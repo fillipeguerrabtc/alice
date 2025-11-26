@@ -1,0 +1,171 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: alice-postgres
+    environment:
+      POSTGRES_USER: alice
+      POSTGRES_PASSWORD: alice_dev_password
+      POSTGRES_DB: alice_development
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U alice -d alice_development"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - alice-network
+
+  traefik:
+    image: traefik:v3.0
+    container_name: alice-gateway
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - alice-network
+
+  auth-service:
+    build:
+      context: ../../
+      dockerfile: apps/auth-service/Dockerfile
+    container_name: alice-auth
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      SERVICE_NAME: auth-service
+      DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
+      SESSION_SECRET: dev-session-secret-change-in-prod-32chars
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)"
+      - "traefik.http.services.auth.loadbalancer.server.port=3001"
+    networks:
+      - alice-network
+
+  chat-service:
+    build:
+      context: ../../
+      dockerfile: apps/chat-service/Dockerfile
+    container_name: alice-chat
+    environment:
+      NODE_ENV: development
+      PORT: 3002
+      SERVICE_NAME: chat-service
+      DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
+      SALAD_API_KEY: ${SALAD_API_KEY:-}
+      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.chat.rule=PathPrefix(`/api/chat`) || PathPrefix(`/ws/chat`)"
+      - "traefik.http.services.chat.loadbalancer.server.port=3002"
+    networks:
+      - alice-network
+
+  rag-service:
+    build:
+      context: ../../
+      dockerfile: apps/rag-service/Dockerfile
+    container_name: alice-rag
+    environment:
+      NODE_ENV: development
+      PORT: 3003
+      SERVICE_NAME: rag-service
+      DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.rag.rule=PathPrefix(`/api/rag`)"
+      - "traefik.http.services.rag.loadbalancer.server.port=3003"
+    networks:
+      - alice-network
+
+  training-service:
+    build:
+      context: ../../
+      dockerfile: apps/training-service/Dockerfile
+    container_name: alice-training
+    environment:
+      NODE_ENV: development
+      PORT: 3004
+      SERVICE_NAME: training-service
+      DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
+      SALAD_API_KEY: ${SALAD_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.training.rule=PathPrefix(`/api/training`)"
+      - "traefik.http.services.training.loadbalancer.server.port=3004"
+    networks:
+      - alice-network
+
+  integrations-service:
+    build:
+      context: ../../
+      dockerfile: apps/integrations-service/Dockerfile
+    container_name: alice-integrations
+    environment:
+      NODE_ENV: development
+      PORT: 3005
+      SERVICE_NAME: integrations-service
+      DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      ERPNEXT_URL: ${ERPNEXT_URL:-}
+      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY:-}
+      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.integrations.rule=PathPrefix(`/api/integrations`)"
+      - "traefik.http.services.integrations.loadbalancer.server.port=3005"
+    networks:
+      - alice-network
+
+  vector:
+    image: timberio/vector:0.34.0-alpine
+    container_name: alice-vector
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      NODE_ENV: development
+    depends_on:
+      - traefik
+    networks:
+      - alice-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  alice-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

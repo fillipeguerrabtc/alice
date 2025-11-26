@@ -1,0 +1,57 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "globalEnv": [
+    "NODE_ENV",
+    "DATABASE_URL",
+    "SESSION_SECRET",
+    "STRIPE_SECRET_KEY",
+    "STRIPE_PUBLISHABLE_KEY",
+    "SALAD_API_KEY",
+    "SALAD_ORGANIZATION_ID",
+    "ERPNEXT_URL",
+    "ERPNEXT_API_KEY",
+    "ERPNEXT_API_SECRET",
+    "RESEND_API_KEY",
+    "LOG_LEVEL",
+    "SERVICE_NAME"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"],
+      "inputs": ["src/**", "package.json", "tsconfig.json"]
+    },
+    "lint": {
+      "dependsOn": ["^lint"],
+      "inputs": ["src/**", ".eslintrc*"]
+    },
+    "typecheck": {
+      "dependsOn": ["^typecheck"],
+      "inputs": ["src/**", "tsconfig.json"]
+    },
+    "test": {
+      "dependsOn": ["^test"],
+      "inputs": ["src/**", "test/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true,
+      "dependsOn": ["^build"]
+    },
+    "start": {
+      "cache": false,
+      "dependsOn": ["build"]
+    },
+    "db:push": {
+      "cache": false
+    },
+    "db:migrate": {
+      "cache": false
+    },
+    "docker:build": {
+      "cache": false,
+      "dependsOn": ["build"]
+    }
+  }
+}

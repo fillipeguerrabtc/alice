@@ -1,0 +1,461 @@
+{
+  "common": {
+    "loading": "Carregando...",
+    "save": "Salvar",
+    "cancel": "Cancelar",
+    "delete": "Excluir",
+    "edit": "Editar",
+    "create": "Criar",
+    "search": "Pesquisar",
+    "filter": "Filtrar",
+    "actions": "Ações",
+    "confirm": "Confirmar",
+    "back": "Voltar",
+    "next": "Próximo",
+    "previous": "Anterior",
+    "close": "Fechar",
+    "yes": "Sim",
+    "no": "Não",
+    "or": "ou",
+    "and": "e",
+    "all": "Todos",
+    "none": "Nenhum",
+    "select": "Selecionar",
+    "noResults": "Nenhum resultado encontrado",
+    "optional": "opcional",
+    "required": "obrigatório",
+    "viewAll": "Ver Todas",
+    "seeMore": "Ver Mais",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "status": "Status",
+    "stable": "Estável",
+    "download": "Baixar",
+    "color": "Cor",
+    "view": "Visualizar"
+  },
+  "auth": {
+    "title": "Alice IA Enterprise",
+    "subtitle": "Plataforma de IA Autônoma Multimodal",
+    "login": "Entrar",
+    "logout": "Sair",
+    "loginError": "Erro ao fazer login",
+    "continueWith": "Continuar com {{provider}}",
+    "or": "ou",
+    "and": "e",
+    "termsNotice": "Ao continuar, você concorda com os",
+    "termsOfService": "Termos de Serviço",
+    "privacyPolicy": "Política de Privacidade",
+    "loginWithReplit": "Entrar com Replit",
+    "loginWithGoogle": "Entrar com Google",
+    "loginWithGitHub": "Entrar com GitHub",
+    "loginWithMicrosoft": "Entrar com Microsoft",
+    "loginWithSSO": "Entrar com SSO Corporativo",
+    "loginWithEmail": "Entrar com E-mail",
+    "welcome": "Bem-vindo",
+    "welcomeBack": "Bem-vindo de volta",
+    "signIn": "Fazer login",
+    "signOut": "Sair da conta",
+    "account": "Minha Conta",
+    "profile": "Perfil",
+    "settings": "Configurações",
+    "unauthorized": "Não autorizado",
+    "sessionExpired": "Sua sessão expirou. Fazendo login novamente...",
+    "email": "E-mail",
+    "password": "Senha",
+    "confirmPassword": "Confirmar Senha",
+    "forgotPassword": "Esqueceu a senha?",
+    "createAccount": "Criar Conta",
+    "alreadyHaveAccount": "Já tem uma conta?",
+    "dontHaveAccount": "Não tem uma conta?",
+    "register": "Cadastrar",
+    "firstName": "Nome",
+    "lastName": "Sobrenome",
+    "orContinueWith": "ou continue com",
+    "rememberMe": "Lembrar de mim",
+    "invalidCredentials": "Credenciais inválidas",
+    "passwordMismatch": "As senhas não coincidem",
+    "passwordTooShort": "A senha deve ter pelo menos 8 caracteres",
+    "emailInvalid": "E-mail inválido",
+    "registrationSuccess": "Conta criada com sucesso! Faça login.",
+    "ssoProvider": "Provedor SSO",
+    "enterpriseSSO": "SSO Enterprise",
+    "selectProvider": "Selecione como deseja entrar"
+  },
+  "landing": {
+    "title": "Yes You Deserve",
+    "subtitle": "Portal Empresarial",
+    "description": "Portal de gestão empresarial com assistente de IA integrado para turismo Tuk Tuk em Portugal.",
+    "cta": "Acessar Portal",
+    "ctaFree": "Acessar Agora",
+    "viewDemo": "Saiba Mais",
+    "talkToSales": "Falar Conosco",
+    "readyToStart": "Pronto para acessar?",
+    "readyToStartDescription": "Entre no portal empresarial para gerir suas operações e atendimento ao cliente.",
+    "companyLocation": "Turismo em Portugal",
+    "autonomous": "IA Integrada",
+    "metricsEur": "Pagamentos EUR",
+    "termsOfService": "Termos",
+    "privacy": "Privacidade",
+    "contact": "Contato",
+    "copyright": "Turismo Tuk Tuk em Portugal. Todos os direitos reservados.",
+    "features": {
+      "title": "Nossos Serviços",
+      "subtitle": "Gestão completa para operações de turismo Tuk Tuk em Portugal.",
+      "autonomous": {
+        "title": "Assistente IA",
+        "description": "Atendimento inteligente para clientes e operações internas"
+      },
+      "multimodal": {
+        "title": "Reservas Online",
+        "description": "Sistema completo de reservas e agendamentos"
+      },
+      "selfHosted": {
+        "title": "Pagamentos Seguros",
+        "description": "Processamento de pagamentos via Stripe com conformidade PCI"
+      },
+      "integrations": {
+        "title": "Integrações",
+        "description": "Conexão com ERPNext, WhatsApp e canais de venda"
+      },
+      "agents": {
+        "title": "Gestão de Tours",
+        "description": "Controle de roteiros, motoristas e veículos em tempo real."
+      },
+      "security": {
+        "title": "Segurança Enterprise",
+        "description": "Controle de acesso, auditoria completa e compliance empresarial."
+      },
+      "rag": {
+        "title": "Base de Conhecimento",
+        "description": "Documentação e FAQs integrados para atendimento ágil."
+      }
+    },
+    "benefits": {
+      "title": "Por que Yes You Deserve?",
+      "subtitle": "Experiências únicas de turismo Tuk Tuk em Portugal, com gestão empresarial moderna e eficiente.",
+      "items": [
+        "Tours exclusivos em Tuk Tuk",
+        "Atendimento personalizado",
+        "Reservas fáceis e seguras",
+        "Pagamentos em EUR",
+        "Experiências autênticas em Portugal",
+        "Suporte em Português e Inglês"
+      ]
+    },
+    "hero": {
+      "title": "Portal Empresarial",
+      "titleHighlight": "Yes You Deserve"
+    },
+    "model": {
+      "parameters": "parâmetros",
+      "activeParameters": "Tours Ativos",
+      "contextTokens": "Reservas",
+      "availability": "Disponibilidade"
+    }
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "chat": "Chat",
+    "agents": "Agentes",
+    "namespaces": "Namespaces",
+    "knowledge": "Base de Conhecimento",
+    "documents": "Documentos",
+    "integrations": "Integrações",
+    "analytics": "Analytics",
+    "settings": "Configurações",
+    "users": "Usuários",
+    "billing": "Faturamento",
+    "help": "Ajuda",
+    "support": "Suporte",
+    "resources": "Recursos",
+    "features": "Serviços",
+    "finance": "Finanças"
+  },
+  "dashboard": {
+    "title": "Painel de Controle",
+    "welcome": "Olá",
+    "overview": "Visão Geral",
+    "quickActions": "Ações Rápidas",
+    "recentActivity": "Atividade Recente",
+    "summary": "Resumo das suas operações",
+    "noActivity": "Nenhuma atividade recente",
+    "noAgents": "Nenhum agente cadastrado",
+    "systemStatus": "Status do Sistema",
+    "resourceUsage": "Uso de Recursos",
+    "stats": {
+      "activeConversations": "Conversas Ativas",
+      "totalConversations": "Total de Conversas",
+      "activeUsers": "Usuários Ativos",
+      "activeAgents": "Agentes Ativos",
+      "totalAgents": "Total de Agentes",
+      "ragDocuments": "Documentos RAG",
+      "tokensUsed": "Tokens Utilizados",
+      "storageUsed": "Armazenamento Usado",
+      "activeNamespaces": "Namespaces Ativos",
+      "totalNamespaces": "Total de Namespaces"
+    },
+    "actions": {
+      "newChat": "Nova Conversa",
+      "newAgent": "Novo Agente",
+      "uploadDocument": "Upload de Documento",
+      "viewReports": "Ver Relatórios"
+    },
+    "status": {
+      "operational": "Operacional",
+      "synced": "Sincronizada",
+      "connected": "Conectadas",
+      "llmModel": "Llama 4 Maverick",
+      "knowledgeBase": "Base de Conhecimento",
+      "integrationsLabel": "Integrações"
+    },
+    "usage": {
+      "tokens": "Tokens utilizados",
+      "storage": "Armazenamento",
+      "users": "Usuários"
+    },
+    "popularAgents": "Agentes Populares",
+    "conversations": "conversas",
+    "training": "Treinando"
+  },
+  "chat": {
+    "title": "Chat",
+    "newConversation": "Nova Conversa",
+    "typeMessage": "Digite sua mensagem...",
+    "send": "Enviar",
+    "attachFile": "Anexar arquivo",
+    "voiceInput": "Entrada por voz",
+    "clearHistory": "Limpar histórico",
+    "exportChat": "Exportar conversa",
+    "noConversations": "Nenhuma conversa ainda",
+    "startConversation": "Inicie uma nova conversa",
+    "processing": "Processando...",
+    "thinking": "Pensando...",
+    "typing": "Digitando...",
+    "messageTypes": {
+      "text": "Texto",
+      "image": "Imagem",
+      "audio": "Áudio",
+      "video": "Vídeo",
+      "file": "Arquivo"
+    }
+  },
+  "agents": {
+    "title": "Agentes",
+    "create": "Criar Agente",
+    "edit": "Editar Agente",
+    "deleteAgent": "Excluir Agente",
+    "name": "Nome do Agente",
+    "description": "Descrição",
+    "systemPrompt": "System Prompt",
+    "capabilities": "Capacidades",
+    "status": "Status",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "noAgents": "Nenhum agente cadastrado",
+    "createFirst": "Crie seu primeiro agente para começar",
+    "types": {
+      "general": "Geral",
+      "support": "Suporte",
+      "sales": "Vendas",
+      "hr": "RH",
+      "finance": "Finanças",
+      "custom": "Personalizado"
+    },
+    "placeholders": {
+      "name": "Ex: Assistente de Vendas",
+      "description": "Descrição do agente...",
+      "systemPrompt": "Você é um assistente especializado em..."
+    }
+  },
+  "namespaces": {
+    "title": "Namespaces",
+    "create": "Criar Namespace",
+    "edit": "Editar Namespace",
+    "deleteNamespace": "Excluir Namespace",
+    "name": "Nome",
+    "slug": "Slug",
+    "description": "Descrição",
+    "tenant": "Tenant",
+    "noNamespaces": "Nenhum namespace cadastrado",
+    "createFirst": "Crie seu primeiro namespace para organizar seus agentes",
+    "placeholders": {
+      "name": "Ex: Vendas",
+      "slug": "ex: vendas",
+      "description": "Descrição do namespace..."
+    }
+  },
+  "documents": {
+    "title": "Documentos",
+    "upload": "Upload",
+    "uploadDocument": "Upload de Documento",
+    "dragDrop": "Arraste e solte arquivos aqui",
+    "or": "ou",
+    "browse": "procure em seu computador",
+    "supportedFormats": "Formatos suportados: PDF, DOCX, TXT, MD, CSV",
+    "processing": "Processando documento...",
+    "indexed": "Indexado",
+    "pending": "Pendente",
+    "failed": "Falhou",
+    "noDocuments": "Nenhum documento na base de conhecimento",
+    "uploadFirst": "Faça upload de documentos para treinar o assistente",
+    "chunks": "Chunks",
+    "size": "Tamanho",
+    "type": "Tipo",
+    "uploadedAt": "Enviado em",
+    "uploadedBy": "Enviado por"
+  },
+  "integrations": {
+    "title": "Integrações",
+    "available": "Disponíveis",
+    "configured": "Configuradas",
+    "connect": "Conectar",
+    "disconnect": "Desconectar",
+    "configure": "Configurar",
+    "status": "Status",
+    "connected": "Conectado",
+    "disconnected": "Desconectado",
+    "pending": "Pendente",
+    "error": "Erro",
+    "erpnext": {
+      "title": "ERPNext",
+      "description": "Integração completa com ERP/CRM para gestão empresarial"
+    },
+    "whatsapp": {
+      "title": "WhatsApp Business",
+      "description": "Atendimento automatizado via WhatsApp com Twilio"
+    },
+    "email": {
+      "title": "Email",
+      "description": "Envio e recebimento de emails integrado"
+    },
+    "calendar": {
+      "title": "Calendário",
+      "description": "Sincronização com Google Calendar e Outlook"
+    }
+  },
+  "settings": {
+    "title": "Configurações",
+    "general": "Geral",
+    "appearance": "Aparência",
+    "language": "Idioma",
+    "theme": "Tema",
+    "notifications": "Notificações",
+    "security": "Segurança",
+    "api": "API",
+    "llm": {
+      "title": "Configuração LLM",
+      "provider": "Provedor",
+      "model": "Modelo",
+      "temperature": "Temperatura",
+      "maxTokens": "Tokens Máximos",
+      "apiKey": "Chave de API",
+      "endpoint": "Endpoint"
+    },
+    "themes": {
+      "light": "Claro",
+      "dark": "Escuro",
+      "system": "Sistema"
+    }
+  },
+  "users": {
+    "title": "Usuários",
+    "invite": "Convidar Usuário",
+    "role": "Papel",
+    "roles": {
+      "superAdmin": "Super Administrador",
+      "admin": "Administrador",
+      "manager": "Gerente",
+      "analyst": "Analista",
+      "operator": "Operador",
+      "viewer": "Visualizador"
+    },
+    "permissions": "Permissões",
+    "lastActive": "Última Atividade",
+    "status": "Status",
+    "active": "Ativo",
+    "inactive": "Inativo",
+    "pending": "Pendente"
+  },
+  "finance": {
+    "title": "Finanças",
+    "description": "Gerencie pagamentos e transações",
+    "overview": "Visão Geral Financeira",
+    "revenue": "Receita",
+    "expenses": "Despesas",
+    "profit": "Lucro",
+    "transactions": "Transações",
+    "invoices": "Faturas",
+    "payments": "Pagamentos",
+    "payouts": "Pagamentos a Terceiros",
+    "stripeConnect": "Stripe Connect",
+    "balance": "Saldo",
+    "pending": "Pendente",
+    "available": "Disponível"
+  },
+  "errors": {
+    "generic": "Ocorreu um erro. Tente novamente.",
+    "notFound": "Página não encontrada",
+    "notFoundTitle": "404 - Não Encontrado",
+    "notFoundDescription": "A página que você está procurando não existe ou foi movida.",
+    "unauthorized": "Acesso não autorizado",
+    "forbidden": "Acesso negado",
+    "serverError": "Erro interno do servidor",
+    "networkError": "Erro de conexão. Verifique sua internet.",
+    "validationError": "Dados inválidos. Verifique os campos.",
+    "sessionExpired": "Sessão expirada. Faça login novamente.",
+    "goHome": "Voltar ao Início"
+  },
+  "success": {
+    "saved": "Salvo com sucesso",
+    "created": "Criado com sucesso",
+    "updated": "Atualizado com sucesso",
+    "deleted": "Excluído com sucesso",
+    "uploaded": "Upload realizado com sucesso",
+    "copied": "Copiado para a área de transferência"
+  },
+  "confirm": {
+    "delete": "Tem certeza que deseja excluir?",
+    "deleteTitle": "Confirmar Exclusão",
+    "deleteDescription": "Esta ação não pode ser desfeita.",
+    "logout": "Tem certeza que deseja sair?",
+    "unsavedChanges": "Você tem alterações não salvas. Deseja sair mesmo assim?"
+  },
+  "time": {
+    "now": "Agora",
+    "minutesAgo": "min atrás",
+    "hoursAgo": "h atrás",
+    "daysAgo": "dias atrás",
+    "today": "Hoje",
+    "yesterday": "Ontem",
+    "thisWeek": "Esta semana",
+    "thisMonth": "Este mês"
+  },
+  "format": {
+    "date": "DD/MM/YYYY",
+    "time": "HH:mm",
+    "datetime": "DD/MM/YYYY HH:mm",
+    "currency": "EUR",
+    "currencySymbol": "€"
+  },
+  "billing": {
+    "title": "Faturamento",
+    "currentPlan": "Plano Atual",
+    "changePlan": "Alterar Plano",
+    "cancelSubscription": "Cancelar Assinatura",
+    "paymentMethod": "Método de Pagamento",
+    "invoices": "Faturas",
+    "usage": "Uso",
+    "free": "Gratuito",
+    "pro": "Profissional",
+    "enterprise": "Enterprise",
+    "manageBilling": "Gerenciar Faturamento",
+    "manageSubscription": "Gerenciar Assinatura",
+    "selectPlan": "Selecionar Plano",
+    "perMonth": "por mês",
+    "perYear": "por ano",
+    "subscribe": "Assinar",
+    "subscribed": "Assinado",
+    "features": "Recursos incluídos"
+  }
+}

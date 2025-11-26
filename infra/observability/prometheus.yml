@@ -1,0 +1,31 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: 'alice-services'
+    static_configs:
+      - targets:
+        - 'alice-auth:3001'
+        - 'alice-chat:3002'
+        - 'alice-rag:3003'
+        - 'alice-training:3004'
+        - 'alice-integrations:3005'
+    metrics_path: '/metrics'
+    scrape_timeout: 10s
+
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['alice-traefik:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'vector'
+    static_configs:
+      - targets: ['alice-vector:8686']
+    metrics_path: '/metrics'
+
+remote_write:
+  - url: ${GRAFANA_PROMETHEUS_URL}
+    basic_auth:
+      username: ${GRAFANA_USER}
+      password: ${GRAFANA_API_KEY}

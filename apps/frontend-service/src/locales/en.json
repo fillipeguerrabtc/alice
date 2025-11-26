@@ -1,0 +1,461 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "filter": "Filter",
+    "actions": "Actions",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "previous": "Previous",
+    "close": "Close",
+    "yes": "Yes",
+    "no": "No",
+    "or": "or",
+    "and": "and",
+    "all": "All",
+    "none": "None",
+    "select": "Select",
+    "noResults": "No results found",
+    "optional": "optional",
+    "required": "required",
+    "viewAll": "View All",
+    "seeMore": "See More",
+    "active": "Active",
+    "inactive": "Inactive",
+    "status": "Status",
+    "stable": "Stable",
+    "download": "Download",
+    "color": "Color",
+    "view": "View"
+  },
+  "auth": {
+    "title": "Alice AI Enterprise",
+    "subtitle": "Autonomous Multimodal AI Platform",
+    "login": "Log In",
+    "logout": "Log Out",
+    "loginError": "Login error",
+    "continueWith": "Continue with {{provider}}",
+    "or": "or",
+    "and": "and",
+    "termsNotice": "By continuing, you agree to the",
+    "termsOfService": "Terms of Service",
+    "privacyPolicy": "Privacy Policy",
+    "loginWithReplit": "Log In with Replit",
+    "loginWithGoogle": "Log In with Google",
+    "loginWithGitHub": "Log In with GitHub",
+    "loginWithMicrosoft": "Log In with Microsoft",
+    "loginWithSSO": "Log In with Corporate SSO",
+    "loginWithEmail": "Log In with Email",
+    "welcome": "Welcome",
+    "welcomeBack": "Welcome back",
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "account": "My Account",
+    "profile": "Profile",
+    "settings": "Settings",
+    "unauthorized": "Unauthorized",
+    "sessionExpired": "Your session has expired. Logging in again...",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm Password",
+    "forgotPassword": "Forgot password?",
+    "createAccount": "Create Account",
+    "alreadyHaveAccount": "Already have an account?",
+    "dontHaveAccount": "Don't have an account?",
+    "register": "Register",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "orContinueWith": "or continue with",
+    "rememberMe": "Remember me",
+    "invalidCredentials": "Invalid credentials",
+    "passwordMismatch": "Passwords do not match",
+    "passwordTooShort": "Password must be at least 8 characters",
+    "emailInvalid": "Invalid email",
+    "registrationSuccess": "Account created successfully! Please log in.",
+    "ssoProvider": "SSO Provider",
+    "enterpriseSSO": "Enterprise SSO",
+    "selectProvider": "Select how you want to sign in"
+  },
+  "landing": {
+    "title": "Yes You Deserve",
+    "subtitle": "Business Portal",
+    "description": "Business management portal with integrated AI assistant for Tuk Tuk tourism in Portugal.",
+    "cta": "Access Portal",
+    "ctaFree": "Access Now",
+    "viewDemo": "Learn More",
+    "talkToSales": "Contact Us",
+    "readyToStart": "Ready to access?",
+    "readyToStartDescription": "Enter the business portal to manage your operations and customer service.",
+    "companyLocation": "Tourism in Portugal",
+    "autonomous": "Integrated AI",
+    "metricsEur": "EUR Payments",
+    "termsOfService": "Terms",
+    "privacy": "Privacy",
+    "contact": "Contact",
+    "copyright": "Tuk Tuk Tourism in Portugal. All rights reserved.",
+    "features": {
+      "title": "Our Services",
+      "subtitle": "Complete management for Tuk Tuk tourism operations in Portugal.",
+      "autonomous": {
+        "title": "AI Assistant",
+        "description": "Intelligent service for customers and internal operations"
+      },
+      "multimodal": {
+        "title": "Online Bookings",
+        "description": "Complete booking and scheduling system"
+      },
+      "selfHosted": {
+        "title": "Secure Payments",
+        "description": "Payment processing via Stripe with PCI compliance"
+      },
+      "integrations": {
+        "title": "Integrations",
+        "description": "Connection with ERPNext, WhatsApp and sales channels"
+      },
+      "agents": {
+        "title": "Tour Management",
+        "description": "Control of itineraries, drivers and vehicles in real time."
+      },
+      "security": {
+        "title": "Enterprise Security",
+        "description": "Access control, complete auditing and business compliance."
+      },
+      "rag": {
+        "title": "Knowledge Base",
+        "description": "Documentation and FAQs integrated for agile service."
+      }
+    },
+    "benefits": {
+      "title": "Why Yes You Deserve?",
+      "subtitle": "Unique Tuk Tuk tourism experiences in Portugal, with modern and efficient business management.",
+      "items": [
+        "Exclusive Tuk Tuk tours",
+        "Personalized service",
+        "Easy and secure bookings",
+        "EUR payments",
+        "Authentic experiences in Portugal",
+        "Support in Portuguese and English"
+      ]
+    },
+    "hero": {
+      "title": "Business Portal",
+      "titleHighlight": "Yes You Deserve"
+    },
+    "model": {
+      "parameters": "parameters",
+      "activeParameters": "Active Tours",
+      "contextTokens": "Bookings",
+      "availability": "Availability"
+    }
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "chat": "Chat",
+    "agents": "Agents",
+    "namespaces": "Namespaces",
+    "knowledge": "Knowledge Base",
+    "documents": "Documents",
+    "integrations": "Integrations",
+    "analytics": "Analytics",
+    "settings": "Settings",
+    "users": "Users",
+    "billing": "Billing",
+    "help": "Help",
+    "support": "Support",
+    "resources": "Resources",
+    "features": "Services",
+    "finance": "Finance"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "welcome": "Hello",
+    "overview": "Overview",
+    "quickActions": "Quick Actions",
+    "recentActivity": "Recent Activity",
+    "summary": "Summary of your operations",
+    "noActivity": "No recent activity",
+    "noAgents": "No agents registered",
+    "systemStatus": "System Status",
+    "resourceUsage": "Resource Usage",
+    "stats": {
+      "activeConversations": "Active Conversations",
+      "totalConversations": "Total Conversations",
+      "activeUsers": "Active Users",
+      "activeAgents": "Active Agents",
+      "totalAgents": "Total Agents",
+      "ragDocuments": "RAG Documents",
+      "tokensUsed": "Tokens Used",
+      "storageUsed": "Storage Used",
+      "activeNamespaces": "Active Namespaces",
+      "totalNamespaces": "Total Namespaces"
+    },
+    "actions": {
+      "newChat": "New Conversation",
+      "newAgent": "New Agent",
+      "uploadDocument": "Upload Document",
+      "viewReports": "View Reports"
+    },
+    "status": {
+      "operational": "Operational",
+      "synced": "Synced",
+      "connected": "Connected",
+      "llmModel": "Llama 4 Maverick",
+      "knowledgeBase": "Knowledge Base",
+      "integrationsLabel": "Integrations"
+    },
+    "usage": {
+      "tokens": "Tokens used",
+      "storage": "Storage",
+      "users": "Users"
+    },
+    "popularAgents": "Popular Agents",
+    "conversations": "conversations",
+    "training": "Training"
+  },
+  "chat": {
+    "title": "Chat",
+    "newConversation": "New Conversation",
+    "typeMessage": "Type your message...",
+    "send": "Send",
+    "attachFile": "Attach file",
+    "voiceInput": "Voice input",
+    "clearHistory": "Clear history",
+    "exportChat": "Export conversation",
+    "noConversations": "No conversations yet",
+    "startConversation": "Start a new conversation",
+    "processing": "Processing...",
+    "thinking": "Thinking...",
+    "typing": "Typing...",
+    "messageTypes": {
+      "text": "Text",
+      "image": "Image",
+      "audio": "Audio",
+      "video": "Video",
+      "file": "File"
+    }
+  },
+  "agents": {
+    "title": "Agents",
+    "create": "Create Agent",
+    "edit": "Edit Agent",
+    "deleteAgent": "Delete Agent",
+    "name": "Agent Name",
+    "description": "Description",
+    "systemPrompt": "System Prompt",
+    "capabilities": "Capabilities",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "noAgents": "No agents registered",
+    "createFirst": "Create your first agent to get started",
+    "types": {
+      "general": "General",
+      "support": "Support",
+      "sales": "Sales",
+      "hr": "HR",
+      "finance": "Finance",
+      "custom": "Custom"
+    },
+    "placeholders": {
+      "name": "E.g.: Sales Assistant",
+      "description": "Agent description...",
+      "systemPrompt": "You are a specialized assistant in..."
+    }
+  },
+  "namespaces": {
+    "title": "Namespaces",
+    "create": "Create Namespace",
+    "edit": "Edit Namespace",
+    "deleteNamespace": "Delete Namespace",
+    "name": "Name",
+    "slug": "Slug",
+    "description": "Description",
+    "tenant": "Tenant",
+    "noNamespaces": "No namespaces registered",
+    "createFirst": "Create your first namespace to organize your agents",
+    "placeholders": {
+      "name": "E.g.: Sales",
+      "slug": "e.g.: sales",
+      "description": "Namespace description..."
+    }
+  },
+  "documents": {
+    "title": "Documents",
+    "upload": "Upload",
+    "uploadDocument": "Upload Document",
+    "dragDrop": "Drag and drop files here",
+    "or": "or",
+    "browse": "browse your computer",
+    "supportedFormats": "Supported formats: PDF, DOCX, TXT, MD, CSV",
+    "processing": "Processing document...",
+    "indexed": "Indexed",
+    "pending": "Pending",
+    "failed": "Failed",
+    "noDocuments": "No documents in the knowledge base",
+    "uploadFirst": "Upload documents to train the assistant",
+    "chunks": "Chunks",
+    "size": "Size",
+    "type": "Type",
+    "uploadedAt": "Uploaded at",
+    "uploadedBy": "Uploaded by"
+  },
+  "integrations": {
+    "title": "Integrations",
+    "available": "Available",
+    "configured": "Configured",
+    "connect": "Connect",
+    "disconnect": "Disconnect",
+    "configure": "Configure",
+    "status": "Status",
+    "connected": "Connected",
+    "disconnected": "Disconnected",
+    "pending": "Pending",
+    "error": "Error",
+    "erpnext": {
+      "title": "ERPNext",
+      "description": "Full ERP/CRM integration for business management"
+    },
+    "whatsapp": {
+      "title": "WhatsApp Business",
+      "description": "Automated WhatsApp support with Twilio"
+    },
+    "email": {
+      "title": "Email",
+      "description": "Integrated email sending and receiving"
+    },
+    "calendar": {
+      "title": "Calendar",
+      "description": "Sync with Google Calendar and Outlook"
+    }
+  },
+  "settings": {
+    "title": "Settings",
+    "general": "General",
+    "appearance": "Appearance",
+    "language": "Language",
+    "theme": "Theme",
+    "notifications": "Notifications",
+    "security": "Security",
+    "api": "API",
+    "llm": {
+      "title": "LLM Configuration",
+      "provider": "Provider",
+      "model": "Model",
+      "temperature": "Temperature",
+      "maxTokens": "Max Tokens",
+      "apiKey": "API Key",
+      "endpoint": "Endpoint"
+    },
+    "themes": {
+      "light": "Light",
+      "dark": "Dark",
+      "system": "System"
+    }
+  },
+  "users": {
+    "title": "Users",
+    "invite": "Invite User",
+    "role": "Role",
+    "roles": {
+      "superAdmin": "Super Administrator",
+      "admin": "Administrator",
+      "manager": "Manager",
+      "analyst": "Analyst",
+      "operator": "Operator",
+      "viewer": "Viewer"
+    },
+    "permissions": "Permissions",
+    "lastActive": "Last Active",
+    "status": "Status",
+    "active": "Active",
+    "inactive": "Inactive",
+    "pending": "Pending"
+  },
+  "finance": {
+    "title": "Finance",
+    "description": "Manage payments and transactions",
+    "overview": "Financial Overview",
+    "revenue": "Revenue",
+    "expenses": "Expenses",
+    "profit": "Profit",
+    "transactions": "Transactions",
+    "invoices": "Invoices",
+    "payments": "Payments",
+    "payouts": "Payouts",
+    "stripeConnect": "Stripe Connect",
+    "balance": "Balance",
+    "pending": "Pending",
+    "available": "Available"
+  },
+  "errors": {
+    "generic": "An error occurred. Please try again.",
+    "notFound": "Page not found",
+    "notFoundTitle": "404 - Not Found",
+    "notFoundDescription": "The page you are looking for does not exist or has been moved.",
+    "unauthorized": "Unauthorized access",
+    "forbidden": "Access denied",
+    "serverError": "Internal server error",
+    "networkError": "Connection error. Check your internet.",
+    "validationError": "Invalid data. Check the fields.",
+    "sessionExpired": "Session expired. Please log in again.",
+    "goHome": "Go Home"
+  },
+  "success": {
+    "saved": "Saved successfully",
+    "created": "Created successfully",
+    "updated": "Updated successfully",
+    "deleted": "Deleted successfully",
+    "uploaded": "Uploaded successfully",
+    "copied": "Copied to clipboard"
+  },
+  "confirm": {
+    "delete": "Are you sure you want to delete?",
+    "deleteTitle": "Confirm Deletion",
+    "deleteDescription": "This action cannot be undone.",
+    "logout": "Are you sure you want to log out?",
+    "unsavedChanges": "You have unsaved changes. Do you want to leave anyway?"
+  },
+  "time": {
+    "now": "Now",
+    "minutesAgo": "min ago",
+    "hoursAgo": "h ago",
+    "daysAgo": "days ago",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "thisWeek": "This week",
+    "thisMonth": "This month"
+  },
+  "format": {
+    "date": "MM/DD/YYYY",
+    "time": "HH:mm",
+    "datetime": "MM/DD/YYYY HH:mm",
+    "currency": "EUR",
+    "currencySymbol": "€"
+  },
+  "billing": {
+    "title": "Billing",
+    "currentPlan": "Current Plan",
+    "changePlan": "Change Plan",
+    "cancelSubscription": "Cancel Subscription",
+    "paymentMethod": "Payment Method",
+    "invoices": "Invoices",
+    "usage": "Usage",
+    "free": "Free",
+    "pro": "Professional",
+    "enterprise": "Enterprise",
+    "manageBilling": "Manage Billing",
+    "manageSubscription": "Manage Subscription",
+    "selectPlan": "Select Plan",
+    "perMonth": "per month",
+    "perYear": "per year",
+    "subscribe": "Subscribe",
+    "subscribed": "Subscribed",
+    "features": "Features included"
+  }
+}

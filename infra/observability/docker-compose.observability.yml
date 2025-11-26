@@ -1,0 +1,52 @@
+version: "3.8"
+
+services:
+  vector:
+    image: timberio/vector:latest-alpine
+    container_name: alice-vector
+    restart: unless-stopped
+    networks:
+      - alice-network
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - vector-data:/var/lib/vector
+      - /var/log/vector:/var/log/vector
+    environment:
+      - GRAFANA_LOKI_URL=${GRAFANA_LOKI_URL}
+      - GRAFANA_PROMETHEUS_URL=${GRAFANA_PROMETHEUS_URL}
+      - GRAFANA_USER=${GRAFANA_USER}
+      - GRAFANA_API_KEY=${GRAFANA_API_KEY}
+    healthcheck:
+      test: ["CMD", "vector", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Optional: Local Prometheus for metrics aggregation
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: alice-prometheus
+    restart: unless-stopped
+    networks:
+      - alice-network
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    profiles:
+      - local-metrics
+
+networks:
+  alice-network:
+    external: true
+
+volumes:
+  vector-data:
+  prometheus-data:

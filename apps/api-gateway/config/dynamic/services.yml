@@ -1,0 +1,195 @@
+http:
+  routers:
+    auth-router:
+      rule: "PathPrefix(`/api/auth`)"
+      service: auth-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+      tls: {}
+
+    chat-router:
+      rule: "PathPrefix(`/api/chat`)"
+      service: chat-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+        - auth-forward
+      tls: {}
+
+    chat-ws-router:
+      rule: "PathPrefix(`/ws/chat`)"
+      service: chat-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - auth-forward
+      tls: {}
+
+    rag-router:
+      rule: "PathPrefix(`/api/rag`)"
+      service: rag-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+        - auth-forward
+      tls: {}
+
+    training-router:
+      rule: "PathPrefix(`/api/training`)"
+      service: training-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+        - auth-forward
+      tls: {}
+
+    integrations-router:
+      rule: "PathPrefix(`/api/integrations`)"
+      service: integrations-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+        - auth-forward
+      tls: {}
+
+    integrations-webhook-router:
+      rule: "PathPrefix(`/api/integrations/stripe/webhook`)"
+      service: integrations-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+      tls: {}
+      priority: 100
+
+    frontend-router:
+      rule: "PathPrefix(`/`)"
+      service: frontend-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - security-headers
+        - compress
+      tls: {}
+      priority: 1
+
+    health-router:
+      rule: "Path(`/health`) || Path(`/api/health`)"
+      service: auth-service
+      entryPoints:
+        - web
+        - websecure
+      tls: {}
+
+  services:
+    auth-service:
+      loadBalancer:
+        servers:
+          - url: "http://auth-service:3001"
+        healthCheck:
+          path: /api/auth/health
+          interval: "30s"
+          timeout: "10s"
+
+    chat-service:
+      loadBalancer:
+        servers:
+          - url: "http://chat-service:3002"
+        healthCheck:
+          path: /api/chat/health
+          interval: "30s"
+          timeout: "10s"
+
+    rag-service:
+      loadBalancer:
+        servers:
+          - url: "http://rag-service:3003"
+        healthCheck:
+          path: /api/rag/health
+          interval: "30s"
+          timeout: "10s"
+
+    training-service:
+      loadBalancer:
+        servers:
+          - url: "http://training-service:3004"
+        healthCheck:
+          path: /api/training/health
+          interval: "30s"
+          timeout: "10s"
+
+    integrations-service:
+      loadBalancer:
+        servers:
+          - url: "http://integrations-service:3005"
+        healthCheck:
+          path: /api/integrations/health
+          interval: "30s"
+          timeout: "10s"
+
+    frontend-service:
+      loadBalancer:
+        servers:
+          - url: "http://frontend:80"
+
+  middlewares:
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50
+        period: 1s
+
+    security-headers:
+      headers:
+        browserXssFilter: true
+        contentTypeNosniff: true
+        forceSTSHeader: true
+        stsIncludeSubdomains: true
+        stsPreload: true
+        stsSeconds: 31536000
+        customFrameOptionsValue: "SAMEORIGIN"
+        customResponseHeaders:
+          X-Content-Type-Options: "nosniff"
+          X-Frame-Options: "SAMEORIGIN"
+          X-XSS-Protection: "1; mode=block"
+          Referrer-Policy: "strict-origin-when-cross-origin"
+
+    auth-forward:
+      forwardAuth:
+        address: "http://auth-service:3001/api/auth/verify"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-User-Id
+          - X-User-Role
+          - X-Tenant-Id
+
+    compress:
+      compress:
+        excludedContentTypes:
+          - "text/event-stream"
+
+    cors:
+      headers:
+        accessControlAllowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        accessControlAllowHeaders:
+          - "*"
+        accessControlAllowOriginList:
+          - "*"
+        accessControlMaxAge: 100
+        addVaryHeader: true

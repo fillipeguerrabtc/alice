@@ -1,0 +1,16 @@
+# Code Owners - Alice Enterprise Platform
+# These owners will be requested for review when changes are made
+
+# Default owner for everything
+* @owner
+
+# Infrastructure changes require extra review
+/infra/ @owner
+/.github/ @owner
+
+# Production deployment workflow
+/.github/workflows/deploy-production.yml @owner
+
+# Security-sensitive files
+/packages/config/ @owner
+/apps/auth-service/ @owner

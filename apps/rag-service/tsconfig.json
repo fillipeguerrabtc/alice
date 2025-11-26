@@ -1,0 +1,25 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "noImplicitAny": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alice/logger": ["../../packages/logger/src/index.ts"],
+      "@alice/config": ["../../packages/config/src/index.ts"],
+      "@alice/database": ["../../packages/database/src/index.ts"],
+      "@alice/shared/*": ["../../packages/shared/src/*"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

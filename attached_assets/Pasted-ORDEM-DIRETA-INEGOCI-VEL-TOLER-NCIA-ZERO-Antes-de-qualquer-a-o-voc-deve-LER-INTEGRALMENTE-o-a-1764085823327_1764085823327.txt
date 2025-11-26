@@ -1,0 +1,30 @@
+ORDEM DIRETA, INEGOCIÁVEL, TOLERÂNCIA ZERO.
+Antes de qualquer ação, você deve LER INTEGRALMENTE o arquivo replit.md deste projeto e SEGUIR TODAS AS REGRAS DELE, além de todas as regras desta mensagem. Se houver conflito, replit.md prevalece até eu autorizar o contrário por escrito.
+
+Contexto obrigatório: agentes anteriores mentiram, não verificaram o código existente, duplicaram trabalho, reimplementaram coisas já feitas, mudaram planos sem aprovação e causaram perdas financeiras severas por >1 semana. Você não tem margem de erro.
+
+REGRAS CRÍTICAS (do replit.md + minhas):
+
+1. LER E VERIFICAR ANTES DE AGIR. É proibido implementar/refatorar qualquer coisa sem inspecionar arquivos, fluxos, dependências e comportamento atual.
+
+2. PROIBIDO DUPLICAR OU REFAZER O QUE JÁ EXISTE. Primeiro encontre, entenda e reaproveite a implementação existente.
+
+3. WORKFLOW OBRIGATÓRIO: diagnóstico → leitura/verificação → plano mínimo → minha aprovação explícita → micro-implementação → validação imediata.
+
+4. APROVAÇÃO A CADA DECISÃO. Se surgir qualquer decisão técnica, mudança de plano, dúvida, risco, ou tentação de “assumir”, pare IMEDIATAMENTE e peça minha revisão/aprovação. Sem exceção.
+
+5. PROIBIDO MENTIR / SUPOR / INVENTAR. Se não souber, diga “não sei”. Se não verificou, diga “não verifiquei”.
+
+6. PROIBIDO workaround, hardcoded, mocks/em-memory, dados mocados ou placeholders. Nada temporário escondido5. Só solução real e alinhada ao sistema.
+
+7. Mudanças mínimas e locais. Nada de refatoração ampla ou reescrita fora do escopo aprovado.
+
+8. TypeScript strict + zero LSP errors. Zero any, zero erros antes de prosseguir.
+
+9. Logging obrigatório via Pino. Nunca console.log/error/warn.
+
+10. Validar após cada micro-passo e relatar resultado real.
+
+Objetivo único: corrigir defeitos reais com honestidade, micro-passos, sem duplicação, sem improviso, seguindo 100% do replit.md.
+
+Confirme explicitamente que leu o replit.md inteiro e que cumprirá todas as regras acima antes de tocar no código.

@@ -1,0 +1,120 @@
+# Vector Configuration for Alice Enterprise Platform
+# Collects logs and metrics from Docker containers
+# Sends to Grafana Cloud Free Tier
+
+[api]
+enabled = true
+address = "0.0.0.0:8686"
+
+# ============================================
+# SOURCES - Collect logs from Docker
+# ============================================
+
+[sources.docker_logs]
+type = "docker_logs"
+docker_host = "unix:///var/run/docker.sock"
+include_containers = [
+  "alice-auth",
+  "alice-chat", 
+  "alice-rag",
+  "alice-training",
+  "alice-integrations",
+  "alice-frontend",
+  "alice-traefik"
+]
+
+[sources.host_metrics]
+type = "host_metrics"
+collectors = ["cpu", "disk", "filesystem", "load", "memory", "network"]
+scrape_interval_secs = 30
+
+# ============================================
+# TRANSFORMS - Parse and enrich logs
+# ============================================
+
+[transforms.parse_logs]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+# Extract service name from container name
+.service = replace(string!(.container_name), "alice-", "")
+
+# Parse JSON logs if possible
+parsed, err = parse_json(.message)
+if err == null {
+  . = merge(., parsed)
+}
+
+# Add environment label
+.environment = "production"
+
+# Extract log level
+if contains(string!(.message), "ERROR") || contains(string!(.message), "error") {
+  .level = "error"
+} else if contains(string!(.message), "WARN") || contains(string!(.message), "warn") {
+  .level = "warn"
+} else if contains(string!(.message), "INFO") || contains(string!(.message), "info") {
+  .level = "info"
+} else {
+  .level = "debug"
+}
+
+# Add timestamp if missing
+if !exists(.timestamp) {
+  .timestamp = now()
+}
+'''
+
+[transforms.filter_noise]
+type = "filter"
+inputs = ["parse_logs"]
+condition = '''
+# Filter out health check logs
+!contains(string!(.message), "/health") &&
+!contains(string!(.message), "healthcheck")
+'''
+
+[transforms.metrics_transform]
+type = "remap"
+inputs = ["host_metrics"]
+source = '''
+.tags.environment = "production"
+.tags.service = "alice-platform"
+'''
+
+# ============================================
+# SINKS - Send to Grafana Cloud
+# ============================================
+
+[sinks.grafana_loki]
+type = "loki"
+inputs = ["filter_noise"]
+endpoint = "${GRAFANA_LOKI_URL}"
+encoding.codec = "json"
+labels.job = "alice-platform"
+labels.service = "{{ service }}"
+labels.level = "{{ level }}"
+labels.environment = "{{ environment }}"
+auth.strategy = "basic"
+auth.user = "${GRAFANA_USER}"
+auth.password = "${GRAFANA_API_KEY}"
+
+[sinks.grafana_prometheus]
+type = "prometheus_remote_write"
+inputs = ["metrics_transform"]
+endpoint = "${GRAFANA_PROMETHEUS_URL}"
+auth.strategy = "basic"
+auth.user = "${GRAFANA_USER}"
+auth.password = "${GRAFANA_API_KEY}"
+
+# Local file sink for backup
+[sinks.file_logs]
+type = "file"
+inputs = ["filter_noise"]
+path = "/var/log/vector/alice-%Y-%m-%d.log"
+encoding.codec = "json"
+
+[sinks.console]
+type = "console"
+inputs = ["filter_noise"]
+encoding.codec = "text"

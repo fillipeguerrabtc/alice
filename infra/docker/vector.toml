@@ -1,0 +1,46 @@
+# =============================================================================
+# ALICE ENTERPRISE - Vector Log Aggregation
+# =============================================================================
+# Coleta logs de todos os servicos e envia para Grafana Cloud (free tier)
+
+[sources.docker_logs]
+type = "docker_logs"
+docker_host = "/var/run/docker.sock"
+
+[transforms.parse_logs]
+type = "remap"
+inputs = ["docker_logs"]
+source = '''
+# Parse JSON logs
+parsed, err = parse_json(.message)
+if err == null {
+  . = merge(., parsed)
+}
+
+# Add metadata
+.service = .container_name
+.environment = get_env_var("NODE_ENV") ?? "development"
+.timestamp = now()
+'''
+
+[transforms.filter_noise]
+type = "filter"
+inputs = ["parse_logs"]
+condition = '.level != "debug" || get_env_var("LOG_DEBUG") == "true"'
+
+[sinks.console]
+type = "console"
+inputs = ["filter_noise"]
+encoding.codec = "json"
+
+# Uncomment to send to Grafana Cloud Loki (free tier: 50GB/month)
+# [sinks.loki]
+# type = "loki"
+# inputs = ["filter_noise"]
+# endpoint = "https://logs-prod-us-central1.grafana.net"
+# auth.strategy = "basic"
+# auth.user = "${GRAFANA_LOKI_USER}"
+# auth.password = "${GRAFANA_LOKI_API_KEY}"
+# labels.service = "{{ service }}"
+# labels.environment = "{{ environment }}"
+# encoding.codec = "json"

@@ -1,0 +1,612 @@
+# =============================================================================
+# ALICE PLATFORM - DOCKER COMPOSE PRODUÇÃO
+# =============================================================================
+# Versão: 3.0
+# Ambiente: Produção (Hetzner Cloud CX43)
+# Servidor: 8 vCPU, 16GB RAM, 160GB NVMe SSD
+# Domínio: yesyoudeserve.duckdns.org
+# IP: 46.224.46.93
+# =============================================================================
+
+version: "3.9"
+
+# =============================================================================
+# NETWORKS - Redes externas (criadas manualmente no servidor)
+# =============================================================================
+# IMPORTANTE: Executar uma vez no servidor antes do primeiro deploy:
+#   docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
+#   docker network create --driver bridge erpnext-network
+# =============================================================================
+networks:
+  alice-network:
+    external: true
+    name: alice-network
+  
+  erpnext-network:
+    external: true
+    name: erpnext-network
+
+# =============================================================================
+# VOLUMES - Persistência de dados
+# =============================================================================
+volumes:
+  # Alice
+  postgres_data:
+    name: alice-postgres-data
+    driver: local
+  
+  traefik_acme:
+    name: alice-traefik-acme
+    driver: local
+  
+  # ERPNext
+  erpnext_sites:
+    name: erpnext-sites
+    driver: local
+  
+  erpnext_logs:
+    name: erpnext-logs
+    driver: local
+  
+  mariadb_data:
+    name: erpnext-mariadb-data
+    driver: local
+  
+  redis_cache_data:
+    name: erpnext-redis-cache
+    driver: local
+  
+  redis_queue_data:
+    name: erpnext-redis-queue
+    driver: local
+
+# =============================================================================
+# SERVICES
+# =============================================================================
+services:
+
+  # ===========================================================================
+  # DOCKER SOCKET PROXY - Proxy seguro para Docker API
+  # ===========================================================================
+  # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
+  # Expõe API Docker via TCP para o Traefik consumir
+  dockerproxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: alice-dockerproxy
+    restart: always
+    environment:
+      - CONTAINERS=1
+      - SERVICES=1
+      - NETWORKS=1
+      - TASKS=1
+      - INFO=1
+      - POST=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2375/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ===========================================================================
+  # TRAEFIK - API Gateway com SSL Automático
+  # ===========================================================================
+  traefik:
+    image: traefik:v3.1
+    container_name: alice-traefik
+    restart: unless-stopped
+    depends_on:
+      dockerproxy:
+        condition: service_healthy
+    command:
+      # API e Dashboard (desabilitado em produção por segurança)
+      - "--api.dashboard=false"
+      - "--api.insecure=false"
+      
+      # Ping endpoint para healthcheck (porta interna dedicada)
+      - "--ping=true"
+      - "--ping.entrypoint=ping"
+      - "--entrypoints.ping.address=:8082"
+      
+      # Providers - via Docker Socket Proxy
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=tcp://dockerproxy:2375"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=alice-network"
+      
+      # Entrypoints públicos
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      
+      # SSL/TLS Let's Encrypt
+      - "--certificatesresolvers.letsencrypt.acme.email=admin@yesyoudeserve.duckdns.org"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json"
+      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
+      
+      # Logging
+      - "--log.level=INFO"
+      - "--accesslog=true"
+      - "--accesslog.format=json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - traefik_acme:/acme
+    networks:
+      - alice-network
+      - erpnext-network
+    labels:
+      - "traefik.enable=false"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://127.0.0.1:8082/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # ===========================================================================
+  # POSTGRESQL - Banco de dados Alice com pgvector
+  # ===========================================================================
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: alice-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alice}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-alice_prod}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+        reservations:
+          memory: 512M
+
+  # ===========================================================================
+  # ALICE FRONTEND SERVICE - React/Nginx
+  # ===========================================================================
+  alice-frontend:
+    image: ${IMAGE_PREFIX}-frontend:${IMAGE_TAG:-latest}
+    container_name: alice-frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+    depends_on:
+      traefik:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-frontend.rule=Host(`yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.alice-frontend.entrypoints=websecure"
+      - "traefik.http.routers.alice-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-frontend.loadbalancer.server.port=80"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ALICE AUTH SERVICE - Autenticação OAuth/SAML/Local
+  # ===========================================================================
+  alice-auth:
+    image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:-latest}
+    container_name: alice-auth
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      SERVICE_NAME: auth-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      SESSION_SECRET: ${SESSION_SECRET}
+      # OAuth Google
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      # OAuth GitHub
+      GITHUB_CLIENT_ID: ${OAUTH_GITHUB_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
+      # OAuth Microsoft
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID}
+      # Callback URL
+      OAUTH_CALLBACK_URL: https://yesyoudeserve.duckdns.org/api/auth/callback
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-auth.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/auth`)"
+      - "traefik.http.routers.alice-auth.entrypoints=websecure"
+      - "traefik.http.routers.alice-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
+  # ===========================================================================
+  alice-chat:
+    image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:-latest}
+    container_name: alice-chat
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      SERVICE_NAME: chat-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      # Salad Cloud LLM
+      SALAD_API_KEY: ${SALAD_API_KEY}
+      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-chat.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/chat`)"
+      - "traefik.http.routers.alice-chat.entrypoints=websecure"
+      - "traefik.http.routers.alice-chat.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-chat.loadbalancer.server.port=3002"
+      # WebSocket
+      - "traefik.http.routers.alice-ws.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/ws`)"
+      - "traefik.http.routers.alice-ws.entrypoints=websecure"
+      - "traefik.http.routers.alice-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ALICE RAG SERVICE - Knowledge Base + Embeddings
+  # ===========================================================================
+  alice-rag:
+    image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
+    container_name: alice-rag
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      SERVICE_NAME: rag-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-rag.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/rag`)"
+      - "traefik.http.routers.alice-rag.entrypoints=websecure"
+      - "traefik.http.routers.alice-rag.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
+  # ===========================================================================
+  alice-training:
+    image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:-latest}
+    container_name: alice-training
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+      SERVICE_NAME: training-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      SALAD_API_KEY: ${SALAD_API_KEY}
+      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-training.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/training`)"
+      - "traefik.http.routers.alice-training.entrypoints=websecure"
+      - "traefik.http.routers.alice-training.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
+  # ===========================================================================
+  alice-integrations:
+    image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
+    container_name: alice-integrations
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      SERVICE_NAME: integrations-service
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      # Stripe Portugal
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      # ERPNext
+      ERPNEXT_URL: http://erpnext-backend:8000
+      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY}
+      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET}
+      # Twilio
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
+      # Resend
+      RESEND_API_KEY: ${RESEND_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - alice-network
+      - erpnext-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-integrations.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/integrations`)"
+      - "traefik.http.routers.alice-integrations.entrypoints=websecure"
+      - "traefik.http.routers.alice-integrations.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-integrations.loadbalancer.server.port=3005"
+      # Webhook Stripe (rota específica)
+      - "traefik.http.routers.alice-webhook.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/webhook`)"
+      - "traefik.http.routers.alice-webhook.entrypoints=websecure"
+      - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # ERPNEXT STACK - Baseado em frappe_docker oficial
+  # ===========================================================================
+  
+  # MariaDB - Banco de dados ERPNext
+  # NOTA: Healthcheck atualizado para usar mysqladmin (mais confiável)
+  erpnext-mariadb:
+    image: mariadb:10.11
+    container_name: erpnext-mariadb
+    restart: always
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --skip-character-set-client-handshake
+      - --skip-innodb-read-only-compressed
+    environment:
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
+      MYSQL_DATABASE: ${ERPNEXT_DB_NAME:-erpnext}
+      MYSQL_USER: ${ERPNEXT_DB_USER:-erpnext}
+      MYSQL_PASSWORD: ${ERPNEXT_DB_PASSWORD:-erpnext_password}
+    volumes:
+      - mariadb_data:/var/lib/mysql
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+
+  # Redis Cache - Cache ERPNext
+  erpnext-redis-cache:
+    image: redis:7-alpine
+    container_name: erpnext-redis-cache
+    restart: always
+    volumes:
+      - redis_cache_data:/data
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Redis Queue - Filas ERPNext
+  erpnext-redis-queue:
+    image: redis:7-alpine
+    container_name: erpnext-redis-queue
+    restart: always
+    volumes:
+      - redis_queue_data:/data
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ERPNext Backend - Frappe/Python
+  erpnext-backend:
+    image: frappe/erpnext:v15
+    container_name: erpnext-backend
+    restart: always
+    command: bench serve --port 8000
+    environment:
+      - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+      - alice-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/frappe.ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ERPNext Frontend - Nginx
+  erpnext-frontend:
+    image: frappe/erpnext:v15
+    container_name: erpnext-frontend
+    restart: always
+    command: nginx-entrypoint.sh
+    environment:
+      - BACKEND=erpnext-backend:8000
+      - SOCKETIO=erpnext-websocket:9000
+      - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
+    depends_on:
+      - erpnext-backend
+      - erpnext-websocket
+    networks:
+      - erpnext-network
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erpnext.rule=Host(`erp.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.erpnext.entrypoints=websecure"
+      - "traefik.http.routers.erpnext.tls.certresolver=letsencrypt"
+      - "traefik.http.services.erpnext.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ERPNext WebSocket - Socket.io
+  erpnext-websocket:
+    image: frappe/erpnext:v15
+    container_name: erpnext-websocket
+    restart: always
+    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
+    depends_on:
+      - erpnext-redis-cache
+    networks:
+      - erpnext-network
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9000')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ERPNext Scheduler - Tarefas agendadas
+  erpnext-scheduler:
+    image: frappe/erpnext:v15
+    container_name: erpnext-scheduler
+    restart: always
+    command: bench schedule
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-backend:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ERPNext Worker - Short Jobs
+  erpnext-worker-short:
+    image: frappe/erpnext:v15
+    container_name: erpnext-worker-short
+    restart: always
+    command: bench worker --queue short
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-backend:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ERPNext Worker - Default Jobs
+  erpnext-worker-default:
+    image: frappe/erpnext:v15
+    container_name: erpnext-worker-default
+    restart: always
+    command: bench worker --queue default
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-backend:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ERPNext Worker - Long Jobs
+  erpnext-worker-long:
+    image: frappe/erpnext:v15
+    container_name: erpnext-worker-long
+    restart: always
+    command: bench worker --queue long
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-backend:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ===========================================================================
+  # OBSERVABILIDADE - Logging centralizado
+  # ===========================================================================
+  vector:
+    image: timberio/vector:0.34.0-alpine
+    container_name: alice-vector
+    restart: always
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      NODE_ENV: production
+    networks:
+      - alice-network
+    depends_on:
+      - traefik
