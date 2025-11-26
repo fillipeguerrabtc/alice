@@ -242,7 +242,7 @@ jobs:
           
           # PostgreSQL Alice
           POSTGRES_USER=alice
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD=${{ secrets.PGPASSWORD }}
           POSTGRES_DB=alice_prod
           
           # Sessão
