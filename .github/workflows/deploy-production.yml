@@ -273,12 +273,18 @@ jobs:
           # Resend
           RESEND_API_KEY=${{ secrets.RESEND_API_KEY }}
           
-          # ERPNext
+          # ERPNext Database
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
           ERPNEXT_MYSQL_ROOT_PASSWORD=${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
           ERPNEXT_DB_NAME=erpnext
           ERPNEXT_DB_USER=erpnext
           ERPNEXT_DB_PASSWORD=${{ secrets.ERPNEXT_DB_PASSWORD }}
+          
+          # ERPNext API (para integrations-service)
+          # URL fixa pois roda no mesmo servidor via Traefik
+          ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org
+          ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY }}
+          ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET }}
           EOF
           chmod 600 .env.prod
 
@@ -339,28 +345,34 @@ jobs:
             echo "✓ Redes Docker configuradas"
             echo ""
             
-            # Clone ou update do repositório
+            # Clone ou update do repositório usando header-based auth
+            # Isso resolve: "fatal: could not read Username for 'https://github.com'"
+            # Usando header evita exposição do token em URLs/logs de erro
+            GH_AUTH_HEADER="Authorization: Bearer ${{ secrets.GH_PAT }}"
+            REPO_URL="https://github.com/${{ github.repository }}.git"
+            
             if [ -d "app/.git" ]; then
               echo "📥 Atualizando repositório..."
               cd app
-              git fetch origin
+              git -c "http.extraHeader=${GH_AUTH_HEADER}" fetch origin
               git checkout main
-              git pull origin main
+              git reset --hard origin/main
+              cd ..
             else
               echo "📥 Clonando repositório..."
               rm -rf app
-              git clone https://github.com/${{ github.repository }}.git app
-              cd app
+              git -c "http.extraHeader=${GH_AUTH_HEADER}" clone "${REPO_URL}" app
             fi
+            cd app
             
             # Mover .env.prod para diretório correto
             echo "📝 Configurando variáveis de ambiente..."
             mv /tmp/.env.prod infra/docker/.env.prod
             chmod 600 infra/docker/.env.prod
             
-            # Login no GitHub Container Registry
+            # Login no GitHub Container Registry usando Personal Access Token
             echo "🔐 Autenticando no registry..."
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             
             # Carregar variáveis de ambiente
             cd infra/docker
