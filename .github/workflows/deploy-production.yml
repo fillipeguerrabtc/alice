@@ -107,7 +107,7 @@ jobs:
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GH_PAT }}
 
       # Build paralelo de todas as imagens
       - name: Build e Push - Auth Service
