@@ -18,7 +18,7 @@ import CircuitBreaker from 'opossum';
 import pino from 'pino';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
-import { eq, sql, desc, and } from 'drizzle-orm';
+import { eq, sql, desc, and, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
 import { 
@@ -28,6 +28,7 @@ import {
   extractAuthContext,
 } from '../../../packages/shared-utils/src/rbac/middleware.js';
 import { getStorageService } from './storage.js';
+import { getImageProcessor, CLIP_EMBEDDING_DIM } from './image-processor.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1021,16 +1022,95 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       processingTimeMs: Date.now() - startTime,
     }, 'Upload de mídia salvo e registrado');
 
-    // Processamento assíncrono (será implementado na tarefa 2)
-    // Por enquanto, retorna o registro com status pending
+    // Processar mídia de forma assíncrona (não bloqueia a resposta)
+    const processMediaAsync = async () => {
+      try {
+        if (mediaType === 'image') {
+          // Processar imagem com CLIP embedding
+          const imageProcessor = getImageProcessor();
+          const result = await imageProcessor.processImage(
+            req.file!.buffer,
+            req.file!.mimetype
+          );
+
+          // Se thumbnail foi gerado, salvar no storage
+          let thumbnailPath: string | null = null;
+          let thumbnailUrl: string | null = null;
+
+          if (result.thumbnailBuffer) {
+            const storageService = getStorageService();
+            const thumbStored = await storageService.saveFile(result.thumbnailBuffer, {
+              tenantId,
+              mediaType: 'thumbnail',
+              originalFilename: `thumb_${req.file!.originalname}`,
+              mimeType: result.thumbnailMimeType || 'image/jpeg',
+            });
+            thumbnailPath = thumbStored.filePath;
+            thumbnailUrl = thumbStored.fileUrl;
+          }
+
+          // Atualizar registro com embedding, thumbnail e metadata
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              embedding: result.embedding,
+              thumbnailPath,
+              thumbnailUrl,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                hasThumbnail: !!thumbnailPath,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            embeddingDim: result.embedding.length,
+            embeddingModel: result.embeddingModel,
+            hasThumbnail: !!thumbnailPath,
+          }, 'Imagem processada com sucesso');
+        } else {
+          // Para audio/video/document - marcamos como pending_processing
+          // Será implementado nas próximas tarefas
+          await db.update(schema.mediaUploads)
+            .set({ processingStatus: 'pending' })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+        }
+      } catch (error) {
+        logger.error({ error, uploadId: mediaUploadRecord.id }, 'Erro ao processar mídia');
+        
+        // Marcar como falha
+        await db.update(schema.mediaUploads)
+          .set({ 
+            processingStatus: 'failed',
+            extractedMetadata: {
+              ...mediaUploadRecord.extractedMetadata as object,
+              processingError: String(error),
+            },
+          })
+          .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+      }
+    };
+
+    // Iniciar processamento assíncrono (fire and forget)
+    processMediaAsync().catch(err => {
+      logger.error({ error: err }, 'Erro no processamento assíncrono');
+    });
+
     res.status(201).json({ 
       upload: mediaUploadRecord,
-      message: 'Upload recebido e salvo. Processamento será iniciado.',
-      supportedProcessing: {
-        image: ['CLIP embedding', 'thumbnail', 'EXIF metadata'],
-        audio: ['Transcrição Whisper', 'text embedding'],
-        video: ['Frame extraction', 'Transcrição Whisper'],
-        document: ['text embedding', 'chunking'],
+      message: mediaType === 'image' 
+        ? 'Upload recebido. Processamento CLIP iniciado.' 
+        : 'Upload recebido. Processamento pendente.',
+      processing: {
+        status: 'started',
+        type: mediaType,
+        features: mediaType === 'image'
+          ? ['CLIP embedding (768 dim)', 'metadata extraction']
+          : ['pendente'],
       },
     });
   } catch (error) {
@@ -1257,14 +1337,155 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', async (req: Request, 
   }
 });
 
+// Busca semântica de imagens por similaridade de embedding
+app.post('/api/media/search', extractAuthContext, async (req: Request, res: Response) => {
+  const tenantId = (req as any).authContext?.tenantId;
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
+
+  try {
+    const { query, imageId, limit = 10 } = req.body as {
+      query?: string;
+      imageId?: number;
+      limit?: number;
+    };
+
+    if (!query && !imageId) {
+      return res.status(400).json({ 
+        error: 'Forneça "query" (texto) ou "imageId" (busca por imagem similar)' 
+      });
+    }
+
+    // Se temos imageId, buscar embedding da imagem de referência
+    let queryEmbedding: number[] | null = null;
+
+    if (imageId) {
+      const [referenceImage] = await db
+        .select({ embedding: schema.mediaUploads.embedding })
+        .from(schema.mediaUploads)
+        .where(and(
+          eq(schema.mediaUploads.id, imageId),
+          eq(schema.mediaUploads.tenantId, tenantId),
+          eq(schema.mediaUploads.mediaType, 'image'),
+          eq(schema.mediaUploads.processingStatus, 'completed')
+        ))
+        .limit(1);
+
+      if (!referenceImage?.embedding) {
+        return res.status(404).json({ 
+          error: 'Imagem de referência não encontrada ou ainda não processada' 
+        });
+      }
+
+      queryEmbedding = referenceImage.embedding as number[];
+    } else if (query) {
+      // Para busca por texto, precisamos gerar embedding do texto via CLIP
+      // Por enquanto, retornar erro (será implementado quando Salad Cloud estiver configurado)
+      return res.status(501).json({
+        error: 'Busca por texto ainda não implementada. Use imageId para buscar imagens similares.',
+        hint: 'Configure SALAD_API_KEY para habilitar busca por texto',
+      });
+    }
+
+    if (!queryEmbedding) {
+      return res.status(400).json({ error: 'Não foi possível obter embedding para busca' });
+    }
+
+    // Buscar imagens com embeddings usando similaridade de cosseno
+    // Nota: Para produção, usar pgvector com operador <=> (distância de cosseno)
+    const allImages = await db
+      .select({
+        id: schema.mediaUploads.id,
+        originalFilename: schema.mediaUploads.originalFilename,
+        fileUrl: schema.mediaUploads.fileUrl,
+        mimeType: schema.mediaUploads.mimeType,
+        embedding: schema.mediaUploads.embedding,
+        extractedMetadata: schema.mediaUploads.extractedMetadata,
+        createdAt: schema.mediaUploads.createdAt,
+      })
+      .from(schema.mediaUploads)
+      .where(and(
+        eq(schema.mediaUploads.tenantId, tenantId),
+        eq(schema.mediaUploads.mediaType, 'image'),
+        eq(schema.mediaUploads.processingStatus, 'completed'),
+        isNotNull(schema.mediaUploads.embedding)
+      ));
+
+    // Calcular similaridade de cosseno para cada imagem
+    const results = allImages
+      .filter(img => img.id !== imageId && img.embedding) // Excluir imagem de referência
+      .map(img => {
+        const embedding = img.embedding as number[];
+        const similarity = cosineSimilarity(queryEmbedding!, embedding);
+        return {
+          id: img.id,
+          originalFilename: img.originalFilename,
+          fileUrl: img.fileUrl,
+          mimeType: img.mimeType,
+          metadata: img.extractedMetadata,
+          similarity: Math.round(similarity * 10000) / 10000, // 4 casas decimais
+          createdAt: img.createdAt,
+        };
+      })
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, Math.min(limit, 50)); // Max 50 resultados
+
+    logger.info({
+      tenantId,
+      queryType: imageId ? 'image' : 'text',
+      resultsCount: results.length,
+    }, 'Busca semântica de imagens');
+
+    res.json({
+      results,
+      query: {
+        type: imageId ? 'image' : 'text',
+        value: imageId || query,
+      },
+      total: results.length,
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro na busca semântica');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Função auxiliar: similaridade de cosseno entre dois vetores
+function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) return 0;
+  
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  
+  for (let i = 0; i < a.length; i++) {
+    dotProduct += a[i] * b[i];
+    normA += a[i] * a[i];
+    normB += b[i] * b[i];
+  }
+  
+  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
+  return denominator === 0 ? 0 : dotProduct / denominator;
+}
+
 // Health check específico para multimodal
 app.get('/api/media/health', (_req: Request, res: Response) => {
+  const imageProcessor = getImageProcessor();
+  const config = imageProcessor.getConfig();
+  
   res.json({ 
     status: 'ok', 
     service: 'media-upload',
     timestamp: new Date().toISOString(),
     supportedTypes: SUPPORTED_MEDIA_TYPES,
     maxFileSizeMb: 100,
+    imageProcessing: {
+      configured: config.configured,
+      embeddingDim: config.embeddingDim,
+      model: config.model,
+    },
   });
 });
 
