@@ -332,6 +332,43 @@ O workflow exige um Environment chamado `production` configurado em:
 
 ---
 
+## Branding "Yes You Deserve"
+
+### Assets Oficiais
+
+| Arquivo | Dimensão | Uso |
+|---------|----------|-----|
+| `logo-round.png` | 512x512 | Logo principal redondo |
+| `favicon.png` | 512x512 | Favicon do navegador |
+
+### Localização dos Assets
+
+| Pasta | Propósito | Deploy |
+|-------|-----------|--------|
+| `assets/branding/` | Fonte única de verdade | N/A |
+| `apps/frontend-service/public/` | Produção Hetzner | GitHub Actions |
+| `client/public/` | Dev preview Replit | Local |
+
+### Uso nas Páginas
+
+| Página/Componente | Logo | Favicon |
+|-------------------|------|---------|
+| index.html | N/A | `/favicon.png` |
+| App.tsx (loading) | `/logo-round.png` | N/A |
+| Landing.tsx | 4x (header, hero, card, footer) | N/A |
+| Login.tsx | `/logo-round.png` | N/A |
+| app-sidebar.tsx | `/logo-round.png` | N/A |
+
+### Manutenção
+
+Para atualizar logos:
+1. Substituir arquivos em `assets/branding/`
+2. Copiar para `apps/frontend-service/public/`
+3. Copiar para `client/public/`
+4. Commit e deploy via GitHub Actions
+
+---
+
 ## Alterações Recentes (Novembro 2025)
 
 ### Twilio/WhatsApp Webhooks (Tarefa Atual)
@@ -372,4 +409,4 @@ Exportados no `packages/database/src/index.ts`:
 ---
 
 Documento em Português Brasileiro
-Versão 5.3 - Novembro 2025
+Versão 5.4 - Novembro 2025

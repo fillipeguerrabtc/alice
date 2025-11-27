@@ -79,9 +79,12 @@ function AppContent() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl animate-pulse">
-            A
-          </div>
+          <img
+            src="/logo-round.png"
+            alt="Yes You Deserve"
+            className="h-12 w-12 rounded-xl animate-pulse"
+            data-testid="img-loading-logo"
+          />
           <p className="text-muted-foreground text-sm">Carregando...</p>
         </div>
       </div>
