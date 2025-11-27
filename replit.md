@@ -284,6 +284,54 @@ O sistema de handover/takeover (511 linhas em `apps/chat-service/src/conversatio
 
 ---
 
+## Secrets do GitHub Actions
+
+### Secrets Configurados (21 secrets ativos)
+
+| Secret | Serviço | Descrição |
+|--------|---------|-----------|
+| `GH_PAT` | GitHub | Personal Access Token para clone e registry |
+| `GOOGLE_CLIENT_ID` | OAuth | Client ID do Google OAuth |
+| `GOOGLE_CLIENT_SECRET` | OAuth | Client Secret do Google OAuth |
+| `HETZNER_SSH_PRIVATE_KEY` | Deploy | Chave SSH privada para acesso ao servidor |
+| `HETZNER_VM_HOST` | Deploy | IP/hostname do servidor Hetzner |
+| `HETZNER_VM_USER` | Deploy | Usuário SSH do servidor |
+| `OAUTH_GITHUB_CLIENT_ID` | OAuth | Client ID do GitHub OAuth |
+| `OAUTH_GITHUB_CLIENT_SECRET` | OAuth | Client Secret do GitHub OAuth |
+| `PGPASSWORD` | PostgreSQL | Senha do banco de dados Alice |
+| `RESEND_API_KEY` | Email | API key do Resend para emails transacionais |
+| `SALAD_API_KEY` | LLM | API key da Salad Cloud |
+| `SALAD_ORGANIZATION_ID` | LLM | ID da organização na Salad Cloud |
+| `SESSION_SECRET` | Auth | Secret para sessões Express |
+| `STRIPE_PUBLISHABLE_KEY` | Pagamentos | Chave pública do Stripe Portugal |
+| `STRIPE_SECRET_KEY` | Pagamentos | Chave secreta do Stripe Portugal |
+| `STRIPE_WEBHOOK_SECRET` | Pagamentos | Secret para validar webhooks Stripe |
+| `TWILIO_ACCOUNT_SID` | WhatsApp | Account SID do Twilio |
+| `TWILIO_AUTH_TOKEN` | WhatsApp | Auth Token do Twilio |
+| `TWILIO_WHATSAPP_NUMBER` | WhatsApp | Número do WhatsApp Business |
+| `WISE_API_KEY` | Pagamentos | API key do Wise |
+| `WISE_PROFILE_ID` | Pagamentos | Profile ID do Wise |
+
+### Secrets Pendentes (criação pós-ERPNext)
+
+Estes secrets só podem ser criados após o ERPNext estar rodando em produção.
+O docker-compose.prod.yml usa defaults seguros internos da imagem Docker enquanto não configurados.
+
+| Secret | Serviço | Quando Criar | Comportamento Atual |
+|--------|---------|--------------|---------------------|
+| `ERPNEXT_API_KEY` | ERPNext | Após setup inicial do site ERPNext | Integração desabilitada |
+| `ERPNEXT_API_SECRET` | ERPNext | Após criar usuário API no ERPNext | Integração desabilitada |
+| `ERPNEXT_DB_PASSWORD` | ERPNext | Após primeiro deploy | Usa default interno Docker |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ERPNext | Após primeiro deploy | Usa default interno Docker |
+| `WISE_WEBHOOK_SECRET` | Wise | Após configurar webhook no Wise | Webhook desabilitado |
+
+### Environment do GitHub
+
+O workflow exige um Environment chamado `production` configurado em:
+`Settings → Environments → New environment → production`
+
+---
+
 ## Alterações Recentes (Novembro 2025)
 
 ### Twilio/WhatsApp Webhooks (Tarefa Atual)
@@ -309,7 +357,19 @@ Adicionados secrets Wise ao deploy workflow e docker-compose:
 - WISE_WEBHOOK_SECRET
 - WISE_SANDBOX
 
+### Migração pgvector toSql()
+
+Atualizado rag-service para usar `toSql()` do pacote pgvector oficial:
+- `/api/rag/search` - Busca vetorial documentos
+- `/api/rag/context` - Contexto RAG
+- `/api/rag/agentic` - Busca híbrida
+- `/api/media/search` - Busca semântica CLIP
+
+Exportados no `packages/database/src/index.ts`:
+- `toSql` - Converte arrays para formato SQL pgvector
+- `EMBEDDING_DIMENSIONS` - Constantes (TEXT: 1536, CLIP: 768)
+
 ---
 
 Documento em Português Brasileiro
-Versão 5.2 - Novembro 2025
+Versão 5.3 - Novembro 2025
