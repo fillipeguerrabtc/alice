@@ -239,6 +239,60 @@ app.get('/metrics', async (_req: Request, res: Response) => {
   }
 });
 
+// ============================================================================
+// LOGS DO FRONTEND (Regra 8 - Logging estruturado)
+// Recebe logs do frontend via beacon/fetch
+// ============================================================================
+
+interface FrontendLogEntry {
+  level: 'debug' | 'info' | 'warn' | 'error';
+  message: string;
+  context?: Record<string, unknown>;
+  timestamp: string;
+  service: string;
+}
+
+const frontendLogSchema = {
+  validate(body: unknown): body is FrontendLogEntry {
+    if (!body || typeof body !== 'object') return false;
+    const log = body as Record<string, unknown>;
+    return (
+      typeof log.level === 'string' &&
+      ['debug', 'info', 'warn', 'error'].includes(log.level) &&
+      typeof log.message === 'string' &&
+      typeof log.timestamp === 'string' &&
+      typeof log.service === 'string'
+    );
+  }
+};
+
+app.post('/api/observability/logs', (req: Request, res: Response) => {
+  try {
+    const body = req.body;
+    
+    if (!frontendLogSchema.validate(body)) {
+      res.status(400).json({ error: 'Formato de log inválido' });
+      return;
+    }
+
+    const logMethod = body.level === 'error' ? 'error' :
+                      body.level === 'warn' ? 'warn' :
+                      body.level === 'info' ? 'info' : 'debug';
+
+    logger[logMethod]({
+      frontendLog: true,
+      originalTimestamp: body.timestamp,
+      frontendService: body.service,
+      ...body.context,
+    }, `[FRONTEND] ${body.message}`);
+
+    res.status(202).json({ received: true });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao processar log do frontend');
+    res.status(500).json({ error: 'Erro interno' });
+  }
+});
+
 // URLs de acesso rápido
 app.get('/api/observability/urls', (_req: Request, res: Response) => {
   res.json({
