@@ -186,7 +186,52 @@ Salad Cloud usa apenas API Key para autenticação. **Não há webhooks para con
 
 ---
 
-### 8. DUCKDNS
+### 8. WISE (PAGAMENTOS GLOBAIS)
+
+**Dashboard:** https://wise.com/settings/profile
+
+#### 8.1 Obter API Key
+
+1. Acesse **Wise Business** → **Settings** → **API Tokens**
+2. Clique **"Add new token"**
+3. Selecione permissões:
+   - `Read balances`
+   - `Read transfers`
+   - `Create transfers`
+   - `Read recipients`
+   - `Create recipients`
+4. Copie o **API Token** gerado
+
+#### 8.2 Obter Profile ID
+
+1. Acesse **Wise Business** → **Settings** → **Profile**
+2. O **Profile ID** está na URL: `https://wise.com/user/account/XXXXX`
+3. Ou use a API: `GET /v1/profiles` retorna o ID
+
+#### 8.3 Configurar Webhook (Opcional)
+
+1. Acesse **Wise Dashboard** → **Settings** → **Webhooks**
+2. Clique **"Add webhook endpoint"**
+3. **URL:** `https://yesyoudeserve.duckdns.org/api/integrations/wise/webhook`
+4. **Events:** Selecione:
+   - `transfers#state-change`
+   - `transfers#active-cases`
+   - `balances#credit`
+5. Copie o **Webhook Secret** (signing key)
+
+**Secrets no GitHub:**
+
+| Secret | Descrição |
+|--------|-----------|
+| `WISE_API_KEY` | API Token gerado |
+| `WISE_PROFILE_ID` | Profile ID do Business |
+| `WISE_WEBHOOK_SECRET` | Signing key do webhook (opcional) |
+
+**Nota:** O Wise pode operar em modo **Sandbox** para testes. Defina `WISE_SANDBOX=true` para usar a API de testes.
+
+---
+
+### 9. DUCKDNS
 
 **Site:** https://www.duckdns.org
 
@@ -243,6 +288,9 @@ Use este checklist para garantir que tudo foi reconfigurado:
 | `TWILIO_AUTH_TOKEN` | Twilio | ✅ OK |
 | `TWILIO_WHATSAPP_NUMBER` | Número WhatsApp | ✅ OK |
 | `RESEND_API_KEY` | API Resend | ✅ OK |
+| `WISE_API_KEY` | API Token Wise | ✅ OK |
+| `WISE_PROFILE_ID` | Profile ID Wise | ✅ OK |
+| `WISE_WEBHOOK_SECRET` | Webhook signing (opcional) | ⬜ Opcional |
 
 ---
 

@@ -260,18 +260,25 @@ taskStatusEnum: "pending" | "processing" | "completed" | "failed" | "cancelled"
 
 ## Enterprise Patterns
 
-| Padrão | Status |
-|--------|--------|
-| API Gateway (Traefik) | ✅ |
-| Circuit Breaker (opossum) | ✅ |
-| Health Checks | ✅ |
-| Rate Limiting | ✅ |
-| Structured Logging (Pino) | ✅ |
-| 12-Factor App | ✅ |
-| Container-ready | ✅ |
-| Auto SSL (Let's Encrypt) | ✅ |
-| Multi-tenant | ✅ |
-| RBAC | ✅ |
+| Padrão | Status | Detalhes |
+|--------|--------|----------|
+| API Gateway (Traefik) | ✅ | v3.1, SSL automático, rate-limit |
+| Circuit Breaker (opossum) | ✅ | ERPNext (10s/50%/30s), Wise (15s/50%/30s) |
+| Health Checks | ✅ | /health em todos os serviços + status circuit breakers |
+| Rate Limiting | ✅ | express-rate-limit configurado |
+| Structured Logging (Pino) | ✅ | Todos os serviços, console.* proibido |
+| 12-Factor App | ✅ | Config via env vars, stateless |
+| Container-ready | ✅ | Docker Compose para produção |
+| Auto SSL (Let's Encrypt) | ✅ | Traefik ACME automático |
+| Multi-tenant | ✅ | Isolamento por tenant_id |
+| RBAC | ✅ | 6 roles hierárquicas |
+
+### Circuit Breakers Configurados
+
+| Serviço | Timeout | Error Threshold | Reset Timeout |
+|---------|---------|-----------------|---------------|
+| ERPNext | 10s | 50% | 30s |
+| Wise API | 15s | 50% | 30s |
 
 ---
 

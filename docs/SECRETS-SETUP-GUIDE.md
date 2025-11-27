@@ -149,7 +149,26 @@ openssl rand -hex 32
 
 ---
 
-### 1.8 Secrets ERPNext (roda localmente no Hetzner)
+### 1.8 Secrets Wise (Pagamentos Globais) - OPCIONAL
+
+| Secret | Descrição | Onde Obter |
+|--------|-----------|------------|
+| `WISE_API_KEY` | API Token | wise.com/settings → API Tokens |
+| `WISE_PROFILE_ID` | Profile ID | wise.com/user/account/XXXXX (na URL) |
+| `WISE_WEBHOOK_SECRET` | Webhook signing key | wise.com/settings → Webhooks |
+
+#### Configurar Wise:
+1. Acesse: https://wise.com/settings/profile
+2. Vá em **API Tokens** → **Add new token**
+3. Selecione permissões: `Read balances`, `Read transfers`, `Create transfers`
+4. Copie o token gerado
+5. O **Profile ID** está na URL quando você acessa sua conta
+
+**Modo Sandbox:** Defina `WISE_SANDBOX=true` para usar a API de testes.
+
+---
+
+### 1.9 Secrets ERPNext (roda localmente no Hetzner)
 
 O ERPNext roda no **mesmo servidor Hetzner** e é acessível via:
 - **URL:** `https://erp.yesyoudeserve.duckdns.org`
@@ -225,7 +244,14 @@ Para usuários fazerem login:
 ⬜ ERPNEXT_API_SECRET          = (gerar após ERPNext rodar)
 ```
 
-#### FASE 6: Opcionais (configurar quando precisar)
+#### FASE 6: Wise (Pagamentos Globais)
+```
+⬜ WISE_API_KEY             = (wise.com/settings → API Tokens)
+⬜ WISE_PROFILE_ID          = (wise.com/user/account/XXXXX)
+⬜ WISE_WEBHOOK_SECRET      = (wise.com/settings → Webhooks - opcional)
+```
+
+#### FASE 7: Opcionais (configurar quando precisar)
 ```
 ⬜ TWILIO_ACCOUNT_SID       = (WhatsApp/SMS)
 ⬜ TWILIO_AUTH_TOKEN        = (WhatsApp/SMS)

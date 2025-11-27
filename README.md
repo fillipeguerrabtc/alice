@@ -91,7 +91,7 @@
 | **chat-service** | 3002 | LLM proxy via Salad Cloud, streaming, WebSocket |
 | **rag-service** | 3003 | Embeddings, pgvector, busca semântica |
 | **training-service** | 3004 | Auto-evolução, SemHash, fine-tuning |
-| **integrations-service** | 3005 | Stripe, ERPNext, Twilio, Resend, WhatsApp |
+| **integrations-service** | 3005 | Stripe, ERPNext, Twilio, Resend, WhatsApp, Wise |
 
 ---
 
