@@ -514,6 +514,91 @@ export const trainingData = pgTable(
   })
 );
 // ============================================================================
+// ESTADOS DE CONVERSA (Handover/Takeover AI↔Humano)
+// ============================================================================
+export const conversationControlModeEnum = pgEnum("conversation_control_mode", [
+  "bot",
+  "pending_handoff",
+  "human",
+]);
+
+export const conversationStates = pgTable(
+  "conversation_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+    controlMode: conversationControlModeEnum("control_mode").default("bot"),
+    assignedAgentId: varchar("assigned_agent_id", { length: 255 }),
+    confidenceScore: real("confidence_score"),
+    sentimentScore: real("sentiment_score"),
+    fallbackCount: integer("fallback_count").default(0),
+    slaDeadline: timestamp("sla_deadline"),
+    slaBreached: boolean("sla_breached").default(false),
+    pendingSince: timestamp("pending_since"),
+    lastEscalationReason: text("last_escalation_reason"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idx_conv_states_conversation: index("idx_conv_states_conversation").on(table.conversationId),
+    idx_conv_states_mode: index("idx_conv_states_mode").on(table.controlMode),
+    idx_conv_states_agent: index("idx_conv_states_agent").on(table.assignedAgentId),
+    idx_conv_states_sla: index("idx_conv_states_sla").on(table.slaBreached),
+  })
+);
+
+// ============================================================================
+// IMAGENS GERADAS (FLUX.1 Schnell - Self-hosted)
+// ============================================================================
+export const generatedImageStatusEnum = pgEnum("generated_image_status", [
+  "pending",
+  "generating",
+  "completed",
+  "failed",
+]);
+
+export const generatedImages = pgTable(
+  "generated_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    messageId: uuid("message_id").references(() => messages.id),
+    createdBy: varchar("created_by", { length: 255 }),
+    prompt: text("prompt").notNull(),
+    negativePrompt: text("negative_prompt"),
+    model: varchar("model", { length: 100 }).default("flux-schnell"),
+    width: integer("width").default(1024),
+    height: integer("height").default(1024),
+    steps: integer("steps").default(4),
+    guidanceScale: real("guidance_scale").default(3.5),
+    seed: integer("seed"),
+    status: generatedImageStatusEnum("status").default("pending"),
+    imagePath: text("image_path"),
+    imageUrl: text("image_url"),
+    generationTimeMs: integer("generation_time_ms"),
+    rating: integer("rating"),
+    approvedForTraining: boolean("approved_for_training"),
+    usedInJobId: varchar("used_in_job_id", { length: 255 }),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idx_gen_images_tenant: index("idx_gen_images_tenant").on(table.tenantId),
+    idx_gen_images_conversation: index("idx_gen_images_conversation").on(table.conversationId),
+    idx_gen_images_status: index("idx_gen_images_status").on(table.status),
+    idx_gen_images_approved: index("idx_gen_images_approved").on(table.approvedForTraining),
+    idx_gen_images_created: index("idx_gen_images_created").on(table.criadoEm),
+  })
+);
+
+// ============================================================================
 // JOBS DE FINE-TUNING
 // ============================================================================
 export const fineTuningJobStatusEnum = pgEnum("fine_tuning_job_status", [
@@ -670,6 +755,26 @@ export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
     references: [messages.id],
   }),
 }));
+export const conversationStatesRelations = relations(conversationStates, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [conversationStates.conversationId],
+    references: [conversations.id],
+  }),
+}));
+export const generatedImagesRelations = relations(generatedImages, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [generatedImages.tenantId],
+    references: [tenants.id],
+  }),
+  conversation: one(conversations, {
+    fields: [generatedImages.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(messages, {
+    fields: [generatedImages.messageId],
+    references: [messages.id],
+  }),
+}));
 // ============================================================================
 // INSERT SCHEMAS (Zod Validation)
 // ============================================================================
@@ -731,6 +836,18 @@ export const insertMediaUploadSchema: z.ZodObject<z.ZodRawShape> = _insertMediaU
   criadoEm: true,
   atualizadoEm: true,
 }) as unknown as z.ZodObject<z.ZodRawShape>;
+const _insertConversationStateSchema = createInsertSchema(conversationStates);
+export const insertConversationStateSchema: z.ZodObject<z.ZodRawShape> = _insertConversationStateSchema.omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+}) as unknown as z.ZodObject<z.ZodRawShape>;
+const _insertGeneratedImageSchema = createInsertSchema(generatedImages);
+export const insertGeneratedImageSchema: z.ZodObject<z.ZodRawShape> = _insertGeneratedImageSchema.omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+}) as unknown as z.ZodObject<z.ZodRawShape>;
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -761,6 +878,10 @@ export type AuditLog = typeof auditLogs.$inferSelect;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
 export type MediaUpload = typeof mediaUploads.$inferSelect;
 export type InsertMediaUpload = z.infer<typeof insertMediaUploadSchema>;
+export type ConversationState = typeof conversationStates.$inferSelect;
+export type InsertConversationState = z.infer<typeof insertConversationStateSchema>;
+export type GeneratedImage = typeof generatedImages.$inferSelect;
+export type InsertGeneratedImage = z.infer<typeof insertGeneratedImageSchema>;
 export type TrainingData = typeof trainingData.$inferSelect;
 export type InsertTrainingData = typeof trainingData.$inferInsert;
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
