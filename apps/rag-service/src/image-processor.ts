@@ -5,12 +5,14 @@
  * - CLIP embeddings (768 dimensões) via Salad Cloud
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
+ * - Circuit breaker para resiliência (Regra 16 replit.md)
  * 
  * Documentação em PT-BR (Regra 10 replit.md)
  */
 
 import pino from 'pino';
 import crypto from 'crypto';
+import CircuitBreaker from 'opossum';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -27,6 +29,76 @@ const SALAD_CLIP_ENDPOINT = process.env.SALAD_CLIP_ENDPOINT || 'https://api.sala
 
 // Dimensão dos embeddings CLIP (ViT-L/14)
 export const CLIP_EMBEDDING_DIM = 768;
+
+// ============================================================================
+// CIRCUIT BREAKER - CLIP API (Regra 16 - Melhores Práticas 2025)
+// ============================================================================
+
+// Configuração do circuit breaker para CLIP embeddings
+// Timeout: 30s (imagens podem ser grandes)
+// Reset: 30s após abrir
+// Threshold: 50% de falhas
+const clipCircuitBreakerOptions = {
+  timeout: 30000,          // 30 segundos de timeout
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000,     // 30 segundos para tentar reconexão
+  volumeThreshold: 5,      // Mínimo de 5 requests antes de calcular threshold
+};
+
+// Função interna para chamar API CLIP (será protegida pelo circuit breaker)
+interface ClipApiParams {
+  endpoint: string;
+  body: { text?: string; image?: string; model: string };
+}
+
+async function callClipApiInternal(params: ClipApiParams): Promise<{ embedding: number[]; model: string }> {
+  const response = await fetch(`${SALAD_CLIP_ENDPOINT}${params.endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Salad-Api-Key': SALAD_API_KEY!,
+      'Salad-Organization': SALAD_ORGANIZATION_ID!,
+    },
+    body: JSON.stringify(params.body),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`CLIP API error: ${response.status} - ${errorText}`);
+  }
+
+  const result = await response.json() as { embedding: number[]; model: string };
+  
+  if (!result.embedding || !Array.isArray(result.embedding)) {
+    throw new Error('Resposta CLIP inválida - embedding ausente');
+  }
+
+  return result;
+}
+
+// Circuit breaker para chamadas CLIP
+const clipBreaker = new CircuitBreaker(callClipApiInternal, clipCircuitBreakerOptions);
+
+clipBreaker.on('open', () => {
+  logger.warn('Circuit breaker CLIP: ABERTO - Salad Cloud CLIP temporariamente indisponível');
+});
+clipBreaker.on('halfOpen', () => {
+  logger.info('Circuit breaker CLIP: HALF-OPEN - Testando reconexão com Salad Cloud');
+});
+clipBreaker.on('close', () => {
+  logger.info('Circuit breaker CLIP: FECHADO - Salad Cloud CLIP funcionando normalmente');
+});
+clipBreaker.on('timeout', () => {
+  logger.warn('Circuit breaker CLIP: TIMEOUT - Request excedeu 30 segundos');
+});
+clipBreaker.on('fallback', () => {
+  logger.info('Circuit breaker CLIP: Usando fallback');
+});
+
+// Função para chamar API CLIP através do circuit breaker
+async function callClipApi(params: ClipApiParams): Promise<{ embedding: number[]; model: string }> {
+  return clipBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
+}
 
 export interface ImageMetadata {
   width?: number;
@@ -135,7 +207,7 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP de texto via Salad Cloud
+   * Gera embedding CLIP de texto via Salad Cloud (com circuit breaker - Regra 16)
    * Permite buscar imagens por descrição textual
    * 
    * IMPORTANTE: Requer endpoint CLIP com suporte a texto configurado em SALAD_CLIP_ENDPOINT
@@ -158,36 +230,14 @@ class ImageProcessorService {
     const trimmedText = text.trim();
 
     try {
-      // Endpoint CLIP que suporta tanto imagem quanto texto
-      // Formato padrão CLIP-as-a-service: POST /inference/clip com { text } ou { image }
-      const response = await fetch(`${SALAD_CLIP_ENDPOINT}/inference/clip`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Salad-Api-Key': SALAD_API_KEY!,
-          'Salad-Organization': SALAD_ORGANIZATION_ID!,
-        },
-        body: JSON.stringify({
+      // Usar circuit breaker para resiliência (Regra 16)
+      const result = await callClipApi({
+        endpoint: '/inference/clip',
+        body: {
           text: trimmedText,
           model: 'ViT-L/14',
-        }),
+        },
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        logger.error({
-          status: response.status,
-          error: errorText,
-          textLength: trimmedText.length,
-        }, 'Falha na API CLIP para texto');
-        throw new Error(`CLIP Text API error: ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json() as { embedding: number[]; model: string };
-      
-      if (!result.embedding || !Array.isArray(result.embedding)) {
-        throw new Error('Resposta CLIP inválida - embedding ausente');
-      }
 
       // Validar dimensão do embedding
       if (result.embedding.length !== CLIP_EMBEDDING_DIM) {
@@ -216,7 +266,7 @@ class ImageProcessorService {
         error: errorMessage, 
         textLength: trimmedText.length,
         endpoint: `${SALAD_CLIP_ENDPOINT}/inference/clip`,
-      }, 'Erro ao gerar text embedding CLIP - verificar se endpoint suporta texto');
+      }, 'Erro ao gerar text embedding CLIP (circuit breaker)');
       throw error;
     }
   }
@@ -297,7 +347,7 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP via Salad Cloud
+   * Gera embedding CLIP via Salad Cloud (com circuit breaker - Regra 16)
    */
   private async generateClipEmbedding(
     imageBuffer: Buffer,
@@ -306,25 +356,14 @@ class ImageProcessorService {
     const base64Image = imageBuffer.toString('base64');
     
     try {
-      const response = await fetch(`${SALAD_CLIP_ENDPOINT}/inference/clip`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Salad-Api-Key': SALAD_API_KEY!,
-          'Salad-Organization': SALAD_ORGANIZATION_ID!,
-        },
-        body: JSON.stringify({
+      // Usar circuit breaker para resiliência
+      const result = await callClipApi({
+        endpoint: '/inference/clip',
+        body: {
           image: `data:${mimeType};base64,${base64Image}`,
           model: 'ViT-L/14',
-        }),
+        },
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`CLIP API error: ${response.status} - ${errorText}`);
-      }
-
-      const result = await response.json() as { embedding: number[]; model: string };
       
       // Validar dimensão do embedding
       if (result.embedding.length !== CLIP_EMBEDDING_DIM) {
@@ -339,7 +378,7 @@ class ImageProcessorService {
         model: result.model || 'ViT-L/14',
       };
     } catch (error) {
-      logger.error({ error }, 'Erro na API CLIP');
+      logger.error({ error }, 'Erro na API CLIP (circuit breaker)');
       throw error;
     }
   }
@@ -529,3 +568,33 @@ export function getImageProcessor(): ImageProcessorService {
 }
 
 export const imageProcessor = getImageProcessor();
+
+/**
+ * Retorna status do circuit breaker CLIP (Regra 16 - Observability)
+ */
+export function getClipCircuitBreakerStatus(): {
+  state: string;
+  stats: {
+    fires: number;
+    failures: number;
+    successes: number;
+    fallbacks: number;
+    timeouts: number;
+    cacheHits: number;
+    latencyMean: number;
+  };
+} {
+  const stats = clipBreaker.stats;
+  return {
+    state: clipBreaker.opened ? 'open' : (clipBreaker.halfOpen ? 'half-open' : 'closed'),
+    stats: {
+      fires: stats.fires || 0,
+      failures: stats.failures || 0,
+      successes: stats.successes || 0,
+      fallbacks: stats.fallbacks || 0,
+      timeouts: stats.timeouts || 0,
+      cacheHits: stats.cacheHits || 0,
+      latencyMean: stats.latencyMean || 0,
+    },
+  };
+}
