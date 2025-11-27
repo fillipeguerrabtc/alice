@@ -372,32 +372,39 @@ jobs:
             echo "✓ Redes Docker configuradas"
             echo ""
             
-            # Clone ou update do repositório usando header-based auth
-            # Isso resolve: "fatal: could not read Username for 'https://github.com'"
-            # Usando header evita exposição do token em URLs/logs de erro
+            # Clone ou update do repositório usando Basic Auth
+            # GitHub PAT requer Basic Auth (não Bearer token)
             echo "🔑 Verificando GH_PAT..."
             if [ -z "${GH_PAT}" ]; then
               echo "❌ ERRO: GH_PAT não está configurado ou não foi passado para o script SSH!"
               echo "   Verifique: 1) Se o secret existe  2) Se o token não expirou  3) Se tem permissões repo/packages"
               exit 1
             fi
-            # Debug: mostrar apenas o comprimento do token (nunca o token em si!)
             echo "✓ GH_PAT recebido (${#GH_PAT} caracteres)"
             
-            GH_AUTH_HEADER="Authorization: Bearer ${GH_PAT}"
-            REPO_URL="https://github.com/${REPO_FULL_NAME}.git"
+            # Configurar URL com credenciais (Basic Auth) - formato aceito pelo GitHub
+            # Usamos variável para evitar exposição em logs de erro
+            REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
             
             if [ -d "app/.git" ]; then
               echo "📥 Atualizando repositório..."
               cd app
-              git -c "http.extraHeader=${GH_AUTH_HEADER}" fetch origin
+              # Configurar remote com credenciais temporariamente
+              git remote set-url origin "${REPO_URL}"
+              git fetch origin
               git checkout main
               git reset --hard origin/main
+              # Remover credenciais do remote após fetch (segurança)
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
               cd ..
             else
               echo "📥 Clonando repositório..."
               rm -rf app
-              git -c "http.extraHeader=${GH_AUTH_HEADER}" clone "${REPO_URL}" app
+              git clone "${REPO_URL}" app
+              # Remover credenciais do remote após clone (segurança)
+              cd app
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
+              cd ..
             fi
             cd app
             
