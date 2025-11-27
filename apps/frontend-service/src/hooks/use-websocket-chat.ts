@@ -112,13 +112,18 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
   return { valid: true };
 }
 
-// Opções do hook
+// Opções do hook - callbacks separados para criação vs atualização
 interface UseWebSocketChatOptions {
   conversationId?: string;
-  onMessageReceived?: (message: ChatMessage) => void;
+  // Callback para ADICIONAR nova mensagem (user ou assistant inicial)
+  onMessageCreated?: (message: ChatMessage) => void;
+  // Callback para ATUALIZAR mensagem existente (streaming do assistant)
+  onMessageUpdated?: (messageId: string, updates: Partial<ChatMessage>) => void;
   onStreamStart?: () => void;
   onStreamEnd?: () => void;
   onError?: (error: Error) => void;
+  // Função para obter mensagens atuais (garante payload completo)
+  getMessages?: () => ChatMessage[];
 }
 
 // Retorno do hook
@@ -145,11 +150,18 @@ interface UseWebSocketChatReturn {
  * - Rating de imagens geradas
  * - Cancelamento de streams
  * 
+ * Callbacks separados para criação (onMessageCreated) e atualização (onMessageUpdated)
+ * evitam duplicação de mensagens durante streaming.
+ * 
  * @example
  * ```tsx
  * const { sendMessage, isStreaming } = useWebSocketChat({
  *   conversationId: 'conv-123',
- *   onMessageReceived: (msg) => setMessages(prev => [...prev, msg]),
+ *   onMessageCreated: (msg) => setMessages(prev => [...prev, msg]),
+ *   onMessageUpdated: (id, updates) => setMessages(prev => 
+ *     prev.map(m => m.id === id ? { ...m, ...updates } : m)
+ *   ),
+ *   getMessages: () => messages,
  * });
  * 
  * await sendMessage('Olá Alice!', [imageAttachment]);
@@ -158,10 +170,12 @@ interface UseWebSocketChatReturn {
 export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebSocketChatReturn {
   const { 
     conversationId, 
-    onMessageReceived,
+    onMessageCreated,
+    onMessageUpdated,
     onStreamStart,
     onStreamEnd,
     onError,
+    getMessages,
   } = options;
   
   const [isStreaming, setIsStreaming] = useState(false);
@@ -235,12 +249,13 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
     mutationFn: async ({ 
       content, 
       mediaAttachments,
-      existingMessages,
     }: { 
       content: string; 
       mediaAttachments?: MediaAttachment[];
-      existingMessages: ChatMessage[];
     }): Promise<string> => {
+      // Obter mensagens atuais do consumidor
+      const currentMessages = getMessages?.() ?? [];
+      
       // Criar mensagem do usuário
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -251,30 +266,38 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
         mediaAttachments,
       };
 
-      onMessageReceived?.(userMessage);
+      // Notificar criação da mensagem do usuário
+      onMessageCreated?.(userMessage);
+      
       setIsStreaming(true);
       onStreamStart?.();
       setError(null);
 
       // Criar placeholder para resposta do assistente
+      const assistantMessageId = crypto.randomUUID();
       const assistantMessage: ChatMessage = {
-        id: crypto.randomUUID(),
+        id: assistantMessageId,
         role: 'assistant',
         content: '',
         createdAt: new Date().toISOString(),
       };
-      onMessageReceived?.(assistantMessage);
+      
+      // Notificar criação da mensagem do assistente (placeholder vazio)
+      onMessageCreated?.(assistantMessage);
 
       // Configurar abort controller
       abortControllerRef.current = new AbortController();
 
+      // Construir histórico completo para o payload
+      const messagesForPayload = [...currentMessages, userMessage].map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
+
       // Fazer requisição SSE
       const res = await apiRequest('POST', '/api/chat/stream', {
         conversationId,
-        messages: [...existingMessages, userMessage].map((m) => ({
-          role: m.role,
-          content: m.content,
-        })),
+        messages: messagesForPayload,
       });
 
       if (!res.body) throw new Error('Sem corpo na resposta');
@@ -300,21 +323,15 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
               const parsed = JSON.parse(data);
               if (parsed.content) {
                 fullContent += parsed.content;
-                // Atualizar mensagem do assistente
-                const updatedAssistant: ChatMessage = {
-                  ...assistantMessage,
-                  content: fullContent,
-                };
-                onMessageReceived?.(updatedAssistant);
+                // ATUALIZAR mensagem existente (não criar nova)
+                onMessageUpdated?.(assistantMessageId, { content: fullContent });
               }
               // Verificar se há imagem gerada
               if (parsed.generatedImage) {
-                const updatedAssistant: ChatMessage = {
-                  ...assistantMessage,
+                onMessageUpdated?.(assistantMessageId, { 
                   content: fullContent,
                   generatedImage: parsed.generatedImage,
-                };
-                onMessageReceived?.(updatedAssistant);
+                });
               }
             } catch {
               // Ignorar erros de parse de linhas inválidas
@@ -341,12 +358,10 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
   const sendMessage = useCallback(async (
     content: string, 
     mediaAttachments?: MediaAttachment[],
-    existingMessages: ChatMessage[] = [],
   ): Promise<string> => {
     return sendMessageMutation.mutateAsync({ 
       content, 
       mediaAttachments,
-      existingMessages,
     });
   }, [sendMessageMutation]);
 
