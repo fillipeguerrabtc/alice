@@ -998,33 +998,62 @@ const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'http://localhost:3002'
 /**
  * Valida assinatura do webhook Twilio
  * Segue especificação oficial: https://www.twilio.com/docs/usage/security
+ * 
+ * Algoritmo Twilio:
+ * 1. Pegar URL completa do webhook
+ * 2. Ordenar parâmetros POST alfabeticamente por chave
+ * 3. Concatenar: URL + key1 + value1 + key2 + value2...
+ * 4. HMAC-SHA1 com auth token
+ * 5. Comparar base64 com X-Twilio-Signature
  */
 function validateTwilioSignature(
   signature: string,
   url: string,
   params: Record<string, string>
-): boolean {
+): { valid: boolean; reason?: string } {
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   if (!TWILIO_AUTH_TOKEN) {
-    logger.warn('TWILIO_AUTH_TOKEN não configurado - validação de assinatura desabilitada');
-    return true; // Em desenvolvimento, permite sem validação
+    if (isProduction) {
+      logger.error('TWILIO_AUTH_TOKEN obrigatório em produção - webhook rejeitado');
+      return { valid: false, reason: 'AUTH_TOKEN_MISSING' };
+    }
+    logger.warn('TWILIO_AUTH_TOKEN não configurado - validação ignorada em desenvolvimento');
+    return { valid: true, reason: 'DEV_MODE_SKIP' };
   }
 
-  // Ordenar parâmetros alfabeticamente e concatenar
-  const sortedParams = Object.keys(params)
-    .sort()
-    .reduce((acc, key) => acc + key + params[key], '');
-  
-  const dataToSign = url + sortedParams;
-  
-  const expectedSignature = crypto
-    .createHmac('sha1', TWILIO_AUTH_TOKEN)
-    .update(Buffer.from(dataToSign, 'utf-8'))
-    .digest('base64');
+  if (!signature) {
+    logger.warn('X-Twilio-Signature header ausente');
+    return { valid: false, reason: 'SIGNATURE_MISSING' };
+  }
 
-  return crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature)
-  );
+  try {
+    // Ordenar parâmetros alfabeticamente e concatenar
+    const sortedParams = Object.keys(params)
+      .sort()
+      .reduce((acc, key) => acc + key + (params[key] || ''), '');
+    
+    const dataToSign = url + sortedParams;
+    
+    const expectedSignature = crypto
+      .createHmac('sha1', TWILIO_AUTH_TOKEN)
+      .update(Buffer.from(dataToSign, 'utf-8'))
+      .digest('base64');
+
+    // Usar timingSafeEqual para prevenir timing attacks
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return { valid: false, reason: 'SIGNATURE_LENGTH_MISMATCH' };
+    }
+
+    const isValid = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+    return { valid: isValid, reason: isValid ? 'VALID' : 'SIGNATURE_MISMATCH' };
+  } catch (error) {
+    logger.error({ error }, 'Erro ao validar assinatura Twilio');
+    return { valid: false, reason: 'VALIDATION_ERROR' };
+  }
 }
 
 /**
@@ -1116,29 +1145,28 @@ async function processMessageWithLLM(
  * Rota: POST /api/integrations/twilio/webhook/whatsapp
  */
 app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: Response) => {
-  // Responder imediatamente ao Twilio (evitar timeout de 15s)
+  const twilioSignature = req.headers['x-twilio-signature'] as string;
+  const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
+  // CRÍTICO: Validar assinatura ANTES de responder
+  const validation = validateTwilioSignature(
+    twilioSignature,
+    webhookUrl,
+    req.body as Record<string, string>
+  );
+
+  if (!validation.valid) {
+    logger.warn({ webhookUrl, reason: validation.reason }, 'Assinatura Twilio inválida - webhook rejeitado');
+    res.status(403).send('Forbidden');
+    return;
+  }
+
+  // Responder ao Twilio após validação bem-sucedida
   res.set('Content-Type', 'text/xml');
   res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
-  // Processar webhook de forma assíncrona
+  // Processar webhook de forma assíncrona (após resposta enviada)
   try {
-    const twilioSignature = req.headers['x-twilio-signature'] as string;
-    const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
-
-    // Validar assinatura em produção
-    if (process.env.NODE_ENV === 'production' && twilioSignature) {
-      const isValid = validateTwilioSignature(
-        twilioSignature,
-        webhookUrl,
-        req.body as Record<string, string>
-      );
-
-      if (!isValid) {
-        logger.warn({ webhookUrl }, 'Assinatura Twilio inválida - webhook rejeitado');
-        return;
-      }
-    }
-
     const {
       MessageSid,
       From,
@@ -1299,6 +1327,23 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
  * Rota: POST /api/integrations/twilio/webhook/status
  */
 app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Response) => {
+  const twilioSignature = req.headers['x-twilio-signature'] as string;
+  const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
+  // CRÍTICO: Validar assinatura ANTES de responder
+  const validation = validateTwilioSignature(
+    twilioSignature,
+    webhookUrl,
+    req.body as Record<string, string>
+  );
+
+  if (!validation.valid) {
+    logger.warn({ webhookUrl, reason: validation.reason }, 'Assinatura Twilio inválida - status webhook rejeitado');
+    res.status(403).send('Forbidden');
+    return;
+  }
+
+  // Responder ao Twilio após validação bem-sucedida
   res.set('Content-Type', 'text/xml');
   res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
