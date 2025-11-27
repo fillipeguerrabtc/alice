@@ -633,6 +633,298 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
   }
 });
 
+// ============================================================================
+// BULK IMPORT - Importação em Lote de Dados de Treinamento
+// ============================================================================
+
+const bulkImportSchema = z.object({
+  source: z.string().min(1).max(50),
+  data: z.array(z.object({
+    messages: z.array(z.object({
+      role: z.enum(['user', 'assistant', 'system']),
+      content: z.string().min(1),
+    })).min(2),
+    rating: z.number().min(1).max(5).optional(),
+  })).min(1).max(1000),
+  autoApprove: z.boolean().optional().default(false),
+});
+
+app.post('/api/training/bulk-import', requirePermission('training:training_data:create'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    
+    if (!authContext || !authContext.tenantId) {
+      logger.warn({ path: req.path }, 'Tentativa de bulk-import sem tenant válido');
+      return res.status(403).json({ error: 'Tenant não identificado. Autenticação obrigatória.' });
+    }
+
+    const tenantId = authContext.tenantId;
+    const validation = bulkImportSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: validation.error.issues,
+      });
+    }
+
+    const { source, data, autoApprove } = validation.data;
+    const importedIds: string[] = [];
+    const duplicatesSkipped: number[] = [];
+
+    for (let i = 0; i < data.length; i++) {
+      const entry = data[i];
+      
+      const text = entry.messages.map(m => m.content).join(' ');
+      let embedding: number[] | null = null;
+      let semhash: string | null = null;
+
+      try {
+        embedding = await embeddingsBreaker.fire(text) as number[];
+        semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
+
+        const existingDuplicate = await db.query.trainingData.findFirst({
+          where: eq(schema.trainingData.semhash, semhash),
+        });
+
+        if (existingDuplicate) {
+          duplicatesSkipped.push(i);
+          continue;
+        }
+      } catch (embError) {
+        logger.warn({ error: embError, index: i }, 'Erro ao gerar embedding - continuando sem deduplicação');
+      }
+
+      const [inserted] = await db.insert(schema.trainingData).values({
+        tenantId,
+        source: `bulk_import:${source}`,
+        messages: entry.messages,
+        rating: entry.rating,
+        status: autoApprove && (entry.rating || 0) >= 4 ? 'approved' : 'pending',
+        semhash,
+        embedding,
+        isDuplicate: false,
+      }).returning();
+
+      importedIds.push(inserted.id);
+    }
+
+    logger.info({
+      source,
+      totalReceived: data.length,
+      imported: importedIds.length,
+      duplicatesSkipped: duplicatesSkipped.length,
+      autoApprove,
+    }, 'Bulk import concluído');
+
+    res.status(201).json({
+      success: true,
+      imported: importedIds.length,
+      duplicatesSkipped: duplicatesSkipped.length,
+      ids: importedIds,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha no bulk import');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// WEBHOOK - Receber Dados de Sistemas Externos
+// ============================================================================
+
+const webhookSchema = z.object({
+  event: z.enum(['training_data', 'feedback', 'document']),
+  payload: z.object({
+    messages: z.array(z.object({
+      role: z.string(),
+      content: z.string(),
+    })).optional(),
+    rating: z.number().min(1).max(5).optional(),
+    conversationId: z.string().optional(),
+    metadata: z.record(z.unknown()).optional(),
+  }),
+  timestamp: z.string().optional(),
+});
+
+app.post('/api/training/webhook', async (req: Request, res: Response) => {
+  const webhookSecret = req.headers['x-webhook-secret'] as string | undefined;
+  const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
+
+  if (!expectedSecret) {
+    logger.error('TRAINING_WEBHOOK_SECRET não configurado - webhook desabilitado por segurança');
+    return res.status(503).json({ error: 'Webhook não configurado. Configure TRAINING_WEBHOOK_SECRET.' });
+  }
+
+  if (!webhookSecret || webhookSecret !== expectedSecret) {
+    logger.warn({ hasSecret: !!webhookSecret }, 'Tentativa de webhook com secret inválido');
+    return res.status(401).json({ error: 'Webhook secret inválido ou ausente' });
+  }
+
+  const tenantId = req.headers['x-tenant-id'] as string | undefined;
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Header X-Tenant-ID obrigatório' });
+  }
+
+  try {
+    const validation = webhookSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: 'Payload inválido',
+        details: validation.error.issues,
+      });
+    }
+
+    const { event, payload } = validation.data;
+
+    if (event === 'training_data' && payload.messages) {
+      const text = payload.messages.map(m => m.content).join(' ');
+      let embedding: number[] | null = null;
+      let semhash: string | null = null;
+
+      try {
+        embedding = await embeddingsBreaker.fire(text) as number[];
+        semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
+      } catch (embError) {
+        logger.warn({ error: embError }, 'Erro ao gerar embedding no webhook');
+      }
+
+      const [inserted] = await db.insert(schema.trainingData).values({
+        tenantId,
+        source: 'webhook',
+        messages: payload.messages,
+        rating: payload.rating,
+        status: 'pending',
+        semhash,
+        embedding,
+      }).returning();
+
+      logger.info({ id: inserted.id, event }, 'Dados recebidos via webhook');
+      res.status(201).json({ success: true, id: inserted.id });
+    } else if (event === 'feedback' && payload.conversationId) {
+      await db.update(schema.trainingData)
+        .set({ rating: payload.rating })
+        .where(eq(schema.trainingData.conversationId, payload.conversationId));
+
+      logger.info({ conversationId: payload.conversationId, rating: payload.rating }, 'Feedback atualizado via webhook');
+      res.json({ success: true });
+    } else {
+      res.status(400).json({ error: 'Evento não suportado ou payload incompleto' });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Falha ao processar webhook');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// APROVAÇÃO EM LOTE
+// ============================================================================
+
+app.post('/api/training/data/approve-batch', requirePermission('training:training_data:update'), async (req: Request, res: Response) => {
+  const { ids, action } = req.body as { ids: string[]; action: 'approve' | 'reject' };
+
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'IDs são obrigatórios' });
+  }
+
+  if (!action || !['approve', 'reject'].includes(action)) {
+    return res.status(400).json({ error: 'Action deve ser "approve" ou "reject"' });
+  }
+
+  try {
+    const newStatus = action === 'approve' ? 'approved' : 'rejected';
+    let updatedCount = 0;
+
+    for (const id of ids) {
+      const [updated] = await db.update(schema.trainingData)
+        .set({ 
+          status: newStatus,
+          processadoEm: new Date(),
+        })
+        .where(eq(schema.trainingData.id, id))
+        .returning();
+
+      if (updated) updatedCount++;
+    }
+
+    logger.info({ action, count: updatedCount }, 'Aprovação em lote concluída');
+    res.json({ success: true, updated: updatedCount });
+  } catch (error) {
+    logger.error({ error }, 'Falha na aprovação em lote');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// AUTO-LEARNING STATUS
+// ============================================================================
+
+app.get('/api/training/auto-learning/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
+  const tenantId = req.query.tenantId as string | undefined;
+
+  try {
+    const modelVersions = await db.query.modelVersions.findMany({
+      where: tenantId ? eq(schema.modelVersions.tenantId, tenantId) : undefined,
+      orderBy: [desc(schema.modelVersions.version)],
+      limit: 10,
+    });
+
+    const activeVersion = modelVersions.find((v: typeof schema.modelVersions.$inferSelect) => v.isActive);
+
+    const schedules = await db.query.autoLearningSchedule.findMany({
+      where: tenantId ? eq(schema.autoLearningSchedule.tenantId, tenantId) : undefined,
+      orderBy: [desc(schema.autoLearningSchedule.scheduledFor)],
+      limit: 5,
+    });
+
+    const pendingData = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.trainingData)
+      .where(and(
+        eq(schema.trainingData.status, 'approved'),
+        isNull(schema.trainingData.usedInJobId),
+        tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
+      ));
+
+    const pendingImages = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.generatedImages)
+      .where(and(
+        eq(schema.generatedImages.approvedForTraining, true),
+        eq(schema.generatedImages.usedInFineTuning, false),
+        tenantId ? eq(schema.generatedImages.tenantId, tenantId) : undefined,
+      ));
+
+    res.json({
+      activeModel: {
+        version: activeVersion?.version || 0,
+        name: activeVersion?.name || 'baseline',
+        improvementPercent: activeVersion?.improvementPercent || 0,
+        trainingDataUsed: activeVersion?.trainingDataCount || 0,
+        imagesUsed: activeVersion?.imageDataCount || 0,
+      },
+      pendingData: {
+        trainingEntries: pendingData[0]?.count || 0,
+        images: pendingImages[0]?.count || 0,
+      },
+      recentVersions: modelVersions.slice(0, 5).map((v: typeof schema.modelVersions.$inferSelect) => ({
+        version: v.version,
+        status: v.status,
+        createdAt: v.criadoEm,
+      })),
+      upcomingSchedules: schedules.map((s: typeof schema.autoLearningSchedule.$inferSelect) => ({
+        id: s.id,
+        type: s.scheduleType,
+        scheduledFor: s.scheduledFor,
+        status: s.status,
+      })),
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter status do auto-learning');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 app.get('/api/training/stats', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const tenantId = req.query.tenantId as string;
 

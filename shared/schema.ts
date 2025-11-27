@@ -691,6 +691,85 @@ export const conversationEscalations = pgTable(
 );
 
 // ============================================================================
+// MODEL VERSIONS (FASE 8 - Progressive LoRA e Versionamento)
+// ============================================================================
+
+export const modelVersionStatusEnum = pgEnum("model_version_status", [
+  "training",
+  "validating",
+  "active",
+  "deprecated",
+  "rolled_back",
+]);
+
+export const modelVersions = pgTable(
+  "model_versions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    name: varchar("name", { length: 255 }).notNull(),
+    version: integer("version").notNull().default(1),
+    baseModel: varchar("base_model", { length: 100 }).notNull().default("llama4-maverick"),
+    loraPath: text("lora_path"),
+    status: modelVersionStatusEnum("status").default("training"),
+    fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
+    trainingDataCount: integer("training_data_count").default(0),
+    imageDataCount: integer("image_data_count").default(0),
+    metrics: jsonb("metrics").default({}),
+    baselineMetrics: jsonb("baseline_metrics").default({}),
+    improvementPercent: real("improvement_percent"),
+    isActive: boolean("is_active").default(false),
+    rolledBackFrom: uuid("rolled_back_from"),
+    rolledBackReason: text("rolled_back_reason"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    ativadoEm: timestamp("ativado_em"),
+    deprecadoEm: timestamp("deprecado_em"),
+  },
+  (table) => [
+    index("idx_model_versions_tenant").on(table.tenantId),
+    index("idx_model_versions_status").on(table.status),
+    index("idx_model_versions_active").on(table.isActive),
+    index("idx_model_versions_version").on(table.version),
+  ]
+);
+
+// ============================================================================
+// AUTO-LEARNING SCHEDULE (FASE 8 - Schedule Agressivo)
+// ============================================================================
+
+export const autoLearningScheduleStatusEnum = pgEnum("auto_learning_schedule_status", [
+  "scheduled",
+  "running",
+  "completed",
+  "failed",
+  "skipped",
+]);
+
+export const autoLearningSchedule = pgTable(
+  "auto_learning_schedule",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    scheduleType: varchar("schedule_type", { length: 50 }).notNull(),
+    status: autoLearningScheduleStatusEnum("status").default("scheduled"),
+    scheduledFor: timestamp("scheduled_for").notNull(),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    modelVersionId: uuid("model_version_id").references(() => modelVersions.id),
+    dataCollected: integer("data_collected").default(0),
+    imagesCollected: integer("images_collected").default(0),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => [
+    index("idx_auto_learning_tenant").on(table.tenantId),
+    index("idx_auto_learning_status").on(table.status),
+    index("idx_auto_learning_scheduled").on(table.scheduledFor),
+  ]
+);
+
+// ============================================================================
 // GENERATED IMAGES (FASE 6.5+ - FLUX.1 Schnell Self-Hosted)
 // ============================================================================
 
@@ -965,6 +1044,14 @@ export type InsertConversationEscalation = typeof conversationEscalations.$infer
 // Generated Images Types (FASE 6.5+)
 export type GeneratedImage = typeof generatedImages.$inferSelect;
 export type InsertGeneratedImage = typeof generatedImages.$inferInsert;
+
+// Model Versions Types (FASE 8)
+export type ModelVersion = typeof modelVersions.$inferSelect;
+export type InsertModelVersion = typeof modelVersions.$inferInsert;
+
+// Auto-Learning Schedule Types (FASE 8)
+export type AutoLearningSchedule = typeof autoLearningSchedule.$inferSelect;
+export type InsertAutoLearningSchedule = typeof autoLearningSchedule.$inferInsert;
 
 export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(trainingData).omit({
   id: true,
