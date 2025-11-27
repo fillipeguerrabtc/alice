@@ -939,19 +939,22 @@ app.get('/api/audit/recent', async (req: Request, res: Response) => {
       },
     });
 
-    const activities = recentAudit.map(log => ({
-      id: log.id,
-      action: log.acao,
-      resource: log.recurso,
-      resourceId: log.recursoId,
-      details: log.detalhes,
-      ipAddress: log.ip,
-      timestamp: log.criadoEm,
-      user: log.user ? {
-        id: log.user.id,
-        name: `${log.user.firstName || ''} ${log.user.lastName || ''}`.trim() || log.user.email,
-      } : null,
-    }));
+    const activities = recentAudit.map(log => {
+      const logUser = log.user as { id: string; firstName: string | null; lastName: string | null; email: string | null } | undefined;
+      return {
+        id: log.id,
+        action: log.acao,
+        resource: log.recurso,
+        resourceId: log.recursoId,
+        details: log.detalhes,
+        ipAddress: log.ip,
+        timestamp: log.criadoEm,
+        user: logUser ? {
+          id: logUser.id,
+          name: `${logUser.firstName || ''} ${logUser.lastName || ''}`.trim() || logUser.email,
+        } : null,
+      };
+    });
 
     res.json(activities);
   } catch (error) {

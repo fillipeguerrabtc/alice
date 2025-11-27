@@ -119,6 +119,12 @@ export const users = pgTable(
     passwordHash: text("password_hash"), // Para autenticação local (email/senha)
     authProvider: varchar("auth_provider", { length: 50 }), // google, github, microsoft, saml, local
     authProviderId: varchar("auth_provider_id", { length: 255 }), // ID do usuário no provedor
+    // IDs OAuth específicos por provedor
+    googleId: varchar("google_id", { length: 255 }), // ID do Google OAuth
+    githubId: varchar("github_id", { length: 255 }), // ID do GitHub OAuth
+    microsoftId: varchar("microsoft_id", { length: 255 }), // ID do Microsoft OAuth
+    samlNameId: varchar("saml_name_id", { length: 255 }), // NameID do SAML 2.0
+    emailVerified: boolean("email_verified").default(false), // Se o email foi verificado
     // Stripe (Blueprint: stripe integration)
     stripeCustomerId: text("stripe_customer_id"),
     stripeSubscriptionId: text("stripe_subscription_id"),
@@ -130,6 +136,10 @@ export const users = pgTable(
     index("idx_users_email").on(table.email),
     index("idx_users_role").on(table.role),
     index("idx_users_auth_provider").on(table.authProvider),
+    index("idx_users_google_id").on(table.googleId),
+    index("idx_users_github_id").on(table.githubId),
+    index("idx_users_microsoft_id").on(table.microsoftId),
+    index("idx_users_saml_name_id").on(table.samlNameId),
   ]
 );
 
@@ -1007,6 +1017,17 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   document: one(documents, {
     fields: [documentChunks.documentId],
     references: [documents.id],
+  }),
+}));
+
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [auditLogs.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [auditLogs.userId],
+    references: [users.id],
   }),
 }));
 

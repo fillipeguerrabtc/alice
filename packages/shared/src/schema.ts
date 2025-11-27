@@ -1020,6 +1020,17 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   }),
 }));
 
+export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [auditLogs.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [auditLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 // ============================================================================
 // INSERT SCHEMAS (Zod Validation)
 // ============================================================================
