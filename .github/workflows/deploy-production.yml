@@ -302,23 +302,33 @@ jobs:
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
+          DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: GH_PAT,PGPASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR
           script: |
             set -e
             
-            # Variáveis injetadas diretamente pelo GitHub Actions (evita problemas com envs)
-            export IMAGE_PREFIX="ghcr.io/${{ github.repository_owner }}/alice"
-            export IMAGE_TAG="${{ needs.build-docker.outputs.image_tag || github.sha }}"
-            export DEPLOY_SERVICES="${{ github.event.inputs.services || 'all' }}"
+            # Variáveis já injetadas via envs do ssh-action
+            export IMAGE_PREFIX="${IMAGE_PREFIX}"
+            export IMAGE_TAG="${IMAGE_TAG}"
+            export DEPLOY_SERVICES="${DEPLOY_SERVICES}"
             
             echo "=============================================="
             echo "🚀 ALICE ENTERPRISE - DEPLOY PRODUÇÃO"
             echo "=============================================="
             echo "Domínio: yesyoudeserve.duckdns.org"
-            echo "Commit: ${{ github.sha }}"
+            echo "Commit: ${GITHUB_SHA}"
             echo "Image Prefix: ${IMAGE_PREFIX}"
             echo "Image Tag: ${IMAGE_TAG}"
             echo "Serviços: ${DEPLOY_SERVICES}"
@@ -356,8 +366,12 @@ jobs:
             # Clone ou update do repositório usando header-based auth
             # Isso resolve: "fatal: could not read Username for 'https://github.com'"
             # Usando header evita exposição do token em URLs/logs de erro
-            GH_AUTH_HEADER="Authorization: Bearer ${{ secrets.GH_PAT }}"
-            REPO_URL="https://github.com/${{ github.repository }}.git"
+            if [ -z "${GH_PAT}" ]; then
+              echo "❌ ERRO: GH_PAT não está configurado nos secrets do repositório!"
+              exit 1
+            fi
+            GH_AUTH_HEADER="Authorization: Bearer ${GH_PAT}"
+            REPO_URL="https://github.com/${REPO_FULL_NAME}.git"
             
             if [ -d "app/.git" ]; then
               echo "📥 Atualizando repositório..."
@@ -380,7 +394,7 @@ jobs:
             
             # Login no GitHub Container Registry usando Personal Access Token
             echo "🔐 Autenticando no registry..."
-            echo "${{ secrets.GH_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
             
             # Carregar variáveis de ambiente
             cd infra/docker
@@ -411,7 +425,7 @@ jobs:
             echo "📦 Executando migração Drizzle (db:push)..."
             docker run --rm \
               --network alice-network \
-              -e DATABASE_URL="postgresql://alice:${{ secrets.PGPASSWORD }}@postgres:5432/alice_prod" \
+              -e DATABASE_URL="postgresql://alice:${PGPASSWORD}@postgres:5432/alice_prod" \
               -v "$(pwd)/../../shared/schema.ts:/app/shared/schema.ts" \
               -v "$(pwd)/../../drizzle.config.ts:/app/drizzle.config.ts" \
               -w /app \
@@ -611,13 +625,16 @@ jobs:
     steps:
       - name: Executar rollback por tag
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: IMAGE_PREFIX
           script: |
-            # Variáveis injetadas diretamente pelo GitHub Actions
-            export IMAGE_PREFIX="ghcr.io/${{ github.repository_owner }}/alice"
+            # Variáveis injetadas via envs do ssh-action
+            export IMAGE_PREFIX="${IMAGE_PREFIX}"
             
             echo "⚠️ Deploy falhou, executando rollback por tag..."
             
