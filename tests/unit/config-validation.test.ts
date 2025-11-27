@@ -28,6 +28,9 @@ import {
   SIZE_LIMITS,
   RAG_CHUNK_CONFIG,
   SALAD_CONFIG,
+  resolveServiceUrls,
+  getServiceUrls,
+  resetConfigCache,
 } from '@alice/shared-utils/config';
 
 const FIXED_TIMESTAMP = '2024-01-01T00:00:00.000Z';
@@ -319,7 +322,19 @@ describe('Config - Rate Limiting', () => {
 });
 
 describe('Config - Service URLs (Regra 16 - Portas)', () => {
-  describe('SERVICE_URLS', () => {
+  const originalEnv = process.env;
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    resetConfigCache();
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+    resetConfigCache();
+  });
+
+  describe('SERVICE_URLS (valores padrão)', () => {
     it('auth-service deve usar porta 3001', () => {
       expect(SERVICE_URLS.auth).toContain(':3001');
     });
@@ -341,16 +356,121 @@ describe('Config - Service URLs (Regra 16 - Portas)', () => {
     });
 
     it('deve ter todos os 5 serviços principais configurados', () => {
-      const services = ['auth', 'chat', 'rag', 'training', 'integrations'];
+      const services = ['auth', 'chat', 'rag', 'training', 'integrations'] as const;
       services.forEach(service => {
         expect(SERVICE_URLS).toHaveProperty(service);
       });
     });
 
-    it('URLs devem seguir padrão Docker (http://service-name:port)', () => {
-      Object.values(SERVICE_URLS).forEach(url => {
+    it('URLs padrão devem seguir padrão Docker (http://service-name:port)', () => {
+      const urls = getServiceUrls();
+      Object.values(urls).forEach(url => {
         expect(url).toMatch(/^http:\/\/[a-z-]+:\d+$/);
       });
+    });
+  });
+
+  describe('resolveServiceUrls() - Resolução direta', () => {
+    it('deve retornar URLs padrão quando env está vazio', () => {
+      const urls = resolveServiceUrls({});
+      expect(urls.auth).toBe('http://auth-service:3001');
+      expect(urls.chat).toBe('http://chat-service:3002');
+      expect(urls.rag).toBe('http://rag-service:3003');
+      expect(urls.training).toBe('http://training-service:3004');
+      expect(urls.integrations).toBe('http://integrations-service:3005');
+    });
+
+    it('deve sobrescrever auth com AUTH_SERVICE_URL', () => {
+      const urls = resolveServiceUrls({ AUTH_SERVICE_URL: 'http://custom-auth:9001' });
+      expect(urls.auth).toBe('http://custom-auth:9001');
+    });
+
+    it('deve sobrescrever chat com CHAT_SERVICE_URL', () => {
+      const urls = resolveServiceUrls({ CHAT_SERVICE_URL: 'http://custom-chat:9002' });
+      expect(urls.chat).toBe('http://custom-chat:9002');
+    });
+
+    it('deve sobrescrever rag com RAG_SERVICE_URL', () => {
+      const urls = resolveServiceUrls({ RAG_SERVICE_URL: 'http://custom-rag:9003' });
+      expect(urls.rag).toBe('http://custom-rag:9003');
+    });
+
+    it('deve sobrescrever training com TRAINING_SERVICE_URL', () => {
+      const urls = resolveServiceUrls({ TRAINING_SERVICE_URL: 'http://custom-training:9004' });
+      expect(urls.training).toBe('http://custom-training:9004');
+    });
+
+    it('deve sobrescrever integrations com INTEGRATIONS_SERVICE_URL', () => {
+      const urls = resolveServiceUrls({ INTEGRATIONS_SERVICE_URL: 'http://custom-integrations:9005' });
+      expect(urls.integrations).toBe('http://custom-integrations:9005');
+    });
+
+    it('deve sobrescrever múltiplos serviços simultaneamente', () => {
+      const urls = resolveServiceUrls({
+        AUTH_SERVICE_URL: 'http://a:1',
+        CHAT_SERVICE_URL: 'http://b:2',
+        RAG_SERVICE_URL: 'http://c:3',
+      });
+      expect(urls.auth).toBe('http://a:1');
+      expect(urls.chat).toBe('http://b:2');
+      expect(urls.rag).toBe('http://c:3');
+      expect(urls.training).toBe('http://training-service:3004');
+      expect(urls.integrations).toBe('http://integrations-service:3005');
+    });
+  });
+
+  describe('getServiceUrls() + resetConfigCache() - Cache lazy', () => {
+    it('deve usar cache na segunda chamada', () => {
+      const urls1 = getServiceUrls();
+      const urls2 = getServiceUrls();
+      expect(urls1).toBe(urls2);
+    });
+
+    it('deve resetar cache corretamente', () => {
+      const urls1 = getServiceUrls();
+      resetConfigCache();
+      const urls2 = getServiceUrls();
+      expect(urls1).not.toBe(urls2);
+      expect(urls1).toEqual(urls2);
+    });
+
+    it('deve refletir mudanças em process.env após reset', () => {
+      resetConfigCache();
+      process.env.AUTH_SERVICE_URL = 'http://new-auth:8001';
+      const urls = getServiceUrls();
+      expect(urls.auth).toBe('http://new-auth:8001');
+    });
+  });
+
+  describe('SERVICE_URLS Proxy - Override via process.env', () => {
+    it('deve refletir AUTH_SERVICE_URL após resetConfigCache', () => {
+      process.env.AUTH_SERVICE_URL = 'http://proxy-auth:7001';
+      resetConfigCache();
+      expect(SERVICE_URLS.auth).toBe('http://proxy-auth:7001');
+    });
+
+    it('deve refletir CHAT_SERVICE_URL após resetConfigCache', () => {
+      process.env.CHAT_SERVICE_URL = 'http://proxy-chat:7002';
+      resetConfigCache();
+      expect(SERVICE_URLS.chat).toBe('http://proxy-chat:7002');
+    });
+
+    it('deve refletir RAG_SERVICE_URL após resetConfigCache', () => {
+      process.env.RAG_SERVICE_URL = 'http://proxy-rag:7003';
+      resetConfigCache();
+      expect(SERVICE_URLS.rag).toBe('http://proxy-rag:7003');
+    });
+
+    it('deve refletir TRAINING_SERVICE_URL após resetConfigCache', () => {
+      process.env.TRAINING_SERVICE_URL = 'http://proxy-training:7004';
+      resetConfigCache();
+      expect(SERVICE_URLS.training).toBe('http://proxy-training:7004');
+    });
+
+    it('deve refletir INTEGRATIONS_SERVICE_URL após resetConfigCache', () => {
+      process.env.INTEGRATIONS_SERVICE_URL = 'http://proxy-integrations:7005';
+      resetConfigCache();
+      expect(SERVICE_URLS.integrations).toBe('http://proxy-integrations:7005');
     });
   });
 });

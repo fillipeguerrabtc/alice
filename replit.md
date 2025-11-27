@@ -102,7 +102,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 
 | Folder | Description | Tests |
 |--------|-------------|-------|
-| `tests/unit/` | Unit tests | 193 tests |
+| `tests/unit/` | Unit tests | 208 tests |
 | `tests/setup.ts` | Global configuration | Pino logger |
 | `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
 
@@ -113,7 +113,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 | `setup-verification.test.ts` | Vitest setup validation | 8 |
 | `health-endpoints.test.ts` | Health endpoint contracts | 45 |
 | `schema-validation.test.ts` | Drizzle schema validation | 58 |
-| `config-validation.test.ts` | Configuration validation | 82 |
+| `config-validation.test.ts` | Configuration validation | 97 |
 
 ### Health Endpoint Contract Tests
 
@@ -159,7 +159,7 @@ Validates environment variables and configuration constants:
 | envSchema | 14 | NODE_ENV, LOG_LEVEL, SALAD_API_URL, variáveis opcionais |
 | CORS Origins | 18 | Produção, desenvolvimento, getCorsOrigins, getCorsConfig |
 | Rate Limiting | 9 | Limites por tipo de endpoint, janela de tempo |
-| Service URLs | 7 | Portas dos microsserviços (Regra 16), padrão Docker |
+| Service URLs | 22 | Portas padrão, resolveServiceUrls(), getServiceUrls(), resetConfigCache(), Proxy overrides |
 | Timeouts | 9 | HTTP, LLM, embeddings, RAG, uploads, fine-tuning |
 | Size Limits | 6 | Upload, mensagem, documento, chunks, resultados RAG |
 | RAG Config | 6 | Chunk size, overlap, embedding dimensions, similarity |
@@ -170,17 +170,26 @@ Validates environment variables and configuration constants:
 
 ### Config Validation Tests (Phase 1 Step 1.4)
 
-Implemented 80 tests for validating configuration:
+Implemented 97 tests for validating configuration:
 - `tests/unit/config-validation.test.ts` - Environment and config validation
-- envSchema: NODE_ENV, LOG_LEVEL, SALAD_API_URL, DATABASE_URL
+- envSchema: NODE_ENV, LOG_LEVEL, SALAD_API_URL, DATABASE_URL, validação negativa
 - CORS: Production origins (yesyoudeserve.duckdns.org), development origins
 - Rate limiting: Limits per endpoint type (public, api, admin, upload)
-- Service URLs: Ports 3001-3005 for microservices (Rule 16)
+- Service URLs: Portas 3001-3005, lazy loading, cache resetável, Proxy pattern
 - Timeouts: HTTP (30s), LLM (60s), embeddings, RAG search, fine-tuning
 - Size limits: Upload (50MB), message (32000 chars), document (10MB)
 - RAG config: Chunk size (1000), overlap (200), embeddings (384 dims)
 - Salad Cloud: llama4-maverick, text-embedding-3-small
-- Total: 191 tests passing (8 setup + 45 health + 58 schema + 80 config)
+- Total: 208 tests passing (8 setup + 45 health + 58 schema + 97 config)
+
+### Config Refactoring - Lazy Loading Pattern
+
+Refatoração enterprise-grade do config.ts:
+- `resolveServiceUrls(env)` - Função pura que resolve URLs a partir de objeto env
+- `getServiceUrls()` - Função com cache lazy para performance
+- `resetConfigCache()` - Limpa cache para testes de override
+- `SERVICE_URLS` - Proxy para compatibilidade retroativa com código existente
+- `ServiceUrlsConfig` - Interface TypeScript para tipagem forte
 
 ### Schema Validation Tests (Phase 1 Step 1.3)
 

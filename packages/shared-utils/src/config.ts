@@ -2,7 +2,10 @@
  * Configurações Centralizadas - Alice Enterprise Platform
  * 
  * Centraliza configurações de CORS, timeouts, limites e URLs.
+ * Implementa padrão lazy loading com cache resetável para testabilidade.
+ * 
  * Documentação em PT-BR (Regra 10 replit.md).
+ * TypeScript strict mode, `any` proibido (Regra 8).
  * 
  * @module @alice/shared-utils/config
  */
@@ -33,6 +36,128 @@ const envSchema = z.object({
 export function getEnvConfig() {
   return envSchema.parse(process.env);
 }
+
+/**
+ * Tipo de URLs de serviços internos
+ */
+export interface ServiceUrlsConfig {
+  auth: string;
+  chat: string;
+  rag: string;
+  training: string;
+  integrations: string;
+}
+
+/**
+ * URLs padrão dos serviços (Regra 16 - Portas de microsserviços)
+ */
+const DEFAULT_SERVICE_URLS: ServiceUrlsConfig = {
+  auth: 'http://auth-service:3001',
+  chat: 'http://chat-service:3002',
+  rag: 'http://rag-service:3003',
+  training: 'http://training-service:3004',
+  integrations: 'http://integrations-service:3005',
+};
+
+/**
+ * Cache interno para SERVICE_URLS
+ * Permite lazy loading e reset para testes
+ */
+let serviceUrlsCache: ServiceUrlsConfig | null = null;
+
+/**
+ * Resolve URLs de serviços a partir de variáveis de ambiente
+ * 
+ * @param env - Objeto com variáveis de ambiente (padrão: process.env)
+ * @returns Objeto com URLs dos serviços resolvidas
+ * 
+ * @example
+ * ```typescript
+ * // Uso padrão (lê de process.env)
+ * const urls = resolveServiceUrls();
+ * 
+ * // Teste com env customizado
+ * const urls = resolveServiceUrls({ AUTH_SERVICE_URL: 'http://custom:9001' });
+ * ```
+ */
+export function resolveServiceUrls(env: Record<string, string | undefined> = process.env): ServiceUrlsConfig {
+  return {
+    auth: env.AUTH_SERVICE_URL || DEFAULT_SERVICE_URLS.auth,
+    chat: env.CHAT_SERVICE_URL || DEFAULT_SERVICE_URLS.chat,
+    rag: env.RAG_SERVICE_URL || DEFAULT_SERVICE_URLS.rag,
+    training: env.TRAINING_SERVICE_URL || DEFAULT_SERVICE_URLS.training,
+    integrations: env.INTEGRATIONS_SERVICE_URL || DEFAULT_SERVICE_URLS.integrations,
+  };
+}
+
+/**
+ * Obtém URLs de serviços com cache lazy
+ * 
+ * Usa cache para evitar re-cálculos desnecessários em runtime.
+ * O cache pode ser limpo com resetConfigCache() para testes.
+ * 
+ * @returns Objeto com URLs dos serviços
+ */
+export function getServiceUrls(): ServiceUrlsConfig {
+  if (serviceUrlsCache === null) {
+    serviceUrlsCache = resolveServiceUrls();
+  }
+  return serviceUrlsCache;
+}
+
+/**
+ * Reseta o cache de configurações
+ * 
+ * IMPORTANTE: Esta função é destinada APENAS para testes.
+ * Permite que testes modifiquem process.env e obtenham novos valores.
+ * 
+ * @example
+ * ```typescript
+ * // Em testes
+ * beforeEach(() => {
+ *   resetConfigCache();
+ *   process.env.AUTH_SERVICE_URL = 'http://test:9001';
+ * });
+ * ```
+ */
+export function resetConfigCache(): void {
+  serviceUrlsCache = null;
+}
+
+/**
+ * Proxy para SERVICE_URLS - Compatibilidade retroativa
+ * 
+ * Permite acesso via `SERVICE_URLS.auth` etc., delegando para getServiceUrls().
+ * Isso garante que código existente continue funcionando enquanto
+ * permite testes de override via resetConfigCache().
+ */
+export const SERVICE_URLS: ServiceUrlsConfig = new Proxy({} as ServiceUrlsConfig, {
+  get(_target, prop: keyof ServiceUrlsConfig): string {
+    const urls = getServiceUrls();
+    return urls[prop];
+  },
+  
+  ownKeys(): (keyof ServiceUrlsConfig)[] {
+    return ['auth', 'chat', 'rag', 'training', 'integrations'];
+  },
+  
+  getOwnPropertyDescriptor(_target, prop: keyof ServiceUrlsConfig): PropertyDescriptor | undefined {
+    const urls = getServiceUrls();
+    if (prop in urls) {
+      return {
+        value: urls[prop],
+        writable: false,
+        enumerable: true,
+        configurable: true,
+      };
+    }
+    return undefined;
+  },
+  
+  has(_target, prop: keyof ServiceUrlsConfig): boolean {
+    return prop in DEFAULT_SERVICE_URLS;
+  },
+});
 
 /**
  * Domínios permitidos para CORS em produção
@@ -132,17 +257,6 @@ export const RATE_LIMIT_CONFIG = {
     /** Webhooks */
     webhook: 100,
   },
-};
-
-/**
- * URLs dos serviços internos
- */
-export const SERVICE_URLS = {
-  auth: process.env.AUTH_SERVICE_URL || 'http://auth-service:3001',
-  chat: process.env.CHAT_SERVICE_URL || 'http://chat-service:3002',
-  rag: process.env.RAG_SERVICE_URL || 'http://rag-service:3003',
-  training: process.env.TRAINING_SERVICE_URL || 'http://training-service:3004',
-  integrations: process.env.INTEGRATIONS_SERVICE_URL || 'http://integrations-service:3005',
 };
 
 /**
