@@ -32,6 +32,9 @@ import {
   formatarContextoParaLLM, 
   getRAGBreakerStats,
   RAGContextResponse,
+  uploadMediaToRAG,
+  getMediaStatus,
+  MediaUploadResult,
 } from './rag-client.js';
 import {
   initOrchestrator,
@@ -711,19 +714,28 @@ app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromReque
   }
 });
 
+// Mapa keyed por tenantId:userId para evitar colisão cross-tenant
 const wsClients = new Map<string, WebSocket>();
+const getClientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
 
 wss.on('connection', (ws, req) => {
   const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
   const userId = urlParams.get('userId');
+  const tenantId = urlParams.get('tenantId');
   
   if (!userId) {
     ws.close(4001, 'ID do usuário necessário');
     return;
   }
 
-  wsClients.set(userId, ws);
-  logger.info({ userId }, 'Cliente WebSocket conectado');
+  if (!tenantId) {
+    ws.close(4002, 'Tenant ID obrigatório para conexão WebSocket');
+    return;
+  }
+
+  const clientKey = getClientKey(tenantId, userId);
+  wsClients.set(clientKey, ws);
+  logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket conectado');
 
   ws.on('message', async (data) => {
     try {
@@ -749,8 +761,29 @@ wss.on('connection', (ws, req) => {
 
         const conversation = await db.query.conversations.findFirst({
           where: eq(schema.conversations.id, message.conversationId),
-          with: { agent: true },
+          with: { 
+            agent: {
+              with: {
+                namespace: true,
+              },
+            },
+          },
         });
+
+        // Verificar isolamento multi-tenant para mensagens de chat
+        const conversationTenantId = conversation?.agent?.namespace?.tenantId;
+        if (conversationTenantId && conversationTenantId !== tenantId) {
+          logger.warn({ 
+            tenantId, 
+            conversationTenantId, 
+            conversationId: message.conversationId,
+          }, 'Tentativa de envio cross-tenant bloqueada');
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Acesso negado: conversa não pertence ao tenant' 
+          }));
+          return;
+        }
 
         const imageDetection = detectImageGenerationRequest(message.content);
         
@@ -771,7 +804,7 @@ wss.on('connection', (ws, req) => {
             const imageResult = await generateImage(
               { prompt: imageDetection.prompt },
               {
-                tenantId: conversation?.tenantId,
+                tenantId, // Usar tenantId validado da conexão WebSocket
                 conversationId: message.conversationId,
                 messageId: userMsg.id,
                 createdBy: userId,
@@ -889,6 +922,240 @@ wss.on('connection', (ws, req) => {
           totalLatencyMs: totalLatency,
           usedRag: !!ragResult?.context,
         }, 'Mensagem WebSocket processada com integração RAG');
+      }
+      
+      // ========================================================================
+      // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
+      // Llama 4 Maverick suporta imagens/vídeo como INPUT (não gera imagens)
+      // ========================================================================
+      else if (message.type === 'media') {
+        const mediaMessage = message as {
+          type: 'media';
+          conversationId: string;
+          content?: string;
+          namespaceId?: string;
+          media: {
+            file: string; // base64
+            filename: string;
+            mimeType: string;
+          };
+        };
+
+        if (!mediaMessage.media?.file || !mediaMessage.media?.filename || !mediaMessage.media?.mimeType) {
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Dados de mídia incompletos. Envie file (base64), filename e mimeType.' 
+          }));
+          return;
+        }
+
+        const conversation = await db.query.conversations.findFirst({
+          where: eq(schema.conversations.id, mediaMessage.conversationId),
+          with: { 
+            agent: {
+              with: {
+                namespace: true,
+              },
+            },
+          },
+        });
+
+        if (!conversation) {
+          ws.send(JSON.stringify({ type: 'error', error: 'Conversa não encontrada' }));
+          return;
+        }
+
+        // Verificar se a conversa pertence ao tenant correto
+        const conversationTenantId = conversation.agent?.namespace?.tenantId;
+        if (conversationTenantId && conversationTenantId !== tenantId) {
+          logger.warn({ 
+            tenantId, 
+            conversationTenantId, 
+            conversationId: mediaMessage.conversationId,
+          }, 'Tentativa de upload cross-tenant bloqueada');
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Acesso negado: conversa não pertence ao tenant' 
+          }));
+          return;
+        }
+
+        // Determinar tipo de mídia
+        const mimeType = mediaMessage.media.mimeType.toLowerCase();
+        let mediaType: 'image' | 'audio' | 'video' = 'image';
+        if (mimeType.startsWith('audio/')) mediaType = 'audio';
+        else if (mimeType.startsWith('video/')) mediaType = 'video';
+
+        ws.send(JSON.stringify({ 
+          type: 'media_uploading',
+          filename: mediaMessage.media.filename,
+          mediaType,
+        }));
+
+        // Salvar mensagem do usuário com referência à mídia
+        const [userMsg] = await db.insert(schema.messages).values({
+          conversationId: mediaMessage.conversationId,
+          userId,
+          conteudo: mediaMessage.content || `[${mediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
+          tipo: mediaType,
+          isFromUser: true,
+          anexos: [{
+            filename: mediaMessage.media.filename,
+            mimeType: mediaMessage.media.mimeType,
+            status: 'uploading',
+          }],
+        }).returning();
+
+        ws.send(JSON.stringify({ type: 'message', data: userMsg }));
+
+        // Upload para RAG Service (processamento assíncrono)
+        // Usar tenantId da conexão WebSocket
+        const uploadResult = await uploadMediaToRAG(
+          mediaMessage.media.file,
+          mediaMessage.media.filename,
+          mediaMessage.media.mimeType,
+          tenantId,
+          userMsg.id,
+          mediaMessage.conversationId,
+        );
+
+        if (!uploadResult) {
+          ws.send(JSON.stringify({ 
+            type: 'media_error',
+            error: 'Falha ao processar mídia. Tente novamente.',
+          }));
+          return;
+        }
+
+        // Atualizar anexos da mensagem com ID do upload
+        await db.update(schema.messages)
+          .set({
+            anexos: [{
+              uploadId: uploadResult.uploadId,
+              filename: mediaMessage.media.filename,
+              mimeType: mediaMessage.media.mimeType,
+              fileUrl: uploadResult.fileUrl,
+              thumbnailUrl: uploadResult.thumbnailUrl,
+              mediaType: uploadResult.mediaType,
+              status: uploadResult.processingStatus,
+            }],
+          })
+          .where(eq(schema.messages.id, userMsg.id));
+
+        ws.send(JSON.stringify({ 
+          type: 'media_uploaded',
+          uploadId: uploadResult.uploadId,
+          fileUrl: uploadResult.fileUrl,
+          thumbnailUrl: uploadResult.thumbnailUrl,
+          processingStatus: uploadResult.processingStatus,
+        }));
+
+        // Preparar prompt para Llama 4 Maverick (multimodal INPUT)
+        const agent = conversation.agent as { instrucoes?: string } | null;
+        let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+        
+        // Para imagens: Llama 4 Maverick entende imagens via base64 data URI
+        // Para áudio: usar transcrição quando disponível
+        let userContent = mediaMessage.content || '';
+        
+        if (mediaType === 'image') {
+          // Adicionar instrução para análise de imagem
+          systemPrompt += '\n\nO usuário enviou uma imagem. Analise a imagem e responda de forma útil.';
+          userContent = userContent || 'Analise esta imagem e descreva o que você vê.';
+        } else if (mediaType === 'audio') {
+          // Aguardar transcrição se disponível
+          if (uploadResult.transcription) {
+            userContent = `[Transcrição do áudio]: ${uploadResult.transcription}\n\n${userContent}`;
+          } else {
+            systemPrompt += '\n\nO usuário enviou um áudio que está sendo processado.';
+            userContent = userContent || 'Recebi seu áudio. Estou processando a transcrição.';
+          }
+        } else if (mediaType === 'video') {
+          systemPrompt += '\n\nO usuário enviou um vídeo. Analise o conteúdo e responda de forma útil.';
+          userContent = userContent || 'Analise este vídeo e descreva o que você observa.';
+        }
+
+        // Buscar contexto RAG
+        const namespaceId = mediaMessage.namespaceId || conversation.namespaceId || undefined;
+        const ragResult = await buscarContextoRAG(userContent, namespaceId);
+        
+        if (ragResult?.context) {
+          systemPrompt += formatarContextoParaLLM(ragResult);
+          
+          ws.send(JSON.stringify({ 
+            type: 'sources', 
+            data: ragResult.sources,
+          }));
+        }
+
+        // Chamar LLM com streaming
+        const llmStartTime = Date.now();
+        
+        // Para imagens, construir mensagem multimodal (Llama 4 Maverick suporta)
+        interface MultimodalContent {
+          type: 'text' | 'image_url';
+          text?: string;
+          image_url?: { url: string };
+        }
+        
+        let llmMessages: LLMMessage[];
+        
+        if (mediaType === 'image') {
+          // Formato multimodal para Llama 4 Maverick
+          const imageDataUri = `data:${mediaMessage.media.mimeType};base64,${mediaMessage.media.file}`;
+          llmMessages = [
+            { role: 'system', content: systemPrompt },
+            { 
+              role: 'user', 
+              content: [
+                { type: 'text', text: userContent },
+                { type: 'image_url', image_url: { url: imageDataUri } },
+              ] as unknown as string, // Type assertion para compatibilidade
+            },
+          ];
+        } else {
+          llmMessages = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userContent },
+          ];
+        }
+
+        const stream = await callLlamaAPI(llmMessages, true) as AsyncGenerator<string>;
+
+        let fullResponse = '';
+        for await (const chunk of stream) {
+          fullResponse += chunk;
+          ws.send(JSON.stringify({ type: 'stream', data: chunk }));
+        }
+        const llmLatency = Date.now() - llmStartTime;
+
+        // Salvar resposta do assistente
+        const [assistantMsg] = await db.insert(schema.messages).values({
+          conversationId: mediaMessage.conversationId,
+          agentId: conversation.agentId,
+          conteudo: fullResponse,
+          tipo: 'text',
+          isFromUser: false,
+          latenciaMs: llmLatency,
+        }).returning();
+
+        ws.send(JSON.stringify({ 
+          type: 'complete', 
+          data: assistantMsg,
+          metrics: {
+            llmLatencyMs: llmLatency,
+            mediaType,
+            uploadId: uploadResult.uploadId,
+            usedRag: !!ragResult?.context,
+          },
+        }));
+
+        logger.info({
+          conversationId: mediaMessage.conversationId,
+          uploadId: uploadResult.uploadId,
+          mediaType,
+          llmLatencyMs: llmLatency,
+        }, 'Mensagem multimodal processada via WebSocket');
       }
     } catch (error) {
       logger.error({ error }, 'Erro na mensagem WebSocket');

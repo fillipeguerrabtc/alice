@@ -92,14 +92,14 @@ class ImageProcessorService {
         embeddingModel = result.model;
       } catch (error) {
         logger.error({ error }, 'Erro ao gerar CLIP embedding');
-        // Usar embedding zero se falhar
+        // Usar embedding zero se falhar - marcado como erro
         embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
-        embeddingModel = 'fallback-zero';
+        embeddingModel = 'error-fallback-zero';
       }
     } else {
-      // Sem configuração: gerar embedding mock para desenvolvimento
-      embedding = this.generateMockEmbedding(imageBuffer);
-      embeddingModel = 'mock-dev';
+      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+      logger.error('SALAD_API_KEY não configurado - embeddings indisponíveis em produção');
+      throw new Error('Configuração Salad Cloud obrigatória para processamento de imagens. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
     }
 
     // Gerar thumbnail
@@ -255,28 +255,6 @@ class ImageProcessorService {
       logger.error({ error }, 'Erro na API CLIP');
       throw error;
     }
-  }
-
-  /**
-   * Gera embedding mock para desenvolvimento (sem Salad Cloud)
-   */
-  private generateMockEmbedding(imageBuffer: Buffer): number[] {
-    // Gerar embedding determinístico baseado no hash da imagem
-    const hash = crypto.createHash('sha256').update(imageBuffer).digest();
-    const embedding: number[] = [];
-
-    // Usar bytes do hash para gerar números pseudo-aleatórios
-    for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
-      const byteIndex = i % hash.length;
-      const byte = hash[byteIndex];
-      // Normalizar para [-1, 1]
-      const value = ((byte / 255) * 2 - 1) * (0.5 + (i % 10) / 20);
-      embedding.push(value);
-    }
-
-    // Normalizar vetor para norma unitária (como CLIP faz)
-    const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
-    return embedding.map(v => v / norm);
   }
 
   /**

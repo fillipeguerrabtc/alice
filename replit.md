@@ -43,7 +43,7 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | 3 | WORKFLOW ESTRUTURADO | Diagnóstico → Plano → Aprovação → Implementação |
 | 4 | APROVAÇÃO OBRIGATÓRIA | Pedir aprovação antes de mudanças grandes |
 | 5 | NÃO MENTIR | Dizer "não sei" quando não souber |
-| 6 | SEM SOLUÇÕES TEMPORÁRIAS | Proibido workarounds e mocks |
+| 6 | SEM SOLUÇÕES TEMPORÁRIAS | **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
 | 7 | MUDANÇAS MÍNIMAS | Foco cirúrgico no problema |
 | 8 | QUALIDADE OBRIGATÓRIA | TypeScript strict, zero any, Pino |
 | 9 | VALIDAÇÃO CONTÍNUA | Testar após cada micro-passo |

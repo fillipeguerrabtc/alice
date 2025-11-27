@@ -198,3 +198,116 @@ export function formatarContextoParaLLM(ragResult: RAGContextResponse | null): s
 
   return `\n\n[CONTEXTO DE DOCUMENTOS]\n${ragResult.context}\n[/CONTEXTO DE DOCUMENTOS]\n\nUse as informações do contexto acima para responder quando relevante. Cite as fontes quando apropriado.`;
 }
+
+// ============================================================================
+// UPLOAD MULTIMODAL (FASE 9 - Integração Chat + RAG Multimodal)
+// ============================================================================
+
+/**
+ * Resultado do upload de mídia para RAG Service
+ */
+export interface MediaUploadResult {
+  uploadId: string;
+  mediaType: 'image' | 'audio' | 'video';
+  fileUrl: string;
+  thumbnailUrl?: string;
+  processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  transcription?: string;
+  extractedMetadata?: Record<string, unknown>;
+}
+
+/**
+ * Faz upload de mídia para RAG Service
+ * 
+ * @param file - Arquivo em base64
+ * @param filename - Nome original do arquivo
+ * @param mimeType - Tipo MIME do arquivo
+ * @param tenantId - ID do tenant
+ * @param messageId - ID da mensagem associada (opcional)
+ * @param conversationId - ID da conversa associada (opcional)
+ * @returns Resultado do upload ou null se falhar
+ */
+export async function uploadMediaToRAG(
+  file: string,
+  filename: string,
+  mimeType: string,
+  tenantId: string,
+  messageId?: string,
+  conversationId?: string,
+): Promise<MediaUploadResult | null> {
+  try {
+    const startTime = Date.now();
+    
+    // Usar endpoint JSON dedicado para uploads base64
+    const response = await fetch(`${RAG_SERVICE_URL}/api/media/upload/json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Tenant-Id': tenantId,
+      },
+      body: JSON.stringify({
+        file, // base64
+        filename,
+        mimeType,
+        messageId,
+        conversationId,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      logger.error({ 
+        status: response.status, 
+        error: errorText,
+        filename,
+        mimeType,
+      }, 'Erro no upload de mídia para RAG');
+      return null;
+    }
+
+    const result = await response.json() as MediaUploadResult;
+    const latency = Date.now() - startTime;
+    
+    logger.info({
+      uploadId: result.uploadId,
+      mediaType: result.mediaType,
+      processingStatus: result.processingStatus,
+      latencyMs: latency,
+    }, 'Upload de mídia enviado para RAG Service');
+
+    return result;
+  } catch (error) {
+    logger.error({ error, filename, mimeType }, 'Falha ao enviar mídia para RAG Service');
+    return null;
+  }
+}
+
+/**
+ * Busca status de processamento de mídia
+ * 
+ * @param uploadId - ID do upload
+ * @param tenantId - ID do tenant
+ * @returns Status atualizado ou null se falhar
+ */
+export async function getMediaStatus(
+  uploadId: string,
+  tenantId: string,
+): Promise<MediaUploadResult | null> {
+  try {
+    const response = await fetch(`${RAG_SERVICE_URL}/api/media/${uploadId}`, {
+      method: 'GET',
+      headers: {
+        'X-Tenant-Id': tenantId,
+      },
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return response.json() as Promise<MediaUploadResult>;
+  } catch (error) {
+    logger.error({ error, uploadId }, 'Falha ao buscar status de mídia');
+    return null;
+  }
+}

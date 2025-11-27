@@ -95,9 +95,9 @@ class AudioProcessorService {
         transcription = '[Transcrição não disponível - erro no processamento]';
       }
     } else {
-      // Mock para desenvolvimento
-      transcription = this.generateMockTranscription(audioBuffer);
-      transcriptionLanguage = 'pt';
+      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+      logger.error('SALAD_API_KEY não configurado - transcrição indisponível em produção');
+      throw new Error('Configuração Salad Cloud obrigatória para processamento de áudio. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
     }
 
     // Gerar embedding do texto transcrito
@@ -113,12 +113,14 @@ class AudioProcessorService {
         } catch (error) {
           logger.error({ error }, 'Erro ao gerar embedding do texto');
           embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-          embeddingModel = 'fallback-zero';
+          embeddingModel = 'error-fallback-zero';
         }
       } else {
-        // Mock embedding baseado no hash do texto
-        embedding = this.generateMockEmbedding(transcription);
-        embeddingModel = 'mock-dev';
+        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+        // Este bloco não deve ser alcançado pois já lançamos erro acima
+        logger.error('SALAD_API_KEY não configurado - embedding indisponível');
+        embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
+        embeddingModel = 'error-not-configured';
       }
     }
 
@@ -245,44 +247,6 @@ class AudioProcessorService {
       logger.error({ error }, 'Erro na API de Embeddings');
       throw error;
     }
-  }
-
-  /**
-   * Gera transcrição mock para desenvolvimento
-   */
-  private generateMockTranscription(audioBuffer: Buffer): string {
-    // Gerar texto determinístico baseado no tamanho do arquivo
-    const fileSizeKb = Math.round(audioBuffer.length / 1024);
-    const hash = crypto.createHash('md5').update(audioBuffer).digest('hex').substring(0, 8);
-    
-    // Estimar duração baseada no tamanho (128kbps típico para MP3)
-    const estimatedDuration = Math.round(audioBuffer.length / (128 * 1024 / 8));
-    
-    return `[Transcrição mock para desenvolvimento] ` +
-      `Arquivo de áudio com ${fileSizeKb}KB. ` +
-      `Duração estimada: ${estimatedDuration} segundos. ` +
-      `Hash: ${hash}. ` +
-      `Para transcrição real, configure SALAD_API_KEY.`;
-  }
-
-  /**
-   * Gera embedding mock baseado no hash do texto
-   */
-  private generateMockEmbedding(text: string): number[] {
-    const hash = crypto.createHash('sha256').update(text).digest();
-    const embedding: number[] = [];
-
-    for (let i = 0; i < TEXT_EMBEDDING_DIM; i++) {
-      const byteIndex = i % hash.length;
-      const byte = hash[byteIndex];
-      // Normalizar para [-1, 1]
-      const value = ((byte / 255) * 2 - 1) * (0.5 + (i % 10) / 20);
-      embedding.push(value);
-    }
-
-    // Normalizar vetor para norma unitária
-    const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
-    return embedding.map(v => v / norm);
   }
 
   /**

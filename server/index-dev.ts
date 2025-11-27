@@ -71,6 +71,11 @@ async function startDevServer() {
     appType: 'spa',
   });
 
+  // ============================================================================
+  // SERVIDOR DE DESENVOLVIMENTO - APENAS PARA PREVIEW NO REPLIT
+  // Produção: Hetzner Cloud via Docker Compose (Regra 12 replit.md)
+  // ============================================================================
+
   app.get('/api/chat/health', (_req: Request, res: Response) => {
     res.json({ 
       status: 'ok', 
@@ -81,7 +86,7 @@ async function startDevServer() {
     });
   });
 
-  // Rotas de autenticação para desenvolvimento (Regra 12: Produção na Hetzner)
+  // Rotas de autenticação para desenvolvimento
   app.get('/api/auth/me', (_req: Request, res: Response) => {
     res.json({
       id: 'dev-user-001',
@@ -110,7 +115,7 @@ async function startDevServer() {
     res.json({ success: true });
   });
 
-  // Rotas do Dashboard para desenvolvimento (Regra 12: Produção na Hetzner)
+  // Rotas do Dashboard para desenvolvimento
   app.get('/api/chat/stats', (_req: Request, res: Response) => {
     res.json({
       conversations: 0,

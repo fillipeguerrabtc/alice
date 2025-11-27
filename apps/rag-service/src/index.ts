@@ -1042,7 +1042,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             const storageService = getStorageService();
             const thumbStored = await storageService.saveFile(result.thumbnailBuffer, {
               tenantId,
-              mediaType: 'thumbnail',
+              mediaType: 'image', // Usar 'image' para thumbnails (tipo válido do enum)
               originalFilename: `thumb_${req.file!.originalname}`,
               mimeType: result.thumbnailMimeType || 'image/jpeg',
             });
@@ -1050,18 +1050,18 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             thumbnailUrl = thumbStored.fileUrl;
           }
 
-          // Atualizar registro com embedding CLIP, thumbnail e metadata
+          // Atualizar registro com embedding CLIP, thumbnail (em metadata) e metadata
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
               clipEmbedding: result.embedding, // CLIP embedding 768 dim para imagens
-              thumbnailPath,
-              thumbnailUrl,
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
                 hasThumbnail: !!thumbnailPath,
+                thumbnailPath, // Armazenar em metadata (não há coluna no schema)
+                thumbnailUrl,  // Armazenar em metadata (não há coluna no schema)
                 processingTimeMs: result.processingTimeMs,
               },
             })
@@ -1177,6 +1177,253 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       tenantId,
       filename: req.file?.originalname,
     }, 'Falha no upload de mídia');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// UPLOAD VIA JSON (base64) - Para integração WebSocket
+// ============================================================================
+
+const jsonUploadSchema = z.object({
+  file: z.string().min(1), // base64
+  filename: z.string().min(1),
+  mimeType: z.string().min(1),
+  conversationId: z.string().uuid().optional(),
+  messageId: z.string().uuid().optional(),
+  description: z.string().optional(),
+});
+
+app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const userId = req.headers['x-user-id'] as string | undefined;
+  const startTime = Date.now();
+
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const body = jsonUploadSchema.parse(req.body);
+    
+    // Decodificar base64 para Buffer
+    const fileBuffer = Buffer.from(body.file, 'base64');
+    const fileSize = fileBuffer.length;
+    
+    // Limitar tamanho (100MB)
+    const maxSize = 100 * 1024 * 1024;
+    if (fileSize > maxSize) {
+      return res.status(400).json({ 
+        error: 'Arquivo muito grande',
+        maxSizeMb: 100,
+        receivedSizeMb: Math.round(fileSize / 1024 / 1024),
+      });
+    }
+
+    const mediaType = detectMediaType(body.mimeType);
+    if (!mediaType) {
+      return res.status(400).json({ 
+        error: 'Tipo de mídia não suportado',
+        mimeType: body.mimeType,
+        supportedTypes: ALL_SUPPORTED_MIMES,
+      });
+    }
+
+    // Gerar hash para deduplicação
+    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    
+    // Verificar duplicatas
+    const existingMedia = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.tenantId, tenantId),
+        sql`extracted_metadata->>'fileHash' = ${fileHash}`
+      ),
+    });
+
+    if (existingMedia) {
+      return res.status(200).json({ 
+        uploadId: existingMedia.id,
+        mediaType: existingMedia.mediaType,
+        fileUrl: existingMedia.fileUrl,
+        processingStatus: existingMedia.processingStatus,
+        duplicate: true,
+        message: 'Arquivo já foi enviado anteriormente',
+      });
+    }
+
+    // Salvar no storage
+    const storageService = getStorageService();
+    const storedFile = await storageService.saveFile(fileBuffer, {
+      tenantId,
+      mediaType,
+      originalFilename: body.filename,
+      mimeType: body.mimeType,
+    });
+
+    // Criar registro
+    const [mediaUploadRecord] = await db.insert(schema.mediaUploads).values({
+      tenantId,
+      userId: userId || null,
+      conversationId: body.conversationId || null,
+      messageId: body.messageId || null,
+      mediaType,
+      originalFilename: body.filename,
+      mimeType: body.mimeType,
+      fileSize,
+      filePath: storedFile.filePath,
+      fileUrl: storedFile.fileUrl,
+      processingStatus: 'pending',
+      extractedMetadata: {
+        fileHash,
+        uploadedAt: new Date().toISOString(),
+        description: body.description,
+        uploadMethod: 'json',
+      },
+    }).returning();
+
+    logger.info({ 
+      uploadId: mediaUploadRecord.id,
+      tenantId,
+      mediaType,
+      filename: body.filename,
+      fileSize,
+      uploadMethod: 'json',
+      processingTimeMs: Date.now() - startTime,
+    }, 'Upload JSON de mídia salvo');
+
+    // Processar assíncrono (mesmo código do endpoint FormData)
+    const processMediaAsync = async () => {
+      try {
+        if (mediaType === 'image') {
+          const imageProcessor = getImageProcessor();
+          const result = await imageProcessor.processImage(fileBuffer, body.mimeType);
+
+          let thumbnailPath: string | null = null;
+          let thumbnailUrl: string | null = null;
+
+          if (result.thumbnailBuffer) {
+            const thumbStored = await storageService.saveFile(result.thumbnailBuffer, {
+              tenantId,
+              mediaType: 'image',
+              originalFilename: `thumb_${body.filename}`,
+              mimeType: result.thumbnailMimeType || 'image/jpeg',
+            });
+            thumbnailPath = thumbStored.filePath;
+            thumbnailUrl = thumbStored.fileUrl;
+          }
+
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              clipEmbedding: result.embedding,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                hasThumbnail: !!thumbnailPath,
+                thumbnailPath,
+                thumbnailUrl,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+        } else if (mediaType === 'audio') {
+          const audioProcessor = getAudioProcessor();
+          const result = await audioProcessor.processAudio(fileBuffer, body.mimeType);
+
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              transcription: result.transcription,
+              transcriptionLanguage: result.transcriptionLanguage,
+              transcriptionConfidence: result.transcriptionConfidence,
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+        } else {
+          await db.update(schema.mediaUploads)
+            .set({ processingStatus: 'pending' })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+        }
+      } catch (error) {
+        logger.error({ error, uploadId: mediaUploadRecord.id }, 'Erro ao processar mídia JSON');
+        await db.update(schema.mediaUploads)
+          .set({ 
+            processingStatus: 'failed',
+            extractedMetadata: {
+              ...mediaUploadRecord.extractedMetadata as object,
+              processingError: String(error),
+            },
+          })
+          .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+      }
+    };
+
+    processMediaAsync().catch(err => {
+      logger.error({ err, uploadId: mediaUploadRecord.id }, 'Falha não tratada no processamento JSON');
+    });
+
+    res.status(201).json({
+      uploadId: mediaUploadRecord.id,
+      mediaType,
+      fileUrl: storedFile.fileUrl,
+      processingStatus: 'pending',
+      duplicate: false,
+    });
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ 
+        error: 'Dados inválidos',
+        details: error.errors,
+      });
+    }
+    logger.error({ error, tenantId }, 'Falha no upload JSON de mídia');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// GET status de um upload específico
+app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const { id } = req.params;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const media = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.id, id),
+        eq(schema.mediaUploads.tenantId, tenantId)
+      ),
+    });
+
+    if (!media) {
+      return res.status(404).json({ error: 'Upload não encontrado' });
+    }
+
+    const metadata = media.extractedMetadata as Record<string, unknown> | null;
+    
+    res.json({
+      uploadId: media.id,
+      mediaType: media.mediaType,
+      fileUrl: media.fileUrl,
+      thumbnailUrl: metadata?.thumbnailUrl || null,
+      processingStatus: media.processingStatus,
+      transcription: media.transcription,
+      extractedMetadata: media.extractedMetadata,
+      criadoEm: media.criadoEm,
+    });
+  } catch (error) {
+    logger.error({ error, id, tenantId }, 'Erro ao buscar status de upload');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
@@ -1406,7 +1653,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
   try {
     const { query, imageId, limit = 10 } = req.body as {
       query?: string;
-      imageId?: number;
+      imageId?: string; // UUID string, não number
       limit?: number;
     };
 
@@ -1461,7 +1708,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
         mimeType: schema.mediaUploads.mimeType,
         clipEmbedding: schema.mediaUploads.clipEmbedding,
         extractedMetadata: schema.mediaUploads.extractedMetadata,
-        createdAt: schema.mediaUploads.createdAt,
+        criadoEm: schema.mediaUploads.criadoEm,
       })
       .from(schema.mediaUploads)
       .where(and(
@@ -1484,7 +1731,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
           mimeType: img.mimeType,
           metadata: img.extractedMetadata,
           similarity: Math.round(similarity * 10000) / 10000, // 4 casas decimais
-          createdAt: img.createdAt,
+          criadoEm: img.criadoEm,
         };
       })
       .sort((a, b) => b.similarity - a.similarity)
@@ -1510,23 +1757,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
   }
 });
 
-// Função auxiliar: similaridade de cosseno entre dois vetores
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  
-  const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  return denominator === 0 ? 0 : dotProduct / denominator;
-}
+// Nota: cosineSimilarity já definida anteriormente no arquivo (linha ~401)
 
 // Health check específico para multimodal
 app.get('/api/media/health', (_req: Request, res: Response) => {
