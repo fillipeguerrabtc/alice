@@ -136,7 +136,36 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 | Image Generation | 6.5+ | FLUX.1 Schnell self-hosted Salad Cloud |
 | Auto-aprendizado Agressivo | 8 | Fine-tuning a cada 4 dias |
 | Multimodal | 9 | Imagens, áudio, vídeo |
-| Crawling | 10 | Web scraping automático |
+| Observabilidade | 10 | Prometheus + Grafana + Langfuse |
+| Crawling | 11 | Web scraping automático |
+
+### Arquitetura de Observabilidade (Planejada)
+
+**Princípio Crítico:** Microserviço de observabilidade SEPARADO e INDEPENDENTE para garantir monitoramento mesmo se o sistema principal travar.
+
+| Componente | Porta | Tecnologia | Licença | Função |
+|------------|-------|------------|---------|--------|
+| Prometheus | 9090 | Prometheus 3.0 | Apache 2.0 | Coleta de métricas |
+| Grafana | 3000 | Grafana OSS | AGPL 3.0 | Dashboards e alertas |
+| Jaeger | 16686 | Jaeger | Apache 2.0 | Distributed tracing |
+| OTel Collector | 4317/4318 | OpenTelemetry | Apache 2.0 | Instrumentação |
+| Langfuse | 3006 | Langfuse | MIT | Métricas LLM |
+
+**Métricas específicas para LLM:**
+
+| Métrica | Descrição | Importância |
+|---------|-----------|-------------|
+| Token Usage | Tokens entrada/saída por request | Custo e otimização |
+| TTFT | Time to First Token | Experiência do usuário |
+| Request Latency | Latência total da resposta | Performance |
+| Error Rate | Taxa de falhas e timeouts | Confiabilidade |
+| Cost per Request | Custo por chamada de modelo | Budget |
+| RAG Retrieval Time | Tempo de busca vetorial | Qualidade RAG |
+
+**Stack recomendada (todas open source):**
+- **OpenLLMetry** (Apache 2.0): SDK OpenTelemetry para LLMs
+- **Langfuse** (MIT): Plataforma completa de observabilidade LLM
+- **Prometheus + Grafana**: Stack tradicional de métricas
 
 ---
 
