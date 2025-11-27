@@ -11,7 +11,8 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Jaeger | 16686 | Jaeger 1.62 | Apache 2.0 | Distributed tracing |
 | OTel Collector | 4317/4318 | OpenTelemetry | Apache 2.0 | Instrumentação |
 | Langfuse | 3006 | Langfuse 2.x | MIT | Métricas LLM |
-| Health Checker | 3007 | Node.js/Express | - | Status do stack |
+| Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
+| Health Checker | 3010 | Node.js/Express | - | Status do stack |
 
 ## Métricas LLM Específicas
 
@@ -26,7 +27,24 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 
 ## Deploy
 
+### Produção (100% Automático via GitHub Actions)
+
+**O deploy é totalmente automatizado.** Ao fazer push para a branch `main`:
+
+1. GitHub Actions faz build das imagens Docker
+2. Push para GitHub Container Registry (GHCR)
+3. SSH para Hetzner VM
+4. Docker Compose inicia todos os serviços
+5. Health checks validam o stack
+
+**Nenhum comando manual é necessário em produção.**
+
+### Desenvolvimento Local (apenas para testes)
+
 ```bash
+# Copiar variáveis de ambiente
+cp .env.example .env
+
 # Iniciar stack completo
 cd apps/observability-service
 docker-compose up -d
@@ -49,7 +67,7 @@ docker-compose down
 | Prometheus | https://prometheus.yesyoudeserve.duckdns.org |
 | Jaeger | https://tracing.yesyoudeserve.duckdns.org |
 | Langfuse | https://llm-metrics.yesyoudeserve.duckdns.org |
-| Health API | https://api.yesyoudeserve.duckdns.org/observability |
+| Health API | https://yesyoudeserve.duckdns.org/observability/health |
 
 ## Endpoints do Health Checker
 
@@ -63,25 +81,32 @@ docker-compose down
 
 ## Variáveis de Ambiente
 
-```env
-# Grafana
-GRAFANA_ADMIN_USER=admin
-GRAFANA_ADMIN_PASSWORD=alice2025
+Consulte `.env.example` para a lista completa. Em produção, configure via GitHub Secrets:
 
-# Langfuse
-LANGFUSE_DB_PASSWORD=langfuse2025
-LANGFUSE_AUTH_SECRET=alice-langfuse-secret-2025
-LANGFUSE_SALT=alice-langfuse-salt-2025
-```
+| Secret | Descrição |
+|--------|-----------|
+| `GRAFANA_ADMIN_PASSWORD` | Senha do admin Grafana |
+| `LANGFUSE_SECRET_KEY` | Chave secreta Langfuse (prefixo `sk-lf-`) |
+| `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação Langfuse |
 
 ## Alertas Configurados
 
-- **LLMHighLatency**: P95 > 30s por 5 minutos
-- **LLMCriticalLatency**: P99 > 60s por 2 minutos
-- **LLMHighErrorRate**: Taxa de erros > 5%
-- **CircuitBreakerOpen**: Circuit breaker aberto
-- **HighTokenUsage**: > 1M tokens/hora
-- **RAGHighRetrievalTime**: P95 > 3s
+| Alerta | Condição | Severidade |
+|--------|----------|------------|
+| LLMHighLatency | P95 > 30s por 5 min | warning |
+| LLMCriticalLatency | P99 > 60s por 2 min | critical |
+| LLMHighErrorRate | Taxa de erros > 5% | warning |
+| CircuitBreakerOpen | Circuit breaker aberto | critical |
+| HighTokenUsage | > 1M tokens/hora | warning |
+| RAGHighRetrievalTime | P95 > 3s | warning |
+
+## Persistência de Dados
+
+| Componente | Volume | Caminho no Container |
+|------------|--------|----------------------|
+| Prometheus | prometheus_data | /prometheus |
+| Grafana | grafana_data | /var/lib/grafana |
+| Langfuse PostgreSQL | langfuse_postgres_data | /var/lib/postgresql/data |
 
 ## Estrutura de Arquivos
 
@@ -108,9 +133,41 @@ apps/observability-service/
 ├── Dockerfile
 ├── package.json
 ├── tsconfig.json
+├── .env.example
 └── README.md
+```
+
+## Arquitetura
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     OBSERVABILITY STACK                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐              │
+│  │ Prometheus  │  │   Grafana   │  │   Jaeger    │              │
+│  │   :9090     │──│   :3000     │  │  :16686     │              │
+│  └──────┬──────┘  └─────────────┘  └──────┬──────┘              │
+│         │                                  │                     │
+│  ┌──────┴──────────────────────────────────┴──────┐             │
+│  │              OTel Collector                     │             │
+│  │         :4317 (gRPC) / :4318 (HTTP)            │             │
+│  └────────────────────────────────────────────────┘             │
+│                           │                                      │
+│  ┌─────────────┐  ┌───────┴───────┐  ┌─────────────────────┐   │
+│  │  Langfuse   │  │Health Checker │  │ Langfuse PostgreSQL │   │
+│  │   :3006     │  │    :3010      │  │       :5433         │   │
+│  └──────┬──────┘  └───────────────┘  └──────────┬──────────┘   │
+│         └────────────────────────────────────────┘              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                   Recebe métricas de
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    MICROSERVIÇOS ALICE                           │
+│  Auth (:3001) │ Chat (:3002) │ RAG (:3003) │ Training (:3004)   │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
+*Versão 2.0.0 - Novembro 2025*
