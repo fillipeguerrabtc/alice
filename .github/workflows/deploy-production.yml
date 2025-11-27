@@ -451,7 +451,7 @@ jobs:
               -v "$(pwd)/../../drizzle.config.ts:/app/drizzle.config.ts" \
               -w /app \
               node:20-alpine \
-              sh -c "npm install drizzle-kit drizzle-orm @neondatabase/serverless pg && npx drizzle-kit push"
+              sh -c "npm install drizzle-kit drizzle-orm drizzle-zod @neondatabase/serverless pg zod && npx drizzle-kit push"
             
             echo "✅ Migração concluída!"
             echo ""

@@ -1,0 +1,67 @@
+The failing job log shows two main error sources:
+
+1. **Missing `drizzle-zod` dependency**
+   - Error: `Error: Cannot find module 'drizzle-zod'`
+   - File referenced: `/app/shared/schema.ts`
+   
+2. **Unhealthy or failed containers**
+   - Notably: `erpnext-backend` keeps crashing/unhealthy.
+   - This leads to dependent containers (like `alice-chat`) failing with: `dependency failed to start: container erpnext-backend is unhealthy`.
+
+## Solutions
+
+### 1. Fix the `drizzle-zod` Missing Module Error
+
+The log indicates that your code is trying to import `drizzle-zod` in `shared/schema.ts`, but the module isn't installed.
+
+**Solution:** Add `drizzle-zod` to your project dependencies.
+
+```sh
+npm install drizzle-zod
+# or if you use yarn:
+yarn add drizzle-zod
+```
+
+Make sure `shared/schema.ts` is using the correct import:
+```ts
+import { ... } from 'drizzle-zod';
+```
+
+Double-check `.github/workflows/deploy-production.yml` to confirm dependencies are installed during build/deploy.
+
+### 2. Resolve Unhealthy Container (`erpnext-backend`)
+
+The logs repeatedly show `Container erpnext-backend  Error`. This causes cascading failures. To debug erpnext-backend:
+
+**Action steps:**
+- Check the logs for `erpnext-backend`: likely via `docker logs erpnext-backend` in your deploy scripts.
+- Common issues: database migrations, missing environment variables, or a network connection problem.
+
+#### Example Docker Compose (ensure healthchecks and environment variables are correct)
+```yaml
+services:
+  erpnext-backend:
+    image: your-erpnext-image
+    environment:
+      - DB_HOST=...
+      - DB_USER=...
+      # all required
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+```
+**Solution:** 
+- Investigate the error in `erpnext-backend` logs and fix the root problem (e.g., misconfigured env vars or database).
+- After the backend is healthy, dependent containers (chat, frontend) should start correctly.
+
+---
+
+## Summary of Required Fixes
+
+- Install `drizzle-zod` to fix the missing module error:  
+  `npm install drizzle-zod`
+- Investigate and fix container `erpnext-backend` so it passes healthchecks.
+
+If you need step-by-step help looking at the deploy workflow or specific file contents (like `shared/schema.ts` or your Docker Compose), let me know!
