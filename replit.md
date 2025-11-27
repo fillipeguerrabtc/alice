@@ -88,3 +88,20 @@ The Alice platform is built as a microservices architecture, with core services 
 *   **PostgreSQL:** Primary database with `pgvector` extension for vector search.
 *   **Hetzner Cloud:** Production hosting environment.
 *   **GitHub Actions:** CI/CD pipeline.
+
+### Índices pgvector HNSW (Enterprise-Grade)
+
+Busca vetorial nativa com índices HNSW para performance O(log N):
+
+| Índice | Tabela | Coluna | Dimensão | Operador |
+|---|---|---|---|---|
+| `idx_media_uploads_clip_embedding_hnsw` | `media_uploads` | `clip_embedding` | 768 (CLIP ViT-L/14) | `vector_cosine_ops` |
+| `idx_document_chunks_embedding_hnsw` | `document_chunks` | `embedding` | 1536 (text-embedding-3-small) | `vector_cosine_ops` |
+
+Configuração HNSW: `m=16`, `ef_construction=64`
+
+Endpoints migrados para busca nativa pgvector:
+- `/api/media/search` - Busca semântica de imagens
+- `/api/rag/search` - Busca de documentos
+- `/api/rag/context` - Contexto RAG
+- `/api/rag/agentic` - Busca agentic híbrida

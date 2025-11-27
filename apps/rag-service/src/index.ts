@@ -581,32 +581,61 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
     const body = searchSchema.parse(req.body);
 
     const queryEmbedding = await generateEmbedding(body.query);
+    
+    // ============================================================================
+    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
+    // ============================================================================
+    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
+    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
+    // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
+    // ============================================================================
+    
+    const embeddingVector = `[${queryEmbedding.join(',')}]`;
+    
+    const results = await sqlClient`
+      SELECT 
+        dc.id,
+        dc.document_id as "documentId",
+        dc.conteudo,
+        dc.posicao,
+        dc.metadata,
+        dc.criado_em as "criadoEm",
+        d.id as "doc_id",
+        d.titulo as "doc_titulo",
+        d.nome_arquivo as "doc_nomeArquivo",
+        d.namespace_id as "doc_namespaceId",
+        1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+      FROM document_chunks dc
+      LEFT JOIN documents d ON dc.document_id = d.id
+      WHERE 
+        dc.embedding IS NOT NULL
+        ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
+      ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
+      LIMIT ${body.limit * 2}
+    `;
+    
+    // Filtrar por threshold e formatar resultados
+    const filteredResults = results
+      .filter(r => Number(r.similarity) >= body.threshold)
+      .slice(0, body.limit)
+      .map(r => ({
+        id: r.id,
+        documentId: r.documentId,
+        conteudo: r.conteudo,
+        posicao: r.posicao,
+        metadata: r.metadata,
+        criadoEm: r.criadoEm,
+        similarity: Math.round(Number(r.similarity) * 10000) / 10000,
+        document: r.doc_id ? {
+          id: r.doc_id,
+          titulo: r.doc_titulo,
+          nomeArquivo: r.doc_nomeArquivo,
+          namespaceId: r.doc_namespaceId,
+        } : null,
+      }));
 
-    const allChunks = await db.query.documentChunks.findMany({
-      with: {
-        document: true,
-      },
-    });
-
-    const results = allChunks
-      .filter(chunk => {
-        if (body.namespaceId && chunk.document?.namespaceId !== body.namespaceId) {
-          return false;
-        }
-        return true;
-      })
-      .map(chunk => ({
-        ...chunk,
-        similarity: chunk.embedding 
-          ? cosineSimilarity(queryEmbedding, chunk.embedding)
-          : 0,
-      }))
-      .filter(chunk => chunk.similarity >= body.threshold)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, body.limit);
-
-    logger.info({ query: body.query, results: results.length }, 'Busca concluída');
-    res.json({ results });
+    logger.info({ query: body.query, results: filteredResults.length }, 'Busca concluída');
+    res.json({ results: filteredResults });
   } catch (error) {
     logger.error({ error }, 'Falha na busca');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -618,40 +647,48 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
     const body = searchSchema.parse(req.body);
 
     const queryEmbedding = await generateEmbedding(body.query);
-
-    const allChunks = await db.query.documentChunks.findMany({
-      with: {
-        document: true,
-      },
-    });
-
-    const results = allChunks
-      .filter(chunk => {
-        if (body.namespaceId && chunk.document?.namespaceId !== body.namespaceId) {
-          return false;
-        }
-        return true;
-      })
-      .map(chunk => ({
-        ...chunk,
-        similarity: chunk.embedding 
-          ? cosineSimilarity(queryEmbedding, chunk.embedding)
-          : 0,
-      }))
-      .filter(chunk => chunk.similarity >= body.threshold)
-      .sort((a, b) => b.similarity - a.similarity)
+    
+    // ============================================================================
+    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
+    // ============================================================================
+    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
+    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
+    // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
+    // ============================================================================
+    
+    const embeddingVector = `[${queryEmbedding.join(',')}]`;
+    
+    const dbResults = await sqlClient`
+      SELECT 
+        dc.id,
+        dc.document_id as "documentId",
+        dc.conteudo,
+        d.titulo as "doc_titulo",
+        1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+      FROM document_chunks dc
+      LEFT JOIN documents d ON dc.document_id = d.id
+      WHERE 
+        dc.embedding IS NOT NULL
+        ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
+      ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
+      LIMIT ${body.limit * 2}
+    `;
+    
+    // Filtrar por threshold
+    const results = dbResults
+      .filter(r => Number(r.similarity) >= body.threshold)
       .slice(0, body.limit);
 
     const context = results
-      .map(r => `[Fonte: ${r.document?.titulo || 'Desconhecido'}]\n${r.conteudo}`)
+      .map(r => `[Fonte: ${r.doc_titulo || 'Desconhecido'}]\n${r.conteudo}`)
       .join('\n\n---\n\n');
 
     res.json({ 
       context,
       sources: results.map(r => ({
         documentId: r.documentId,
-        titulo: r.document?.titulo,
-        similarity: r.similarity,
+        titulo: r.doc_titulo,
+        similarity: Math.round(Number(r.similarity) * 10000) / 10000,
       })),
     });
   } catch (error) {
@@ -792,39 +829,45 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
     };
 
     if (classification.type === 'internal' || classification.type === 'hybrid') {
-      const tenantNamespaces = await db.query.namespaces.findMany({
-        where: eq(schema.namespaces.tenantId, tenantId),
-      });
-      const tenantNamespaceIds = new Set(tenantNamespaces.map(ns => ns.id));
-
+      // ============================================================================
+      // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
+      // ============================================================================
+      // SEGURANÇA: Prepared statement + isolamento por tenant_id
+      // PERFORMANCE: Índice HNSW para O(log N)
+      // MULTI-TENANCY: Filtra por namespaces do tenant
+      // ============================================================================
+      
       const queryEmbedding = await generateEmbedding(body.query);
-
-      const allChunks = await db.query.documentChunks.findMany({
-        with: {
-          document: true,
-        },
-      });
-
-      const internalResults = allChunks
-        .filter(chunk => {
-          if (!chunk.document?.namespaceId) return false;
-          if (!tenantNamespaceIds.has(chunk.document.namespaceId)) return false;
-          if (body.namespaceId && chunk.document.namespaceId !== body.namespaceId) {
-            return false;
-          }
-          return true;
-        })
-        .map(chunk => ({
-          documentId: chunk.documentId,
-          titulo: chunk.document?.titulo,
-          conteudo: chunk.conteudo,
-          similarity: chunk.embedding 
-            ? cosineSimilarity(queryEmbedding, chunk.embedding)
-            : 0,
-        }))
-        .filter(chunk => chunk.similarity >= body.threshold)
-        .sort((a, b) => b.similarity - a.similarity)
-        .slice(0, body.limit);
+      const embeddingVector = `[${queryEmbedding.join(',')}]`;
+      
+      // Query nativa pgvector com filtro por tenant via namespaces
+      const dbResults = await sqlClient`
+        SELECT 
+          dc.document_id as "documentId",
+          d.titulo,
+          dc.conteudo,
+          1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+        FROM document_chunks dc
+        INNER JOIN documents d ON dc.document_id = d.id
+        INNER JOIN namespaces n ON d.namespace_id = n.id
+        WHERE 
+          dc.embedding IS NOT NULL
+          AND n.tenant_id = ${tenantId}
+          ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
+        ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
+        LIMIT ${body.limit * 2}
+      `;
+      
+      // Filtrar por threshold e formatar
+      const internalResults = dbResults
+        .filter(r => Number(r.similarity) >= body.threshold)
+        .slice(0, body.limit)
+        .map(r => ({
+          documentId: r.documentId as string,
+          titulo: r.titulo as string | undefined,
+          conteudo: r.conteudo as string,
+          similarity: Math.round(Number(r.similarity) * 10000) / 10000,
+        }));
 
       results.internal = internalResults;
     }
@@ -1735,49 +1778,51 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
 
     const safeLimit = Math.min(Math.max(1, limit), 50);
 
-    // Busca híbrida segura: query parametrizada + similaridade em memória (Regra 6)
-    // SEGURANÇA: Usa Drizzle Query Builder para evitar SQL injection
-    // TRADE-OFF: Similaridade calculada em memória (O(N)) vs pgvector nativo
-    // ESCALA: Adequado para < 10k imagens/tenant. Para escala maior, migrar para:
-    //   - Índice HNSW/IVFFlat no pgvector com prepared statements
-    //   - Usar sql.placeholder() ou extensão pg-native para parametrização de vetores
-    // O isolamento por tenant_id limita N na prática
-    const candidateImages = await db
-      .select({
-        id: schema.mediaUploads.id,
-        originalFilename: schema.mediaUploads.originalFilename,
-        fileUrl: schema.mediaUploads.fileUrl,
-        mimeType: schema.mediaUploads.mimeType,
-        clipEmbedding: schema.mediaUploads.clipEmbedding,
-        extractedMetadata: schema.mediaUploads.extractedMetadata,
-        criadoEm: schema.mediaUploads.criadoEm,
-      })
-      .from(schema.mediaUploads)
-      .where(and(
-        eq(schema.mediaUploads.tenantId, tenantId),
-        eq(schema.mediaUploads.mediaType, 'image'),
-        eq(schema.mediaUploads.processingStatus, 'completed'),
-        isNotNull(schema.mediaUploads.clipEmbedding)
-      ));
+    // ============================================================================
+    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
+    // ============================================================================
+    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
+    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
+    // ISOLAMENTO: tenant_id garante multi-tenancy seguro
+    // ÍNDICE: idx_media_uploads_clip_embedding_hnsw (vector_cosine_ops)
+    // ============================================================================
+    
+    // Serializar embedding como string para prepared statement seguro
+    const embeddingVector = `[${sanitizedEmbedding.join(',')}]`;
+    
+    // Query nativa pgvector com ORDER BY <=> (distância de cosseno)
+    // O operador <=> retorna distância (0 = idêntico, 2 = oposto)
+    // Similaridade = 1 - (distância / 2) para normalizar para [0, 1]
+    const nativeResults = await sqlClient`
+      SELECT 
+        id,
+        original_filename as "originalFilename",
+        file_url as "fileUrl",
+        mime_type as "mimeType",
+        extracted_metadata as "extractedMetadata",
+        criado_em as "criadoEm",
+        1 - (clip_embedding::vector(768) <=> ${embeddingVector}::vector(768)) / 2 as similarity
+      FROM media_uploads
+      WHERE 
+        tenant_id = ${tenantId}
+        AND media_type = 'image'
+        AND processing_status = 'completed'
+        AND clip_embedding IS NOT NULL
+        ${imageId ? sqlClient`AND id != ${imageId}` : sqlClient``}
+      ORDER BY clip_embedding::vector(768) <=> ${embeddingVector}::vector(768)
+      LIMIT ${safeLimit}
+    `;
 
-    // Calcular similaridade de cosseno de forma segura em memória
-    const results = candidateImages
-      .filter(img => img.id !== imageId && img.clipEmbedding && Array.isArray(img.clipEmbedding) && img.clipEmbedding.length === CLIP_EMBEDDING_DIM)
-      .map(img => {
-        const embedding = img.clipEmbedding as number[];
-        const similarity = cosineSimilarity(sanitizedEmbedding, embedding);
-        return {
-          id: img.id,
-          originalFilename: img.originalFilename,
-          fileUrl: img.fileUrl,
-          mimeType: img.mimeType,
-          metadata: img.extractedMetadata,
-          similarity: Math.round(similarity * 10000) / 10000,
-          criadoEm: img.criadoEm,
-        };
-      })
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, safeLimit);
+    // Formatar resultados
+    const results = nativeResults.map(row => ({
+      id: row.id,
+      originalFilename: row.originalFilename,
+      fileUrl: row.fileUrl,
+      mimeType: row.mimeType,
+      metadata: row.extractedMetadata,
+      similarity: Math.round(Number(row.similarity) * 10000) / 10000,
+      criadoEm: row.criadoEm,
+    }));
 
     logger.info({
       tenantId,
