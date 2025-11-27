@@ -84,7 +84,6 @@ async function startDevServer() {
   app.use('/api/integrations', createProxyMiddleware({
     target: 'http://localhost:3005/api/integrations',
     changeOrigin: true,
-    logLevel: 'silent',
   }));
 
   app.use(vite.middlewares);

@@ -17,17 +17,15 @@
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                       GITHUB ACTIONS CI/CD                               │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │  1. Lint & Typecheck                                               │  │
-│  │  2. Build Pacotes Compartilhados                                   │  │
-│  │  3. Build & Test Serviços (paralelo)                               │  │
-│  │  4. Scan de Segurança (Trivy)                                      │  │
-│  │  5. Build Imagens Docker                                           │  │
-│  │  6. Push para GHCR                                                 │  │
-│  │  7. SSH para Hetzner VM                                            │  │
-│  │  8. Deploy Docker Compose                                          │  │
-│  │  9. Health Checks                                                  │  │
-│  │  10. Notificação de Sucesso / Rollback em Falha                    │  │
+│  │  1. Build Pacotes Compartilhados                                   │  │
+│  │  2. Build Imagens Docker                                           │  │
+│  │  3. Push para GHCR                                                 │  │
+│  │  4. SSH para Hetzner VM                                            │  │
+│  │  5. Deploy Docker Compose                                          │  │
+│  │  6. Health Checks                                                  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  Nota: Pipeline básico. Lint, Trivy e aprovação manual são opcionais.   │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │
                                    ▼
@@ -268,17 +266,17 @@ O deploy é **100% automático** via GitHub Actions:
 ```
 1. Push para branch main
 2. Pipeline CI/CD executa:
-   - Lint & Typecheck
    - Build pacotes compartilhados
-   - Build imagens Docker (paralelo)
+   - Build imagens Docker
    - Push para GHCR
 3. Deploy para Hetzner:
    - SSH para VM
    - Pull das novas imagens
    - Docker Compose up
    - Health checks
-4. Notificação de sucesso/falha
 ```
+
+**Nota:** Pipeline básico configurado. Lint, testes e scans de segurança podem ser adicionados conforme necessário.
 
 ### Deploy Manual
 

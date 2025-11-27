@@ -17,18 +17,18 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma multimodal pronta para produção. Utiliza o modelo LLM **Llama 4 Maverick (400B parâmetros)** hospedado em infraestrutura própria (Salad Cloud GPUs), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Llama 4 Maverick (400B parâmetros)** hospedado em infraestrutura própria (Salad Cloud GPUs), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
 | **IA 100% Autônoma** | LLM próprio (Llama 4 Maverick 400B) hospedado em Salad Cloud GPUs |
-| **Multimodal** | Suporta texto, imagem, áudio e vídeo |
-| **Auto-aprendizado** | Fine-tuning contínuo via SemHash e NeMo Curator |
+| **Chat em Texto** | Conversação via WebSocket com streaming (processamento de texto) |
+| **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
-| **RAG Avançado** | Base de conhecimento com deduplicação semântica (pgvector) |
-| **Enterprise RBAC** | Controle de acesso granular com roles hierárquicas |
+| **RAG Backend** | Serviço de embeddings e busca vetorial (pgvector) implementado |
+| **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
 
 ### Diferenciais
 
@@ -49,16 +49,16 @@
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                         DESENVOLVIMENTO (Replit)                     │
-│  ┌───────────┐  ┌───────────┐  ┌───────────┐  ┌───────────────────┐ │
-│  │ Frontend  │  │ Serviços  │  │PostgreSQL │  │ Object Storage    │ │
-│  │ React     │  │ Node.js   │  │ + pgvector│  │                   │ │
-│  └───────────┘  └───────────┘  └───────────┘  └───────────────────┘ │
+│  ┌───────────┐  ┌───────────┐  ┌───────────┐                        │
+│  │ Frontend  │  │ Serviços  │  │PostgreSQL │                        │
+│  │ React     │  │ Node.js   │  │ + pgvector│                        │
+│  └───────────┘  └───────────┘  └───────────┘                        │
 └───────────────────────────────────┬─────────────────────────────────┘
                                     │ Git Push
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    GITHUB ACTIONS CI/CD                              │
-│  Build → Test → Security Scan → ⏸️ Aprovação Manual → Deploy        │
+│  Build → Push para GHCR → Deploy SSH para Hetzner                   │
 └───────────────────────────────────┬─────────────────────────────────┘
                                     │
                                     ▼
@@ -127,20 +127,19 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | **Desenvolvimento** | Replit | IDE, hot reload, debugging |
 | **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, Nuremberg |
 
-### Pipeline CI/CD (100% Automatizado)
+### Pipeline CI/CD
 
 ```
 1. Push para branch main
 2. GitHub Actions executa:
-   ├── Lint & Typecheck
    ├── Build pacotes compartilhados
    ├── Build imagens Docker
    ├── Push para GHCR
-   ├── ⏸️ Aprovação Manual
    └── Deploy SSH para Hetzner
-3. Health checks automáticos
-4. Rollback automático se falhar
+3. Health checks nos serviços
 ```
+
+**Nota:** Pipeline básico configurado. Scans de segurança e aprovação manual podem ser adicionados conforme necessário.
 
 ### URLs de Produção
 

@@ -1,317 +1,62 @@
-# Alice - Plataforma Enterprise de IA Autônoma
-
 ## Overview
 
-Alice é uma plataforma enterprise de IA autônoma multimodal abrangente e pronta para produção. O projeto utiliza um modelo LLM proprietário, **Llama 4 Maverick (400B parâmetros)**, hospedado em infraestrutura própria (Salad Cloud GPUs), garantindo 100% de autonomia e privacidade sem dependência de APIs externas como OpenAI ou Anthropic.
+Alice is an autonomous enterprise AI platform designed for businesses requiring full control over their data and AI inference. It utilizes a self-hosted **Llama 4 Maverick (400B parameters)** language model via Salad Cloud, ensuring total autonomy, absolute privacy, predictable costs, unlimited customization through fine-tuning, and guaranteed availability without reliance on third-party APIs like OpenAI or Anthropic.
 
-### Capacidades Principais
+The platform addresses critical challenges faced by AI-implementing companies: dependence on third parties, data privacy concerns, and unpredictable costs. Alice provides a 100% company-controlled AI solution for medium to large enterprises, ensuring compliance with privacy regulations like LGPD and GDPR. It targets organizations with stringent privacy requirements, sensitive data (healthcare, finance, legal), those seeking cost control, and those needing deep model customization.
 
-| Capacidade | Descrição |
-|------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Llama 4 Maverick 400B) para controle total, privacidade, custos previsíveis |
-| **Multimodal** | Suporte para texto, imagem, áudio e vídeo |
-| **Auto-aprendizado** | Fine-tuning contínuo via SemHash e NeMo Curator |
-| **Multi-tenant** | Múltiplas organizações com agentes IA especializados |
-| **Enterprise RBAC** | Controle de acesso granular com roles hierárquicas |
-| **RAG Avançado** | Base de conhecimento com pgvector e deduplicação semântica |
-
-### Visão de Negócio
-Fornecer uma solução de IA robusta, privada e customizável para empresas, sem dependência de provedores externos.
-
----
+Key capabilities include: a proprietary AI model, real-time chat with conversation context, semantic deduplication for training data, multi-tenant isolation, RBAC access control, a RAG backend with pgvector, Stripe and Wise payment integrations, ERPNext CRM integration, Twilio for WhatsApp/SMS, Resend for transactional emails, enterprise authentication (OAuth/SAML), an API Gateway (Traefik), and a robust CI/CD pipeline (GitHub Actions for Hetzner deployment).
 
 ## User Preferences
 
-### REGRAS CRÍTICAS - TOLERÂNCIA ZERO
+These rules are NON-NEGOTIABLE and must be followed in ALL implementations:
 
-| # | Regra | Descrição |
-|---|---|---|
-| 1 | **LER ANTES DE AGIR** | PROIBIDO implementar sem inspecionar arquivos, fluxos e dependências |
-| 2 | **NÃO DUPLICAR** | Primeiro encontrar e reutilizar implementação existente |
-| 3 | **WORKFLOW** | diagnóstico → leitura → plano mínimo → aprovação → micro-implementação → validação |
-| 4 | **APROVAÇÃO** | Qualquer decisão técnica: PARAR e pedir aprovação |
-| 5 | **NÃO MENTIR** | Se não sabe, dizer "Eu não sei". Se não verificou, dizer "Eu não verifiquei" |
-| 6 | **SEM SOLUÇÕES TEMPORÁRIAS** | PROIBIDO: workarounds, hardcoded, mocks, placeholders |
-| 7 | **MUDANÇAS MÍNIMAS** | Sem refatorações fora do escopo aprovado |
-| 8 | **QUALIDADE** | TypeScript strict, zero LSP errors, zero any, Pino logging |
-| 9 | **VALIDAÇÃO** | Validar após cada micro-passo |
-| 10 | **DOCUMENTAÇÃO** | SEMPRE em PT-BR. NUNCA em Inglês |
-| 11 | **DOCUMENTAÇÃO OFICIAL** | SEMPRE seguir docs oficiais e best practices 2025 |
-| 12 | **HETZNER CLOUD** | Replit=IDE. Produção=Hetzner CX43 (8vCPU, 16GB, IP: 46.224.46.93) via GitHub Actions CI/CD |
-| 13 | **i18n OBRIGATÓRIO** | PT-BR primário, EN secundário, switch em todas as páginas |
-| 14 | **VERIFICAR SECRETS** | SEMPRE verificar chaves existentes antes de implementar |
-| 15 | **SOMENTE MICROSERVIÇOS** | PROIBIDO código monolítico. apps/ para serviços, packages/ para shared |
-| 16 | **MELHORES PRÁTICAS 2025** | API Gateway, health checks, circuit breakers, container-ready |
-
-### Preferências de Linguagem
-- **Documentação, comentários, logs:** Português Brasileiro (PT-BR)
-- **Variáveis, funções, tipos, pacotes:** Inglês
-
----
+1.  **READ BEFORE ACTING**: It is FORBIDDEN to implement any code without first inspecting existing files, understanding current flows, and mapping dependencies. Always use search tools (grep, glob, read) before writing any new code.
+2.  **DO NOT DUPLICATE**: Before creating any functionality, ALWAYS check if a similar implementation already exists. First find and reuse existing code. Code duplication is strictly prohibited.
+3.  **STRUCTURED WORKFLOW**: All work must follow the sequence: problem diagnosis → reading existing code → drafting a minimal plan → user approval → micro-implementation → immediate validation.
+4.  **MANDATORY APPROVAL**: Any significant technical decision requires STOPPING and explicitly asking for user approval before proceeding. Never assume a major change is authorized.
+5.  **DO NOT LIE**: If you don't know something, clearly state "I don't know." If you haven't verified, say "I haven't verified." Assumptions and false statements are strictly prohibited.
+6.  **NO TEMPORARY SOLUTIONS**: It is FORBIDDEN to implement: workarounds, hardcoded values in production code, mocks that go to production, placeholders, hacks, or any "temporary" solution.
+7.  **MINIMAL CHANGES**: Never refactor code outside the scope approved by the user. Maintain surgical focus only on the specific problem being solved.
+8.  **MANDATORY QUALITY**: All code must use TypeScript in strict mode, have zero LSP errors, never use the `any` type, and strictly use Pino for logging.
+9.  **CONTINUOUS VALIDATION**: Validate correct functioning after EACH micro-step of implementation. Never accumulate multiple changes without testing.
+10. **DOCUMENTATION IN PT-BR**: ALL documentation, code comments, and log messages must be in Brazilian Portuguese. Only established technical terms (such as OAuth, WebSocket, Circuit Breaker) may remain in English.
+11. **FOLLOW OFFICIAL DOCUMENTATION**: ALWAYS consult and follow the official documentation of libraries and frameworks. Apply 2025 best practices.
+12. **PRODUCTION ON HETZNER**: Replit is ONLY an IDE for code editing. The production application runs 100% on the Hetzner CX43 server (8 vCPUs, 16GB RAM, IP: 46.224.46.93) via deployment through GitHub Actions.
+13. **MANDATORY INTERNATIONALIZATION**: Brazilian Portuguese (PT-BR) as the primary language, English (EN) as secondary. All pages must have a functional language selector.
+14. **CHECK EXISTING SECRETS**: ALWAYS verify which secrets are already configured before implementing integrations. Use the `view_env_vars` tool to list existing variables.
+15. **MICROSERVICES ARCHITECTURE**: Monolithic code is FORBIDDEN. Services should be in `apps/`, shared code in `packages/`. Each service must be independent and containerizable.
+16. **2025 BEST PRACTICES**: Mandatorily implement: API Gateway, health checks in all services, circuit breakers for external services, rate limiting, container-ready applications.
 
 ## System Architecture
 
-### Decisões Arquiteturais
+The Alice platform employs a microservices architecture orchestrated by Docker Compose, with a Traefik API Gateway handling external traffic. All services are containerized and deployed on Hetzner Cloud.
 
-| Decisão | Implementação |
-|---------|---------------|
-| **Microserviços** | 7 serviços independentes em apps/ |
-| **LLM Dedicado** | Llama 4 Maverick 400B via Salad Cloud GPUs |
-| **Autenticação** | Passport.js: OAuth 2.0 + SAML 2.0 + Local |
-| **Gateway** | Traefik v3.1 com SSL automático |
-| **Database** | PostgreSQL 16 + pgvector |
-| **Logging** | Pino obrigatório (console.* proibido) |
+**Core Services:**
+-   **Frontend Service (Port 5000):** React 18, TypeScript 5, Vite 5, shadcn/ui, Tailwind CSS 4, TanStack Query, Wouter, react-i18next. Handles UI rendering, state management, routing, and real-time chat via WebSocket.
+-   **Authentication Service (Port 3001):** Node.js, Express, TypeScript. Manages OAuth 2.0 (Google, GitHub, Microsoft), SAML 2.0 (Azure AD, Okta), local authentication with bcrypt, session management (PostgreSQL), and RBAC with 6 hierarchical levels (super\_admin, admin, manager, operator, viewer, guest).
+-   **Chat Service (Port 3002):** Node.js, Express, TypeScript. Provides a WebSocket server for real-time conversations, proxies requests to Salad Cloud's Llama 4 Maverick LLM, manages conversation context, streams tokens, and persists messages.
+-   **RAG Service (Port 3003):** Node.js, Express, TypeScript. Handles embedding generation via Salad Cloud, vector storage with pgvector, semantic search, intelligent document chunking (500 char chunks, 50 char overlap), and content-hash deduplication. Includes a circuit breaker for Salad Cloud (30s timeout, 50% error threshold, 30s reset).
+-   **Training Service (Port 3004):** Node.js, Express, TypeScript. Collects conversation data for training, performs semantic deduplication using SemHash (SHA-256 hash + cosine similarity > 0.85), manages fine-tuning jobs (pending, preparing, training, completed, failed), and integrates with Salad Cloud for fine-tuning.
+-   **Integrations Service (Port 3005):** Node.js, Express, TypeScript. Centralizes all third-party integrations with circuit breakers for external APIs and webhook validation.
+-   **API Gateway (Traefik v3.1):** Handles SSL termination (Let's Encrypt), intelligent routing, rate limiting, load balancing, and active health checks for microservices.
 
-### Estrutura de Microserviços
+**Database:** PostgreSQL 16 with pgvector extension for vector search. Features multi-tenant isolation, JSONB for flexible configurations, and audit logs.
 
-| Serviço | Porta | Responsabilidade |
-|---------|-------|------------------|
-| **frontend-service** | 5000/80 | React SPA, i18n, theming |
-| **api-gateway** | 80/443 | Traefik, SSL, rate-limit |
-| **auth-service** | 3001 | OAuth/SAML/Local, RBAC |
-| **chat-service** | 3002 | LLM proxy, WebSocket |
-| **rag-service** | 3003 | pgvector, embeddings |
-| **training-service** | 3004 | Fine-tuning, SemHash |
-| **integrations-service** | 3005 | Stripe, ERPNext, Twilio |
+**Shared Components (`packages/`):** Centralized Drizzle ORM schema, PostgreSQL connection utilities, Pino logger configuration, and Zod validation schemas for consistency across services.
 
-### Technical Stack
+**UI/UX Design:** Frontend built with React, utilizing shadcn/ui for accessible components, Tailwind CSS 4 for utility-first styling, and Framer Motion for animations. Supports light/dark themes and PT-BR/EN internationalization.
 
-**Frontend:** React 18, TypeScript 5, Vite 5, shadcn/ui, Tailwind 4, react-i18next
-**Backend:** Node.js 20, Express 4, Drizzle ORM, PostgreSQL 16, pgvector, Pino
-**Infra:** Docker, Traefik v3.1, GitHub Actions, Hetzner Cloud
+**CI/CD Pipeline (GitHub Actions):** Automates build, push to GitHub Container Registry, and deployment to Hetzner Cloud. Includes code quality checks (ESLint, TypeScript), Docker image builds for each service, and SSH-based deployment, followed by health checks with automatic rollback if services fail.
 
----
+**Security:** Implements bcrypt for password hashing, HttpOnly/Secure/SameSite=Strict cookies, CSRF protection, SAML signature validation, session expiration, IP-based rate limiting, role-based access control (RBAC), tenant isolation, least privilege principle, Zod for input validation, parameterized queries, and structured logging without sensitive data.
 
 ## External Dependencies
 
-### Serviços e Secrets
-
-| Serviço | Uso | Secrets |
-|---------|-----|---------|
-| **Salad Cloud** | GPUs para LLM Maverick 400B | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
-| **Stripe Portugal** | Receber pagamentos EUR, SEPA (ERPNext nativo) | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET |
-| **Wise** | Enviar pagamentos globais (Dashboard Admin) | WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET |
-| **ERPNext** | CRM/ERP, centralização de vendas | ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
-| **Twilio** | WhatsApp, SMS, Voice | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER |
-| **Resend** | Emails | RESEND_API_KEY |
-
-### OAuth Providers
-- **Google:** GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-- **GitHub:** GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
-- **Microsoft:** MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID
-
-### SAML Providers
-- **Azure AD / Okta:** SAML_ENTRY_POINT, SAML_ISSUER, SAML_CERT
-
----
-
-## Secrets Management
-
-```bash
-# Database
-DATABASE_URL, PGDATABASE, PGHOST, PGPORT, PGUSER, PGPASSWORD
-
-# Session
-SESSION_SECRET
-
-# LLM Salad Cloud
-SALAD_API_KEY, SALAD_ORGANIZATION_ID
-
-# Stripe
-STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET
-
-# OAuth
-GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET
-MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID
-
-# SAML
-SAML_ENTRY_POINT, SAML_ISSUER, SAML_CERT
-
-# Wise Pagamentos
-WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET
-
-# Integrações
-ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET
-TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER
-RESEND_API_KEY
-
-# Hetzner (GitHub Secrets)
-HETZNER_VM_HOST, HETZNER_VM_USER, HETZNER_SSH_PRIVATE_KEY
-```
-
----
-
-## Infraestrutura Hetzner Cloud
-
-### Servidor CX43 (Nuremberg)
-
-| Config | Valor |
-|--------|-------|
-| **IP** | 46.224.46.93 |
-| **User** | root |
-| **SSH Port** | 22 |
-| **Specs** | 8 vCPU AMD EPYC, 16GB RAM, 160GB NVMe |
-| **Domínio** | yesyoudeserve.duckdns.org |
-
-### Chave SSH
-
-**Variável GitHub Secret:** `HETZNER_SSH_PRIVATE_KEY`
-
-> **IMPORTANTE:** A chave privada SSH deve ser armazenada APENAS como GitHub Secret.
-> NUNCA commitar chaves privadas no repositório.
-
----
-
-## Estrutura do Projeto
-
-```
-alice/
-├── apps/                           # Microserviços
-│   ├── frontend-service/           # React + Vite
-│   ├── api-gateway/                # Traefik config
-│   ├── auth-service/               # OAuth/SAML/Local
-│   ├── chat-service/               # LLM + WebSocket
-│   ├── rag-service/                # pgvector + embeddings
-│   ├── training-service/           # Fine-tuning + SemHash
-│   └── integrations-service/       # Stripe, ERPNext, Twilio
-├── packages/                       # Código compartilhado
-│   ├── shared/src/schema.ts        # Drizzle ORM schema
-│   ├── database/                   # PostgreSQL connection
-│   ├── logger/                     # Pino config
-│   └── config/                     # Zod validation
-├── infra/docker/                   # Docker Compose
-├── .github/workflows/              # CI/CD
-└── server/index-dev.ts             # Dev gateway
-```
-
----
-
-## Data Models (packages/shared/src/schema.ts)
-
-### Entidades Principais
-
-| Entidade | Descrição |
-|----------|-----------|
-| **sessions** | Sessões de usuário |
-| **tenants** | Multi-tenant (empresas) |
-| **users** | Usuários com auth enterprise |
-| **permissions** | Permissões granulares |
-| **rolePermissions** | Role → Permissions mapping |
-| **namespaces** | Contextos (Sales, Support, HR, Finance) |
-| **agents** | Agentes IA especializados |
-| **conversations** | Conversas com agentes |
-| **messages** | Mensagens multimodal |
-| **documents** | Knowledge base (RAG) |
-| **documentChunks** | Chunks para RAG |
-| **learningTasks** | Tarefas de fine-tuning |
-| **integrations** | Integrações externas |
-| **auditLogs** | Logs de auditoria |
-| **usageMetrics** | Métricas de uso |
-
-### Enums
-
-```typescript
-userRoleEnum: "super_admin" | "admin" | "manager" | "operator" | "viewer" | "guest"
-agentStatusEnum: "active" | "training" | "paused" | "deprecated"
-messageTypeEnum: "text" | "image" | "audio" | "video" | "document" | "mixed"
-conversationStatusEnum: "active" | "archived" | "deleted"
-taskStatusEnum: "pending" | "processing" | "completed" | "failed" | "cancelled"
-```
-
----
-
-## ERPNext Centralização
-
-**TODAS vendas centralizadas no ERPNext:**
-
-| Fonte | Fluxo |
-|-------|-------|
-| **Website** | Direto → ERPNext |
-| **Alice WhatsApp** | Venda → Webhook → ERPNext Sales Order |
-| **Stripe** | Pagamento → Webhook → ERPNext Payment Entry |
-
----
-
-## Deploy Workflow (100% Automatizado)
-
-```
-1. Código no Replit
-2. Git push → GitHub
-3. GitHub Actions:
-   ├── Code Quality
-   ├── Security Scan
-   ├── Build Docker Images
-   ├── ⏸️ Aprovação Manual
-   └── Deploy SSH → Hetzner
-4. Health checks automáticos
-5. Rollback se falhar
-```
-
-### URLs de Produção
-
-| Serviço | URL |
-|---------|-----|
-| **Alice** | https://yesyoudeserve.duckdns.org |
-| **ERPNext** | https://erp.yesyoudeserve.duckdns.org |
-| **Traefik** | https://traefik.yesyoudeserve.duckdns.org |
-
----
-
-## Enterprise Patterns
-
-| Padrão | Status | Detalhes |
-|--------|--------|----------|
-| API Gateway (Traefik) | ✅ | v3.1, SSL automático, rate-limit |
-| Circuit Breaker (opossum) | ✅ | ERPNext (10s/50%/30s), Wise (15s/50%/30s) |
-| Health Checks | ✅ | /health em todos os serviços + status circuit breakers |
-| Rate Limiting | ✅ | express-rate-limit configurado |
-| Structured Logging (Pino) | ✅ | Todos os serviços, console.* proibido |
-| 12-Factor App | ✅ | Config via env vars, stateless |
-| Container-ready | ✅ | Docker Compose para produção |
-| Auto SSL (Let's Encrypt) | ✅ | Traefik ACME automático |
-| Multi-tenant | ✅ | Isolamento por tenant_id |
-| RBAC | ✅ | 6 roles hierárquicas |
-
-### Circuit Breakers Configurados
-
-| Serviço | Timeout | Error Threshold | Reset Timeout |
-|---------|---------|-----------------|---------------|
-| ERPNext | 10s | 50% | 30s |
-| Wise API | 15s | 50% | 30s |
-
----
-
-## Padrões de Código
-
-```typescript
-// CORRETO - Pino logging
-import { logger } from '@alice/logger';
-logger.info({ userId }, 'Usuário autenticado');
-
-// ERRADO - console.* PROIBIDO
-console.log('msg'); // ❌ NUNCA
-
-// CORRETO - TypeScript strict
-interface User { id: string; email: string; role: UserRole; }
-
-// ERRADO - any PROIBIDO
-const user: any = {}; // ❌ NUNCA
-```
-
----
-
-## Resumo Técnico
-
-| Aspecto | Valor |
-|---------|-------|
-| **Modelo LLM** | Llama 4 Maverick 400B (Salad Cloud) |
-| **Arquitetura** | 7 Microserviços |
-| **Database** | PostgreSQL 16 + pgvector |
-| **Auth** | OAuth 2.0 + SAML 2.0 + Local |
-| **Frontend** | React 18 + TypeScript + Vite |
-| **Backend** | Node.js 20 + Express |
-| **Produção** | Hetzner CX43 (Nuremberg) |
-| **Deploy** | GitHub Actions CI/CD |
-| **Gateway** | Traefik v3.1 (SSL auto) |
-| **i18n** | PT-BR primário, EN secundário |
+-   **Salad Cloud:** Provides GPUs for hosting the Llama 4 Maverick (400B parameters) LLM for inference and `text-embedding-3-small` for generating embeddings.
+-   **Stripe Portugal:** Used for receiving payments in EUR, including SEPA, managing subscriptions, and processing webhooks (e.g., `checkout.session.completed`, `payment_intent.succeeded`).
+-   **Wise:** Integrated for sending international payments to suppliers and partners in various currencies, incorporating a circuit breaker (15s timeout, 50% error, 30s reset).
+-   **ERPNext:** A self-hosted CRM/ERP system used for centralizing sales, customer data, and financial operations, with automatic synchronization via webhooks.
+-   **Twilio:** Utilized for WhatsApp and SMS communication (customer support, notifications), supporting both inbound and outbound messages.
+-   **Resend:** Provides transactional email services for sending confirmations, notifications, and password reset emails using templates.
+-   **Let's Encrypt:** For automatic SSL/TLS certificates managed by Traefik.
+-   **DuckDNS:** A free dynamic DNS service for managing production URLs.
