@@ -102,7 +102,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 
 | Folder | Description | Tests |
 |--------|-------------|-------|
-| `tests/unit/` | Unit tests | 228 tests |
+| `tests/unit/` | Unit tests | 309 tests |
 | `tests/setup.ts` | Global configuration | Pino logger |
 | `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
 
@@ -114,6 +114,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 | `health-endpoints.test.ts` | Health endpoint contracts | 45 |
 | `schema-validation.test.ts` | Drizzle schema validation | 58 |
 | `config-validation.test.ts` | Configuration validation | 117 |
+| `rbac-validation.test.ts` | RBAC system validation | 81 |
 
 ### Health Endpoint Contract Tests
 
@@ -168,7 +169,37 @@ Validates environment variables and configuration constants:
 | SERVICE_URL Validação | 12 | Validação positiva/negativa de URLs de serviços |
 | Edge Cases | 4 | resetConfigCache repetido, alternância, isolamento |
 
+### RBAC Validation Tests
+
+Validates Role-Based Access Control system:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Hierarquia de Roles | 12 | 6 níveis (super_admin → guest), ROLE_HIERARCHY, ROLE_DESCRIPTIONS |
+| Funções de Hierarquia | 12 | hasMinimumRole para todas as combinações de roles |
+| Matriz de Permissões | 18 | PERMISSION_MAP por módulo (AUTH, CHAT, RAG, TRAINING, INTEGRATIONS, ADMIN, IMAGES) |
+| Funções de Permissão | 11 | hasPermission, getRolePermissions, getPermissionRoles |
+| Middleware | 17 | extractAuthContext, requireAuth, requirePermission, requireRole, requireSameTenant, checkPermission |
+| Cache de Permissões | 7 | PermissionCache: set/get, invalidate, TTL, maxSize, stats |
+| Cenários Enterprise | 4 | Multi-tenant isolation, Takeover/Handover, Fine-tuning, Integrações Financeiras |
+
 ## Recent Changes (November 2025)
+
+### RBAC Validation Tests (Phase 1 Step 1.5 - COMPLETO)
+
+Implemented 81 tests for validating RBAC system:
+- `tests/unit/rbac-validation.test.ts` - RBAC structure and authorization validation
+- Hierarquia: 6 níveis (super_admin, admin, manager, operator, viewer, guest)
+- ROLE_HIERARCHY: Valores numéricos 1-6 para comparação hierárquica
+- ROLE_DESCRIPTIONS: Descrições em PT-BR para cada role
+- hasMinimumRole: Validação de nível mínimo para cada role
+- PERMISSION_MAP: 279 permissões mapeadas por módulo
+- Módulos: AUTH, CHAT, RAG, TRAINING, INTEGRATIONS, ADMIN, IMAGES
+- Middleware: requireAuth, requirePermission, requireRole, requireSameTenant
+- extractAuthContext: Extração de req.user ou headers
+- checkPermission: Verificação programática
+- PermissionCache: Cache com TTL, maxSize, invalidação por tenant
+- Cenários Enterprise: Multi-tenant, Takeover/Handover, Fine-tuning, Stripe/Wise
 
 ### Config Validation Tests (Phase 1 Step 1.4 - COMPLETO)
 
@@ -185,7 +216,7 @@ Implemented 113 tests for validating configuration:
 - SERVICE_URL validation: URLs absolutas com protocolo HTTP/HTTPS obrigatório
 - CORS_ORIGINS validation: Cada origem deve ser uma URL válida
 - Edge cases: resetConfigCache repetido, alternância, isolamento
-- Total: 228 tests passing (8 setup + 45 health + 58 schema + 117 config)
+- Total: 309 tests passing (8 setup + 45 health + 58 schema + 117 config + 81 rbac)
 
 ### Config Refactoring - Lazy Loading Pattern
 
