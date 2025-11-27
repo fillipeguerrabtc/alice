@@ -332,8 +332,17 @@ jobs:
             echo "Image Prefix: ${IMAGE_PREFIX}"
             echo "Image Tag: ${IMAGE_TAG}"
             echo "Serviços: ${DEPLOY_SERVICES}"
+            echo "Repositório: ${REPO_FULL_NAME}"
             echo "Timestamp: $(date)"
             echo "=============================================="
+            
+            # Debug: verificar variáveis recebidas
+            echo ""
+            echo "🔍 DEBUG - Variáveis recebidas via SSH:"
+            echo "  REPO_FULL_NAME: ${REPO_FULL_NAME:-NÃO DEFINIDO}"
+            echo "  GITHUB_ACTOR: ${GITHUB_ACTOR:-NÃO DEFINIDO}"
+            echo "  GH_PAT length: ${#GH_PAT} chars"
+            echo ""
             
             # Criar estrutura de diretórios
             mkdir -p /opt/alice/{app,data,logs,backups}
@@ -366,10 +375,15 @@ jobs:
             # Clone ou update do repositório usando header-based auth
             # Isso resolve: "fatal: could not read Username for 'https://github.com'"
             # Usando header evita exposição do token em URLs/logs de erro
+            echo "🔑 Verificando GH_PAT..."
             if [ -z "${GH_PAT}" ]; then
-              echo "❌ ERRO: GH_PAT não está configurado nos secrets do repositório!"
+              echo "❌ ERRO: GH_PAT não está configurado ou não foi passado para o script SSH!"
+              echo "   Verifique: 1) Se o secret existe  2) Se o token não expirou  3) Se tem permissões repo/packages"
               exit 1
             fi
+            # Debug: mostrar apenas o comprimento do token (nunca o token em si!)
+            echo "✓ GH_PAT recebido (${#GH_PAT} caracteres)"
+            
             GH_AUTH_HEADER="Authorization: Bearer ${GH_PAT}"
             REPO_URL="https://github.com/${REPO_FULL_NAME}.git"
             
