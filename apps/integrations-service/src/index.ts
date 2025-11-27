@@ -11,7 +11,7 @@ import { getDatabase, schema } from '@alice/database';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService';
-import { isWiseConfigured, getSandboxStatus, getProfileIdSafe } from './wiseClient';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -113,6 +113,7 @@ app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json'
 app.use(express.json());
 
 app.get('/api/integrations/health', (_req: Request, res: Response) => {
+  const wiseConfigured = isWiseConfigured();
   res.json({ 
     status: 'ok', 
     service: 'integrations-service', 
@@ -120,7 +121,11 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
     integrations: {
       stripe: !!stripe,
       erpnext: !!config.ERPNEXT_URL,
-      wise: !!process.env.WISE_API_KEY,
+      wise: wiseConfigured,
+    },
+    circuitBreakers: {
+      erpnext: erpNextBreaker.opened ? 'open' : 'closed',
+      wise: wiseConfigured ? getWiseCircuitBreakerStatus() : null,
     },
   });
 });
@@ -550,11 +555,6 @@ app.post('/api/integrations/resend/send', async (req: Request, res: Response) =>
 // WISE API - Pagamentos Globais
 // Documentação: https://docs.wise.com/api-docs/
 // ============================================================
-
-// Verificar se Wise está configurado
-function isWiseConfigured(): boolean {
-  return !!(process.env.WISE_API_KEY && process.env.WISE_PROFILE_ID);
-}
 
 // Obter saldos multi-moeda
 app.get('/api/integrations/wise/balances', async (_req: Request, res: Response) => {
