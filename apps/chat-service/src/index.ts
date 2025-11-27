@@ -557,7 +557,8 @@ app.post('/api/chat/stream', async (req: Request, res: Response) => {
 const wsClients = new Map<string, WebSocket>();
 
 wss.on('connection', (ws, req) => {
-  const userId = new URL(req.url || '', 'ws://localhost').searchParams.get('userId');
+  const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
+  const userId = urlParams.get('userId');
   
   if (!userId) {
     ws.close(4001, 'ID do usuário necessário');
@@ -573,9 +574,12 @@ wss.on('connection', (ws, req) => {
         type: string;
         conversationId: string;
         content: string;
+        namespaceId?: string;
       };
 
       if (message.type === 'chat') {
+        const ragStartTime = Date.now();
+        
         const [userMsg] = await db.insert(schema.messages).values({
           conversationId: message.conversationId,
           userId,
@@ -592,8 +596,30 @@ wss.on('connection', (ws, req) => {
         });
 
         const agent = conversation?.agent as { instrucoes?: string } | null;
-        const systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+        let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
 
+        const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
+        const ragResult = await buscarContextoRAG(message.content, namespaceId);
+        const ragLatency = Date.now() - ragStartTime;
+        
+        if (ragResult && ragResult.context) {
+          systemPrompt += formatarContextoParaLLM(ragResult);
+          
+          ws.send(JSON.stringify({ 
+            type: 'sources', 
+            data: ragResult.sources,
+            ragLatencyMs: ragLatency,
+          }));
+          
+          logger.info({ 
+            conversationId: message.conversationId,
+            ragChunks: ragResult.sources.length,
+            ragLatencyMs: ragLatency,
+            namespaceId,
+          }, 'Contexto RAG injetado via WebSocket');
+        }
+
+        const llmStartTime = Date.now();
         const stream = await callLlamaAPI([
           { role: 'system', content: systemPrompt },
           { role: 'user', content: message.content },
@@ -604,6 +630,8 @@ wss.on('connection', (ws, req) => {
           fullResponse += chunk;
           ws.send(JSON.stringify({ type: 'stream', data: chunk }));
         }
+        const llmLatency = Date.now() - llmStartTime;
+        const totalLatency = Date.now() - ragStartTime;
 
         const [assistantMsg] = await db.insert(schema.messages).values({
           conversationId: message.conversationId,
@@ -611,9 +639,28 @@ wss.on('connection', (ws, req) => {
           conteudo: fullResponse,
           tipo: 'text',
           isFromUser: false,
+          latenciaMs: totalLatency,
         }).returning();
 
-        ws.send(JSON.stringify({ type: 'complete', data: assistantMsg }));
+        ws.send(JSON.stringify({ 
+          type: 'complete', 
+          data: assistantMsg,
+          metrics: {
+            ragLatencyMs: ragLatency,
+            llmLatencyMs: llmLatency,
+            totalLatencyMs: totalLatency,
+            usedRag: !!ragResult?.context,
+            ragChunks: ragResult?.sources?.length || 0,
+          },
+        }));
+        
+        logger.info({
+          conversationId: message.conversationId,
+          ragLatencyMs: ragLatency,
+          llmLatencyMs: llmLatency,
+          totalLatencyMs: totalLatency,
+          usedRag: !!ragResult?.context,
+        }, 'Mensagem WebSocket processada com integração RAG');
       }
     } catch (error) {
       logger.error({ error }, 'Erro na mensagem WebSocket');

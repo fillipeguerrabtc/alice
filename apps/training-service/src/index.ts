@@ -19,6 +19,15 @@ import { neon } from '@neondatabase/serverless';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
+import { 
+  createFineTuningJob as createSaladJob,
+  getJobStatus as getSaladJobStatus,
+  cancelJob as cancelSaladJob,
+  mapContainerStatusToJobStatus,
+  generateTrainingJSONL,
+  getSaladBreakerStats,
+  verificarDisponibilidadeSalad,
+} from './salad-client.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -143,7 +152,8 @@ app.use(limiter);
 app.use(express.json());
 
 const SIMILARITY_THRESHOLD = 0.85;
-const EMBEDDING_DIMENSIONS = 384;
+const EMBEDDING_DIMENSIONS = 1536;
+const JOB_POLLING_INTERVAL_MS = 30000;
 
 function computeSemHash(text: string): string {
   const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -169,22 +179,30 @@ function cosineSimilarity(a: number[], b: number[]): number {
   return dotProduct / denominator;
 }
 
-app.get('/api/training/health', (_req: Request, res: Response) => {
-  const circuitState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+app.get('/api/training/health', async (_req: Request, res: Response) => {
+  const embeddingsCircuitState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+  const saladStats = getSaladBreakerStats();
+  const saladAvailable = await verificarDisponibilidadeSalad();
+  
+  const overallStatus = embeddingsCircuitState === 'open' ? 'degraded' : 'ok';
   
   res.json({ 
-    status: 'ok', 
+    status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
     embeddingsProvider: 'salad-cloud',
     model: 'text-embedding-3-small',
-    circuitBreaker: {
-      state: circuitState,
-      stats: {
-        failures: embeddingsBreaker.stats.failures,
-        successes: embeddingsBreaker.stats.successes,
-        timeouts: embeddingsBreaker.stats.timeouts,
+    saladCloudAvailable: saladAvailable,
+    circuitBreakers: {
+      embeddings: {
+        state: embeddingsCircuitState,
+        stats: {
+          failures: embeddingsBreaker.stats.failures,
+          successes: embeddingsBreaker.stats.successes,
+          timeouts: embeddingsBreaker.stats.timeouts,
+        },
       },
+      saladContainerGroups: saladStats,
     },
   });
 });
@@ -389,7 +407,13 @@ app.post('/api/training/jobs', async (req: Request, res: Response) => {
         .where(eq(schema.trainingData.id, data.id));
     }
 
-    startFineTuningJob(job.id).catch(err => {
+    const jobHyperparameters = body.hyperparameters || {
+      epochs: 3,
+      learningRate: 0.0001,
+      batchSize: 4,
+    };
+    
+    startFineTuningJob(job.id, jobHyperparameters).catch(err => {
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
     });
 
@@ -401,8 +425,10 @@ app.post('/api/training/jobs', async (req: Request, res: Response) => {
   }
 });
 
-async function startFineTuningJob(jobId: string): Promise<void> {
-  logger.info({ jobId }, 'Iniciando job de fine-tuning');
+const activePollingJobs = new Map<string, NodeJS.Timeout>();
+
+async function startFineTuningJob(jobId: string, hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
+  logger.info({ jobId }, 'Iniciando job de fine-tuning na Salad Cloud');
   
   await db.update(schema.fineTuningJobs)
     .set({ 
@@ -412,29 +438,58 @@ async function startFineTuningJob(jobId: string): Promise<void> {
     .where(eq(schema.fineTuningJobs.id, jobId));
 
   try {
-    logger.info({ jobId }, 'Chamando API Salad Cloud para fine-tuning');
+    const job = await db.query.fineTuningJobs.findFirst({
+      where: eq(schema.fineTuningJobs.id, jobId),
+    });
     
+    if (!job) {
+      throw new Error('Job não encontrado');
+    }
+
+    const trainingData = await db.query.trainingData.findMany({
+      where: eq(schema.trainingData.usedInJobId, jobId),
+    });
+
+    if (trainingData.length === 0) {
+      throw new Error('Nenhum dado de treinamento associado ao job');
+    }
+
+    const jsonlData = generateTrainingJSONL(
+      trainingData.map(d => ({
+        messages: d.messages as Array<{ role: string; content: string }>,
+      }))
+    );
+
+    const dataUrl = `s3://alice-training-data/${jobId}/training.jsonl`;
+    const outputUrl = `s3://alice-training-output/${jobId}/`;
+
+    logger.info({ jobId, dataCount: trainingData.length }, 'Criando Container Group na Salad Cloud');
+    
+    const saladResponse = await createSaladJob(jobId, {
+      baseModel: job.baseModel,
+      dataUrl,
+      outputUrl,
+      hyperparameters,
+    });
+
     await db.update(schema.fineTuningJobs)
       .set({ 
         status: 'training',
         progress: 0,
+        containerGroupId: saladResponse.name,
       })
       .where(eq(schema.fineTuningJobs.id, jobId));
 
-    await db.update(schema.fineTuningJobs)
-      .set({ 
-        status: 'completed',
-        completadoEm: new Date(),
-        resultModel: `llama4-maverick-ft-${jobId.slice(0, 8)}`,
-        metrics: {
-          mode: 'production',
-        },
-      })
-      .where(eq(schema.fineTuningJobs.id, jobId));
+    logger.info({ 
+      jobId, 
+      containerGroupName: saladResponse.name,
+      containerGroupId: saladResponse.id,
+    }, 'Container Group criado - iniciando polling de status');
 
-    logger.info({ jobId }, 'Job de fine-tuning concluído');
+    startStatusPolling(jobId, saladResponse.name);
+
   } catch (error) {
-    logger.error({ error, jobId }, 'Erro no fine-tuning');
+    logger.error({ error, jobId }, 'Erro ao iniciar fine-tuning na Salad Cloud');
     
     await db.update(schema.fineTuningJobs)
       .set({ 
@@ -442,6 +497,71 @@ async function startFineTuningJob(jobId: string): Promise<void> {
         errorMessage: error instanceof Error ? error.message : 'Erro desconhecido',
       })
       .where(eq(schema.fineTuningJobs.id, jobId));
+  }
+}
+
+function startStatusPolling(jobId: string, containerGroupName: string): void {
+  const pollStatus = async () => {
+    try {
+      const status = await getSaladJobStatus(containerGroupName);
+      const mappedStatus = mapContainerStatusToJobStatus(status.currentState.status);
+      
+      logger.debug({ 
+        jobId, 
+        containerStatus: status.currentState.status,
+        mappedStatus,
+      }, 'Status do job atualizado');
+
+      const updateData: Record<string, unknown> = { status: mappedStatus };
+      
+      if (status.currentState.instanceStatusCounts) {
+        const running = status.currentState.instanceStatusCounts.running || 0;
+        const total = Object.values(status.currentState.instanceStatusCounts).reduce((a, b) => a + b, 0);
+        if (total > 0) {
+          updateData.progress = Math.round((running / total) * 100);
+        }
+      }
+
+      if (mappedStatus === 'completed') {
+        updateData.completadoEm = new Date();
+        updateData.resultModel = `llama4-maverick-ft-${jobId.slice(0, 8)}`;
+        updateData.metrics = {
+          mode: 'production',
+          containerGroupName,
+          finishTime: status.currentState.finishTime,
+        };
+        stopStatusPolling(jobId);
+        logger.info({ jobId, containerGroupName }, 'Job de fine-tuning concluído com sucesso');
+      } else if (mappedStatus === 'failed') {
+        updateData.errorMessage = status.currentState.description || 'Falha no Container Group';
+        stopStatusPolling(jobId);
+        logger.error({ jobId, containerGroupName, description: status.currentState.description }, 'Job de fine-tuning falhou');
+      } else if (mappedStatus === 'cancelled') {
+        stopStatusPolling(jobId);
+        logger.warn({ jobId, containerGroupName }, 'Job de fine-tuning cancelado');
+      }
+
+      await db.update(schema.fineTuningJobs)
+        .set(updateData)
+        .where(eq(schema.fineTuningJobs.id, jobId));
+
+    } catch (error) {
+      logger.warn({ error, jobId }, 'Erro ao verificar status do job - tentará novamente');
+    }
+  };
+
+  pollStatus();
+  
+  const intervalId = setInterval(pollStatus, JOB_POLLING_INTERVAL_MS);
+  activePollingJobs.set(jobId, intervalId);
+}
+
+function stopStatusPolling(jobId: string): void {
+  const intervalId = activePollingJobs.get(jobId);
+  if (intervalId) {
+    clearInterval(intervalId);
+    activePollingJobs.delete(jobId);
+    logger.info({ jobId }, 'Polling de status interrompido');
   }
 }
 
@@ -460,6 +580,49 @@ app.get('/api/training/jobs/:id', async (req: Request, res: Response) => {
     res.json({ job });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar job');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.delete('/api/training/jobs/:id', async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const job = await db.query.fineTuningJobs.findFirst({
+      where: eq(schema.fineTuningJobs.id, id),
+    });
+
+    if (!job) {
+      return res.status(404).json({ error: 'Job não encontrado' });
+    }
+
+    if (job.status === 'completed' || job.status === 'cancelled') {
+      return res.status(400).json({ error: 'Job já finalizado ou cancelado' });
+    }
+
+    stopStatusPolling(id);
+
+    if (job.containerGroupId) {
+      try {
+        await cancelSaladJob(job.containerGroupId);
+        logger.info({ jobId: id, containerGroupId: job.containerGroupId }, 'Container Group cancelado na Salad Cloud');
+      } catch (saladError) {
+        logger.warn({ saladError, jobId: id }, 'Erro ao cancelar na Salad Cloud - continuando com cancelamento local');
+      }
+    }
+
+    const [updated] = await db.update(schema.fineTuningJobs)
+      .set({ 
+        status: 'cancelled',
+        completadoEm: new Date(),
+      })
+      .where(eq(schema.fineTuningJobs.id, id))
+      .returning();
+
+    logger.info({ jobId: id }, 'Job de fine-tuning cancelado');
+    res.json({ job: updated });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao cancelar job');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

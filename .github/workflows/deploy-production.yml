@@ -62,16 +62,13 @@ jobs:
         run: npm ci
 
       - name: ESLint
-        run: npm run lint 2>/dev/null || echo "⚠️ Lint com avisos"
-        continue-on-error: true
+        run: npm run lint --max-warnings=0
 
       - name: TypeScript Check
-        run: npm run typecheck 2>/dev/null || echo "⚠️ TypeCheck com avisos"
-        continue-on-error: true
+        run: npm run typecheck
 
       - name: Verificar vulnerabilidades
-        run: npm audit --audit-level=high 2>/dev/null || echo "⚠️ Verificação de segurança"
-        continue-on-error: true
+        run: npm audit --audit-level=moderate
 
   # ===========================================================================
   # Job 2: Build Imagens Docker
