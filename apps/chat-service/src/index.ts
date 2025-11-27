@@ -2,6 +2,7 @@
  * Chat Service - Alice Enterprise Platform
  * 
  * Serviço de chat com WebSocket tempo real e integração LLM Salad Cloud.
+ * Integra com RAG Service para contexto de documentos (Fase 3 - Integração Chat+RAG).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
  * Documentação em PT-BR (Regra 10 replit.md)
@@ -20,6 +21,12 @@ import { neon } from '@neondatabase/serverless';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
+import { 
+  buscarContextoRAG, 
+  formatarContextoParaLLM, 
+  getRAGBreakerStats,
+  RAGContextResponse,
+} from './rag-client.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -197,21 +204,27 @@ app.use(limiter);
 app.use(express.json());
 
 app.get('/api/chat/health', (_req: Request, res: Response) => {
-  const circuitState = saladCloudBreaker.opened ? 'open' : (saladCloudBreaker.halfOpen ? 'half-open' : 'closed');
+  const llmCircuitState = saladCloudBreaker.opened ? 'open' : (saladCloudBreaker.halfOpen ? 'half-open' : 'closed');
+  const ragStats = getRAGBreakerStats();
+  
+  const overallStatus = llmCircuitState === 'open' ? 'degraded' : 'ok';
   
   res.json({ 
-    status: 'ok', 
+    status: overallStatus, 
     service: 'chat-service', 
     timestamp: new Date().toISOString(),
     llmProvider: 'salad-cloud',
     model: 'llama4-maverick',
-    circuitBreaker: {
-      state: circuitState,
-      stats: {
-        failures: saladCloudBreaker.stats.failures,
-        successes: saladCloudBreaker.stats.successes,
-        timeouts: saladCloudBreaker.stats.timeouts,
+    circuitBreakers: {
+      llm: {
+        state: llmCircuitState,
+        stats: {
+          failures: saladCloudBreaker.stats.failures,
+          successes: saladCloudBreaker.stats.successes,
+          timeouts: saladCloudBreaker.stats.timeouts,
+        },
       },
+      rag: ragStats,
     },
   });
 });
@@ -415,7 +428,20 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
     }).returning();
 
     const agent = conversation.agent as { instrucoes?: string } | null;
-    const systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
+    let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
+    
+    const ragStartTime = Date.now();
+    const ragResult = await buscarContextoRAG(body.conteudo, conversation.namespaceId || undefined);
+    const ragLatency = Date.now() - ragStartTime;
+    
+    if (ragResult && ragResult.context) {
+      systemPrompt += formatarContextoParaLLM(ragResult);
+      logger.info({ 
+        conversationId: id, 
+        ragChunks: ragResult.sources.length,
+        ragLatencyMs: ragLatency,
+      }, 'Contexto RAG injetado no prompt');
+    }
     
     const previousMessages = await db.query.messages.findMany({
       where: eq(schema.messages.conversationId, id),
@@ -431,9 +457,10 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
       })),
     ];
 
-    const startTime = Date.now();
+    const llmStartTime = Date.now();
     const response = await callLlamaAPI(llmMessages);
-    const latency = Date.now() - startTime;
+    const llmLatency = Date.now() - llmStartTime;
+    const totalLatency = Date.now() - ragStartTime;
 
     const [assistantMessage] = await db.insert(schema.messages).values({
       conversationId: id,
@@ -441,7 +468,7 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
       conteudo: response as string,
       tipo: 'text',
       isFromUser: false,
-      latenciaMs: latency,
+      latenciaMs: totalLatency,
     }).returning();
 
     await db.update(schema.conversations)
@@ -452,8 +479,19 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
       })
       .where(eq(schema.conversations.id, id));
 
-    logger.info({ conversationId: id, latency }, 'Mensagem processada');
-    res.json({ userMessage, assistantMessage });
+    logger.info({ 
+      conversationId: id, 
+      ragLatencyMs: ragLatency,
+      llmLatencyMs: llmLatency,
+      totalLatencyMs: totalLatency,
+      usedRag: !!ragResult?.context,
+    }, 'Mensagem processada com integração RAG');
+    
+    res.json({ 
+      userMessage, 
+      assistantMessage,
+      ragSources: ragResult?.sources || [],
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao enviar mensagem');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -461,9 +499,10 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
 });
 
 app.post('/api/chat/stream', async (req: Request, res: Response) => {
-  const { messages: inputMessages, conversationId } = req.body as { 
+  const { messages: inputMessages, conversationId, namespaceId } = req.body as { 
     messages: Array<{ role: string; content: string }>;
     conversationId?: string;
+    namespaceId?: string;
   };
 
   res.setHeader('Content-Type', 'text/event-stream');
@@ -471,13 +510,34 @@ app.post('/api/chat/stream', async (req: Request, res: Response) => {
   res.setHeader('Connection', 'keep-alive');
 
   try {
+    let systemPrompt = 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
+    
+    const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
+    let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
+    
+    if (lastUserMessage) {
+      const ragResult = await buscarContextoRAG(lastUserMessage.content, namespaceId);
+      if (ragResult && ragResult.context) {
+        systemPrompt += formatarContextoParaLLM(ragResult);
+        ragSources = ragResult.sources;
+        logger.info({ 
+          ragChunks: ragResult.sources.length,
+          namespaceId,
+        }, 'Contexto RAG injetado no streaming');
+      }
+    }
+    
     const llmMessages: LLMMessage[] = [
-      { role: 'system', content: 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.' },
+      { role: 'system', content: systemPrompt },
       ...inputMessages.map(m => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
     ];
+
+    if (ragSources.length > 0) {
+      res.write(`data: ${JSON.stringify({ type: 'sources', sources: ragSources })}\n\n`);
+    }
 
     const stream = await callLlamaAPI(llmMessages, true) as AsyncGenerator<string>;
 

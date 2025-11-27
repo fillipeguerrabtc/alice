@@ -1,0 +1,38 @@
+{
+  "name": "@alice/shared-utils",
+  "version": "1.0.0",
+  "description": "Utilitários compartilhados para Alice Enterprise Platform",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./logger": "./src/logger.ts",
+    "./circuit-breaker": "./src/circuit-breaker.ts",
+    "./config": "./src/config.ts",
+    "./audit": "./src/audit.ts",
+    "./metrics": "./src/metrics.ts",
+    "./health": "./src/health.ts",
+    "./rbac": "./src/rbac/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pino": "^9.5.0",
+    "pino-pretty": "^11.3.0",
+    "opossum": "^8.1.4",
+    "zod": "^3.23.8",
+    "drizzle-orm": "^0.36.4",
+    "@neondatabase/serverless": "^0.10.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/opossum": "^8.1.7",
+    "typescript": "^5.7.2"
+  },
+  "peerDependencies": {
+    "express": "^4.21.1"
+  }
+}
