@@ -69,7 +69,9 @@ export const sessions = pgTable(
     sess: jsonb("sess").notNull(),
     expire: timestamp("expire").notNull(),
   },
-  (table) => [index("IDX_session_expire").on(table.expire)]
+  (table) => ({
+    idxSessionExpire: index("IDX_session_expire").on(table.expire),
+  })
 );
 
 // ============================================================================
@@ -131,16 +133,16 @@ export const users = pgTable(
     createdAt: timestamp("created_at").defaultNow(),
     updatedAt: timestamp("updated_at").defaultNow(),
   },
-  (table) => [
-    index("idx_users_tenant").on(table.tenantId),
-    index("idx_users_email").on(table.email),
-    index("idx_users_role").on(table.role),
-    index("idx_users_auth_provider").on(table.authProvider),
-    index("idx_users_google_id").on(table.googleId),
-    index("idx_users_github_id").on(table.githubId),
-    index("idx_users_microsoft_id").on(table.microsoftId),
-    index("idx_users_saml_name_id").on(table.samlNameId),
-  ]
+  (table) => ({
+    idxUsersTenant: index("idx_users_tenant").on(table.tenantId),
+    idxUsersEmail: index("idx_users_email").on(table.email),
+    idxUsersRole: index("idx_users_role").on(table.role),
+    idxUsersAuthProvider: index("idx_users_auth_provider").on(table.authProvider),
+    idxUsersGoogleId: index("idx_users_google_id").on(table.googleId),
+    idxUsersGithubId: index("idx_users_github_id").on(table.githubId),
+    idxUsersMicrosoftId: index("idx_users_microsoft_id").on(table.microsoftId),
+    idxUsersSamlNameId: index("idx_users_saml_name_id").on(table.samlNameId),
+  })
 );
 
 // ============================================================================
@@ -166,10 +168,10 @@ export const rolePermissions = pgTable(
       .notNull(),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_role_permissions_role").on(table.role),
-    index("idx_role_permissions_permission").on(table.permissionId),
-  ]
+  (table) => ({
+    idxRolePermissionsRole: index("idx_role_permissions_role").on(table.role),
+    idxRolePermissionsPermission: index("idx_role_permissions_permission").on(table.permissionId),
+  })
 );
 
 // ============================================================================
@@ -193,10 +195,10 @@ export const namespaces = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_namespaces_tenant").on(table.tenantId),
-    index("idx_namespaces_slug").on(table.slug),
-  ]
+  (table) => ({
+    idxNamespacesTenant: index("idx_namespaces_tenant").on(table.tenantId),
+    idxNamespacesSlug: index("idx_namespaces_slug").on(table.slug),
+  })
 );
 
 // ============================================================================
@@ -226,10 +228,10 @@ export const agents = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_agents_namespace").on(table.namespaceId),
-    index("idx_agents_status").on(table.status),
-  ]
+  (table) => ({
+    idxAgentsNamespace: index("idx_agents_namespace").on(table.namespaceId),
+    idxAgentsStatus: index("idx_agents_status").on(table.status),
+  })
 );
 
 // ============================================================================
@@ -253,12 +255,12 @@ export const conversations = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_conversations_user").on(table.userId),
-    index("idx_conversations_agent").on(table.agentId),
-    index("idx_conversations_namespace").on(table.namespaceId),
-    index("idx_conversations_status").on(table.status),
-  ]
+  (table) => ({
+    idxConversationsUser: index("idx_conversations_user").on(table.userId),
+    idxConversationsAgent: index("idx_conversations_agent").on(table.agentId),
+    idxConversationsNamespace: index("idx_conversations_namespace").on(table.namespaceId),
+    idxConversationsStatus: index("idx_conversations_status").on(table.status),
+  })
 );
 
 // ============================================================================
@@ -283,11 +285,11 @@ export const messages = pgTable(
     isFromUser: boolean("is_from_user").default(true),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_messages_conversation").on(table.conversationId),
-    index("idx_messages_user").on(table.userId),
-    index("idx_messages_created").on(table.criadoEm),
-  ]
+  (table) => ({
+    idxMessagesConversation: index("idx_messages_conversation").on(table.conversationId),
+    idxMessagesUser: index("idx_messages_user").on(table.userId),
+    idxMessagesCreated: index("idx_messages_created").on(table.criadoEm),
+  })
 );
 
 // ============================================================================
@@ -313,11 +315,11 @@ export const documents = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_documents_namespace").on(table.namespaceId),
-    index("idx_documents_hash").on(table.hashConteudo),
-    index("idx_documents_semhash").on(table.semhash),
-  ]
+  (table) => ({
+    idxDocumentsNamespace: index("idx_documents_namespace").on(table.namespaceId),
+    idxDocumentsHash: index("idx_documents_hash").on(table.hashConteudo),
+    idxDocumentsSemhash: index("idx_documents_semhash").on(table.semhash),
+  })
 );
 
 // ============================================================================
@@ -337,10 +339,10 @@ export const documentChunks = pgTable(
     metadata: jsonb("metadata").default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_chunks_document").on(table.documentId),
-    index("idx_chunks_position").on(table.posicao),
-  ]
+  (table) => ({
+    idxChunksDocument: index("idx_chunks_document").on(table.documentId),
+    idxChunksPosition: index("idx_chunks_position").on(table.posicao),
+  })
 );
 
 // ============================================================================
@@ -363,10 +365,10 @@ export const learningTasks = pgTable(
     finalizadoEm: timestamp("finalizado_em"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_learning_tasks_status").on(table.status),
-    index("idx_learning_tasks_agent").on(table.agentId),
-  ]
+  (table) => ({
+    idxLearningTasksStatus: index("idx_learning_tasks_status").on(table.status),
+    idxLearningTasksAgent: index("idx_learning_tasks_agent").on(table.agentId),
+  })
 );
 
 // ============================================================================
@@ -388,10 +390,10 @@ export const integrations = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_integrations_tenant").on(table.tenantId),
-    index("idx_integrations_tipo").on(table.tipo),
-  ]
+  (table) => ({
+    idxIntegrationsTenant: index("idx_integrations_tenant").on(table.tenantId),
+    idxIntegrationsTipo: index("idx_integrations_tipo").on(table.tipo),
+  })
 );
 
 // ============================================================================
@@ -431,12 +433,12 @@ export const auditLogs = pgTable(
     userAgent: text("user_agent"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_audit_tenant").on(table.tenantId),
-    index("idx_audit_user").on(table.userId),
-    index("idx_audit_acao").on(table.acao),
-    index("idx_audit_created").on(table.criadoEm),
-  ]
+  (table) => ({
+    idxAuditTenant: index("idx_audit_tenant").on(table.tenantId),
+    idxAuditUser: index("idx_audit_user").on(table.userId),
+    idxAuditAcao: index("idx_audit_acao").on(table.acao),
+    idxAuditCreated: index("idx_audit_created").on(table.criadoEm),
+  })
 );
 
 // ============================================================================
@@ -463,12 +465,12 @@ export const usageMetrics = pgTable(
     errorMessage: text("error_message"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_usage_tenant").on(table.tenantId),
-    index("idx_usage_user").on(table.userId),
-    index("idx_usage_data").on(table.data),
-    index("idx_usage_type").on(table.type),
-  ]
+  (table) => ({
+    idxUsageTenant: index("idx_usage_tenant").on(table.tenantId),
+    idxUsageUser: index("idx_usage_user").on(table.userId),
+    idxUsageData: index("idx_usage_data").on(table.data),
+    idxUsageType: index("idx_usage_type").on(table.type),
+  })
 );
 
 // ============================================================================
@@ -502,13 +504,13 @@ export const trainingData = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     processadoEm: timestamp("processado_em"),
   },
-  (table) => [
-    index("idx_training_tenant").on(table.tenantId),
-    index("idx_training_namespace").on(table.namespaceId),
-    index("idx_training_status").on(table.status),
-    index("idx_training_semhash").on(table.semhash),
-    index("idx_training_source").on(table.source),
-  ]
+  (table) => ({
+    idxTrainingTenant: index("idx_training_tenant").on(table.tenantId),
+    idxTrainingNamespace: index("idx_training_namespace").on(table.namespaceId),
+    idxTrainingStatus: index("idx_training_status").on(table.status),
+    idxTrainingSemhash: index("idx_training_semhash").on(table.semhash),
+    idxTrainingSource: index("idx_training_source").on(table.source),
+  })
 );
 
 // ============================================================================
@@ -545,10 +547,10 @@ export const fineTuningJobs = pgTable(
     completadoEm: timestamp("completado_em"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_finetuning_tenant").on(table.tenantId),
-    index("idx_finetuning_status").on(table.status),
-  ]
+  (table) => ({
+    idxFinetuningTenant: index("idx_finetuning_tenant").on(table.tenantId),
+    idxFinetuningStatus: index("idx_finetuning_status").on(table.status),
+  })
 );
 
 // ============================================================================
@@ -583,12 +585,12 @@ export const wiseSyncLog = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     sincronizadoEm: timestamp("sincronizado_em"),
   },
-  (table) => [
-    index("idx_wise_sync_tenant").on(table.tenantId),
-    index("idx_wise_sync_transfer").on(table.wiseTransferId),
-    index("idx_wise_sync_status").on(table.status),
-    index("idx_wise_sync_erpnext").on(table.erpnextPaymentId),
-  ]
+  (table) => ({
+    idxWiseSyncTenant: index("idx_wise_sync_tenant").on(table.tenantId),
+    idxWiseSyncTransfer: index("idx_wise_sync_transfer").on(table.wiseTransferId),
+    idxWiseSyncStatus: index("idx_wise_sync_status").on(table.status),
+    idxWiseSyncErpnext: index("idx_wise_sync_erpnext").on(table.erpnextPaymentId),
+  })
 );
 
 // ============================================================================
@@ -642,13 +644,13 @@ export const conversationStates = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_conv_states_conversation").on(table.conversationId),
-    index("idx_conv_states_control_mode").on(table.controlMode),
-    index("idx_conv_states_assigned_agent").on(table.assignedAgentId),
-    index("idx_conv_states_pending").on(table.pendingSince),
-    index("idx_conv_states_sla").on(table.slaDeadline),
-  ]
+  (table) => ({
+    idxConvStatesConversation: index("idx_conv_states_conversation").on(table.conversationId),
+    idxConvStatesControlMode: index("idx_conv_states_control_mode").on(table.controlMode),
+    idxConvStatesAssignedAgent: index("idx_conv_states_assigned_agent").on(table.assignedAgentId),
+    idxConvStatesPending: index("idx_conv_states_pending").on(table.pendingSince),
+    idxConvStatesSla: index("idx_conv_states_sla").on(table.slaDeadline),
+  })
 );
 
 export const conversationParticipants = pgTable(
@@ -665,11 +667,11 @@ export const conversationParticipants = pgTable(
     isActive: boolean("is_active").default(true),
     metadata: jsonb("metadata").default({}),
   },
-  (table) => [
-    index("idx_conv_participants_conversation").on(table.conversationId),
-    index("idx_conv_participants_user").on(table.userId),
-    index("idx_conv_participants_active").on(table.isActive),
-  ]
+  (table) => ({
+    idxConvParticipantsConversation: index("idx_conv_participants_conversation").on(table.conversationId),
+    idxConvParticipantsUser: index("idx_conv_participants_user").on(table.userId),
+    idxConvParticipantsActive: index("idx_conv_participants_active").on(table.isActive),
+  })
 );
 
 export const conversationEscalations = pgTable(
@@ -692,12 +694,12 @@ export const conversationEscalations = pgTable(
     resolvedAt: timestamp("resolved_at"),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_escalations_conversation").on(table.conversationId),
-    index("idx_escalations_trigger").on(table.trigger),
-    index("idx_escalations_handler").on(table.handledBy),
-    index("idx_escalations_created").on(table.criadoEm),
-  ]
+  (table) => ({
+    idxEscalationsConversation: index("idx_escalations_conversation").on(table.conversationId),
+    idxEscalationsTrigger: index("idx_escalations_trigger").on(table.trigger),
+    idxEscalationsHandler: index("idx_escalations_handler").on(table.handledBy),
+    idxEscalationsCreated: index("idx_escalations_created").on(table.criadoEm),
+  })
 );
 
 // ============================================================================
@@ -735,12 +737,12 @@ export const modelVersions = pgTable(
     ativadoEm: timestamp("ativado_em"),
     deprecadoEm: timestamp("deprecado_em"),
   },
-  (table) => [
-    index("idx_model_versions_tenant").on(table.tenantId),
-    index("idx_model_versions_status").on(table.status),
-    index("idx_model_versions_active").on(table.isActive),
-    index("idx_model_versions_version").on(table.version),
-  ]
+  (table) => ({
+    idxModelVersionsTenant: index("idx_model_versions_tenant").on(table.tenantId),
+    idxModelVersionsStatus: index("idx_model_versions_status").on(table.status),
+    idxModelVersionsActive: index("idx_model_versions_active").on(table.isActive),
+    idxModelVersionsVersion: index("idx_model_versions_version").on(table.version),
+  })
 );
 
 // ============================================================================
@@ -772,11 +774,11 @@ export const autoLearningSchedule = pgTable(
     metadata: jsonb("metadata").default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_auto_learning_tenant").on(table.tenantId),
-    index("idx_auto_learning_status").on(table.status),
-    index("idx_auto_learning_scheduled").on(table.scheduledFor),
-  ]
+  (table) => ({
+    idxAutoLearningTenant: index("idx_auto_learning_tenant").on(table.tenantId),
+    idxAutoLearningStatus: index("idx_auto_learning_status").on(table.status),
+    idxAutoLearningScheduled: index("idx_auto_learning_scheduled").on(table.scheduledFor),
+  })
 );
 
 // ============================================================================
@@ -831,14 +833,14 @@ export const generatedImages = pgTable(
     
     criadoEm: timestamp("criado_em").defaultNow(),
   },
-  (table) => [
-    index("idx_gen_images_tenant").on(table.tenantId),
-    index("idx_gen_images_conversation").on(table.conversationId),
-    index("idx_gen_images_created_by").on(table.createdBy),
-    index("idx_gen_images_status").on(table.status),
-    index("idx_gen_images_approved").on(table.approvedForTraining),
-    index("idx_gen_images_used").on(table.usedInFineTuning),
-  ]
+  (table) => ({
+    idxGenImagesTenant: index("idx_gen_images_tenant").on(table.tenantId),
+    idxGenImagesConversation: index("idx_gen_images_conversation").on(table.conversationId),
+    idxGenImagesCreatedBy: index("idx_gen_images_created_by").on(table.createdBy),
+    idxGenImagesStatus: index("idx_gen_images_status").on(table.status),
+    idxGenImagesApproved: index("idx_gen_images_approved").on(table.approvedForTraining),
+    idxGenImagesUsed: index("idx_gen_images_used").on(table.usedInFineTuning),
+  })
 );
 
 // ============================================================================
@@ -916,17 +918,15 @@ export const mediaUploads = pgTable(
     criadoEm: timestamp("criado_em").defaultNow(),
     processadoEm: timestamp("processado_em"),
   },
-  (table) => [
-    // Índices compostos para tenant isolation
-    index("idx_media_uploads_tenant_conversation").on(table.tenantId, table.conversationId),
-    index("idx_media_uploads_tenant_message").on(table.tenantId, table.messageId),
-    index("idx_media_uploads_tenant_user").on(table.tenantId, table.userId),
-    index("idx_media_uploads_tenant_type").on(table.tenantId, table.mediaType),
-    // Índices simples
-    index("idx_media_uploads_status").on(table.processingStatus),
-    index("idx_media_uploads_created").on(table.criadoEm),
-    index("idx_media_uploads_approved").on(table.approvedForTraining),
-  ]
+  (table) => ({
+    idxMediaUploadsTenantConversation: index("idx_media_uploads_tenant_conversation").on(table.tenantId, table.conversationId),
+    idxMediaUploadsTenantMessage: index("idx_media_uploads_tenant_message").on(table.tenantId, table.messageId),
+    idxMediaUploadsTenantUser: index("idx_media_uploads_tenant_user").on(table.tenantId, table.userId),
+    idxMediaUploadsTenantType: index("idx_media_uploads_tenant_type").on(table.tenantId, table.mediaType),
+    idxMediaUploadsStatus: index("idx_media_uploads_status").on(table.processingStatus),
+    idxMediaUploadsCreated: index("idx_media_uploads_created").on(table.criadoEm),
+    idxMediaUploadsApproved: index("idx_media_uploads_approved").on(table.approvedForTraining),
+  })
 );
 
 // ============================================================================
