@@ -29,6 +29,7 @@ import {
 } from '../../../packages/shared-utils/src/rbac/middleware.js';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM } from './image-processor.js';
+import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1049,11 +1050,11 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             thumbnailUrl = thumbStored.fileUrl;
           }
 
-          // Atualizar registro com embedding, thumbnail e metadata
+          // Atualizar registro com embedding CLIP, thumbnail e metadata
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
-              embedding: result.embedding,
+              clipEmbedding: result.embedding, // CLIP embedding 768 dim para imagens
               thumbnailPath,
               thumbnailUrl,
               extractedMetadata: {
@@ -1072,12 +1073,48 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             embeddingModel: result.embeddingModel,
             hasThumbnail: !!thumbnailPath,
           }, 'Imagem processada com sucesso');
+        } else if (mediaType === 'audio') {
+          // Processar áudio com Whisper transcrição
+          const audioProcessor = getAudioProcessor();
+          const result = await audioProcessor.processAudio(
+            req.file!.buffer,
+            req.file!.mimetype
+          );
+
+          // Atualizar registro com transcrição, embedding de texto e metadata
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              transcription: result.transcription,
+              transcriptionLanguage: result.transcriptionLanguage,
+              transcriptionConfidence: result.transcriptionConfidence,
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 1536 dim
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            transcriptionLength: result.transcription.length,
+            language: result.transcriptionLanguage,
+            embeddingDim: result.embedding.length,
+          }, 'Áudio processado com sucesso');
         } else {
-          // Para audio/video/document - marcamos como pending_processing
-          // Será implementado nas próximas tarefas
+          // Para video/document - marcamos como pending_processing
+          // Será implementado nas próximas tarefas (vídeo usará frames + whisper)
           await db.update(schema.mediaUploads)
             .set({ processingStatus: 'pending' })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            mediaType,
+          }, 'Mídia aguardando processamento (não implementado)');
         }
       } catch (error) {
         logger.error({ error, uploadId: mediaUploadRecord.id }, 'Erro ao processar mídia');
@@ -1100,17 +1137,38 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       logger.error({ error: err }, 'Erro no processamento assíncrono');
     });
 
+    // Determinar mensagem e features baseado no tipo de mídia
+    const processingInfo: Record<string, { message: string; features: string[] }> = {
+      image: {
+        message: 'Upload recebido. Processamento CLIP iniciado.',
+        features: ['CLIP embedding (768 dim)', 'thumbnail', 'metadata extraction'],
+      },
+      audio: {
+        message: 'Upload recebido. Transcrição Whisper iniciada.',
+        features: ['Transcrição Whisper', 'text embedding (1536 dim)', 'metadata extraction'],
+      },
+      video: {
+        message: 'Upload recebido. Processamento pendente.',
+        features: ['Frame extraction (pendente)', 'Transcrição Whisper (pendente)'],
+      },
+      document: {
+        message: 'Upload recebido. Processamento pendente.',
+        features: ['Text extraction (pendente)', 'text embedding (pendente)'],
+      },
+    };
+
+    const info = processingInfo[mediaType] || { 
+      message: 'Upload recebido.', 
+      features: [] 
+    };
+
     res.status(201).json({ 
       upload: mediaUploadRecord,
-      message: mediaType === 'image' 
-        ? 'Upload recebido. Processamento CLIP iniciado.' 
-        : 'Upload recebido. Processamento pendente.',
+      message: info.message,
       processing: {
         status: 'started',
         type: mediaType,
-        features: mediaType === 'image'
-          ? ['CLIP embedding (768 dim)', 'metadata extraction']
-          : ['pendente'],
+        features: info.features,
       },
     });
   } catch (error) {
@@ -1363,7 +1421,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
 
     if (imageId) {
       const [referenceImage] = await db
-        .select({ embedding: schema.mediaUploads.embedding })
+        .select({ clipEmbedding: schema.mediaUploads.clipEmbedding })
         .from(schema.mediaUploads)
         .where(and(
           eq(schema.mediaUploads.id, imageId),
@@ -1373,13 +1431,13 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
         ))
         .limit(1);
 
-      if (!referenceImage?.embedding) {
+      if (!referenceImage?.clipEmbedding) {
         return res.status(404).json({ 
           error: 'Imagem de referência não encontrada ou ainda não processada' 
         });
       }
 
-      queryEmbedding = referenceImage.embedding as number[];
+      queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
       // Para busca por texto, precisamos gerar embedding do texto via CLIP
       // Por enquanto, retornar erro (será implementado quando Salad Cloud estiver configurado)
@@ -1393,7 +1451,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
       return res.status(400).json({ error: 'Não foi possível obter embedding para busca' });
     }
 
-    // Buscar imagens com embeddings usando similaridade de cosseno
+    // Buscar imagens com embeddings CLIP usando similaridade de cosseno
     // Nota: Para produção, usar pgvector com operador <=> (distância de cosseno)
     const allImages = await db
       .select({
@@ -1401,7 +1459,7 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
         originalFilename: schema.mediaUploads.originalFilename,
         fileUrl: schema.mediaUploads.fileUrl,
         mimeType: schema.mediaUploads.mimeType,
-        embedding: schema.mediaUploads.embedding,
+        clipEmbedding: schema.mediaUploads.clipEmbedding,
         extractedMetadata: schema.mediaUploads.extractedMetadata,
         createdAt: schema.mediaUploads.createdAt,
       })
@@ -1410,14 +1468,14 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
         eq(schema.mediaUploads.tenantId, tenantId),
         eq(schema.mediaUploads.mediaType, 'image'),
         eq(schema.mediaUploads.processingStatus, 'completed'),
-        isNotNull(schema.mediaUploads.embedding)
+        isNotNull(schema.mediaUploads.clipEmbedding)
       ));
 
     // Calcular similaridade de cosseno para cada imagem
     const results = allImages
-      .filter(img => img.id !== imageId && img.embedding) // Excluir imagem de referência
+      .filter(img => img.id !== imageId && img.clipEmbedding) // Excluir imagem de referência
       .map(img => {
-        const embedding = img.embedding as number[];
+        const embedding = img.clipEmbedding as number[];
         const similarity = cosineSimilarity(queryEmbedding!, embedding);
         return {
           id: img.id,
@@ -1473,7 +1531,10 @@ function cosineSimilarity(a: number[], b: number[]): number {
 // Health check específico para multimodal
 app.get('/api/media/health', (_req: Request, res: Response) => {
   const imageProcessor = getImageProcessor();
-  const config = imageProcessor.getConfig();
+  const imageConfig = imageProcessor.getConfig();
+  
+  const audioProcessor = getAudioProcessor();
+  const audioConfig = audioProcessor.getConfig();
   
   res.json({ 
     status: 'ok', 
@@ -1481,10 +1542,26 @@ app.get('/api/media/health', (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     supportedTypes: SUPPORTED_MEDIA_TYPES,
     maxFileSizeMb: 100,
-    imageProcessing: {
-      configured: config.configured,
-      embeddingDim: config.embeddingDim,
-      model: config.model,
+    processing: {
+      image: {
+        configured: imageConfig.configured,
+        embeddingDim: imageConfig.embeddingDim,
+        model: imageConfig.model,
+      },
+      audio: {
+        configured: audioConfig.configured,
+        embeddingDim: audioConfig.embeddingDim,
+        transcriptionModel: audioConfig.transcriptionModel,
+        embeddingModel: audioConfig.embeddingModel,
+      },
+      video: {
+        configured: false,
+        status: 'pendente',
+      },
+      document: {
+        configured: false,
+        status: 'pendente',
+      },
     },
   });
 });

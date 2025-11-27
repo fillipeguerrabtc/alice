@@ -1,0 +1,466 @@
+/**
+ * Audio Processor Service - Alice Enterprise Platform
+ * 
+ * Processamento de áudio:
+ * - Transcrição via Whisper (Salad Cloud)
+ * - Text embedding da transcrição
+ * - Extração de metadata (duração, formato, bitrate)
+ * 
+ * Documentação em PT-BR (Regra 10 replit.md)
+ */
+
+import pino from 'pino';
+import crypto from 'crypto';
+
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  transport: {
+    target: 'pino-pretty',
+    options: { colorize: true }
+  }
+}).child({ service: 'audio-processor' });
+
+// Configuração Salad Cloud
+const SALAD_API_KEY = process.env.SALAD_API_KEY;
+const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
+const SALAD_WHISPER_ENDPOINT = process.env.SALAD_WHISPER_ENDPOINT || 'https://api.salad.com/api/public';
+
+// Dimensão dos embeddings de texto
+export const TEXT_EMBEDDING_DIM = 1536;
+
+export interface AudioMetadata {
+  duration?: number; // segundos
+  format?: string;
+  channels?: number;
+  sampleRate?: number;
+  bitrate?: number;
+  fileSize: number;
+}
+
+export interface ProcessedAudio {
+  transcription: string;
+  transcriptionLanguage?: string;
+  transcriptionConfidence?: number;
+  embedding: number[];
+  embeddingModel: string;
+  metadata: AudioMetadata;
+  processedAt: string;
+  processingTimeMs: number;
+}
+
+export interface AudioProcessorOptions {
+  language?: string; // 'pt', 'en', etc. ou 'auto' para detecção
+  generateEmbedding?: boolean;
+}
+
+class AudioProcessorService {
+  private isConfigured: boolean = false;
+
+  constructor() {
+    if (SALAD_API_KEY && SALAD_ORGANIZATION_ID) {
+      this.isConfigured = true;
+      logger.info('Audio Processor configurado com Salad Cloud (Whisper)');
+    } else {
+      logger.warn('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados - transcrição indisponível');
+    }
+  }
+
+  /**
+   * Processa um arquivo de áudio: transcreve e gera embedding
+   */
+  async processAudio(
+    audioBuffer: Buffer,
+    mimeType: string,
+    options: AudioProcessorOptions = {}
+  ): Promise<ProcessedAudio> {
+    const startTime = Date.now();
+    const { language = 'auto', generateEmbedding = true } = options;
+
+    // Extrair metadata básica
+    const metadata = await this.extractMetadata(audioBuffer, mimeType);
+
+    // Transcrever via Whisper
+    let transcription = '';
+    let transcriptionLanguage: string | undefined;
+    let transcriptionConfidence: number | undefined;
+
+    if (this.isConfigured) {
+      try {
+        const result = await this.transcribeWithWhisper(audioBuffer, mimeType, language);
+        transcription = result.text;
+        transcriptionLanguage = result.language;
+        transcriptionConfidence = result.confidence;
+      } catch (error) {
+        logger.error({ error }, 'Erro na transcrição Whisper');
+        transcription = '[Transcrição não disponível - erro no processamento]';
+      }
+    } else {
+      // Mock para desenvolvimento
+      transcription = this.generateMockTranscription(audioBuffer);
+      transcriptionLanguage = 'pt';
+    }
+
+    // Gerar embedding do texto transcrito
+    let embedding: number[] = [];
+    let embeddingModel = 'none';
+
+    if (generateEmbedding && transcription && !transcription.startsWith('[')) {
+      if (this.isConfigured) {
+        try {
+          const result = await this.generateTextEmbedding(transcription);
+          embedding = result.embedding;
+          embeddingModel = result.model;
+        } catch (error) {
+          logger.error({ error }, 'Erro ao gerar embedding do texto');
+          embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
+          embeddingModel = 'fallback-zero';
+        }
+      } else {
+        // Mock embedding baseado no hash do texto
+        embedding = this.generateMockEmbedding(transcription);
+        embeddingModel = 'mock-dev';
+      }
+    }
+
+    const processingTimeMs = Date.now() - startTime;
+
+    logger.info({
+      transcriptionLength: transcription.length,
+      language: transcriptionLanguage,
+      embeddingDim: embedding.length,
+      embeddingModel,
+      processingTimeMs,
+    }, 'Áudio processado');
+
+    return {
+      transcription,
+      transcriptionLanguage,
+      transcriptionConfidence,
+      embedding,
+      embeddingModel,
+      metadata,
+      processedAt: new Date().toISOString(),
+      processingTimeMs,
+    };
+  }
+
+  /**
+   * Transcreve áudio usando Whisper via Salad Cloud
+   */
+  private async transcribeWithWhisper(
+    audioBuffer: Buffer,
+    mimeType: string,
+    language: string
+  ): Promise<{ text: string; language: string; confidence?: number }> {
+    const base64Audio = audioBuffer.toString('base64');
+    
+    try {
+      const response = await fetch(`${SALAD_WHISPER_ENDPOINT}/inference/whisper`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Salad-Api-Key': SALAD_API_KEY!,
+          'Salad-Organization': SALAD_ORGANIZATION_ID!,
+        },
+        body: JSON.stringify({
+          audio: `data:${mimeType};base64,${base64Audio}`,
+          model: 'whisper-large-v3',
+          language: language === 'auto' ? undefined : language,
+          task: 'transcribe',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Whisper API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json() as { 
+        text: string; 
+        language: string; 
+        segments?: Array<{ confidence?: number }>;
+      };
+
+      // Calcular confiança média dos segmentos
+      let avgConfidence: number | undefined;
+      if (result.segments && result.segments.length > 0) {
+        const confidences = result.segments
+          .filter(s => s.confidence !== undefined)
+          .map(s => s.confidence!);
+        if (confidences.length > 0) {
+          avgConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
+        }
+      }
+
+      return {
+        text: result.text.trim(),
+        language: result.language,
+        confidence: avgConfidence,
+      };
+    } catch (error) {
+      logger.error({ error }, 'Erro na API Whisper');
+      throw error;
+    }
+  }
+
+  /**
+   * Gera embedding de texto via Salad Cloud
+   */
+  private async generateTextEmbedding(
+    text: string
+  ): Promise<{ embedding: number[]; model: string }> {
+    try {
+      const response = await fetch(`${SALAD_WHISPER_ENDPOINT}/inference/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Salad-Api-Key': SALAD_API_KEY!,
+          'Salad-Organization': SALAD_ORGANIZATION_ID!,
+        },
+        body: JSON.stringify({
+          input: text,
+          model: 'text-embedding-3-small',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json() as { 
+        data: Array<{ embedding: number[] }>; 
+        model: string;
+      };
+
+      if (!result.data || result.data.length === 0) {
+        throw new Error('Resposta de embedding vazia');
+      }
+
+      return {
+        embedding: result.data[0].embedding,
+        model: result.model || 'text-embedding-3-small',
+      };
+    } catch (error) {
+      logger.error({ error }, 'Erro na API de Embeddings');
+      throw error;
+    }
+  }
+
+  /**
+   * Gera transcrição mock para desenvolvimento
+   */
+  private generateMockTranscription(audioBuffer: Buffer): string {
+    // Gerar texto determinístico baseado no tamanho do arquivo
+    const fileSizeKb = Math.round(audioBuffer.length / 1024);
+    const hash = crypto.createHash('md5').update(audioBuffer).digest('hex').substring(0, 8);
+    
+    // Estimar duração baseada no tamanho (128kbps típico para MP3)
+    const estimatedDuration = Math.round(audioBuffer.length / (128 * 1024 / 8));
+    
+    return `[Transcrição mock para desenvolvimento] ` +
+      `Arquivo de áudio com ${fileSizeKb}KB. ` +
+      `Duração estimada: ${estimatedDuration} segundos. ` +
+      `Hash: ${hash}. ` +
+      `Para transcrição real, configure SALAD_API_KEY.`;
+  }
+
+  /**
+   * Gera embedding mock baseado no hash do texto
+   */
+  private generateMockEmbedding(text: string): number[] {
+    const hash = crypto.createHash('sha256').update(text).digest();
+    const embedding: number[] = [];
+
+    for (let i = 0; i < TEXT_EMBEDDING_DIM; i++) {
+      const byteIndex = i % hash.length;
+      const byte = hash[byteIndex];
+      // Normalizar para [-1, 1]
+      const value = ((byte / 255) * 2 - 1) * (0.5 + (i % 10) / 20);
+      embedding.push(value);
+    }
+
+    // Normalizar vetor para norma unitária
+    const norm = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
+    return embedding.map(v => v / norm);
+  }
+
+  /**
+   * Extrai metadata do áudio
+   */
+  private async extractMetadata(
+    audioBuffer: Buffer,
+    mimeType: string
+  ): Promise<AudioMetadata> {
+    const metadata: AudioMetadata = {
+      fileSize: audioBuffer.length,
+    };
+
+    // Determinar formato baseado no MIME type
+    const formatMap: Record<string, string> = {
+      'audio/mpeg': 'mp3',
+      'audio/mp3': 'mp3',
+      'audio/wav': 'wav',
+      'audio/wave': 'wav',
+      'audio/ogg': 'ogg',
+      'audio/webm': 'webm',
+      'audio/aac': 'aac',
+      'audio/flac': 'flac',
+      'audio/m4a': 'm4a',
+    };
+    metadata.format = formatMap[mimeType] || 'unknown';
+
+    // Tentar extrair informações básicas do header
+    try {
+      if (mimeType === 'audio/mpeg' || mimeType === 'audio/mp3') {
+        const mp3Info = this.extractMp3Info(audioBuffer);
+        if (mp3Info) {
+          metadata.bitrate = mp3Info.bitrate;
+          metadata.sampleRate = mp3Info.sampleRate;
+          metadata.channels = mp3Info.channels;
+          metadata.duration = mp3Info.duration;
+        }
+      } else if (mimeType === 'audio/wav' || mimeType === 'audio/wave') {
+        const wavInfo = this.extractWavInfo(audioBuffer);
+        if (wavInfo) {
+          metadata.sampleRate = wavInfo.sampleRate;
+          metadata.channels = wavInfo.channels;
+          metadata.duration = wavInfo.duration;
+        }
+      }
+    } catch (error) {
+      logger.warn({ error, mimeType }, 'Não foi possível extrair metadata do áudio');
+    }
+
+    return metadata;
+  }
+
+  /**
+   * Extrai informações básicas de arquivo MP3
+   */
+  private extractMp3Info(buffer: Buffer): {
+    bitrate: number;
+    sampleRate: number;
+    channels: number;
+    duration: number;
+  } | null {
+    try {
+      // Procurar frame header MP3 (sync word: 0xFF + 0xE0-0xFF)
+      for (let i = 0; i < Math.min(buffer.length - 4, 8192); i++) {
+        if (buffer[i] === 0xFF && (buffer[i + 1] & 0xE0) === 0xE0) {
+          const byte1 = buffer[i + 1];
+          const byte2 = buffer[i + 2];
+          const byte3 = buffer[i + 3];
+
+          // Versão MPEG
+          const version = (byte1 >> 3) & 0x03;
+          const layer = (byte1 >> 1) & 0x03;
+          
+          // Tabela de bitrates (Layer III, MPEG1)
+          const bitrateIndex = (byte2 >> 4) & 0x0F;
+          const bitrateTable = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
+          const bitrate = bitrateTable[bitrateIndex] || 128;
+
+          // Tabela de sample rates
+          const sampleRateIndex = (byte2 >> 2) & 0x03;
+          const sampleRateTable: Record<number, number[]> = {
+            3: [44100, 48000, 32000], // MPEG1
+            2: [22050, 24000, 16000], // MPEG2
+            0: [11025, 12000, 8000],  // MPEG2.5
+          };
+          const sampleRate = (sampleRateTable[version] || sampleRateTable[3])[sampleRateIndex] || 44100;
+
+          // Modo (stereo/mono)
+          const mode = (byte3 >> 6) & 0x03;
+          const channels = mode === 3 ? 1 : 2;
+
+          // Estimar duração baseado no tamanho e bitrate
+          const duration = Math.round((buffer.length * 8) / (bitrate * 1000));
+
+          return { bitrate, sampleRate, channels, duration };
+        }
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Extrai informações básicas de arquivo WAV
+   */
+  private extractWavInfo(buffer: Buffer): {
+    sampleRate: number;
+    channels: number;
+    duration: number;
+  } | null {
+    try {
+      // Verificar header RIFF/WAVE
+      if (buffer.slice(0, 4).toString() !== 'RIFF' ||
+          buffer.slice(8, 12).toString() !== 'WAVE') {
+        return null;
+      }
+
+      // Procurar chunk 'fmt '
+      let offset = 12;
+      while (offset < buffer.length - 8) {
+        const chunkId = buffer.slice(offset, offset + 4).toString();
+        const chunkSize = buffer.readUInt32LE(offset + 4);
+
+        if (chunkId === 'fmt ') {
+          const channels = buffer.readUInt16LE(offset + 10);
+          const sampleRate = buffer.readUInt32LE(offset + 12);
+          const byteRate = buffer.readUInt32LE(offset + 16);
+
+          // Estimar duração
+          const dataSize = buffer.length - 44; // Estimativa
+          const duration = Math.round(dataSize / byteRate);
+
+          return { sampleRate, channels, duration };
+        }
+
+        offset += 8 + chunkSize;
+        if (chunkSize % 2 !== 0) offset++; // Padding
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Verifica se o serviço está configurado
+   */
+  isReady(): boolean {
+    return true; // Funciona mesmo sem Salad (usa mock)
+  }
+
+  /**
+   * Retorna informações sobre a configuração
+   */
+  getConfig(): { 
+    configured: boolean; 
+    embeddingDim: number; 
+    transcriptionModel: string;
+    embeddingModel: string;
+  } {
+    return {
+      configured: this.isConfigured,
+      embeddingDim: TEXT_EMBEDDING_DIM,
+      transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'mock (desenvolvimento)',
+      embeddingModel: this.isConfigured ? 'text-embedding-3-small (Salad Cloud)' : 'mock (desenvolvimento)',
+    };
+  }
+}
+
+// Singleton
+let audioProcessorInstance: AudioProcessorService | null = null;
+
+export function getAudioProcessor(): AudioProcessorService {
+  if (!audioProcessorInstance) {
+    audioProcessorInstance = new AudioProcessorService();
+  }
+  return audioProcessorInstance;
+}
+
+export const audioProcessor = getAudioProcessor();
