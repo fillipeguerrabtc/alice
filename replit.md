@@ -102,9 +102,17 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 
 | Folder | Description | Tests |
 |--------|-------------|-------|
-| `tests/unit/` | Unit tests | 53 tests |
+| `tests/unit/` | Unit tests | 111 tests |
 | `tests/setup.ts` | Global configuration | Pino logger |
 | `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
+
+### Test Files
+
+| File | Description | Tests |
+|------|-------------|-------|
+| `setup-verification.test.ts` | Vitest setup validation | 8 |
+| `health-endpoints.test.ts` | Health endpoint contracts | 45 |
+| `schema-validation.test.ts` | Drizzle schema validation | 58 |
 
 ### Health Endpoint Contract Tests
 
@@ -130,7 +138,27 @@ Validates schemas for all 6 microservices:
 | integrations | integrations (stripe, erpnext, wise), circuitBreakers |
 | observability | services (Prometheus, Grafana, Jaeger, Langfuse), uptimeSeconds |
 
+### Schema Validation Tests
+
+Validates Drizzle ORM schema structure:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| Enums RBAC | 12 | userRoleEnum (6 níveis), messageTypeEnum, status enums |
+| Tabelas Principais | 22 | tenants, users, agents, conversations, messages, documents |
+| Insert Schemas | 18 | Zod validation for all main tables |
+| Integridade | 6 | Multi-tenancy, timestamps, pgvector, SemHash |
+
 ## Recent Changes (November 2025)
+
+### Schema Validation Tests (Phase 1 Step 1.3)
+
+Implemented 58 tests for validating Drizzle schema:
+- `tests/unit/schema-validation.test.ts` - Schema structure validation
+- Enums: userRoleEnum, messageTypeEnum, conversationControlModeEnum
+- Tables: tenants, users, agents, conversations, messages, documents
+- Insert Schemas: Zod validation with required fields
+- Total: 111 tests passing (8 setup + 45 health + 58 schema)
 
 ### Health Endpoint Tests (Phase 1 Step 1.2)
 
@@ -139,4 +167,3 @@ Implemented 45 contract tests for validating microservice schemas:
 - Schemas for auth, chat, rag, training, integrations, observability
 - Circuit breaker states (open, closed, half-open)
 - Port and endpoint configuration (Rule 16)
-- Total: 53 tests passing (8 setup + 45 health)
