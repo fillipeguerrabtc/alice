@@ -81,18 +81,20 @@ The frontend is a React SPA, with branding assets managed centrally.
 
 ### Logging Compliance (Regra 8 - COMPLETO)
 
-- `apps/frontend-service/src/lib/logger.ts`: Frontend logger estruturado (sendBeacon + fetch fallback)
+- `apps/frontend-service/src/lib/logger.ts`: Frontend logger resiliente (sendBeacon + fetch, retry com backoff, queue 100 itens, flush automático)
 - `apps/frontend-service/src/pages/Chat.tsx`: frontendLogger.warn + toast para uploads inválidos
+- `apps/observability-service/src/index.ts`: Rota POST /api/observability/logs para receber telemetria do frontend
 - `packages/config/src/index.ts`: Pino logger para erros de configuração
 - Zero console.* em código executável
 
 ### Testing
 
-- 309 testes passando (unit + contract)
+- 334 testes passando (unit + contract)
 - RBAC: 81 testes (hierarquia, permissões, middleware, cache)
 - Config: 117 testes (validação, service URLs, timeouts)
 - Schema: 58 testes (Drizzle, enums, tabelas)
 - Health: 45 testes (contratos de todos os serviços)
+- Frontend Logger: 25 testes (estrutura, retry, queue, flush automático)
 
 ### Backlog
 
