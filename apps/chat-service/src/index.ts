@@ -22,6 +22,12 @@ import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
 import { 
+  requirePermission, 
+  requireAuth,
+  requireSameTenant,
+  extractAuthContext,
+} from '../../../packages/shared-utils/src/rbac/middleware.js';
+import { 
   buscarContextoRAG, 
   formatarContextoParaLLM, 
   getRAGBreakerStats,
@@ -330,7 +336,7 @@ app.get('/api/chat/usage', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/api/chat/conversations', async (req: Request, res: Response) => {
+app.get('/api/chat/conversations', requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
   const userId = req.headers['x-user-id'] as string;
   
   if (!userId) {
@@ -357,7 +363,7 @@ const createConversationSchema = z.object({
   titulo: z.string().optional(),
 });
 
-app.post('/api/chat/conversations', async (req: Request, res: Response) => {
+app.post('/api/chat/conversations', requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
   const userId = req.headers['x-user-id'] as string;
   
   if (!userId) {
@@ -382,7 +388,7 @@ app.post('/api/chat/conversations', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/chat/conversations/:id/messages', async (req: Request, res: Response) => {
+app.get('/api/chat/conversations/:id/messages', requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
@@ -403,7 +409,7 @@ const sendMessageSchema = z.object({
   tipo: z.enum(['text', 'image', 'audio', 'video', 'document', 'mixed']).default('text'),
 });
 
-app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Response) => {
+app.post('/api/chat/conversations/:id/messages', requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
   const userId = req.headers['x-user-id'] as string;
 
@@ -498,7 +504,7 @@ app.post('/api/chat/conversations/:id/messages', async (req: Request, res: Respo
   }
 });
 
-app.post('/api/chat/stream', async (req: Request, res: Response) => {
+app.post('/api/chat/stream', requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { messages: inputMessages, conversationId, namespaceId } = req.body as { 
     messages: Array<{ role: string; content: string }>;
     conversationId?: string;

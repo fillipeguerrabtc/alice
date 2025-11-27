@@ -28,6 +28,11 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import * as schema from '../../../packages/shared/src/schema';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
+import { 
+  requirePermission, 
+  requireAuth,
+  requireRole,
+} from '../../../packages/shared-utils/src/rbac/middleware.js';
 
 const { Pool } = pg;
 
@@ -856,7 +861,7 @@ app.post('/api/auth/logout', (req: Request, res: Response) => {
 // ROTAS: Permissões RBAC
 // ============================================================================
 
-app.get('/api/auth/permissions', async (req: Request, res: Response) => {
+app.get('/api/auth/permissions', requireAuth(), async (req: Request, res: Response) => {
   if (!req.isAuthenticated() || !req.user) {
     return res.status(401).json({ error: 'Não autenticado' });
   }

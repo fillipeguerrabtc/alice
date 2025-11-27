@@ -12,6 +12,10 @@ import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient';
+import { 
+  requirePermission, 
+  requireAuth,
+} from '../../../packages/shared-utils/src/rbac/middleware.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -130,7 +134,7 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/integrations', async (req: Request, res: Response) => {
+app.get('/api/integrations', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
   const tenantId = req.query.tenantId as string;
 
   try {
@@ -156,7 +160,7 @@ const createIntegrationSchema = z.object({
   credenciais: z.record(z.unknown()).optional(),
 });
 
-app.post('/api/integrations', async (req: Request, res: Response) => {
+app.post('/api/integrations', requirePermission('integrations:integrations:write'), async (req: Request, res: Response) => {
   try {
     const body = createIntegrationSchema.parse(req.body);
     const db = getDatabase();
@@ -178,7 +182,7 @@ app.post('/api/integrations', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/integrations/stripe/create-checkout', async (req: Request, res: Response) => {
+app.post('/api/integrations/stripe/create-checkout', requirePermission('integrations:stripe:write'), async (req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
@@ -223,7 +227,7 @@ app.post('/api/integrations/stripe/create-checkout', async (req: Request, res: R
   }
 });
 
-app.post('/api/integrations/stripe/create-portal', async (req: Request, res: Response) => {
+app.post('/api/integrations/stripe/create-portal', requirePermission('integrations:stripe:write'), async (req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
@@ -253,7 +257,7 @@ app.post('/api/integrations/stripe/create-portal', async (req: Request, res: Res
 });
 
 // Listar produtos do Stripe
-app.get('/api/integrations/stripe/products', async (_req: Request, res: Response) => {
+app.get('/api/integrations/stripe/products', requirePermission('integrations:stripe:read'), async (_req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
@@ -275,7 +279,7 @@ app.get('/api/integrations/stripe/products', async (_req: Request, res: Response
 });
 
 // Criar PaymentIntent para pagamento único
-app.post('/api/integrations/stripe/create-payment-intent', async (req: Request, res: Response) => {
+app.post('/api/integrations/stripe/create-payment-intent', requirePermission('integrations:stripe:write'), async (req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
@@ -436,7 +440,7 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
   }
 });
 
-app.get('/api/integrations/erpnext/test', async (_req: Request, res: Response) => {
+app.get('/api/integrations/erpnext/test', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
   if (!config.ERPNEXT_URL) {
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
@@ -460,7 +464,7 @@ app.get('/api/integrations/erpnext/test', async (_req: Request, res: Response) =
   }
 });
 
-app.get('/api/integrations/erpnext/customers', async (_req: Request, res: Response) => {
+app.get('/api/integrations/erpnext/customers', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
   if (!config.ERPNEXT_URL) {
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
@@ -487,7 +491,7 @@ app.get('/api/integrations/erpnext/customers', async (_req: Request, res: Respon
   }
 });
 
-app.get('/api/integrations/erpnext/items', async (_req: Request, res: Response) => {
+app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpnext:read'), async (_req: Request, res: Response) => {
   if (!config.ERPNEXT_URL) {
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
@@ -514,7 +518,7 @@ app.get('/api/integrations/erpnext/items', async (_req: Request, res: Response) 
   }
 });
 
-app.post('/api/integrations/resend/send', async (req: Request, res: Response) => {
+app.post('/api/integrations/resend/send', requirePermission('integrations:resend:write'), async (req: Request, res: Response) => {
   const { to, subject, html, from } = req.body;
 
   const resendApiKey = process.env.RESEND_API_KEY;
@@ -557,7 +561,7 @@ app.post('/api/integrations/resend/send', async (req: Request, res: Response) =>
 // ============================================================
 
 // Obter saldos multi-moeda
-app.get('/api/integrations/wise/balances', async (_req: Request, res: Response) => {
+app.get('/api/integrations/wise/balances', requirePermission('integrations:wise:read'), async (_req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -572,7 +576,7 @@ app.get('/api/integrations/wise/balances', async (_req: Request, res: Response) 
 });
 
 // Obter taxas de câmbio
-app.get('/api/integrations/wise/rates', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/rates', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -592,7 +596,7 @@ app.get('/api/integrations/wise/rates', async (req: Request, res: Response) => {
 });
 
 // Criar cotação
-app.post('/api/integrations/wise/quotes', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/quotes', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -614,7 +618,7 @@ app.post('/api/integrations/wise/quotes', async (req: Request, res: Response) =>
 });
 
 // Listar destinatários
-app.get('/api/integrations/wise/recipients', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/recipients', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -631,7 +635,7 @@ app.get('/api/integrations/wise/recipients', async (req: Request, res: Response)
 });
 
 // Criar destinatário
-app.post('/api/integrations/wise/recipients', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/recipients', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -653,7 +657,7 @@ app.post('/api/integrations/wise/recipients', async (req: Request, res: Response
 });
 
 // Obter destinatário por ID
-app.get('/api/integrations/wise/recipients/:id', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/recipients/:id', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -668,7 +672,7 @@ app.get('/api/integrations/wise/recipients/:id', async (req: Request, res: Respo
 });
 
 // Excluir destinatário
-app.delete('/api/integrations/wise/recipients/:id', async (req: Request, res: Response) => {
+app.delete('/api/integrations/wise/recipients/:id', requirePermission('integrations:wise:delete'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -683,7 +687,7 @@ app.delete('/api/integrations/wise/recipients/:id', async (req: Request, res: Re
 });
 
 // Listar transferências
-app.get('/api/integrations/wise/transfers', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/transfers', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -701,7 +705,7 @@ app.get('/api/integrations/wise/transfers', async (req: Request, res: Response) 
 });
 
 // Criar transferência
-app.post('/api/integrations/wise/transfers', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/transfers', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -725,7 +729,7 @@ app.post('/api/integrations/wise/transfers', async (req: Request, res: Response)
 });
 
 // Obter transferência por ID
-app.get('/api/integrations/wise/transfers/:id', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/transfers/:id', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -740,7 +744,7 @@ app.get('/api/integrations/wise/transfers/:id', async (req: Request, res: Respon
 });
 
 // Financiar transferência (sandbox)
-app.post('/api/integrations/wise/transfers/:id/fund', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/transfers/:id/fund', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -755,7 +759,7 @@ app.post('/api/integrations/wise/transfers/:id/fund', async (req: Request, res: 
 });
 
 // Cancelar transferência
-app.post('/api/integrations/wise/transfers/:id/cancel', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/transfers/:id/cancel', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -770,7 +774,7 @@ app.post('/api/integrations/wise/transfers/:id/cancel', async (req: Request, res
 });
 
 // Listar batch groups (pagamentos em lote)
-app.get('/api/integrations/wise/batch-groups', async (_req: Request, res: Response) => {
+app.get('/api/integrations/wise/batch-groups', requirePermission('integrations:wise:read'), async (_req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -785,7 +789,7 @@ app.get('/api/integrations/wise/batch-groups', async (_req: Request, res: Respon
 });
 
 // Criar batch group
-app.post('/api/integrations/wise/batch-groups', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/batch-groups', requirePermission('integrations:wise:write'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -802,7 +806,7 @@ app.post('/api/integrations/wise/batch-groups', async (req: Request, res: Respon
 });
 
 // Obter batch group por ID
-app.get('/api/integrations/wise/batch-groups/:id', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/batch-groups/:id', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -817,7 +821,7 @@ app.get('/api/integrations/wise/batch-groups/:id', async (req: Request, res: Res
 });
 
 // Completar batch group
-app.post('/api/integrations/wise/batch-groups/:id/complete', async (req: Request, res: Response) => {
+app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('integrations:wise:manage'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
@@ -943,7 +947,7 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
 });
 
 // Obter requisitos de conta por moeda
-app.get('/api/integrations/wise/recipient-requirements', async (req: Request, res: Response) => {
+app.get('/api/integrations/wise/recipient-requirements', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }

@@ -20,6 +20,12 @@ import { neon } from '@neondatabase/serverless';
 import { eq, sql, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
+import { 
+  requirePermission, 
+  requireAuth,
+  requireSameTenant,
+  extractAuthContext,
+} from '../../../packages/shared-utils/src/rbac/middleware.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -208,7 +214,7 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/rag/documents', async (req: Request, res: Response) => {
+app.get('/api/rag/documents', requirePermission('rag:documents:read'), async (req: Request, res: Response) => {
   const namespaceId = req.query.namespaceId as string;
 
   try {
@@ -238,7 +244,7 @@ const createDocumentSchema = z.object({
   urlOrigem: z.string().url().optional(),
 });
 
-app.post('/api/rag/documents', async (req: Request, res: Response) => {
+app.post('/api/rag/documents', requirePermission('rag:documents:write'), async (req: Request, res: Response) => {
   try {
     const body = createDocumentSchema.parse(req.body);
 
@@ -294,7 +300,7 @@ app.post('/api/rag/documents', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/rag/documents/upload', upload.single('file'), async (req: MulterRequest, res: Response) => {
+app.post('/api/rag/documents/upload', requirePermission('rag:documents:upload'), upload.single('file'), async (req: MulterRequest, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
@@ -350,7 +356,7 @@ const searchSchema = z.object({
   threshold: z.coerce.number().min(0).max(1).default(0.7),
 });
 
-app.post('/api/rag/search', async (req: Request, res: Response) => {
+app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req: Request, res: Response) => {
   try {
     const body = searchSchema.parse(req.body);
 
@@ -387,7 +393,7 @@ app.post('/api/rag/search', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/rag/context', async (req: Request, res: Response) => {
+app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) => {
   try {
     const body = searchSchema.parse(req.body);
 
@@ -434,7 +440,7 @@ app.post('/api/rag/context', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/rag/documents/:id', async (req: Request, res: Response) => {
+app.delete('/api/rag/documents/:id', requirePermission('rag:documents:delete'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
@@ -452,7 +458,7 @@ app.delete('/api/rag/documents/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/rag/namespaces/:id/stats', async (req: Request, res: Response) => {
+app.get('/api/rag/namespaces/:id/stats', requirePermission('rag:namespaces:read'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {

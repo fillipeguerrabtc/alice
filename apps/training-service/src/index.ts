@@ -20,6 +20,12 @@ import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
 import { 
+  requirePermission, 
+  requireAuth,
+  requireSameTenant,
+  extractAuthContext,
+} from '../../../packages/shared-utils/src/rbac/middleware.js';
+import { 
   createFineTuningJob as createSaladJob,
   getJobStatus as getSaladJobStatus,
   cancelJob as cancelSaladJob,
@@ -221,7 +227,7 @@ const collectTrainingDataSchema = z.object({
   rating: z.number().min(1).max(5).optional(),
 });
 
-app.post('/api/training/data', async (req: Request, res: Response) => {
+app.post('/api/training/data', requirePermission('training:training_data:write'), async (req: Request, res: Response) => {
   try {
     const body = collectTrainingDataSchema.parse(req.body);
 
@@ -291,7 +297,7 @@ app.post('/api/training/data', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/training/data', async (req: Request, res: Response) => {
+app.get('/api/training/data', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const status = req.query.status as string;
   const namespaceId = req.query.namespaceId as string;
 
@@ -313,7 +319,7 @@ app.get('/api/training/data', async (req: Request, res: Response) => {
   }
 });
 
-app.patch('/api/training/data/:id/status', async (req: Request, res: Response) => {
+app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
   const { id } = req.params;
   const { status } = req.body;
 
@@ -338,7 +344,7 @@ app.patch('/api/training/data/:id/status', async (req: Request, res: Response) =
   }
 });
 
-app.get('/api/training/jobs', async (req: Request, res: Response) => {
+app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
   const tenantId = req.query.tenantId as string;
 
   try {
@@ -366,7 +372,7 @@ const createJobSchema = z.object({
   }).optional(),
 });
 
-app.post('/api/training/jobs', async (req: Request, res: Response) => {
+app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:start'), async (req: Request, res: Response) => {
   try {
     const body = createJobSchema.parse(req.body);
 
@@ -565,7 +571,7 @@ function stopStatusPolling(jobId: string): void {
   }
 }
 
-app.get('/api/training/jobs/:id', async (req: Request, res: Response) => {
+app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
@@ -584,7 +590,7 @@ app.get('/api/training/jobs/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.delete('/api/training/jobs/:id', async (req: Request, res: Response) => {
+app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:cancel'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
@@ -627,7 +633,7 @@ app.delete('/api/training/jobs/:id', async (req: Request, res: Response) => {
   }
 });
 
-app.get('/api/training/stats', async (req: Request, res: Response) => {
+app.get('/api/training/stats', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
   const tenantId = req.query.tenantId as string;
 
   try {
