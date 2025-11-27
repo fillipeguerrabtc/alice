@@ -13,11 +13,12 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import crypto from 'crypto';
+import path from 'path';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
-import { eq, sql, desc } from 'drizzle-orm';
+import { eq, sql, desc, and } from 'drizzle-orm';
 import { z } from 'zod';
 import * as schema from '../../../shared/schema.js';
 import { 
@@ -26,9 +27,38 @@ import {
   requireSameTenant,
   extractAuthContext,
 } from '../../../packages/shared-utils/src/rbac/middleware.js';
+import { getStorageService } from './storage.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
+}
+
+// ============================================================================
+// MULTIMODAL - Tipos de mídia suportados (Fase 9)
+// ============================================================================
+
+const SUPPORTED_MEDIA_TYPES = {
+  image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
+  audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
+  video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
+  document: ['application/pdf', 'text/plain', 'text/markdown', 'application/json'],
+} as const;
+
+const ALL_SUPPORTED_MIMES = [
+  ...SUPPORTED_MEDIA_TYPES.image,
+  ...SUPPORTED_MEDIA_TYPES.audio,
+  ...SUPPORTED_MEDIA_TYPES.video,
+  ...SUPPORTED_MEDIA_TYPES.document,
+];
+
+type MediaType = 'image' | 'audio' | 'video' | 'document';
+
+function detectMediaType(mimeType: string): MediaType | null {
+  if (SUPPORTED_MEDIA_TYPES.image.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.image[number])) return 'image';
+  if (SUPPORTED_MEDIA_TYPES.audio.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.audio[number])) return 'audio';
+  if (SUPPORTED_MEDIA_TYPES.video.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.video[number])) return 'video';
+  if (SUPPORTED_MEDIA_TYPES.document.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.document[number])) return 'document';
+  return null;
 }
 
 const logger = pino({
@@ -71,9 +101,26 @@ const sqlClient = neon(DATABASE_URL);
 const db = drizzle(sqlClient, { schema });
 
 const app = express();
+
+// Upload para documentos RAG (texto)
 const upload = multer({ 
   storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 },
+});
+
+// Upload para mídia multimodal (imagem, áudio, vídeo)
+const mediaUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { 
+    fileSize: 100 * 1024 * 1024, // 100MB para vídeos
+  },
+  fileFilter: (_req, file, cb) => {
+    if (ALL_SUPPORTED_MIMES.includes(file.mimetype as typeof ALL_SUPPORTED_MIMES[number])) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Tipo de arquivo não suportado: ${file.mimetype}`));
+    }
+  },
 });
 
 // ============================================================================
@@ -871,6 +918,353 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
       web: WEB_SEARCH_KEYWORDS.length,
       internal: INTERNAL_KEYWORDS.length,
     },
+  });
+});
+
+// ============================================================================
+// MULTIMODAL UPLOAD - Fase 9
+// ============================================================================
+
+const mediaUploadSchema = z.object({
+  conversationId: z.string().uuid().optional(),
+  messageId: z.string().uuid().optional(),
+  description: z.string().optional(),
+});
+
+app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRequest), mediaUpload.single('file'), async (req: MulterRequest, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const userId = req.headers['x-user-id'] as string | undefined;
+  const startTime = Date.now();
+
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
+  try {
+    const body = mediaUploadSchema.safeParse(req.body);
+    const metadata = body.success ? body.data : {};
+
+    const mediaType = detectMediaType(req.file.mimetype);
+    if (!mediaType) {
+      return res.status(400).json({ 
+        error: 'Tipo de mídia não suportado',
+        mimeType: req.file.mimetype,
+        supportedTypes: ALL_SUPPORTED_MIMES,
+      });
+    }
+
+    // Gerar hash único para o arquivo
+    const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    
+    // Verificar duplicatas no mesmo tenant
+    const existingMedia = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.tenantId, tenantId),
+        sql`extracted_metadata->>'fileHash' = ${fileHash}`
+      ),
+    });
+
+    if (existingMedia) {
+      logger.info({ 
+        tenantId, 
+        existingId: existingMedia.id,
+        filename: req.file.originalname,
+      }, 'Upload duplicado detectado');
+      
+      return res.status(200).json({ 
+        upload: existingMedia,
+        duplicate: true,
+        message: 'Arquivo já foi enviado anteriormente',
+      });
+    }
+
+    // Salvar arquivo no storage
+    const storageService = getStorageService();
+    const storedFile = await storageService.saveFile(req.file.buffer, {
+      tenantId,
+      mediaType,
+      originalFilename: req.file.originalname,
+      mimeType: req.file.mimetype,
+    });
+
+    // Criar registro de upload (status: pending)
+    const [mediaUploadRecord] = await db.insert(schema.mediaUploads).values({
+      tenantId,
+      userId: userId || null,
+      conversationId: metadata.conversationId || null,
+      messageId: metadata.messageId || null,
+      mediaType,
+      originalFilename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      fileSize: req.file.size,
+      filePath: storedFile.filePath,
+      fileUrl: storedFile.fileUrl,
+      processingStatus: 'pending',
+      extractedMetadata: {
+        fileHash,
+        uploadedAt: new Date().toISOString(),
+        description: metadata.description,
+      },
+    }).returning();
+
+    logger.info({ 
+      uploadId: mediaUploadRecord.id,
+      tenantId,
+      mediaType,
+      filename: req.file.originalname,
+      fileSize: req.file.size,
+      filePath: storedFile.filePath,
+      processingTimeMs: Date.now() - startTime,
+    }, 'Upload de mídia salvo e registrado');
+
+    // Processamento assíncrono (será implementado na tarefa 2)
+    // Por enquanto, retorna o registro com status pending
+    res.status(201).json({ 
+      upload: mediaUploadRecord,
+      message: 'Upload recebido e salvo. Processamento será iniciado.',
+      supportedProcessing: {
+        image: ['CLIP embedding', 'thumbnail', 'EXIF metadata'],
+        audio: ['Transcrição Whisper', 'text embedding'],
+        video: ['Frame extraction', 'Transcrição Whisper'],
+        document: ['text embedding', 'chunking'],
+      },
+    });
+  } catch (error) {
+    logger.error({ 
+      error, 
+      tenantId,
+      filename: req.file?.originalname,
+    }, 'Falha no upload de mídia');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Listar uploads de mídia do tenant
+app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const mediaType = req.query.mediaType as string | undefined;
+    const conversationId = req.query.conversationId as string | undefined;
+
+    const whereConditions = [eq(schema.mediaUploads.tenantId, tenantId)];
+    
+    if (mediaType && ['image', 'audio', 'video', 'document'].includes(mediaType)) {
+      whereConditions.push(eq(schema.mediaUploads.mediaType, mediaType as MediaType));
+    }
+    
+    if (conversationId) {
+      whereConditions.push(eq(schema.mediaUploads.conversationId, conversationId));
+    }
+
+    const uploads = await db.query.mediaUploads.findMany({
+      where: and(...whereConditions),
+      orderBy: [desc(schema.mediaUploads.criadoEm)],
+      limit,
+      offset,
+    });
+
+    const totalCount = await db.select({ count: sql<number>`count(*)` })
+      .from(schema.mediaUploads)
+      .where(and(...whereConditions));
+
+    res.json({ 
+      uploads,
+      pagination: {
+        limit,
+        offset,
+        total: totalCount[0]?.count || 0,
+      },
+    });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao listar uploads');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Detalhes de um upload específico
+app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const { id } = req.params;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.id, id),
+        eq(schema.mediaUploads.tenantId, tenantId)
+      ),
+    });
+
+    if (!upload) {
+      return res.status(404).json({ error: 'Upload não encontrado' });
+    }
+
+    res.json({ upload });
+  } catch (error) {
+    logger.error({ error, tenantId, uploadId: id }, 'Falha ao buscar upload');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Deletar upload
+app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const { id } = req.params;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const upload = await db.query.mediaUploads.findFirst({
+      where: and(
+        eq(schema.mediaUploads.id, id),
+        eq(schema.mediaUploads.tenantId, tenantId)
+      ),
+    });
+
+    if (!upload) {
+      return res.status(404).json({ error: 'Upload não encontrado' });
+    }
+
+    await db.delete(schema.mediaUploads)
+      .where(eq(schema.mediaUploads.id, id));
+
+    logger.info({ uploadId: id, tenantId }, 'Upload de mídia excluído');
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error, tenantId, uploadId: id }, 'Falha ao excluir upload');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Estatísticas de uploads do tenant
+app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const stats = await db.select({
+      mediaType: schema.mediaUploads.mediaType,
+      processingStatus: schema.mediaUploads.processingStatus,
+      count: sql<number>`count(*)`,
+      totalSize: sql<number>`sum(file_size)`,
+    })
+      .from(schema.mediaUploads)
+      .where(eq(schema.mediaUploads.tenantId, tenantId))
+      .groupBy(schema.mediaUploads.mediaType, schema.mediaUploads.processingStatus);
+
+    const summary = {
+      byType: {} as Record<string, { count: number; totalSize: number }>,
+      byStatus: {} as Record<string, number>,
+      total: { count: 0, totalSize: 0 },
+    };
+
+    for (const row of stats) {
+      const type = row.mediaType || 'unknown';
+      const status = row.processingStatus || 'unknown';
+      const count = Number(row.count);
+      const size = Number(row.totalSize) || 0;
+
+      if (!summary.byType[type]) {
+        summary.byType[type] = { count: 0, totalSize: 0 };
+      }
+      summary.byType[type].count += count;
+      summary.byType[type].totalSize += size;
+
+      if (!summary.byStatus[status]) {
+        summary.byStatus[status] = 0;
+      }
+      summary.byStatus[status] += count;
+
+      summary.total.count += count;
+      summary.total.totalSize += size;
+    }
+
+    res.json({ stats: summary });
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Falha ao obter estatísticas');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Servir arquivos de mídia (com verificação de tenant)
+app.get('/api/media/files/:tenantId/:mediaType/:filename', async (req: Request, res: Response) => {
+  const { tenantId, mediaType, filename } = req.params;
+  
+  try {
+    const storageService = getStorageService();
+    const filePath = `${tenantId}/${mediaType}/${filename}`;
+    
+    // Verificar se arquivo existe
+    const exists = await storageService.fileExists(filePath);
+    if (!exists) {
+      return res.status(404).json({ error: 'Arquivo não encontrado' });
+    }
+    
+    // Ler arquivo
+    const buffer = await storageService.readFile(filePath);
+    
+    // Determinar content type
+    const ext = path.extname(filename).toLowerCase();
+    const contentTypes: Record<string, string> = {
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.webp': 'image/webp',
+      '.gif': 'image/gif',
+      '.mp3': 'audio/mpeg',
+      '.wav': 'audio/wav',
+      '.ogg': 'audio/ogg',
+      '.webm': 'video/webm',
+      '.mp4': 'video/mp4',
+      '.mov': 'video/quicktime',
+      '.pdf': 'application/pdf',
+      '.txt': 'text/plain',
+      '.md': 'text/markdown',
+      '.json': 'application/json',
+    };
+    
+    const contentType = contentTypes[ext] || 'application/octet-stream';
+    
+    res.set({
+      'Content-Type': contentType,
+      'Content-Length': buffer.length.toString(),
+      'Cache-Control': 'public, max-age=31536000', // 1 ano para arquivos imutáveis
+    });
+    
+    res.send(buffer);
+  } catch (error) {
+    logger.error({ error, tenantId, mediaType, filename }, 'Erro ao servir arquivo');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Health check específico para multimodal
+app.get('/api/media/health', (_req: Request, res: Response) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'media-upload',
+    timestamp: new Date().toISOString(),
+    supportedTypes: SUPPORTED_MEDIA_TYPES,
+    maxFileSizeMb: 100,
   });
 });
 
