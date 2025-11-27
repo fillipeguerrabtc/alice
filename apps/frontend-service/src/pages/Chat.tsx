@@ -30,6 +30,9 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
+  Download,
+  X,
+  Star,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -37,8 +40,20 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
+
+interface GeneratedImageData {
+  id: string;
+  prompt: string;
+  imageUrl?: string;
+  imagePath?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  width?: number;
+  height?: number;
+  feedbackScore?: number;
+}
 
 interface Message {
   id: string;
@@ -46,6 +61,9 @@ interface Message {
   content: string;
   createdAt: string;
   tokensUsados?: number;
+  tipo?: 'text' | 'image' | 'audio' | 'video';
+  anexos?: unknown[];
+  generatedImage?: GeneratedImageData;
 }
 
 interface Conversation {
@@ -84,14 +102,141 @@ const sidebarVariants = {
   exit: { x: -300, opacity: 0 },
 };
 
+function InlineImage({ image, onRate }: { image: GeneratedImageData; onRate?: (score: number) => void }) {
+  const [imageLoaded, setImageLoaded] = useState(false);
+  const [showFullscreen, setShowFullscreen] = useState(false);
+  const [hoveredStar, setHoveredStar] = useState(0);
+
+  const imageSource = image.imageUrl || image.imagePath;
+
+  if (image.status === 'pending' || image.status === 'processing') {
+    return (
+      <div className="flex items-center justify-center bg-muted rounded-lg p-4 min-h-[200px]">
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+          <p className="text-sm text-muted-foreground">
+            {image.status === 'pending' ? 'Aguardando processamento...' : 'Gerando imagem...'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (image.status === 'failed' || !imageSource) {
+    return (
+      <div className="flex items-center justify-center bg-destructive/10 rounded-lg p-4 min-h-[100px]">
+        <div className="text-center">
+          <X className="h-6 w-6 text-destructive mx-auto mb-2" />
+          <p className="text-sm text-destructive">Falha ao gerar imagem</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="relative group">
+        {!imageLoaded && (
+          <Skeleton className="w-full aspect-square max-w-[300px] rounded-lg" />
+        )}
+        <img
+          src={imageSource}
+          alt={image.prompt}
+          className={cn(
+            "rounded-lg max-w-[300px] w-full object-cover cursor-pointer transition-transform",
+            !imageLoaded && "hidden"
+          )}
+          onLoad={() => setImageLoaded(true)}
+          onClick={() => setShowFullscreen(true)}
+          data-testid={`image-generated-${image.id}`}
+        />
+        
+        <div className="absolute bottom-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <Button
+            variant="secondary"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => {
+              const link = document.createElement('a');
+              link.href = imageSource;
+              link.download = `alice-${image.id}.png`;
+              link.click();
+            }}
+            data-testid={`button-download-image-${image.id}`}
+          >
+            <Download className="h-3 w-3" />
+          </Button>
+        </div>
+
+        {onRate && (
+          <div className="flex items-center gap-0.5 mt-2">
+            {[1, 2, 3, 4, 5].map((star) => (
+              <button
+                key={star}
+                onClick={() => onRate(star)}
+                onMouseEnter={() => setHoveredStar(star)}
+                onMouseLeave={() => setHoveredStar(0)}
+                className="p-0.5 transition-colors"
+                data-testid={`button-rate-image-${image.id}-${star}`}
+              >
+                <Star
+                  className={cn(
+                    "h-4 w-4 transition-colors",
+                    (hoveredStar >= star || (image.feedbackScore && image.feedbackScore >= star))
+                      ? "text-yellow-500 fill-yellow-500"
+                      : "text-muted-foreground"
+                  )}
+                />
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <Dialog open={showFullscreen} onOpenChange={setShowFullscreen}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Imagem Gerada</DialogTitle>
+            <DialogDescription className="text-sm truncate">{image.prompt}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-center">
+            <img
+              src={imageSource}
+              alt={image.prompt}
+              className="max-h-[70vh] rounded-lg object-contain"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const link = document.createElement('a');
+                link.href = imageSource;
+                link.download = `alice-${image.id}.png`;
+                link.click();
+              }}
+              data-testid="button-download-fullscreen"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+}
+
 function MessageBubble({ 
   message, 
   isStreaming, 
   isLast,
+  onRateImage,
 }: { 
   message: Message; 
   isStreaming: boolean;
   isLast: boolean;
+  onRateImage?: (imageId: string, score: number) => void;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -133,12 +278,23 @@ function MessageBubble({
           )}
           data-testid={`message-${message.role}-${message.id}`}
         >
-          <div className="whitespace-pre-wrap text-sm leading-relaxed">
-            {message.content}
-            {isStreaming && isLast && message.role === 'assistant' && (
-              <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
-            )}
-          </div>
+          {message.content && (
+            <div className="whitespace-pre-wrap text-sm leading-relaxed">
+              {message.content}
+              {isStreaming && isLast && message.role === 'assistant' && (
+                <span className="inline-block w-2 h-4 ml-0.5 bg-current animate-pulse rounded-sm" />
+              )}
+            </div>
+          )}
+          
+          {message.generatedImage && (
+            <div className={cn(message.content && "mt-3")}>
+              <InlineImage 
+                image={message.generatedImage} 
+                onRate={onRateImage ? (score) => onRateImage(message.generatedImage!.id, score) : undefined}
+              />
+            </div>
+          )}
         </Card>
         
         <div className={cn(
@@ -383,6 +539,29 @@ export default function Chat() {
     },
   });
 
+  const rateImage = useMutation({
+    mutationFn: async ({ imageId, score }: { imageId: string; score: number }) => {
+      await apiRequest('POST', `/api/chat/images/${imageId}/rate`, { score });
+    },
+    onSuccess: (_, { imageId, score }) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.generatedImage?.id === imageId) {
+            return {
+              ...msg,
+              generatedImage: { ...msg.generatedImage, feedbackScore: score },
+            };
+          }
+          return msg;
+        })
+      );
+    },
+  });
+
+  const handleRateImage = useCallback((imageId: string, score: number) => {
+    rateImage.mutate({ imageId, score });
+  }, [rateImage]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isStreaming) return;
@@ -507,6 +686,7 @@ export default function Chat() {
                     message={message}
                     isStreaming={isStreaming}
                     isLast={index === messages.length - 1}
+                    onRateImage={handleRateImage}
                   />
                 ))}
               </motion.div>
