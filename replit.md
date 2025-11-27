@@ -130,17 +130,15 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 | Agentic RAG | Produção | Busca híbrida (interna + Brave Search), classificador inteligente |
 | Imagens Inline no Chat | Produção | Skeleton loading, rating, fullscreen, download |
 
-### Planejado (163 Tarefas Enterprise Restantes)
+### Planejado (Tarefas Enterprise Restantes)
 
 | Capacidade | Fase | Descrição |
 |------------|------|-----------|
-| Image Generation | 6.5+ | FLUX.1 Schnell self-hosted Salad Cloud |
-| Auto-aprendizado Agressivo | 8 | Fine-tuning a cada 4 dias |
-| Multimodal | 9 | Imagens, áudio, vídeo |
-| Observabilidade | 10 | Prometheus + Grafana + Langfuse |
+| Multimodal Avançado | 9 | Áudio e vídeo |
 | Crawling | 11 | Web scraping automático |
+| Analytics Avançado | 12 | Relatórios e dashboards customizados |
 
-### Arquitetura de Observabilidade (Planejada)
+### Arquitetura de Observabilidade (IMPLEMENTADA)
 
 **Princípio Crítico:** Microserviço de observabilidade SEPARADO e INDEPENDENTE para garantir monitoramento mesmo se o sistema principal travar.
 
@@ -163,10 +161,17 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 | Cost per Request | Custo por chamada de modelo | Budget |
 | RAG Retrieval Time | Tempo de busca vetorial | Qualidade RAG |
 
-**Stack recomendada (todas open source):**
-- **OpenLLMetry** (Apache 2.0): SDK OpenTelemetry para LLMs
-- **Langfuse** (MIT): Plataforma completa de observabilidade LLM
-- **Prometheus + Grafana**: Stack tradicional de métricas
+**Stack implementada (todas open source):**
+- **Prometheus 3.0** (Apache 2.0): Coleta de métricas com alertas LLM
+- **Grafana OSS 11.3** (AGPL 3.0): Dashboards e visualização
+- **Jaeger 1.62** (Apache 2.0): Distributed tracing
+- **OpenTelemetry Collector** (Apache 2.0): Instrumentação unificada
+- **Langfuse 2.x** (MIT): Métricas específicas para LLM
+- **Health Checker** (Custom): API de status do stack
+
+**Localização:** `apps/observability-service/`
+
+**Deploy:** 100% automático via GitHub Actions (Regra 12)
 
 ---
 
@@ -222,6 +227,7 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 | rag | 3003 | Embeddings |
 | training | 3004 | Fine-tuning |
 | integrations | 3005 | Stripe, Wise, etc. |
+| observability | 9090/3000/16686/3006 | Prometheus, Grafana, Jaeger, Langfuse |
 
 ---
 

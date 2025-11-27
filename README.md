@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-1.3.0-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-2.0.0-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Llama%204%20Maverick%20400B-purple?style=for-the-badge)
 
@@ -24,11 +24,14 @@
 | Capacidade | Descrição |
 |------------|-----------|
 | **IA 100% Autônoma** | LLM próprio (Llama 4 Maverick 400B) hospedado em Salad Cloud GPUs |
-| **Chat em Texto** | Conversação via WebSocket com streaming (processamento de texto) |
+| **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
+| **Geração de Imagens** | FLUX.1 Schnell self-hosted (1-3 segundos por imagem) |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
 | **Multi-tenant** | Suporte a múltiplas organizações com agentes IA especializados |
-| **RAG Backend** | Serviço de embeddings e busca vetorial (pgvector) implementado |
+| **RAG Agentic** | Busca híbrida (interna + Brave Search) com classificador inteligente |
 | **Enterprise RBAC** | Controle de acesso granular com 6 roles hierárquicas |
+| **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
+| **Auto-aprendizado** | Progressive LoRA a cada 4 dias com dados aprovados |
 
 ### Diferenciais
 
@@ -58,7 +61,7 @@
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    GITHUB ACTIONS CI/CD                              │
-│  Build → Push para GHCR → Deploy SSH para Hetzner                   │
+│  Build → Push para GHCR → Deploy SSH para Hetzner (100% AUTOMÁTICO) │
 └───────────────────────────────────┬─────────────────────────────────┘
                                     │
                                     ▼
@@ -67,17 +70,21 @@
 │  ┌─────────────────────────────────────────────────────────────────┐│
 │  │    CX43 VM (8 vCPU AMD EPYC, 16GB RAM, 160GB NVMe SSD)          ││
 │  │    IP: 46.224.46.93 | Domínio: yesyoudeserve.duckdns.org       ││
-│  │  ┌─────────┐  ┌───────┐  ┌───────┐  ┌─────────┐  ┌───────────┐ ││
-│  │  │ Traefik │  │ Auth  │  │ Chat  │  │   RAG   │  │ Training  │ ││
-│  │  │ Gateway │  │:3001  │  │:3002  │  │  :3003  │  │  :3004    │ ││
-│  │  └─────────┘  └───────┘  └───────┘  └─────────┘  └───────────┘ ││
+│  │  ┌─────────┐ ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────────┐     ││
+│  │  │ Traefik │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
+│  │  │ Gateway │ │:3001  │ │:3002  │ │  :3003  │ │  :3004    │     ││
+│  │  └─────────┘ └───────┘ └───────┘ └─────────┘ └───────────┘     ││
+│  │  ┌─────────────┐ ┌─────────────────────────────────────────┐   ││
+│  │  │Integrations │ │         OBSERVABILITY STACK             │   ││
+│  │  │   :3005     │ │ Prometheus │ Grafana │ Jaeger │ Langfuse│   ││
+│  │  └─────────────┘ └─────────────────────────────────────────┘   ││
 │  └─────────────────────────────────────────────────────────────────┘│
 └───────────────────────────────────┬─────────────────────────────────┘
                                     │ API Calls
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      SALAD CLOUD (GPUs)                              │
-│                  Llama 4 Maverick 400B - Inferência LLM              │
+│       Llama 4 Maverick 400B (Inferência) + FLUX.1 Schnell (Imagens) │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -85,13 +92,14 @@
 
 | Serviço | Porta | Responsabilidade |
 |---------|-------|------------------|
-| **frontend-service** | 80 | React SPA, i18n, theming |
+| **frontend-service** | 5000 | React SPA, i18n, theming |
 | **api-gateway** | 80/443 | Traefik v3.1, SSL automático, rate-limit |
 | **auth-service** | 3001 | OAuth 2.0, SAML 2.0, autenticação local, RBAC |
 | **chat-service** | 3002 | LLM proxy via Salad Cloud, streaming, WebSocket |
-| **rag-service** | 3003 | Embeddings, pgvector, busca semântica |
-| **training-service** | 3004 | Auto-evolução, SemHash, fine-tuning |
+| **rag-service** | 3003 | Embeddings, pgvector, busca semântica híbrida |
+| **training-service** | 3004 | Auto-evolução, SemHash, fine-tuning LoRA |
 | **integrations-service** | 3005 | Stripe, ERPNext, Twilio, Resend, WhatsApp, Wise |
+| **observability-service** | 9090/3000/16686/3006 | Prometheus, Grafana, Jaeger, Langfuse |
 
 ---
 
@@ -127,11 +135,11 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | **Desenvolvimento** | Replit | IDE, hot reload, debugging |
 | **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, Nuremberg |
 
-### Pipeline CI/CD
+### Pipeline CI/CD (100% Automático)
 
 ```
 1. Push para branch main
-2. GitHub Actions executa:
+2. GitHub Actions executa automaticamente:
    ├── Build pacotes compartilhados
    ├── Build imagens Docker
    ├── Push para GHCR
@@ -139,15 +147,20 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 3. Health checks nos serviços
 ```
 
-**Nota:** Pipeline básico configurado. Scans de segurança e aprovação manual podem ser adicionados conforme necessário.
+**IMPORTANTE:** Nenhum comando manual é necessário em produção. Todo deploy acontece automaticamente via GitHub Actions quando você faz push para a branch `main`.
 
 ### URLs de Produção
 
 | Serviço | URL |
 |---------|-----|
 | **Alice Frontend** | https://yesyoudeserve.duckdns.org |
+| **Alice Chat** | https://yesyoudeserve.duckdns.org/chat |
+| **Alice Dashboard** | https://yesyoudeserve.duckdns.org/dashboard |
 | **ERPNext** | https://erp.yesyoudeserve.duckdns.org |
-| **Traefik Dashboard** | https://traefik.yesyoudeserve.duckdns.org |
+| **Grafana** | https://observability.yesyoudeserve.duckdns.org |
+| **Prometheus** | https://prometheus.yesyoudeserve.duckdns.org |
+| **Jaeger** | https://tracing.yesyoudeserve.duckdns.org |
+| **Langfuse** | https://llm-metrics.yesyoudeserve.duckdns.org |
 
 Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 
@@ -164,7 +177,8 @@ alice/
 │   ├── chat-service/               # LLM Proxy + WebSocket
 │   ├── rag-service/                # Embeddings + pgvector
 │   ├── training-service/           # SemHash + Fine-tuning
-│   └── integrations-service/       # Stripe, ERPNext, Twilio
+│   ├── integrations-service/       # Stripe, ERPNext, Twilio
+│   └── observability-service/      # Prometheus, Grafana, Jaeger, Langfuse
 │
 ├── packages/                       # Código compartilhado
 │   ├── shared/                     # Schema Drizzle ORM
@@ -178,10 +192,19 @@ alice/
 │
 ├── docs/                           # Documentação
 │   ├── DEPLOYMENT.md               # Guia de deploy
-│   └── SECRETS.md                  # Guia de secrets
+│   ├── SECRETS.md                  # Guia de secrets
+│   └── SISTEMA-APRENDIZADO.md      # Sistema de auto-aprendizado
 │
 ├── .github/workflows/              # CI/CD
 │   └── deploy-production.yml       # Deploy automatizado
+│
+├── client/                         # Frontend React
+│   └── src/
+│       ├── pages/
+│       │   ├── Chat.tsx            # Interface do chat (/chat)
+│       │   └── Dashboard.tsx       # Dashboard admin (/dashboard)
+│       └── hooks/
+│           └── use-websocket-chat.ts  # Hook WebSocket
 │
 └── server/
     └── index-dev.ts                # Gateway de desenvolvimento
@@ -208,6 +231,13 @@ alice/
 - GitHub Actions CI/CD
 - Hetzner Cloud (Nuremberg)
 
+### Observabilidade
+- Prometheus 3.0 (métricas)
+- Grafana OSS 11.3 (dashboards)
+- Jaeger 1.62 (tracing distribuído)
+- OpenTelemetry (instrumentação)
+- Langfuse (métricas LLM)
+
 ---
 
 ## Documentação
@@ -217,7 +247,8 @@ alice/
 | [replit.md](replit.md) | Contexto completo do projeto e 16 regras |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deploy para produção |
 | [docs/SECRETS.md](docs/SECRETS.md) | Guia de secrets e webhooks |
-| [design_guidelines.md](design_guidelines.md) | Diretrizes de design UI/UX |
+| [docs/SISTEMA-APRENDIZADO.md](docs/SISTEMA-APRENDIZADO.md) | Sistema de auto-aprendizado |
+| [apps/observability-service/README.md](apps/observability-service/README.md) | Stack de observabilidade |
 
 ---
 
@@ -243,5 +274,7 @@ Proprietário - Todos os direitos reservados.
 <div align="center">
 
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
+
+*Versão 2.0.0 - Novembro 2025*
 
 </div>
