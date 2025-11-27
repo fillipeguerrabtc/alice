@@ -468,6 +468,104 @@ services:
       timeout: 5s
       retries: 3
 
+  # ===========================================================================
+  # ERPNext Configurator - Configura common_site_config.json na primeira execução
+  # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
+  # ===========================================================================
+  erpnext-configurator:
+    image: frappe/erpnext:v15
+    container_name: erpnext-configurator
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        ls -1 apps > sites/apps.txt;
+        bench set-config -g db_host erpnext-mariadb;
+        bench set-config -g db_port 3306;
+        bench set-config -g redis_cache redis://erpnext-redis-cache:6379;
+        bench set-config -g redis_queue redis://erpnext-redis-queue:6379;
+        bench set-config -g redis_socketio redis://erpnext-redis-queue:6379;
+        echo "Configuração ERPNext concluída com sucesso!"
+    environment:
+      - DB_HOST=erpnext-mariadb
+      - DB_PORT=3306
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ===========================================================================
+  # ERPNext Create-Site - Cria o site na primeira instalação
+  # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
+  # Credenciais padrão: admin/admin (alterar após primeira instalação)
+  # IDEMPOTENTE: Se site já existe, sai com sucesso (exit 0)
+  # ===========================================================================
+  erpnext-create-site:
+    image: frappe/erpnext:v15
+    container_name: erpnext-create-site
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        echo "=== ERPNext Create-Site ===";
+        
+        if [[ -d "sites/${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}" ]]; then
+          echo "Site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org} já existe.";
+          echo "Pulando criação. Deploy subsequente detectado.";
+          exit 0;
+        fi;
+        
+        export START=$$(date +%s);
+        echo "Aguardando common_site_config.json...";
+        until [[ -f "sites/common_site_config.json" ]] || [[ $$(date +%s) -gt $$((START + 180)) ]]; do
+          sleep 5;
+          echo "  Verificando... ($$(( $$(date +%s) - START ))s)";
+        done;
+        
+        if [[ ! -f "sites/common_site_config.json" ]]; then
+          echo "ERRO: common_site_config.json não encontrado após 180s";
+          exit 1;
+        fi;
+        
+        echo "common_site_config.json encontrado!";
+        echo "Criando site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}...";
+        
+        bench new-site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+          --mariadb-root-password=${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
+          --admin-password=${ERPNEXT_ADMIN_PASSWORD:-admin}
+          --install-app=erpnext
+          --mariadb-user-host-login-scope=%;
+        
+        bench --site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org} set-config host_name "https://${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}";
+        
+        echo "Site ERPNext criado com sucesso!"
+    environment:
+      - ERPNEXT_SITE_NAME=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      - ERPNEXT_MYSQL_ROOT_PASSWORD=${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
+      - ERPNEXT_ADMIN_PASSWORD=${ERPNEXT_ADMIN_PASSWORD:-admin}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-configurator:
+        condition: service_completed_successfully
+      erpnext-mariadb:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
   # ERPNext Backend - Frappe/Python
   erpnext-backend:
     image: frappe/erpnext:v15
@@ -480,6 +578,8 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -493,7 +593,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/frappe.ping"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s
 
   # ERPNext Frontend - Nginx
   erpnext-frontend:

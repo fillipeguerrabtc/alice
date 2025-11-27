@@ -280,10 +280,13 @@ jobs:
           WISE_SANDBOX=false
           
           # ERPNext Database
-          # NOTA: Secrets criados após primeiro deploy do ERPNext
-          # Se vazios, o ERPNext usará defaults internos da imagem Docker
+          # NOTA: Na primeira instalação, se secrets vazios, usará defaults:
+          # - ERPNEXT_MYSQL_ROOT_PASSWORD: erpnext_root_password
+          # - ERPNEXT_ADMIN_PASSWORD: admin
+          # Alterar após primeira instalação!
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
           ERPNEXT_MYSQL_ROOT_PASSWORD=${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
+          ERPNEXT_ADMIN_PASSWORD=${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
           ERPNEXT_DB_NAME=erpnext
           ERPNEXT_DB_USER=erpnext
           ERPNEXT_DB_PASSWORD=${{ secrets.ERPNEXT_DB_PASSWORD }}
@@ -475,6 +478,7 @@ jobs:
                   --env-file .env.prod \
                   up -d --no-build --remove-orphans \
                   erpnext-mariadb erpnext-redis-cache erpnext-redis-queue \
+                  erpnext-configurator erpnext-create-site \
                   erpnext-backend erpnext-frontend erpnext-websocket \
                   erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long
                 ;;
