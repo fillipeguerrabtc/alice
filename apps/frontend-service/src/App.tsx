@@ -22,6 +22,7 @@ import Agents from '@/pages/Agents';
 import Namespaces from '@/pages/Namespaces';
 import WisePayments from '@/pages/WisePayments';
 import TakeoverPanel from '@/pages/TakeoverPanel';
+import ImageGalleryPage from '@/pages/ImageGalleryPage';
 import NotFound from '@/pages/NotFound';
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -59,6 +60,7 @@ function Router() {
       <Route path="/chat/:conversationId" component={Chat} />
       <Route path="/agents" component={Agents} />
       <Route path="/takeover" component={TakeoverPanel} />
+      <Route path="/images" component={ImageGalleryPage} />
       <Route path="/namespaces" component={Namespaces} />
       <Route path="/documents" component={Documents} />
       <Route path="/training" component={Training} />

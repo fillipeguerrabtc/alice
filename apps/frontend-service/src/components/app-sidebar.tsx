@@ -11,6 +11,7 @@ import {
   Wallet,
   ExternalLink,
   Headphones,
+  Sparkles,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -40,6 +41,7 @@ const menuItems = [
 
 const operationsItems = [
   { title: 'Atendimento', url: '/takeover', icon: Headphones },
+  { title: 'Galeria de Imagens', url: '/images', icon: Sparkles },
   { title: 'Agentes IA', url: '/agents', icon: Bot },
 ];
 

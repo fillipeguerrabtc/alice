@@ -1014,9 +1014,18 @@ app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantId
 
 app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
+  const tenantId = req.headers['x-tenant-id'] as string;
   const { score } = req.body as { score: number };
   
   try {
+    const image = await db.query.generatedImages.findFirst({
+      where: eq(schema.generatedImages.id, id),
+    });
+    
+    if (!image || image.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
     await rateImage(id, score);
     res.json({ message: 'Feedback registrado com sucesso' });
   } catch (error) {
@@ -1027,9 +1036,18 @@ app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantId
 
 app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
+  const tenantId = req.headers['x-tenant-id'] as string;
   const { approved } = req.body as { approved: boolean };
   
   try {
+    const image = await db.query.generatedImages.findFirst({
+      where: eq(schema.generatedImages.id, id),
+    });
+    
+    if (!image || image.tenantId !== tenantId) {
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
     await approveForTraining(id, approved);
     res.json({ message: `Imagem ${approved ? 'aprovada' : 'reprovada'} para treinamento` });
   } catch (error) {
@@ -1045,6 +1063,81 @@ app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFrom
     res.json({ ...stats, circuitBreaker: breakerStats });
   } catch (error) {
     logger.error({ error }, 'Erro ao buscar estatísticas de imagens');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  const { status, approved, limit, offset } = req.query;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+  
+  try {
+    let images = await db.query.generatedImages.findMany({
+      where: eq(schema.generatedImages.tenantId, tenantId),
+      orderBy: [desc(schema.generatedImages.criadoEm)],
+      with: {
+        conversation: true,
+      },
+    });
+    
+    if (status && status !== 'all') {
+      images = images.filter(img => img.status === status);
+    }
+    
+    if (approved === 'true') {
+      images = images.filter(img => img.approvedForTraining === true);
+    } else if (approved === 'false') {
+      images = images.filter(img => img.approvedForTraining === false);
+    } else if (approved === 'pending') {
+      images = images.filter(img => img.approvedForTraining === null);
+    }
+    
+    const total = images.length;
+    
+    const pageOffset = parseInt(offset as string) || 0;
+    const pageLimit = parseInt(limit as string) || 20;
+    images = images.slice(pageOffset, pageOffset + pageLimit);
+    
+    res.json({
+      images,
+      total,
+      offset: pageOffset,
+      limit: pageLimit,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao listar imagens');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const tenantId = req.headers['x-tenant-id'] as string;
+  
+  try {
+    const image = await db.query.generatedImages.findFirst({
+      where: eq(schema.generatedImages.id, id),
+      with: {
+        conversation: true,
+      },
+    });
+    
+    if (!image) {
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
+    if (image.tenantId !== tenantId) {
+      logger.warn({ imageId: id, requestedBy: tenantId, ownedBy: image.tenantId }, 'Tentativa de acesso a imagem de outro tenant');
+      return res.status(404).json({ error: 'Imagem não encontrada' });
+    }
+    
+    res.json({ image });
+  } catch (error) {
+    logger.error({ error, imageId: id }, 'Erro ao buscar imagem');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });
