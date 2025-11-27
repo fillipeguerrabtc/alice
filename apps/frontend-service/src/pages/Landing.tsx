@@ -67,9 +67,12 @@ export default function Landing() {
       <header className="sticky top-0 z-50 w-full border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-6">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold">
-              A
-            </div>
+            <img
+              src="/logo-round.png"
+              alt="Yes You Deserve"
+              className="h-10 w-10 rounded-xl"
+              data-testid="img-header-logo"
+            />
             <span className="text-xl font-semibold">{t('auth.title')}</span>
           </div>
 

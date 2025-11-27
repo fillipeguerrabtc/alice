@@ -61,9 +61,12 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b p-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Bot className="h-5 w-5" />
-          </div>
+          <img
+            src="/logo-round.png"
+            alt="Yes You Deserve"
+            className="h-8 w-8 rounded-lg"
+            data-testid="img-logo"
+          />
           <span className="font-bold text-lg" data-testid="text-app-name">Alice</span>
         </Link>
       </SidebarHeader>
