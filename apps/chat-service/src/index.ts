@@ -1164,8 +1164,8 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    wsClients.delete(userId);
-    logger.info({ userId }, 'Cliente WebSocket desconectado');
+    wsClients.delete(clientKey);
+    logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket desconectado');
   });
 });
 
