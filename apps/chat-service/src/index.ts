@@ -785,6 +785,168 @@ app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantId
   }
 });
 
+app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+  const { status, channel, priority } = req.query as { 
+    status?: string; 
+    channel?: string; 
+    priority?: string;
+  };
+  
+  try {
+    const allConversations = await db.query.conversations.findMany({
+      with: {
+        messages: {
+          orderBy: [desc(schema.messages.criadoEm)],
+          limit: 1,
+        },
+        user: true,
+      },
+      orderBy: [desc(schema.conversations.ultimaMensagemEm)],
+    });
+    
+    const allStates = await db.query.conversationStates.findMany();
+    const statesMap = new Map(allStates.map(s => [s.conversationId, s]));
+    
+    let conversations = allConversations.map(conv => {
+      const state = statesMap.get(conv.id);
+      const lastMessage = conv.messages?.[0];
+      
+      let slaStatus: 'ok' | 'at_risk' | 'breached' = 'ok';
+      if (state?.slaBreached) {
+        slaStatus = 'breached';
+      } else if (state?.slaDeadline) {
+        const deadline = new Date(state.slaDeadline);
+        const now = new Date();
+        const minutesRemaining = (deadline.getTime() - now.getTime()) / 60000;
+        if (minutesRemaining < 10) slaStatus = 'at_risk';
+      }
+      
+      let calculatedPriority: 'high' | 'medium' | 'low' = 'medium';
+      if (state?.slaBreached || slaStatus === 'at_risk') {
+        calculatedPriority = 'high';
+      } else if ((state?.sentimentScore ?? 0) < -0.3) {
+        calculatedPriority = 'high';
+      }
+      
+      const metadata = conv.metadata as { canal?: string } | null;
+      
+      return {
+        id: conv.id,
+        titulo: conv.titulo,
+        userId: conv.userId,
+        canal: metadata?.canal || 'web',
+        status: state?.controlMode || 'bot',
+        assignedAgentId: state?.assignedAgentId,
+        confidenceScore: state?.confidenceScore,
+        sentimentScore: state?.sentimentScore,
+        fallbackCount: state?.fallbackCount,
+        slaDeadline: state?.slaDeadline,
+        slaBreached: state?.slaBreached,
+        slaStatus,
+        priority: calculatedPriority,
+        pendingSince: state?.pendingSince,
+        ultimaMensagemEm: conv.ultimaMensagemEm,
+        totalMensagens: conv.totalMensagens,
+        lastMessage: lastMessage ? {
+          conteudo: lastMessage.conteudo,
+          isFromUser: lastMessage.isFromUser,
+          criadoEm: lastMessage.criadoEm,
+        } : null,
+        user: conv.user ? {
+          id: conv.user.id,
+          email: conv.user.email,
+          firstName: conv.user.firstName,
+          lastName: conv.user.lastName,
+        } : null,
+      };
+    });
+    
+    const summary = {
+      pending: conversations.filter(c => c.status === 'pending_handoff').length,
+      human: conversations.filter(c => c.status === 'human').length,
+      bot: conversations.filter(c => c.status === 'bot').length,
+      slaBreached: conversations.filter(c => c.slaBreached).length,
+      atRisk: conversations.filter(c => c.slaStatus === 'at_risk').length,
+    };
+    
+    if (status && status !== 'all') {
+      conversations = conversations.filter(c => c.status === status);
+    }
+    if (channel && channel !== 'all') {
+      conversations = conversations.filter(c => c.canal === channel);
+    }
+    if (priority && priority !== 'all') {
+      conversations = conversations.filter(c => c.priority === priority);
+    }
+    
+    res.json({ 
+      conversations,
+      total: conversations.length,
+      summary,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao listar conversas para takeover');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const agentId = req.headers['x-user-id'] as string;
+  const { content } = req.body as { content: string };
+  
+  if (!agentId) {
+    return res.status(401).json({ error: 'ID do agente necessário' });
+  }
+  
+  if (!content || content.trim().length === 0) {
+    return res.status(400).json({ error: 'Conteúdo da mensagem necessário' });
+  }
+  
+  try {
+    const state = await getOrCreateConversationState(id);
+    
+    if (state.controlMode !== 'human') {
+      return res.status(400).json({ 
+        error: 'Conversa não está em modo humano. Faça takeover primeiro.',
+        currentMode: state.controlMode,
+      });
+    }
+    
+    if (state.assignedAgentId !== agentId) {
+      return res.status(403).json({ 
+        error: 'Você não é o agente atribuído a esta conversa',
+        assignedAgentId: state.assignedAgentId,
+      });
+    }
+    
+    const [message] = await db.insert(schema.messages).values({
+      conversationId: id,
+      userId: agentId,
+      conteudo: content.trim(),
+      tipo: 'text',
+      isFromUser: false,
+    }).returning();
+    
+    await db.update(schema.conversations)
+      .set({
+        ultimaMensagemEm: new Date(),
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.conversations.id, id));
+    
+    logger.info({ conversationId: id, agentId, messageId: message.id }, 'Mensagem humana enviada');
+    
+    res.json({ 
+      message,
+      success: true,
+    });
+  } catch (error) {
+    logger.error({ error, conversationId: id, agentId }, 'Erro ao enviar mensagem humana');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
 app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   const minutesThreshold = parseInt(req.query.minutes as string) || 10;
   

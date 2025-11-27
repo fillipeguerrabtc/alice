@@ -257,15 +257,15 @@ function ConversationDetailPanel({
   
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId, message }: { conversationId: string; message: string }) => {
-      const res = await apiRequest('POST', `/api/chat/takeover/${conversationId}/message`, { 
+      const res = await apiRequest('POST', `/api/takeover/conversations/${conversationId}/message`, { 
         content: message,
-        role: 'human'
       });
       return res.json();
     },
     onSuccess: () => {
       setReplyText('');
-      queryClient.invalidateQueries({ queryKey: ['/api/chat/takeover', conversation?.id] });
+      queryClient.invalidateQueries({ queryKey: [`/api/chat/conversations/${conversation?.id}/messages`] });
+      queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
       toast({ title: 'Mensagem enviada' });
     },
     onError: () => {
@@ -488,25 +488,172 @@ export default function TakeoverPanel() {
   const [filterStatus, setFilterStatus] = useState<string>('pending');
   const [searchQuery, setSearchQuery] = useState('');
   
-  const { data: conversations, isLoading, refetch } = useQuery<PendingConversation[]>({
-    queryKey: ['/api/chat/pending-handoffs'],
+  interface APIConversation {
+    id: string;
+    titulo: string;
+    userId: string;
+    canal: string;
+    status: string;
+    assignedAgentId?: string;
+    confidenceScore?: number;
+    sentimentScore?: number;
+    fallbackCount?: number;
+    slaDeadline?: string;
+    slaBreached?: boolean;
+    slaStatus: 'ok' | 'at_risk' | 'breached';
+    priority: 'high' | 'medium' | 'low';
+    pendingSince?: string;
+    ultimaMensagemEm?: string;
+    totalMensagens?: number;
+    lastMessage?: {
+      conteudo: string;
+      isFromUser: boolean;
+      criadoEm: string;
+    };
+    user?: {
+      id: string;
+      email: string;
+      firstName?: string;
+      lastName?: string;
+    };
+  }
+  
+  interface APIResponse {
+    conversations: APIConversation[];
+    total: number;
+    summary: {
+      pending: number;
+      human: number;
+      bot: number;
+      slaBreached: number;
+      atRisk: number;
+    };
+  }
+
+  const getBackendStatus = (frontendStatus: string): string => {
+    if (frontendStatus === 'pending') return 'pending_handoff';
+    if (frontendStatus === 'in_progress') return 'human';
+    if (frontendStatus === 'resolved') return 'bot';
+    return frontendStatus;
+  };
+  
+  const buildQueryParams = () => {
+    const params = new URLSearchParams();
+    if (filterStatus !== 'all') params.set('status', getBackendStatus(filterStatus));
+    if (filterChannel !== 'all') params.set('channel', filterChannel);
+    if (filterPriority !== 'all') params.set('priority', filterPriority);
+    return params.toString();
+  };
+  
+  const fetchTakeoverConversations = async (): Promise<APIResponse> => {
+    const queryString = buildQueryParams();
+    const url = `/api/takeover/conversations${queryString ? `?${queryString}` : ''}`;
+    const response = await fetch(url, {
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(errorText || 'Falha ao carregar conversas');
+    }
+    return response.json();
+  };
+  
+  const { data: apiResponse, isLoading, refetch } = useQuery<APIResponse>({
+    queryKey: ['/api/takeover/conversations', filterStatus, filterChannel, filterPriority],
+    queryFn: fetchTakeoverConversations,
     refetchInterval: 10000,
     enabled: !!user,
   });
   
-  const { data: selectedConversation } = useQuery<ConversationDetail>({
-    queryKey: ['/api/chat/takeover', selectedId],
+  const conversations: PendingConversation[] = (apiResponse?.conversations || []).map((conv): PendingConversation => {
+    let waitTimeSeconds = 0;
+    if (conv.pendingSince) {
+      waitTimeSeconds = Math.floor((Date.now() - new Date(conv.pendingSince).getTime()) / 1000);
+    } else if (conv.ultimaMensagemEm) {
+      waitTimeSeconds = Math.floor((Date.now() - new Date(conv.ultimaMensagemEm).getTime()) / 1000);
+    }
+    
+    let sentiment: 'positive' | 'neutral' | 'negative' = 'neutral';
+    if (conv.sentimentScore !== undefined) {
+      if (conv.sentimentScore > 0.3) sentiment = 'positive';
+      else if (conv.sentimentScore < -0.3) sentiment = 'negative';
+    }
+    
+    let slaStatus: 'on_track' | 'at_risk' | 'breached' = 'on_track';
+    if (conv.slaStatus === 'breached') slaStatus = 'breached';
+    else if (conv.slaStatus === 'at_risk') slaStatus = 'at_risk';
+    
+    let mappedStatus: 'pending' | 'in_progress' | 'resolved' = 'pending';
+    if (conv.status === 'human') mappedStatus = 'in_progress';
+    else if (conv.status === 'pending_handoff') mappedStatus = 'pending';
+    else if (conv.status === 'bot') mappedStatus = 'resolved';
+    
+    return {
+      id: conv.id,
+      customerId: conv.userId || 'unknown',
+      customerName: conv.user 
+        ? `${conv.user.firstName || ''} ${conv.user.lastName || ''}`.trim() || conv.user.email
+        : 'Cliente',
+      channel: (conv.canal as 'web' | 'whatsapp' | 'api') || 'web',
+      status: mappedStatus,
+      priority: conv.priority === 'high' ? 'high' : conv.priority === 'medium' ? 'medium' : 'low',
+      waitTime: waitTimeSeconds,
+      sentiment,
+      lastMessage: conv.lastMessage?.conteudo || conv.titulo || 'Sem mensagens',
+      messageCount: conv.totalMensagens || 0,
+      aiConfidence: (conv.confidenceScore || 0.5) * 100,
+      escalationReason: conv.fallbackCount && conv.fallbackCount >= 3 ? 'Múltiplas falhas de IA' : undefined,
+      assignedTo: conv.assignedAgentId,
+      slaStatus,
+      createdAt: conv.pendingSince || conv.ultimaMensagemEm || new Date().toISOString(),
+    };
+  });
+  
+  interface MessagesResponse {
+    messages: Array<{ 
+      id: string; 
+      conteudo: string; 
+      isFromUser: boolean; 
+      criadoEm: string;
+      userId?: string;
+    }>;
+  }
+  
+  const { data: messagesData } = useQuery<MessagesResponse>({
+    queryKey: [`/api/chat/conversations/${selectedId}/messages`],
     enabled: !!selectedId,
   });
   
+  const selectedConversation: ConversationDetail | undefined = (() => {
+    const conv = conversations.find(c => c.id === selectedId);
+    if (!conv) return undefined;
+    return {
+      ...conv,
+      messages: (messagesData?.messages || []).map(m => ({
+        id: m.id,
+        role: m.isFromUser ? 'user' as const : 'assistant' as const,
+        content: m.conteudo,
+        timestamp: m.criadoEm,
+      })),
+      customerHistory: {
+        totalConversations: 1,
+        resolvedByAI: 0,
+        avgSatisfaction: 4,
+      },
+    };
+  })();
+  
   const takeoverMutation = useMutation({
     mutationFn: async (conversationId: string) => {
-      const res = await apiRequest('POST', `/api/chat/takeover/${conversationId}/take`);
+      const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/takeover`);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/chat/pending-handoffs'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/chat/takeover', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', selectedId] });
       toast({ title: 'Conversa assumida com sucesso' });
     },
     onError: () => {
@@ -516,12 +663,12 @@ export default function TakeoverPanel() {
   
   const handbackMutation = useMutation({
     mutationFn: async (conversationId: string) => {
-      const res = await apiRequest('POST', `/api/chat/takeover/${conversationId}/handback`);
+      const res = await apiRequest('POST', `/api/chat/conversations/${conversationId}/handback`);
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/chat/pending-handoffs'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/chat/takeover', selectedId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/chat/conversations/${selectedId}/messages`] });
       toast({ title: 'Conversa devolvida para IA' });
     },
     onError: () => {
