@@ -2,13 +2,7 @@
 
 ## Overview
 
-Alice is an autonomous, production-ready enterprise AI platform built around the **Llama 4 Maverick (400B parameters)** model hosted on Salad Cloud. It aims to solve critical problems in enterprise AI:
-1.  **Eliminate Third-Party Dependency**: Provides full autonomy, removing reliance on external APIs that might change pricing or discontinue services.
-2.  **Ensure Data Privacy**: Guarantees absolute data privacy by keeping all sensitive information within controlled infrastructure.
-3.  **Offer Predictable Costs**: Delivers transparent and predictable costs by avoiding third-party token-based billing.
-4.  **Enable Unlimited Customization**: Allows extensive fine-tuning specific to each client's needs.
-
-The platform offers real-time chat with streaming, multi-tenant isolation, robust RBAC, RAG backend with HNSW vector search, and integrations with Stripe, Wise, ERPNext, Twilio, and Resend.
+Alice is an autonomous, production-ready enterprise AI platform built around the **Llama 4 Maverick (400B parameters)** model hosted on Salad Cloud. It aims to solve critical problems in enterprise AI by eliminating third-party dependency, ensuring data privacy, offering predictable costs, and enabling unlimited customization. The platform provides real-time chat with streaming, multi-tenant isolation, robust RBAC, RAG backend with HNSW vector search, and integrations with various enterprise services.
 
 ## User Preferences
 
@@ -36,209 +30,72 @@ The platform offers real-time chat with streaming, multi-tenant isolation, robus
 ## System Architecture
 
 ### UI/UX Decisions
-The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed centrally and deployed to the frontend service.
+The frontend is a React SPA, with branding assets managed centrally.
 
 ### Technical Implementations
--   **AI Model**: Llama 4 Maverick (400B params, 17B active MoE) via Salad Cloud. Multimodal input (text, images, video), text output only. 1M token context.
+-   **AI Model**: Llama 4 Maverick (400B params, 17B active MoE) via Salad Cloud, supporting multimodal input (text, images, video) with text output and 1M token context.
 -   **Embeddings**: `text-embedding-3-small` (1536 dimensions) for RAG and CLIP ViT-L/14 (768 dimensions) for multimodal inference.
 -   **Image Generation**: FLUX.1 Schnell, self-hosted on RTX 3090/4090 GPUs.
 -   **Real-time Chat**: WebSocket with streaming capabilities.
 -   **Deduplication**: SemHash for duplicate data detection.
--   **Multi-tenancy**: Isolation enforced via `tenant_id` in queries.
+-   **Multi-tenancy**: Isolation enforced via `tenant_id`.
 -   **Authentication**: OAuth 2.0 and SAML 2.0.
--   **RBAC**: 6 levels of permission (super\_admin, admin, manager, operator, viewer, guest).
--   **Vector Search**: Native `pgvector` with HNSW indices (`m=16`, `ef_construction=64`) for `media_uploads` (CLIP embeddings) and `document_chunks` (text embeddings).
--   **Handover/Takeover System**: `conversation-orchestrator` enables seamless transition between AI and human agents, with automatic escalation triggers (negative sentiment, frustration keywords, repeated questions, explicit request, SLA breach).
+-   **RBAC**: 6 levels of permission (super_admin, admin, manager, operator, viewer, guest).
+-   **Vector Search**: Native `pgvector` with HNSW indices for `media_uploads` (CLIP embeddings) and `document_chunks` (text embeddings).
+-   **Handover/Takeover System**: `conversation-orchestrator` for seamless AI-to-human agent transitions with automatic escalation.
 -   **Logging**: Pino logger; `console.log` is forbidden.
 -   **TypeScript**: Strict mode, `any` type forbidden.
 -   **Health Checks**: Mandatory `/api/service/health` endpoints for all microservices.
 
 ### System Design Choices
--   **Microservices Architecture**: Code organized into microservices in the `apps/` directory, sharing common packages in `packages/`.
--   **API Gateway**: Traefik handles routing and SSL.
--   **CI/CD**: GitHub Actions for automated testing, migration (`db:push`), and deployment to Hetzner Cloud.
--   **Security**: bcrypt (12 rounds) for passwords, HttpOnly/Secure/SameSite cookies, CSRF protection (OAuth state parameter), rate limiting by IP and endpoint.
+-   **Microservices Architecture**: Code organized into microservices in `apps/` with shared packages in `packages/`.
+-   **API Gateway**: Traefik for routing and SSL.
+-   **CI/CD**: GitHub Actions for automated testing, migration, and deployment.
+-   **Security**: bcrypt (12 rounds) for passwords, HttpOnly/Secure/SameSite cookies, CSRF protection, rate limiting.
 -   **Observability**: Integrated Prometheus, Grafana, Jaeger, and Langfuse.
 
 ### Services Overview
--   **frontend**: React SPA (port 5000)
--   **api-gateway**: Traefik (ports 80/443)
--   **auth**: OAuth/SAML (port 3001)
--   **chat**: LLM + WebSocket (port 3002)
--   **rag**: Embeddings (port 3003)
--   **training**: Fine-tuning (port 3004)
--   **integrations**: Stripe, Wise, etc. (port 3005)
--   **observability**: Monitoring and tracing (ports 9090/3000/16686/3007)
+-   **frontend**: React SPA
+-   **api-gateway**: Traefik
+-   **auth**: OAuth/SAML
+-   **chat**: LLM + WebSocket
+-   **rag**: Embeddings
+-   **training**: Fine-tuning
+-   **integrations**: Stripe, Wise, etc.
+-   **observability**: Monitoring and tracing
 
 ## External Dependencies
 
--   **Salad Cloud**:
-    -   **LLM**: Llama 4 Maverick (400B params), multimodal input, text output. Circuit breaker: 30s timeout.
-    -   **Embeddings**: text-embedding-3-small.
--   **Self-hosted Models (via Salad Container Groups)**:
-    -   **Image Generation**: FLUX.1 Schnell.
-    -   **CLIP Inference**: CLIP ViT-L/14 (multimodal embeddings).
--   **Stripe Portugal**: Payments in EUR via SEPA, webhook integration for checkout and payments.
--   **Wise**: International transfers, supporting 50+ currencies.
+-   **Salad Cloud**: Llama 4 Maverick (LLM), `text-embedding-3-small` (embeddings).
+-   **Self-hosted Models (via Salad Container Groups)**: FLUX.1 Schnell (Image Generation), CLIP ViT-L/14 (multimodal embeddings).
+-   **Stripe Portugal**: Payments in EUR via SEPA, webhook integration.
+-   **Wise**: International transfers (50+ currencies).
 -   **ERPNext**: Integrated CRM and ERP system.
--   **Twilio**: WhatsApp and SMS communication, with webhook support.
+-   **Twilio**: WhatsApp and SMS communication with webhook support.
 -   **Resend**: Transactional email service.
--   **PostgreSQL**: Primary database with `pgvector` extension for vector similarity search.
--   **GitHub Actions**: CI/CD pipeline for deployment and automation.
+-   **PostgreSQL**: Primary database with `pgvector` extension.
+-   **GitHub Actions**: CI/CD pipeline.
 -   **Hetzner Cloud**: Production infrastructure hosting.
-
-## Testing
-
-### Vitest Configuration
-
-| Command | Description |
-|---------|-------------|
-| `npm test` | Run all tests |
-| `npm run test:watch` | Watch mode for development |
-| `npm run test:coverage` | Coverage report |
-| `npm run test:ui` | Visual interface |
-
-### Test Structure
-
-| Folder | Description | Tests |
-|--------|-------------|-------|
-| `tests/unit/` | Unit tests | 309 tests |
-| `tests/setup.ts` | Global configuration | Pino logger |
-| `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
-
-### Test Files
-
-| File | Description | Tests |
-|------|-------------|-------|
-| `setup-verification.test.ts` | Vitest setup validation | 8 |
-| `health-endpoints.test.ts` | Health endpoint contracts | 45 |
-| `schema-validation.test.ts` | Drizzle schema validation | 58 |
-| `config-validation.test.ts` | Configuration validation | 117 |
-| `rbac-validation.test.ts` | RBAC system validation | 81 |
-
-### Health Endpoint Contract Tests
-
-Validates schemas for all 6 microservices:
-
-| Service | Port | Endpoint | Tests |
-|---------|------|----------|-------|
-| auth-service | 3001 | `/api/auth/health` | 5 |
-| chat-service | 3002 | `/api/chat/health` | 6 |
-| rag-service | 3003 | `/api/rag/health` | 6 |
-| training-service | 3004 | `/api/training/health` | 5 |
-| integrations-service | 3005 | `/api/integrations/health` | 5 |
-| observability-service | 3007 | `/api/observability/health` | 5 |
-
-### Validated Schemas
-
-| Service | Specific Fields |
-|---------|-----------------|
-| auth | providers (OAuth), metrics |
-| chat | llmProvider, model, circuitBreakers (llm, rag) |
-| rag | embeddingsProvider, model, circuitBreaker |
-| training | saladCloudAvailable, circuitBreakers (embeddings, saladContainerGroups) |
-| integrations | integrations (stripe, erpnext, wise), circuitBreakers |
-| observability | services (Prometheus, Grafana, Jaeger, Langfuse), uptimeSeconds |
-
-### Schema Validation Tests
-
-Validates Drizzle ORM schema structure:
-
-| Category | Tests | Description |
-|----------|-------|-------------|
-| Enums RBAC | 12 | userRoleEnum (6 níveis), messageTypeEnum, status enums |
-| Tabelas Principais | 22 | tenants, users, agents, conversations, messages, documents |
-| Insert Schemas | 18 | Zod validation for all main tables |
-| Integridade | 6 | Multi-tenancy, timestamps, pgvector, SemHash |
-
-### Config Validation Tests
-
-Validates environment variables and configuration constants:
-
-| Category | Tests | Description |
-|----------|-------|-------------|
-| envSchema | 14 | NODE_ENV, LOG_LEVEL, SALAD_API_URL, variáveis opcionais |
-| CORS Origins | 18 | Produção, desenvolvimento, getCorsOrigins, getCorsConfig |
-| Rate Limiting | 9 | Limites por tipo de endpoint, janela de tempo |
-| Service URLs | 22 | Portas padrão, resolveServiceUrls(), getServiceUrls(), resetConfigCache(), Proxy overrides |
-| Timeouts | 9 | HTTP, LLM, embeddings, RAG, uploads, fine-tuning |
-| Size Limits | 6 | Upload, mensagem, documento, chunks, resultados RAG |
-| RAG Config | 6 | Chunk size, overlap, embedding dimensions, similarity |
-| Salad Cloud | 7 | API URL, modelos chat/embeddings, defaults |
-| Consistência | 4 | Validações cruzadas entre configurações |
-| SERVICE_URL Validação | 12 | Validação positiva/negativa de URLs de serviços |
-| Edge Cases | 4 | resetConfigCache repetido, alternância, isolamento |
-
-### RBAC Validation Tests
-
-Validates Role-Based Access Control system:
-
-| Category | Tests | Description |
-|----------|-------|-------------|
-| Hierarquia de Roles | 12 | 6 níveis (super_admin → guest), ROLE_HIERARCHY, ROLE_DESCRIPTIONS |
-| Funções de Hierarquia | 12 | hasMinimumRole para todas as combinações de roles |
-| Matriz de Permissões | 18 | PERMISSION_MAP por módulo (AUTH, CHAT, RAG, TRAINING, INTEGRATIONS, ADMIN, IMAGES) |
-| Funções de Permissão | 11 | hasPermission, getRolePermissions, getPermissionRoles |
-| Middleware | 17 | extractAuthContext, requireAuth, requirePermission, requireRole, requireSameTenant, checkPermission |
-| Cache de Permissões | 7 | PermissionCache: set/get, invalidate, TTL, maxSize, stats |
-| Cenários Enterprise | 4 | Multi-tenant isolation, Takeover/Handover, Fine-tuning, Integrações Financeiras |
 
 ## Recent Changes (November 2025)
 
-### RBAC Validation Tests (Phase 1 Step 1.5 - COMPLETO)
+### Logging Compliance (Regra 8 - COMPLETO)
 
-Implemented 81 tests for validating RBAC system:
-- `tests/unit/rbac-validation.test.ts` - RBAC structure and authorization validation
-- Hierarquia: 6 níveis (super_admin, admin, manager, operator, viewer, guest)
-- ROLE_HIERARCHY: Valores numéricos 1-6 para comparação hierárquica
-- ROLE_DESCRIPTIONS: Descrições em PT-BR para cada role
-- hasMinimumRole: Validação de nível mínimo para cada role
-- PERMISSION_MAP: 279 permissões mapeadas por módulo
-- Módulos: AUTH, CHAT, RAG, TRAINING, INTEGRATIONS, ADMIN, IMAGES
-- Middleware: requireAuth, requirePermission, requireRole, requireSameTenant
-- extractAuthContext: Extração de req.user ou headers
-- checkPermission: Verificação programática
-- PermissionCache: Cache com TTL, maxSize, invalidação por tenant
-- Cenários Enterprise: Multi-tenant, Takeover/Handover, Fine-tuning, Stripe/Wise
+- `apps/frontend-service/src/lib/logger.ts`: Frontend logger estruturado (sendBeacon + fetch fallback)
+- `apps/frontend-service/src/pages/Chat.tsx`: frontendLogger.warn + toast para uploads inválidos
+- `packages/config/src/index.ts`: Pino logger para erros de configuração
+- Zero console.* em código executável
 
-### Config Validation Tests (Phase 1 Step 1.4 - COMPLETO)
+### Testing
 
-Implemented 113 tests for validating configuration:
-- `tests/unit/config-validation.test.ts` - Environment and config validation
-- envSchema: NODE_ENV, LOG_LEVEL, SALAD_API_URL, DATABASE_URL, validação negativa
-- CORS: Production origins (yesyoudeserve.duckdns.org), development origins
-- Rate limiting: Limits per endpoint type (public, api, admin, upload)
-- Service URLs: Portas 3001-3005, lazy loading, cache resetável, Proxy pattern
-- Timeouts: HTTP (30s), LLM (60s), embeddings, RAG search, fine-tuning
-- Size limits: Upload (50MB), message (32000 chars), document (10MB)
-- RAG config: Chunk size (1000), overlap (200), embeddings (384 dims)
-- Salad Cloud: llama4-maverick, text-embedding-3-small
-- SERVICE_URL validation: URLs absolutas com protocolo HTTP/HTTPS obrigatório
-- CORS_ORIGINS validation: Cada origem deve ser uma URL válida
-- Edge cases: resetConfigCache repetido, alternância, isolamento
-- Total: 309 tests passing (8 setup + 45 health + 58 schema + 117 config + 81 rbac)
+- 309 testes passando (unit + contract)
+- RBAC: 81 testes (hierarquia, permissões, middleware, cache)
+- Config: 117 testes (validação, service URLs, timeouts)
+- Schema: 58 testes (Drizzle, enums, tabelas)
+- Health: 45 testes (contratos de todos os serviços)
 
-### Config Refactoring - Lazy Loading Pattern
+### Backlog
 
-Refatoração enterprise-grade do config.ts:
-- `resolveServiceUrls(env)` - Função pura que resolve URLs a partir de objeto env
-- `getServiceUrls()` - Função com cache lazy para performance
-- `resetConfigCache()` - Limpa cache para testes de override
-- `SERVICE_URLS` - Proxy para compatibilidade retroativa com código existente
-- `ServiceUrlsConfig` - Interface TypeScript para tipagem forte
-
-### Schema Validation Tests (Phase 1 Step 1.3)
-
-Implemented 58 tests for validating Drizzle schema:
-- `tests/unit/schema-validation.test.ts` - Schema structure validation
-- Enums: userRoleEnum, messageTypeEnum, conversationControlModeEnum
-- Tables: tenants, users, agents, conversations, messages, documents
-- Insert Schemas: Zod validation with required fields
-
-### Health Endpoint Tests (Phase 1 Step 1.2)
-
-Implemented 45 contract tests for validating microservice schemas:
-- `tests/unit/health-endpoints.test.ts` - Zod schema validation
-- Schemas for auth, chat, rag, training, integrations, observability
-- Circuit breaker states (open, closed, half-open)
-- Port and endpoint configuration (Rule 16)
+- Microsoft OAuth: Stub documentado, autenticação local/Google/GitHub/SAML funcionam
+- Testes E2E: Playwright (futuro)
+- Testes de Carga: k6 (futuro)

@@ -1,4 +1,10 @@
 import { z } from 'zod';
+import pino from 'pino';
+
+const configLogger = pino({
+  name: 'config',
+  level: process.env.LOG_LEVEL || 'info',
+});
 
 const baseConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -97,9 +103,9 @@ export function loadConfig<T>(schema: z.ZodSchema<T>): T {
   const result = schema.safeParse(process.env);
   
   if (!result.success) {
-    console.error('Configuration validation failed:');
-    console.error(result.error.format());
-    throw new Error('Invalid configuration. Check environment variables.');
+    const formattedErrors = result.error.format();
+    configLogger.error({ errors: formattedErrors }, 'Falha na validação de configuração');
+    throw new Error(`Falha na validação de configuração: ${JSON.stringify(formattedErrors)}`);
   }
   
   return result.data;

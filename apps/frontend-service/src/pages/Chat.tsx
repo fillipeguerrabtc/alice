@@ -50,6 +50,8 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+import { frontendLogger } from '@/lib/logger';
 
 interface GeneratedImageData {
   id: string;
@@ -913,6 +915,7 @@ export default function Chat() {
   const { conversationId } = useParams<{ conversationId?: string }>();
   const [, navigate] = useLocation();
   const queryClientRef = useQueryClient();
+  const { toast } = useToast();
   
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -933,13 +936,33 @@ export default function Chat() {
       const mediaType = getMediaType(file.type);
       
       if (!mediaType) {
-        console.warn('Tipo de arquivo não suportado:', file.type);
+        frontendLogger.warn('Upload rejeitado: tipo não suportado', { 
+          fileName: file.name, 
+          mimeType: file.type 
+        });
+        toast({
+          title: t('chat.upload.unsupportedType', 'Tipo não suportado'),
+          description: t('chat.upload.unsupportedTypeDesc', 'Este tipo de arquivo não é suportado: {{type}}', { type: file.type }),
+          variant: 'destructive',
+        });
         continue;
       }
 
       const limit = FILE_LIMITS[mediaType];
       if (file.size > limit) {
-        console.warn(`Arquivo muito grande: ${formatFileSize(file.size)} > ${formatFileSize(limit)}`);
+        frontendLogger.warn('Upload rejeitado: arquivo muito grande', { 
+          fileName: file.name, 
+          fileSize: file.size, 
+          limit 
+        });
+        toast({
+          title: t('chat.upload.fileTooLarge', 'Arquivo muito grande'),
+          description: t('chat.upload.fileTooLargeDesc', 'Tamanho: {{size}}. Limite: {{limit}}', { 
+            size: formatFileSize(file.size), 
+            limit: formatFileSize(limit) 
+          }),
+          variant: 'destructive',
+        });
         continue;
       }
 
