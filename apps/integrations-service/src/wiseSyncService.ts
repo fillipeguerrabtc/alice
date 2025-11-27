@@ -8,9 +8,9 @@
  */
 
 import { eq, and, lt, desc } from 'drizzle-orm';
+import { schema, type Database } from '@alice/database';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
-import * as schema from '../../../shared/schema.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -23,8 +23,8 @@ const logger = pino({
 const ERPNEXT_URL = process.env.ERPNEXT_URL;
 const ERPNEXT_API_KEY = process.env.ERPNEXT_API_KEY;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbClient = any;
+type DbClient = Database;
+type WiseSyncLogRow = typeof schema.wiseSyncLog.$inferSelect;
 let db: DbClient;
 
 export function initWiseSyncService(dbClient: DbClient): void {
@@ -381,11 +381,11 @@ export async function getSyncStats() {
 
   return {
     total: logs.length,
-    synced: logs.filter(l => l.status === 'synced').length,
-    failed: logs.filter(l => l.status === 'failed').length,
-    pending: logs.filter(l => l.status === 'pending').length,
-    manualReview: logs.filter(l => l.status === 'manual_review').length,
-    retrying: logs.filter(l => l.status === 'retrying').length,
+    synced: logs.filter((l: WiseSyncLogRow) => l.status === 'synced').length,
+    failed: logs.filter((l: WiseSyncLogRow) => l.status === 'failed').length,
+    pending: logs.filter((l: WiseSyncLogRow) => l.status === 'pending').length,
+    manualReview: logs.filter((l: WiseSyncLogRow) => l.status === 'manual_review').length,
+    retrying: logs.filter((l: WiseSyncLogRow) => l.status === 'retrying').length,
   };
 }
 

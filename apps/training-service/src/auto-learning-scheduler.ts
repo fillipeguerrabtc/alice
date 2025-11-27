@@ -14,6 +14,7 @@
 
 import pino from 'pino';
 import { eq, and, lt, gte, desc, isNull } from 'drizzle-orm';
+import type { NeonHttpDatabase } from 'drizzle-orm/neon-http';
 import * as schema from '../../../shared/schema.js';
 
 const logger = pino({
@@ -24,7 +25,7 @@ const logger = pino({
   }
 }).child({ module: 'auto-learning-scheduler' });
 
-type DbClient = ReturnType<typeof import('drizzle-orm/neon-http').drizzle>;
+type DbClient = NeonHttpDatabase<typeof schema>;
 let db: DbClient;
 
 export function initAutoLearningScheduler(dbClient: DbClient): void {
