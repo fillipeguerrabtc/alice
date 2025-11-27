@@ -119,9 +119,12 @@ export default function Landing() {
           <div className="container mx-auto px-4 md:px-6 relative">
             <div className="flex flex-col items-center text-center max-w-4xl mx-auto">
               <div className="mb-8">
-                <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-primary text-primary-foreground font-bold text-4xl shadow-lg">
-                  A
-                </div>
+                <img
+                  src="/logo-round.png"
+                  alt="Yes You Deserve"
+                  className="h-24 w-24 rounded-2xl shadow-lg"
+                  data-testid="img-hero-logo"
+                />
               </div>
 
               <div className="inline-flex items-center gap-2 rounded-full border border-border bg-muted/50 px-4 py-1.5 text-sm text-muted-foreground mb-6">
@@ -227,9 +230,12 @@ export default function Landing() {
                 <Card className="p-8 bg-gradient-to-br from-primary/5 to-accent/5">
                   <div className="space-y-6">
                     <div className="flex items-center gap-4">
-                      <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground font-bold text-xl">
-                        A
-                      </div>
+                      <img
+                        src="/logo-round.png"
+                        alt="Yes You Deserve"
+                        className="h-14 w-14 rounded-xl"
+                        data-testid="img-card-logo"
+                      />
                       <div>
                         <h3 className="font-semibold text-foreground">
                           {t('auth.title')}
@@ -301,9 +307,12 @@ export default function Landing() {
         <div className="container mx-auto px-4 md:px-6">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground font-bold text-sm">
-                A
-              </div>
+              <img
+                src="/logo-round.png"
+                alt="Yes You Deserve"
+                className="h-8 w-8 rounded-lg"
+                data-testid="img-footer-logo"
+              />
               <span className="font-semibold">{t('auth.title')}</span>
             </div>
 

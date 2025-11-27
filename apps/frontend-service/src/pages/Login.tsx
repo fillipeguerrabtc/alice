@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, Loader2, Mail, Chrome, Github } from 'lucide-react';
+import { Loader2, Mail, Chrome, Github } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -84,9 +84,12 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">
           <div className="flex justify-center mb-4">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary text-primary-foreground">
-              <Bot className="h-7 w-7" />
-            </div>
+            <img
+              src="/logo-round.png"
+              alt="Yes You Deserve"
+              className="h-12 w-12 rounded-xl"
+              data-testid="img-login-logo"
+            />
           </div>
           <CardTitle className="text-2xl" data-testid="text-login-title">
             {t('auth.title')}
