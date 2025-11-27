@@ -96,6 +96,56 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | Dashboard Admin | 30% |
 | Analytics | Planejado |
 
+### Planejado (185 Tarefas Enterprise)
+
+| Capacidade | Fase | Descrição |
+|------------|------|-----------|
+| Takeover/Handover | 6.5 | Agentes humanos assumem conversas |
+| Agentic RAG | 6.5 | Web Search + auto-indexação diária |
+| Image Generation | 6.5+ | FLUX.1 Schnell self-hosted Salad Cloud |
+| Auto-aprendizado Agressivo | 8 | Fine-tuning a cada 4 dias |
+| Multimodal | 9 | Imagens, áudio, vídeo |
+| Crawling | 10 | Web scraping automático |
+
+---
+
+## Decisões Arquiteturais Confirmadas
+
+### Schedule de Aprendizado (Uso Verticalizado)
+
+| Componente | Frequência | Justificativa |
+|------------|------------|---------------|
+| RAG update | Tempo real | Documentos disponíveis imediatamente |
+| Auto-indexação | Diário | Uso verticalizado exige aprendizado rápido |
+| Fine-tuning incremental | A cada 4 dias | LoRA com dados novos (agressivo) |
+| Fine-tuning completo | Quinzenal | Retreino mais profundo |
+
+### Pub/Sub Real-time
+
+| Decisão | Escolha | Justificativa |
+|---------|---------|---------------|
+| Tecnologia | PostgreSQL NOTIFY | Simplicidade, suficiente para escala inicial |
+| Fallback | Tabela conversation_states | Garantia de persistência |
+| Migração futura | Redis se >1k msg/s | Apenas se escala exigir |
+
+### Geração de Imagens
+
+| Decisão | Escolha | Justificativa |
+|---------|---------|---------------|
+| Modelo | FLUX.1 Schnell | Estado da arte 2025, Apache 2.0 |
+| Hospedagem | Salad Cloud (self-hosted) | Sem API externa, custo previsível |
+| Aprendizado | Progressive LoRA | Imagens aprovadas entram no training |
+| Storage | Object Storage + CLIP embeddings | RAG multimodal |
+
+### Takeover/Handover
+
+| Decisão | Escolha | Justificativa |
+|---------|---------|---------------|
+| Twilio Flex | Não usar | Custo alto ($1/hora/agente) |
+| Painel | Custom na Alice | Integrado ao dashboard |
+| SLA Default | 30 minutos | Best practice prioridade média |
+| Triggers automáticos | Confiança <70%, 3+ fallbacks, sentimento negativo | Pesquisa 2025 |
+
 ---
 
 ## Arquitetura
@@ -164,9 +214,20 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 
 ### Salad Cloud
 
-- Modelo: Llama 4 Maverick (400B)
+**LLM Principal:**
+- Modelo: Llama 4 Maverick (400B parâmetros, 17B ativos MoE)
+- Multimodal: INPUT apenas (entende texto, imagens, vídeo)
+- Output: Texto apenas (NÃO gera imagens)
+- Contexto: 1M tokens
 - Embeddings: text-embedding-3-small
 - Circuit breaker: 30s timeout
+
+**Geração de Imagens:**
+- Modelo: FLUX.1 Schnell (Apache 2.0)
+- Self-hosted: Container Group próprio
+- GPU: RTX 3090/4090 (24GB VRAM)
+- Velocidade: 1-3 segundos/imagem
+- Custo: ~$0.20/hora = ~$20 por 100k imagens
 
 ### Stripe Portugal
 
