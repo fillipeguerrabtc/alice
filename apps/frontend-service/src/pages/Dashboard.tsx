@@ -44,6 +44,9 @@ import {
   UserCheck,
   Bot,
   AlertTriangle,
+  Headphones,
+  PhoneCall,
+  Timer,
 } from 'lucide-react';
 import { 
   AreaChart,
@@ -60,6 +63,7 @@ import {
   Cell,
   Legend,
 } from 'recharts';
+import { Progress } from '@/components/ui/progress';
 
 interface DashboardStats {
   conversations: number;
@@ -142,6 +146,13 @@ interface ConversationBreakdown {
   name: string;
   value: number;
   color: string;
+}
+
+interface CircuitBreakerStatus {
+  name: string;
+  status: 'closed' | 'open' | 'half-open';
+  failures: number;
+  successRate: number;
 }
 
 const containerVariants = {
@@ -406,6 +417,403 @@ const CHART_COLORS = {
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6'];
 
+function TakeoverStatsCard({ 
+  stats, 
+  isLoading 
+}: { 
+  stats: TakeoverStats; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <Skeleton className="h-5 w-32" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const urgencyLevel = stats.urgentConversations > 5 ? 'danger' : stats.urgentConversations > 0 ? 'warning' : 'success';
+  const urgencyColors = {
+    danger: 'text-red-500 bg-red-500/10',
+    warning: 'text-yellow-500 bg-yellow-500/10',
+    success: 'text-green-500 bg-green-500/10',
+  };
+
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <div className={`p-2 rounded-md ${urgencyColors[urgencyLevel]}`}>
+            <Headphones className="h-4 w-4" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-sm font-medium">Takeover / Handover</CardTitle>
+            <CardDescription className="text-xs">Conversas com agentes humanos</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+              <PhoneCall className="h-4 w-4 text-muted-foreground" />
+              <div>
+                <p className="text-lg font-bold" data-testid="stat-pending-handoffs">
+                  {stats.pendingHandoffs}
+                </p>
+                <p className="text-xs text-muted-foreground">Handoffs Pendentes</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
+              <AlertTriangle className={`h-4 w-4 ${stats.urgentConversations > 0 ? 'text-yellow-500' : 'text-muted-foreground'}`} />
+              <div>
+                <p className="text-lg font-bold" data-testid="stat-urgent-conversations">
+                  {stats.urgentConversations}
+                </p>
+                <p className="text-xs text-muted-foreground">Urgentes</p>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+            <div className="flex items-center gap-2">
+              <Bot className="h-4 w-4 text-blue-500" />
+              <span className="text-sm">Resolvidas por IA</span>
+            </div>
+            <span className="font-semibold">{stats.resolvedByAI}</span>
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-green-500" />
+              <span className="text-sm">Resolvidas por Humano</span>
+            </div>
+            <span className="font-semibold">{stats.resolvedByHuman}</span>
+          </div>
+          {stats.avgResponseTime > 0 && (
+            <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+              <div className="flex items-center gap-2">
+                <Timer className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm">Tempo Médio Resposta</span>
+              </div>
+              <span className="font-semibold">{Math.round(stats.avgResponseTime / 60)}min</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ImageGenerationCard({ 
+  stats, 
+  isLoading 
+}: { 
+  stats: ImageGenerationStats; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <Skeleton className="h-5 w-32" />
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const approvalRate = stats.totalGenerated > 0 
+    ? Math.round((stats.approved / stats.totalGenerated) * 100) 
+    : 0;
+
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <div className="p-2 rounded-md bg-purple-500/10">
+            <Image className="h-4 w-4 text-purple-500" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-sm font-medium">Geração de Imagens</CardTitle>
+            <CardDescription className="text-xs">FLUX.1 Schnell via Salad Cloud</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="p-2 rounded-md bg-muted/50">
+              <p className="text-lg font-bold" data-testid="stat-total-images">{stats.totalGenerated}</p>
+              <p className="text-xs text-muted-foreground">Total</p>
+            </div>
+            <div className="p-2 rounded-md bg-green-500/10">
+              <p className="text-lg font-bold text-green-600 dark:text-green-400" data-testid="stat-approved-images">{stats.approved}</p>
+              <p className="text-xs text-muted-foreground">Aprovadas</p>
+            </div>
+            <div className="p-2 rounded-md bg-yellow-500/10">
+              <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400" data-testid="stat-pending-images">{stats.pending}</p>
+              <p className="text-xs text-muted-foreground">Pendentes</p>
+            </div>
+          </div>
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-muted-foreground">Taxa de Aprovação</span>
+              <span className="font-medium">{approvalRate}%</span>
+            </div>
+            <Progress value={approvalRate} className="h-2" />
+          </div>
+          <div className="flex items-center justify-between p-2 rounded-md bg-blue-500/10">
+            <div className="flex items-center gap-2">
+              <Brain className="h-4 w-4 text-blue-500" />
+              <span className="text-sm">Em Training</span>
+            </div>
+            <Badge variant="secondary">{stats.inTraining}</Badge>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function SLAMonitorCard({ 
+  metrics, 
+  isLoading 
+}: { 
+  metrics: SLAMetrics; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <Skeleton className="h-5 w-24" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const total = metrics.breachedCount + metrics.atRiskCount + metrics.onTrackCount;
+  const slaData: ConversationBreakdown[] = [
+    { name: 'On Track', value: metrics.onTrackCount, color: '#10b981' },
+    { name: 'At Risk', value: metrics.atRiskCount, color: '#f59e0b' },
+    { name: 'Breached', value: metrics.breachedCount, color: '#ef4444' },
+  ].filter(d => d.value > 0);
+
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <div className="p-2 rounded-md bg-blue-500/10">
+            <Clock className="h-4 w-4 text-blue-500" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-sm font-medium">SLA Monitoring</CardTitle>
+            <CardDescription className="text-xs">Acordos de nível de serviço</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {total > 0 ? (
+            <>
+              <div className="h-[120px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <PieChart>
+                    <Pie
+                      data={slaData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={30}
+                      outerRadius={50}
+                      paddingAngle={2}
+                      dataKey="value"
+                    >
+                      {slaData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Legend 
+                      verticalAlign="bottom" 
+                      height={24}
+                      formatter={(value: string) => <span className="text-xs">{value}</span>}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                  <span className="text-muted-foreground">1ª Resposta</span>
+                  <span className="font-medium">{Math.round(metrics.avgFirstResponseTime / 60)}min</span>
+                </div>
+                <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                  <span className="text-muted-foreground">Resolução</span>
+                  <span className="font-medium">{Math.round(metrics.avgResolutionTime / 60)}min</span>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-[150px] text-muted-foreground">
+              <Clock className="h-8 w-8 mb-2 opacity-50" />
+              <p className="text-sm">Sem dados de SLA</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function CircuitBreakerCard({ 
+  breakers, 
+  isLoading 
+}: { 
+  breakers: CircuitBreakerStatus[]; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <Skeleton className="h-5 w-28" />
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-8 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const statusColors: Record<string, string> = {
+    closed: 'text-green-500',
+    open: 'text-red-500',
+    'half-open': 'text-yellow-500',
+  };
+
+  const statusLabels: Record<string, string> = {
+    closed: 'Fechado',
+    open: 'Aberto',
+    'half-open': 'Semi-Aberto',
+  };
+
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate">
+        <CardHeader className="flex flex-row items-center gap-2 pb-2">
+          <div className="p-2 rounded-md bg-orange-500/10">
+            <Shield className="h-4 w-4 text-orange-500" />
+          </div>
+          <div className="flex-1">
+            <CardTitle className="text-sm font-medium">Circuit Breakers</CardTitle>
+            <CardDescription className="text-xs">Proteção contra falhas em cascata</CardDescription>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-2">
+          {breakers.map((breaker) => (
+            <div 
+              key={breaker.name}
+              className="flex items-center justify-between p-2 rounded-md bg-muted/50"
+            >
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${breaker.status === 'closed' ? 'bg-green-500' : breaker.status === 'open' ? 'bg-red-500' : 'bg-yellow-500'}`} />
+                <span className="text-sm font-medium">{breaker.name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {breaker.successRate}%
+                </span>
+                <Badge variant="outline" className={`text-xs ${statusColors[breaker.status]}`}>
+                  {statusLabels[breaker.status]}
+                </Badge>
+              </div>
+            </div>
+          ))}
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ConversationsBarChart({ 
+  data, 
+  isLoading 
+}: { 
+  data: { name: string; ai: number; human: number }[]; 
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <Skeleton className="h-5 w-40" />
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-[200px] w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <motion.div variants={itemVariants}>
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <MessageSquare className="h-4 w-4" />
+            Conversas por Período
+          </CardTitle>
+          <CardDescription>Resoluções IA vs Humano nos últimos 7 dias</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[200px]">
+            {data.length > 0 ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data}>
+                  <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
+                  <XAxis
+                    dataKey="name"
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <YAxis
+                    className="text-xs"
+                    tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      backgroundColor: 'hsl(var(--popover))',
+                      border: '1px solid hsl(var(--border))',
+                      borderRadius: '0.5rem',
+                    }}
+                  />
+                  <Legend 
+                    formatter={(value: string) => <span className="text-xs">{value}</span>}
+                  />
+                  <Bar dataKey="ai" name="IA" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="human" name="Humano" fill="#10b981" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
+                <p className="text-sm">Sem dados de conversas</p>
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
 export default function Dashboard() {
   const { t } = useTranslation();
 
@@ -506,6 +914,31 @@ export default function Dashboard() {
     { name: 'Documentos', value: displayStats.documents, color: '#10b981' },
     { name: 'Training', value: displayStats.trainingData, color: '#f59e0b' },
   ].filter(d => d.value > 0);
+
+  const displaySLAMetrics: SLAMetrics = {
+    breachedCount: 0,
+    atRiskCount: 0,
+    onTrackCount: 0,
+    avgFirstResponseTime: 0,
+    avgResolutionTime: 0,
+  };
+
+  const displayCircuitBreakers: CircuitBreakerStatus[] = [
+    { name: 'LLM (Salad Cloud)', status: 'closed', failures: 0, successRate: 100 },
+    { name: 'RAG Embeddings', status: 'closed', failures: 0, successRate: 100 },
+    { name: 'Wise API', status: 'closed', failures: 0, successRate: 100 },
+    { name: 'ERPNext', status: 'closed', failures: 0, successRate: 100 },
+  ];
+
+  const conversationsBarData = [
+    { name: 'Seg', ai: 0, human: 0 },
+    { name: 'Ter', ai: 0, human: 0 },
+    { name: 'Qua', ai: 0, human: 0 },
+    { name: 'Qui', ai: 0, human: 0 },
+    { name: 'Sex', ai: 0, human: 0 },
+    { name: 'Sáb', ai: 0, human: 0 },
+    { name: 'Dom', ai: 0, human: 0 },
+  ];
 
   return (
     <motion.div
@@ -643,6 +1076,46 @@ export default function Dashboard() {
           }
         />
       </div>
+
+      <motion.div variants={itemVariants}>
+        <Card className="bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 dark:from-blue-500/10 dark:via-purple-500/10 dark:to-pink-500/10">
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-primary" />
+              Métricas de IA
+            </CardTitle>
+            <CardDescription>
+              Operações autônomas, takeover/handover e geração de imagens
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <TakeoverStatsCard 
+                stats={displayTakeoverStats} 
+                isLoading={imageStatsLoading} 
+              />
+              <ImageGenerationCard 
+                stats={displayImageStats} 
+                isLoading={imageStatsLoading} 
+              />
+              <SLAMonitorCard 
+                metrics={displaySLAMetrics} 
+                isLoading={false} 
+              />
+              <CircuitBreakerCard 
+                breakers={displayCircuitBreakers} 
+                isLoading={false} 
+              />
+            </div>
+            <div className="mt-4">
+              <ConversationsBarChart 
+                data={conversationsBarData} 
+                isLoading={statsLoading} 
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
 
       <Tabs defaultValue="usage" className="space-y-4">
         <TabsList>
