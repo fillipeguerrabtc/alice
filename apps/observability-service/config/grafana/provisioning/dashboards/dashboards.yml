@@ -1,0 +1,20 @@
+# Grafana Dashboard Provisioning - Alice Enterprise Platform
+#
+# Configuração automática de dashboards.
+#
+# Documentação PT-BR (Regra 10 replit.md)
+
+apiVersion: 1
+
+providers:
+  - name: 'Alice Dashboards'
+    orgId: 1
+    folder: 'Alice Enterprise'
+    folderUid: 'alice'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: true

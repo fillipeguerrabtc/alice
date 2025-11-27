@@ -1,0 +1,54 @@
+# Grafana Datasources - Alice Enterprise Platform
+#
+# Configuração automática de datasources para Grafana.
+# Conecta Prometheus (métricas) e Jaeger (traces).
+#
+# Documentação PT-BR (Regra 10 replit.md)
+
+apiVersion: 1
+
+datasources:
+  # ============================================================================
+  # PROMETHEUS - Métricas
+  # ============================================================================
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: "15s"
+      queryTimeout: "60s"
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "3.0.0"
+
+  # ============================================================================
+  # JAEGER - Traces
+  # ============================================================================
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-1h"
+        spanEndTimeShift: "1h"
+        tags: ["service.name"]
+        filterByTraceID: true
+        filterBySpanID: true
+
+  # ============================================================================
+  # LANGFUSE - Métricas LLM (via API)
+  # ============================================================================
+  - name: Langfuse
+    type: grafana-simple-json-datasource
+    access: proxy
+    url: http://langfuse:3000/api/public
+    editable: false
+    jsonData:
+      tlsSkipVerify: true

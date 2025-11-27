@@ -1,0 +1,183 @@
+# Alertas LLM - Alice Enterprise Platform
+#
+# Regras de alerta específicas para monitoramento de LLM.
+# Baseado em melhores práticas 2025 para observabilidade de IA.
+#
+# Documentação PT-BR (Regra 10 replit.md)
+
+groups:
+  - name: llm_alerts
+    interval: 30s
+    rules:
+      # ========================================================================
+      # LATÊNCIA
+      # ========================================================================
+      - alert: LLMHighLatency
+        expr: histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m])) > 30
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alta latência nas requisições LLM"
+          description: "P95 de latência está acima de 30s por mais de 5 minutos."
+
+      - alert: LLMCriticalLatency
+        expr: histogram_quantile(0.99, rate(llm_request_duration_seconds_bucket[5m])) > 60
+        for: 2m
+        labels:
+          severity: critical
+          service: chat-service
+        annotations:
+          summary: "Latência crítica nas requisições LLM"
+          description: "P99 de latência está acima de 60s por mais de 2 minutos."
+
+      # ========================================================================
+      # TIME TO FIRST TOKEN (TTFT)
+      # ========================================================================
+      - alert: LLMHighTTFT
+        expr: histogram_quantile(0.95, rate(llm_ttft_seconds_bucket[5m])) > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alto Time to First Token"
+          description: "TTFT P95 está acima de 5s - impacto na experiência do usuário."
+
+      # ========================================================================
+      # TAXA DE ERROS
+      # ========================================================================
+      - alert: LLMHighErrorRate
+        expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alta taxa de erros no LLM"
+          description: "Taxa de erros acima de 5% nos últimos 5 minutos."
+
+      - alert: LLMCriticalErrorRate
+        expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m]) > 0.15
+        for: 2m
+        labels:
+          severity: critical
+          service: chat-service
+        annotations:
+          summary: "Taxa crítica de erros no LLM"
+          description: "Taxa de erros acima de 15% - possível problema com Salad Cloud."
+
+      # ========================================================================
+      # CIRCUIT BREAKER
+      # ========================================================================
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{state="open"} == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit Breaker aberto"
+          description: "Circuit breaker {{ $labels.name }} está aberto - serviço degradado."
+
+      # ========================================================================
+      # TOKENS E CUSTOS
+      # ========================================================================
+      - alert: HighTokenUsage
+        expr: increase(llm_tokens_total[1h]) > 1000000
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alto consumo de tokens"
+          description: "Mais de 1M tokens consumidos na última hora."
+
+      - alert: CriticalTokenUsage
+        expr: increase(llm_tokens_total[1h]) > 5000000
+        for: 5m
+        labels:
+          severity: critical
+          service: chat-service
+        annotations:
+          summary: "Consumo crítico de tokens"
+          description: "Mais de 5M tokens consumidos na última hora - verificar custos."
+
+      # ========================================================================
+      # RAG SERVICE
+      # ========================================================================
+      - alert: RAGHighRetrievalTime
+        expr: histogram_quantile(0.95, rate(rag_retrieval_duration_seconds_bucket[5m])) > 3
+        for: 5m
+        labels:
+          severity: warning
+          service: rag-service
+        annotations:
+          summary: "Alta latência na busca RAG"
+          description: "P95 de busca vetorial está acima de 3s."
+
+      - alert: RAGLowRelevanceScore
+        expr: avg(rag_relevance_score) < 0.5
+        for: 10m
+        labels:
+          severity: warning
+          service: rag-service
+        annotations:
+          summary: "Baixa relevância nos resultados RAG"
+          description: "Score médio de relevância abaixo de 0.5 - revisar embeddings."
+
+      # ========================================================================
+      # IMAGE GENERATION (FLUX.1)
+      # ========================================================================
+      - alert: ImageGenHighLatency
+        expr: histogram_quantile(0.95, rate(image_generation_duration_seconds_bucket[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alta latência na geração de imagens"
+          description: "P95 de geração FLUX.1 está acima de 10s."
+
+      - alert: ImageGenHighErrorRate
+        expr: rate(image_generation_total{status="error"}[5m]) / rate(image_generation_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          service: chat-service
+        annotations:
+          summary: "Alta taxa de erros na geração de imagens"
+          description: "Taxa de erros FLUX.1 acima de 10%."
+
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      # ========================================================================
+      # DISPONIBILIDADE DOS SERVIÇOS
+      # ========================================================================
+      - alert: ServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Serviço indisponível"
+          description: "{{ $labels.job }} está indisponível há mais de 2 minutos."
+
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alto uso de memória"
+          description: "Uso de memória acima de 90% por mais de 5 minutos."
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Alto uso de CPU"
+          description: "Uso de CPU acima de 85% por mais de 5 minutos."

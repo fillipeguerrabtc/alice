@@ -1,0 +1,105 @@
+# Prometheus Configuration - Alice Enterprise Platform
+#
+# Configuração de scrape para todos os microserviços Alice.
+# Métricas específicas para LLM incluídas.
+#
+# Documentação PT-BR (Regra 10 replit.md)
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'alice-production'
+    env: 'production'
+
+# Regras de alerta
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+# Configuração de Alertmanager (futuro)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
+
+scrape_configs:
+  # ============================================================================
+  # PROMETHEUS SELF-MONITORING
+  # ============================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+
+  # ============================================================================
+  # OPENTELEMETRY COLLECTOR
+  # ============================================================================
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888']
+    metrics_path: /metrics
+
+  # ============================================================================
+  # ALICE MICROSERVICES
+  # ============================================================================
+  - job_name: 'alice-auth-service'
+    static_configs:
+      - targets: ['host.docker.internal:3001']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: 'alice-chat-service'
+    static_configs:
+      - targets: ['host.docker.internal:3002']
+    metrics_path: /metrics
+    scrape_interval: 15s
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'llm_.*'
+        action: keep
+
+  - job_name: 'alice-rag-service'
+    static_configs:
+      - targets: ['host.docker.internal:3003']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  - job_name: 'alice-training-service'
+    static_configs:
+      - targets: ['host.docker.internal:3004']
+    metrics_path: /metrics
+    scrape_interval: 60s
+
+  - job_name: 'alice-integrations-service'
+    static_configs:
+      - targets: ['host.docker.internal:3005']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ============================================================================
+  # TRAEFIK API GATEWAY
+  # ============================================================================
+  - job_name: 'traefik'
+    static_configs:
+      - targets: ['host.docker.internal:8080']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ============================================================================
+  # JAEGER
+  # ============================================================================
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: /metrics
+
+  # ============================================================================
+  # NOTA: Langfuse não expõe endpoint /metrics nativo.
+  # Métricas LLM são coletadas via SDK Langfuse nos microserviços Alice.
+  # O health-checker expõe métricas de disponibilidade do stack.
+  # ============================================================================
+  - job_name: 'observability-health'
+    static_configs:
+      - targets: ['health-checker:3007']
+    metrics_path: /metrics
+    scrape_interval: 30s
