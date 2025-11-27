@@ -1,0 +1,25 @@
+# CLIP Inference Service - Dependências
+# Alice Enterprise Platform
+#
+# Documentação em PT-BR (Regra 10 replit.md)
+
+# Framework web
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+
+# CLIP e PyTorch
+torch>=2.1.0
+torchvision>=0.16.0
+git+https://github.com/openai/CLIP.git
+
+# Processamento de imagem
+Pillow>=10.0.0
+
+# Validação
+pydantic>=2.0.0
+
+# Logging estruturado
+python-json-logger>=2.0.0
+
+# Métricas (opcional - para Prometheus)
+prometheus-client>=0.17.0
