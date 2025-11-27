@@ -92,16 +92,25 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 
 | Capacidade | Progresso |
 |------------|-----------|
-| Integração RAG + Chat | 50% |
-| Dashboard Admin | 30% |
+| Integração RAG + Chat | 80% |
+| Dashboard Admin | 70% |
 | Analytics | Planejado |
+| Auto-aprendizado Agressivo | Planejado |
 
-### Planejado (185 Tarefas Enterprise)
+### Recém Concluído (Fase 6.5)
+
+| Capacidade | Status | Descrição |
+|------------|--------|-----------|
+| Dashboard IA | Produção | Métricas de conversas, imagens, SLA, circuit breakers |
+| Takeover/Handover | Produção | Painel completo para agentes humanos (Web + WhatsApp) |
+| Galeria de Imagens | Produção | Sistema de rating, aprovação para training, multi-tenant |
+| Agentic RAG | Produção | Busca híbrida (interna + Brave Search), classificador inteligente |
+| Imagens Inline no Chat | Produção | Skeleton loading, rating, fullscreen, download |
+
+### Planejado (163 Tarefas Enterprise Restantes)
 
 | Capacidade | Fase | Descrição |
 |------------|------|-----------|
-| Takeover/Handover | 6.5 | Agentes humanos assumem conversas |
-| Agentic RAG | 6.5 | Web Search + auto-indexação diária |
 | Image Generation | 6.5+ | FLUX.1 Schnell self-hosted Salad Cloud |
 | Auto-aprendizado Agressivo | 8 | Fine-tuning a cada 4 dias |
 | Multimodal | 9 | Imagens, áudio, vídeo |
