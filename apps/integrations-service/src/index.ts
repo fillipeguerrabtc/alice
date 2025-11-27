@@ -12,6 +12,7 @@ import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient';
+import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService';
 import { 
   requirePermission, 
   requireAuth,
@@ -989,6 +990,14 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
 app.use(errorHandler);
 
 const PORT = config.PORT || 3005;
+
+try {
+  const db = getDatabase();
+  initWiseSyncService(db);
+  logger.info('WiseSyncService inicializado com sucesso');
+} catch (error) {
+  logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
+}
 
 app.listen(PORT, '0.0.0.0', () => {
   logger.info({ port: PORT }, 'Integrations service started');

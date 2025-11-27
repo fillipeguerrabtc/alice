@@ -542,6 +542,217 @@ export const fineTuningJobs = pgTable(
 );
 
 // ============================================================================
+// WISE-ERPNEXT SYNC LOG (FASE 5.5 - Reconciliação e Auditoria)
+// ============================================================================
+
+export const wiseSyncStatusEnum = pgEnum("wise_sync_status", [
+  "pending",
+  "synced",
+  "failed",
+  "retrying",
+  "manual_review",
+]);
+
+export const wiseSyncLog = pgTable(
+  "wise_sync_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    wiseTransferId: varchar("wise_transfer_id", { length: 255 }).notNull(),
+    erpnextPaymentId: varchar("erpnext_payment_id", { length: 255 }),
+    status: wiseSyncStatusEnum("status").default("pending"),
+    wiseAmount: real("wise_amount"),
+    wiseCurrency: varchar("wise_currency", { length: 3 }),
+    erpnextAmount: real("erpnext_amount"),
+    erpnextCurrency: varchar("erpnext_currency", { length: 3 }),
+    amountDivergence: real("amount_divergence"),
+    syncAttempts: integer("sync_attempts").default(0),
+    lastSyncAttempt: timestamp("last_sync_attempt"),
+    lastError: text("last_error"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    sincronizadoEm: timestamp("sincronizado_em"),
+  },
+  (table) => [
+    index("idx_wise_sync_tenant").on(table.tenantId),
+    index("idx_wise_sync_transfer").on(table.wiseTransferId),
+    index("idx_wise_sync_status").on(table.status),
+    index("idx_wise_sync_erpnext").on(table.erpnextPaymentId),
+  ]
+);
+
+// ============================================================================
+// TAKEOVER/HANDOVER (FASE 6.5 - Controle de Conversas Humano/IA)
+// ============================================================================
+
+export const conversationControlModeEnum = pgEnum("conversation_control_mode", [
+  "bot",           // Alice está respondendo
+  "human",         // Agente humano assumiu (takeover)
+  "pending_handoff", // Aguardando agente humano
+  "hybrid",        // Modo híbrido (sugestões IA + aprovação humana)
+]);
+
+export const escalationTriggerEnum = pgEnum("escalation_trigger", [
+  "low_confidence",     // Confiança LLM < 70%
+  "fallback_count",     // 3+ fallbacks consecutivos
+  "negative_sentiment", // Sentimento negativo detectado
+  "keyword_match",      // "falar com humano", "atendente", etc.
+  "manual_request",     // Agente solicitou takeover manualmente
+  "sla_breach",         // SLA de resposta excedido
+]);
+
+export const messageOriginEnum = pgEnum("message_origin", [
+  "bot",      // Mensagem gerada pela Alice
+  "human",    // Mensagem de agente humano
+  "customer", // Mensagem do cliente
+  "system",   // Mensagem de sistema (notificações, etc.)
+]);
+
+export const conversationStates = pgTable(
+  "conversation_states",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull()
+      .unique(),
+    controlMode: conversationControlModeEnum("control_mode").default("bot"),
+    assignedAgentId: varchar("assigned_agent_id").references(() => users.id),
+    pendingSince: timestamp("pending_since"),
+    lastBotMessage: timestamp("last_bot_message"),
+    lastHumanMessage: timestamp("last_human_message"),
+    lastCustomerMessage: timestamp("last_customer_message"),
+    confidenceScore: real("confidence_score"),
+    fallbackCount: integer("fallback_count").default(0),
+    sentimentScore: real("sentiment_score"),
+    slaDeadline: timestamp("sla_deadline"),
+    slaBreached: boolean("sla_breached").default(false),
+    notes: text("notes"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => [
+    index("idx_conv_states_conversation").on(table.conversationId),
+    index("idx_conv_states_control_mode").on(table.controlMode),
+    index("idx_conv_states_assigned_agent").on(table.assignedAgentId),
+    index("idx_conv_states_pending").on(table.pendingSince),
+    index("idx_conv_states_sla").on(table.slaDeadline),
+  ]
+);
+
+export const conversationParticipants = pgTable(
+  "conversation_participants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    userId: varchar("user_id").references(() => users.id),
+    role: varchar("role", { length: 50 }).notNull(), // customer, agent, supervisor
+    joinedAt: timestamp("joined_at").defaultNow(),
+    leftAt: timestamp("left_at"),
+    isActive: boolean("is_active").default(true),
+    metadata: jsonb("metadata").default({}),
+  },
+  (table) => [
+    index("idx_conv_participants_conversation").on(table.conversationId),
+    index("idx_conv_participants_user").on(table.userId),
+    index("idx_conv_participants_active").on(table.isActive),
+  ]
+);
+
+export const conversationEscalations = pgTable(
+  "conversation_escalations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    conversationId: uuid("conversation_id")
+      .references(() => conversations.id, { onDelete: "cascade" })
+      .notNull(),
+    trigger: escalationTriggerEnum("trigger").notNull(),
+    fromMode: conversationControlModeEnum("from_mode").notNull(),
+    toMode: conversationControlModeEnum("to_mode").notNull(),
+    requestedBy: varchar("requested_by").references(() => users.id),
+    handledBy: varchar("handled_by").references(() => users.id),
+    confidenceAtEscalation: real("confidence_at_escalation"),
+    sentimentAtEscalation: real("sentiment_at_escalation"),
+    fallbackCountAtEscalation: integer("fallback_count_at_escalation"),
+    triggerDetails: jsonb("trigger_details").default({}),
+    resolutionNotes: text("resolution_notes"),
+    resolvedAt: timestamp("resolved_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => [
+    index("idx_escalations_conversation").on(table.conversationId),
+    index("idx_escalations_trigger").on(table.trigger),
+    index("idx_escalations_handler").on(table.handledBy),
+    index("idx_escalations_created").on(table.criadoEm),
+  ]
+);
+
+// ============================================================================
+// GENERATED IMAGES (FASE 6.5+ - FLUX.1 Schnell Self-Hosted)
+// ============================================================================
+
+export const generatedImageStatusEnum = pgEnum("generated_image_status", [
+  "pending",
+  "generating",
+  "completed",
+  "failed",
+]);
+
+export const generatedImages = pgTable(
+  "generated_images",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    messageId: uuid("message_id").references(() => messages.id),
+    createdBy: varchar("created_by").references(() => users.id),
+    
+    // Parâmetros de geração
+    prompt: text("prompt").notNull(),
+    negativePrompt: text("negative_prompt"),
+    model: varchar("model", { length: 50 }).default("flux-schnell"),
+    steps: integer("steps").default(4),
+    seed: integer("seed"),
+    width: integer("width").default(1024),
+    height: integer("height").default(1024),
+    guidanceScale: real("guidance_scale").default(3.5),
+    
+    // Status e storage
+    status: generatedImageStatusEnum("status").default("pending"),
+    imagePath: text("image_path"),
+    thumbnailPath: text("thumbnail_path"),
+    imageUrl: text("image_url"),
+    
+    // Embeddings para RAG multimodal (CLIP - 768 dimensões)
+    clipEmbedding: real("clip_embedding").array(),
+    
+    // Feedback e aprovação para training
+    feedbackScore: integer("feedback_score"), // 1-5 estrelas
+    approvedForTraining: boolean("approved_for_training").default(false),
+    usedInFineTuning: boolean("used_in_fine_tuning").default(false),
+    fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
+    
+    // Métricas
+    generationTimeMs: integer("generation_time_ms"),
+    errorMessage: text("error_message"),
+    metadata: jsonb("metadata").default({}),
+    
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => [
+    index("idx_gen_images_tenant").on(table.tenantId),
+    index("idx_gen_images_conversation").on(table.conversationId),
+    index("idx_gen_images_created_by").on(table.createdBy),
+    index("idx_gen_images_status").on(table.status),
+    index("idx_gen_images_approved").on(table.approvedForTraining),
+    index("idx_gen_images_used").on(table.usedInFineTuning),
+  ]
+);
+
+// ============================================================================
 // RELATIONS
 // ============================================================================
 
@@ -737,6 +948,24 @@ export type InsertTrainingData = typeof trainingData.$inferInsert;
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;
 export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 
+// Wise-ERPNext Sync Types (FASE 5.5)
+export type WiseSyncLog = typeof wiseSyncLog.$inferSelect;
+export type InsertWiseSyncLog = typeof wiseSyncLog.$inferInsert;
+
+// Takeover/Handover Types (FASE 6.5)
+export type ConversationState = typeof conversationStates.$inferSelect;
+export type InsertConversationState = typeof conversationStates.$inferInsert;
+
+export type ConversationParticipant = typeof conversationParticipants.$inferSelect;
+export type InsertConversationParticipant = typeof conversationParticipants.$inferInsert;
+
+export type ConversationEscalation = typeof conversationEscalations.$inferSelect;
+export type InsertConversationEscalation = typeof conversationEscalations.$inferInsert;
+
+// Generated Images Types (FASE 6.5+)
+export type GeneratedImage = typeof generatedImages.$inferSelect;
+export type InsertGeneratedImage = typeof generatedImages.$inferInsert;
+
 export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(trainingData).omit({
   id: true,
   criadoEm: true,
@@ -751,6 +980,35 @@ export const insertFineTuningJobSchema: z.ZodType<unknown> = createInsertSchema(
 });
 
 export const insertUsageMetricSchema: z.ZodType<unknown> = createInsertSchema(usageMetrics).omit({
+  id: true,
+  criadoEm: true,
+});
+
+// Wise-ERPNext Sync Insert Schema (FASE 5.5)
+export const insertWiseSyncLogSchema: z.ZodType<unknown> = createInsertSchema(wiseSyncLog).omit({
+  id: true,
+  criadoEm: true,
+  sincronizadoEm: true,
+});
+
+// Takeover/Handover Insert Schemas (FASE 6.5)
+export const insertConversationStateSchema: z.ZodType<unknown> = createInsertSchema(conversationStates).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+export const insertConversationParticipantSchema: z.ZodType<unknown> = createInsertSchema(conversationParticipants).omit({
+  id: true,
+});
+
+export const insertConversationEscalationSchema: z.ZodType<unknown> = createInsertSchema(conversationEscalations).omit({
+  id: true,
+  criadoEm: true,
+});
+
+// Generated Images Insert Schema (FASE 6.5+)
+export const insertGeneratedImageSchema: z.ZodType<unknown> = createInsertSchema(generatedImages).omit({
   id: true,
   criadoEm: true,
 });

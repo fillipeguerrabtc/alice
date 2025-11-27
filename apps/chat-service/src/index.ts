@@ -33,6 +33,26 @@ import {
   getRAGBreakerStats,
   RAGContextResponse,
 } from './rag-client.js';
+import {
+  initOrchestrator,
+  getOrCreateConversationState,
+  inititateTakeover,
+  handbackToBot,
+  processAutoEscalation,
+  shouldEscalate,
+  getPendingHandoffs,
+  getUrgentConversations,
+  checkSLABreaches,
+  ESCALATION_CONFIG,
+} from './conversation-orchestrator.js';
+import {
+  initImageGeneration,
+  generateImage,
+  rateImage,
+  approveForTraining,
+  getImageGenerationStats,
+  getImageGenBreakerStats,
+} from './image-generation-client.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -48,6 +68,10 @@ const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
+
+const getTenantIdFromRequest = (req: Request): string | undefined => {
+  return req.headers['x-tenant-id'] as string | undefined;
+};
 
 if (!DATABASE_URL) {
   logger.error('DATABASE_URL não configurada');
@@ -69,6 +93,9 @@ const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
 const sql = neon(DATABASE_URL);
 const db = drizzle(sql, { schema });
+
+initOrchestrator(db);
+initImageGeneration(db);
 
 const app = express();
 const server = createServer(app);
@@ -336,7 +363,7 @@ app.get('/api/chat/usage', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/api/chat/conversations', requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
   const userId = req.headers['x-user-id'] as string;
   
   if (!userId) {
@@ -363,7 +390,7 @@ const createConversationSchema = z.object({
   titulo: z.string().optional(),
 });
 
-app.post('/api/chat/conversations', requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
   const userId = req.headers['x-user-id'] as string;
   
   if (!userId) {
@@ -388,7 +415,7 @@ app.post('/api/chat/conversations', requirePermission('chat:conversations:write'
   }
 });
 
-app.get('/api/chat/conversations/:id/messages', requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
   const { id } = req.params;
 
   try {
@@ -409,7 +436,7 @@ const sendMessageSchema = z.object({
   tipo: z.enum(['text', 'image', 'audio', 'video', 'document', 'mixed']).default('text'),
 });
 
-app.post('/api/chat/conversations/:id/messages', requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
   const userId = req.headers['x-user-id'] as string;
 
@@ -504,7 +531,7 @@ app.post('/api/chat/conversations/:id/messages', requirePermission('chat:message
   }
 });
 
-app.post('/api/chat/stream', requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { messages: inputMessages, conversationId, namespaceId } = req.body as { 
     messages: Array<{ role: string; content: string }>;
     conversationId?: string;
@@ -678,6 +705,186 @@ wss.on('connection', (ws, req) => {
     wsClients.delete(userId);
     logger.info({ userId }, 'Cliente WebSocket desconectado');
   });
+});
+
+// ============================================================================
+// TAKEOVER/HANDOVER ROUTES (FASE 6.5)
+// ============================================================================
+
+app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  
+  try {
+    const state = await getOrCreateConversationState(id);
+    res.json({ state });
+  } catch (error) {
+    logger.error({ error, conversationId: id }, 'Erro ao buscar estado da conversa');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const agentId = req.headers['x-user-id'] as string;
+  const { notes } = req.body as { notes?: string };
+  
+  if (!agentId) {
+    return res.status(401).json({ error: 'ID do agente necessário' });
+  }
+  
+  try {
+    const result = await inititateTakeover(id, agentId, notes);
+    
+    if (result.success) {
+      res.json({ 
+        message: 'Takeover realizado com sucesso',
+        ...result,
+      });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    logger.error({ error, conversationId: id, agentId }, 'Erro ao realizar takeover');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:handoff:write'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const agentId = req.headers['x-user-id'] as string;
+  const { resolutionNotes } = req.body as { resolutionNotes?: string };
+  
+  if (!agentId) {
+    return res.status(401).json({ error: 'ID do agente necessário' });
+  }
+  
+  try {
+    const result = await handbackToBot(id, agentId, resolutionNotes);
+    
+    if (result.success) {
+      res.json({ 
+        message: 'Controle devolvido para IA com sucesso',
+        ...result,
+      });
+    } else {
+      res.status(400).json({ error: result.error });
+    }
+  } catch (error) {
+    logger.error({ error, conversationId: id, agentId }, 'Erro ao devolver controle para IA');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (_req: Request, res: Response) => {
+  try {
+    const pending = await getPendingHandoffs();
+    res.json({ pending, count: pending.length });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao listar handoffs pendentes');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+  const minutesThreshold = parseInt(req.query.minutes as string) || 10;
+  
+  try {
+    const urgent = await getUrgentConversations(minutesThreshold);
+    res.json({ urgent, count: urgent.length });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao listar conversas urgentes');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:manage'), async (_req: Request, res: Response) => {
+  try {
+    const breachedCount = await checkSLABreaches();
+    res.json({ breachedCount, message: `${breachedCount} SLAs violados processados` });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao verificar SLAs');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.get('/api/chat/escalation-config', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
+  res.json(ESCALATION_CONFIG);
+});
+
+// ============================================================================
+// IMAGE GENERATION ROUTES (FASE 6.5+)
+// ============================================================================
+
+const imageGenerationSchema = z.object({
+  prompt: z.string().min(1).max(2000),
+  negativePrompt: z.string().max(1000).optional(),
+  width: z.number().min(256).max(2048).default(1024),
+  height: z.number().min(256).max(2048).default(1024),
+  steps: z.number().min(1).max(50).default(4),
+  seed: z.number().optional(),
+  guidanceScale: z.number().min(1).max(20).default(3.5),
+});
+
+app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
+  const userId = req.headers['x-user-id'] as string;
+  const tenantId = req.headers['x-tenant-id'] as string;
+  
+  try {
+    const body = imageGenerationSchema.parse(req.body);
+    
+    const result = await generateImage(body, {
+      tenantId,
+      createdBy: userId,
+      conversationId: req.body.conversationId,
+      messageId: req.body.messageId,
+    });
+    
+    res.json({
+      imageId: result.imageId,
+      generationTimeMs: result.generationTimeMs,
+      imageBase64: result.imageBase64,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao gerar imagem');
+    res.status(500).json({ error: 'Erro ao gerar imagem' });
+  }
+});
+
+app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { score } = req.body as { score: number };
+  
+  try {
+    await rateImage(id, score);
+    res.json({ message: 'Feedback registrado com sucesso' });
+  } catch (error) {
+    logger.error({ error, imageId: id }, 'Erro ao registrar feedback');
+    res.status(500).json({ error: 'Erro ao registrar feedback' });
+  }
+});
+
+app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const { approved } = req.body as { approved: boolean };
+  
+  try {
+    await approveForTraining(id, approved);
+    res.json({ message: `Imagem ${approved ? 'aprovada' : 'reprovada'} para treinamento` });
+  } catch (error) {
+    logger.error({ error, imageId: id }, 'Erro ao aprovar imagem');
+    res.status(500).json({ error: 'Erro ao aprovar imagem' });
+  }
+});
+
+app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (_req: Request, res: Response) => {
+  try {
+    const stats = await getImageGenerationStats();
+    const breakerStats = getImageGenBreakerStats();
+    res.json({ ...stats, circuitBreaker: breakerStats });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao buscar estatísticas de imagens');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
 });
 
 const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {

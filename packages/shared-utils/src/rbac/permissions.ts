@@ -67,6 +67,27 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'chat:namespaces:manage': ['super_admin', 'admin', 'manager'],
 
   // ============================================================================
+  // TAKEOVER/HANDOVER MODULE - Controle de conversas humano/IA (FASE 6.5)
+  // ============================================================================
+  'chat:takeover:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:takeover:write': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:takeover:manage': ['super_admin', 'admin', 'manager'],
+  'chat:takeover:assign': ['super_admin', 'admin', 'manager'],
+  
+  'chat:handoff:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:handoff:write': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:handoff:manage': ['super_admin', 'admin', 'manager'],
+  
+  'chat:escalation:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:escalation:write': ['super_admin', 'admin', 'manager'],
+  'chat:escalation:manage': ['super_admin', 'admin', 'manager'],
+  'chat:escalation:resolve': ['super_admin', 'admin', 'manager', 'operator'],
+  
+  'chat:participants:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'chat:participants:write': ['super_admin', 'admin', 'manager'],
+  'chat:participants:manage': ['super_admin', 'admin', 'manager'],
+
+  // ============================================================================
   // RAG MODULE - Documentos e busca
   // ============================================================================
   'rag:documents:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],
@@ -130,6 +151,32 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:resend:write': ['super_admin', 'admin'],
   'integrations:resend:delete': ['super_admin'],
   'integrations:resend:manage': ['super_admin', 'admin'],
+
+  // ============================================================================
+  // IMAGE GENERATION MODULE - FLUX.1 Schnell (FASE 6.5+)
+  // ============================================================================
+  'images:generate:read': ['super_admin', 'admin', 'manager', 'operator', 'viewer'],
+  'images:generate:write': ['super_admin', 'admin', 'manager', 'operator'],
+  'images:generate:delete': ['super_admin', 'admin', 'manager'],
+  'images:generate:manage': ['super_admin', 'admin', 'manager'],
+  
+  'images:approve:read': ['super_admin', 'admin', 'manager'],
+  'images:approve:write': ['super_admin', 'admin', 'manager'],
+  'images:approve:manage': ['super_admin', 'admin'],
+  
+  'images:training:read': ['super_admin', 'admin'],
+  'images:training:write': ['super_admin', 'admin'],
+  'images:training:manage': ['super_admin', 'admin'],
+
+  // ============================================================================
+  // WISE-ERPNEXT SYNC MODULE (FASE 5.5)
+  // ============================================================================
+  'integrations:wise_sync:read': ['super_admin', 'admin'],
+  'integrations:wise_sync:write': ['super_admin', 'admin'],
+  'integrations:wise_sync:delete': ['super_admin'],
+  'integrations:wise_sync:manage': ['super_admin', 'admin'],
+  'integrations:wise_sync:retry': ['super_admin', 'admin'],
+  'integrations:wise_sync:reconcile': ['super_admin', 'admin'],
 
   // ============================================================================
   // ADMIN MODULE - Administração do sistema
