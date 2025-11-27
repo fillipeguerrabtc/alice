@@ -20,6 +20,7 @@ import Login from '@/pages/Login';
 import Landing from '@/pages/Landing';
 import Agents from '@/pages/Agents';
 import Namespaces from '@/pages/Namespaces';
+import WisePayments from '@/pages/WisePayments';
 import NotFound from '@/pages/NotFound';
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
@@ -60,6 +61,7 @@ function Router() {
       <Route path="/documents" component={Documents} />
       <Route path="/training" component={Training} />
       <Route path="/integrations" component={Integrations} />
+      <Route path="/wise" component={WisePayments} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

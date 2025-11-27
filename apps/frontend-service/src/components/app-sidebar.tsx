@@ -8,6 +8,8 @@ import {
   Settings,
   LogOut,
   Bot,
+  Wallet,
+  ExternalLink,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -23,6 +25,7 @@ import {
 } from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/hooks/use-auth';
 
 const menuItems = [
@@ -32,6 +35,10 @@ const menuItems = [
   { title: 'Training', url: '/training', icon: Brain },
   { title: 'Integrações', url: '/integrations', icon: Plug },
   { title: 'Configurações', url: '/settings', icon: Settings },
+];
+
+const financeItems = [
+  { title: 'Wise Pagamentos', url: '/wise', icon: Wallet },
 ];
 
 export function AppSidebar() {
@@ -71,6 +78,42 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <Separator className="my-2" />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Finanças</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {financeItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === item.url || location.startsWith(item.url)}
+                  >
+                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild>
+                  <a
+                    href="https://erp.yesyoudeserve.duckdns.org"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="link-erpnext"
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                    <span>ERPNext</span>
+                  </a>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

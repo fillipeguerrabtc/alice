@@ -457,5 +457,117 @@
     "subscribe": "Subscribe",
     "subscribed": "Subscribed",
     "features": "Features included"
+  },
+  "wise": {
+    "title": "Wise Payments",
+    "subtitle": "Global payments with the best rates",
+    "sandbox": "Sandbox Mode",
+    "production": "Production",
+    "notConfigured": "Wise not configured",
+    "balances": {
+      "title": "Balances",
+      "subtitle": "Multi-currency balances",
+      "available": "Available",
+      "reserved": "Reserved",
+      "total": "Total",
+      "noBalances": "No balances available"
+    },
+    "transfers": {
+      "title": "Transfers",
+      "subtitle": "Send money anywhere in the world",
+      "new": "New Transfer",
+      "amount": "Amount",
+      "recipient": "Recipient",
+      "reference": "Reference",
+      "status": "Status",
+      "created": "Created",
+      "processing": "Processing",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "failed": "Failed",
+      "noTransfers": "No transfers found",
+      "fund": "Fund",
+      "cancel": "Cancel",
+      "viewDetails": "View Details"
+    },
+    "recipients": {
+      "title": "Recipients",
+      "subtitle": "Manage recipient accounts",
+      "new": "New Recipient",
+      "name": "Account Holder Name",
+      "accountType": "Account Type",
+      "currency": "Currency",
+      "details": "Account Details",
+      "iban": "IBAN",
+      "bic": "BIC/SWIFT",
+      "accountNumber": "Account Number",
+      "sortCode": "Sort Code",
+      "noRecipients": "No recipients registered",
+      "delete": "Delete",
+      "confirmDelete": "Are you sure you want to delete this recipient?"
+    },
+    "quotes": {
+      "title": "Quotes",
+      "subtitle": "Get real-time exchange quotes",
+      "from": "From",
+      "to": "To",
+      "amount": "Amount",
+      "rate": "Exchange Rate",
+      "fee": "Fee",
+      "total": "Total to Pay",
+      "receive": "You Receive",
+      "getQuote": "Get Quote",
+      "expires": "Expires in",
+      "delivery": "Estimated Delivery"
+    },
+    "batch": {
+      "title": "Batch Payments",
+      "subtitle": "Send up to 1,000 payments at once",
+      "new": "New Batch",
+      "name": "Batch Name",
+      "status": "Status",
+      "transfers": "Transfers",
+      "total": "Total",
+      "complete": "Complete Batch",
+      "noBatches": "No batches found"
+    },
+    "rates": {
+      "title": "Exchange Rates",
+      "subtitle": "Real-time rates",
+      "source": "Source Currency",
+      "target": "Target Currency",
+      "currentRate": "Current Rate",
+      "lastUpdate": "Last Update"
+    },
+    "history": {
+      "title": "History",
+      "subtitle": "Transaction history",
+      "filter": "Filter",
+      "export": "Export",
+      "noHistory": "No transactions in history"
+    },
+    "errors": {
+      "fetchFailed": "Failed to load data",
+      "createFailed": "Failed to create",
+      "deleteFailed": "Failed to delete",
+      "transferFailed": "Transfer failed",
+      "quoteFailed": "Failed to get quote"
+    },
+    "success": {
+      "transferCreated": "Transfer created successfully",
+      "recipientCreated": "Recipient created successfully",
+      "recipientDeleted": "Recipient deleted successfully",
+      "batchCompleted": "Batch completed successfully"
+    }
+  },
+  "erpnext": {
+    "title": "ERPNext",
+    "subtitle": "Business management system",
+    "openErpnext": "Open ERPNext",
+    "syncStatus": "Sync Status"
+  },
+  "externalLinks": {
+    "erpnext": "Go to ERPNext",
+    "openInNewTab": "Opens in new tab"
   }
 }

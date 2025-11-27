@@ -15,6 +15,23 @@ interface WiseClientConfig {
   useSandbox: boolean;
 }
 
+// Verifica se o Wise está configurado (sem lançar erro)
+export function isWiseConfigured(): boolean {
+  const apiKey = process.env.WISE_API_KEY;
+  const profileId = process.env.WISE_PROFILE_ID;
+  return Boolean(apiKey && profileId);
+}
+
+// Obtém status do sandbox de forma segura
+export function getSandboxStatus(): boolean {
+  return process.env.WISE_SANDBOX === 'true' || process.env.NODE_ENV !== 'production';
+}
+
+// Obtém Profile ID de forma segura (retorna null se não configurado)
+export function getProfileIdSafe(): string | null {
+  return process.env.WISE_PROFILE_ID || null;
+}
+
 // Obtém configuração do Wise das variáveis de ambiente
 function getWiseConfig(): WiseClientConfig {
   const apiKey = process.env.WISE_API_KEY;

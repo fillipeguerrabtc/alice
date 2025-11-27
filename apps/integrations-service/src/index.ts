@@ -11,6 +11,7 @@ import { getDatabase, schema } from '@alice/database';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe } from './wiseClient';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -543,6 +544,437 @@ app.post('/api/integrations/resend/send', async (req: Request, res: Response) =>
     logger.error({ error }, 'Failed to send email');
     res.status(500).json({ error: 'Failed to send email' });
   }
+});
+
+// ============================================================
+// WISE API - Pagamentos Globais
+// Documentação: https://docs.wise.com/api-docs/
+// ============================================================
+
+// Verificar se Wise está configurado
+function isWiseConfigured(): boolean {
+  return !!(process.env.WISE_API_KEY && process.env.WISE_PROFILE_ID);
+}
+
+// Obter saldos multi-moeda
+app.get('/api/integrations/wise/balances', async (_req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const account = await wiseService.getBalances();
+    res.json({ balances: account.balances, sandbox: wiseService.isSandboxMode() });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter saldos Wise');
+    res.status(500).json({ error: 'Falha ao obter saldos' });
+  }
+});
+
+// Obter taxas de câmbio
+app.get('/api/integrations/wise/rates', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { source, target } = req.query;
+  if (!source || !target) {
+    return res.status(400).json({ error: 'Parâmetros source e target são obrigatórios' });
+  }
+
+  try {
+    const rate = await wiseService.getExchangeRates(source as string, target as string);
+    res.json({ rate });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter taxa de câmbio Wise');
+    res.status(500).json({ error: 'Falha ao obter taxa de câmbio' });
+  }
+});
+
+// Criar cotação
+app.post('/api/integrations/wise/quotes', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { sourceCurrency, targetCurrency, sourceAmount, targetAmount } = req.body;
+
+  try {
+    const quote = await wiseService.createQuote({
+      sourceCurrency,
+      targetCurrency,
+      sourceAmount,
+      targetAmount,
+    });
+    res.json({ quote });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar cotação Wise');
+    res.status(500).json({ error: 'Falha ao criar cotação' });
+  }
+});
+
+// Listar destinatários
+app.get('/api/integrations/wise/recipients', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { currency } = req.query;
+
+  try {
+    const recipients = await wiseService.listRecipients(currency as string | undefined);
+    res.json({ recipients });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar destinatários Wise');
+    res.status(500).json({ error: 'Falha ao listar destinatários' });
+  }
+});
+
+// Criar destinatário
+app.post('/api/integrations/wise/recipients', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { currency, type, accountHolderName, details } = req.body;
+
+  try {
+    const recipient = await wiseService.createRecipient({
+      currency,
+      type,
+      accountHolderName,
+      details,
+    });
+    res.json({ recipient });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar destinatário Wise');
+    res.status(500).json({ error: 'Falha ao criar destinatário' });
+  }
+});
+
+// Obter destinatário por ID
+app.get('/api/integrations/wise/recipients/:id', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const recipient = await wiseService.getRecipient(parseInt(req.params.id));
+    res.json({ recipient });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter destinatário Wise');
+    res.status(500).json({ error: 'Falha ao obter destinatário' });
+  }
+});
+
+// Excluir destinatário
+app.delete('/api/integrations/wise/recipients/:id', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    await wiseService.deleteRecipient(parseInt(req.params.id));
+    res.json({ success: true });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao excluir destinatário Wise');
+    res.status(500).json({ error: 'Falha ao excluir destinatário' });
+  }
+});
+
+// Listar transferências
+app.get('/api/integrations/wise/transfers', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const limit = parseInt(req.query.limit as string) || 20;
+  const offset = parseInt(req.query.offset as string) || 0;
+
+  try {
+    const transfers = await wiseService.listTransfers(limit, offset);
+    res.json({ transfers });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar transferências Wise');
+    res.status(500).json({ error: 'Falha ao listar transferências' });
+  }
+});
+
+// Criar transferência
+app.post('/api/integrations/wise/transfers', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { targetAccount, quoteUuid, customerTransactionId, details } = req.body;
+
+  try {
+    const transfer = await wiseService.createTransfer({
+      targetAccount,
+      quoteUuid,
+      customerTransactionId: customerTransactionId || `alice-${Date.now()}`,
+      details: details || { reference: 'Pagamento Alice' },
+    });
+
+    logger.info({ transferId: transfer.id, targetAccount }, 'Transferência Wise criada');
+    res.json({ transfer });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar transferência Wise');
+    res.status(500).json({ error: 'Falha ao criar transferência' });
+  }
+});
+
+// Obter transferência por ID
+app.get('/api/integrations/wise/transfers/:id', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const transfer = await wiseService.getTransfer(parseInt(req.params.id));
+    res.json({ transfer });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter transferência Wise');
+    res.status(500).json({ error: 'Falha ao obter transferência' });
+  }
+});
+
+// Financiar transferência (sandbox)
+app.post('/api/integrations/wise/transfers/:id/fund', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const result = await wiseService.fundTransfer(parseInt(req.params.id));
+    res.json({ result });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao financiar transferência Wise');
+    res.status(500).json({ error: 'Falha ao financiar transferência' });
+  }
+});
+
+// Cancelar transferência
+app.post('/api/integrations/wise/transfers/:id/cancel', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const transfer = await wiseService.cancelTransfer(parseInt(req.params.id));
+    res.json({ transfer });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao cancelar transferência Wise');
+    res.status(500).json({ error: 'Falha ao cancelar transferência' });
+  }
+});
+
+// Listar batch groups (pagamentos em lote)
+app.get('/api/integrations/wise/batch-groups', async (_req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const batchGroups = await wiseService.listBatchGroups();
+    res.json({ batchGroups });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao listar batch groups Wise');
+    res.status(500).json({ error: 'Falha ao listar batch groups' });
+  }
+});
+
+// Criar batch group
+app.post('/api/integrations/wise/batch-groups', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { name, sourceCurrency } = req.body;
+
+  try {
+    const batchGroup = await wiseService.createBatchGroup({ name, sourceCurrency });
+    res.json({ batchGroup });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar batch group Wise');
+    res.status(500).json({ error: 'Falha ao criar batch group' });
+  }
+});
+
+// Obter batch group por ID
+app.get('/api/integrations/wise/batch-groups/:id', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  try {
+    const batchGroup = await wiseService.getBatchGroup(req.params.id);
+    res.json({ batchGroup });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter batch group Wise');
+    res.status(500).json({ error: 'Falha ao obter batch group' });
+  }
+});
+
+// Completar batch group
+app.post('/api/integrations/wise/batch-groups/:id/complete', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { version } = req.body;
+
+  try {
+    const batchGroup = await wiseService.completeBatchGroup(req.params.id, version);
+    res.json({ batchGroup });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao completar batch group Wise');
+    res.status(500).json({ error: 'Falha ao completar batch group' });
+  }
+});
+
+// Webhook Wise - Receber notificações de transferências
+app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) => {
+  const signature = req.headers['x-signature-sha256'] as string;
+  const isTestNotification = req.headers['x-test-notification'] === 'true';
+  const deliveryId = req.headers['x-delivery-id'] as string;
+
+  // Responder imediatamente para o Wise
+  res.status(200).json({ received: true });
+
+  // Processar webhook de forma assíncrona
+  try {
+    const payload = req.body.toString('utf8');
+    
+    // Verificar se é notificação de teste
+    if (isTestNotification) {
+      logger.info({ deliveryId }, 'Webhook Wise: Notificação de teste recebida');
+      return;
+    }
+
+    // Validar assinatura (se webhook secret configurado)
+    const webhookSecret = process.env.WISE_WEBHOOK_SECRET;
+    if (webhookSecret && signature) {
+      const expectedSignature = crypto
+        .createHmac('sha256', webhookSecret)
+        .update(payload)
+        .digest('hex');
+      
+      if (signature !== expectedSignature) {
+        logger.warn({ deliveryId }, 'Webhook Wise: Assinatura inválida');
+        return;
+      }
+    }
+
+    const event = JSON.parse(payload) as {
+      event_type: string;
+      data: {
+        resource: {
+          id: number;
+          type: string;
+          profile_id: number;
+          state?: string;
+          source_amount?: number;
+          source_currency?: string;
+          target_amount?: number;
+          target_currency?: string;
+          reference?: string;
+        };
+        current_state?: string;
+        previous_state?: string;
+        occurred_at: string;
+      };
+    };
+
+    logger.info({ 
+      eventType: event.event_type, 
+      resourceId: event.data.resource.id,
+      deliveryId,
+    }, 'Webhook Wise recebido');
+
+    // Processar eventos de transferência
+    if (event.event_type === 'transfers#state-change') {
+      const transfer = event.data.resource;
+      const newState = event.data.current_state;
+
+      // Sincronizar com ERPNext quando transferência for concluída
+      if (newState === 'outgoing_payment_sent' || newState === 'funds_converted') {
+        await syncToERPNext('payment', {
+          payment_type: 'Pay',
+          party_type: 'Supplier',
+          party: transfer.reference || `Wise-${transfer.id}`,
+          paid_amount: transfer.source_amount,
+          paid_to_account_currency: transfer.source_currency,
+          received_amount: transfer.target_amount,
+          reference_no: `WISE-${transfer.id}`,
+          reference_date: event.data.occurred_at.split('T')[0],
+          mode_of_payment: 'Wise Transfer',
+          custom_wise_transfer_id: transfer.id.toString(),
+          custom_wise_state: newState,
+        });
+
+        logger.info({ transferId: transfer.id, state: newState }, 'Transferência Wise sincronizada com ERPNext');
+      }
+    }
+
+    // Processar eventos de depósito (credit balance)
+    if (event.event_type === 'balances#credit') {
+      const balance = event.data.resource;
+      
+      // Registrar recebimento no ERPNext
+      await syncToERPNext('payment', {
+        payment_type: 'Receive',
+        party_type: 'Customer',
+        party: `Wise-Balance-${balance.id}`,
+        paid_amount: balance.source_amount,
+        paid_from_account_currency: balance.source_currency,
+        reference_no: `WISE-CREDIT-${balance.id}`,
+        reference_date: event.data.occurred_at.split('T')[0],
+        mode_of_payment: 'Wise Deposit',
+        custom_wise_balance_id: balance.id.toString(),
+      });
+
+      logger.info({ balanceId: balance.id }, 'Depósito Wise sincronizado com ERPNext');
+    }
+
+  } catch (error) {
+    logger.error({ error, deliveryId }, 'Falha ao processar webhook Wise');
+  }
+});
+
+// Obter requisitos de conta por moeda
+app.get('/api/integrations/wise/recipient-requirements', async (req: Request, res: Response) => {
+  if (!isWiseConfigured()) {
+    return res.status(503).json({ error: 'Wise não configurado' });
+  }
+
+  const { sourceCurrency, targetCurrency, sourceAmount } = req.query;
+
+  if (!sourceCurrency || !targetCurrency || !sourceAmount) {
+    return res.status(400).json({ error: 'Parâmetros sourceCurrency, targetCurrency e sourceAmount são obrigatórios' });
+  }
+
+  try {
+    const requirements = await wiseService.getRecipientRequirements(
+      sourceCurrency as string,
+      targetCurrency as string,
+      parseFloat(sourceAmount as string)
+    );
+    res.json({ requirements });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao obter requisitos de destinatário Wise');
+    res.status(500).json({ error: 'Falha ao obter requisitos' });
+  }
+});
+
+// Status do Wise (não requer configuração para retornar status)
+app.get('/api/integrations/wise/status', (_req: Request, res: Response) => {
+  const profileId = getProfileIdSafe();
+  res.json({
+    configured: isWiseConfigured(),
+    sandbox: getSandboxStatus(),
+    profileId: profileId ? '***' + profileId.slice(-4) : null,
+  });
 });
 
 const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {

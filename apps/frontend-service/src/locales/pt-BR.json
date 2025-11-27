@@ -457,5 +457,117 @@
     "subscribe": "Assinar",
     "subscribed": "Assinado",
     "features": "Recursos incluídos"
+  },
+  "wise": {
+    "title": "Wise Pagamentos",
+    "subtitle": "Pagamentos globais com as melhores taxas",
+    "sandbox": "Ambiente de Testes",
+    "production": "Produção",
+    "notConfigured": "Wise não configurado",
+    "balances": {
+      "title": "Saldos",
+      "subtitle": "Saldos em múltiplas moedas",
+      "available": "Disponível",
+      "reserved": "Reservado",
+      "total": "Total",
+      "noBalances": "Nenhum saldo disponível"
+    },
+    "transfers": {
+      "title": "Transferências",
+      "subtitle": "Enviar dinheiro para qualquer lugar do mundo",
+      "new": "Nova Transferência",
+      "amount": "Valor",
+      "recipient": "Destinatário",
+      "reference": "Referência",
+      "status": "Status",
+      "created": "Criada",
+      "processing": "Processando",
+      "completed": "Concluída",
+      "cancelled": "Cancelada",
+      "failed": "Falhou",
+      "noTransfers": "Nenhuma transferência encontrada",
+      "fund": "Financiar",
+      "cancel": "Cancelar",
+      "viewDetails": "Ver Detalhes"
+    },
+    "recipients": {
+      "title": "Destinatários",
+      "subtitle": "Gerenciar contas de destinatários",
+      "new": "Novo Destinatário",
+      "name": "Nome do Titular",
+      "accountType": "Tipo de Conta",
+      "currency": "Moeda",
+      "details": "Detalhes da Conta",
+      "iban": "IBAN",
+      "bic": "BIC/SWIFT",
+      "accountNumber": "Número da Conta",
+      "sortCode": "Sort Code",
+      "noRecipients": "Nenhum destinatário cadastrado",
+      "delete": "Excluir",
+      "confirmDelete": "Tem certeza que deseja excluir este destinatário?"
+    },
+    "quotes": {
+      "title": "Cotações",
+      "subtitle": "Obter cotações de câmbio em tempo real",
+      "from": "De",
+      "to": "Para",
+      "amount": "Valor",
+      "rate": "Taxa de Câmbio",
+      "fee": "Taxa",
+      "total": "Total a Pagar",
+      "receive": "Você Recebe",
+      "getQuote": "Obter Cotação",
+      "expires": "Expira em",
+      "delivery": "Entrega Estimada"
+    },
+    "batch": {
+      "title": "Pagamentos em Lote",
+      "subtitle": "Enviar até 1.000 pagamentos de uma vez",
+      "new": "Novo Lote",
+      "name": "Nome do Lote",
+      "status": "Status",
+      "transfers": "Transferências",
+      "total": "Total",
+      "complete": "Completar Lote",
+      "noBatches": "Nenhum lote encontrado"
+    },
+    "rates": {
+      "title": "Taxas de Câmbio",
+      "subtitle": "Taxas em tempo real",
+      "source": "Moeda de Origem",
+      "target": "Moeda de Destino",
+      "currentRate": "Taxa Atual",
+      "lastUpdate": "Última Atualização"
+    },
+    "history": {
+      "title": "Histórico",
+      "subtitle": "Histórico de transações",
+      "filter": "Filtrar",
+      "export": "Exportar",
+      "noHistory": "Nenhuma transação no histórico"
+    },
+    "errors": {
+      "fetchFailed": "Falha ao carregar dados",
+      "createFailed": "Falha ao criar",
+      "deleteFailed": "Falha ao excluir",
+      "transferFailed": "Falha na transferência",
+      "quoteFailed": "Falha ao obter cotação"
+    },
+    "success": {
+      "transferCreated": "Transferência criada com sucesso",
+      "recipientCreated": "Destinatário criado com sucesso",
+      "recipientDeleted": "Destinatário excluído com sucesso",
+      "batchCompleted": "Lote completado com sucesso"
+    }
+  },
+  "erpnext": {
+    "title": "ERPNext",
+    "subtitle": "Sistema de gestão empresarial",
+    "openErpnext": "Abrir ERPNext",
+    "syncStatus": "Status de Sincronização"
+  },
+  "externalLinks": {
+    "erpnext": "Ir para ERPNext",
+    "openInNewTab": "Abre em nova aba"
   }
 }

@@ -89,8 +89,9 @@ Fornecer uma solução de IA robusta, privada e customizável para empresas, sem
 | Serviço | Uso | Secrets |
 |---------|-----|---------|
 | **Salad Cloud** | GPUs para LLM Maverick 400B | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
-| **Stripe Portugal** | Pagamentos EUR, SEPA | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET |
-| **ERPNext** | CRM/ERP | ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
+| **Stripe Portugal** | Receber pagamentos EUR, SEPA (ERPNext nativo) | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET |
+| **Wise** | Enviar pagamentos globais (Dashboard Admin) | WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET |
+| **ERPNext** | CRM/ERP, centralização de vendas | ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
 | **Twilio** | WhatsApp, SMS, Voice | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER |
 | **Resend** | Emails | RESEND_API_KEY |
 
@@ -126,6 +127,9 @@ MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID
 
 # SAML
 SAML_ENTRY_POINT, SAML_ISSUER, SAML_CERT
+
+# Wise Pagamentos
+WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET
 
 # Integrações
 ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET

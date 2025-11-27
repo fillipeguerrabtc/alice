@@ -12,15 +12,52 @@
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { createServer as createViteServer, ViteDevServer } from 'vite';
+import { createProxyMiddleware } from 'http-proxy-middleware';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import { spawn, ChildProcess } from 'child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let integrationsProcess: ChildProcess | null = null;
+
+function startIntegrationsService(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    console.log('  Iniciando integrations-service na porta 3005...');
+    
+    integrationsProcess = spawn('npx', ['tsx', 'apps/integrations-service/src/index.ts'], {
+      cwd: path.resolve(__dirname, '..'),
+      env: { ...process.env, PORT: '3005' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    integrationsProcess.stdout?.on('data', (data) => {
+      const output = data.toString();
+      if (output.includes('Integrations service started')) {
+        console.log('  ✓ integrations-service iniciado');
+        resolve();
+      }
+    });
+
+    integrationsProcess.stderr?.on('data', (data) => {
+      console.error(`  integrations-service error: ${data}`);
+    });
+
+    integrationsProcess.on('error', (err) => {
+      console.error('  Falha ao iniciar integrations-service:', err);
+      reject(err);
+    });
+
+    setTimeout(() => resolve(), 3000);
+  });
+}
 
 async function startDevServer() {
   console.log('========================================');
   console.log('  Alice Enterprise Platform - DEV');
+
+  await startIntegrationsService();
 
   const app = express();
   app.use(express.json());
@@ -43,6 +80,12 @@ async function startDevServer() {
       note: 'Servidor de preview Replit - Microserviços rodam em produção na Hetzner Cloud',
     });
   });
+
+  app.use('/api/integrations', createProxyMiddleware({
+    target: 'http://localhost:3005/api/integrations',
+    changeOrigin: true,
+    logLevel: 'silent',
+  }));
 
   app.use(vite.middlewares);
 
@@ -76,6 +119,7 @@ async function startDevServer() {
 
   process.on('SIGTERM', () => {
     console.log('\nEncerrando servidor de desenvolvimento...');
+    if (integrationsProcess) integrationsProcess.kill();
     vite.close();
     server.close();
     process.exit(0);
@@ -83,6 +127,7 @@ async function startDevServer() {
 
   process.on('SIGINT', () => {
     console.log('\nEncerrando servidor de desenvolvimento...');
+    if (integrationsProcess) integrationsProcess.kill();
     vite.close();
     server.close();
     process.exit(0);
