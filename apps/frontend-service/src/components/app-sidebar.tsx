@@ -10,6 +10,7 @@ import {
   Bot,
   Wallet,
   ExternalLink,
+  Headphones,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -35,6 +36,11 @@ const menuItems = [
   { title: 'Training', url: '/training', icon: Brain },
   { title: 'Integrações', url: '/integrations', icon: Plug },
   { title: 'Configurações', url: '/settings', icon: Settings },
+];
+
+const operationsItems = [
+  { title: 'Atendimento', url: '/takeover', icon: Headphones },
+  { title: 'Agentes IA', url: '/agents', icon: Bot },
 ];
 
 const financeItems = [
@@ -72,6 +78,29 @@ export function AppSidebar() {
                     isActive={location === item.url || (item.url !== '/' && location.startsWith(item.url))}
                   >
                     <Link href={item.url} data-testid={`link-${item.title.toLowerCase()}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <Separator className="my-2" />
+
+        <SidebarGroup>
+          <SidebarGroupLabel>Operações</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {operationsItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === item.url || location.startsWith(item.url)}
+                  >
+                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </Link>

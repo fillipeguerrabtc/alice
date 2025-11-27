@@ -53,7 +53,26 @@ import {
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
-import type { Agent } from "@alice/shared/schema";
+
+interface Agent {
+  id: string;
+  namespaceId: string | null;
+  nome: string;
+  slug: string;
+  descricao: string | null;
+  avatar: string | null;
+  personalidade: string | null;
+  instrucoes: string | null;
+  capacidades: string[] | null;
+  modeloBase: string | null;
+  temperaturaModelo: number | null;
+  maxTokens: number | null;
+  status: 'active' | 'training' | 'paused' | 'deprecated' | null;
+  metricas: unknown;
+  versao: number | null;
+  criadoEm: Date | null;
+  atualizadoEm: Date | null;
+}
 
 const agentFormSchema = z.object({
   nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
