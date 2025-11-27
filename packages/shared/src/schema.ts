@@ -314,6 +314,51 @@ export const documentChunks = pgTable(
   })
 );
 // ============================================================================
+// UPLOADS DE MÍDIA (Imagens, Áudio, Vídeo para RAG Multimodal)
+// ============================================================================
+export const mediaUploadStatusEnum = pgEnum("media_upload_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+]);
+export const mediaUploads = pgTable(
+  "media_uploads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    userId: varchar("user_id").references(() => users.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    messageId: uuid("message_id").references(() => messages.id),
+    mediaType: varchar("media_type", { length: 20 }).notNull(), // image, audio, video, document
+    originalFilename: varchar("original_filename", { length: 500 }).notNull(),
+    mimeType: varchar("mime_type", { length: 100 }).notNull(),
+    fileSize: integer("file_size").notNull(),
+    filePath: text("file_path").notNull(),
+    fileUrl: text("file_url"),
+    processingStatus: mediaUploadStatusEnum("processing_status").default("pending"),
+    // CLIP embedding para imagens (768 dimensões)
+    clipEmbedding: real("clip_embedding").array(),
+    // Text embedding para transcrição de áudio (1536 dimensões)
+    textEmbedding: real("text_embedding").array(),
+    // Transcrição de áudio
+    transcription: text("transcription"),
+    transcriptionLanguage: varchar("transcription_language", { length: 10 }),
+    transcriptionConfidence: real("transcription_confidence"),
+    // Metadata extraída
+    extractedMetadata: jsonb("extracted_metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idx_media_tenant: index("idx_media_tenant").on(table.tenantId),
+    idx_media_user: index("idx_media_user").on(table.userId),
+    idx_media_conversation: index("idx_media_conversation").on(table.conversationId),
+    idx_media_type: index("idx_media_type").on(table.mediaType),
+    idx_media_status: index("idx_media_status").on(table.processingStatus),
+  })
+);
+// ============================================================================
 // TAREFAS DE APRENDIZADO (Fine-tuning, Treinamento)
 // ============================================================================
 export const learningTasks = pgTable(
@@ -607,6 +652,24 @@ export const usageMetricsRelations = relations(usageMetrics, ({ one }) => ({
     references: [users.id],
   }),
 }));
+export const mediaUploadsRelations = relations(mediaUploads, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mediaUploads.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [mediaUploads.userId],
+    references: [users.id],
+  }),
+  conversation: one(conversations, {
+    fields: [mediaUploads.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(messages, {
+    fields: [mediaUploads.messageId],
+    references: [messages.id],
+  }),
+}));
 // ============================================================================
 // INSERT SCHEMAS (Zod Validation)
 // ============================================================================
@@ -662,6 +725,12 @@ export const insertLlmConfigSchema: z.ZodObject<z.ZodRawShape> = _insertLlmConfi
   criadoEm: true,
   atualizadoEm: true,
 }) as unknown as z.ZodObject<z.ZodRawShape>;
+const _insertMediaUploadSchema = createInsertSchema(mediaUploads);
+export const insertMediaUploadSchema: z.ZodObject<z.ZodRawShape> = _insertMediaUploadSchema.omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+}) as unknown as z.ZodObject<z.ZodRawShape>;
 // ============================================================================
 // TYPES
 // ============================================================================
@@ -690,6 +759,8 @@ export type LlmConfig = typeof llmConfig.$inferSelect;
 export type InsertLlmConfig = z.infer<typeof insertLlmConfigSchema>;
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
+export type MediaUpload = typeof mediaUploads.$inferSelect;
+export type InsertMediaUpload = z.infer<typeof insertMediaUploadSchema>;
 export type TrainingData = typeof trainingData.$inferSelect;
 export type InsertTrainingData = typeof trainingData.$inferInsert;
 export type FineTuningJob = typeof fineTuningJobs.$inferSelect;

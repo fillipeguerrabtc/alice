@@ -16,11 +16,9 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
+import { getDatabase, schema } from '@alice/database';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
-import * as schema from '../../../shared/schema.js';
 import { 
   requirePermission, 
   requireAuth,
@@ -94,8 +92,8 @@ if (!SALAD_ORGANIZATION_ID) {
 const SALAD_KEY: string = SALAD_API_KEY;
 const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
-const sql = neon(DATABASE_URL);
-const db = drizzle(sql, { schema });
+// Usar package @alice/database centralizado (node-postgres para produção Hetzner)
+const db = getDatabase();
 
 initOrchestrator(db);
 initImageGeneration(db);

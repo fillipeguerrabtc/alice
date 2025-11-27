@@ -16,11 +16,9 @@ import crypto from 'crypto';
 import path from 'path';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
-import { drizzle } from 'drizzle-orm/neon-http';
-import { neon } from '@neondatabase/serverless';
+import { getDatabase, getPool, schema, toSql } from '@alice/database';
 import { eq, sql, desc, and, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
-import * as schema from '../../../shared/schema.js';
 import { 
   requirePermission, 
   requireAuth,
@@ -99,8 +97,8 @@ const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 
-const sqlClient = neon(DATABASE_URL);
-const db = drizzle(sqlClient, { schema });
+// Usar package @alice/database centralizado (node-postgres para produção Hetzner)
+const db = getDatabase();
 
 const app = express();
 
@@ -590,9 +588,33 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
     // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
     // ============================================================================
     
-    const embeddingVector = `[${queryEmbedding.join(',')}]`;
+    // Converter embedding para formato SQL pgvector (enterprise-grade)
+    const embeddingVector = toSql(queryEmbedding);
     
-    const results = await sqlClient`
+    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
+    const pool = getPool();
+    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2];
+    let paramIndex = 3;
+    
+    let namespaceFilter = '';
+    if (body.namespaceId) {
+      namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
+      queryParams.push(body.namespaceId);
+    }
+    
+    const { rows: results } = await pool.query<{
+      id: string;
+      documentId: string;
+      conteudo: string;
+      posicao: number;
+      metadata: Record<string, unknown>;
+      criadoEm: Date;
+      doc_id: string | null;
+      doc_titulo: string | null;
+      doc_nomeArquivo: string | null;
+      doc_namespaceId: string | null;
+      similarity: number;
+    }>(`
       SELECT 
         dc.id,
         dc.document_id as "documentId",
@@ -604,15 +626,15 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+        1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
-        ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
-      ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
-      LIMIT ${body.limit * 2}
-    `;
+        ${namespaceFilter}
+      ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+      LIMIT $2
+    `, queryParams);
     
     // Filtrar por threshold e formatar resultados
     const filteredResults = results
@@ -656,23 +678,41 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
     // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
     // ============================================================================
     
-    const embeddingVector = `[${queryEmbedding.join(',')}]`;
+    // Converter embedding para formato SQL pgvector (enterprise-grade)
+    const embeddingVector = toSql(queryEmbedding);
     
-    const dbResults = await sqlClient`
+    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
+    const pool = getPool();
+    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2];
+    let paramIndex = 3;
+    
+    let namespaceFilter = '';
+    if (body.namespaceId) {
+      namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
+      queryParams.push(body.namespaceId);
+    }
+    
+    const { rows: dbResults } = await pool.query<{
+      id: string;
+      documentId: string;
+      conteudo: string;
+      doc_titulo: string | null;
+      similarity: number;
+    }>(`
       SELECT 
         dc.id,
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+        1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
-        ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
-      ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
-      LIMIT ${body.limit * 2}
-    `;
+        ${namespaceFilter}
+      ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+      LIMIT $2
+    `, queryParams);
     
     // Filtrar por threshold
     const results = dbResults
@@ -838,25 +878,41 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
       // ============================================================================
       
       const queryEmbedding = await generateEmbedding(body.query);
-      const embeddingVector = `[${queryEmbedding.join(',')}]`;
+      // Converter embedding para formato SQL pgvector (enterprise-grade)
+      const embeddingVector = toSql(queryEmbedding);
       
-      // Query nativa pgvector com filtro por tenant via namespaces
-      const dbResults = await sqlClient`
+      // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
+      const pool = getPool();
+      const queryParams: (string | number)[] = [embeddingVector, tenantId, body.limit * 2];
+      let paramIndex = 4;
+      
+      let namespaceFilter = '';
+      if (body.namespaceId) {
+        namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
+        queryParams.push(body.namespaceId);
+      }
+      
+      const { rows: dbResults } = await pool.query<{
+        documentId: string;
+        titulo: string | null;
+        conteudo: string;
+        similarity: number;
+      }>(`
         SELECT 
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          1 - (dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)) / 2 as similarity
+          1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
         FROM document_chunks dc
         INNER JOIN documents d ON dc.document_id = d.id
         INNER JOIN namespaces n ON d.namespace_id = n.id
         WHERE 
           dc.embedding IS NOT NULL
-          AND n.tenant_id = ${tenantId}
-          ${body.namespaceId ? sqlClient`AND d.namespace_id = ${body.namespaceId}` : sqlClient``}
-        ORDER BY dc.embedding::vector(1536) <=> ${embeddingVector}::vector(1536)
-        LIMIT ${body.limit * 2}
-      `;
+          AND n.tenant_id = $2
+          ${namespaceFilter}
+        ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+        LIMIT $3
+      `, queryParams);
       
       // Filtrar por threshold e formatar
       const internalResults = dbResults
@@ -1787,13 +1843,31 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
     // ÍNDICE: idx_media_uploads_clip_embedding_hnsw (vector_cosine_ops)
     // ============================================================================
     
-    // Serializar embedding como string para prepared statement seguro
-    const embeddingVector = `[${sanitizedEmbedding.join(',')}]`;
+    // Converter embedding CLIP para formato SQL pgvector (enterprise-grade - 768 dim)
+    const embeddingVector = toSql(sanitizedEmbedding);
     
-    // Query nativa pgvector com ORDER BY <=> (distância de cosseno)
+    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
     // O operador <=> retorna distância (0 = idêntico, 2 = oposto)
     // Similaridade = 1 - (distância / 2) para normalizar para [0, 1]
-    const nativeResults = await sqlClient`
+    const pool = getPool();
+    const queryParams: (string | number)[] = [embeddingVector, tenantId, safeLimit];
+    let paramIndex = 4;
+    
+    let excludeImageFilter = '';
+    if (imageId) {
+      excludeImageFilter = `AND id != $${paramIndex}`;
+      queryParams.push(imageId);
+    }
+    
+    const { rows: nativeResults } = await pool.query<{
+      id: string;
+      originalFilename: string;
+      fileUrl: string | null;
+      mimeType: string;
+      extractedMetadata: Record<string, unknown>;
+      criadoEm: Date;
+      similarity: number;
+    }>(`
       SELECT 
         id,
         original_filename as "originalFilename",
@@ -1801,17 +1875,17 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
         mime_type as "mimeType",
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
-        1 - (clip_embedding::vector(768) <=> ${embeddingVector}::vector(768)) / 2 as similarity
+        1 - (clip_embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
       FROM media_uploads
       WHERE 
-        tenant_id = ${tenantId}
+        tenant_id = $2
         AND media_type = 'image'
         AND processing_status = 'completed'
         AND clip_embedding IS NOT NULL
-        ${imageId ? sqlClient`AND id != ${imageId}` : sqlClient``}
-      ORDER BY clip_embedding::vector(768) <=> ${embeddingVector}::vector(768)
-      LIMIT ${safeLimit}
-    `;
+        ${excludeImageFilter}
+      ORDER BY clip_embedding::vector(768) <=> $1::vector(768)
+      LIMIT $3
+    `, queryParams);
 
     // Formatar resultados
     const results = nativeResults.map(row => ({
