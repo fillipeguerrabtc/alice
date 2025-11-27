@@ -135,6 +135,93 @@ class ImageProcessorService {
   }
 
   /**
+   * Gera embedding CLIP de texto via Salad Cloud
+   * Permite buscar imagens por descrição textual
+   * 
+   * IMPORTANTE: Requer endpoint CLIP com suporte a texto configurado em SALAD_CLIP_ENDPOINT
+   * O endpoint deve aceitar payload { text: string, model: string } e retornar { embedding: number[] }
+   * 
+   * @param text - Texto descritivo para gerar embedding (ex: "gato laranja dormindo")
+   * @returns Embedding CLIP (768 dim) e modelo usado
+   */
+  async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
+    if (!this.isConfigured) {
+      logger.error('SALAD_API_KEY não configurado - text embeddings CLIP indisponíveis');
+      throw new Error('Configuração Salad Cloud obrigatória para embeddings de texto CLIP. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
+    }
+
+    if (!text || text.trim().length === 0) {
+      throw new Error('Texto vazio não é permitido para geração de embedding');
+    }
+
+    const startTime = Date.now();
+    const trimmedText = text.trim();
+
+    try {
+      // Endpoint CLIP que suporta tanto imagem quanto texto
+      // Formato padrão CLIP-as-a-service: POST /inference/clip com { text } ou { image }
+      const response = await fetch(`${SALAD_CLIP_ENDPOINT}/inference/clip`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Salad-Api-Key': SALAD_API_KEY!,
+          'Salad-Organization': SALAD_ORGANIZATION_ID!,
+        },
+        body: JSON.stringify({
+          text: trimmedText,
+          model: 'ViT-L/14',
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        logger.error({
+          status: response.status,
+          error: errorText,
+          textLength: trimmedText.length,
+        }, 'Falha na API CLIP para texto');
+        throw new Error(`CLIP Text API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json() as { embedding: number[]; model: string };
+      
+      if (!result.embedding || !Array.isArray(result.embedding)) {
+        throw new Error('Resposta CLIP inválida - embedding ausente');
+      }
+
+      // Validar dimensão do embedding
+      if (result.embedding.length !== CLIP_EMBEDDING_DIM) {
+        logger.warn({
+          expected: CLIP_EMBEDDING_DIM,
+          received: result.embedding.length,
+        }, 'Dimensão do text embedding diferente do esperado - verificar configuração CLIP');
+      }
+
+      const processingTimeMs = Date.now() - startTime;
+
+      logger.info({
+        textLength: trimmedText.length,
+        embeddingDim: result.embedding.length,
+        model: result.model || 'ViT-L/14',
+        processingTimeMs,
+      }, 'Text embedding CLIP gerado com sucesso');
+
+      return {
+        embedding: result.embedding,
+        model: result.model || 'ViT-L/14',
+      };
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      logger.error({ 
+        error: errorMessage, 
+        textLength: trimmedText.length,
+        endpoint: `${SALAD_CLIP_ENDPOINT}/inference/clip`,
+      }, 'Erro ao gerar text embedding CLIP - verificar se endpoint suporta texto');
+      throw error;
+    }
+  }
+
+  /**
    * Gera thumbnail da imagem
    * Sem dependência de sharp - usa imagem original para imagens pequenas
    * ou retorna undefined para imagens grandes (thumbnail não disponível)

@@ -1686,12 +1686,32 @@ app.post('/api/media/search', extractAuthContext, async (req: Request, res: Resp
 
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
-      // Para busca por texto, precisamos gerar embedding do texto via CLIP
-      // Por enquanto, retornar erro (será implementado quando Salad Cloud estiver configurado)
-      return res.status(501).json({
-        error: 'Busca por texto ainda não implementada. Use imageId para buscar imagens similares.',
-        hint: 'Configure SALAD_API_KEY para habilitar busca por texto',
-      });
+      // Busca por texto: gerar embedding CLIP do texto via Salad Cloud
+      const imageProcessor = getImageProcessor();
+      
+      if (!imageProcessor.isReady()) {
+        return res.status(503).json({
+          error: 'Serviço de embeddings não configurado',
+          hint: 'Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID para habilitar busca por texto',
+        });
+      }
+
+      try {
+        const textResult = await imageProcessor.generateTextEmbedding(query);
+        queryEmbedding = textResult.embedding;
+        
+        logger.info({
+          queryLength: query.length,
+          embeddingDim: queryEmbedding.length,
+          model: textResult.model,
+        }, 'Text embedding gerado para busca visual');
+      } catch (embeddingError) {
+        logger.error({ error: embeddingError, query }, 'Erro ao gerar text embedding para busca');
+        return res.status(500).json({
+          error: 'Falha ao processar texto para busca',
+          detail: embeddingError instanceof Error ? embeddingError.message : 'Erro desconhecido',
+        });
+      }
     }
 
     if (!queryEmbedding) {

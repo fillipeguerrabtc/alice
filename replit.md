@@ -92,12 +92,13 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 
 | Capacidade | Progresso |
 |------------|-----------|
-| Integração RAG + Chat | 80% |
+| Integração RAG + Chat | 100% |
 | Dashboard Admin | 100% |
 | Detecção de Geração de Imagem | 100% |
 | Auto-aprendizado Agressivo | 100% |
 | FLUX.1 Schnell (Imagens) | 100% |
 | Observability Stack | 100% |
+| RAG Multimodal | 100% |
 | Analytics | Planejado |
 
 ### Ambiente de Desenvolvimento (Replit)
@@ -134,7 +135,7 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 
 | Capacidade | Fase | Descrição |
 |------------|------|-----------|
-| Multimodal Avançado | 9 | Áudio e vídeo |
+| Vídeo Multimodal | 9.5 | Processamento de vídeo (extração de frames, transcrição) |
 | Crawling | 11 | Web scraping automático |
 | Analytics Avançado | 12 | Relatórios e dashboards customizados |
 
@@ -202,6 +203,23 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 | Hospedagem | Salad Cloud (self-hosted) | Sem API externa, custo previsível |
 | Aprendizado | Progressive LoRA | Imagens aprovadas entram no training |
 | Storage | Object Storage + CLIP embeddings | RAG multimodal |
+
+### RAG Multimodal (IMPLEMENTADO)
+
+| Componente | Implementação | Notas |
+|------------|---------------|-------|
+| Upload Imagens | CLIP embeddings (768 dim) | Via SALAD_CLIP_ENDPOINT |
+| Upload Áudio | Whisper + text embeddings (1536 dim) | Via SALAD_WHISPER_ENDPOINT |
+| Busca por Imagem | Similaridade de cosseno | imageId → embeddings similares |
+| Busca por Texto | CLIP text embedding | Requer endpoint CLIP com suporte a texto |
+| Storage | Local + S3 compatível | Multi-tenant com tenant_id |
+| Frontend | Upload, preview, players | AudioPlayer, VideoPlayer, MediaPreview |
+
+**Variáveis de ambiente para RAG Multimodal:**
+- `SALAD_CLIP_ENDPOINT`: Endpoint do container CLIP (deve suportar texto e imagem)
+- `SALAD_WHISPER_ENDPOINT`: Endpoint do Whisper para transcrição
+- `SALAD_API_KEY`: Chave de API Salad Cloud
+- `SALAD_ORGANIZATION_ID`: ID da organização
 
 ### Takeover/Handover
 
