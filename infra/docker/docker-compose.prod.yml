@@ -374,8 +374,17 @@ services:
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
       # Resend
       RESEND_API_KEY: ${RESEND_API_KEY}
+      # Wise (pagamentos globais)
+      WISE_API_KEY: ${WISE_API_KEY}
+      WISE_PROFILE_ID: ${WISE_PROFILE_ID}
+      WISE_WEBHOOK_SECRET: ${WISE_WEBHOOK_SECRET}
+      WISE_SANDBOX: ${WISE_SANDBOX:-false}
+      # Inter-service communication
+      CHAT_SERVICE_URL: http://alice-chat:3002
     depends_on:
       postgres:
+        condition: service_healthy
+      alice-chat:
         condition: service_healthy
     networks:
       - alice-network

@@ -132,8 +132,8 @@ Estes são necessários para o deploy funcionar:
 
 **Configuração de Webhook:**
 1. Messaging → Settings → WhatsApp sandbox settings
-2. When a message comes in: `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp`
-3. Status callback URL: `https://yesyoudeserve.duckdns.org/webhook/twilio/status`
+2. When a message comes in: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/whatsapp`
+3. Status callback URL: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/status`
 
 **Resend:**
 
@@ -259,8 +259,8 @@ Estes são necessários para o deploy funcionar:
 | Provedor | URL do Webhook |
 |----------|----------------|
 | Stripe | `https://yesyoudeserve.duckdns.org/webhook/stripe` |
-| Twilio WhatsApp | `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp` |
-| Twilio Status | `https://yesyoudeserve.duckdns.org/webhook/twilio/status` |
+| Twilio WhatsApp | `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/whatsapp` |
+| Twilio Status | `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/status` |
 | Wise | `https://yesyoudeserve.duckdns.org/api/integrations/wise/webhook` |
 
 ---

@@ -8,7 +8,7 @@ import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema } from '@alice/database';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient';
@@ -16,6 +16,7 @@ import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats
 import { 
   requirePermission, 
   requireAuth,
+  extractAuthContext,
 } from '../../../packages/shared-utils/src/rbac/middleware.js';
 
 const logger = createLogger('integrations-service');
@@ -115,6 +116,7 @@ app.use(limiter);
 
 app.use('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/integrations/twilio/webhook', express.urlencoded({ extended: false }));
 app.use(express.json());
 
 app.get('/api/integrations/health', (_req: Request, res: Response) => {
@@ -979,6 +981,437 @@ app.get('/api/integrations/wise/status', (_req: Request, res: Response) => {
     configured: isWiseConfigured(),
     sandbox: getSandboxStatus(),
     profileId: profileId ? '***' + profileId.slice(-4) : null,
+  });
+});
+
+// ============================================================
+// TWILIO/WHATSAPP API - Mensagens e Webhooks
+// Documentação: https://www.twilio.com/docs/messaging/webhooks
+// Integração com Conversation Orchestrator para Handover/Takeover
+// ============================================================
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
+const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
+const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'http://localhost:3002';
+
+/**
+ * Valida assinatura do webhook Twilio
+ * Segue especificação oficial: https://www.twilio.com/docs/usage/security
+ */
+function validateTwilioSignature(
+  signature: string,
+  url: string,
+  params: Record<string, string>
+): boolean {
+  if (!TWILIO_AUTH_TOKEN) {
+    logger.warn('TWILIO_AUTH_TOKEN não configurado - validação de assinatura desabilitada');
+    return true; // Em desenvolvimento, permite sem validação
+  }
+
+  // Ordenar parâmetros alfabeticamente e concatenar
+  const sortedParams = Object.keys(params)
+    .sort()
+    .reduce((acc, key) => acc + key + params[key], '');
+  
+  const dataToSign = url + sortedParams;
+  
+  const expectedSignature = crypto
+    .createHmac('sha1', TWILIO_AUTH_TOKEN)
+    .update(Buffer.from(dataToSign, 'utf-8'))
+    .digest('base64');
+
+  return crypto.timingSafeEqual(
+    Buffer.from(signature),
+    Buffer.from(expectedSignature)
+  );
+}
+
+/**
+ * Envia mensagem WhatsApp via Twilio
+ */
+async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string): Promise<{
+  success: boolean;
+  messageSid?: string;
+  error?: string;
+}> {
+  if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_NUMBER) {
+    logger.error('Twilio não configurado para envio de mensagens');
+    return { success: false, error: 'Twilio não configurado' };
+  }
+
+  try {
+    const formData = new URLSearchParams();
+    formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
+    formData.append('To', to.startsWith('whatsapp:') ? to : `whatsapp:${to}`);
+    formData.append('Body', body);
+    if (mediaUrl) {
+      formData.append('MediaUrl', mediaUrl);
+    }
+
+    const response = await fetch(
+      `https://api.twilio.com/2010-04-01/Accounts/${TWILIO_ACCOUNT_SID}/Messages.json`,
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString('base64')}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: formData.toString(),
+      }
+    );
+
+    if (!response.ok) {
+      const errorData = await response.json() as { message?: string };
+      throw new Error(errorData.message || `Twilio API error: ${response.status}`);
+    }
+
+    const data = await response.json() as { sid: string };
+    logger.info({ messageSid: data.sid, to }, 'Mensagem WhatsApp enviada com sucesso');
+    return { success: true, messageSid: data.sid };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error, to }, 'Falha ao enviar mensagem WhatsApp');
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Processa mensagem via Chat Service (LLM + RAG)
+ */
+async function processMessageWithLLM(
+  conversationId: string,
+  message: string,
+  tenantId?: string
+): Promise<string> {
+  try {
+    const response = await fetch(`${CHAT_SERVICE_URL}/api/chat/message`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(tenantId && { 'X-Tenant-Id': tenantId }),
+      },
+      body: JSON.stringify({
+        conversationId,
+        content: message,
+        role: 'user',
+        channel: 'whatsapp',
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Chat service error: ${response.status}`);
+    }
+
+    const data = await response.json() as { response: string };
+    return data.response;
+  } catch (error) {
+    logger.error({ error, conversationId }, 'Falha ao processar mensagem com LLM');
+    return 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.';
+  }
+}
+
+/**
+ * Webhook principal para mensagens WhatsApp recebidas
+ * Rota: POST /api/integrations/twilio/webhook/whatsapp
+ */
+app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: Response) => {
+  // Responder imediatamente ao Twilio (evitar timeout de 15s)
+  res.set('Content-Type', 'text/xml');
+  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
+  // Processar webhook de forma assíncrona
+  try {
+    const twilioSignature = req.headers['x-twilio-signature'] as string;
+    const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
+    // Validar assinatura em produção
+    if (process.env.NODE_ENV === 'production' && twilioSignature) {
+      const isValid = validateTwilioSignature(
+        twilioSignature,
+        webhookUrl,
+        req.body as Record<string, string>
+      );
+
+      if (!isValid) {
+        logger.warn({ webhookUrl }, 'Assinatura Twilio inválida - webhook rejeitado');
+        return;
+      }
+    }
+
+    const {
+      MessageSid,
+      From,
+      To,
+      Body,
+      NumMedia,
+      MediaUrl0,
+      MediaContentType0,
+    } = req.body as {
+      MessageSid: string;
+      From: string;
+      To: string;
+      Body: string;
+      NumMedia?: string;
+      MediaUrl0?: string;
+      MediaContentType0?: string;
+    };
+
+    logger.info({
+      messageSid: MessageSid,
+      from: From,
+      hasMedia: parseInt(NumMedia || '0') > 0,
+    }, 'Webhook WhatsApp recebido');
+
+    const db = getDatabase();
+
+    // Normalizar número de telefone (remover 'whatsapp:')
+    const phoneNumber = From.replace('whatsapp:', '');
+
+    // Buscar ou criar usuário pelo telefone
+    let user = await db.query.users.findFirst({
+      where: eq(schema.users.telefone, phoneNumber),
+    });
+
+    if (!user) {
+      // Criar usuário temporário para WhatsApp
+      const [newUser] = await db.insert(schema.users).values({
+        email: `whatsapp_${phoneNumber.replace(/\+/g, '')}@temp.alice.app`,
+        telefone: phoneNumber,
+        firstName: 'WhatsApp',
+        lastName: `User ${phoneNumber.slice(-4)}`,
+        authProvider: 'whatsapp',
+        authProviderId: phoneNumber,
+        role: 'guest',
+      }).returning();
+      user = newUser;
+      logger.info({ userId: user.id, phone: phoneNumber }, 'Novo usuário WhatsApp criado');
+    }
+
+    // Buscar ou criar conversa ativa para este usuário via WhatsApp
+    let conversation = await db.query.conversations.findFirst({
+      where: (c, { and, eq: e }) => and(
+        e(c.userId, user.id),
+        e(c.status, 'active'),
+        e(c.metadata, sql`metadata->>'channel' = 'whatsapp'`)
+      ),
+      orderBy: [desc(schema.conversations.criadoEm)],
+    });
+
+    if (!conversation) {
+      // Criar nova conversa para WhatsApp
+      const [newConversation] = await db.insert(schema.conversations).values({
+        userId: user.id,
+        titulo: `WhatsApp - ${phoneNumber}`,
+        status: 'active',
+        metadata: {
+          channel: 'whatsapp',
+          phoneNumber,
+          twilioFrom: From,
+          twilioTo: To,
+        },
+      }).returning();
+      conversation = newConversation;
+      logger.info({ conversationId: conversation.id }, 'Nova conversa WhatsApp criada');
+    }
+
+    // Salvar mensagem do usuário
+    await db.insert(schema.messages).values({
+      conversationId: conversation.id,
+      userId: user.id,
+      role: 'user',
+      content: Body,
+      tipo: parseInt(NumMedia || '0') > 0 ? 'mixed' : 'text',
+      metadata: {
+        twilioMessageSid: MessageSid,
+        mediaUrl: MediaUrl0,
+        mediaContentType: MediaContentType0,
+        channel: 'whatsapp',
+      },
+    });
+
+    // Verificar estado de handover/takeover
+    const conversationState = await db.query.conversationStates.findFirst({
+      where: eq(schema.conversationStates.conversationId, conversation.id),
+    });
+
+    // Se a conversa está em modo humano, não responder automaticamente
+    if (conversationState?.controlMode === 'human') {
+      logger.info({
+        conversationId: conversation.id,
+        controlMode: 'human',
+      }, 'Conversa em modo humano - mensagem salva sem resposta automática');
+
+      // Notificar agente humano via chat-service WebSocket
+      try {
+        await fetch(`${CHAT_SERVICE_URL}/api/chat/notify-agent`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            conversationId: conversation.id,
+            type: 'new_message',
+            message: Body,
+            from: phoneNumber,
+          }),
+        });
+      } catch (notifyError) {
+        logger.warn({ error: notifyError }, 'Falha ao notificar agente humano');
+      }
+      return;
+    }
+
+    // Processar mensagem com LLM via Chat Service
+    const llmResponse = await processMessageWithLLM(
+      conversation.id,
+      Body,
+      user.tenantId ?? undefined
+    );
+
+    // Salvar resposta do bot
+    await db.insert(schema.messages).values({
+      conversationId: conversation.id,
+      role: 'assistant',
+      content: llmResponse,
+      tipo: 'text',
+      metadata: {
+        channel: 'whatsapp',
+        generatedBy: 'llm',
+      },
+    });
+
+    // Enviar resposta via WhatsApp
+    const sendResult = await sendWhatsAppMessage(From, llmResponse);
+
+    if (!sendResult.success) {
+      logger.error({
+        conversationId: conversation.id,
+        error: sendResult.error,
+      }, 'Falha ao enviar resposta WhatsApp');
+    }
+
+  } catch (error) {
+    logger.error({ error }, 'Erro ao processar webhook WhatsApp');
+  }
+});
+
+/**
+ * Webhook para status de mensagens Twilio
+ * Rota: POST /api/integrations/twilio/webhook/status
+ */
+app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Response) => {
+  res.set('Content-Type', 'text/xml');
+  res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
+  try {
+    const {
+      MessageSid,
+      MessageStatus,
+      ErrorCode,
+      ErrorMessage,
+      To,
+    } = req.body as {
+      MessageSid: string;
+      MessageStatus: string;
+      ErrorCode?: string;
+      ErrorMessage?: string;
+      To: string;
+    };
+
+    logger.info({
+      messageSid: MessageSid,
+      status: MessageStatus,
+      errorCode: ErrorCode,
+      to: To,
+    }, 'Status de mensagem Twilio recebido');
+
+    // Atualizar metadata da mensagem com status
+    if (MessageStatus === 'failed' || MessageStatus === 'undelivered') {
+      logger.error({
+        messageSid: MessageSid,
+        status: MessageStatus,
+        errorCode: ErrorCode,
+        errorMessage: ErrorMessage,
+      }, 'Mensagem WhatsApp falhou na entrega');
+
+      // Registrar falha em audit log se necessário
+      const db = getDatabase();
+      await db.insert(schema.auditLogs).values({
+        acao: 'whatsapp_delivery_failed',
+        recurso: 'message',
+        detalhes: {
+          messageSid: MessageSid,
+          status: MessageStatus,
+          errorCode: ErrorCode,
+          errorMessage: ErrorMessage,
+          to: To,
+        },
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao processar webhook de status Twilio');
+  }
+});
+
+/**
+ * Enviar mensagem WhatsApp manualmente (para handover humano)
+ * Rota: POST /api/integrations/twilio/send
+ */
+app.post('/api/integrations/twilio/send', requirePermission('integrations:twilio:write'), async (req: Request, res: Response) => {
+  const { to, message, conversationId, mediaUrl } = req.body as {
+    to: string;
+    message: string;
+    conversationId?: string;
+    mediaUrl?: string;
+  };
+
+  if (!to || !message) {
+    return res.status(400).json({ error: 'Parâmetros to e message são obrigatórios' });
+  }
+
+  try {
+    const result = await sendWhatsAppMessage(to, message, mediaUrl);
+
+    if (!result.success) {
+      return res.status(500).json({ error: result.error });
+    }
+
+    // Se conversationId fornecido, salvar mensagem no histórico
+    if (conversationId) {
+      const db = getDatabase();
+      const authContext = extractAuthContext(req);
+
+      await db.insert(schema.messages).values({
+        conversationId,
+        userId: authContext?.userId,
+        role: 'assistant',
+        content: message,
+        tipo: mediaUrl ? 'mixed' : 'text',
+        metadata: {
+          channel: 'whatsapp',
+          twilioMessageSid: result.messageSid,
+          sentByAgent: true,
+          mediaUrl,
+        },
+      });
+    }
+
+    res.json({ success: true, messageSid: result.messageSid });
+  } catch (error) {
+    logger.error({ error, to }, 'Falha ao enviar mensagem WhatsApp');
+    res.status(500).json({ error: 'Falha ao enviar mensagem' });
+  }
+});
+
+/**
+ * Status da integração Twilio
+ * Rota: GET /api/integrations/twilio/status
+ */
+app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
+  const configured = !!(TWILIO_ACCOUNT_SID && TWILIO_AUTH_TOKEN && TWILIO_WHATSAPP_NUMBER);
+  res.json({
+    configured,
+    accountSid: TWILIO_ACCOUNT_SID ? '***' + TWILIO_ACCOUNT_SID.slice(-4) : null,
+    whatsappNumber: TWILIO_WHATSAPP_NUMBER ? TWILIO_WHATSAPP_NUMBER.slice(-4) : null,
   });
 });
 

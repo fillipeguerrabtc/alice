@@ -250,5 +250,66 @@ Endpoints migrados para busca nativa pgvector:
 
 ---
 
+## Sistema de Handover/Takeover
+
+### Conversation Orchestrator
+
+O sistema de handover/takeover (511 linhas em `apps/chat-service/src/conversation-orchestrator.ts`) permite transição suave entre atendimento por IA e humano:
+
+| Funcionalidade | Descrição |
+|----------------|-----------|
+| Takeover | Agente humano assume conversa do bot |
+| Handback | Devolve conversa para o bot |
+| Escalação Automática | Triggers baseados em sentimento e keywords |
+| SLA | Timeout de 30 minutos para primeira resposta |
+| Prioridades | low, medium, high, urgent |
+
+### Triggers de Escalação
+
+| Trigger | Descrição |
+|---------|-----------|
+| negative_sentiment | Sentimento negativo detectado |
+| frustration_keywords | Palavras como "falar com humano", "gerente" |
+| repeated_questions | Perguntas repetidas (loop detectado) |
+| explicit_request | Pedido explícito de atendimento humano |
+| sla_breach | SLA ultrapassado |
+
+### Canais Suportados
+
+| Canal | Status | Endpoint |
+|-------|--------|----------|
+| Web | Produção | WebSocket /ws/chat |
+| WhatsApp | Produção | /api/integrations/twilio/webhook/whatsapp |
+| API | Produção | /api/chat/* |
+
+---
+
+## Alterações Recentes (Novembro 2025)
+
+### Twilio/WhatsApp Webhooks (Tarefa Atual)
+
+Implementadas rotas completas de webhook Twilio no integrations-service:
+- `POST /api/integrations/twilio/webhook/whatsapp` - Recebe mensagens WhatsApp
+- `POST /api/integrations/twilio/webhook/status` - Status de entrega
+- `POST /api/integrations/twilio/send` - Enviar mensagens manualmente
+- `GET /api/integrations/twilio/status` - Status da integração
+
+### Migração Drizzle no CI/CD
+
+Adicionado step de migração `db:push` no GitHub Actions:
+- Inicia PostgreSQL antes dos serviços
+- Executa migração via container temporário
+- Garante tabelas criadas antes de iniciar aplicação
+
+### Secrets Wise
+
+Adicionados secrets Wise ao deploy workflow e docker-compose:
+- WISE_API_KEY
+- WISE_PROFILE_ID
+- WISE_WEBHOOK_SECRET
+- WISE_SANDBOX
+
+---
+
 Documento em Português Brasileiro
-Versão 5.1 - Novembro 2025
+Versão 5.2 - Novembro 2025
