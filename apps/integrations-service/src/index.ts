@@ -4,11 +4,13 @@ import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
+import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema } from '@alice/database';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
+import { wiseService } from './wiseService';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -106,6 +108,7 @@ const limiter = rateLimit({
 app.use(limiter);
 
 app.use('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }));
+app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
 app.get('/api/integrations/health', (_req: Request, res: Response) => {
@@ -116,6 +119,7 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
     integrations: {
       stripe: !!stripe,
       erpnext: !!config.ERPNEXT_URL,
+      wise: !!process.env.WISE_API_KEY,
     },
   });
 });
