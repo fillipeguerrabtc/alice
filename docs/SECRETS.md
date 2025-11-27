@@ -1,10 +1,8 @@
-# Guia Completo de Secrets e Webhooks - Alice Enterprise Platform
+# Guia Completo de Secrets - Alice Enterprise Platform
 
 ## Visão Geral
 
-Este documento contém:
-1. **Todos os secrets necessários** para a plataforma Alice Enterprise
-2. **Guia completo para reconfigurar webhooks e OAuth** para a nova URL Hetzner
+Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
 **Arquitetura:** Replit é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
@@ -14,302 +12,262 @@ Este documento contém:
 
 ---
 
-## ⚠️ IMPORTANTE: O que precisa ser reconfigurado
+## Onde Configurar
 
-| Item | Onde Alterar | O que Muda |
-|------|--------------|------------|
-| **Secrets GitHub** | GitHub Actions | ❌ NÃO precisa alterar |
-| **URLs de Webhook** | Dashboard do provedor | ✅ PRECISA alterar |
-| **URLs de Callback OAuth** | Dashboard do provedor | ✅ PRECISA alterar |
-
-**Resumo:** Os secrets (API keys, tokens) permanecem os mesmos. Apenas as URLs precisam apontar para a nova URL Hetzner.
+| Local | O que vai lá | Observação |
+|-------|--------------|------------|
+| **GitHub Secrets** | Todos os secrets de produção | CI/CD cria `.env.prod` automaticamente |
+| **Replit Secrets** | Apenas para desenvolvimento local | NÃO usado em produção |
+| **Hetzner .env.prod** | Criado automaticamente | Gerado pelo GitHub Actions |
 
 ---
 
-## 🔄 GUIA DE RECONFIGURAÇÃO DE WEBHOOKS E OAUTH
+## Secrets por Fase de Deploy
 
-### 1. STRIPE PORTUGAL
+### FASE 1: Deploy Mínimo Funcional (OBRIGATÓRIOS)
 
-**Dashboard:** https://dashboard.stripe.com
+Estes são necessários para o deploy funcionar:
 
-#### 1.1 Reconfigurar Webhooks
+| Secret | Valor | Descrição |
+|--------|-------|-----------|
+| `HETZNER_VM_HOST` | `46.224.46.93` | IP do servidor |
+| `HETZNER_VM_USER` | `root` | Usuário SSH |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` |
+| `GH_PAT` | Token GitHub | Personal Access Token com write:packages |
+| `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
+| `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
 
-1. Acesse **Stripe Dashboard** → **Developers** → **Webhooks**
-2. Clique no webhook existente (que aponta para Replit)
-3. Clique **"..."** → **"Update details"**
-4. Altere a **Endpoint URL** de:
-   ```
-   https://SEU-REPLIT-ANTIGO.replit.dev/webhook/stripe
-   ```
-   Para:
-   ```
-   https://yesyoudeserve.duckdns.org/webhook/stripe
-   ```
-5. Clique **"Update endpoint"**
+### FASE 2: Autenticação (mínimo 1 provider)
 
-**OU** crie um novo webhook:
-1. **Webhooks** → **Add endpoint**
-2. **Endpoint URL:** `https://yesyoudeserve.duckdns.org/webhook/stripe`
-3. **Events to send:** Selecione:
-   - `customer.created`
-   - `customer.updated`
-   - `customer.deleted`
-   - `payment_intent.succeeded`
-   - `payment_intent.payment_failed`
-   - `invoice.paid`
-   - `invoice.payment_failed`
+**Google OAuth:**
+
+| Secret | Onde Obter |
+|--------|------------|
+| `GOOGLE_CLIENT_ID` | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) |
+| `GOOGLE_CLIENT_SECRET` | [console.cloud.google.com](https://console.cloud.google.com/apis/credentials) |
+
+**Configuração:**
+1. Acesse Google Cloud Console → APIs & Services → Credentials
+2. Crie OAuth 2.0 Client ID (Web application)
+3. Authorized redirect URIs: `https://yesyoudeserve.duckdns.org/api/auth/callback/google`
+4. Authorized JavaScript origins: `https://yesyoudeserve.duckdns.org`
+
+**GitHub OAuth:**
+
+| Secret | Onde Obter |
+|--------|------------|
+| `OAUTH_GITHUB_CLIENT_ID` | [github.com/settings/developers](https://github.com/settings/developers) |
+| `OAUTH_GITHUB_CLIENT_SECRET` | [github.com/settings/developers](https://github.com/settings/developers) |
+
+**Configuração:**
+1. Settings → Developer settings → OAuth Apps → New OAuth App
+2. Homepage URL: `https://yesyoudeserve.duckdns.org`
+3. Authorization callback URL: `https://yesyoudeserve.duckdns.org/api/auth/callback/github`
+
+⚠️ **IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.
+
+**Microsoft/Azure AD OAuth (Opcional):**
+
+| Secret | Onde Obter |
+|--------|------------|
+| `MICROSOFT_CLIENT_ID` | [portal.azure.com](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps) |
+| `MICROSOFT_CLIENT_SECRET` | Azure Portal |
+| `MICROSOFT_TENANT_ID` | Azure Portal |
+
+**Configuração:**
+1. Azure Portal → App registrations → Nova aplicação
+2. Authentication → Platform configurations → Web
+3. Redirect URIs: `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft`
+
+### FASE 3: Chat com IA (LLM)
+
+| Secret | Onde Obter |
+|--------|------------|
+| `SALAD_API_KEY` | [portal.salad.com](https://portal.salad.com) → API Keys |
+| `SALAD_ORGANIZATION_ID` | portal.salad.com → Settings |
+
+### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
+
+| Secret | Onde Obter |
+|--------|------------|
+| `STRIPE_SECRET_KEY` | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
+| `STRIPE_PUBLISHABLE_KEY` | dashboard.stripe.com/apikeys |
+| `STRIPE_WEBHOOK_SECRET` | dashboard.stripe.com/webhooks |
+
+**Configuração de Webhook:**
+1. Stripe Dashboard → Developers → Webhooks → Add endpoint
+2. Endpoint URL: `https://yesyoudeserve.duckdns.org/webhook/stripe`
+3. Eventos:
+   - `customer.created`, `customer.updated`, `customer.deleted`
+   - `payment_intent.succeeded`, `payment_intent.payment_failed`
+   - `invoice.paid`, `invoice.payment_failed`
    - `checkout.session.completed`
-   - `subscription.created`
-   - `subscription.updated`
-   - `subscription.deleted`
-4. Clique **"Add endpoint"**
-5. **IMPORTANTE:** Copie o novo **Signing Secret** (começa com `whsec_`)
-6. Atualize no GitHub Actions: `STRIPE_WEBHOOK_SECRET`
+   - `subscription.created`, `subscription.updated`, `subscription.deleted`
+4. Copie o Signing Secret (começa com `whsec_`)
 
-#### 1.2 Verificar API Keys
+### FASE 5: Pagamentos Wise (enviar globalmente)
 
-As API Keys (`STRIPE_SECRET_KEY` e `STRIPE_PUBLISHABLE_KEY`) **NÃO mudam**.
+| Secret | Onde Obter |
+|--------|------------|
+| `WISE_API_KEY` | [wise.com/settings](https://wise.com/settings) → API Tokens |
+| `WISE_PROFILE_ID` | URL: `wise.com/user/account/XXXXX` |
+| `WISE_WEBHOOK_SECRET` | wise.com/settings → Webhooks (opcional) |
 
----
+**Configuração:**
+1. Wise Business → Settings → API Tokens → Add new token
+2. Permissões: `Read balances`, `Read transfers`, `Create transfers`
+3. Profile ID está na URL quando você acessa sua conta
 
-### 2. GOOGLE OAUTH
+**Nota:** Defina `WISE_SANDBOX=true` para usar API de testes.
 
-**Console:** https://console.cloud.google.com/apis/credentials
+### FASE 6: Comunicação (WhatsApp/SMS/Email)
 
-#### 2.1 Atualizar Redirect URIs
+**Twilio:**
 
-1. Acesse **Google Cloud Console** → **APIs & Services** → **Credentials**
-2. Clique no seu **OAuth 2.0 Client ID** (Web application)
-3. Na seção **"Authorized redirect URIs"**:
-   - **Remova:** `https://SEU-REPLIT-ANTIGO.replit.dev/api/auth/callback/google`
-   - **Adicione:** `https://yesyoudeserve.duckdns.org/api/auth/callback/google`
-4. Na seção **"Authorized JavaScript origins"**:
-   - **Remova:** `https://SEU-REPLIT-ANTIGO.replit.dev`
-   - **Adicione:** `https://yesyoudeserve.duckdns.org`
-5. Clique **"Save"**
+| Secret | Onde Obter |
+|--------|------------|
+| `TWILIO_ACCOUNT_SID` | [console.twilio.com](https://console.twilio.com) |
+| `TWILIO_AUTH_TOKEN` | console.twilio.com |
+| `TWILIO_WHATSAPP_NUMBER` | console.twilio.com/whatsapp |
 
-**Secrets no GitHub:** `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` **NÃO mudam**.
+**Configuração de Webhook:**
+1. Messaging → Settings → WhatsApp sandbox settings
+2. When a message comes in: `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp`
+3. Status callback URL: `https://yesyoudeserve.duckdns.org/webhook/twilio/status`
 
----
+**Resend:**
 
-### 3. GITHUB OAUTH
+| Secret | Onde Obter |
+|--------|------------|
+| `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys) |
 
-**Settings:** https://github.com/settings/developers
-
-#### 3.1 Atualizar OAuth App
-
-1. Acesse **GitHub** → **Settings** → **Developer settings** → **OAuth Apps**
-2. Clique na sua aplicação "Alice Enterprise"
-3. Atualize os campos:
-   - **Homepage URL:** `https://yesyoudeserve.duckdns.org`
-   - **Authorization callback URL:** `https://yesyoudeserve.duckdns.org/api/auth/callback/github`
-4. Clique **"Update application"**
-
-**Secrets no GitHub:** `OAUTH_GITHUB_CLIENT_ID` e `OAUTH_GITHUB_CLIENT_SECRET` **NÃO mudam**.
-
----
-
-### 4. MICROSOFT/AZURE AD OAUTH
-
-**Portal:** https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps
-
-#### 4.1 Atualizar Redirect URIs
-
-1. Acesse **Azure Portal** → **App registrations** → Sua aplicação
-2. Vá em **Authentication** → **Platform configurations** → **Web**
-3. Na seção **"Redirect URIs"**:
-   - **Remova:** `https://SEU-REPLIT-ANTIGO.replit.dev/api/auth/callback/microsoft`
-   - **Adicione:** `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft`
-4. Clique **"Save"**
-
-**Secrets no GitHub:** `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_TENANT_ID` **NÃO mudam**.
-
----
-
-### 5. TWILIO (WHATSAPP/SMS)
-
-**Console:** https://console.twilio.com
-
-#### 5.1 Atualizar Webhook do WhatsApp Sandbox
-
-1. Acesse **Twilio Console** → **Messaging** → **Try it out** → **Send a WhatsApp message**
-2. Ou: **Messaging** → **Settings** → **WhatsApp sandbox settings**
-3. Atualize os campos:
-   - **When a message comes in:** 
-     ```
-     https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp
-     ```
-   - **Status callback URL:**
-     ```
-     https://yesyoudeserve.duckdns.org/webhook/twilio/status
-     ```
-4. Clique **"Save"**
-
-#### 5.2 Para Número de Produção (se tiver)
-
-1. **Phone Numbers** → **Manage** → **Active numbers**
-2. Clique no seu número WhatsApp
-3. Atualize:
-   - **A MESSAGE COMES IN:** `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp`
-   - **STATUS CALLBACK URL:** `https://yesyoudeserve.duckdns.org/webhook/twilio/status`
-4. Clique **"Save"**
-
-**Secrets no GitHub:** `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER` **NÃO mudam**.
-
----
-
-### 6. RESEND (EMAIL)
-
-**Dashboard:** https://resend.com/domains
-
-#### 6.1 Verificar Domínio (Opcional)
-
-Se você quer enviar emails de `@yesyoudeserve.duckdns.org`:
-
-1. Acesse **Resend** → **Domains** → **Add Domain**
-2. Adicione: `yesyoudeserve.duckdns.org`
-3. Configure os registros DNS no DuckDNS (se suportado) ou use o domínio padrão Resend
-
-**Nota:** Geralmente Resend funciona sem webhook. A API Key é suficiente.
-
-**Secret no GitHub:** `RESEND_API_KEY` **NÃO muda**.
-
----
-
-### 7. SALAD CLOUD (LLM)
-
-**Dashboard:** https://portal.salad.com
-
-Salad Cloud usa apenas API Key para autenticação. **Não há webhooks para configurar.**
-
-**Secrets no GitHub:** `SALAD_API_KEY` e `SALAD_ORGANIZATION_ID` **NÃO mudam**.
-
----
-
-### 8. WISE (PAGAMENTOS GLOBAIS)
-
-**Dashboard:** https://wise.com/settings/profile
-
-#### 8.1 Obter API Key
-
-1. Acesse **Wise Business** → **Settings** → **API Tokens**
-2. Clique **"Add new token"**
-3. Selecione permissões:
-   - `Read balances`
-   - `Read transfers`
-   - `Create transfers`
-   - `Read recipients`
-   - `Create recipients`
-4. Copie o **API Token** gerado
-
-#### 8.2 Obter Profile ID
-
-1. Acesse **Wise Business** → **Settings** → **Profile**
-2. O **Profile ID** está na URL: `https://wise.com/user/account/XXXXX`
-3. Ou use a API: `GET /v1/profiles` retorna o ID
-
-#### 8.3 Configurar Webhook (Opcional)
-
-1. Acesse **Wise Dashboard** → **Settings** → **Webhooks**
-2. Clique **"Add webhook endpoint"**
-3. **URL:** `https://yesyoudeserve.duckdns.org/api/integrations/wise/webhook`
-4. **Events:** Selecione:
-   - `transfers#state-change`
-   - `transfers#active-cases`
-   - `balances#credit`
-5. Copie o **Webhook Secret** (signing key)
-
-**Secrets no GitHub:**
-
-| Secret | Descrição |
-|--------|-----------|
-| `WISE_API_KEY` | API Token gerado |
-| `WISE_PROFILE_ID` | Profile ID do Business |
-| `WISE_WEBHOOK_SECRET` | Signing key do webhook (opcional) |
-
-**Nota:** O Wise pode operar em modo **Sandbox** para testes. Defina `WISE_SANDBOX=true` para usar a API de testes.
-
----
-
-### 9. DUCKDNS
-
-**Site:** https://www.duckdns.org
-
-#### 8.1 Verificar IP do Domínio
-
-1. Acesse **DuckDNS** e faça login
-2. Verifique se o domínio `yesyoudeserve` aponta para: `46.224.46.93`
-3. Se não, atualize o IP manualmente ou configure atualização automática
-
-**Não há secrets para configurar no GitHub para DuckDNS.**
-
----
-
-## 📋 CHECKLIST DE RECONFIGURAÇÃO
-
-Use este checklist para garantir que tudo foi reconfigurado:
-
-### URLs de Webhook
-
-| Provedor | URL Nova | Status |
-|----------|----------|--------|
-| Stripe Webhook | `https://yesyoudeserve.duckdns.org/webhook/stripe` | ⬜ |
-| Twilio WhatsApp | `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp` | ⬜ |
-| Twilio Status | `https://yesyoudeserve.duckdns.org/webhook/twilio/status` | ⬜ |
-
-### URLs de OAuth Callback
-
-| Provedor | URL Nova | Status |
-|----------|----------|--------|
-| Google | `https://yesyoudeserve.duckdns.org/api/auth/callback/google` | ⬜ |
-| GitHub | `https://yesyoudeserve.duckdns.org/api/auth/callback/github` | ⬜ |
-| Microsoft | `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft` | ⬜ |
-
-### Secrets no GitHub (Não Alterar)
-
-| Secret | Descrição | Status |
-|--------|-----------|--------|
-| `HETZNER_API_TOKEN` | Token API Hetzner | ✅ OK |
-| `HETZNER_VM_HOST` | IP: 46.224.46.93 | ✅ OK |
-| `HETZNER_VM_USER` | Usuário: root | ✅ OK |
-| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH privada | ✅ OK |
-| `SESSION_SECRET` | Chave sessões Express | ✅ OK |
-| `POSTGRES_PASSWORD` | Senha PostgreSQL | ✅ OK |
-| `STRIPE_SECRET_KEY` | API Key Stripe | ✅ OK |
-| `STRIPE_PUBLISHABLE_KEY` | Chave pública Stripe | ✅ OK |
-| `STRIPE_WEBHOOK_SECRET` | ⚠️ **ATUALIZAR SE CRIAR NOVO WEBHOOK** | ⚠️ Verificar |
-| `GOOGLE_CLIENT_ID` | OAuth Google | ✅ OK |
-| `GOOGLE_CLIENT_SECRET` | OAuth Google | ✅ OK |
-| `OAUTH_GITHUB_CLIENT_ID` | OAuth GitHub | ✅ OK |
-| `OAUTH_GITHUB_CLIENT_SECRET` | OAuth GitHub | ✅ OK |
-| `SALAD_API_KEY` | API Salad Cloud | ✅ OK |
-| `SALAD_ORGANIZATION_ID` | Org ID Salad | ✅ OK |
-| `TWILIO_ACCOUNT_SID` | Twilio | ✅ OK |
-| `TWILIO_AUTH_TOKEN` | Twilio | ✅ OK |
-| `TWILIO_WHATSAPP_NUMBER` | Número WhatsApp | ✅ OK |
-| `RESEND_API_KEY` | API Resend | ✅ OK |
-| `WISE_API_KEY` | API Token Wise | ✅ OK |
-| `WISE_PROFILE_ID` | Profile ID Wise | ✅ OK |
-| `WISE_WEBHOOK_SECRET` | Webhook signing (opcional) | ⬜ Opcional |
-
----
-
-## 🆕 SECRETS ADICIONAIS PARA ERPNEXT
-
-Após o primeiro deploy, você precisará adicionar estes secrets:
+### FASE 7: ERPNext (CRM/ERP)
 
 | Secret | Descrição | Como Obter |
 |--------|-----------|------------|
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | Gerar: `openssl rand -base64 24` |
-| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext | Gerar: `openssl rand -base64 24` |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `openssl rand -base64 24` |
+| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext | `openssl rand -base64 24` |
 | `ERPNEXT_API_KEY` | API Key ERPNext | Após setup: ERPNext → User → API Access |
 | `ERPNEXT_API_SECRET` | API Secret ERPNext | Gerado junto com API Key |
 
+**Nota:** API Keys do ERPNext são geradas após o primeiro deploy.
+
+### FASE 8: Observabilidade (Métricas LLM)
+
+| Secret | Descrição | Como Obter |
+|--------|-----------|------------|
+| `LANGFUSE_SECRET_KEY` | Chave secreta Langfuse | `openssl rand -hex 32` com prefixo `sk-lf-` |
+| `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
+| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | Senha segura de sua escolha |
+
+**Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
+
+### Domínio e SSL
+
+| Secret | Descrição |
+|--------|-----------|
+| `ACME_EMAIL` | Email para certificados Let's Encrypt |
+
 ---
 
-## 🔐 COMO ADICIONAR/ATUALIZAR SECRETS NO GITHUB
+## Checklist de Verificação
 
-1. Vá para o repositório → **Settings**
+### Infraestrutura
+
+| Secret | Status |
+|--------|--------|
+| `HETZNER_VM_HOST` | ⬜ |
+| `HETZNER_VM_USER` | ⬜ |
+| `HETZNER_SSH_PRIVATE_KEY` | ⬜ |
+| `GH_PAT` | ⬜ |
+| `POSTGRES_PASSWORD` | ⬜ |
+| `SESSION_SECRET` | ⬜ |
+
+### OAuth (pelo menos 1)
+
+| Secret | Status |
+|--------|--------|
+| `GOOGLE_CLIENT_ID` | ⬜ |
+| `GOOGLE_CLIENT_SECRET` | ⬜ |
+| `OAUTH_GITHUB_CLIENT_ID` | ⬜ |
+| `OAUTH_GITHUB_CLIENT_SECRET` | ⬜ |
+
+### Salad Cloud (LLM)
+
+| Secret | Status |
+|--------|--------|
+| `SALAD_API_KEY` | ⬜ |
+| `SALAD_ORGANIZATION_ID` | ⬜ |
+
+### Stripe (Pagamentos)
+
+| Secret | Status |
+|--------|--------|
+| `STRIPE_SECRET_KEY` | ⬜ |
+| `STRIPE_PUBLISHABLE_KEY` | ⬜ |
+| `STRIPE_WEBHOOK_SECRET` | ⬜ |
+
+### Wise (Transferências)
+
+| Secret | Status |
+|--------|--------|
+| `WISE_API_KEY` | ⬜ |
+| `WISE_PROFILE_ID` | ⬜ |
+| `WISE_WEBHOOK_SECRET` | ⬜ (opcional) |
+
+### Comunicação
+
+| Secret | Status |
+|--------|--------|
+| `TWILIO_ACCOUNT_SID` | ⬜ |
+| `TWILIO_AUTH_TOKEN` | ⬜ |
+| `TWILIO_WHATSAPP_NUMBER` | ⬜ |
+| `RESEND_API_KEY` | ⬜ |
+
+### ERPNext
+
+| Secret | Status |
+|--------|--------|
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ⬜ |
+| `ERPNEXT_DB_PASSWORD` | ⬜ |
+| `ERPNEXT_API_KEY` | ⬜ (após deploy) |
+| `ERPNEXT_API_SECRET` | ⬜ (após deploy) |
+
+### Observabilidade
+
+| Secret | Status |
+|--------|--------|
+| `LANGFUSE_SECRET_KEY` | ⬜ |
+| `LANGFUSE_NEXT_AUTH_SECRET` | ⬜ |
+| `GRAFANA_ADMIN_PASSWORD` | ⬜ |
+| `ACME_EMAIL` | ⬜ |
+
+---
+
+## URLs de Callback e Webhook
+
+### OAuth Callbacks
+
+| Provedor | URL de Callback |
+|----------|-----------------|
+| Google | `https://yesyoudeserve.duckdns.org/api/auth/callback/google` |
+| GitHub | `https://yesyoudeserve.duckdns.org/api/auth/callback/github` |
+| Microsoft | `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft` |
+
+### Webhooks
+
+| Provedor | URL do Webhook |
+|----------|----------------|
+| Stripe | `https://yesyoudeserve.duckdns.org/webhook/stripe` |
+| Twilio WhatsApp | `https://yesyoudeserve.duckdns.org/webhook/twilio/whatsapp` |
+| Twilio Status | `https://yesyoudeserve.duckdns.org/webhook/twilio/status` |
+| Wise | `https://yesyoudeserve.duckdns.org/api/integrations/wise/webhook` |
+
+---
+
+## Como Adicionar Secrets no GitHub
+
+1. Acesse o repositório → **Settings**
 2. Menu lateral → **Secrets and variables** → **Actions**
 3. Para **adicionar novo:** Clique **"New repository secret"**
 4. Para **atualizar:** Clique no secret → **"Update"**
@@ -318,53 +276,47 @@ Após o primeiro deploy, você precisará adicionar estes secrets:
 
 ---
 
-## ⚠️ IMPORTANTE: STRIPE_WEBHOOK_SECRET
+## Geradores de Senhas Seguras
 
-Se você **criar um novo endpoint** no Stripe (em vez de editar o existente), você receberá um **novo Signing Secret**.
+```bash
+# Senha 32 caracteres (hex)
+openssl rand -hex 32
 
-**Neste caso, você DEVE atualizar no GitHub:**
+# Senha 24 caracteres (base64)
+openssl rand -base64 24
 
-1. Stripe Dashboard → Webhooks → Seu endpoint → "Signing secret" → "Reveal"
-2. Copie o novo valor (começa com `whsec_...`)
-3. Atualize no GitHub: `STRIPE_WEBHOOK_SECRET`
+# Senha 64 caracteres (hex)
+openssl rand -hex 64
+```
 
 ---
 
-## 🛡️ SEGURANÇA - BOAS PRÁTICAS
+## Segurança - Boas Práticas
 
 - ✅ Secrets criptografados em repouso no GitHub
 - ✅ Valores mascarados automaticamente nos logs do CI/CD
 - ✅ Arquivo `.env.prod` gerado automaticamente e NUNCA commitado
 - ✅ Sempre use HTTPS para webhooks
 - ✅ Valide assinaturas de webhook (Stripe, Twilio)
-
-### Gerador de Senhas Seguras
-
-```bash
-# Gerar SESSION_SECRET (32+ caracteres)
-openssl rand -base64 32
-
-# Gerar senha PostgreSQL
-openssl rand -base64 24
-
-# Gerar senha ERPNext MariaDB
-openssl rand -base64 24
-```
+- ✅ Rotacione chaves periodicamente
+- ✅ Use secrets diferentes para dev e prod
 
 ---
 
-## 📞 SUPORTE DOS PROVEDORES
+## Suporte dos Provedores
 
 | Provedor | Documentação |
 |----------|--------------|
 | Stripe | https://stripe.com/docs/webhooks |
 | Google OAuth | https://developers.google.com/identity/protocols/oauth2 |
 | GitHub OAuth | https://docs.github.com/en/developers/apps/building-oauth-apps |
-| Microsoft OAuth | https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-auth-code-flow |
+| Microsoft OAuth | https://docs.microsoft.com/en-us/azure/active-directory/develop/ |
 | Twilio | https://www.twilio.com/docs/usage/webhooks |
 | Resend | https://resend.com/docs |
+| Wise | https://docs.wise.com/ |
+| Salad Cloud | https://docs.salad.com/ |
 
 ---
 
 *Documento atualizado em: Novembro 2025*
-*Versão: 3.0 - Arquitetura PROD-only Hetzner Cloud*
+*Versão: 4.0 - Consolidado com Observability Stack*
