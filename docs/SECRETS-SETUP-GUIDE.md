@@ -149,7 +149,7 @@ openssl rand -hex 32
 
 ---
 
-### 1.8 Secrets Wise (Pagamentos Globais) - OPCIONAL
+### 1.8 Secrets Wise (Pagamentos Globais)
 
 | Secret | Descrição | Onde Obter |
 |--------|-----------|------------|
@@ -229,34 +229,36 @@ Para usuários fazerem login:
 ⬜ SALAD_ORGANIZATION_ID    = (portal.salad.com)
 ```
 
-#### FASE 4: Pagamentos (para Stripe funcionar)
+#### FASE 4: Pagamentos Stripe (receber pagamentos EUR/SEPA)
 ```
 ⬜ STRIPE_SECRET_KEY        = (dashboard.stripe.com/apikeys)
 ⬜ STRIPE_PUBLISHABLE_KEY   = (dashboard.stripe.com/apikeys)
 ⬜ STRIPE_WEBHOOK_SECRET    = (dashboard.stripe.com/webhooks)
 ```
 
-#### FASE 5: ERPNext (roda localmente - pode configurar depois)
-```
-⬜ ERPNEXT_MYSQL_ROOT_PASSWORD = (gere senha forte)
-⬜ ERPNEXT_DB_PASSWORD         = (gere senha forte)
-⬜ ERPNEXT_API_KEY             = (gerar após ERPNext rodar)
-⬜ ERPNEXT_API_SECRET          = (gerar após ERPNext rodar)
-```
-
-#### FASE 6: Wise (Pagamentos Globais)
+#### FASE 5: Pagamentos Wise (enviar pagamentos globais)
 ```
 ⬜ WISE_API_KEY             = (wise.com/settings → API Tokens)
 ⬜ WISE_PROFILE_ID          = (wise.com/user/account/XXXXX)
 ⬜ WISE_WEBHOOK_SECRET      = (wise.com/settings → Webhooks - opcional)
 ```
 
-#### FASE 7: Opcionais (configurar quando precisar)
+**Nota:** Wise usa Circuit Breaker enterprise (timeout 15s, error threshold 50%, reset 30s).
+
+#### FASE 6: Comunicação (WhatsApp/SMS/Email)
 ```
 ⬜ TWILIO_ACCOUNT_SID       = (WhatsApp/SMS)
 ⬜ TWILIO_AUTH_TOKEN        = (WhatsApp/SMS)
 ⬜ TWILIO_WHATSAPP_NUMBER   = (WhatsApp)
 ⬜ RESEND_API_KEY           = (Email)
+```
+
+#### FASE 7: ERPNext (CRM/ERP - configurar após deploy)
+```
+⬜ ERPNEXT_MYSQL_ROOT_PASSWORD = (gere senha forte)
+⬜ ERPNEXT_DB_PASSWORD         = (gere senha forte)
+⬜ ERPNEXT_API_KEY             = (gerar após ERPNext rodar)
+⬜ ERPNEXT_API_SECRET          = (gerar após ERPNext rodar)
 ```
 
 ---

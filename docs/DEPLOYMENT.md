@@ -179,10 +179,16 @@ POSTGRES_PASSWORD=senha-segura-gerada
 # ========== SESSÃO E SEGURANÇA ==========
 SESSION_SECRET=seu-session-secret-seguro
 
-# ========== STRIPE ==========
+# ========== STRIPE (RECEBER PAGAMENTOS) ==========
 STRIPE_SECRET_KEY=sk_live_xxxxx
 STRIPE_PUBLISHABLE_KEY=pk_live_xxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxx
+
+# ========== WISE (ENVIAR PAGAMENTOS GLOBAIS) ==========
+# Circuit Breaker: timeout 15s, error threshold 50%, reset 30s
+WISE_API_KEY=xxxxx
+WISE_PROFILE_ID=xxxxx
+WISE_WEBHOOK_SECRET=xxxxx  # opcional para webhooks
 
 # ========== OAUTH GOOGLE ==========
 GOOGLE_CLIENT_ID=xxxxx.apps.googleusercontent.com
