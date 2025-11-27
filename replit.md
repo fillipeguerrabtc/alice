@@ -104,12 +104,20 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | Componente | Status | Descrição |
 |------------|--------|-----------|
 | Frontend React | Funcional | Vite dev server na porta 5000 |
-| Servidor Dev | Funcional | Express com rotas mock para preview |
-| Autenticação Dev | Funcional | Rotas /api/auth/* com usuário de teste |
-| Dashboard APIs | Funcional | Rotas mock para métricas e stats |
+| Servidor Dev | Funcional | Express com dados de preview (apenas para UI) |
+| Autenticação Dev | Funcional | Rotas /api/auth/* para testar UI |
+| Dashboard APIs | Funcional | Dados de preview para visualização |
 | Integrations Service | Funcional | Proxy para porta 3005 |
 
-**Nota**: O Replit é apenas IDE para desenvolvimento. Produção roda na Hetzner Cloud via GitHub Actions (Regra 12).
+**IMPORTANTE - Distinção DEV vs PRODUÇÃO:**
+
+| Ambiente | Local | Propósito | Regras |
+|----------|-------|-----------|--------|
+| DEV | Replit | IDE e preview de UI | Dados de preview permitidos em `server/index-dev.ts` |
+| PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+
+O código em `apps/` (microserviços) vai para produção via GitHub Actions (Regra 12). 
+O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para produção.
 
 ### Recém Concluído (Fase 6.5)
 

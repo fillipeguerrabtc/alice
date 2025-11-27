@@ -396,7 +396,8 @@ class AudioProcessorService {
    * Verifica se o serviço está configurado
    */
   isReady(): boolean {
-    return true; // Funciona mesmo sem Salad (usa mock)
+    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md)
+    return this.isConfigured;
   }
 
   /**
@@ -411,8 +412,8 @@ class AudioProcessorService {
     return {
       configured: this.isConfigured,
       embeddingDim: TEXT_EMBEDDING_DIM,
-      transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'mock (desenvolvimento)',
-      embeddingModel: this.isConfigured ? 'text-embedding-3-small (Salad Cloud)' : 'mock (desenvolvimento)',
+      transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'NÃO CONFIGURADO',
+      embeddingModel: this.isConfigured ? 'text-embedding-3-small (Salad Cloud)' : 'NÃO CONFIGURADO',
     };
   }
 }

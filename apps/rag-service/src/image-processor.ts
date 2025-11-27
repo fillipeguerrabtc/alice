@@ -415,7 +415,8 @@ class ImageProcessorService {
    * Verifica se o serviço está configurado corretamente
    */
   isReady(): boolean {
-    return true; // Funciona mesmo sem Salad (usa mock)
+    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md)
+    return this.isConfigured;
   }
 
   /**
@@ -425,7 +426,7 @@ class ImageProcessorService {
     return {
       configured: this.isConfigured,
       embeddingDim: CLIP_EMBEDDING_DIM,
-      model: this.isConfigured ? 'ViT-L/14 (Salad Cloud)' : 'mock (desenvolvimento)',
+      model: this.isConfigured ? 'ViT-L/14 (Salad Cloud)' : 'NÃO CONFIGURADO',
     };
   }
 }
