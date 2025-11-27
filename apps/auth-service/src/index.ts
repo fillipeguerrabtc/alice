@@ -70,6 +70,18 @@ function getDatabase(): NodePgDatabase<typeof schema> {
   return dbInstance;
 }
 
+type DbUser = typeof schema.users.$inferSelect;
+
+function toAuthContext(dbUser: DbUser): Express.User {
+  return {
+    userId: dbUser.id,
+    tenantId: dbUser.tenantId || undefined,
+    role: dbUser.role || 'guest',
+    email: dbUser.email || undefined,
+    permissions: [],
+  };
+}
+
 // Schema de configuração do auth-service
 const authConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -180,16 +192,19 @@ app.use(passport.session());
 
 // Serialização de usuário para sessão
 passport.serializeUser((user: Express.User, done) => {
-  done(null, (user as { id: string }).id);
+  done(null, user.userId);
 });
 
 passport.deserializeUser(async (id: string, done) => {
   try {
     const db = getDatabase();
-    const user = await db.query.users.findFirst({
+    const dbUser = await db.query.users.findFirst({
       where: eq(schema.users.id, id),
     });
-    done(null, user || null);
+    if (!dbUser) {
+      return done(null, null);
+    }
+    done(null, toAuthContext(dbUser));
   } catch (error) {
     logger.error({ error, userId: id }, 'Erro ao deserializar usuário');
     done(error, null);
@@ -278,7 +293,7 @@ passport.use(new LocalStrategy(
 
       recordAuthAttempt('local', true);
       logger.info({ userId: user.id, email }, 'Login local bem-sucedido');
-      return done(null, user);
+      return done(null, toAuthContext(user));
     } catch (error) {
       recordAuthAttempt('local', false);
       logger.error({ error, email }, 'Erro na autenticação local');
@@ -357,7 +372,7 @@ if (googleClientId && googleClientSecret) {
         }
 
         recordAuthAttempt('google', true);
-        return done(null, user);
+        return done(null, toAuthContext(user));
       } catch (error) {
         recordAuthAttempt('google', false);
         logger.error({ error }, 'Erro na autenticação Google');
@@ -440,7 +455,7 @@ if (githubClientId && githubClientSecret) {
         }
 
         recordAuthAttempt('github', true);
-        return done(null, user);
+        return done(null, toAuthContext(user));
       } catch (error) {
         recordAuthAttempt('github', false);
         logger.error({ error }, 'Erro na autenticação GitHub');
@@ -523,7 +538,7 @@ if (microsoftClientId && microsoftClientSecret) {
         }
 
         recordAuthAttempt('microsoft', true);
-        return done(null, user);
+        return done(null, toAuthContext(user));
       } catch (error) {
         recordAuthAttempt('microsoft', false);
         logger.error({ error }, 'Erro na autenticação Microsoft');
@@ -618,7 +633,7 @@ if (samlEntryPoint && samlIssuer && samlCert) {
         }
 
         recordAuthAttempt('saml', true);
-        return done(null, user);
+        return done(null, toAuthContext(user) as unknown as Record<string, unknown>);
       } catch (error) {
         recordAuthAttempt('saml', false);
         logger.error({ error }, 'Erro na autenticação SAML');
@@ -676,7 +691,7 @@ app.get('/api/auth/user', async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, (req.user as { id: string }).id),
+      where: eq(schema.users.id, req.user.userId),
       with: {
         tenant: true,
       },
@@ -754,9 +769,7 @@ app.post('/api/auth/login', passport.authenticate('local'), (req: Request, res: 
     return res.status(401).json({ error: 'Falha na autenticação' });
   }
   
-  const user = req.user as { id: string; passwordHash?: string; [key: string]: unknown };
-  const { passwordHash, ...safeUser } = user;
-  res.json({ user: safeUser });
+  res.json({ user: req.user });
 });
 
 // ============================================================================
@@ -868,17 +881,11 @@ app.get('/api/auth/permissions', requireAuth(), async (req: Request, res: Respon
 
   try {
     const db = getDatabase();
-    const user = await db.query.users.findFirst({
-      where: eq(schema.users.id, (req.user as { id: string }).id),
-    });
-
-    if (!user) {
-      return res.status(404).json({ error: 'Usuário não encontrado' });
-    }
+    const userRole = req.user.role;
 
     // Buscar permissões da role
     const rolePermissions = await db.query.rolePermissions.findMany({
-      where: eq(schema.rolePermissions.role, user.role || 'viewer'),
+      where: eq(schema.rolePermissions.role, userRole || 'viewer'),
       with: {
         permission: true,
       },
@@ -889,11 +896,11 @@ app.get('/api/auth/permissions', requireAuth(), async (req: Request, res: Respon
       .filter(Boolean);
 
     res.json({ 
-      role: user.role, 
+      role: userRole, 
       permissions,
-      canManageUsers: ['super_admin', 'admin'].includes(user.role || ''),
-      canManageAgents: ['super_admin', 'admin', 'manager'].includes(user.role || ''),
-      canViewReports: ['super_admin', 'admin', 'manager', 'operator'].includes(user.role || ''),
+      canManageUsers: ['super_admin', 'admin'].includes(userRole || ''),
+      canManageAgents: ['super_admin', 'admin', 'manager'].includes(userRole || ''),
+      canViewReports: ['super_admin', 'admin', 'manager', 'operator'].includes(userRole || ''),
     });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar permissões');

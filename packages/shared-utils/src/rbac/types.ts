@@ -146,11 +146,12 @@ export interface AuthorizationOptions {
 
 /**
  * Extensão do Request Express para incluir contexto de auth
+ * NOTA: Sobrescreve Express.User para compatibilidade com passport
  */
 declare global {
   namespace Express {
+    interface User extends AuthContext {}
     interface Request {
-      user?: AuthContext;
       tenantId?: string;
     }
   }

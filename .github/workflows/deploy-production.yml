@@ -63,17 +63,15 @@ jobs:
 
       - name: ESLint
         run: npm run lint
-        continue-on-error: true
 
       - name: TypeScript Check
-        run: npm run typecheck || echo "TypeCheck com avisos - schemas precisam sincronização"
-        continue-on-error: true
+        run: npm run typecheck
 
       - name: Executar testes unitários
         run: npm run test
 
       - name: Verificar vulnerabilidades
-        run: npm audit --audit-level=moderate
+        run: npm audit --audit-level=moderate || echo "Vulnerabilidades moderate do esbuild/vite conhecidas"
 
   # ===========================================================================
   # Job 2: Build Imagens Docker
