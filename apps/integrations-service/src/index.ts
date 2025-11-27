@@ -1209,7 +1209,6 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
         firstName: 'WhatsApp',
         lastName: `User ${phoneNumber.slice(-4)}`,
         authProvider: 'whatsapp',
-        authProviderId: phoneNumber,
         role: 'guest',
       }).returning();
       user = newUser;
@@ -1247,8 +1246,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
     await db.insert(schema.messages).values({
       conversationId: conversation.id,
       userId: user.id,
-      role: 'user',
-      content: Body,
+      isFromUser: true,
+      conteudo: Body,
       tipo: parseInt(NumMedia || '0') > 0 ? 'mixed' : 'text',
       metadata: {
         twilioMessageSid: MessageSid,
@@ -1298,8 +1297,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
     // Salvar resposta do bot
     await db.insert(schema.messages).values({
       conversationId: conversation.id,
-      role: 'assistant',
-      content: llmResponse,
+      isFromUser: false,
+      conteudo: llmResponse,
       tipo: 'text',
       metadata: {
         channel: 'whatsapp',
@@ -1428,8 +1427,8 @@ app.post('/api/integrations/twilio/send', requirePermission('integrations:twilio
       await db.insert(schema.messages).values({
         conversationId,
         userId: authContext?.userId,
-        role: 'assistant',
-        content: message,
+        isFromUser: false,
+        conteudo: message,
         tipo: mediaUrl ? 'mixed' : 'text',
         metadata: {
           channel: 'whatsapp',
