@@ -95,8 +95,9 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | Integração RAG + Chat | 80% |
 | Dashboard Admin | 100% |
 | Detecção de Geração de Imagem | 100% |
+| Auto-aprendizado Agressivo | 100% |
+| FLUX.1 Schnell (Imagens) | 100% |
 | Analytics | Planejado |
-| Auto-aprendizado Agressivo | Planejado |
 
 ### Ambiente de Desenvolvimento (Replit)
 
