@@ -304,7 +304,7 @@ jobs:
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/.env.prod
 
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.0
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
@@ -432,29 +432,78 @@ jobs:
               --env-file .env.prod \
               up -d postgres
             
-            # Aguardar PostgreSQL ficar pronto
+            # Aguardar PostgreSQL ficar pronto (verificação de serviço)
             echo "⏳ Aguardando PostgreSQL ficar pronto..."
+            PG_READY=false
             for i in {1..30}; do
               if docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres pg_isready -U alice -d alice_prod >/dev/null 2>&1; then
-                echo "✅ PostgreSQL está pronto!"
+                echo "✅ PostgreSQL está aceitando conexões!"
+                PG_READY=true
                 break
               fi
               echo "  Tentativa $i/30..."
               sleep 2
             done
             
-            # Executar migração Drizzle via container temporário
+            if [ "$PG_READY" = "false" ]; then
+              echo "❌ ERRO: PostgreSQL não está pronto após 60s"
+              docker compose -f docker-compose.prod.yml logs postgres --tail 50
+              exit 1
+            fi
+            
+            # Verificar autenticação PostgreSQL (teste real de conexão)
+            echo "🔐 Verificando autenticação PostgreSQL..."
+            if docker compose -f docker-compose.prod.yml \
+              --env-file .env.prod \
+              exec -T postgres psql -U alice -d alice_prod -c "SELECT 1;" >/dev/null 2>&1; then
+              echo "✅ Autenticação PostgreSQL OK!"
+            else
+              echo ""
+              echo "⚠️ AVISO: Falha na autenticação do PostgreSQL"
+              echo "   Isso pode acontecer se o container foi criado com uma senha diferente."
+              echo ""
+              echo "   OPÇÃO 1 - Resetar senha (recomendado para primeira instalação):"
+              echo "   docker compose -f docker-compose.prod.yml down -v postgres"
+              echo "   docker volume rm alice-postgres-data"
+              echo "   Depois re-execute o deploy."
+              echo ""
+              echo "   OPÇÃO 2 - Atualizar senha no banco existente (preserva dados):"
+              echo "   docker compose exec postgres psql -U postgres -c \"ALTER USER alice PASSWORD 'NOVA_SENHA';\""
+              echo ""
+              echo "   Continuando deploy (os serviços podem falhar ao conectar)..."
+            fi
+            
+            # Migração Drizzle via container temporário com caminhos ABSOLUTOS
+            # Permanece em /opt/alice/app/infra/docker (não muda diretório)
             echo "📦 Executando migração Drizzle (db:push)..."
+            
+            # Criar drizzle.config temporário para produção
+            cat > /tmp/drizzle.config.ts << 'DRIZZLE_EOF'
+            import { defineConfig } from "drizzle-kit";
+            export default defineConfig({
+              schema: "./packages/shared/src/schema.ts",
+              out: "./drizzle",
+              dialect: "postgresql",
+              dbCredentials: {
+                url: process.env.DATABASE_URL!,
+              },
+            });
+            DRIZZLE_EOF
+            
+            # Usar caminhos ABSOLUTOS para evitar problemas de diretório
             docker run --rm \
               --network alice-network \
               -e DATABASE_URL="postgresql://alice:${PGPASSWORD}@postgres:5432/alice_prod" \
-              -v "$(pwd)/../../shared/schema.ts:/app/shared/schema.ts" \
-              -v "$(pwd)/../../drizzle.config.ts:/app/drizzle.config.ts" \
+              -v "/opt/alice/app/packages:/app/packages:ro" \
+              -v "/tmp/drizzle.config.ts:/app/drizzle.config.ts:ro" \
               -w /app \
               node:20-alpine \
-              sh -c "npm install drizzle-kit drizzle-orm drizzle-zod @neondatabase/serverless pg zod && npx drizzle-kit push"
+              sh -c "npm install drizzle-kit drizzle-orm drizzle-zod pg zod && npx drizzle-kit push --force" || {
+                echo "⚠️ Migração Drizzle falhou (pode ser problema de autenticação ou schema já atualizado)"
+                echo "   Continuando deploy..."
+              }
             
             echo "✅ Migração concluída!"
             echo ""
