@@ -24,7 +24,6 @@ import {
   Brain, 
   Zap, 
   TrendingUp, 
-  TrendingDown,
   Users, 
   Activity,
   CreditCard,
@@ -40,10 +39,13 @@ import {
   Shield,
   Database,
   Cpu,
+  Image,
+  Clock,
+  UserCheck,
+  Bot,
+  AlertTriangle,
 } from 'lucide-react';
 import { 
-  LineChart, 
-  Line, 
   AreaChart,
   Area,
   BarChart,
@@ -56,6 +58,7 @@ import {
   PieChart,
   Pie,
   Cell,
+  Legend,
 } from 'recharts';
 
 interface DashboardStats {
@@ -108,6 +111,37 @@ interface IntegrationStats {
     orders: number;
     synced: boolean;
   };
+}
+
+interface ImageGenerationStats {
+  totalGenerated: number;
+  approved: number;
+  pending: number;
+  inTraining: number;
+  avgRating: number;
+}
+
+interface TakeoverStats {
+  pendingHandoffs: number;
+  activeHumanAgents: number;
+  urgentConversations: number;
+  avgResponseTime: number;
+  resolvedByAI: number;
+  resolvedByHuman: number;
+}
+
+interface SLAMetrics {
+  breachedCount: number;
+  atRiskCount: number;
+  onTrackCount: number;
+  avgFirstResponseTime: number;
+  avgResolutionTime: number;
+}
+
+interface ConversationBreakdown {
+  name: string;
+  value: number;
+  color: string;
 }
 
 const containerVariants = {
@@ -406,6 +440,41 @@ export default function Dashboard() {
     staleTime: 1000 * 60 * 5,
   });
 
+  const { data: imageStats, isLoading: imageStatsLoading } = useQuery<ImageGenerationStats>({
+    queryKey: ['/api/chat/images/stats'],
+    staleTime: 1000 * 60 * 2,
+    refetchInterval: 1000 * 60 * 2,
+  });
+
+  const { data: pendingHandoffs } = useQuery<{ conversations: Array<{ id: string; priority: string; waitTime: number }> }>({
+    queryKey: ['/api/chat/pending-handoffs'],
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30,
+  });
+
+  const { data: urgentConversations } = useQuery<{ conversations: Array<{ id: string; reason: string }> }>({
+    queryKey: ['/api/chat/urgent-conversations'],
+    staleTime: 1000 * 30,
+    refetchInterval: 1000 * 30,
+  });
+
+  const displayImageStats: ImageGenerationStats = imageStats || {
+    totalGenerated: 0,
+    approved: 0,
+    pending: 0,
+    inTraining: 0,
+    avgRating: 0,
+  };
+
+  const displayTakeoverStats: TakeoverStats = {
+    pendingHandoffs: pendingHandoffs?.conversations?.length || 0,
+    activeHumanAgents: 0,
+    urgentConversations: urgentConversations?.conversations?.length || 0,
+    avgResponseTime: 0,
+    resolvedByAI: 0,
+    resolvedByHuman: 0,
+  };
+
   const integrationStats: IntegrationStats = {
     stripe: { totalRevenue: 0, transactions: 0, currency: 'EUR' },
     wise: { totalTransfers: 0, pendingAmount: 0, completedCount: 0 },
@@ -687,7 +756,7 @@ export default function Dashboard() {
                             dataKey="value"
                             label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                           >
-                            {distributionData.map((entry, index) => (
+                            {distributionData.map((_entry, index) => (
                               <Cell key={`cell-${index}`} fill={PIE_COLORS[index % PIE_COLORS.length]} />
                             ))}
                           </Pie>

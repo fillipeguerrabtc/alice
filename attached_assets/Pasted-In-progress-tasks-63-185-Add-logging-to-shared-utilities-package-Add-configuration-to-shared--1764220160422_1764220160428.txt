@@ -1,0 +1,188 @@
+In progress tasks
+63 / 185
+
+Add logging to shared utilities package
+Add configuration to shared utilities package
+Add permissions to shared utilities
+Build Docker images using GitHub Actions
+Push Docker images to GitHub registry
+Deploy applications using SSH and GitHub
+Add Google sign-in with OAuth 2.0
+Add GitHub sign-in with OAuth 2.0
+Add Microsoft sign-in with OAuth 2.0
+Add Azure AD sign-in with SAML
+Add Okta sign-in with SAML 2.0
+Add local sign-in with bcrypt
+Manage user sessions in PostgreSQL
+Enforce permissions for routes
+Add real-time chat with WebSockets
+Proxy Salad Cloud Llama model
+Stream chat responses using SSE
+Store chat messages in PostgreSQL
+Add RAG context to chat
+Create text embeddings for RAG
+Perform vector searches in pgvector
+Split text into smaller chunks
+Add circuit breaker for RAG service
+Upload documents using Multer
+Collect approved conversation data
+Deduplicate training data with SemHash
+Use Salad Cloud for training
+Train models periodically
+Resume training jobs from checkpoints
+Process Stripe payments in Euros
+Set up Stripe customer portal
+Validate Stripe webhook signatures
+Manage Stripe PaymentIntents
+Manage multi-currency balances with Wise
+Get Wise currency quotes
+Manage Wise recipients
+Manage Wise transfers
+Handle Wise batch transfers
+Process Wise payment notifications
+Sync customers to ERPNext
+Sync sales orders to ERPNext
+Sync payments to ERPNext
+Add circuit breaker for ERPNext
+Integrate Twilio WhatsApp endpoint
+Integrate Twilio SMS endpoint
+Send transactional emails with Resend
+Protect auth-service routes
+Protect chat-service routes
+Protect rag-service routes
+Protect training-service routes
+Protect integrations-service routes
+Chat interface streams text
+Chat saves conversation history
+Chat handles multiple file types
+Manage documents for RAG
+Upload and split documents
+Dashboard for training jobs
+Approve training data
+View API service status
+Add entrance/exit animations
+Create elegant hover effects
+Create active feedback effects
+Implement skeleton loading states
+Ensure transfers sync reliably
+Log sync activity for tracking
+Automate reconciliation endpoint
+Check data between Wise and ERPNext
+Manual backup for sync failures
+Alert for data differences
+Admin dashboard for AI metrics
+Admin dashboard with AI charts
+Admin dashboard for Wise transfers
+Admin dashboard for Alice services
+User profile settings page
+Tenant preference settings page
+Manage autonomous agents
+Manage RAG namespaces
+Add page transition animations
+Polish dark mode theme
+Polish light mode theme
+Set up conversation participants data
+Update conversation states control mode
+Make conversation escalations auditable
+Update message origin indicators
+Check flag before responding
+Endpoint for conversation takeover
+Endpoint for conversation handover
+Endpoint for live conversations
+Endpoint for conversation notes
+WebSocket event for state updates
+Detect low AI confidence automatically
+Detect many sync failures
+Detect negative customer sentiment
+Detect 'talk to human' keywords
+Monitor pending handoff SLAs
+Delegate Twilio webhook to orchestrator
+Remove Alice webhook on takeover
+Reinstall Alice webhook on handover
+Use PostgreSQL for real-time updates
+Live conversations operations page
+Real-time conversations list
+Filter conversations by channel/sentiment
+Show SLA and status badges
+Takeover buttons for conversations
+Handover buttons for conversations
+Conversation history side drawer
+AI summary of conversation
+Agent notes input field
+Human response composer area
+Toast notifications for escalations
+Show online agent count
+Monitor escalation rate metrics
+Monitor containment rate metrics
+Monitor average handover time
+Add structured logging for Pino
+Permission for chat moderation
+Integrate Brave Search API
+Classify queries for RAG/Web
+Daily auto-indexing of new knowledge
+Save web knowledge to RAG
+Configurable SLA thresholds per tenant
+Dashboard for escalation/containment rates
+Deploy image generation service
+Run ComfyUI in container mode
+Proxy image generation API requests
+Add circuit breaker for image generation
+Create generated images schema
+Add CLIP embeddings for RAG
+Store generated images in object storage
+Detect 'generate image' requests
+Display generated images inline
+Frontend image gallery with feedback
+Approve images for training
+Progressive LoRA with approved images
+Activate native ERPNext website module
+Set public ERPNext website URL
+Make product catalog public
+Add shopping cart functionality
+Integrate Stripe for checkout
+Enable native customer login
+Display customer order history
+Integrate Alice sales assistant
+Integrate AI metrics dashboard
+Bidirectional Wise payment integration
+Sync inventory automatically
+Daily conversation data collection pipeline
+Automatic data quality evaluation
+Score relevance for each data
+Incremental fine-tuning every 4 days
+Complete fine-tuning every fortnight
+Schedule cron jobs with node-cron
+Monitor model performance metrics
+Compare performance against baseline
+Automatic rollback for degradation
+A/B test models in production
+Version models in registry
+Upload images to chat Vision
+Upload audio files to chat
+Upload video files to chat
+Upload documents to chat
+OCR images using Tesseract
+Transcribe audio using Whisper
+Extract frames from videos
+Unified multimodal embeddings with CLIP
+Scrape provided URLs
+Extract structured HTML content
+Clean and normalize text
+Daily RAG index automation
+Schedule periodic re-crawling
+Detect content changes with hash
+Respect robots.txt rules
+Track platform usage per tenant
+Analyze conversation message metrics
+Track tokens consumed by AI
+Create interactive Recharts dashboards
+Export AI usage reports
+Use Docker Compose multi-service
+Configure Traefik SSL/TLS
+Implement health checks for services
+Automate PostgreSQL backups daily
+Collect Prometheus metrics
+Visualize metrics with Grafana
+Set up PagerDuty/Slack alerts
+Limit requests per IP
+Aggregate logs with Loki
