@@ -1,12 +1,38 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
-## Overview
+## Sumário
 
-Alice is a production-ready, autonomous enterprise AI platform powered by the Llama 4 Maverick (400B parameters) model, self-hosted on Salad Cloud. Its core purpose is to provide a fully autonomous, private, and cost-predictable AI solution, free from external API dependencies and third-party token charges. Alice ensures absolute data privacy by keeping all operations within controlled infrastructure and offers unlimited customization through client-specific fine-tuning. It addresses issues of third-party dependency, data privacy concerns with external servers, and unpredictable costs associated with per-token billing.
+1. [Visão Geral do Projeto](#visão-geral-do-projeto)
+2. [Regras Críticas](#regras-críticas)
+3. [Estado Atual](#estado-atual)
+4. [Arquitetura](#arquitetura)
+5. [Serviços](#serviços)
+6. [Integrações](#integrações)
+7. [Segurança](#segurança)
+8. [Infraestrutura](#infraestrutura)
 
-The project encompasses a wide range of functionalities including real-time chat, deduplication, multi-tenancy, RBAC, RAG backend, and integrations with payment (Stripe, Wise), CRM (ERPNext), communication (Twilio, Resend), and robust authentication (OAuth 2.0, SAML 2.0). Recent enhancements include an AI Dashboard, human agent takeover/handover capabilities, an image gallery with rating, agentic RAG with hybrid search, and inline image display in chat. Future plans include advanced multimodal capabilities (audio/video), web crawling, and advanced analytics.
+---
 
-## User Preferences
+## Visão Geral do Projeto
+
+### O Que é a Alice?
+
+Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta para produção. Utiliza o modelo **Llama 4 Maverick (400B parâmetros)** hospedado na Salad Cloud, garantindo:
+
+- **Autonomia Total**: Sem dependência de APIs externas
+- **Privacidade Absoluta**: Dados nunca saem da infraestrutura controlada
+- **Custos Previsíveis**: Sem cobrança por token de terceiros
+- **Customização Ilimitada**: Fine-tuning específico para cada cliente
+
+### Problema Resolvido
+
+1. **Dependência de Terceiros**: APIs externas podem mudar preços ou descontinuar
+2. **Privacidade de Dados**: Dados sensíveis em servidores de terceiros
+3. **Custos Imprevisíveis**: Cobrança por token gera faturas astronômicas
+
+---
+
+## Regras Críticas
 
 ### As 16 Regras Fundamentais
 
@@ -17,7 +43,7 @@ The project encompasses a wide range of functionalities including real-time chat
 | 3 | WORKFLOW ESTRUTURADO | Diagnóstico → Plano → Aprovação → Implementação |
 | 4 | APROVAÇÃO OBRIGATÓRIA | Pedir aprovação antes de mudanças grandes |
 | 5 | NÃO MENTIR | Dizer "não sei" quando não souber |
-| 6 | SEM SOLUÇÕES TEMPORÁRIAS | **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
+| 6 | SEM SOLUÇÕES TEMPORÁRIAS | PROIBIDO: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
 | 7 | MUDANÇAS MÍNIMAS | Foco cirúrgico no problema |
 | 8 | QUALIDADE OBRIGATÓRIA | TypeScript strict, zero any, Pino |
 | 9 | VALIDAÇÃO CONTÍNUA | Testar após cada micro-passo |
@@ -39,50 +65,190 @@ The project encompasses a wide range of functionalities including real-time chat
 | Nomes de variáveis | Inglês |
 | Termos técnicos | Inglês (OAuth, JWT, etc.) |
 
-## System Architecture
+---
 
-Alice employs a microservices architecture, with core services deployed in `apps/` and shared utilities in `packages/`. The system is designed for high availability, scalability, and security, following 2025 best practices.
+## Estado Atual
 
-**Core Services:**
+### Funcionalidades em Produção
 
-*   **Frontend (Porta 5000):** React 18, TypeScript 5, Vite 5, shadcn/ui, Tailwind CSS, TanStack Query, Wouter, react-i18next (PT-BR/EN).
-*   **Auth (Porta 3001):** Handles OAuth 2.0 (Google, GitHub, Microsoft), SAML 2.0 (Azure AD, Okta), local authentication with bcrypt, and a 6-level RBAC system.
-*   **Chat (Porta 3002):** Manages real-time communication via WebSockets, proxies LLM requests to Salad Cloud, streams tokens, and persists messages.
-*   **RAG (Porta 3003):** Manages embeddings via Salad Cloud, utilizes `pgvector` with HNSW for native vector search (chunking: 500 chars, 50 overlap), and implements circuit breakers.
-*   **Training (Porta 3004):** Collects training data, uses SemHash for deduplication, and manages fine-tuning jobs.
-*   **Integrations (Porta 3005):** Centralizes third-party API interactions with circuit breakers for resilience.
-*   **Observability (Porta 9090/3000/16686/3006):** A separate, independent microservice ensuring continuous monitoring even if the main system fails. It integrates Prometheus, Grafana, Jaeger, OpenTelemetry Collector, and Langfuse for comprehensive metrics and tracing.
+| Capacidade | Status | Descrição |
+|------------|--------|-----------|
+| Modelo de IA | Produção | Llama 4 Maverick via Salad Cloud |
+| Chat Tempo Real | Produção | WebSocket com streaming |
+| Deduplicação | Produção | SemHash para dados duplicados |
+| Multi-tenant | Produção | Isolamento por tenant_id |
+| RBAC | Produção | 6 níveis de permissão |
+| RAG Backend | Produção | Embeddings e busca vetorial |
+| Stripe | Produção | Receber pagamentos EUR |
+| Wise | Produção | Enviar pagamentos globais |
+| ERPNext | Produção | CRM integrado |
+| Twilio | Produção | WhatsApp e SMS |
+| Resend | Produção | Email transacional |
+| Autenticação | Produção | OAuth 2.0 e SAML 2.0 |
+| Traefik | Produção | Gateway com SSL |
+| CI/CD | Produção | GitHub Actions |
+| Busca Vetorial HNSW | Produção | pgvector nativo com índices HNSW |
 
-**Architectural Decisions:**
+### Ambiente de Desenvolvimento (Replit)
 
-*   **Learning Schedule:** Real-time RAG updates, daily auto-indexing, aggressive incremental fine-tuning (every 4 days with LoRA), and bi-weekly full fine-tuning.
-*   **Real-time Pub/Sub:** Initially uses PostgreSQL NOTIFY for simplicity and persistence, with a future migration to Redis if scale demands ( >1k msg/s).
-*   **Image Generation:** Leverages FLUX.1 Schnell (Apache 2.0) self-hosted on Salad Cloud, with progressive LoRA for learning from approved images and object storage + CLIP embeddings for multimodal RAG.
-*   **Takeover/Handover:** Custom panel integrated into the Alice dashboard, avoiding costly third-party solutions. Automated triggers based on confidence scores, fallbacks, and sentiment analysis.
-*   **Security:** Implements bcrypt for passwords, HttpOnly/Secure/SameSite cookies, CSRF protection, IP/endpoint rate limiting, and `tenant_id` isolation.
-*   **Observability Stack:** Comprises Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, and Langfuse 2.x for LLM-specific metrics.
-*   **Database:** PostgreSQL with native `pgvector` HNSW indexes for efficient vector search on `media_uploads` (CLIP embeddings) and `document_chunks` (text embeddings).
-*   **Deployment:** CI/CD pipeline via GitHub Actions for automated Docker image builds, pushes to GHCR, and SSH deployment to Hetzner Cloud.
-*   **Development Environment:** Replit serves as the IDE for local development, debugging, and UI preview (using `server/index-dev.ts` for preview data, which is distinct from production code).
-*   **Production Environment:** Hetzner Cloud (CX43 instance) hosts the enterprise system.
+IMPORTANTE - Distinção DEV vs PRODUÇÃO:
 
-## External Dependencies
+| Ambiente | Local | Propósito | Regras |
+|----------|-------|-----------|--------|
+| DEV | Replit | IDE e preview de UI | Dados de preview permitidos em server/index-dev.ts |
+| PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | PROIBIDO mocks/hardcoded (Regra 6) |
 
-*   **Salad Cloud:**
-    *   **LLM Principal:** Llama 4 Maverick (400B params) for text output, multimodal input.
-    *   **Embeddings:** `text-embedding-3-small`.
-    *   **Image Generation:** FLUX.1 Schnell (Apache 2.0), self-hosted on Salad Cloud GPUs.
-    *   **CLIP Inference:** CLIP ViT-L/14 (MIT license), self-hosted for multimodal (text/image) embeddings with 768 dimensions.
-*   **PostgreSQL:** Primary database, utilized for data persistence and native `pgvector` for vector search.
-*   **Stripe Portugal:** For EUR payments via SEPA, including webhook processing.
-*   **Wise:** For international money transfers supporting 50+ currencies.
-*   **ERPNext:** Integrated CRM and ERP system.
-*   **Twilio:** For WhatsApp and SMS communication.
-*   **Resend:** For transactional email services.
-*   **Traefik:** Used as the API Gateway for routing and SSL termination.
-*   **GitHub Actions:** For CI/CD pipeline automation.
-*   **Prometheus 3.0:** Open-source monitoring system.
-*   **Grafana OSS 11.3:** Open-source analytics and visualization platform.
-*   **Jaeger 1.62:** Distributed tracing system.
-*   **OpenTelemetry Collector:** Open-source instrumentation for telemetry data.
-*   **Langfuse 2.x:** Open-source platform for LLM observability.
+O código em apps/ (microserviços) vai para produção via GitHub Actions (Regra 12).
+O arquivo server/index-dev.ts é APENAS para preview no Replit e NÃO vai para produção.
+
+---
+
+## Arquitetura
+
+### Serviços Principais
+
+| Serviço | Porta | Função |
+|---------|-------|--------|
+| frontend | 5000 | React SPA |
+| api-gateway | 80/443 | Traefik |
+| auth | 3001 | OAuth/SAML |
+| chat | 3002 | LLM + WebSocket |
+| rag | 3003 | Embeddings |
+| training | 3004 | Fine-tuning |
+| integrations | 3005 | Stripe, Wise, etc. |
+| observability | 9090/3000/16686/3006 | Prometheus, Grafana, Jaeger, Langfuse |
+
+---
+
+## Integrações
+
+### Salad Cloud
+
+LLM Principal:
+- Modelo: Llama 4 Maverick (400B parâmetros, 17B ativos MoE)
+- Multimodal: INPUT apenas (entende texto, imagens, vídeo)
+- Output: Texto apenas (NÃO gera imagens)
+- Contexto: 1M tokens
+- Embeddings: text-embedding-3-small
+- Circuit breaker: 30s timeout
+
+Geração de Imagens:
+- Modelo: FLUX.1 Schnell (Apache 2.0)
+- Self-hosted: Container Group próprio
+- GPU: RTX 3090/4090 (24GB VRAM)
+- Velocidade: 1-3 segundos/imagem
+
+Inferência CLIP (Embeddings Multimodais):
+- Modelo: CLIP ViT-L/14 (Licença MIT)
+- Dimensão: 768 (mesmo espaço vetorial para texto e imagem)
+- Self-hosted: Container Group próprio (apps/clip-inference-service/)
+
+### Stripe Portugal
+
+- Pagamentos em EUR via SEPA
+- Webhooks de checkout e pagamento
+
+### Wise
+
+- Transferências internacionais
+- 50+ moedas suportadas
+
+### ERPNext
+
+- CRM e ERP integrado
+
+### Twilio
+
+- WhatsApp e SMS
+
+### Resend
+
+- Emails transacionais
+
+---
+
+## Segurança
+
+### Práticas Implementadas
+
+| Prática | Implementação |
+|---------|---------------|
+| Senhas | bcrypt 12 rounds |
+| Cookies | HttpOnly, Secure, SameSite |
+| CSRF | State parameter OAuth |
+| Rate limiting | Por IP e endpoint |
+| Isolamento | tenant_id em queries |
+
+### Hierarquia RBAC
+
+| Role | Nível | Acesso |
+|------|-------|--------|
+| super_admin | 1 | Total |
+| admin | 2 | Tenant |
+| manager | 3 | Namespaces |
+| operator | 4 | Operação |
+| viewer | 5 | Leitura |
+| guest | 6 | Mínimo |
+
+---
+
+## Infraestrutura
+
+### Produção (Hetzner Cloud)
+
+| Especificação | Valor |
+|---------------|-------|
+| Tipo | CX43 |
+| vCPUs | 8 |
+| RAM | 16 GB |
+| SSD | 160 GB |
+| IPv4 | 46.224.46.93 |
+| Custo | 9.49 EUR/mês |
+
+### URLs de Produção
+
+| Serviço | URL |
+|---------|-----|
+| Frontend | https://yesyoudeserve.duckdns.org |
+| API | https://yesyoudeserve.duckdns.org/api |
+| ERPNext | https://erp.yesyoudeserve.duckdns.org |
+
+---
+
+## Padrões de Código
+
+### Logging
+
+Usar Pino. console.log é PROIBIDO.
+
+### TypeScript
+
+Modo strict. any é PROIBIDO.
+
+### Health Check
+
+Obrigatório em /api/servico/health.
+
+---
+
+## Índices pgvector HNSW (Enterprise-Grade)
+
+Busca vetorial nativa com índices HNSW para performance O(log N):
+
+| Índice | Tabela | Coluna | Dimensão | Operador |
+|--------|--------|--------|----------|----------|
+| idx_media_uploads_clip_embedding_hnsw | media_uploads | clip_embedding | 768 (CLIP ViT-L/14) | vector_cosine_ops |
+| idx_document_chunks_embedding_hnsw | document_chunks | embedding | 1536 (text-embedding-3-small) | vector_cosine_ops |
+
+Configuração HNSW: m=16, ef_construction=64
+
+Endpoints migrados para busca nativa pgvector:
+- /api/media/search - Busca semântica de imagens
+- /api/rag/search - Busca de documentos
+- /api/rag/context - Contexto RAG
+- /api/rag/agentic - Busca agentic híbrida
+
+---
+
+Documento em Português Brasileiro
+Versão 5.1 - Novembro 2025
