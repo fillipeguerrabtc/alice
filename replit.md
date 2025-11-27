@@ -97,6 +97,7 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | Detecção de Geração de Imagem | 100% |
 | Auto-aprendizado Agressivo | 100% |
 | FLUX.1 Schnell (Imagens) | 100% |
+| Observability Stack | 100% |
 | Analytics | Planejado |
 
 ### Ambiente de Desenvolvimento (Replit)
