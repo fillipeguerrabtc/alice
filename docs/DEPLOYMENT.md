@@ -25,7 +25,7 @@
 │  │  6. Health Checks                                                  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
-│  Nota: Pipeline básico. Lint, Trivy e aprovação manual são opcionais.   │
+│  ⚠️  DEPLOY 100% AUTOMÁTICO - NENHUM COMANDO MANUAL EM PRODUÇÃO         │
 └──────────────────────────────────┬──────────────────────────────────────┘
                                    │
                                    ▼
@@ -36,7 +36,7 @@
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                   │  │
 │  │                                                                    │  │
 │  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     TRAEFIK v3.0                             │  │  │
+│  │  │                     TRAEFIK v3.1                             │  │  │
 │  │  │           (API Gateway + SSL Automático)                     │  │  │
 │  │  │                   :80 / :443                                 │  │  │
 │  │  └──────────────────────┬──────────────────────────────────────┘  │  │
@@ -47,13 +47,22 @@
 │  │  │              MICROSERVIÇOS ALICE                          │    │  │
 │  │  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐  │    │  │
 │  │  │  │Frontend│ │  Auth  │ │  Chat  │ │  RAG   │ │Training│  │    │  │
-│  │  │  │ :3000  │ │ :3001  │ │ :3002  │ │ :3003  │ │ :3004  │  │    │  │
+│  │  │  │ :5000  │ │ :3001  │ │ :3002  │ │ :3003  │ │ :3004  │  │    │  │
 │  │  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘  │    │  │
 │  │  │                      ┌────────┐                           │    │  │
 │  │  │                      │Integra.│                           │    │  │
 │  │  │                      │ :3005  │                           │    │  │
 │  │  │                      └────────┘                           │    │  │
 │  │  └──────────────────────────────────────────────────────────┘    │  │
+│  │                         │                                          │  │
+│  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
+│  │  │                 OBSERVABILITY STACK                          │  │  │
+│  │  │  ┌──────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐ │  │  │
+│  │  │  │Prometheus│ │Grafana │ │ Jaeger │ │Langfuse│ │  OTel   │ │  │  │
+│  │  │  │  :9090   │ │ :3000  │ │:16686  │ │ :3006  │ │Collector│ │  │  │
+│  │  │  └──────────┘ └────────┘ └────────┘ └────────┘ └─────────┘ │  │  │
+│  │  │  Health Checker API: :3010                                   │  │  │
+│  │  └─────────────────────────────────────────────────────────────┘  │  │
 │  │                         │                                          │  │
 │  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
 │  │  │                      ERPNEXT STACK                           │  │  │
@@ -65,14 +74,18 @@
 │  │                         │                                          │  │
 │  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
 │  │  │                      DATABASES                               │  │  │
-│  │  │        ┌─────────────────────────────────────────┐          │  │  │
-│  │  │        │  PostgreSQL 16 + pgvector               │          │  │  │
-│  │  │        │           :5432                          │          │  │  │
-│  │  │        └─────────────────────────────────────────┘          │  │  │
+│  │  │  ┌─────────────────────────────────────────┐                │  │  │
+│  │  │  │  PostgreSQL 16 + pgvector (Alice)       │                │  │  │
+│  │  │  │           :5432                          │                │  │  │
+│  │  │  └─────────────────────────────────────────┘                │  │  │
+│  │  │  ┌─────────────────────────────────────────┐                │  │  │
+│  │  │  │  PostgreSQL 16 (Langfuse)               │                │  │  │
+│  │  │  │           :5433                          │                │  │  │
+│  │  │  └─────────────────────────────────────────┘                │  │  │
 │  │  └─────────────────────────────────────────────────────────────┘  │  │
 │  │                         │                                          │  │
 │  │                   SaladCloud GPUs                                  │  │
-│  │                (Llama 4 Maverick 400B)                             │  │
+│  │       (Llama 4 Maverick 400B + FLUX.1 Schnell)                    │  │
 │  └────────────────────────────────────────────────────────────────────┘  │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
@@ -115,6 +128,7 @@
 |---------|-------|
 | Horas GPU | $0.10-0.30/hora |
 | Llama 4 Maverick | Sob demanda |
+| FLUX.1 Schnell | Sob demanda |
 
 ### DuckDNS (Gratuito)
 
@@ -183,7 +197,6 @@ STRIPE_PUBLISHABLE_KEY=pk_live_xxxxx
 STRIPE_WEBHOOK_SECRET=whsec_xxxxx
 
 # ========== WISE (ENVIAR PAGAMENTOS GLOBAIS) ==========
-# Circuit Breaker: timeout 15s, error threshold 50%, reset 30s
 WISE_API_KEY=xxxxx
 WISE_PROFILE_ID=xxxxx
 WISE_WEBHOOK_SECRET=xxxxx  # opcional para webhooks
@@ -210,6 +223,11 @@ RESEND_API_KEY=re_xxxxx
 
 # ========== DOMÍNIO E SSL ==========
 ACME_EMAIL=seu-email@exemplo.com
+
+# ========== OBSERVABILITY (Langfuse + Grafana) ==========
+LANGFUSE_SECRET_KEY=sk-lf-xxxxx
+LANGFUSE_NEXT_AUTH_SECRET=sua-chave-segura-32-chars
+GRAFANA_ADMIN_PASSWORD=sua-senha-grafana
 ```
 
 **⚠️ IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.
@@ -241,7 +259,7 @@ ufw enable
 
 # Criar estrutura de pastas
 mkdir -p /opt/alice/{data,logs,ssl,backups}
-mkdir -p /opt/alice/data/{postgres,mariadb,redis,erpnext}
+mkdir -p /opt/alice/data/{postgres,postgres-langfuse,mariadb,redis,erpnext,prometheus,grafana}
 ```
 
 ### 6. Primeiro Deploy
@@ -249,13 +267,15 @@ mkdir -p /opt/alice/data/{postgres,mariadb,redis,erpnext}
 O deploy é **100% automático** via GitHub Actions:
 
 1. Faça commit e push para a branch `main`
-2. O GitHub Actions irá:
+2. O GitHub Actions irá automaticamente:
    - Build dos containers
    - Push para GHCR
    - SSH para Hetzner
    - Deploy via Docker Compose
    - Health checks
 3. Acesse: `https://yesyoudeserve.duckdns.org`
+
+**⚠️ IMPORTANTE:** Nenhum comando manual é necessário em produção. Todo deploy acontece automaticamente.
 
 ---
 
@@ -265,20 +285,18 @@ O deploy é **100% automático** via GitHub Actions:
 
 ```
 1. Push para branch main
-2. Pipeline CI/CD executa:
+2. Pipeline CI/CD executa automaticamente:
    - Build pacotes compartilhados
    - Build imagens Docker
    - Push para GHCR
-3. Deploy para Hetzner:
+3. Deploy para Hetzner (automático):
    - SSH para VM
    - Pull das novas imagens
    - Docker Compose up
    - Health checks
 ```
 
-**Nota:** Pipeline básico configurado. Lint, testes e scans de segurança podem ser adicionados conforme necessário.
-
-### Deploy Manual
+### Deploy Manual (apenas para emergências)
 
 ```bash
 # Via GitHub UI
@@ -287,6 +305,41 @@ Actions → Deploy to Production → Run workflow
 # Via CLI
 gh workflow run deploy-production.yml
 ```
+
+---
+
+## URLs de Produção
+
+### Aplicação Principal
+
+| Serviço | URL |
+|---------|-----|
+| Alice Frontend | https://yesyoudeserve.duckdns.org |
+| Alice Chat | https://yesyoudeserve.duckdns.org/chat |
+| Alice Dashboard | https://yesyoudeserve.duckdns.org/dashboard |
+| Alice API | https://yesyoudeserve.duckdns.org/api |
+
+### ERPNext
+
+| Serviço | URL |
+|---------|-----|
+| ERPNext | https://erp.yesyoudeserve.duckdns.org |
+
+### Observability Stack
+
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| Grafana | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
+| Prometheus | https://prometheus.yesyoudeserve.duckdns.org | Métricas e consultas |
+| Jaeger | https://tracing.yesyoudeserve.duckdns.org | Distributed tracing |
+| Langfuse | https://llm-metrics.yesyoudeserve.duckdns.org | Métricas LLM |
+| Health Check | https://yesyoudeserve.duckdns.org/observability/health | Status do stack |
+
+### Infraestrutura
+
+| Serviço | URL |
+|---------|-----|
+| Traefik Dashboard | https://traefik.yesyoudeserve.duckdns.org (protegido) |
 
 ---
 
@@ -324,6 +377,12 @@ docker logs -f alice-auth
 
 # Logs do Traefik (API Gateway)
 docker logs -f traefik
+
+# Logs da Observability Stack
+docker logs -f alice-prometheus
+docker logs -f alice-grafana
+docker logs -f alice-jaeger
+docker logs -f alice-langfuse
 ```
 
 ### Health Checks
@@ -332,9 +391,12 @@ docker logs -f traefik
 # Verificar status dos serviços
 docker compose ps
 
-# Testar endpoints
+# Testar endpoints principais
 curl -s https://yesyoudeserve.duckdns.org/api/health
 curl -s https://yesyoudeserve.duckdns.org/api/auth/health
+
+# Testar observability stack
+curl -s https://yesyoudeserve.duckdns.org/observability/health
 ```
 
 ### Recursos do Servidor
@@ -362,6 +424,16 @@ docker exec alice-postgres pg_dump -U alice alice_db > /opt/alice/backups/alice_
 
 # Restore
 cat backup.sql | docker exec -i alice-postgres psql -U alice alice_db
+```
+
+### PostgreSQL (Langfuse)
+
+```bash
+# Backup manual
+docker exec langfuse-postgres pg_dump -U langfuse langfuse > /opt/alice/backups/langfuse_$(date +%Y%m%d).sql
+
+# Restore
+cat backup.sql | docker exec -i langfuse-postgres psql -U langfuse langfuse
 ```
 
 ### MariaDB (ERPNext)
@@ -440,6 +512,21 @@ ufw status verbose
 ufw allow PORTA/tcp
 ```
 
+### Observability não responde
+
+```bash
+# Verificar containers
+docker ps | grep -E "(prometheus|grafana|jaeger|langfuse)"
+
+# Ver logs
+docker logs alice-prometheus --tail 50
+docker logs alice-grafana --tail 50
+docker logs alice-langfuse --tail 50
+
+# Health check
+curl http://localhost:3010/health
+```
+
 ---
 
 ## Scripts Disponíveis
@@ -459,19 +546,10 @@ ufw allow PORTA/tcp
 | `.github/workflows/deploy-production.yml` | Pipeline CI/CD completo |
 | `infra/docker/docker-compose.prod.yml` | Stack Docker para produção |
 | `infra/docker/.env.prod.example` | Exemplo de variáveis de ambiente |
-
----
-
-## URLs de Produção
-
-| Serviço | URL |
-|---------|-----|
-| Alice Frontend | https://yesyoudeserve.duckdns.org |
-| Alice API | https://yesyoudeserve.duckdns.org/api |
-| ERPNext | https://erp.yesyoudeserve.duckdns.org |
-| Traefik Dashboard | https://traefik.yesyoudeserve.duckdns.org (protegido) |
+| `apps/observability-service/docker-compose.yml` | Stack de observabilidade |
+| `apps/observability-service/.env.example` | Variáveis da observabilidade |
 
 ---
 
 *Documento atualizado em: Novembro 2025*
-*Versão: 3.0 - Arquitetura PROD-only Hetzner Cloud*
+*Versão: 4.0 - Arquitetura PROD-only Hetzner Cloud com Observability Stack*
