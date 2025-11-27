@@ -96,6 +96,13 @@ The frontend is a React SPA, with branding assets managed centrally.
 - Health: 45 testes (contratos de todos os serviços)
 - Frontend Logger: 25 testes (estrutura, retry, queue, flush automático)
 
+### CI/CD Pipeline (Regra 9 - COMPLETO)
+
+- `.github/workflows/deploy-production.yml`: Testes unitários integrados ao pipeline
+- Node.js 20 LTS consistente em CI, Docker e produção (zero incompatibilidade)
+- Pipeline completo: ESLint → TypeScript Check → **Testes Unitários (334)** → npm audit → Build Docker → Aprovação Manual → Deploy Hetzner → Health Checks
+- Deploy bloqueado automaticamente se qualquer teste falhar
+
 ### Backlog
 
 - Microsoft OAuth: Stub documentado, autenticação local/Google/GitHub/SAML funcionam

@@ -67,6 +67,9 @@ jobs:
       - name: TypeScript Check
         run: npm run typecheck
 
+      - name: Executar testes unitários
+        run: npm run test
+
       - name: Verificar vulnerabilidades
         run: npm audit --audit-level=moderate
 
