@@ -304,9 +304,9 @@ export async function getApprovedImagesForTraining(limit = 100) {
   const images = await db.query.generatedImages.findMany({
     where: eq(schema.generatedImages.approvedForTraining, true),
     limit,
-  });
+  }) as Array<typeof schema.generatedImages.$inferSelect>;
   
-  return images.filter(img => !img.usedInFineTuning);
+  return images.filter((img: typeof schema.generatedImages.$inferSelect) => !img.usedInFineTuning);
 }
 
 /**
@@ -350,20 +350,21 @@ export function getImageGenBreakerStats() {
  * Retorna estatísticas de geração de imagens
  */
 export async function getImageGenerationStats() {
-  const images = await db.query.generatedImages.findMany();
+  type GeneratedImage = typeof schema.generatedImages.$inferSelect;
+  const images = await db.query.generatedImages.findMany() as GeneratedImage[];
   
-  const completed = images.filter(img => img.status === 'completed');
+  const completed = images.filter((img: GeneratedImage) => img.status === 'completed');
   const avgGenerationTime = completed.length > 0
-    ? completed.reduce((sum, img) => sum + (img.generationTimeMs || 0), 0) / completed.length
+    ? completed.reduce((sum: number, img: GeneratedImage) => sum + (img.generationTimeMs || 0), 0) / completed.length
     : 0;
   
   return {
     total: images.length,
     completed: completed.length,
-    pending: images.filter(img => img.status === 'pending' || img.status === 'generating').length,
-    failed: images.filter(img => img.status === 'failed').length,
-    approvedForTraining: images.filter(img => img.approvedForTraining).length,
-    usedInFineTuning: images.filter(img => img.usedInFineTuning).length,
+    pending: images.filter((img: GeneratedImage) => img.status === 'pending' || img.status === 'generating').length,
+    failed: images.filter((img: GeneratedImage) => img.status === 'failed').length,
+    approvedForTraining: images.filter((img: GeneratedImage) => img.approvedForTraining).length,
+    usedInFineTuning: images.filter((img: GeneratedImage) => img.usedInFineTuning).length,
     averageGenerationTimeMs: Math.round(avgGenerationTime),
   };
 }

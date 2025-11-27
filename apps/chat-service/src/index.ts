@@ -102,6 +102,130 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws/chat' });
 
 // ============================================================================
+// IMAGE GENERATION DETECTION (Tarefa 133 - Detectar pedidos de geração de imagem)
+// ============================================================================
+
+interface ImageGenerationDetection {
+  isImageRequest: boolean;
+  prompt: string | null;
+  confidence: number;
+  reason: string;
+}
+
+const IMAGE_KEYWORDS_PT = [
+  'gere uma imagem',
+  'crie uma imagem',
+  'faça uma imagem',
+  'desenhe',
+  'ilustre',
+  'gerar imagem',
+  'criar imagem',
+  'fazer imagem',
+  'quero uma imagem',
+  'preciso de uma imagem',
+  'pode criar uma imagem',
+  'gere um',
+  'crie um',
+  'desenha',
+  'ilustra',
+  'visualize',
+  'mostre visualmente',
+  'gerar uma foto',
+  'criar uma foto',
+  'gerar uma ilustração',
+  'criar uma ilustração',
+];
+
+const IMAGE_KEYWORDS_EN = [
+  'generate an image',
+  'create an image',
+  'make an image',
+  'draw',
+  'illustrate',
+  'generate image',
+  'create image',
+  'make image',
+  'i want an image',
+  'i need an image',
+  'can you create an image',
+  'generate a',
+  'create a picture',
+  'draw me',
+  'visualize',
+  'show me visually',
+  'generate a photo',
+  'create a photo',
+  'generate an illustration',
+  'create an illustration',
+];
+
+function detectImageGenerationRequest(message: string): ImageGenerationDetection {
+  const lowerMessage = message.toLowerCase().trim();
+  
+  for (const keyword of IMAGE_KEYWORDS_PT) {
+    if (lowerMessage.includes(keyword)) {
+      const prompt = extractImagePrompt(message, keyword);
+      return {
+        isImageRequest: true,
+        prompt,
+        confidence: 0.95,
+        reason: `Detectado keyword PT: "${keyword}"`,
+      };
+    }
+  }
+  
+  for (const keyword of IMAGE_KEYWORDS_EN) {
+    if (lowerMessage.includes(keyword)) {
+      const prompt = extractImagePrompt(message, keyword);
+      return {
+        isImageRequest: true,
+        prompt,
+        confidence: 0.95,
+        reason: `Detectado keyword EN: "${keyword}"`,
+      };
+    }
+  }
+  
+  const visualPatterns = [
+    /(?:gere|crie|faça|desenhe|ilustre)\s+(?:uma?\s+)?(?:imagem|foto|ilustração|desenho)/i,
+    /(?:generate|create|make|draw|illustrate)\s+(?:an?\s+)?(?:image|photo|illustration|drawing)/i,
+    /(?:quero|preciso|gostaria)\s+(?:de\s+)?(?:ver|uma?\s+)?(?:imagem|foto|ilustração)/i,
+  ];
+  
+  for (const pattern of visualPatterns) {
+    if (pattern.test(message)) {
+      return {
+        isImageRequest: true,
+        prompt: message,
+        confidence: 0.85,
+        reason: 'Detectado padrão visual regex',
+      };
+    }
+  }
+  
+  return {
+    isImageRequest: false,
+    prompt: null,
+    confidence: 0,
+    reason: 'Nenhum padrão de geração de imagem detectado',
+  };
+}
+
+function extractImagePrompt(message: string, keyword: string): string {
+  const lowerMessage = message.toLowerCase();
+  const keywordIndex = lowerMessage.indexOf(keyword.toLowerCase());
+  
+  if (keywordIndex !== -1) {
+    const afterKeyword = message.slice(keywordIndex + keyword.length).trim();
+    if (afterKeyword.length > 5) {
+      return afterKeyword.replace(/^(de|of|:|\s)+/i, '').trim();
+    }
+  }
+  
+  return message;
+}
+
+// ============================================================================
 // CIRCUIT BREAKER - Salad Cloud LLM API (Regra 16 - Best Practices 2025)
 // ============================================================================
 
@@ -627,6 +751,77 @@ wss.on('connection', (ws, req) => {
           where: eq(schema.conversations.id, message.conversationId),
           with: { agent: true },
         });
+
+        const imageDetection = detectImageGenerationRequest(message.content);
+        
+        if (imageDetection.isImageRequest && imageDetection.prompt) {
+          logger.info({
+            conversationId: message.conversationId,
+            prompt: imageDetection.prompt,
+            confidence: imageDetection.confidence,
+            reason: imageDetection.reason,
+          }, 'Pedido de geração de imagem detectado');
+
+          ws.send(JSON.stringify({ 
+            type: 'image_generating',
+            prompt: imageDetection.prompt,
+          }));
+
+          try {
+            const imageResult = await generateImage(
+              { prompt: imageDetection.prompt },
+              {
+                tenantId: conversation?.tenantId,
+                conversationId: message.conversationId,
+                messageId: userMsg.id,
+                createdBy: userId,
+              }
+            );
+
+            ws.send(JSON.stringify({
+              type: 'image_generated',
+              imageId: imageResult.imageId,
+              imageBase64: imageResult.imageBase64,
+              generationTimeMs: imageResult.generationTimeMs,
+            }));
+
+            const [imageMsg] = await db.insert(schema.messages).values({
+              conversationId: message.conversationId,
+              agentId: conversation?.agentId,
+              conteudo: `Imagem gerada com sucesso para: "${imageDetection.prompt}"`,
+              tipo: 'image',
+              isFromUser: false,
+              latenciaMs: imageResult.generationTimeMs,
+              metadata: { 
+                imageId: imageResult.imageId,
+                prompt: imageDetection.prompt,
+              },
+            }).returning();
+
+            ws.send(JSON.stringify({ 
+              type: 'complete', 
+              data: imageMsg,
+              metrics: {
+                imageGenerationMs: imageResult.generationTimeMs,
+                imageId: imageResult.imageId,
+              },
+            }));
+
+            logger.info({
+              conversationId: message.conversationId,
+              imageId: imageResult.imageId,
+              generationTimeMs: imageResult.generationTimeMs,
+            }, 'Imagem gerada e enviada via WebSocket');
+            
+            return;
+          } catch (imageError) {
+            logger.error({ imageError, prompt: imageDetection.prompt }, 'Erro ao gerar imagem');
+            ws.send(JSON.stringify({
+              type: 'image_error',
+              error: 'Não foi possível gerar a imagem. Tente novamente.',
+            }));
+          }
+        }
 
         const agent = conversation?.agent as { instrucoes?: string } | null;
         let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
