@@ -1,42 +1,14 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
-## Sumário
+## Overview
 
-1. [Visão Geral do Projeto](#visão-geral-do-projeto)
-2. [Regras Críticas](#regras-críticas)
-3. [Estado Atual](#estado-atual)
-4. [Arquitetura](#arquitetura)
-5. [Serviços](#serviços)
-6. [Integrações](#integrações)
-7. [Segurança](#segurança)
-8. [Infraestrutura](#infraestrutura)
+Alice is a production-ready enterprise autonomous AI platform built around the Llama 4 Maverick (400B parameters) model, self-hosted on Salad Cloud. This architecture ensures complete autonomy, absolute data privacy, predictable costs by avoiding third-party token charges, and unlimited customization through fine-tuning. The platform addresses common enterprise AI challenges like dependency on third-party APIs, data privacy concerns, and unpredictable costs. Key capabilities include real-time chat, deduplication, multi-tenancy, RBAC, RAG backend, image generation (FLUX.1 Schnell), and aggressive auto-learning. Future plans include advanced multimodal capabilities, web crawling, and advanced analytics.
 
----
+## User Preferences
 
-## Visão Geral do Projeto
+### The 16 Fundamental Rules
 
-### O Que é a Alice?
-
-Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta para produção. Utiliza o modelo **Llama 4 Maverick (400B parâmetros)** hospedado na Salad Cloud, garantindo:
-
-- **Autonomia Total**: Sem dependência de APIs externas
-- **Privacidade Absoluta**: Dados nunca saem da infraestrutura controlada
-- **Custos Previsíveis**: Sem cobrança por token de terceiros
-- **Customização Ilimitada**: Fine-tuning específico para cada cliente
-
-### Problema Resolvido
-
-1. **Dependência de Terceiros**: APIs externas podem mudar preços ou descontinuar
-2. **Privacidade de Dados**: Dados sensíveis em servidores de terceiros
-3. **Custos Imprevisíveis**: Cobrança por token gera faturas astronômicas
-
----
-
-## Regras Críticas
-
-### As 16 Regras Fundamentais
-
-| Número | Regra | Descrição |
+| Number | Rule | Description |
 |--------|-------|-----------|
 | 1 | LER ANTES DE AGIR | Inspecionar arquivos antes de implementar |
 | 2 | NÃO DUPLICAR | Verificar código existente primeiro |
@@ -55,435 +27,89 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | 15 | MICROSSERVIÇOS | Código em apps/, compartilhado em packages/ |
 | 16 | MELHORES PRÁTICAS | API Gateway, health checks, circuit breakers |
 
-### Preferências de Idioma
+### Language Preferences
 
-| Contexto | Idioma |
+| Context | Language |
 |----------|--------|
-| Documentação | Português Brasileiro |
-| Comentários no código | Português Brasileiro |
-| Mensagens de log | Português Brasileiro |
-| Nomes de variáveis | Inglês |
-| Termos técnicos | Inglês (OAuth, JWT, etc.) |
+| Documentation | Português Brasileiro |
+| Code Comments | Português Brasileiro |
+| Log Messages | Português Brasileiro |
+| Variable Names | English |
+| Technical Terms | English (OAuth, JWT, etc.) |
 
----
+### Development Environment (Replit) Rules
 
-## Estado Atual
+- The `server/index-dev.ts` file is ONLY for preview within Replit and is NOT deployed to production.
+- Preview data is allowed in `server/index-dev.ts` for UI visualization.
+- The code in `apps/` (microservices) goes to production via GitHub Actions.
 
-### Funcionalidades em Produção
+## System Architecture
 
-| Capacidade | Status | Descrição |
-|------------|--------|-----------|
-| Modelo de IA | Produção | Llama 4 Maverick via Salad Cloud |
-| Chat Tempo Real | Produção | WebSocket com streaming |
-| Deduplicação | Produção | SemHash para dados duplicados |
-| Multi-tenant | Produção | Isolamento por tenant_id |
-| RBAC | Produção | 6 níveis de permissão |
-| RAG Backend | Produção | Embeddings e busca vetorial |
-| Stripe | Produção | Receber pagamentos EUR |
-| Wise | Produção | Enviar pagamentos globais |
-| ERPNext | Produção | CRM integrado |
-| Twilio | Produção | WhatsApp e SMS |
-| Resend | Produção | Email transacional |
-| Autenticação | Produção | OAuth 2.0 e SAML 2.0 |
-| Traefik | Produção | Gateway com SSL |
-| CI/CD | Produção | GitHub Actions |
+The Alice platform employs a microservice architecture with distinct services for various functionalities, all orchestrated by an API Gateway (Traefik).
 
-### Em Desenvolvimento
+### Core Services
 
-| Capacidade | Progresso |
-|------------|-----------|
-| Integração RAG + Chat | 80% |
-| Dashboard Admin | 100% |
-| Detecção de Geração de Imagem | 100% |
-| Auto-aprendizado Agressivo | 100% |
-| FLUX.1 Schnell (Imagens) | 100% |
-| Observability Stack | 100% |
-| Analytics | Planejado |
+- **Frontend (Porta 5000):** React 18, TypeScript 5, Vite 5, shadcn/ui, Tailwind CSS, TanStack Query, Wouter, react-i18next (PT-BR/EN).
+- **Authentication (Porta 3001):** OAuth 2.0 (Google, GitHub, Microsoft), SAML 2.0 (Azure AD, Okta), local authentication with bcrypt, RBAC with 6 roles.
+- **Chat (Porta 3002):** WebSocket for real-time communication, proxy to Salad Cloud LLM, token streaming, message persistence.
+- **RAG (Porta 3003):** Embeddings via Salad Cloud, pgvector for vector search, chunking (500 chars, 50 overlap), circuit breaker (30s/50%/30s).
+- **Training (Porta 3004):** Training data collection, SemHash for deduplication, fine-tuning job management.
+- **Integrations (Porta 3005):** Handles external services like Stripe, Wise, ERPNext, Twilio, Resend.
+- **Observability (Porta 9090/3000/16686/3006):** Dedicated microservice for monitoring, including Prometheus 3.0 (metrics), Grafana OSS 11.3 (dashboards), Jaeger 1.62 (distributed tracing), OpenTelemetry Collector (instrumentation), and Langfuse 2.x (LLM metrics). This service is designed to be separate and independent to ensure continuous monitoring.
 
-### Ambiente de Desenvolvimento (Replit)
+### Observability Architecture
 
-| Componente | Status | Descrição |
-|------------|--------|-----------|
-| Frontend React | Funcional | Vite dev server na porta 5000 |
-| Servidor Dev | Funcional | Express com dados de preview (apenas para UI) |
-| Autenticação Dev | Funcional | Rotas /api/auth/* para testar UI |
-| Dashboard APIs | Funcional | Dados de preview para visualização |
-| Integrations Service | Funcional | Proxy para porta 3005 |
+- **Principle:** Separate and independent observability microservice to guarantee monitoring even if the main system fails.
+- **LLM Specific Metrics:** Token Usage, Time to First Token (TTFT), Request Latency, Error Rate, Cost per Request, RAG Retrieval Time.
+- **Stack:** Prometheus, Grafana, Jaeger, OpenTelemetry Collector, Langfuse, and a custom Health Checker API.
 
-**IMPORTANTE - Distinção DEV vs PRODUÇÃO:**
+### Schedule de Aprendizado (Verticalized Use)
 
-| Ambiente | Local | Propósito | Regras |
-|----------|-------|-----------|--------|
-| DEV | Replit | IDE e preview de UI | Dados de preview permitidos em `server/index-dev.ts` |
-| PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
-
-O código em `apps/` (microserviços) vai para produção via GitHub Actions (Regra 12). 
-O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para produção.
-
-### Recém Concluído (Fase 6.5)
-
-| Capacidade | Status | Descrição |
-|------------|--------|-----------|
-| Dashboard IA | Produção | Métricas de conversas, imagens, SLA, circuit breakers |
-| Takeover/Handover | Produção | Painel completo para agentes humanos (Web + WhatsApp) |
-| Galeria de Imagens | Produção | Sistema de rating, aprovação para training, multi-tenant |
-| Agentic RAG | Produção | Busca híbrida (interna + Brave Search), classificador inteligente |
-| Imagens Inline no Chat | Produção | Skeleton loading, rating, fullscreen, download |
-
-### Planejado (Tarefas Enterprise Restantes)
-
-| Capacidade | Fase | Descrição |
-|------------|------|-----------|
-| Multimodal Avançado | 9 | Áudio e vídeo |
-| Crawling | 11 | Web scraping automático |
-| Analytics Avançado | 12 | Relatórios e dashboards customizados |
-
-### Arquitetura de Observabilidade (IMPLEMENTADA)
-
-**Princípio Crítico:** Microserviço de observabilidade SEPARADO e INDEPENDENTE para garantir monitoramento mesmo se o sistema principal travar.
-
-| Componente | Porta | Tecnologia | Licença | Função |
-|------------|-------|------------|---------|--------|
-| Prometheus | 9090 | Prometheus 3.0 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS | AGPL 3.0 | Dashboards e alertas |
-| Jaeger | 16686 | Jaeger | Apache 2.0 | Distributed tracing |
-| OTel Collector | 4317/4318 | OpenTelemetry | Apache 2.0 | Instrumentação |
-| Langfuse | 3006 | Langfuse | MIT | Métricas LLM |
-
-**Métricas específicas para LLM:**
-
-| Métrica | Descrição | Importância |
-|---------|-----------|-------------|
-| Token Usage | Tokens entrada/saída por request | Custo e otimização |
-| TTFT | Time to First Token | Experiência do usuário |
-| Request Latency | Latência total da resposta | Performance |
-| Error Rate | Taxa de falhas e timeouts | Confiabilidade |
-| Cost per Request | Custo por chamada de modelo | Budget |
-| RAG Retrieval Time | Tempo de busca vetorial | Qualidade RAG |
-
-**Stack implementada (todas open source):**
-- **Prometheus 3.0** (Apache 2.0): Coleta de métricas com alertas LLM
-- **Grafana OSS 11.3** (AGPL 3.0): Dashboards e visualização
-- **Jaeger 1.62** (Apache 2.0): Distributed tracing
-- **OpenTelemetry Collector** (Apache 2.0): Instrumentação unificada
-- **Langfuse 2.x** (MIT): Métricas específicas para LLM
-- **Health Checker** (Custom): API de status do stack
-
-**Localização:** `apps/observability-service/`
-
-**Deploy:** 100% automático via GitHub Actions (Regra 12)
-
----
-
-## Decisões Arquiteturais Confirmadas
-
-### Schedule de Aprendizado (Uso Verticalizado)
-
-| Componente | Frequência | Justificativa |
-|------------|------------|---------------|
-| RAG update | Tempo real | Documentos disponíveis imediatamente |
-| Auto-indexação | Diário | Uso verticalizado exige aprendizado rápido |
-| Fine-tuning incremental | A cada 4 dias | LoRA com dados novos (agressivo) |
-| Fine-tuning completo | Quinzenal | Retreino mais profundo |
+- **RAG update:** Real-time.
+- **Auto-indexação:** Daily.
+- **Fine-tuning incremental:** Every 4 days (LoRA with new data).
+- **Fine-tuning completo:** Bi-weekly (deeper retraining).
 
 ### Pub/Sub Real-time
 
-| Decisão | Escolha | Justificativa |
-|---------|---------|---------------|
-| Tecnologia | PostgreSQL NOTIFY | Simplicidade, suficiente para escala inicial |
-| Fallback | Tabela conversation_states | Garantia de persistência |
-| Migração futura | Redis se >1k msg/s | Apenas se escala exigir |
+- **Technology:** PostgreSQL NOTIFY for simplicity and initial scalability.
+- **Fallback:** `conversation_states` table for persistence guarantee.
+- **Future Migration:** Redis if message rates exceed 1k msg/s.
 
-### Geração de Imagens
+### Image Generation
 
-| Decisão | Escolha | Justificativa |
-|---------|---------|---------------|
-| Modelo | FLUX.1 Schnell | Estado da arte 2025, Apache 2.0 |
-| Hospedagem | Salad Cloud (self-hosted) | Sem API externa, custo previsível |
-| Aprendizado | Progressive LoRA | Imagens aprovadas entram no training |
-| Storage | Object Storage + CLIP embeddings | RAG multimodal |
+- **Model:** FLUX.1 Schnell (state-of-the-art 2025, Apache 2.0).
+- **Hosting:** Salad Cloud (self-hosted container group).
+- **Learning:** Progressive LoRA using approved images.
+- **Storage:** Object Storage + CLIP embeddings for multimodal RAG.
 
 ### Takeover/Handover
 
-| Decisão | Escolha | Justificativa |
-|---------|---------|---------------|
-| Twilio Flex | Não usar | Custo alto ($1/hora/agente) |
-| Painel | Custom na Alice | Integrado ao dashboard |
-| SLA Default | 30 minutos | Best practice prioridade média |
-| Triggers automáticos | Confiança <70%, 3+ fallbacks, sentimento negativo | Pesquisa 2025 |
-
----
-
-## Arquitetura
-
-### Serviços Principais
-
-| Serviço | Porta | Função |
-|---------|-------|--------|
-| frontend | 5000 | React SPA |
-| api-gateway | 80/443 | Traefik |
-| auth | 3001 | OAuth/SAML |
-| chat | 3002 | LLM + WebSocket |
-| rag | 3003 | Embeddings |
-| training | 3004 | Fine-tuning |
-| integrations | 3005 | Stripe, Wise, etc. |
-| observability | 9090/3000/16686/3006 | Prometheus, Grafana, Jaeger, Langfuse |
-
----
-
-## Serviços
-
-### 1. Frontend (Porta 5000)
-
-- React 18 + TypeScript 5 + Vite 5
-- shadcn/ui + Tailwind CSS
-- TanStack Query + Wouter
-- react-i18next para PT-BR/EN
-
-### 2. Autenticação (Porta 3001)
-
-- OAuth 2.0: Google, GitHub, Microsoft
-- SAML 2.0: Azure AD, Okta
-- Autenticação local com bcrypt
-- RBAC com 6 roles
-
-### 3. Chat (Porta 3002)
-
-- WebSocket para tempo real
-- Proxy para Salad Cloud
-- Streaming de tokens
-- Persistência de mensagens
-
-### 4. RAG (Porta 3003)
-
-- Embeddings via Salad Cloud
-- pgvector para busca vetorial
-- Chunking: 500 chars, 50 overlap
-- Circuit breaker: 30s/50%/30s
-
-### 5. Training (Porta 3004)
-
-- Coleta de dados de treinamento
-- SemHash para deduplicação
-- Gestão de jobs fine-tuning
-
-### 6. Integrações (Porta 3005)
-
-- Stripe: pagamentos EUR
-- Wise: transferências globais (15s/50%/30s)
-- ERPNext: CRM (10s/50%/30s)
-- Twilio: WhatsApp/SMS
-- Resend: emails
-
----
-
-## Integrações
-
-### Salad Cloud
-
-**LLM Principal:**
-- Modelo: Llama 4 Maverick (400B parâmetros, 17B ativos MoE)
-- Multimodal: INPUT apenas (entende texto, imagens, vídeo)
-- Output: Texto apenas (NÃO gera imagens)
-- Contexto: 1M tokens
-- Embeddings: text-embedding-3-small
-- Circuit breaker: 30s timeout
-
-**Geração de Imagens:**
-- Modelo: FLUX.1 Schnell (Apache 2.0)
-- Self-hosted: Container Group próprio
-- GPU: RTX 3090/4090 (24GB VRAM)
-- Velocidade: 1-3 segundos/imagem
-- Custo: ~$0.20/hora = ~$20 por 100k imagens
-
-**Inferência CLIP (Embeddings Multimodais):**
-- Modelo: CLIP ViT-L/14 (Licença MIT - uso comercial permitido)
-- Dimensão: 768 (mesmo espaço vetorial para texto e imagem)
-- Self-hosted: Container Group próprio (`apps/clip-inference-service/`)
-- GPU: RTX 3060+ (12GB VRAM suficiente)
-- Custo: ~$0.10/hora
-- Endpoint: `POST /inference/clip` com `{ text }` ou `{ image }`
-- Variável de ambiente: `SALAD_CLIP_ENDPOINT` aponta para este container
-- Busca cross-modal: texto → imagem, imagem → imagem
-
-**Deploy do Container CLIP na Salad Cloud:**
-
-| Passo | Comando/Ação |
-|-------|--------------|
-| Construir imagem | `docker build -t clip-inference:latest ./apps/clip-inference-service` |
-| Enviar para registry | `docker push ghcr.io/ORG/clip-inference:latest` |
-| Criar Container Group | Portal Salad Cloud ou API |
-| GPU recomendada | RTX 3060/3070/3090 |
-| Porta | 8080 (Container Gateway) |
-| Health check | `GET /health` |
-
-### Stripe Portugal
-
-- Pagamentos em EUR via SEPA
-- Webhooks de checkout e pagamento
-
-### Wise
-
-- Transferências internacionais
-- 50+ moedas suportadas
-- Circuit breaker: 15s timeout
-
-### ERPNext
-
-- CRM e ERP integrado
-- Circuit breaker: 10s timeout
-
-**Implementação Docker (frappe_docker oficial):**
-
-Baseado 100% na documentação oficial: https://github.com/frappe/frappe_docker
-
-| Serviço | Função | Restart |
-|---------|--------|---------|
-| erpnext-mariadb | MariaDB 10.11 (utf8mb4) | always |
-| erpnext-redis-cache | Cache Redis 7 | always |
-| erpnext-redis-queue | Filas Redis 7 | always |
-| erpnext-configurator | Configura common_site_config.json | no (one-shot) |
-| erpnext-create-site | Cria site na primeira instalação | no (one-shot) |
-| erpnext-backend | Gunicorn/Python (bench serve) | always |
-| erpnext-frontend | Nginx | always |
-| erpnext-websocket | Socket.io tempo real | always |
-| erpnext-scheduler | Tarefas agendadas | always |
-| erpnext-worker-* | Workers de fila (short/default/long) | always |
-
-**Ordem de Inicialização:**
-1. mariadb + redis-cache + redis-queue (healthcheck)
-2. configurator (cria common_site_config.json)
-3. create-site (cria site se não existir - IDEMPOTENTE)
-4. backend + frontend + websocket + scheduler + workers
-
-**Idempotência do create-site:**
-- Verifica existência do diretório do site ANTES de qualquer ação
-- Se site existe: exit 0 (deploy subsequente funciona)
-- Se não existe: aguarda common_site_config.json e cria site
-
-**Secrets GitHub Actions:**
-
-| Secret | Descrição | Padrão |
-|--------|-----------|--------|
-| ERPNEXT_MYSQL_ROOT_PASSWORD | Senha root MariaDB | erpnext_root_password |
-| ERPNEXT_ADMIN_PASSWORD | Senha admin ERPNext | admin |
-| ERPNEXT_DB_PASSWORD | Senha usuário erpnext | (obrigatório) |
-| ERPNEXT_API_KEY | API Key para integrations | (após setup) |
-| ERPNEXT_API_SECRET | API Secret para integrations | (após setup) |
-
-**Primeira Instalação:**
-- Credenciais padrão: Administrator / admin
-- ALTERAR imediatamente após primeiro acesso!
-- Site: erp.yesyoudeserve.duckdns.org
-
-### Twilio
-
-- WhatsApp e SMS
-
-### Resend
-
-- Emails transacionais
-
----
-
-## Segurança
-
-### Práticas Implementadas
-
-| Prática | Implementação |
-|---------|---------------|
-| Senhas | bcrypt 12 rounds |
-| Cookies | HttpOnly, Secure, SameSite |
-| CSRF | State parameter OAuth |
-| Rate limiting | Por IP e endpoint |
-| Isolamento | tenant_id em queries |
-
-### Hierarquia RBAC
-
-| Role | Nível | Acesso |
-|------|-------|--------|
-| super_admin | 1 | Total |
-| admin | 2 | Tenant |
-| manager | 3 | Namespaces |
-| operator | 4 | Operação |
-| viewer | 5 | Leitura |
-| guest | 6 | Mínimo |
-
----
-
-## Infraestrutura
-
-### Desenvolvimento (Replit)
-
-- IDE para edição de código
-- Debugging e testes locais
-- Operações git
-
-### Produção (Hetzner Cloud)
-
-| Especificação | Valor |
-|---------------|-------|
-| Tipo | CX43 |
-| vCPUs | 8 |
-| RAM | 16 GB |
-| SSD | 160 GB |
-| IPv4 | 46.224.46.93 |
-| Custo | 9.49 EUR/mês |
-
-### URLs de Produção
-
-| Serviço | URL |
-|---------|-----|
-| Frontend | https://yesyoudeserve.duckdns.org |
-| API | https://yesyoudeserve.duckdns.org/api |
-| ERPNext | https://erp.yesyoudeserve.duckdns.org |
-
----
-
-## CI/CD
-
-### Pipeline
-
-1. Push para main
-2. Build imagens Docker
-3. Push para GHCR
-4. Deploy SSH para Hetzner
-5. Health checks
-
----
-
-## Secrets
-
-### Categorias
-
-| Categoria | Secrets |
-|-----------|---------|
-| Database | DATABASE_URL |
-| Sessão | SESSION_SECRET |
-| Salad | SALAD_API_KEY |
-| Stripe | STRIPE_SECRET_KEY |
-| Wise | WISE_API_KEY |
-| OAuth | GOOGLE_CLIENT_ID |
-| Twilio | TWILIO_ACCOUNT_SID |
-| Resend | RESEND_API_KEY |
-
----
-
-## Padrões de Código
-
-### Logging
-
-Usar Pino. console.log é PROIBIDO.
-
-### TypeScript
-
-Modo strict. any é PROIBIDO.
-
-### Health Check
-
-Obrigatório em /api/servico/health.
-
----
-
-*Documento em Português Brasileiro*
-*Versão 5.0 - Novembro 2025*
+- **Panel:** Custom built into the Alice dashboard, not using Twilio Flex.
+- **SLA Default:** 30 minutes.
+- **Automatic Triggers:** Confidence <70%, 3+ fallbacks, negative sentiment.
+
+### Security
+
+- **Practices:** bcrypt 12 rounds for passwords, HttpOnly/Secure/SameSite cookies, OAuth state parameter for CSRF, rate limiting by IP/endpoint, `tenant_id` isolation in queries.
+- **RBAC Hierarchy:** 6 roles (super_admin, admin, manager, operator, viewer, guest) with progressively decreasing access.
+
+### Infrastructure
+
+- **Development:** Replit IDE for coding, debugging, local testing, and Git operations.
+- **Production:** Hetzner Cloud (CX43: 8 vCPUs, 16 GB RAM, 160 GB SSD) with deployments handled via GitHub Actions.
+
+## External Dependencies
+
+- **Salad Cloud:**
+    - **LLM Principal:** Llama 4 Maverick (400B parameters, 17B active MoE) for text generation. Multimodal input (text, images, video) but text-only output. Context window: 1M tokens.
+    - **Embeddings:** text-embedding-3-small.
+    - **Image Generation:** FLUX.1 Schnell (Apache 2.0, self-hosted container group on RTX 3090/4090 GPUs).
+    - **CLIP Inference (Multimodal Embeddings):** CLIP ViT-L/14 (MIT license) self-hosted container group on RTX 3060+ GPUs. Provides 768-dimension embeddings for cross-modal search.
+- **PostgreSQL:** Primary database with pgvector extension for RAG.
+- **Stripe Portugal:** For EUR payments via SEPA, including webhook processing.
+- **Wise:** For global money transfers in 50+ currencies.
+- **ERPNext:** Integrated CRM and ERP system. Implemented with `frappe_docker` for MariaDB, Redis, Gunicorn/Python, Nginx, and Socket.io services.
+- **Twilio:** For WhatsApp and SMS messaging.
+- **Resend:** For transactional email delivery.
+- **GitHub Actions:** CI/CD pipeline for building Docker images, pushing to GHCR, and deploying to Hetzner Cloud via SSH.
