@@ -1,6 +1,9 @@
 // Cliente Stripe para Alice Enterprise Platform
 // Produção: Hetzner Cloud com variáveis de ambiente padrão
 import Stripe from 'stripe';
+import { createLogger } from '@alice/logger';
+
+const logger = createLogger('stripe-client');
 
 // Obtém a chave secreta do Stripe das variáveis de ambiente
 function getStripeSecretKeySync(): string {
@@ -108,23 +111,23 @@ export async function getStripeSync(): Promise<StripeSyncProcessor> {
         case 'customer.created':
         case 'customer.updated':
         case 'customer.deleted':
-          console.log(`[Stripe] Evento de cliente processado: ${event.type}`);
+          logger.info({ eventType: event.type }, 'Evento de cliente processado');
           break;
         case 'payment_intent.succeeded':
-          console.log('[Stripe] Pagamento bem-sucedido');
+          logger.info({ eventType: event.type }, 'Pagamento bem-sucedido');
           break;
         case 'payment_intent.payment_failed':
-          console.log('[Stripe] Pagamento falhou');
+          logger.warn({ eventType: event.type }, 'Pagamento falhou');
           break;
         case 'invoice.paid':
         case 'invoice.payment_failed':
-          console.log(`[Stripe] Evento de fatura processado: ${event.type}`);
+          logger.info({ eventType: event.type }, 'Evento de fatura processado');
           break;
         case 'checkout.session.completed':
-          console.log('[Stripe] Checkout concluído');
+          logger.info({ eventType: event.type }, 'Checkout concluído');
           break;
         default:
-          console.log(`[Stripe] Evento não tratado: ${event.type}`);
+          logger.debug({ eventType: event.type }, 'Evento não tratado');
       }
     }
   };
