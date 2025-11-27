@@ -102,7 +102,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 
 | Folder | Description | Tests |
 |--------|-------------|-------|
-| `tests/unit/` | Unit tests | 111 tests |
+| `tests/unit/` | Unit tests | 193 tests |
 | `tests/setup.ts` | Global configuration | Pino logger |
 | `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
 
@@ -113,6 +113,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 | `setup-verification.test.ts` | Vitest setup validation | 8 |
 | `health-endpoints.test.ts` | Health endpoint contracts | 45 |
 | `schema-validation.test.ts` | Drizzle schema validation | 58 |
+| `config-validation.test.ts` | Configuration validation | 82 |
 
 ### Health Endpoint Contract Tests
 
@@ -149,7 +150,37 @@ Validates Drizzle ORM schema structure:
 | Insert Schemas | 18 | Zod validation for all main tables |
 | Integridade | 6 | Multi-tenancy, timestamps, pgvector, SemHash |
 
+### Config Validation Tests
+
+Validates environment variables and configuration constants:
+
+| Category | Tests | Description |
+|----------|-------|-------------|
+| envSchema | 14 | NODE_ENV, LOG_LEVEL, SALAD_API_URL, variáveis opcionais |
+| CORS Origins | 18 | Produção, desenvolvimento, getCorsOrigins, getCorsConfig |
+| Rate Limiting | 9 | Limites por tipo de endpoint, janela de tempo |
+| Service URLs | 7 | Portas dos microsserviços (Regra 16), padrão Docker |
+| Timeouts | 9 | HTTP, LLM, embeddings, RAG, uploads, fine-tuning |
+| Size Limits | 6 | Upload, mensagem, documento, chunks, resultados RAG |
+| RAG Config | 6 | Chunk size, overlap, embedding dimensions, similarity |
+| Salad Cloud | 7 | API URL, modelos chat/embeddings, defaults |
+| Consistência | 4 | Validações cruzadas entre configurações |
+
 ## Recent Changes (November 2025)
+
+### Config Validation Tests (Phase 1 Step 1.4)
+
+Implemented 80 tests for validating configuration:
+- `tests/unit/config-validation.test.ts` - Environment and config validation
+- envSchema: NODE_ENV, LOG_LEVEL, SALAD_API_URL, DATABASE_URL
+- CORS: Production origins (yesyoudeserve.duckdns.org), development origins
+- Rate limiting: Limits per endpoint type (public, api, admin, upload)
+- Service URLs: Ports 3001-3005 for microservices (Rule 16)
+- Timeouts: HTTP (30s), LLM (60s), embeddings, RAG search, fine-tuning
+- Size limits: Upload (50MB), message (32000 chars), document (10MB)
+- RAG config: Chunk size (1000), overlap (200), embeddings (384 dims)
+- Salad Cloud: llama4-maverick, text-embedding-3-small
+- Total: 191 tests passing (8 setup + 45 health + 58 schema + 80 config)
 
 ### Schema Validation Tests (Phase 1 Step 1.3)
 
@@ -158,7 +189,6 @@ Implemented 58 tests for validating Drizzle schema:
 - Enums: userRoleEnum, messageTypeEnum, conversationControlModeEnum
 - Tables: tenants, users, agents, conversations, messages, documents
 - Insert Schemas: Zod validation with required fields
-- Total: 111 tests passing (8 setup + 45 health + 58 schema)
 
 ### Health Endpoint Tests (Phase 1 Step 1.2)
 
