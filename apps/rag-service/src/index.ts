@@ -64,6 +64,9 @@ if (!SALAD_ORGANIZATION_ID) {
 const SALAD_KEY: string = SALAD_API_KEY;
 const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
+const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
+
 const sqlClient = neon(DATABASE_URL);
 const db = drizzle(sqlClient, { schema });
 
@@ -138,6 +141,174 @@ async function generateEmbedding(text: string): Promise<number[]> {
     }
     throw error;
   }
+}
+
+// ============================================================================
+// AGENTIC RAG - Web Search Integration (Regra 16 - Best Practices 2025)
+// ============================================================================
+
+interface WebSearchResult {
+  title: string;
+  url: string;
+  description: string;
+  snippet?: string;
+}
+
+interface BraveSearchResponse {
+  web?: {
+    results: Array<{
+      title: string;
+      url: string;
+      description: string;
+    }>;
+  };
+}
+
+async function webSearchInternal(query: string, count: number = 5): Promise<WebSearchResult[]> {
+  if (!BRAVE_API_KEY) {
+    logger.warn('BRAVE_API_KEY não configurada - busca web desabilitada');
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    q: query,
+    count: count.toString(),
+    safesearch: 'moderate',
+    country: 'BR',
+    text_decorations: 'false',
+  });
+
+  const response = await fetch(`${BRAVE_SEARCH_URL}?${params}`, {
+    method: 'GET',
+    headers: {
+      'Accept': 'application/json',
+      'Accept-Encoding': 'gzip',
+      'X-Subscription-Token': BRAVE_API_KEY,
+    },
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Falha na busca web: ${response.status} - ${errorText}`);
+  }
+
+  const data = await response.json() as BraveSearchResponse;
+  
+  return (data.web?.results || []).map(r => ({
+    title: r.title,
+    url: r.url,
+    description: r.description,
+    snippet: r.description,
+  }));
+}
+
+const webSearchBreakerOptions = {
+  timeout: 10000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000,
+  volumeThreshold: 3,
+};
+
+const webSearchBreaker = new CircuitBreaker(webSearchInternal, webSearchBreakerOptions);
+
+webSearchBreaker.on('open', () => {
+  logger.warn('Circuit breaker Brave Search: ABERTO - API temporariamente indisponível');
+});
+webSearchBreaker.on('halfOpen', () => {
+  logger.info('Circuit breaker Brave Search: HALF-OPEN - Testando reconexão');
+});
+webSearchBreaker.on('close', () => {
+  logger.info('Circuit breaker Brave Search: FECHADO - API funcionando normalmente');
+});
+
+async function webSearch(query: string, count?: number): Promise<WebSearchResult[]> {
+  try {
+    return await webSearchBreaker.fire(query, count) as WebSearchResult[];
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Breaker is open')) {
+      logger.warn('Circuit breaker aberto - Busca web temporariamente indisponível');
+      return [];
+    }
+    logger.error({ error, query }, 'Erro na busca web');
+    return [];
+  }
+}
+
+// ============================================================================
+// QUERY CLASSIFIER - Decidir entre RAG interno vs Web Search
+// ============================================================================
+
+type QueryType = 'internal' | 'web' | 'hybrid';
+
+interface ClassificationResult {
+  type: QueryType;
+  confidence: number;
+  reason: string;
+}
+
+const WEB_SEARCH_KEYWORDS = [
+  'notícias', 'news', 'atualidades', 'hoje', 'ontem', 'recente',
+  'preço', 'cotação', 'valor atual', 'quanto custa',
+  'tempo', 'clima', 'previsão',
+  'resultado', 'placar', 'jogo',
+  'lançamento', 'novo', 'última versão',
+  'como fazer', 'tutorial', 'passo a passo',
+  'onde encontrar', 'onde comprar', 'onde fica',
+  'quem é', 'biografia', 'história de',
+];
+
+const INTERNAL_KEYWORDS = [
+  'nosso', 'nossa', 'empresa', 'produto',
+  'política', 'procedimento', 'processo interno',
+  'manual', 'documentação interna', 'wiki',
+  'funcionário', 'equipe', 'time',
+  'projeto', 'sistema interno', 'ferramenta interna',
+  'alice', 'plataforma',
+];
+
+function classifyQuery(query: string): ClassificationResult {
+  const lowerQuery = query.toLowerCase();
+  
+  const webScore = WEB_SEARCH_KEYWORDS.reduce((score, keyword) => {
+    return lowerQuery.includes(keyword) ? score + 1 : score;
+  }, 0);
+  
+  const internalScore = INTERNAL_KEYWORDS.reduce((score, keyword) => {
+    return lowerQuery.includes(keyword) ? score + 1 : score;
+  }, 0);
+  
+  const hasQuestionMark = query.includes('?');
+  const hasCurrentTimeReference = /(?:hoje|agora|atualmente|202\d)/i.test(query);
+  
+  if (internalScore > 0 && webScore === 0) {
+    return {
+      type: 'internal',
+      confidence: 0.9,
+      reason: 'Query contém referências a documentos internos',
+    };
+  }
+  
+  if (webScore > 0 && internalScore === 0 && hasCurrentTimeReference) {
+    return {
+      type: 'web',
+      confidence: 0.85,
+      reason: 'Query requer informações atualizadas da web',
+    };
+  }
+  
+  if (webScore > 0 || hasCurrentTimeReference) {
+    return {
+      type: 'hybrid',
+      confidence: 0.7,
+      reason: 'Query pode se beneficiar de ambas as fontes',
+    };
+  }
+  
+  return {
+    type: 'internal',
+    confidence: 0.6,
+    reason: 'Consulta padrão para base de conhecimento interna',
+  };
 }
 
 app.use(helmet());
@@ -483,6 +654,224 @@ app.get('/api/rag/namespaces/:id/stats', requirePermission('rag:namespaces:read'
     logger.error({ error }, 'Falha ao obter estatísticas');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
+});
+
+// ============================================================================
+// AGENTIC RAG ENDPOINTS - Busca híbrida inteligente
+// ============================================================================
+
+const agenticSearchSchema = z.object({
+  query: z.string().min(1),
+  namespaceId: z.string().uuid().optional(),
+  limit: z.coerce.number().min(1).max(20).default(5),
+  threshold: z.coerce.number().min(0).max(1).default(0.6),
+  forceMode: z.enum(['internal', 'web', 'hybrid']).optional(),
+});
+
+app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const { query, limit = 5 } = req.body;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query é obrigatória' });
+    }
+
+    if (!BRAVE_API_KEY) {
+      return res.status(503).json({ 
+        error: 'Busca web não configurada', 
+        message: 'BRAVE_API_KEY não está configurada',
+      });
+    }
+
+    const results = await webSearch(query, limit);
+    
+    logger.info({ query, results: results.length }, 'Busca web concluída');
+    res.json({ results, source: 'brave-search' });
+  } catch (error) {
+    logger.error({ error }, 'Falha na busca web');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response) => {
+  try {
+    const { query } = req.body;
+    
+    if (!query || typeof query !== 'string') {
+      return res.status(400).json({ error: 'Query é obrigatória' });
+    }
+
+    const classification = classifyQuery(query);
+    
+    res.json({ 
+      query, 
+      classification,
+      webSearchAvailable: !!BRAVE_API_KEY,
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha na classificação');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+function getTenantIdFromRequest(req: Request): string {
+  return req.headers['x-tenant-id'] as string;
+}
+
+app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.headers['x-tenant-id'] as string;
+  
+  if (!tenantId) {
+    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+  }
+
+  try {
+    const body = agenticSearchSchema.parse(req.body);
+    
+    const classification = body.forceMode 
+      ? { type: body.forceMode, confidence: 1, reason: 'Modo forçado pelo usuário' }
+      : classifyQuery(body.query);
+    
+    const results: {
+      internal: Array<{ documentId: string; titulo?: string; conteudo: string; similarity: number }>;
+      web: WebSearchResult[];
+      classification: ClassificationResult;
+    } = {
+      internal: [],
+      web: [],
+      classification,
+    };
+
+    if (classification.type === 'internal' || classification.type === 'hybrid') {
+      const tenantNamespaces = await db.query.namespaces.findMany({
+        where: eq(schema.namespaces.tenantId, tenantId),
+      });
+      const tenantNamespaceIds = new Set(tenantNamespaces.map(ns => ns.id));
+
+      const queryEmbedding = await generateEmbedding(body.query);
+
+      const allChunks = await db.query.documentChunks.findMany({
+        with: {
+          document: true,
+        },
+      });
+
+      const internalResults = allChunks
+        .filter(chunk => {
+          if (!chunk.document?.namespaceId) return false;
+          if (!tenantNamespaceIds.has(chunk.document.namespaceId)) return false;
+          if (body.namespaceId && chunk.document.namespaceId !== body.namespaceId) {
+            return false;
+          }
+          return true;
+        })
+        .map(chunk => ({
+          documentId: chunk.documentId,
+          titulo: chunk.document?.titulo,
+          conteudo: chunk.conteudo,
+          similarity: chunk.embedding 
+            ? cosineSimilarity(queryEmbedding, chunk.embedding)
+            : 0,
+        }))
+        .filter(chunk => chunk.similarity >= body.threshold)
+        .sort((a, b) => b.similarity - a.similarity)
+        .slice(0, body.limit);
+
+      results.internal = internalResults;
+    }
+
+    if ((classification.type === 'web' || classification.type === 'hybrid') && BRAVE_API_KEY) {
+      results.web = await webSearch(body.query, body.limit);
+    }
+
+    const context = buildAgenticContext(results.internal, results.web);
+
+    logger.info({ 
+      query: body.query, 
+      tenantId,
+      classification: classification.type,
+      internalResults: results.internal.length,
+      webResults: results.web.length,
+    }, 'Busca agentic concluída');
+
+    res.json({ 
+      ...results,
+      context,
+      sources: {
+        internal: results.internal.map(r => ({
+          documentId: r.documentId,
+          titulo: r.titulo,
+          similarity: r.similarity,
+        })),
+        web: results.web.map(r => ({
+          title: r.title,
+          url: r.url,
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Falha na busca agentic');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+function buildAgenticContext(
+  internal: Array<{ titulo?: string; conteudo: string; similarity: number }>,
+  web: WebSearchResult[]
+): string {
+  const parts: string[] = [];
+
+  if (internal.length > 0) {
+    parts.push('## Documentos Internos\n');
+    internal.forEach((doc, i) => {
+      parts.push(`### ${i + 1}. ${doc.titulo || 'Documento sem título'} (Relevância: ${(doc.similarity * 100).toFixed(0)}%)`);
+      parts.push(doc.conteudo);
+      parts.push('');
+    });
+  }
+
+  if (web.length > 0) {
+    parts.push('\n## Resultados da Web\n');
+    web.forEach((result, i) => {
+      parts.push(`### ${i + 1}. ${result.title}`);
+      parts.push(`Fonte: ${result.url}`);
+      parts.push(result.description);
+      parts.push('');
+    });
+  }
+
+  return parts.join('\n');
+}
+
+app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Response) => {
+  const embeddingsState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+  const webSearchState = webSearchBreaker.opened ? 'open' : (webSearchBreaker.halfOpen ? 'half-open' : 'closed');
+
+  res.json({
+    webSearchEnabled: !!BRAVE_API_KEY,
+    circuitBreakers: {
+      embeddings: {
+        state: embeddingsState,
+        stats: {
+          failures: embeddingsBreaker.stats.failures,
+          successes: embeddingsBreaker.stats.successes,
+          timeouts: embeddingsBreaker.stats.timeouts,
+        },
+      },
+      webSearch: {
+        state: webSearchState,
+        stats: {
+          failures: webSearchBreaker.stats.failures,
+          successes: webSearchBreaker.stats.successes,
+          timeouts: webSearchBreaker.stats.timeouts,
+        },
+      },
+    },
+    classificationKeywords: {
+      web: WEB_SEARCH_KEYWORDS.length,
+      internal: INTERNAL_KEYWORDS.length,
+    },
+  });
 });
 
 const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
