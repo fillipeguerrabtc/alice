@@ -225,6 +225,9 @@
   "chat": {
     "title": "Chat",
     "newConversation": "New Conversation",
+    "welcome": "Welcome to Alice",
+    "welcomeMessage": "I am your enterprise AI assistant. How can I help you?",
+    "placeholder": "Type your message...",
     "typeMessage": "Type your message...",
     "send": "Send",
     "attachFile": "Attach file",

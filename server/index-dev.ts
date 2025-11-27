@@ -178,6 +178,70 @@ async function startDevServer() {
     });
   });
 
+  // ============================================================================
+  // ROTAS DE CHAT PARA PREVIEW - APENAS DEV
+  // Em produção, essas rotas são servidas pelo chat-service (porta 3002)
+  // ============================================================================
+
+  app.get('/api/chat/conversations', (_req: Request, res: Response) => {
+    res.json({
+      conversations: [
+        {
+          id: 'dev-conv-001',
+          titulo: 'Conversa de Teste',
+          criadoEm: new Date().toISOString(),
+          atualizadoEm: new Date().toISOString(),
+        },
+      ],
+    });
+  });
+
+  app.get('/api/chat/conversations/:id/messages', (req: Request, res: Response) => {
+    res.json({
+      messages: [
+        {
+          id: 'msg-001',
+          role: 'assistant',
+          content: 'Olá! Sou a Alice, sua assistente de IA enterprise. Este é um ambiente de preview no Replit. Em produção, a Alice utiliza o Llama 4 Maverick (400B parâmetros) hospedado na Salad Cloud.',
+          createdAt: new Date().toISOString(),
+          tipo: 'text',
+        },
+      ],
+    });
+  });
+
+  // Streaming de mensagens (SSE) para preview
+  app.post('/api/chat/stream', (req: Request, res: Response) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const previewResponse = 'Esta é uma resposta de preview no ambiente de desenvolvimento do Replit. Em produção, a Alice processa suas mensagens usando o modelo Llama 4 Maverick com 400 bilhões de parâmetros, oferecendo respostas inteligentes e contextualizadas.';
+
+    // Simular streaming de tokens
+    const words = previewResponse.split(' ');
+    let index = 0;
+
+    const sendWord = () => {
+      if (index < words.length) {
+        const word = words[index] + (index < words.length - 1 ? ' ' : '');
+        res.write(`data: ${JSON.stringify({ content: word })}\n\n`);
+        index++;
+        setTimeout(sendWord, 50);
+      } else {
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    };
+
+    sendWord();
+  });
+
+  // Rate de imagem para preview
+  app.post('/api/chat/images/:id/rate', (req: Request, res: Response) => {
+    res.json({ success: true, imageId: req.params.id, score: req.body.score });
+  });
+
   app.use('/api/integrations', createProxyMiddleware({
     target: 'http://localhost:3005/api/integrations',
     changeOrigin: true,
