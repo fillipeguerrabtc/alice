@@ -93,9 +93,22 @@ Alice é uma plataforma enterprise de inteligência artificial autônoma, pronta
 | Capacidade | Progresso |
 |------------|-----------|
 | Integração RAG + Chat | 80% |
-| Dashboard Admin | 70% |
+| Dashboard Admin | 100% |
+| Detecção de Geração de Imagem | 100% |
 | Analytics | Planejado |
 | Auto-aprendizado Agressivo | Planejado |
+
+### Ambiente de Desenvolvimento (Replit)
+
+| Componente | Status | Descrição |
+|------------|--------|-----------|
+| Frontend React | Funcional | Vite dev server na porta 5000 |
+| Servidor Dev | Funcional | Express com rotas mock para preview |
+| Autenticação Dev | Funcional | Rotas /api/auth/* com usuário de teste |
+| Dashboard APIs | Funcional | Rotas mock para métricas e stats |
+| Integrations Service | Funcional | Proxy para porta 3005 |
+
+**Nota**: O Replit é apenas IDE para desenvolvimento. Produção roda na Hetzner Cloud via GitHub Actions (Regra 12).
 
 ### Recém Concluído (Fase 6.5)
 

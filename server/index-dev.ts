@@ -81,6 +81,98 @@ async function startDevServer() {
     });
   });
 
+  // Rotas de autenticação para desenvolvimento (Regra 12: Produção na Hetzner)
+  app.get('/api/auth/me', (_req: Request, res: Response) => {
+    res.json({
+      id: 'dev-user-001',
+      email: 'dev@alice.local',
+      name: 'Desenvolvedor',
+      role: 'admin',
+      tenantId: 'dev-tenant',
+      permissions: ['*'],
+    });
+  });
+
+  app.post('/api/auth/login', (_req: Request, res: Response) => {
+    res.json({
+      success: true,
+      user: {
+        id: 'dev-user-001',
+        email: 'dev@alice.local',
+        name: 'Desenvolvedor',
+        role: 'admin',
+        tenantId: 'dev-tenant',
+      },
+    });
+  });
+
+  app.post('/api/auth/logout', (_req: Request, res: Response) => {
+    res.json({ success: true });
+  });
+
+  // Rotas do Dashboard para desenvolvimento (Regra 12: Produção na Hetzner)
+  app.get('/api/chat/stats', (_req: Request, res: Response) => {
+    res.json({
+      conversations: 0,
+      documents: 0,
+      trainingData: 0,
+      tokensUsed: 0,
+      trend: { conversations: 0, documents: 0, trainingData: 0, tokensUsed: 0 },
+    });
+  });
+
+  app.get('/api/chat/usage', (_req: Request, res: Response) => {
+    res.json([]);
+  });
+
+  app.get('/api/audit/recent', (_req: Request, res: Response) => {
+    res.json([]);
+  });
+
+  app.get('/api/integrations/health', (_req: Request, res: Response) => {
+    res.json([
+      { service: 'LLM (Salad Cloud)', status: 'ok', latency: 0, uptime: 100 },
+      { service: 'RAG Service', status: 'ok', latency: 0, uptime: 100 },
+      { service: 'Stripe Portugal', status: 'ok', latency: 0, uptime: 100 },
+      { service: 'Wise Transfers', status: 'ok', latency: 0, uptime: 100 },
+    ]);
+  });
+
+  app.get('/api/chat/images/stats', (_req: Request, res: Response) => {
+    res.json({
+      totalGenerated: 0,
+      approved: 0,
+      pending: 0,
+      inTraining: 0,
+      avgRating: 0,
+    });
+  });
+
+  app.get('/api/chat/pending-handoffs', (_req: Request, res: Response) => {
+    res.json([]);
+  });
+
+  app.get('/api/chat/urgent-conversations', (_req: Request, res: Response) => {
+    res.json([]);
+  });
+
+  app.get('/api/chat/sla/status', (_req: Request, res: Response) => {
+    res.json({
+      breached: 0,
+      atRisk: 0,
+      healthy: 0,
+      avgResponseTime: 0,
+    });
+  });
+
+  app.get('/api/chat/breakers/stats', (_req: Request, res: Response) => {
+    res.json({
+      llm: { state: 'closed', failures: 0, successes: 100 },
+      rag: { state: 'closed', failures: 0, successes: 100 },
+      imageGen: { state: 'closed', failures: 0, successes: 100 },
+    });
+  });
+
   app.use('/api/integrations', createProxyMiddleware({
     target: 'http://localhost:3005/api/integrations',
     changeOrigin: true,

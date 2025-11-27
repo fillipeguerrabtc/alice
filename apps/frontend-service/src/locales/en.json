@@ -161,6 +161,7 @@
     "namespaces": "Namespaces",
     "knowledge": "Knowledge Base",
     "documents": "Documents",
+    "training": "Training",
     "integrations": "Integrations",
     "analytics": "Analytics",
     "settings": "Settings",
@@ -170,7 +171,10 @@
     "support": "Support",
     "resources": "Resources",
     "features": "Services",
-    "finance": "Finance"
+    "finance": "Finance",
+    "takeover": "Customer Service",
+    "images": "Image Gallery",
+    "wise": "Wise Payments"
   },
   "dashboard": {
     "title": "Dashboard",
