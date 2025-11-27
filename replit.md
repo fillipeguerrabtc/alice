@@ -102,7 +102,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 
 | Folder | Description | Tests |
 |--------|-------------|-------|
-| `tests/unit/` | Unit tests | 208 tests |
+| `tests/unit/` | Unit tests | 228 tests |
 | `tests/setup.ts` | Global configuration | Pino logger |
 | `tests/utils/test-helpers.ts` | Helper functions | UUID, mocks |
 
@@ -113,7 +113,7 @@ The frontend is a React SPA. Branding assets for "Yes You Deserve" are managed c
 | `setup-verification.test.ts` | Vitest setup validation | 8 |
 | `health-endpoints.test.ts` | Health endpoint contracts | 45 |
 | `schema-validation.test.ts` | Drizzle schema validation | 58 |
-| `config-validation.test.ts` | Configuration validation | 97 |
+| `config-validation.test.ts` | Configuration validation | 117 |
 
 ### Health Endpoint Contract Tests
 
@@ -165,12 +165,14 @@ Validates environment variables and configuration constants:
 | RAG Config | 6 | Chunk size, overlap, embedding dimensions, similarity |
 | Salad Cloud | 7 | API URL, modelos chat/embeddings, defaults |
 | Consistência | 4 | Validações cruzadas entre configurações |
+| SERVICE_URL Validação | 12 | Validação positiva/negativa de URLs de serviços |
+| Edge Cases | 4 | resetConfigCache repetido, alternância, isolamento |
 
 ## Recent Changes (November 2025)
 
-### Config Validation Tests (Phase 1 Step 1.4)
+### Config Validation Tests (Phase 1 Step 1.4 - COMPLETO)
 
-Implemented 97 tests for validating configuration:
+Implemented 113 tests for validating configuration:
 - `tests/unit/config-validation.test.ts` - Environment and config validation
 - envSchema: NODE_ENV, LOG_LEVEL, SALAD_API_URL, DATABASE_URL, validação negativa
 - CORS: Production origins (yesyoudeserve.duckdns.org), development origins
@@ -180,7 +182,10 @@ Implemented 97 tests for validating configuration:
 - Size limits: Upload (50MB), message (32000 chars), document (10MB)
 - RAG config: Chunk size (1000), overlap (200), embeddings (384 dims)
 - Salad Cloud: llama4-maverick, text-embedding-3-small
-- Total: 208 tests passing (8 setup + 45 health + 58 schema + 97 config)
+- SERVICE_URL validation: URLs absolutas com protocolo HTTP/HTTPS obrigatório
+- CORS_ORIGINS validation: Cada origem deve ser uma URL válida
+- Edge cases: resetConfigCache repetido, alternância, isolamento
+- Total: 228 tests passing (8 setup + 45 health + 58 schema + 117 config)
 
 ### Config Refactoring - Lazy Loading Pattern
 

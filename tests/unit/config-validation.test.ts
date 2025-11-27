@@ -150,6 +150,110 @@ describe('Config - Variáveis de Ambiente (envSchema)', () => {
       process.env.LOG_LEVEL = 'invalid_level';
       expect(() => getEnvConfig()).toThrow();
     });
+
+    it('deve rejeitar AUTH_SERVICE_URL sem protocolo', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.AUTH_SERVICE_URL = 'auth-service:3001';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CHAT_SERVICE_URL com protocolo inválido', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CHAT_SERVICE_URL = 'ftp://chat-service:3002';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar RAG_SERVICE_URL com formato inválido', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RAG_SERVICE_URL = 'http://';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CORS_ORIGINS com URL inválida', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'not-a-valid-url';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CORS_ORIGINS com protocolo inválido', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'ftp://invalid.com';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CORS_ORIGINS com uma URL válida e uma inválida', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'https://valid.com, invalid-url';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar AUTH_SERVICE_URL sem hostname (https://)', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.AUTH_SERVICE_URL = 'https://';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CHAT_SERVICE_URL com hostname vazio (https://:3000)', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CHAT_SERVICE_URL = 'https://:3000';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CORS_ORIGINS sem hostname', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'https://';
+      expect(() => getEnvConfig()).toThrow();
+    });
+
+    it('deve rejeitar CORS_ORIGINS com uma origem sem hostname', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'https://valid.com, https://';
+      expect(() => getEnvConfig()).toThrow();
+    });
+  });
+
+  describe('SERVICE_URL validação positiva (formato válido)', () => {
+    it('deve aceitar AUTH_SERVICE_URL com HTTP', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.AUTH_SERVICE_URL = 'http://auth-service:3001';
+      const config = getEnvConfig();
+      expect(config.AUTH_SERVICE_URL).toBe('http://auth-service:3001');
+    });
+
+    it('deve aceitar CHAT_SERVICE_URL com HTTPS', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CHAT_SERVICE_URL = 'https://chat.example.com:443';
+      const config = getEnvConfig();
+      expect(config.CHAT_SERVICE_URL).toBe('https://chat.example.com:443');
+    });
+
+    it('deve aceitar RAG_SERVICE_URL sem porta (usa porta padrão)', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.RAG_SERVICE_URL = 'http://rag-service';
+      const config = getEnvConfig();
+      expect(config.RAG_SERVICE_URL).toBe('http://rag-service');
+    });
+
+    it('deve aceitar TRAINING_SERVICE_URL com subdomínio', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.TRAINING_SERVICE_URL = 'https://training.api.example.com:8080';
+      const config = getEnvConfig();
+      expect(config.TRAINING_SERVICE_URL).toBe('https://training.api.example.com:8080');
+    });
+
+    it('deve aceitar INTEGRATIONS_SERVICE_URL com path', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.INTEGRATIONS_SERVICE_URL = 'http://integrations:3005/api/v1';
+      const config = getEnvConfig();
+      expect(config.INTEGRATIONS_SERVICE_URL).toBe('http://integrations:3005/api/v1');
+    });
+
+    it('deve aceitar CORS_ORIGINS com múltiplas URLs válidas', () => {
+      process.env.NODE_ENV = 'test';
+      process.env.CORS_ORIGINS = 'https://app.example.com, http://localhost:3000, https://api.example.com:8443';
+      const config = getEnvConfig();
+      expect(config.CORS_ORIGINS).toBe('https://app.example.com, http://localhost:3000, https://api.example.com:8443');
+    });
   });
 });
 
@@ -471,6 +575,44 @@ describe('Config - Service URLs (Regra 16 - Portas)', () => {
       process.env.INTEGRATIONS_SERVICE_URL = 'http://proxy-integrations:7005';
       resetConfigCache();
       expect(SERVICE_URLS.integrations).toBe('http://proxy-integrations:7005');
+    });
+  });
+
+  describe('Edge cases - resetConfigCache', () => {
+    it('deve funcionar quando chamado múltiplas vezes consecutivas', () => {
+      resetConfigCache();
+      resetConfigCache();
+      resetConfigCache();
+      const urls = getServiceUrls();
+      expect(urls.auth).toBe('http://auth-service:3001');
+    });
+
+    it('deve funcionar quando cache está vazio', () => {
+      resetConfigCache();
+      expect(() => resetConfigCache()).not.toThrow();
+    });
+
+    it('deve permitir alternância entre valores', () => {
+      process.env.AUTH_SERVICE_URL = 'http://first:1111';
+      resetConfigCache();
+      expect(SERVICE_URLS.auth).toBe('http://first:1111');
+      
+      process.env.AUTH_SERVICE_URL = 'http://second:2222';
+      resetConfigCache();
+      expect(SERVICE_URLS.auth).toBe('http://second:2222');
+      
+      delete process.env.AUTH_SERVICE_URL;
+      resetConfigCache();
+      expect(SERVICE_URLS.auth).toBe('http://auth-service:3001');
+    });
+
+    it('deve isolar mudanças entre serviços', () => {
+      process.env.AUTH_SERVICE_URL = 'http://custom-auth:9999';
+      resetConfigCache();
+      
+      expect(SERVICE_URLS.auth).toBe('http://custom-auth:9999');
+      expect(SERVICE_URLS.chat).toBe('http://chat-service:3002');
+      expect(SERVICE_URLS.rag).toBe('http://rag-service:3003');
     });
   });
 });

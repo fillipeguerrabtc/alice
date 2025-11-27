@@ -13,6 +13,61 @@
 import { z } from 'zod';
 
 /**
+ * Regex para validação de URL de serviço
+ * Requer: protocolo (http/https) + hostname válido (não vazio) + porta opcional + path opcional
+ * 
+ * Exemplos válidos:
+ * - http://auth-service:3001
+ * - https://api.example.com
+ * - http://localhost:5000/api/v1
+ * 
+ * Exemplos inválidos:
+ * - https:// (sem hostname)
+ * - https://: (hostname vazio)
+ * - ftp://server (protocolo inválido)
+ */
+const SERVICE_URL_REGEX = /^https?:\/\/[a-zA-Z0-9][a-zA-Z0-9.-]*(:\d{1,5})?(\/[^\s]*)?$/;
+
+/**
+ * Schema para validação de URL de serviço (HTTP/HTTPS obrigatório)
+ * Valida formato: http(s)://hostname:port ou http(s)://hostname
+ */
+const serviceUrlSchema = z.string().refine(
+  (value) => {
+    if (!value) return true;
+    if (!SERVICE_URL_REGEX.test(value)) return false;
+    try {
+      const url = new URL(value);
+      return url.hostname.length > 0;
+    } catch {
+      return false;
+    }
+  },
+  'URL de serviço inválida: deve começar com http:// ou https:// e ter hostname válido'
+).optional();
+
+/**
+ * Schema para validação de CORS origins (lista separada por vírgula)
+ * Cada origem deve ser uma URL válida com hostname não vazio
+ */
+const corsOriginsSchema = z.string().refine(
+  (value) => {
+    if (!value) return true;
+    const origins = value.split(',').map(o => o.trim());
+    return origins.every(origin => {
+      if (!SERVICE_URL_REGEX.test(origin)) return false;
+      try {
+        const url = new URL(origin);
+        return url.hostname.length > 0;
+      } catch {
+        return false;
+      }
+    });
+  },
+  'CORS_ORIGINS inválido: cada origem deve ser uma URL válida (http:// ou https://) com hostname'
+).optional();
+
+/**
  * Schema de validação para variáveis de ambiente
  */
 const envSchema = z.object({
@@ -25,9 +80,15 @@ const envSchema = z.object({
   SALAD_ORGANIZATION_ID: z.string().optional(),
   SALAD_API_URL: z.string().default('https://api.salad.com/api/public'),
   
-  CORS_ORIGINS: z.string().optional(),
+  CORS_ORIGINS: corsOriginsSchema,
   
   PRODUCTION_DOMAIN: z.string().default('yesyoudeserve.duckdns.org'),
+  
+  AUTH_SERVICE_URL: serviceUrlSchema,
+  CHAT_SERVICE_URL: serviceUrlSchema,
+  RAG_SERVICE_URL: serviceUrlSchema,
+  TRAINING_SERVICE_URL: serviceUrlSchema,
+  INTEGRATIONS_SERVICE_URL: serviceUrlSchema,
 });
 
 /**
