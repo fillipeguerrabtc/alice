@@ -1,6 +1,9 @@
+# Dashboard desabilitado em produção (Regra 16 - Segurança Enterprise)
+# Para acessar localmente: docker exec -it traefik sh
+# Ref: https://doc.traefik.io/traefik/operations/dashboard/
 api:
-  dashboard: true
-  insecure: true
+  dashboard: false
+  insecure: false
 
 entryPoints:
   web:

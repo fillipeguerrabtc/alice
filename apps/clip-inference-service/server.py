@@ -6,14 +6,16 @@ Modelo: CLIP ViT-L/14 (768 dimensões)
 Licença: MIT (uso comercial permitido)
 
 Endpoints:
-- POST /inference/clip - Gera embedding de texto ou imagem
-- GET /health - Health check
+- POST /inference/clip - Gera embedding de texto ou imagem (REQUER AUTH)
+- GET /health - Health check (público para docker healthcheck)
 
 Documentação em PT-BR (Regra 10 replit.md)
+Segurança Enterprise (Regra 16 replit.md)
 """
 
 import os
 import io
+import sys
 import base64
 import logging
 import time
@@ -22,12 +24,15 @@ from typing import Optional, Union, List
 import torch
 import clip
 from PIL import Image
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Depends, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import APIKeyHeader
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE
 from pydantic import BaseModel, Field
 import uvicorn
 
 # Configuração de logging estruturado (Regra 8 - Pino equivalent)
+IS_PRODUCTION = os.getenv("NODE_ENV", "development") == "production"
 logging.basicConfig(
     level=logging.INFO,
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "clip-inference", "message": "%(message)s"}'
@@ -38,6 +43,31 @@ logger = logging.getLogger(__name__)
 MODEL_NAME = os.getenv("MODEL_NAME", "ViT-L/14")
 PORT = int(os.getenv("PORT", 8080))
 EMBEDDING_DIM = 768  # ViT-L/14 produz embeddings de 768 dimensões
+
+# Segurança: Token de API (Regra 16 - Autenticação obrigatória em produção)
+CLIP_API_TOKEN = os.getenv("CLIP_API_TOKEN")
+MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB default
+
+if not CLIP_API_TOKEN and IS_PRODUCTION:
+    logger.error("CRITICAL: CLIP_API_TOKEN é OBRIGATÓRIO em produção. Abortando.")
+    sys.exit(1)
+
+# Header de autenticação
+api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+    """Verifica token de API para endpoints protegidos."""
+    # Em desenvolvimento sem token, permitir acesso
+    if not CLIP_API_TOKEN and not IS_PRODUCTION:
+        return "dev-mode"
+    
+    if not api_key or api_key != CLIP_API_TOKEN:
+        logger.warning(f"Tentativa de acesso não autorizado")
+        raise HTTPException(
+            status_code=HTTP_401_UNAUTHORIZED,
+            detail="Token de API inválido ou ausente. Use header X-API-Key."
+        )
+    return api_key
 
 # Dispositivo (GPU se disponível)
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -119,16 +149,20 @@ def decode_base64_image(image_data: str) -> Image.Image:
 @app.post("/inference/clip", response_model=ClipResponse)
 async def generate_embedding(
     request: ClipRequest,
+    api_key: str = Depends(verify_api_key),
     salad_api_key: Optional[str] = Header(None, alias="Salad-Api-Key"),
     salad_organization: Optional[str] = Header(None, alias="Salad-Organization"),
 ) -> ClipResponse:
     """
     Gera embedding CLIP para texto ou imagem.
     
+    REQUER AUTENTICAÇÃO: Header X-API-Key com token válido.
+    
     Retorna vetor de 768 dimensões no mesmo espaço vetorial,
     permitindo busca cross-modal (texto → imagem, imagem → texto).
     
     Apenas um dos campos (text ou image) deve ser fornecido.
+    Limite de imagem: 10MB (configurável via MAX_IMAGE_SIZE_BYTES).
     """
     start_time = time.time()
     
@@ -144,6 +178,21 @@ async def generate_embedding(
             status_code=400,
             detail="Forneça apenas 'text' OU 'image', não ambos"
         )
+    
+    # Validar tamanho da imagem (prevenir DoS/GPU hog)
+    if request.image:
+        # Estimar tamanho do base64 (cada 4 chars = 3 bytes)
+        image_data = request.image
+        if image_data.startswith("data:"):
+            _, image_data = image_data.split(",", 1)
+        estimated_size = len(image_data) * 3 // 4
+        
+        if estimated_size > MAX_IMAGE_SIZE_BYTES:
+            logger.warning(f"Imagem rejeitada: {estimated_size} bytes > {MAX_IMAGE_SIZE_BYTES} bytes")
+            raise HTTPException(
+                status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail=f"Imagem muito grande. Máximo: {MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB"
+            )
     
     try:
         with torch.no_grad():

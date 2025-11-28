@@ -331,20 +331,29 @@ app.post('/api/integrations/stripe/create-payment-intent', requirePermission('in
   }
 });
 
+// Validar STRIPE_WEBHOOK_SECRET obrigatório em produção (Regra 16 - Segurança Enterprise)
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
+  logger.error('CRITICAL: STRIPE_WEBHOOK_SECRET é OBRIGATÓRIO em produção com Stripe ativo. Abortando.');
+  process.exit(1);
+}
+
 app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
 
   const sig = req.headers['stripe-signature'] as string;
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
-  if (!webhookSecret) {
+  if (!STRIPE_WEBHOOK_SECRET) {
+    logger.error('Webhook recebido mas STRIPE_WEBHOOK_SECRET não configurado');
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
 
   try {
-    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+    const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
     const db = getDatabase();
 
     switch (event.type) {

@@ -15,6 +15,7 @@ import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';
 import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
@@ -168,6 +169,7 @@ app.use(express.urlencoded({ extended: true }));
 const PgSession = connectPgSimple(session);
 const pool = getPool();
 
+// Configuração de sessão com PostgreSQL (Regra 16 - Segurança Enterprise)
 app.use(session({
   store: new PgSession({
     pool,
@@ -178,10 +180,12 @@ app.use(session({
   resave: false,
   saveUninitialized: false,
   cookie: {
+    // CORREÇÃO SEGURANÇA: secure=true SEMPRE em produção
     secure: config.NODE_ENV === 'production',
     httpOnly: true,
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 dias
-    sameSite: 'lax',
+    // CORREÇÃO SEGURANÇA: sameSite=strict para prevenir CSRF
+    sameSite: config.NODE_ENV === 'production' ? 'strict' : 'lax',
   },
   name: 'alice.sid',
 }));
@@ -764,7 +768,21 @@ app.post('/api/auth/register', async (req: Request, res: Response) => {
   }
 });
 
-app.post('/api/auth/login', passport.authenticate('local'), (req: Request, res: Response) => {
+// Rate limiting para login - 5 tentativas por minuto por IP (Regra 16 - Proteção Brute-force)
+const loginRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minuto
+  max: 5, // 5 tentativas por minuto
+  message: { error: 'Muitas tentativas de login. Aguarde 1 minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => {
+    // Usar IP + email para evitar bloqueio de IP compartilhado
+    const email = req.body?.email || '';
+    return `${req.ip}-${email}`;
+  },
+});
+
+app.post('/api/auth/login', loginRateLimiter, passport.authenticate('local'), (req: Request, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Falha na autenticação' });
   }

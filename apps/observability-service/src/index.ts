@@ -11,17 +11,53 @@
  * TypeScript strict (Regra 8 replit.md)
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import pino from 'pino';
 
+// Logger estruturado - JSON em produção (Regra 8 replit.md)
+const isProduction = process.env.NODE_ENV === 'production';
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
-  transport: {
+  transport: isProduction ? undefined : {
     target: 'pino-pretty',
     options: { colorize: true }
   }
 }).child({ service: 'observability-health' });
+
+// Token de autenticação para endpoints internos (Regra 16 - Segurança)
+const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN;
+
+if (!INTERNAL_API_TOKEN && isProduction) {
+  logger.error('CRITICAL: INTERNAL_API_TOKEN é OBRIGATÓRIO em produção. Abortando.');
+  process.exit(1);
+}
+
+// Middleware de autenticação para endpoints internos
+function requireInternalAuth(req: Request, res: Response, next: NextFunction): void {
+  // Health check básico não requer auth (para docker healthcheck)
+  if (req.path === '/health') {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  // Em desenvolvimento sem token configurado, permitir acesso
+  if (!INTERNAL_API_TOKEN && !isProduction) {
+    return next();
+  }
+
+  if (!token || token !== INTERNAL_API_TOKEN) {
+    logger.warn({ path: req.path, ip: req.ip }, 'Tentativa de acesso não autorizado');
+    res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
+    return;
+  }
+
+  next();
+}
 
 const PORT = process.env.PORT || 3007;
 
@@ -144,14 +180,33 @@ async function checkAllServices(): Promise<StackHealth> {
 
 const app = express();
 
-app.use(cors());
+// Segurança (Regra 16 - Melhores práticas)
+app.use(helmet());
+app.use(cors({
+  origin: process.env.CORS_ORIGINS?.split(',') || [],
+  credentials: true,
+}));
 app.use(express.json());
+
+// Rate limiting - 100 requisições por minuto por IP (Regra 16 - Proteção DoS)
+const limiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path === '/health', // Health check não tem limite
+});
+app.use(limiter);
+
+// Aplicar autenticação em todos os endpoints exceto /health
+app.use(requireInternalAuth);
 
 // ============================================================================
 // ENDPOINTS
 // ============================================================================
 
-// Health check simples (para docker healthcheck)
+// Health check simples (para docker healthcheck) - SEM autenticação
 app.get('/health', (_req: Request, res: Response) => {
   res.json({ 
     status: 'ok', 
