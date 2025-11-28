@@ -99,6 +99,19 @@ The Alice platform employs a microservice architecture with distinct services fo
 - **Development:** Replit IDE for coding, debugging, local testing, and Git operations.
 - **Production:** Hetzner Cloud (CX43: 8 vCPUs, 16 GB RAM, 160 GB SSD) with deployments handled via GitHub Actions.
 
+### Build System (pnpm Workspaces - Enterprise 2025)
+
+- **Package Manager:** pnpm@10.12.4 (padrão enterprise 2025)
+- **Workspace Config:** pnpm-workspace.yaml com packages/* e apps/*
+- **GitHub Actions:** pnpm/action-setup@v4 com cache otimizado BuildKit
+- **Dockerfiles:** Multi-stage builds seguindo padrão oficial pnpm.io:
+  - Stage 1 (deps): Copia package.json de todos os pacotes workspace
+  - Stage 2 (builder): pnpm install → build pacotes → build serviço → pnpm deploy --prod
+  - Stage 3 (runner): node:20-slim com usuário não-root + health checks
+- **Pacotes Internos (packages/):** shared, shared-utils, config, logger, database
+- **Serviços (apps/):** chat, auth, rag, training, integrations, api-gateway, frontend, observability
+- **Campo "files":** Todos os 13 package.json têm `"files": ["dist"]` para pnpm deploy incluir artefatos compilados
+
 ## External Dependencies
 
 - **Salad Cloud:**
