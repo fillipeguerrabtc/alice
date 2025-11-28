@@ -17,7 +17,7 @@ import {
   requirePermission, 
   requireAuth,
   extractAuthContext,
-} from '../../../packages/shared-utils/src/rbac/middleware.js';
+} from '@alice/shared-utils';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);

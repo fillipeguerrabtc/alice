@@ -25,14 +25,14 @@ import bcrypt from 'bcrypt';
 import pino from 'pino';
 import pg from 'pg';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '../../../packages/shared/src/schema';
+import * as schema from '@alice/shared/schema';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
   requirePermission, 
   requireAuth,
   requireRole,
-} from '../../../packages/shared-utils/src/rbac/middleware.js';
+} from '@alice/shared-utils';
 
 const { Pool } = pg;
 

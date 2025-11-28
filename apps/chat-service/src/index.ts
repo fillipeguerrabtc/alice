@@ -24,7 +24,7 @@ import {
   requireAuth,
   requireSameTenant,
   extractAuthContext,
-} from '../../../packages/shared-utils/src/rbac/middleware.js';
+} from '@alice/shared-utils';
 import { 
   buscarContextoRAG, 
   formatarContextoParaLLM, 

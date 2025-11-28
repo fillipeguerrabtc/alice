@@ -24,7 +24,7 @@ import {
   requireAuth,
   requireSameTenant,
   extractAuthContext,
-} from '../../../packages/shared-utils/src/rbac/middleware.js';
+} from '@alice/shared-utils';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
 import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
