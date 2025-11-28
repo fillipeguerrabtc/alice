@@ -11,36 +11,36 @@
   ],
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
     },
     "./logger": {
-      "import": "./dist/logger.js",
-      "types": "./dist/logger.d.ts"
+      "types": "./dist/logger.d.ts",
+      "import": "./dist/logger.js"
     },
     "./circuit-breaker": {
-      "import": "./dist/circuit-breaker.js",
-      "types": "./dist/circuit-breaker.d.ts"
+      "types": "./dist/circuit-breaker.d.ts",
+      "import": "./dist/circuit-breaker.js"
     },
     "./config": {
-      "import": "./dist/config.js",
-      "types": "./dist/config.d.ts"
+      "types": "./dist/config.d.ts",
+      "import": "./dist/config.js"
     },
     "./audit": {
-      "import": "./dist/audit.js",
-      "types": "./dist/audit.d.ts"
+      "types": "./dist/audit.d.ts",
+      "import": "./dist/audit.js"
     },
     "./metrics": {
-      "import": "./dist/metrics.js",
-      "types": "./dist/metrics.d.ts"
+      "types": "./dist/metrics.d.ts",
+      "import": "./dist/metrics.js"
     },
     "./health": {
-      "import": "./dist/health.js",
-      "types": "./dist/health.d.ts"
+      "types": "./dist/health.d.ts",
+      "import": "./dist/health.js"
     },
     "./rbac": {
-      "import": "./dist/rbac/index.js",
-      "types": "./dist/rbac/index.d.ts"
+      "types": "./dist/rbac/index.d.ts",
+      "import": "./dist/rbac/index.js"
     }
   },
   "scripts": {
