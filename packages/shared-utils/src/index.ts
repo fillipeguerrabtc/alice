@@ -30,10 +30,12 @@ export {
   getPermissionRoles,
   PERMISSION_MAP,
 } from './rbac/permissions.js';
-export { 
+export type { 
   Role, 
   PermissionCode, 
   AuthContext,
+} from './rbac/types.js';
+export { 
   ROLE_HIERARCHY,
   ROLE_DESCRIPTIONS,
 } from './rbac/types.js';
