@@ -1615,13 +1615,31 @@ async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string):
 }
 
 /**
+ * Resultado do processamento de mensagem via Chat Service
+ * Inclui suporte para escalação automática (handover)
+ */
+interface ChatMessageResult {
+  response: string | null;
+  escalated: boolean;
+  humanMode: boolean;
+  trigger?: string;
+  error?: string;
+}
+
+/**
  * Processa mensagem via Chat Service (LLM + RAG)
+ * Integrado com sistema de Handover/Takeover para escalação automática
+ * 
+ * O chat-service agora verifica shouldEscalate() e pode retornar:
+ * - escalated: true → Conversa foi escalada para agente humano
+ * - humanMode: true → Conversa já está em modo humano
+ * - response: string → Resposta normal do LLM
  */
 async function processMessageWithLLM(
   conversationId: string,
   message: string,
   tenantId?: string
-): Promise<string> {
+): Promise<ChatMessageResult> {
   try {
     const response = await fetch(`${CHAT_SERVICE_URL}/api/chat/message`, {
       method: 'POST',
@@ -1641,11 +1659,57 @@ async function processMessageWithLLM(
       throw new Error(`Chat service error: ${response.status}`);
     }
 
-    const data = await response.json() as { response: string };
-    return data.response;
+    const data = await response.json() as {
+      response?: string;
+      escalated?: boolean;
+      humanMode?: boolean;
+      trigger?: string;
+    };
+    
+    // Verificar se houve escalação automática
+    if (data.escalated) {
+      logger.info({
+        conversationId,
+        trigger: data.trigger,
+        channel: 'whatsapp',
+      }, 'Escalação automática detectada via WhatsApp');
+      
+      return {
+        response: data.response || 'Um de nossos atendentes irá auxiliá-lo em breve. Por favor, aguarde.',
+        escalated: true,
+        humanMode: false,
+        trigger: data.trigger,
+      };
+    }
+    
+    // Verificar se conversa está em modo humano
+    if (data.humanMode) {
+      logger.info({
+        conversationId,
+        channel: 'whatsapp',
+      }, 'Conversa em modo humano - mensagem encaminhada para agente');
+      
+      return {
+        response: null,
+        escalated: false,
+        humanMode: true,
+      };
+    }
+    
+    // Resposta normal do LLM
+    return {
+      response: data.response || '',
+      escalated: false,
+      humanMode: false,
+    };
   } catch (error) {
     logger.error({ error, conversationId }, 'Falha ao processar mensagem com LLM');
-    return 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.';
+    return {
+      response: 'Desculpe, ocorreu um erro ao processar sua mensagem. Por favor, tente novamente.',
+      escalated: false,
+      humanMode: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    };
   }
 }
 
@@ -1795,32 +1859,80 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
     }
 
     // Processar mensagem com LLM via Chat Service
-    const llmResponse = await processMessageWithLLM(
+    // Inclui verificação automática de handover/escalação
+    const chatResult = await processMessageWithLLM(
       conversation.id,
       Body,
       user.tenantId ?? undefined
     );
 
-    // Salvar resposta do bot
-    await db.insert(schema.messages).values({
-      conversationId: conversation.id,
-      isFromUser: false,
-      conteudo: llmResponse,
-      tipo: 'text',
-      metadata: {
-        channel: 'whatsapp',
-        generatedBy: 'llm',
-      },
-    });
-
-    // Enviar resposta via WhatsApp
-    const sendResult = await sendWhatsAppMessage(From, llmResponse);
-
-    if (!sendResult.success) {
-      logger.error({
+    // Se conversa está em modo humano, não enviar resposta automática
+    if (chatResult.humanMode) {
+      logger.info({
         conversationId: conversation.id,
-        error: sendResult.error,
-      }, 'Falha ao enviar resposta WhatsApp');
+        channel: 'whatsapp',
+      }, 'Conversa em modo humano - aguardando resposta do agente');
+      return;
+    }
+
+    // Se houve escalação automática, enviar mensagem de notificação
+    if (chatResult.escalated) {
+      logger.info({
+        conversationId: conversation.id,
+        trigger: chatResult.trigger,
+        channel: 'whatsapp',
+      }, 'Escalação automática processada via WhatsApp');
+      
+      // Salvar mensagem de escalação
+      await db.insert(schema.messages).values({
+        conversationId: conversation.id,
+        isFromUser: false,
+        conteudo: chatResult.response || 'Um de nossos atendentes irá auxiliá-lo em breve.',
+        tipo: 'text',
+        metadata: {
+          channel: 'whatsapp',
+          escalated: true,
+          escalationTrigger: chatResult.trigger,
+        },
+      });
+      
+      // Enviar notificação de escalação via WhatsApp
+      const escalationMessage = chatResult.response || 'Um de nossos atendentes irá auxiliá-lo em breve. Por favor, aguarde.';
+      const sendResult = await sendWhatsAppMessage(From, escalationMessage);
+      
+      if (!sendResult.success) {
+        logger.error({
+          conversationId: conversation.id,
+          error: sendResult.error,
+        }, 'Falha ao enviar notificação de escalação WhatsApp');
+      }
+      
+      return;
+    }
+
+    // Resposta normal do LLM
+    if (chatResult.response) {
+      // Salvar resposta do bot
+      await db.insert(schema.messages).values({
+        conversationId: conversation.id,
+        isFromUser: false,
+        conteudo: chatResult.response,
+        tipo: 'text',
+        metadata: {
+          channel: 'whatsapp',
+          generatedBy: 'llm',
+        },
+      });
+
+      // Enviar resposta via WhatsApp
+      const sendResult = await sendWhatsAppMessage(From, chatResult.response);
+
+      if (!sendResult.success) {
+        logger.error({
+          conversationId: conversation.id,
+          error: sendResult.error,
+        }, 'Falha ao enviar resposta WhatsApp');
+      }
     }
 
   } catch (error) {

@@ -994,6 +994,104 @@ setInterval(() => {
 const wsClients = new Map<string, WebSocket>();
 const getClientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
 
+// ============================================================================
+// MAPA DE AGENTES CONECTADOS (HANDOVER/TAKEOVER REAL-TIME)
+// Permite notificações em tempo real para agentes humanos
+// ============================================================================
+interface AgentConnection {
+  ws: WebSocket;
+  userId: string;
+  tenantId: string;
+  subscribedConversations: Set<string>;
+}
+const wsAgentClients = new Map<string, AgentConnection>();
+
+/**
+ * Notifica agentes conectados sobre eventos de handover
+ * Respeita isolamento de tenant e inscrições de conversas específicas
+ * Usado para atualizar TakeoverPanel em tempo real
+ * 
+ * SEGURANÇA (OWASP + Regra 16):
+ * - Filtra por tenantId para isolamento multi-tenant
+ * - Respeita subscribedConversations quando agente se inscreve em conversas específicas
+ * - Para eventos 'new_handoff', notifica TODOS os agentes do tenant (para pickup)
+ * - Para eventos 'new_message', notifica apenas agentes inscritos na conversa
+ */
+function notifyAgentsAboutEvent(
+  eventType: 'new_handoff' | 'new_message' | 'sla_warning' | 'handback',
+  data: {
+    conversationId: string;
+    tenantId?: string;
+    message?: string;
+    from?: string;
+    trigger?: string;
+    priority?: string;
+  }
+) {
+  // CRÍTICO: tenantId é obrigatório para isolamento multi-tenant
+  if (!data.tenantId) {
+    logger.warn({
+      eventType,
+      conversationId: data.conversationId,
+    }, 'Notificação ignorada - tenantId ausente (violaria isolamento multi-tenant)');
+    return;
+  }
+  
+  let notifiedCount = 0;
+  
+  for (const [key, agent] of wsAgentClients.entries()) {
+    // SEGURANÇA: Filtrar por tenant (isolamento obrigatório)
+    if (agent.tenantId !== data.tenantId) {
+      continue;
+    }
+    
+    // Para 'new_message', verificar se agente está inscrito na conversa
+    // Isso evita spam de notificações para agentes não interessados
+    if (eventType === 'new_message') {
+      // Se agente tem inscrições específicas, verificar se esta conversa está incluída
+      if (agent.subscribedConversations.size > 0 && 
+          !agent.subscribedConversations.has(data.conversationId)) {
+        continue;
+      }
+    }
+    
+    try {
+      agent.ws.send(JSON.stringify({
+        type: 'agent_notification',
+        event: eventType,
+        data: {
+          conversationId: data.conversationId,
+          message: data.message,
+          from: data.from,
+          trigger: data.trigger,
+          priority: data.priority,
+          // Não incluir tenantId na resposta (já está implícito na conexão)
+        },
+        timestamp: new Date().toISOString(),
+      }));
+      
+      notifiedCount++;
+      
+      logger.debug({ 
+        agentKey: key, 
+        eventType, 
+        conversationId: data.conversationId,
+      }, 'Agente notificado sobre evento');
+    } catch (error) {
+      logger.warn({ error, agentKey: key }, 'Falha ao notificar agente');
+      wsAgentClients.delete(key);
+    }
+  }
+  
+  if (notifiedCount === 0 && eventType === 'new_handoff') {
+    logger.warn({
+      eventType,
+      conversationId: data.conversationId,
+      tenantId: data.tenantId,
+    }, 'Nenhum agente online para receber handoff - SLA pode ser impactado');
+  }
+}
+
 wss.on('connection', (ws, req) => {
   // Cast para ExtendedWebSocket para suportar heartbeat
   const extWs = ws as ExtendedWebSocket;
@@ -1050,16 +1148,13 @@ wss.on('connection', (ws, req) => {
       if (message.type === 'chat') {
         const ragStartTime = Date.now();
         
-        const [userMsg] = await db.insert(schema.messages).values({
-          conversationId: message.conversationId,
-          userId,
-          conteudo: message.content,
-          tipo: 'text',
-          isFromUser: true,
-        }).returning();
-
-        ws.send(JSON.stringify({ type: 'message', data: userMsg }));
-
+        // ========================================================================
+        // FASE 1: VERIFICAÇÕES PRÉ-INSERT (CRÍTICO para handover correto!)
+        // Verificar conversa, tenant, estado e escalação ANTES de persistir mensagem
+        // Isso garante que mensagens escaladas não sejam tratadas como bot-handled
+        // ========================================================================
+        
+        // Buscar conversa e validar tenant
         const conversation = await db.query.conversations.findFirst({
           where: eq(schema.conversations.id, message.conversationId),
           with: { 
@@ -1070,8 +1165,16 @@ wss.on('connection', (ws, req) => {
             },
           },
         });
+        
+        if (!conversation) {
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Conversa não encontrada' 
+          }));
+          return;
+        }
 
-        // Verificar isolamento multi-tenant para mensagens de chat
+        // Verificar isolamento multi-tenant (SEGURANÇA - derivar tenantId da conversa)
         const conversationTenantId = conversation?.agent?.namespace?.tenantId;
         if (conversationTenantId && conversationTenantId !== tenantId) {
           logger.warn({ 
@@ -1085,6 +1188,131 @@ wss.on('connection', (ws, req) => {
           }));
           return;
         }
+        
+        // Usar tenantId derivado da conversa (mais seguro que confiar no parâmetro)
+        const safeTenantId = conversationTenantId || tenantId;
+        
+        // Verificar estado da conversa ANTES de inserir mensagem
+        const conversationState = await getOrCreateConversationState(message.conversationId);
+        
+        // Se já está em modo humano, apenas encaminhar para agente (sem LLM)
+        if (conversationState.controlMode === 'human') {
+          // Salvar mensagem do usuário com metadata indicando modo humano
+          const [userMsg] = await db.insert(schema.messages).values({
+            conversationId: message.conversationId,
+            userId,
+            conteudo: message.content,
+            tipo: 'text',
+            isFromUser: true,
+            metadata: { 
+              handledBy: 'human',
+              assignedAgentId: conversationState.assignedAgentId,
+            },
+          }).returning();
+          
+          ws.send(JSON.stringify({ type: 'message', data: userMsg }));
+          ws.send(JSON.stringify({
+            type: 'human_mode',
+            message: 'Sua mensagem foi enviada para o atendente humano.',
+            assignedAgentId: conversationState.assignedAgentId,
+          }));
+          
+          // Notificar agente sobre nova mensagem (usando tenantId derivado da conversa)
+          notifyAgentsAboutEvent('new_message', {
+            conversationId: message.conversationId,
+            tenantId: safeTenantId,
+            message: message.content,
+            from: 'websocket',
+          });
+          
+          return;
+        }
+
+        // ========================================================================
+        // VERIFICAÇÃO DE HANDOVER AUTOMÁTICO (ANTES de inserir mensagem!)
+        // Verifica se mensagem deve triggerar escalação para agente humano
+        // ========================================================================
+        const escalationContext = await shouldEscalate(message.conversationId, message.content);
+        
+        if (escalationContext) {
+          // Processar escalação automática
+          const escalationResult = await processAutoEscalation(escalationContext);
+          
+          // Salvar mensagem do usuário com metadata indicando escalação
+          const [userMsg] = await db.insert(schema.messages).values({
+            conversationId: message.conversationId,
+            userId,
+            conteudo: message.content,
+            tipo: 'text',
+            isFromUser: true,
+            metadata: { 
+              escalated: true,
+              escalationTrigger: escalationContext.trigger,
+              handledBy: 'escalation',
+            },
+          }).returning();
+          
+          ws.send(JSON.stringify({ type: 'message', data: userMsg }));
+          
+          logger.info({
+            conversationId: message.conversationId,
+            trigger: escalationContext.trigger,
+            userId,
+            tenantId: safeTenantId,
+            success: escalationResult.success,
+          }, 'Escalação automática processada via WebSocket');
+          
+          // Notificar usuário sobre escalação
+          ws.send(JSON.stringify({
+            type: 'escalation',
+            trigger: escalationContext.trigger,
+            message: 'Sua conversa foi encaminhada para um atendente humano. Por favor, aguarde.',
+            sentiment: escalationContext.sentiment,
+            confidence: escalationContext.confidence,
+          }));
+          
+          // Notificar agentes conectados em tempo real (usando tenantId derivado)
+          notifyAgentsAboutEvent('new_handoff', {
+            conversationId: message.conversationId,
+            tenantId: safeTenantId,
+            message: message.content,
+            trigger: escalationContext.trigger,
+            priority: 'high',
+          });
+          
+          // Salvar mensagem do sistema informando escalação
+          await db.insert(schema.messages).values({
+            conversationId: message.conversationId,
+            conteudo: `[Sistema] Conversa escalada automaticamente. Trigger: ${escalationContext.trigger}`,
+            tipo: 'text',
+            isFromUser: false,
+            metadata: {
+              systemMessage: true,
+              escalationTrigger: escalationContext.trigger,
+              sentiment: escalationContext.sentiment,
+              confidence: escalationContext.confidence,
+            },
+          });
+          
+          return; // CRÍTICO: Parar aqui - não processar com LLM
+        }
+        
+        // ========================================================================
+        // FASE 2: FLUXO NORMAL (Bot responde via LLM)
+        // Apenas chegamos aqui se não houve escalação nem modo humano
+        // ========================================================================
+        
+        // Agora é seguro inserir a mensagem do usuário (será processada pelo bot)
+        const [userMsg] = await db.insert(schema.messages).values({
+          conversationId: message.conversationId,
+          userId,
+          conteudo: message.content,
+          tipo: 'text',
+          isFromUser: true,
+          metadata: { handledBy: 'bot' },
+        }).returning();
+
+        ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
         const imageDetection = detectImageGenerationRequest(message.content);
         
@@ -1105,7 +1333,7 @@ wss.on('connection', (ws, req) => {
             const imageResult = await generateImage(
               { prompt: imageDetection.prompt },
               {
-                tenantId, // Usar tenantId validado da conexão WebSocket
+                tenantId: safeTenantId, // Usar tenantId derivado da conversa
                 conversationId: message.conversationId,
                 messageId: userMsg.id,
                 createdBy: userId,
@@ -1267,11 +1495,11 @@ wss.on('connection', (ws, req) => {
         }
 
         // Verificar se a conversa pertence ao tenant correto
-        const conversationTenantId = conversation.agent?.namespace?.tenantId;
-        if (conversationTenantId && conversationTenantId !== tenantId) {
+        const mediaConversationTenantId = conversation.agent?.namespace?.tenantId;
+        if (mediaConversationTenantId && mediaConversationTenantId !== tenantId) {
           logger.warn({ 
             tenantId, 
-            conversationTenantId, 
+            mediaConversationTenantId, 
             conversationId: mediaMessage.conversationId,
           }, 'Tentativa de upload cross-tenant bloqueada');
           ws.send(JSON.stringify({ 
@@ -1280,6 +1508,9 @@ wss.on('connection', (ws, req) => {
           }));
           return;
         }
+        
+        // Usar tenantId derivado da conversa (mais seguro)
+        const mediaSafeTenantId = mediaConversationTenantId || tenantId;
 
         // Determinar tipo de mídia
         const mimeType = mediaMessage.media.mimeType.toLowerCase();
@@ -1310,12 +1541,12 @@ wss.on('connection', (ws, req) => {
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
         // Upload para RAG Service (processamento assíncrono)
-        // Usar tenantId da conexão WebSocket
+        // Usar tenantId derivado da conversa (mais seguro)
         const uploadResult = await uploadMediaToRAG(
           mediaMessage.media.file,
           mediaMessage.media.filename,
           mediaMessage.media.mimeType,
-          tenantId,
+          mediaSafeTenantId,
           userMsg.id,
           mediaMessage.conversationId,
         );
@@ -1469,6 +1700,189 @@ wss.on('connection', (ws, req) => {
     cleanupWsRateLimit(clientKey);
     logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket desconectado');
   });
+});
+
+// ============================================================================
+// WEBSOCKET PARA AGENTES (TAKEOVER/HANDOVER REAL-TIME)
+// Permite que agentes recebam notificações em tempo real sobre:
+// - Novas escalações (new_handoff)
+// - Mensagens de usuários em conversas humanas (new_message)
+// - Alertas de SLA (sla_warning)
+// - Handbacks (handback)
+// ============================================================================
+const agentWss = new WebSocketServer({ noServer: true });
+
+// Atualizar upgrade handler para suportar dois WebSocket servers
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url || '', 'ws://localhost').pathname;
+  
+  if (pathname === '/ws/agent') {
+    // Conexão de agente para TakeoverPanel
+    agentWss.handleUpgrade(request, socket, head, (ws) => {
+      agentWss.emit('connection', ws, request);
+    });
+  } else {
+    // Conexão de cliente normal (chat)
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  }
+});
+
+agentWss.on('connection', async (ws, req) => {
+  const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
+  const agentId = urlParams.get('agentId');
+  const claimedTenantId = urlParams.get('tenantId');
+  
+  if (!agentId) {
+    ws.close(4001, 'ID do agente necessário');
+    return;
+  }
+  
+  if (!claimedTenantId) {
+    ws.close(4002, 'Tenant ID obrigatório para conexão de agente');
+    return;
+  }
+  
+  // ========================================================================
+  // SEGURANÇA: Validar que o agente pertence ao tenant especificado
+  // OWASP API Security - Não confiar em tenantId passado via URL
+  // Derivar tenantId do agente no banco de dados
+  // ========================================================================
+  try {
+    const user = await db.query.users.findFirst({
+      where: eq(schema.users.id, agentId),
+    });
+    
+    if (!user) {
+      logger.warn({ agentId, claimedTenantId }, 'Agente não encontrado no banco de dados');
+      ws.close(4003, 'Agente não encontrado');
+      return;
+    }
+    
+    // Derivar tenantId do agente (verificação de segurança)
+    const safeTenantId = user.tenantId;
+    
+    if (!safeTenantId) {
+      logger.warn({ agentId }, 'Agente sem tenant associado');
+      ws.close(4004, 'Agente sem tenant associado');
+      return;
+    }
+    
+    // Verificar se o tenant reivindicado corresponde ao tenant real do agente
+    if (claimedTenantId !== safeTenantId) {
+      logger.warn({ 
+        agentId, 
+        claimedTenantId, 
+        actualTenantId: safeTenantId,
+      }, 'Tentativa de conexão WebSocket com tenant incorreto - possível ataque');
+      ws.close(4005, 'Tenant inválido para este agente');
+      return;
+    }
+    
+    // Verificar se o agente tem permissão de takeover
+    const userRole = await db.query.userRoles.findFirst({
+      where: eq(schema.userRoles.userId, agentId),
+      with: {
+        role: {
+          with: {
+            permissions: {
+              with: {
+                permission: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    
+    const hasPermission = userRole?.role?.permissions?.some(
+      (p: { permission: { name: string } }) => 
+        p.permission.name === 'chat:takeover:read' || 
+        p.permission.name === 'chat:takeover:write'
+    );
+    
+    if (!hasPermission) {
+      logger.warn({ agentId, safeTenantId }, 'Agente sem permissão de takeover');
+      ws.close(4006, 'Sem permissão para takeover');
+      return;
+    }
+    
+    const agentKey = `${safeTenantId}:${agentId}`;
+    
+    // Registrar agente conectado (usando tenantId derivado do banco)
+    wsAgentClients.set(agentKey, {
+      ws,
+      userId: agentId,
+      tenantId: safeTenantId, // Usar tenantId derivado, não o reivindicado
+      subscribedConversations: new Set(),
+    });
+    
+    logger.info({ agentId, tenantId: safeTenantId, agentKey }, 'Agente conectado ao WebSocket de takeover');
+    
+    // Enviar confirmação de conexão
+    ws.send(JSON.stringify({
+      type: 'connected',
+      agentId,
+      tenantId: safeTenantId, // Usar tenantId derivado
+      timestamp: new Date().toISOString(),
+    }));
+    // Handlers de eventos ficam dentro do try pois precisam do agentKey e safeTenantId
+    ws.on('message', async (data) => {
+      try {
+        const message = JSON.parse(data.toString()) as {
+          type: string;
+          conversationId?: string;
+        };
+        
+        // Agente pode se inscrever para receber notificações de conversas específicas
+        if (message.type === 'subscribe' && message.conversationId) {
+          const agent = wsAgentClients.get(agentKey);
+          if (agent) {
+            agent.subscribedConversations.add(message.conversationId);
+            ws.send(JSON.stringify({
+              type: 'subscribed',
+              conversationId: message.conversationId,
+            }));
+            logger.debug({ agentKey, conversationId: message.conversationId }, 'Agente inscrito em conversa');
+          }
+        }
+        
+        // Agente pode se desinscrever de conversas
+        if (message.type === 'unsubscribe' && message.conversationId) {
+          const agent = wsAgentClients.get(agentKey);
+          if (agent) {
+            agent.subscribedConversations.delete(message.conversationId);
+            ws.send(JSON.stringify({
+              type: 'unsubscribed',
+              conversationId: message.conversationId,
+            }));
+          }
+        }
+        
+        // Ping/pong para manter conexão viva
+        if (message.type === 'ping') {
+          ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+        }
+      } catch (error) {
+        logger.error({ error }, 'Erro ao processar mensagem de agente WebSocket');
+      }
+    });
+    
+    ws.on('close', () => {
+      wsAgentClients.delete(agentKey);
+      logger.info({ agentId, tenantId: safeTenantId, agentKey }, 'Agente desconectado do WebSocket de takeover');
+    });
+    
+    ws.on('error', (error) => {
+      logger.error({ error, agentKey }, 'Erro no WebSocket do agente');
+      wsAgentClients.delete(agentKey);
+    });
+  } catch (error) {
+    logger.error({ error, agentId }, 'Erro ao validar agente para WebSocket');
+    ws.close(4000, 'Erro interno de autenticação');
+    return;
+  }
 });
 
 // ============================================================================
@@ -1757,6 +2171,321 @@ app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRe
 app.get('/api/chat/escalation-config', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
   res.json(ESCALATION_CONFIG);
 });
+
+// ============================================================================
+// ROTAS DE INTEGRAÇÃO CROSS-SERVICE (HANDOVER/TAKEOVER)
+// Usadas pelo integrations-service para WhatsApp e outros canais
+// ============================================================================
+
+// Zod schemas para validação (OWASP API3)
+// SEGURANÇA: Schema para canais externos força role='user' (impede spoofing de assistant)
+const messageFromChannelSchema = z.object({
+  conversationId: z.string().uuid(),
+  content: z.string().min(1).max(8000),
+  // Role para canais externos - validação estrita
+  role: z.enum(['user']).default('user'), // APENAS 'user' permitido em canais externos
+  channel: z.enum(['whatsapp', 'web', 'sms', 'email']).default('web'),
+});
+
+const notifyAgentSchema = z.object({
+  conversationId: z.string().uuid(),
+  type: z.enum(['new_message', 'escalation', 'sla_warning']),
+  message: z.string().max(4000).optional(),
+  from: z.string().max(100).optional(),
+  trigger: z.string().max(100).optional(),
+  priority: z.enum(['low', 'medium', 'high']).optional(),
+});
+
+/**
+ * POST /api/chat/message
+ * 
+ * Processa mensagem de canais externos (WhatsApp, SMS, etc.)
+ * Inclui verificação de handover automático via shouldEscalate()
+ * 
+ * SEGURANÇA (OWASP + Regra 16):
+ * - Apenas role='user' permitido (impede spoofing de assistant/system)
+ * - tenantId derivado da conversa (não confia no header X-Tenant-Id)
+ * - Verificação de escalação ANTES de persistir mensagem
+ * 
+ * Usado pelo integrations-service para processar mensagens com LLM
+ */
+app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) => {
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = messageFromChannelSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/chat/message');
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  
+  const { conversationId, content, channel } = parseResult.data;
+  // role é sempre 'user' após validação Zod (isFromUser sempre true)
+  
+  try {
+    // ========================================================================
+    // FASE 1: VERIFICAÇÕES PRÉ-INSERT (CRÍTICO para handover correto!)
+    // ========================================================================
+    
+    // Buscar conversa com agent e namespace para derivar tenantId
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.id, conversationId),
+      with: { 
+        agent: {
+          with: {
+            namespace: true,
+          },
+        },
+      },
+    });
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+    
+    // SEGURANÇA: Derivar tenantId da conversa (não confiar no header)
+    const safeTenantId = (conversation.agent as { namespace?: { tenantId?: string } })
+      ?.namespace?.tenantId;
+    
+    if (!safeTenantId) {
+      logger.warn({ conversationId }, 'Conversa sem tenant associado');
+    }
+    
+    // Verificar estado da conversa ANTES de inserir mensagem
+    const state = await getOrCreateConversationState(conversationId);
+    
+    // Se já está em modo humano, apenas encaminhar para agente (sem LLM)
+    if (state.controlMode === 'human') {
+      // Salvar mensagem do usuário com metadata indicando modo humano
+      const [userMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        conteudo: content,
+        tipo: 'text',
+        isFromUser: true, // Sempre true (role forçado a 'user')
+        metadata: { 
+          channel, 
+          handledBy: 'human',
+          assignedAgentId: state.assignedAgentId,
+        },
+      }).returning();
+      
+      // Notificar agente sobre nova mensagem (usando tenantId derivado)
+      notifyAgentsAboutEvent('new_message', {
+        conversationId,
+        tenantId: safeTenantId,
+        message: content,
+        from: channel,
+      });
+      
+      return res.json({
+        humanMode: true,
+        response: null,
+        userMessage,
+      });
+    }
+    
+    // ========================================================================
+    // VERIFICAÇÃO DE HANDOVER AUTOMÁTICO (ANTES de persistir mensagem!)
+    // ========================================================================
+    const escalationContext = await shouldEscalate(conversationId, content);
+    
+    if (escalationContext) {
+      // Processar escalação automática
+      const escalationResult = await processAutoEscalation(escalationContext);
+      
+      // Salvar mensagem do usuário com metadata indicando escalação
+      const [userMessage] = await db.insert(schema.messages).values({
+        conversationId,
+        conteudo: content,
+        tipo: 'text',
+        isFromUser: true, // Sempre true (role forçado a 'user')
+        metadata: { 
+          channel, 
+          escalated: true,
+          escalationTrigger: escalationContext.trigger,
+          handledBy: 'escalation',
+        },
+      }).returning();
+      
+      logger.info({
+        conversationId,
+        trigger: escalationContext.trigger,
+        channel,
+        tenantId: safeTenantId,
+        success: escalationResult.success,
+      }, 'Escalação automática processada via canal externo');
+      
+      // Notificar agentes conectados em tempo real (usando tenantId derivado)
+      notifyAgentsAboutEvent('new_handoff', {
+        conversationId,
+        tenantId: safeTenantId,
+        message: content,
+        trigger: escalationContext.trigger,
+        priority: 'high',
+      });
+      
+      return res.json({
+        escalated: true,
+        trigger: escalationContext.trigger,
+        response: 'Um de nossos atendentes irá auxiliá-lo em breve. Por favor, aguarde.',
+        userMessage,
+      });
+    }
+    
+    // ========================================================================
+    // FASE 2: FLUXO NORMAL (Bot responde via LLM)
+    // Apenas chegamos aqui se não houve escalação nem modo humano
+    // ========================================================================
+    
+    // Salvar mensagem do usuário (será processada pelo bot)
+    const [userMessage] = await db.insert(schema.messages).values({
+      conversationId,
+      conteudo: content,
+      tipo: 'text',
+      isFromUser: true, // Sempre true (role forçado a 'user')
+      metadata: { channel, handledBy: 'bot' },
+    }).returning();
+    
+    // Processar mensagem com LLM
+    const agent = conversation.agent as { instrucoes?: string } | null;
+    let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+    
+    // Buscar contexto RAG se disponível
+    const ragResult = await buscarContextoRAG(content, conversation.namespaceId || undefined);
+    if (ragResult && ragResult.context) {
+      systemPrompt += formatarContextoParaLLM(ragResult);
+    }
+    
+    // Buscar histórico recente
+    const previousMessages = await db.query.messages.findMany({
+      where: eq(schema.messages.conversationId, conversationId),
+      orderBy: [desc(schema.messages.criadoEm)],
+      limit: 10,
+    });
+    
+    const llmMessages: LLMMessage[] = [
+      { role: 'system', content: systemPrompt },
+      ...previousMessages.reverse().map(m => ({
+        role: (m.isFromUser ? 'user' : 'assistant') as 'user' | 'assistant',
+        content: m.conteudo || '',
+      })),
+    ];
+    
+    const llmStartTime = Date.now();
+    const llmResponse = await callLlamaAPI(llmMessages);
+    const llmLatency = Date.now() - llmStartTime;
+    
+    // Salvar resposta do bot
+    const [botMessage] = await db.insert(schema.messages).values({
+      conversationId,
+      agentId: conversation.agentId,
+      conteudo: llmResponse as string,
+      tipo: 'text',
+      isFromUser: false,
+      latenciaMs: llmLatency,
+      metadata: { channel, generatedBy: 'llm' },
+    }).returning();
+    
+    // Atualizar conversa
+    await db.update(schema.conversations)
+      .set({
+        totalMensagens: (conversation.totalMensagens || 0) + 2,
+        ultimaMensagemEm: new Date(),
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.conversations.id, conversationId));
+    
+    logger.info({
+      conversationId,
+      channel,
+      llmLatencyMs: llmLatency,
+      usedRag: !!ragResult?.context,
+    }, 'Mensagem processada via canal externo');
+    
+    res.json({
+      response: llmResponse,
+      userMessage,
+      botMessage,
+      ragSources: ragResult?.sources || [],
+    });
+  } catch (error) {
+    logger.error({ error, conversationId, channel }, 'Erro ao processar mensagem de canal externo');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+}));
+
+/**
+ * POST /api/chat/notify-agent
+ * 
+ * Notifica agentes humanos sobre novos eventos (mensagens, escalações, SLA)
+ * Usado pelo integrations-service para notificar agentes sobre WhatsApp, etc.
+ * 
+ * SEGURANÇA (OWASP + Regra 16):
+ * - tenantId derivado da conversa (não confia no header X-Tenant-Id)
+ * - Previne data leak cross-tenant
+ */
+app.post('/api/chat/notify-agent', asyncHandler(async (req: Request, res: Response) => {
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = notifyAgentSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    logger.warn({ errors: parseResult.error.flatten() }, 'Input inválido em /api/chat/notify-agent');
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  
+  const { conversationId, type, message, from, trigger, priority } = parseResult.data;
+  
+  try {
+    // SEGURANÇA: Derivar tenantId da conversa (não confiar no header)
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.id, conversationId),
+      with: { 
+        agent: {
+          with: {
+            namespace: true,
+          },
+        },
+      },
+    });
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+    
+    const safeTenantId = (conversation.agent as { namespace?: { tenantId?: string } })
+      ?.namespace?.tenantId;
+    
+    if (!safeTenantId) {
+      logger.warn({ conversationId }, 'Conversa sem tenant associado - notificação pode falhar');
+    }
+    
+    // Mapear tipo para evento
+    const eventType = type === 'escalation' ? 'new_handoff' : 
+                      type === 'sla_warning' ? 'sla_warning' : 'new_message';
+    
+    // Notificar todos os agentes conectados (usando tenantId derivado)
+    notifyAgentsAboutEvent(eventType, {
+      conversationId,
+      tenantId: safeTenantId,
+      message,
+      from,
+      trigger,
+      priority,
+    });
+    
+    logger.info({
+      conversationId,
+      eventType,
+      tenantId: safeTenantId,
+      connectedAgents: wsAgentClients.size,
+    }, 'Agentes notificados via API');
+    
+    res.json({
+      success: true,
+      notifiedAgents: wsAgentClients.size,
+    });
+  } catch (error) {
+    logger.error({ error, conversationId }, 'Erro ao notificar agentes');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+}));
 
 // ============================================================================
 // IMAGE GENERATION ROUTES (FASE 6.5+)
