@@ -16,7 +16,6 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import CircuitBreaker from 'opossum';
-import pino from 'pino';
 import { getDatabase, getPool, schema, toSql } from '@alice/database';
 import { eq, sql, desc, and, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
@@ -397,13 +396,9 @@ function validateUpload(file: Express.Multer.File): { valid: boolean; error?: st
   return { valid: true };
 }
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'rag-service' });
+// Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
+import { createLogger } from '@alice/logger';
+const logger = createLogger('rag-service');
 
 const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;

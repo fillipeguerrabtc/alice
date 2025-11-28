@@ -27,7 +27,7 @@ import { Strategy as MicrosoftStrategy } from './types/passport-microsoft.js';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -44,14 +44,8 @@ import {
   isPoolHealthy,
 } from '@alice/database';
 
-const logger = pino({
-  name: 'auth-service',
-  level: process.env.LOG_LEVEL || 'info',
-  transport: process.env.NODE_ENV !== 'production' ? {
-    target: 'pino-pretty',
-    options: { colorize: true },
-  } : undefined,
-});
+// Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
+const logger = createLogger('auth-service');
 
 // Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
 setupGracefulShutdown(logger);

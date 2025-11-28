@@ -14,7 +14,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import CircuitBreaker from 'opossum';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { getDatabase, schema } from '@alice/database';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
@@ -34,13 +34,8 @@ import {
   verificarDisponibilidadeSalad,
 } from './salad-client.js';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'training-service' });
+// Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
+const logger = createLogger('training-service');
 
 const PORT = parseInt(process.env.PORT || '3004', 10);
 const DATABASE_URL = process.env.DATABASE_URL;
