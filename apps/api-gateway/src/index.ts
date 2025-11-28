@@ -16,12 +16,16 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
+import {
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+} from '@alice/shared-utils';
 import { z } from 'zod';
 
 const logger = pino({
@@ -69,13 +73,11 @@ app.disable('x-powered-by');
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
-// Middleware de segurança
-app.use(helmet({
+// SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
+app.use(createSecurityMiddleware({
   contentSecurityPolicy: config.NODE_ENV === 'production',
+  isDevelopment: config.NODE_ENV === 'development',
 }));
-
-// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
-app.use(compression());
 
 // CORS configurado
 const corsOrigins = config.CORS_ORIGIN.split(',').map(o => o.trim());
@@ -83,19 +85,16 @@ app.use(cors({
   origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'x-tenant-id', 'x-correlation-id'],
 }));
 
-// Rate limiting global
-const limiter = rateLimit({
+// Rate limiting global com suporte multi-tenant (módulo @alice/shared-utils)
+app.use(createRateLimiter({
   windowMs: config.RATE_LIMIT_WINDOW_MS,
   max: config.RATE_LIMIT_MAX_REQUESTS,
-  standardHeaders: true,
-  legacyHeaders: false,
-  message: { error: 'Muitas requisições. Tente novamente mais tarde.' },
-  skip: (req) => req.path.includes('/health'),
-});
-app.use(limiter);
+  serviceName: 'api-gateway',
+  skipRoutes: ['/health', '/api/health', '/metrics'],
+}));
 
 // Rate limiting mais restrito para autenticação
 const authLimiter = rateLimit({
@@ -301,16 +300,16 @@ services.forEach(service => {
   logger.info({ service: service.name, prefix: service.pathPrefix, target: service.url }, 'Proxy configurado');
 });
 
-// Rota 404 para paths não encontrados
-app.use((_req: Request, res: Response) => {
-  res.status(404).json({ error: 'Rota não encontrada' });
-});
+// Rota 404 para paths não encontrados (módulo @alice/shared-utils)
+app.use(createNotFoundHandler({ serviceName: 'api-gateway' }));
 
-// Error handler global
-app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Erro não tratado no gateway');
-  res.status(500).json({ error: 'Erro interno do servidor' });
-});
+// Error handler global (módulo @alice/shared-utils)
+app.use(createErrorHandler({
+  serviceName: 'api-gateway',
+  logger: {
+    error: (obj: object, msg: string) => logger.error(obj, msg),
+  },
+}));
 
 // Iniciar servidor
 const PORT = config.PORT;

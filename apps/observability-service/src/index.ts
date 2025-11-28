@@ -13,10 +13,13 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
-import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import pino from 'pino';
+import {
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+} from '@alice/shared-utils';
 
 // Logger estruturado - JSON em produção (Regra 8 replit.md)
 const isProduction = process.env.NODE_ENV === 'production';
@@ -188,29 +191,28 @@ app.disable('x-powered-by');
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
-// Segurança (Regra 16 - Melhores práticas)
-app.use(helmet());
+// SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: isProduction,
+  isDevelopment: !isProduction,
+}));
 
-// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
-app.use(compression());
-
+// CORS configurado
 app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || [],
   credentials: true,
 }));
+
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '1mb' }));
 
-// Rate limiting - 100 requisições por minuto por IP (Regra 16 - Proteção DoS)
-const limiter = rateLimit({
+// Rate limiting multi-tenant (módulo @alice/shared-utils)
+app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 100,
-  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path === '/health', // Health check não tem limite
-});
-app.use(limiter);
+  serviceName: 'observability-service',
+  skipRoutes: ['/health', '/metrics'],
+}));
 
 // Aplicar autenticação em todos os endpoints exceto /health
 app.use(requireInternalAuth);
@@ -386,6 +388,21 @@ app.get('/api/observability/urls', (_req: Request, res: Response) => {
     },
   });
 });
+
+// ============================================================================
+// ERROR HANDLERS (módulo @alice/shared-utils)
+// ============================================================================
+
+// Rota 404 para paths não encontrados
+app.use(createNotFoundHandler({ serviceName: 'observability-service' }));
+
+// Error handler global
+app.use(createErrorHandler({
+  serviceName: 'observability-service',
+  logger: {
+    error: (obj: object, msg: string) => logger.error(obj, msg),
+  },
+}));
 
 // ============================================================================
 // STARTUP
