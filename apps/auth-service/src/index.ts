@@ -237,6 +237,10 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 // Middleware de segurança
 app.use(helmet());
 
@@ -249,8 +253,9 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie'],
 }));
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
 // Configuração de sessão com PostgreSQL
 const PgSession = connectPgSimple(session);

@@ -64,6 +64,10 @@ const app: express.Application = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 // Middleware de segurança
 app.use(helmet({
   contentSecurityPolicy: config.NODE_ENV === 'production',
@@ -99,7 +103,8 @@ const authLimiter = rateLimit({
   keyGenerator: (req) => req.ip || 'unknown',
 });
 
-app.use(express.json());
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
 
 // Definição dos serviços e suas configurações
 interface ServiceConfig {
