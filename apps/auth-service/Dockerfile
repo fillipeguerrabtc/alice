@@ -1,83 +1,85 @@
 # ==============================================================================
 # Alice Enterprise Platform - Auth Service
+# Dockerfile Enterprise usando pnpm deploy --filter (padrão oficial pnpm.io)
 # Documentação em PT-BR (Regra 10 replit.md)
 # ==============================================================================
 
-FROM node:20-alpine AS base
-RUN apk add --no-cache libc6-compat python3 make g++ curl
-WORKDIR /app
+FROM node:20-slim AS base
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 
 # ==============================================================================
-# Stage: deps - Instalar todas as dependências do monorepo
+# Stage: deps - Copiar package.jsons para cache de dependências
 # ==============================================================================
 FROM base AS deps
 WORKDIR /app
 
-# Copiar todos os package.json para npm workspaces
-COPY package.json package-lock.json ./
+# Copiar arquivos de configuração do workspace
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+
+# Copiar package.json de cada pacote interno
 COPY packages/shared/package.json ./packages/shared/
+COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
 COPY packages/database/package.json ./packages/database/
+
+# Copiar package.json do serviço alvo
 COPY apps/auth-service/package.json ./apps/auth-service/
 
-# Instalar dependências usando workspaces
-RUN npm ci
+# Instalar todas as dependências (aproveitando cache)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
 
 # ==============================================================================
-# Stage: builder - Compilar todos os pacotes
+# Stage: builder - Compilar pacotes e serviço
 # ==============================================================================
 FROM base AS builder
 WORKDIR /app
 
-# Copiar node_modules instalados
-COPY --from=deps /app/node_modules ./node_modules
+# Copiar todo o código fonte
+COPY . .
 
-# Copiar código fonte completo
-COPY package.json tsconfig.json ./
-COPY packages ./packages
-COPY shared ./shared
-COPY apps/auth-service ./apps/auth-service
+# Instalar dependências (com cache)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile
 
-# Compilar pacotes na ordem de dependências
-WORKDIR /app/packages/shared
-RUN npm run build 2>/dev/null || npx tsc --skipLibCheck
+# Compilar pacotes internos na ordem de dependências
+RUN pnpm --filter @alice/shared run build
+RUN pnpm --filter @alice/shared-utils run build
+RUN pnpm --filter @alice/config run build
+RUN pnpm --filter @alice/logger run build
+RUN pnpm --filter @alice/database run build
 
-WORKDIR /app/packages/config
-RUN npm run build 2>/dev/null || npx tsc --skipLibCheck
+# Compilar o serviço
+RUN pnpm --filter @alice/auth-service run build
 
-WORKDIR /app/packages/logger
-RUN npm run build 2>/dev/null || npx tsc --skipLibCheck
-
-WORKDIR /app/packages/database
-RUN npm run build 2>/dev/null || npx tsc --skipLibCheck
-
-# Compilar auth-service
-WORKDIR /app/apps/auth-service
-RUN npm run build 2>/dev/null || npx tsc --skipLibCheck --outDir dist
+# Usar pnpm deploy para extrair apenas produção (padrão oficial)
+RUN pnpm --filter @alice/auth-service deploy --prod /prod/auth-service
 
 # ==============================================================================
-# Stage: runner - Imagem final de produção
+# Stage: runner - Imagem final de produção (mínima)
 # ==============================================================================
-FROM base AS runner
+FROM node:20-slim AS runner
 ENV NODE_ENV=production
 ENV SERVICE_NAME=auth-service
+ENV PORT=3001
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 alice
+# Criar usuário não-root para segurança
+RUN groupadd --system --gid 1001 nodejs && \
+    useradd --system --uid 1001 --gid nodejs alice
 
 WORKDIR /app
 
-# Copiar estrutura completa do monorepo com pacotes compilados
-COPY --from=builder --chown=alice:nodejs /app/node_modules ./node_modules
-COPY --from=builder --chown=alice:nodejs /app/packages ./packages
-COPY --from=builder --chown=alice:nodejs /app/shared ./shared
-COPY --from=builder --chown=alice:nodejs /app/apps/auth-service ./apps/auth-service
-COPY --from=builder --chown=alice:nodejs /app/package.json ./
-
-# Definir diretório de trabalho do serviço
-WORKDIR /app/apps/auth-service
+# Copiar apenas o resultado do pnpm deploy (dependências de produção + código compilado)
+COPY --from=builder --chown=alice:nodejs /prod/auth-service ./
 
 USER alice
 EXPOSE 3001
-CMD ["node", "--experimental-specifier-resolution=node", "--import=tsx", "src/index.ts"]
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3001/api/auth/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+
+CMD ["node", "dist/index.js"]

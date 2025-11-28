@@ -4,6 +4,9 @@
   "description": "API Gateway de desenvolvimento para Alice Enterprise Platform",
   "type": "module",
   "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",

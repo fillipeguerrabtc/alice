@@ -2,18 +2,46 @@
   "name": "@alice/shared-utils",
   "version": "1.0.0",
   "description": "Utilitários compartilhados para Alice Enterprise Platform",
+  "private": true,
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
   "exports": {
-    ".": "./src/index.ts",
-    "./logger": "./src/logger.ts",
-    "./circuit-breaker": "./src/circuit-breaker.ts",
-    "./config": "./src/config.ts",
-    "./audit": "./src/audit.ts",
-    "./metrics": "./src/metrics.ts",
-    "./health": "./src/health.ts",
-    "./rbac": "./src/rbac/index.ts"
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./logger": {
+      "import": "./dist/logger.js",
+      "types": "./dist/logger.d.ts"
+    },
+    "./circuit-breaker": {
+      "import": "./dist/circuit-breaker.js",
+      "types": "./dist/circuit-breaker.d.ts"
+    },
+    "./config": {
+      "import": "./dist/config.js",
+      "types": "./dist/config.d.ts"
+    },
+    "./audit": {
+      "import": "./dist/audit.js",
+      "types": "./dist/audit.d.ts"
+    },
+    "./metrics": {
+      "import": "./dist/metrics.js",
+      "types": "./dist/metrics.d.ts"
+    },
+    "./health": {
+      "import": "./dist/health.js",
+      "types": "./dist/health.d.ts"
+    },
+    "./rbac": {
+      "import": "./dist/rbac/index.js",
+      "types": "./dist/rbac/index.d.ts"
+    }
   },
   "scripts": {
     "build": "tsc",
@@ -24,7 +52,7 @@
     "pino-pretty": "^11.3.0",
     "opossum": "^8.1.4",
     "zod": "^3.23.8",
-    "drizzle-orm": "^0.36.4",
+    "drizzle-orm": "^0.39.1",
     "@neondatabase/serverless": "^0.10.4"
   },
   "devDependencies": {
