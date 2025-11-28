@@ -290,7 +290,7 @@ services:
       NODE_ENV: production
       PORT: 3001
       SERVICE_NAME: auth-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       SESSION_SECRET: ${SESSION_SECRET}
       # OAuth Google
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
@@ -344,7 +344,7 @@ services:
       NODE_ENV: production
       PORT: 3002
       SERVICE_NAME: chat-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       # Salad Cloud LLM
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
@@ -393,7 +393,7 @@ services:
       NODE_ENV: production
       PORT: 3003
       SERVICE_NAME: rag-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
     depends_on:
       postgres:
         condition: service_healthy
@@ -433,7 +433,7 @@ services:
       NODE_ENV: production
       PORT: 3004
       SERVICE_NAME: training-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
     depends_on:
@@ -475,7 +475,7 @@ services:
       NODE_ENV: production
       PORT: 3005
       SERVICE_NAME: integrations-service
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       # Stripe Portugal
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
@@ -562,16 +562,16 @@ services:
       - --innodb-flush-log-at-trx-commit=2
       - --expire-logs-days=7
     environment:
-      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD:?ERPNEXT_MYSQL_ROOT_PASSWORD obrigatorio}
       MYSQL_DATABASE: ${ERPNEXT_DB_NAME:-erpnext}
       MYSQL_USER: ${ERPNEXT_DB_USER:-erpnext}
-      MYSQL_PASSWORD: ${ERPNEXT_DB_PASSWORD:-erpnext_password}
+      MYSQL_PASSWORD: ${ERPNEXT_DB_PASSWORD:?ERPNEXT_DB_PASSWORD obrigatorio}
     volumes:
       - mariadb_data:/var/lib/mysql
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD}"]
       interval: 15s
       timeout: 10s
       retries: 10
@@ -607,7 +607,7 @@ services:
       - "300"
       - "10"
       - --requirepass
-      - ${REDIS_CACHE_PASSWORD:-redis_cache_secure_2025}
+      - ${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD obrigatorio}
       - --rename-command
       - FLUSHALL
       - ""
@@ -625,7 +625,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD:-redis_cache_secure_2025}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -660,7 +660,7 @@ services:
       - "300"
       - "10"
       - --requirepass
-      - ${REDIS_QUEUE_PASSWORD:-redis_queue_secure_2025}
+      - ${REDIS_QUEUE_PASSWORD:?REDIS_QUEUE_PASSWORD obrigatorio}
       - --rename-command
       - FLUSHALL
       - ""
@@ -678,7 +678,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_QUEUE_PASSWORD:-redis_queue_secure_2025}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_QUEUE_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -696,7 +696,7 @@ services:
   # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
   # ===========================================================================
   erpnext-configurator:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-configurator
     restart: "no"
     entrypoint:
@@ -707,15 +707,15 @@ services:
         ls -1 apps > sites/apps.txt;
         bench set-config -g db_host erpnext-mariadb;
         bench set-config -g db_port 3306;
-        bench set-config -g redis_cache "redis://:${REDIS_CACHE_PASSWORD:-redis_cache_secure_2025}@erpnext-redis-cache:6379";
-        bench set-config -g redis_queue "redis://:${REDIS_QUEUE_PASSWORD:-redis_queue_secure_2025}@erpnext-redis-queue:6379";
-        bench set-config -g redis_socketio "redis://:${REDIS_QUEUE_PASSWORD:-redis_queue_secure_2025}@erpnext-redis-queue:6379";
+        bench set-config -g redis_cache "redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379";
+        bench set-config -g redis_queue "redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379";
+        bench set-config -g redis_socketio "redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379";
         echo "Configuração ERPNext concluída com sucesso (Redis ACL habilitado)!"
     environment:
       - DB_HOST=erpnext-mariadb
       - DB_PORT=3306
-      - REDIS_CACHE_PASSWORD=${REDIS_CACHE_PASSWORD:-redis_cache_secure_2025}
-      - REDIS_QUEUE_PASSWORD=${REDIS_QUEUE_PASSWORD:-redis_queue_secure_2025}
+      - REDIS_CACHE_PASSWORD=${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD obrigatorio}
+      - REDIS_QUEUE_PASSWORD=${REDIS_QUEUE_PASSWORD:?REDIS_QUEUE_PASSWORD obrigatorio}
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
@@ -736,7 +736,7 @@ services:
   # IDEMPOTENTE: Se site já existe, sai com sucesso (exit 0)
   # ===========================================================================
   erpnext-create-site:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-create-site
     restart: "no"
     entrypoint:
@@ -768,8 +768,8 @@ services:
         echo "Criando site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}...";
         
         bench new-site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
-          --mariadb-root-password=${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
-          --admin-password=${ERPNEXT_ADMIN_PASSWORD:-admin}
+          --mariadb-root-password=${ERPNEXT_MYSQL_ROOT_PASSWORD}
+          --admin-password=${ERPNEXT_ADMIN_PASSWORD}
           --install-app=erpnext
           --mariadb-user-host-login-scope=%;
         
@@ -778,8 +778,8 @@ services:
         echo "Site ERPNext criado com sucesso!"
     environment:
       - ERPNEXT_SITE_NAME=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
-      - ERPNEXT_MYSQL_ROOT_PASSWORD=${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
-      - ERPNEXT_ADMIN_PASSWORD=${ERPNEXT_ADMIN_PASSWORD:-admin}
+      - ERPNEXT_MYSQL_ROOT_PASSWORD=${ERPNEXT_MYSQL_ROOT_PASSWORD:?ERPNEXT_MYSQL_ROOT_PASSWORD obrigatorio}
+      - ERPNEXT_ADMIN_PASSWORD=${ERPNEXT_ADMIN_PASSWORD:?ERPNEXT_ADMIN_PASSWORD obrigatorio}
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
@@ -794,7 +794,7 @@ services:
   # ERPNext Backend - Frappe/Python
   # Docs 2025: Frappe/Gunicorn production - 1.5 CPU, 2GB
   erpnext-backend:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-backend
     restart: always
     command: bench serve --port 8000
@@ -833,7 +833,7 @@ services:
   # ERPNext Frontend - Nginx
   # Docs 2025: Nginx static - 0.25 CPU, 256MB
   erpnext-frontend:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-frontend
     restart: always
     command: nginx-entrypoint.sh
@@ -872,7 +872,7 @@ services:
   # ERPNext WebSocket - Socket.io
   # Docs 2025: Node.js Socket.io - 0.3 CPU, 256MB
   erpnext-websocket:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-websocket
     restart: always
     command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
@@ -899,7 +899,7 @@ services:
   # ERPNext Scheduler - Tarefas agendadas
   # Docs 2025: Python scheduler - 0.3 CPU, 512MB
   erpnext-scheduler:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-scheduler
     restart: always
     command: bench schedule
@@ -923,7 +923,7 @@ services:
   # ERPNext Worker - Short Jobs
   # Docs 2025: Python worker short - 0.4 CPU, 512MB
   erpnext-worker-short:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-worker-short
     restart: always
     command: bench worker --queue short
@@ -947,7 +947,7 @@ services:
   # ERPNext Worker - Default Jobs
   # Docs 2025: Python worker default - 0.4 CPU, 512MB
   erpnext-worker-default:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-worker-default
     restart: always
     command: bench worker --queue default
@@ -971,7 +971,7 @@ services:
   # ERPNext Worker - Long Jobs
   # Docs 2025: Python worker heavy - 0.75 CPU, 1GB
   erpnext-worker-long:
-    image: frappe/erpnext:v15
+    image: frappe/erpnext:v15.74.2
     container_name: erpnext-worker-long
     restart: always
     command: bench worker --queue long

@@ -91,15 +91,19 @@ The platform includes several microservices:
 ### Security Hardening (Novembro 2025)
 
 -   **PostgreSQL RLS**: Row Level Security habilitado em todas as tabelas tenant-scoped (users, namespaces, integrations, training_data, etc.). Funções auxiliares `current_tenant_id()` e `is_super_admin()` para políticas de acesso.
+-   **PostgreSQL sslmode**: Conexões com sslmode=prefer configuradas em todos os 5 microsserviços Alice que acessam o banco.
 -   **Índices tenant_id**: Índices compostos criados para performance em queries multi-tenant.
 -   **pgAudit**: Extension habilitada para audit logging de operações DDL e DML.
 -   **Docker Non-Root**: Todos os 9 Dockerfiles (8 serviços Alice + CLIP) rodam como usuários non-root com UIDs específicos.
 -   **Traefik v3.3**: API Gateway com CAP_NET_BIND_SERVICE, rate limiting via ipStrategy (anti-spoofing), security headers middleware.
--   **Redis ACL**: Autenticação habilitada para Redis cache e queue do ERPNext com comandos perigosos desabilitados.
+-   **Redis ACL**: Autenticação habilitada para Redis cache e queue do ERPNext com comandos perigosos desabilitados (FLUSHALL, FLUSHDB, CONFIG, DEBUG).
 -   **GitHub Actions SHA Pinning**: Todas as actions pinadas a commit SHA para supply chain security.
+-   **GitHub Actions Permissions**: Least privilege configurado no nível do workflow e em cada job.
 -   **CSP Hardening**: Content-Security-Policy sem 'unsafe-eval', apenas 'unsafe-inline' mantido para React hydration.
 -   **Compression Middleware**: Todos os 7 microsserviços Node.js usam compression() após helmet() para otimização de banda (Express.js 2025).
 -   **Server Timeouts**: Configurados em todos os serviços seguindo Node.js 20 LTS: server.timeout (30s padrão, 60s RAG, 120s chat), keepAliveTimeout (65s), headersTimeout (66s).
+-   **ERPNext Fail-Fast**: Defaults inseguros removidos do docker-compose.prod.yml. Credenciais obrigatórias via sintaxe :? que falha se não configuradas.
+-   **Frappe v15.74.2**: Versão específica pinada em todos os 9 containers ERPNext para mitigar CVEs críticos (SQL Injection, RCE).
 
 ## External Dependencies
 

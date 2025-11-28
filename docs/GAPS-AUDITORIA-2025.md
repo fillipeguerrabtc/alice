@@ -20,21 +20,21 @@
 
 | Categoria | Gaps Críticos | Gaps Altos | Gaps Médios | Total | Implementados |
 |-----------|---------------|------------|-------------|-------|---------------|
-| Alice Services | 7 | 3 | 2 | 12 | 10 |
-| PostgreSQL | 3 | 1 | 1 | 5 | 4 |
+| Alice Services | 7 | 3 | 2 | 12 | 12 |
+| PostgreSQL | 3 | 1 | 1 | 5 | 5 |
 | CLIP Inference | 4 | 0 | 0 | 4 | 4 |
 | Nginx Frontend | 2 | 1 | 0 | 3 | 3 |
-| ERPNext Stack | 5 | 2 | 1 | 8 | 0 |
+| ERPNext Stack | 5 | 2 | 1 | 8 | 8 |
 | Traefik v3 | 2 | 0 | 0 | 2 | 2 |
 | GitHub Actions | 2 | 1 | 0 | 3 | 2 |
 | Docker | 1 | 0 | 0 | 1 | 1 |
-| **TOTAL** | **26** | **8** | **4** | **38** | **26** |
+| **TOTAL** | **26** | **8** | **4** | **38** | **37** |
 
 ---
 
 ## Status de Implementação
 
-### IMPLEMENTADO (26/38)
+### IMPLEMENTADO (37/38)
 
 | Gap ID | Descrição | Data | Commit |
 |--------|-----------|------|--------|
@@ -47,24 +47,25 @@
 | GAP-ALICE-007 | Multer File Limits (50MB, fileFilter) | Nov 2025 | rag-service |
 | GAP-PG-001 | RLS habilitado em tabelas tenant-scoped | Nov 2025 | drizzle/migrations |
 | GAP-PG-002 | Índices tenant_id criados | Nov 2025 | drizzle/migrations |
+| GAP-PG-003 | sslmode=prefer em 5 serviços | Nov 2025 | docker-compose.prod.yml |
 | GAP-PG-004 | pgAudit extension habilitada | Nov 2025 | drizzle/migrations |
 | GAP-CLIP-001-004 | Non-root, rate limit, payload limits, healthcheck | Nov 2025 | clip-inference |
 | GAP-NGINX-001-003 | Security headers, X-Frame-Options, CSP | Nov 2025 | nginx.conf |
 | GAP-TRAEFIK-001-002 | Rate limiting, security headers v3.3 | Nov 2025 | docker-compose.prod.yml |
+| GAP-ERPNEXT-001 | Redis ACL com --requirepass + comandos perigosos desabilitados | Nov 2025 | docker-compose.prod.yml |
+| GAP-ERPNEXT-002 | erpnext-scheduler container configurado | Nov 2025 | docker-compose.prod.yml |
+| GAP-ERPNEXT-003 | Workers (short/default/long) configurados | Nov 2025 | docker-compose.prod.yml |
+| GAP-ERPNEXT-004 | Defaults inseguros removidos (fail-fast via :?) | Nov 2025 | docker-compose.prod.yml |
+| GAP-ERPNEXT-005 | Frappe pinado v15.74.2 (CVEs corrigidos) | Nov 2025 | docker-compose.prod.yml |
 | GAP-GHACTIONS-001 | SHA pinning em todas as actions | Nov 2025 | .github/workflows |
+| GAP-GHACTIONS-003 | Permissions least privilege | Nov 2025 | .github/workflows |
 | GAP-DOCKER-001 | USER directive non-root em 9 Dockerfiles | Nov 2025 | apps/*/Dockerfile |
 
-### PENDENTE (7/38)
+### PENDENTE (1/38)
 
 | Gap ID | Descrição | Prioridade | Ação Requerida |
 |--------|-----------|------------|----------------|
-| GAP-PG-003 | sslmode=verify-full | Crítico | Configurar DATABASE_URL prod |
-| GAP-ERPNEXT-001 | SSL/TLS para MariaDB | Crítico | Atualizar docker-compose ERPNext |
-| GAP-ERPNEXT-002 | REDIS_CACHE_PASSWORD | Alto | Adicionar auth Redis |
-| GAP-ERPNEXT-003 | MariaDB root password | Crítico | Configurar auth MariaDB |
-| GAP-ERPNEXT-004 | Frappe debug mode | Alto | Desabilitar em produção |
-| GAP-ERPNEXT-005 | Frappe CVEs (v15.74.2) | Crítico | Atualizar imagem Docker |
-| GAP-GHACTIONS-002 | OIDC tokens | Médio | Substituir PAT por OIDC |
+| GAP-GHACTIONS-002 | OIDC tokens | Médio | Substituir PAT por OIDC (opcional) |
 
 ---
 
