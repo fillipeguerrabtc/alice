@@ -117,9 +117,9 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
 
   return rateLimit({
     windowMs,
-    max,
+    limit: max,
     message,
-    standardHeaders: true,
+    standardHeaders: 'draft-8',
     legacyHeaders: false,
     
     // keyGenerator multi-tenant: combina IP + tenantId para isolamento

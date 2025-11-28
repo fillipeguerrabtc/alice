@@ -52,6 +52,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "compression": "^1.7.5",
+    "express-rate-limit": "^8.2.1",
+    "helmet": "^8.0.0",
     "pino": "^9.5.0",
     "pino-pretty": "^11.3.0",
     "opossum": "^8.1.4",
