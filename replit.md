@@ -237,38 +237,67 @@ Modo **strict**. `any` é **PROIBIDO**.
 
 ### Problema Original
 
-O `pnpm deploy` não copiava os pacotes internos (`@alice/shared`, `@alice/database`, etc.) para o container final, causando erro:
+Dois problemas críticos identificados:
 
+1. **pnpm deploy não copiava pacotes internos**: Os pacotes `@alice/shared`, `@alice/database`, etc. não eram incluídos no container final
+2. **Ordem de build incorreta**: O script `build:packages` usava `--stream` (paralelo), causando `@alice/database` tentar compilar antes de `@alice/shared` existir
+
+Erros resultantes:
 ```
 Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/packages/shared/src/schema'
+error TS2307: Cannot find module '@alice/shared' or its corresponding type declarations
 ```
 
-### Solução Implementada: esbuild Bundling
+### Solução Implementada: esbuild Bundling + Topological Sort
 
-Substituímos a abordagem `pnpm deploy` por **esbuild bundling**, que:
+#### Correção 1: Ordem de Build (package.json)
 
-1. **Bundla pacotes `@alice/*` inline** no arquivo final
-2. **Mantém dependências externas** (express, pg, etc.) como imports separados
-3. **Garante builds determinísticos** com `pnpm-lock.yaml` e `--frozen-lockfile`
+```json
+// ANTES (paralelo - causava erro de ordem)
+"build:packages": "pnpm --filter '@alice/*' --stream run build"
+
+// DEPOIS (topological - respeita dependências)
+"build:packages": "pnpm -r --filter '@alice/*' run build"
+```
+
+A flag `-r` (recursive) do pnpm **respeita ordem de dependências** automaticamente, garantindo que `@alice/shared` seja buildado ANTES de `@alice/database`.
+
+#### Correção 2: Dockerfiles Enterprise 3-Stage
+
+Arquitetura de 3 stages nos Dockerfiles:
+
+1. **Builder Stage**: Instala todas as deps com `--frozen-lockfile`, compila pacotes, cria bundle com esbuild
+2. **Pruner Stage**: Usa `pnpm deploy --prod` para extrair dependências de produção (determinístico)
+3. **Runner Stage**: Copia `node_modules` do pruner + `bundle.js` do builder
 
 ### Arquivos Criados/Modificados
 
 | Arquivo | Função |
 |---------|--------|
 | `scripts/build-service.mjs` | Script de build com esbuild para microsserviços |
+| `package.json` | Script `build:packages` corrigido para ordem topológica |
 | `apps/*/package.json` | Scripts atualizados: `build` usa esbuild |
-| `apps/*/Dockerfile` | Dockerfiles enterprise com jq para manipulação JSON ESM-compatible |
+| `apps/*/Dockerfile` | Dockerfiles enterprise 3-stage (builder → pruner → runner) |
+| `packages/*/tsconfig.json` | TypeScript project references configuradas |
 
-### Como Funciona o Build
+### Dependências Entre Pacotes
 
-1. **Builder Stage**: Compila pacotes `@alice/*` e cria bundle com esbuild
-2. **Deps Stage**: Usa `jq` para remover dependências `@alice/*` do package.json (ESM-compatible)
-3. **Runner Stage**: Copia apenas `node_modules` externo + `bundle.js`
+```
+@alice/shared          (base - sem dependências internas)
+    ↓
+@alice/database        (depende de shared)
+    ↓
+@alice/config          (depende de shared)
+@alice/logger          (depende de shared)
+@alice/shared-utils    (depende de shared)
+    ↓
+Serviços (auth, chat, rag, training, integrations)
+```
 
 ### Comando de Build
 
 ```bash
-# Build de todos os pacotes e serviços
+# Build de todos os pacotes e serviços (ordem topológica)
 pnpm run build:packages
 
 # Build de um serviço específico
@@ -277,13 +306,13 @@ node scripts/build-service.mjs auth-service
 
 ### Tamanho dos Bundles
 
-| Serviço | Tamanho |
-|---------|---------|
-| auth-service | 121.2kb |
-| chat-service | 303.9kb |
-| rag-service | 323.3kb |
-| training-service | 274.8kb |
-| integrations-service | 295.2kb |
+| Serviço | Tamanho | Dependências Externas |
+|---------|---------|----------------------|
+| auth-service | 121.2kb | 32 pacotes |
+| chat-service | 303.9kb | 17 pacotes |
+| rag-service | 323.3kb | 17 pacotes |
+| training-service | 274.8kb | 15 pacotes |
+| integrations-service | 295.2kb | 16 pacotes |
 
 ### Servidor Limpo (28/11/2024)
 
