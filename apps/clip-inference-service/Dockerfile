@@ -4,6 +4,7 @@
 # Licença: MIT (uso comercial permitido)
 #
 # Documentação em PT-BR (Regra 10 replit.md)
+# SEGURANÇA: Non-root container (Docker 2025 Best Practices)
 
 FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
@@ -16,6 +17,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV MODEL_NAME="ViT-L/14"
 ENV PORT=8080
+ENV HOME=/app
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -25,18 +27,32 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Criar diretório da aplicação
-WORKDIR /app
+# SEGURANÇA: Criar usuário non-root (Docker 2025 + OWASP Container Security)
+RUN groupadd --gid 1001 clipservice \
+    && useradd --uid 1001 --gid 1001 --shell /bin/bash --create-home clipservice
 
-# Instalar dependências Python
+# Criar diretório da aplicação com permissões corretas
+WORKDIR /app
+RUN chown -R clipservice:clipservice /app
+
+# Instalar dependências Python (como root para cache)
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copiar código da aplicação
-COPY server.py .
-
 # Baixar modelo CLIP durante build (evita cold start)
-RUN python3 -c "import clip; clip.load('ViT-L/14', device='cpu')"
+# Criar diretório cache com permissões corretas
+RUN mkdir -p /app/.cache && chown -R clipservice:clipservice /app/.cache
+ENV TORCH_HOME=/app/.cache
+
+# Baixar modelo como root (permissões de cache)
+RUN python3 -c "import clip; clip.load('ViT-L/14', device='cpu')" \
+    && chown -R clipservice:clipservice /app/.cache
+
+# Copiar código da aplicação
+COPY --chown=clipservice:clipservice server.py .
+
+# SEGURANÇA: Mudar para usuário non-root
+USER clipservice
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

@@ -29,6 +29,10 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 let stripe: Stripe | null = null;
 if (config.STRIPE_SECRET_KEY) {
   stripe = new Stripe(config.STRIPE_SECRET_KEY, {
@@ -122,7 +126,8 @@ app.use(limiter);
 app.use('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/integrations/twilio/webhook', express.urlencoded({ extended: false }));
-app.use(express.json());
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/integrations/health', (_req: Request, res: Response) => {
   const wiseConfigured = isWiseConfigured();

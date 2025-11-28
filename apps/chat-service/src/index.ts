@@ -105,8 +105,87 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 const server = createServer(app);
-const wss = new WebSocketServer({ server, path: '/ws/chat' });
+
+// ============================================================================
+// WEBSOCKET SECURITY (ws v8.18.3 - Best Practices 2025)
+// ============================================================================
+
+// SEGURANÇA: Origin validation allowlist (OWASP WebSocket Security)
+const ALLOWED_WEBSOCKET_ORIGINS = process.env.WEBSOCKET_ALLOWED_ORIGINS?.split(',') || CORS_ORIGINS;
+
+function verifyWebSocketOrigin(origin: string | undefined): boolean {
+  if (!origin) {
+    logger.warn('WebSocket connection attempt without Origin header');
+    return false;
+  }
+  
+  // Em desenvolvimento permitir localhost
+  if (process.env.NODE_ENV !== 'production') {
+    const devPatterns = ['localhost', '127.0.0.1', 'replit.dev', 'repl.co'];
+    if (devPatterns.some(pattern => origin.includes(pattern))) {
+      return true;
+    }
+  }
+  
+  // Em produção, verificar contra allowlist
+  const isAllowed = ALLOWED_WEBSOCKET_ORIGINS.some(allowed => {
+    const normalizedAllowed = allowed.trim().toLowerCase();
+    const normalizedOrigin = origin.toLowerCase();
+    return normalizedOrigin === normalizedAllowed || 
+           normalizedOrigin.endsWith(normalizedAllowed.replace('https://', '.').replace('http://', '.'));
+  });
+  
+  if (!isAllowed) {
+    logger.warn({ origin, allowedOrigins: ALLOWED_WEBSOCKET_ORIGINS }, 'WebSocket connection rejected: origin not in allowlist');
+  }
+  
+  return isAllowed;
+}
+
+// SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
+const wss = new WebSocketServer({ 
+  server, 
+  path: '/ws/chat',
+  maxPayload: 10 * 1024 * 1024, // 10MB max payload (OWASP WebSocket Security)
+  verifyClient: (info, callback) => {
+    const origin = info.origin || info.req.headers.origin;
+    const isValid = verifyWebSocketOrigin(origin);
+    callback(isValid, isValid ? undefined : 403, isValid ? undefined : 'Origin not allowed');
+  },
+});
+
+// SEGURANÇA: Ping/Pong heartbeat para detectar conexões mortas (ws v8.18.3)
+const HEARTBEAT_INTERVAL = 30000; // 30 segundos
+const CONNECTION_TIMEOUT = 35000; // 35 segundos (um pouco mais que heartbeat)
+
+interface ExtendedWebSocket extends WebSocket {
+  isAlive?: boolean;
+  userId?: string;
+  tenantId?: string;
+  clientKey?: string;
+}
+
+// Heartbeat para detectar conexões mortas
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    const extWs = ws as ExtendedWebSocket;
+    if (extWs.isAlive === false) {
+      logger.info({ userId: extWs.userId, tenantId: extWs.tenantId }, 'Terminando conexão WebSocket inativa (heartbeat timeout)');
+      return extWs.terminate();
+    }
+    extWs.isAlive = false;
+    extWs.ping();
+  });
+}, HEARTBEAT_INTERVAL);
+
+wss.on('close', () => {
+  clearInterval(heartbeatInterval);
+});
 
 // ============================================================================
 // IMAGE GENERATION DETECTION (Tarefa 133 - Detectar pedidos de geração de imagem)
@@ -365,7 +444,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-app.use(express.json());
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/chat/health', (_req: Request, res: Response) => {
   const llmCircuitState = saladCloudBreaker.opened ? 'open' : (saladCloudBreaker.halfOpen ? 'half-open' : 'closed');
@@ -867,6 +947,9 @@ const wsClients = new Map<string, WebSocket>();
 const getClientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
 
 wss.on('connection', (ws, req) => {
+  // Cast para ExtendedWebSocket para suportar heartbeat
+  const extWs = ws as ExtendedWebSocket;
+  
   const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
   const userId = urlParams.get('userId');
   const tenantId = urlParams.get('tenantId');
@@ -882,6 +965,18 @@ wss.on('connection', (ws, req) => {
   }
 
   const clientKey = getClientKey(tenantId, userId);
+  
+  // SEGURANÇA: Configurar heartbeat (ws v8.18.3)
+  extWs.isAlive = true;
+  extWs.userId = userId;
+  extWs.tenantId = tenantId;
+  extWs.clientKey = clientKey;
+  
+  // Responder ao pong mantém conexão viva
+  extWs.on('pong', () => {
+    extWs.isAlive = true;
+  });
+  
   wsClients.set(clientKey, ws);
   logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket conectado');
 

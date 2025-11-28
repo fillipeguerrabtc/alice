@@ -74,6 +74,10 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 // ============================================================================
 // CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
 // ============================================================================
@@ -156,7 +160,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-app.use(express.json());
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
 
 const SIMILARITY_THRESHOLD = 0.85;
 const EMBEDDING_DIMENSIONS = 1536;

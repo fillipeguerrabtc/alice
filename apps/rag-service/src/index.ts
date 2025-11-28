@@ -23,7 +23,6 @@ import {
   requirePermission, 
   requireAuth,
   requireSameTenant,
-  extractAuthContext,
 } from '@alice/shared-utils';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
@@ -441,6 +440,10 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
+// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
+// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
+app.set('trust proxy', true);
+
 // Upload para documentos RAG (texto)
 const upload = multer({ 
   storage: multer.memoryStorage(),
@@ -712,7 +715,8 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-app.use(express.json());
+// SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
+app.use(express.json({ limit: '10mb' }));
 
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
@@ -2114,8 +2118,9 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', async (req: Request, 
 });
 
 // Busca semântica de imagens por similaridade de embedding
-app.post('/api/media/search', extractAuthContext, async (req: Request, res: Response) => {
-  const tenantId = (req as any).authContext?.tenantId;
+app.post('/api/media/search', requireAuth(), async (req: Request, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth (Regra 8)
+  const tenantId = req.tenantId;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Tenant não identificado' });

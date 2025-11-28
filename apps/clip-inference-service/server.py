@@ -19,17 +19,21 @@ import sys
 import base64
 import logging
 import time
+import asyncio
 from typing import Optional, Union, List
 
 import torch
 import clip
 from PIL import Image
-from fastapi import FastAPI, HTTPException, Header, Depends, Security
+from fastapi import FastAPI, HTTPException, Header, Depends, Security, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT
 from pydantic import BaseModel, Field
 import uvicorn
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 # Configuração de logging estruturado (Regra 8 - Pino equivalent)
 IS_PRODUCTION = os.getenv("NODE_ENV", "development") == "production"
@@ -47,10 +51,23 @@ EMBEDDING_DIM = 768  # ViT-L/14 produz embeddings de 768 dimensões
 # Segurança: Token de API (Regra 16 - Autenticação obrigatória em produção)
 CLIP_API_TOKEN = os.getenv("CLIP_API_TOKEN")
 MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB default
+REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s default
+
+# SEGURANÇA: CORS origins (OWASP API Security)
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+if not CORS_ORIGINS and IS_PRODUCTION:
+    logger.warning("CORS_ORIGINS não configurado - usando allowlist padrão de produção")
+    CORS_ORIGINS = [
+        "https://api.yesyoudeserve.duckdns.org",
+        "https://alice.yesyoudeserve.duckdns.org",
+    ]
 
 if not CLIP_API_TOKEN and IS_PRODUCTION:
     logger.error("CRITICAL: CLIP_API_TOKEN é OBRIGATÓRIO em produção. Abortando.")
     sys.exit(1)
+
+# SEGURANÇA: Rate limiter (FastAPI 2025 + OWASP API4)
+limiter = Limiter(key_func=get_remote_address)
 
 # Header de autenticação
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -89,13 +106,21 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS (necessário para Container Gateway da Salad Cloud)
+# SEGURANÇA: Rate limiter exception handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# SEGURANÇA: CORS configurado (não ['*'] em produção) - OWASP API Security
+# Em desenvolvimento permite localhost, em produção usa allowlist
+dev_origins = ["http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"]
+allowed_origins = CORS_ORIGINS if IS_PRODUCTION else dev_origins + CORS_ORIGINS
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins if allowed_origins else ["*"],  # Fallback para dev sem config
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["X-API-Key", "Content-Type", "Authorization", "Salad-Api-Key", "Salad-Organization"],
 )
 
 
@@ -147,7 +172,9 @@ def decode_base64_image(image_data: str) -> Image.Image:
 
 
 @app.post("/inference/clip", response_model=ClipResponse)
+@limiter.limit("60/minute")  # SEGURANÇA: Rate limit 60 req/min (OWASP API4)
 async def generate_embedding(
+    request_http: Request,  # Necessário para SlowAPI
     request: ClipRequest,
     api_key: str = Depends(verify_api_key),
     salad_api_key: Optional[str] = Header(None, alias="Salad-Api-Key"),
@@ -163,6 +190,8 @@ async def generate_embedding(
     
     Apenas um dos campos (text ou image) deve ser fornecido.
     Limite de imagem: 10MB (configurável via MAX_IMAGE_SIZE_BYTES).
+    Rate limit: 60 requisições/minuto por IP.
+    Timeout: 30 segundos por requisição.
     """
     start_time = time.time()
     
@@ -194,7 +223,8 @@ async def generate_embedding(
                 detail=f"Imagem muito grande. Máximo: {MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB"
             )
     
-    try:
+    # SEGURANÇA: Timeout para prevenir DoS (OWASP API4)
+    async def process_embedding():
         with torch.no_grad():
             if request.text:
                 # Embedding de texto
@@ -224,6 +254,15 @@ async def generate_embedding(
                 
                 logger.info(f"Image embedding gerado: {image.size}")
         
+        return embedding, input_type
+    
+    try:
+        # Aplicar timeout configurável (default 30s)
+        embedding, input_type = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(None, lambda: asyncio.run(process_embedding())),
+            timeout=REQUEST_TIMEOUT_SECONDS
+        )
+        
         processing_time_ms = int((time.time() - start_time) * 1000)
         
         return ClipResponse(
@@ -233,6 +272,12 @@ async def generate_embedding(
             processing_time_ms=processing_time_ms,
         )
         
+    except asyncio.TimeoutError:
+        logger.warning(f"Timeout ao processar embedding após {REQUEST_TIMEOUT_SECONDS}s")
+        raise HTTPException(
+            status_code=HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Timeout: processamento excedeu {REQUEST_TIMEOUT_SECONDS} segundos"
+        )
     except Exception as e:
         logger.error(f"Erro ao gerar embedding: {str(e)}")
         raise HTTPException(

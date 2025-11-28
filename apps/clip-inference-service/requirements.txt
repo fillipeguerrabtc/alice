@@ -7,6 +7,9 @@
 fastapi>=0.104.0
 uvicorn[standard]>=0.24.0
 
+# SEGURANÇA: Rate limiting (OWASP API4)
+slowapi>=0.1.9
+
 # CLIP e PyTorch
 torch>=2.1.0
 torchvision>=0.16.0
