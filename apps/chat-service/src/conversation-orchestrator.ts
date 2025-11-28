@@ -52,6 +52,25 @@ const ESCALATION_CONFIG = {
     'cancelar',
     'reembolso',
   ],
+  // Frases que indicam baixa confiança do LLM (indicadores proxy)
+  lowConfidenceIndicators: [
+    'não tenho certeza',
+    'não sei',
+    'não consigo',
+    'não posso ajudar',
+    'não tenho informação',
+    'não disponho',
+    'desculpe, mas',
+    'infelizmente não',
+    'fora do meu escopo',
+    'preciso de mais contexto',
+    'não compreendi',
+    'poderia reformular',
+    'não entendi',
+    'não é possível',
+    'sugiro que entre em contato',
+    'recomendo falar com',
+  ],
 } as const;
 
 // ============================================================================
@@ -100,6 +119,93 @@ export function detectEscalationKeywords(message: string): boolean {
     const normalizedKeyword = keyword.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     return lowerMessage.includes(normalizedKeyword);
   });
+}
+
+/**
+ * Analisa resposta do LLM para detectar indicadores de baixa confiança
+ * Retorna confidence score estimado baseado em indicadores proxy
+ * 
+ * Usado para incrementar fallback counter quando LLM dá respostas evasivas
+ * (Llama 4 não retorna confidence score diretamente)
+ */
+export function analyzeLLMResponseConfidence(llmResponse: string): {
+  estimatedConfidence: number;
+  isLowConfidence: boolean;
+  matchedIndicators: string[];
+} {
+  const lowerResponse = llmResponse.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  
+  const matchedIndicators: string[] = [];
+  
+  for (const indicator of ESCALATION_CONFIG.lowConfidenceIndicators) {
+    const normalizedIndicator = indicator.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (lowerResponse.includes(normalizedIndicator)) {
+      matchedIndicators.push(indicator);
+    }
+  }
+  
+  // Calcular confidence estimada: começa em 1.0 e decresce 0.15 por cada indicador
+  const confidencePenalty = matchedIndicators.length * 0.15;
+  const estimatedConfidence = Math.max(0, 1 - confidencePenalty);
+  
+  return {
+    estimatedConfidence,
+    isLowConfidence: estimatedConfidence < ESCALATION_CONFIG.confidenceThreshold,
+    matchedIndicators,
+  };
+}
+
+/**
+ * Processa resposta do LLM e atualiza estado da conversa
+ * Se resposta indica baixa confiança, incrementa fallback counter
+ * 
+ * @returns EscalationContext se deve escalar após esta resposta, null caso contrário
+ */
+export async function processLLMResponseForEscalation(
+  conversationId: string,
+  llmResponse: string
+): Promise<EscalationContext | null> {
+  const analysis = analyzeLLMResponseConfidence(llmResponse);
+  
+  if (analysis.isLowConfidence) {
+    const state = await getOrCreateConversationState(conversationId);
+    const newFallbackCount = (state.fallbackCount || 0) + 1;
+    
+    await updateConversationState(conversationId, {
+      fallbackCount: newFallbackCount,
+      confidenceScore: analysis.estimatedConfidence,
+    });
+    
+    logger.info({
+      conversationId,
+      estimatedConfidence: analysis.estimatedConfidence,
+      matchedIndicators: analysis.matchedIndicators,
+      fallbackCount: newFallbackCount,
+    }, 'Resposta do LLM com baixa confiança detectada');
+    
+    // Verificar se atingiu threshold de fallback para escalar
+    if (newFallbackCount >= ESCALATION_CONFIG.fallbackCountThreshold) {
+      return {
+        conversationId,
+        trigger: 'low_confidence',  // Trigger correto: baixa confiança acumulada
+        confidence: analysis.estimatedConfidence,
+        fallbackCount: newFallbackCount,
+        triggerDetails: {
+          matchedIndicators: analysis.matchedIndicators,
+          estimatedConfidence: analysis.estimatedConfidence,
+          reason: 'Múltiplas respostas consecutivas com indicadores de incerteza do LLM',
+        },
+      };
+    }
+  } else {
+    // Resposta de alta confiança - resetar fallback counter
+    await updateConversationState(conversationId, {
+      fallbackCount: 0,
+      confidenceScore: analysis.estimatedConfidence,
+    });
+  }
+  
+  return null;
 }
 
 /**

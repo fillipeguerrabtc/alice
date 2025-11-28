@@ -49,6 +49,7 @@ import {
   handbackToBot,
   processAutoEscalation,
   shouldEscalate,
+  processLLMResponseForEscalation,
   getPendingHandoffs,
   getUrgentConversations,
   checkSLABreaches,
@@ -1466,6 +1467,45 @@ wss.on('connection', (ws, req) => {
           totalLatencyMs: totalLatency,
           usedRag: !!ragResult?.context,
         }, 'Mensagem WebSocket processada com integração RAG');
+        
+        // ======================================================================
+        // ANÁLISE PÓS-RESPOSTA: Verificar se LLM deu resposta de baixa confiança
+        // Se sim, incrementa fallback counter e pode escalar automaticamente
+        // (Llama 4 não retorna confidence score - usamos indicadores proxy)
+        // ======================================================================
+        const postResponseEscalation = await processLLMResponseForEscalation(
+          message.conversationId,
+          fullResponse
+        );
+        
+        if (postResponseEscalation) {
+          // LLM atingiu limite de respostas de baixa confiança - escalar
+          const escalationResult = await processAutoEscalation(postResponseEscalation);
+          
+          ws.send(JSON.stringify({
+            type: 'escalation',
+            trigger: postResponseEscalation.trigger,
+            message: 'A conversa foi encaminhada para um atendente humano devido a respostas inconclusivas.',
+            confidence: postResponseEscalation.confidence,
+            fallbackCount: postResponseEscalation.fallbackCount,
+          }));
+          
+          // Notificar agentes conectados
+          notifyAgentsAboutEvent('new_handoff', {
+            conversationId: message.conversationId,
+            tenantId: safeTenantId,
+            trigger: postResponseEscalation.trigger,
+            priority: 'medium',
+            reason: 'low_confidence_responses',
+          });
+          
+          logger.info({
+            conversationId: message.conversationId,
+            trigger: postResponseEscalation.trigger,
+            fallbackCount: postResponseEscalation.fallbackCount,
+            confidence: postResponseEscalation.confidence,
+          }, 'Escalação automática após resposta de baixa confiança do LLM');
+        }
       }
       
       // ========================================================================

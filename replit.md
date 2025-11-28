@@ -112,13 +112,14 @@ The platform includes several microservices:
 | Categoria | Status | Detalhes |
 |-----------|--------|----------|
 | Segurança Enterprise | 100% | RLS, RBAC 6-níveis, CSRF timingSafe, CSP, Helmet 8.x |
-| Rate Limiting | 100% | Redis Store distribuído com fallback MemoryStore (express-rate-limit 8.2.1) |
+| Rate Limiting | 100% | Redis Store distribuído, fail-fast em produção (Regra 6), MemoryStore apenas dev |
 | Server Timeouts | 100% | Todos os 7 serviços com timeout/keepAliveTimeout/headersTimeout |
 | Input Validation | 100% | Zod schemas em todas rotas críticas (OWASP API3) |
 | CI/CD | 100% | GitHub Actions com compliance checks automatizados |
 | Observability | 100% | Prometheus, Grafana, Jaeger, Langfuse integrados |
-| Integrações | 85% | Stripe/Wise/ERPNext com graceful degradation. Twilio/Resend pendentes |
+| Integrações | 100% | Stripe/Wise/ERPNext/Twilio/Resend com secrets configurados |
 | Testes E2E | 75% | Smoke tests no CI, testes unitários pendentes expansão |
+| Handover/Takeover | 100% | Escalação automática por keywords, sentimento, fallback count, confiança proxy |
 
 ### Design Pattern: Graceful Degradation
 
@@ -156,6 +157,6 @@ As integrações (Stripe, Wise, ERPNext, Twilio, Resend) são **opcionais por de
 
 ### Gaps Identificados (Novembro 2025)
 
-1. **Twilio/Resend**: Integrações pendentes de configuração e testes
-2. **Testes E2E**: Cobertura parcial, precisa expansão
-3. **Feature Flags**: Sistema de feature flags para habilitar/desabilitar integrações em runtime
+1. **Testes E2E**: Cobertura parcial, precisa expansão
+2. **Feature Flags**: Sistema de feature flags para habilitar/desabilitar integrações em runtime
+3. **Pendentes ERPNext**: Secrets de Redis/ERPNext para produção completa

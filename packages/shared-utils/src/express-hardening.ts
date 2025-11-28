@@ -49,6 +49,8 @@ async function getRedisClient(): Promise<RedisClientType | null> {
   }
   
   redisConnectionPromise = (async () => {
+    const isProduction = process.env.NODE_ENV === 'production';
+    
     try {
       const client = createClient({
         url: redisUrl,
@@ -56,7 +58,12 @@ async function getRedisClient(): Promise<RedisClientType | null> {
           connectTimeout: 5000,
           reconnectStrategy: (retries) => {
             if (retries > 3) {
-              console.warn('[express-hardening] Redis: máximo de tentativas atingido, usando fallback');
+              // REGRA 6: Em produção, fail-fast se Redis não disponível
+              if (isProduction) {
+                console.error('[express-hardening] CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
+                throw new Error('Redis obrigatório em produção para rate limiting distribuído');
+              }
+              console.warn('[express-hardening] Redis: máximo de tentativas atingido (desenvolvimento)');
               return new Error('Max retries reached');
             }
             return Math.min(retries * 100, 2000);
@@ -66,6 +73,10 @@ async function getRedisClient(): Promise<RedisClientType | null> {
       
       client.on('error', (err) => {
         console.error('[express-hardening] Erro Redis:', err.message);
+        // REGRA 6: Em produção, erro de Redis é crítico
+        if (isProduction) {
+          console.error('[express-hardening] CRÍTICO: Erro Redis em produção - serviço pode estar comprometido');
+        }
       });
       
       client.on('connect', () => {
@@ -76,7 +87,12 @@ async function getRedisClient(): Promise<RedisClientType | null> {
       redisClient = client as RedisClientType;
       return redisClient;
     } catch (error) {
-      console.warn('[express-hardening] Falha ao conectar Redis, usando MemoryStore:', (error as Error).message);
+      // REGRA 6: Em produção, NUNCA usar MemoryStore - fail-fast
+      if (isProduction) {
+        console.error('[express-hardening] CRÍTICO: Falha ao conectar Redis em produção:', (error as Error).message);
+        throw new Error(`Redis obrigatório em produção: ${(error as Error).message}`);
+      }
+      console.warn('[express-hardening] Falha ao conectar Redis (desenvolvimento), usando MemoryStore:', (error as Error).message);
       redisConnectionPromise = null;
       return null;
     }
@@ -275,10 +291,12 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
     };
   }
   
+  // REGRA 6: Em produção, Redis é OBRIGATÓRIO - fail-fast
   if (isProduction && !process.env.REDIS_URL) {
-    console.warn(`[${serviceName}] AVISO: REDIS_URL não configurado em produção. Rate limiting usando MemoryStore (OWASP API4/8 violação em escala multi-pod)`);
+    throw new Error(`[${serviceName}] CRÍTICO: REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6 - SEM SOLUÇÕES TEMPORÁRIAS)`);
   }
   
+  // Desenvolvimento: MemoryStore é aceitável
   return rateLimit({
     windowMs,
     limit: max,
