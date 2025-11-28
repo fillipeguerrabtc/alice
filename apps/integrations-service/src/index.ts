@@ -7,10 +7,21 @@ import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import crypto from 'crypto';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
+import { 
+  createCorrelationMiddleware, 
+  getContextHeaders,
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+  asyncHandler,
+  requirePermission, 
+  requireAuth,
+  extractAuthContext,
+} from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
-import { eq, desc, sql } from 'drizzle-orm';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
@@ -208,7 +219,11 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
 
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
-app.use(helmet());
+// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production',
+  isDevelopment: process.env.NODE_ENV !== 'production',
+}));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
 // Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
@@ -222,16 +237,13 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-// Rate limiting - 60 requisições por minuto por IP
-const limiter = rateLimit({
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 60,
-  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skip: (req) => req.path === '/api/integrations/stripe/webhook',
-});
-app.use(limiter);
+  skipRoutes: ['/api/integrations/health', '/api/integrations/stripe/webhook', '/api/integrations/wise/webhook', '/api/integrations/twilio/webhook'],
+  serviceName: 'integrations-service',
+}));
 
 app.use('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }));
 app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }));
@@ -1915,12 +1927,19 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
   });
 });
 
-const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Unhandled error');
-  res.status(500).json({ error: 'Internal server error' });
-};
+// ============================================================================
+// MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
+// ============================================================================
 
-app.use(errorHandler);
+// Not Found handler (antes do error handler)
+app.use(createNotFoundHandler({ serviceName: 'integrations-service' }));
+
+// Error handler global (OWASP 2023 + Express.js 2025)
+app.use(createErrorHandler({ 
+  serviceName: 'integrations-service', 
+  logger,
+  includeStackInDev: true,
+}));
 
 const PORT = config.PORT || 3005;
 

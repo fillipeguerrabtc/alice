@@ -18,6 +18,7 @@ export * from './audit.js';
 export * from './metrics.js';
 export * from './health.js';
 export * from './async-context.js';
+export * from './express-hardening.js';
 
 export * as rbac from './rbac/index.js';
 export { 

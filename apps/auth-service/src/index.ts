@@ -28,14 +28,20 @@ import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
-import { eq, or } from 'drizzle-orm';
-import { z } from 'zod';
 import { 
+  createCorrelationMiddleware, 
+  getContextHeaders,
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+  asyncHandler,
   requirePermission, 
   requireAuth,
   requireRole,
 } from '@alice/shared-utils';
+import { eq, or } from 'drizzle-orm';
+import { z } from 'zod';
 import { 
   getDatabase, 
   getPool, 
@@ -237,8 +243,11 @@ app.disable('x-powered-by');
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
-// Middleware de segurança
-app.use(helmet());
+// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: config.NODE_ENV === 'production',
+  isDevelopment: config.NODE_ENV !== 'production',
+}));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
 // Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
@@ -246,6 +255,14 @@ app.use(createCorrelationMiddleware({ serviceName: 'auth-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());
+
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+app.use(createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 100,
+  skipRoutes: ['/api/auth/health', '/api/auth/google', '/api/auth/github', '/api/auth/microsoft', '/api/auth/saml'],
+  serviceName: 'auth-service',
+}));
 
 // CORS configurado para desenvolvimento e produção
 const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5000'];
@@ -1095,15 +1112,18 @@ app.get('/api/audit/recent', async (req: Request, res: Response) => {
 });
 
 // ============================================================================
-// MIDDLEWARE: Error Handler
+// MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
 // ============================================================================
 
-const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Erro não tratado');
-  res.status(500).json({ error: 'Erro interno do servidor' });
-};
+// Not Found handler (antes do error handler)
+app.use(createNotFoundHandler({ serviceName: 'auth-service' }));
 
-app.use(errorHandler);
+// Error handler global (OWASP 2023 + Express.js 2025)
+app.use(createErrorHandler({ 
+  serviceName: 'auth-service', 
+  logger,
+  includeStackInDev: true,
+}));
 
 // ============================================================================
 // INICIAR SERVIDOR

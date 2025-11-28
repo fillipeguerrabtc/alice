@@ -16,7 +16,15 @@ import crypto from 'crypto';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
-import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
+import { 
+  createCorrelationMiddleware, 
+  getContextHeaders,
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+  asyncHandler,
+} from '@alice/shared-utils';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -145,7 +153,11 @@ async function generateEmbedding(text: string): Promise<number[]> {
   }
 }
 
-app.use(helmet());
+// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production',
+  isDevelopment: process.env.NODE_ENV !== 'production',
+}));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
 // Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
@@ -159,14 +171,13 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-const limiter = rateLimit({
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 30,
-  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
+  skipRoutes: ['/api/training/health', '/api/training/stats'],
+  serviceName: 'training-service',
+}));
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
@@ -987,12 +998,19 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
   }
 });
 
-const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Erro não tratado');
-  res.status(500).json({ error: 'Erro interno do servidor' });
-};
+// ============================================================================
+// MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
+// ============================================================================
 
-app.use(errorHandler);
+// Not Found handler (antes do error handler)
+app.use(createNotFoundHandler({ serviceName: 'training-service' }));
+
+// Error handler global (OWASP 2023 + Express.js 2025)
+app.use(createErrorHandler({ 
+  serviceName: 'training-service', 
+  logger,
+  includeStackInDev: true,
+}));
 
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ 

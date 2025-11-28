@@ -18,15 +18,21 @@ import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
-import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
-import { eq, desc } from 'drizzle-orm';
-import { z } from 'zod';
 import { 
+  createCorrelationMiddleware, 
+  getContextHeaders,
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+  asyncHandler,
   requirePermission, 
   requireAuth,
   requireSameTenant,
   extractAuthContext,
 } from '@alice/shared-utils';
+import { eq, desc } from 'drizzle-orm';
+import { z } from 'zod';
 import { 
   buscarContextoRAG, 
   formatarContextoParaLLM, 
@@ -429,7 +435,11 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
   }
 }
 
-app.use(helmet());
+// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production',
+  isDevelopment: process.env.NODE_ENV !== 'production',
+}));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
 // Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
@@ -443,14 +453,13 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-const limiter = rateLimit({
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 100,
-  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
+  skipRoutes: ['/api/chat/health', '/api/chat/stats'],
+  serviceName: 'chat-service',
+}));
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
@@ -1890,12 +1899,19 @@ app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRe
   }
 });
 
-const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Erro não tratado');
-  res.status(500).json({ error: 'Erro interno do servidor' });
-};
+// ============================================================================
+// MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
+// ============================================================================
 
-app.use(errorHandler);
+// Not Found handler (antes do error handler)
+app.use(createNotFoundHandler({ serviceName: 'chat-service' }));
+
+// Error handler global (OWASP 2023 + Express.js 2025)
+app.use(createErrorHandler({ 
+  serviceName: 'chat-service', 
+  logger,
+  includeStackInDev: true,
+}));
 
 server.listen(PORT, () => {
   logger.info({ 

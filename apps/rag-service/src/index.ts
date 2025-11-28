@@ -23,7 +23,14 @@ import {
   requirePermission, 
   requireAuth,
   requireSameTenant,
+  createSecurityMiddleware,
+  createRateLimiter,
+  createErrorHandler,
+  createNotFoundHandler,
+  asyncHandler,
+  createCorrelationMiddleware,
 } from '@alice/shared-utils';
+import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
 import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
@@ -700,7 +707,11 @@ function classifyQuery(query: string): ClassificationResult {
   };
 }
 
-app.use(helmet());
+// SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
+app.use(createSecurityMiddleware({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production',
+  isDevelopment: process.env.NODE_ENV !== 'production',
+}));
 
 // OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
 // Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
@@ -714,14 +725,13 @@ app.use(cors({
   credentials: CORS_ORIGINS.length > 0,
 }));
 
-const limiter = rateLimit({
+// SEGURANÇA: Rate limiting multi-tenant (express-rate-limit 2025)
+app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 50,
-  message: { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-});
-app.use(limiter);
+  skipRoutes: ['/api/rag/health', '/api/rag/stats'],
+  serviceName: 'rag-service',
+}));
 
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
@@ -2354,12 +2364,19 @@ app.get('/api/rag/circuit-breaker/clip', (_req: Request, res: Response) => {
   });
 });
 
-const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunction) => {
-  logger.error({ error: err }, 'Erro não tratado');
-  res.status(500).json({ error: 'Erro interno do servidor' });
-};
+// ============================================================================
+// MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
+// ============================================================================
 
-app.use(errorHandler);
+// Not Found handler (antes do error handler)
+app.use(createNotFoundHandler({ serviceName: 'rag-service' }));
+
+// Error handler global (OWASP 2023 + Express.js 2025)
+app.use(createErrorHandler({ 
+  serviceName: 'rag-service', 
+  logger,
+  includeStackInDev: true,
+}));
 
 const server = app.listen(PORT, () => {
   logger.info({ 
