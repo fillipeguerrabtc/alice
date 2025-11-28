@@ -77,6 +77,10 @@ const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
+// URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
+// Porta 3005 é padrão do integrations-service (ver server/index-dev.ts)
+const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL || 'http://localhost:3005';
+
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
 const getTenantIdFromRequest = (req: Request): string | undefined => {
@@ -434,6 +438,120 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
       }
     }
   }
+}
+
+// ============================================================================
+// CIRCUIT BREAKER - Integrations Service (Regra 16 - Best Practices 2025)
+// Usado para comunicação cross-service segura (envio WhatsApp, etc.)
+// ============================================================================
+
+interface IntegrationsWhatsAppRequest {
+  to: string;
+  message: string;
+  conversationId?: string;
+  mediaUrl?: string;
+}
+
+interface IntegrationsWhatsAppResponse {
+  success: boolean;
+  messageSid?: string;
+  error?: string;
+}
+
+const integrationsServiceBreakerOptions = {
+  timeout: 15000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000,
+  volumeThreshold: 3,
+};
+
+async function sendWhatsAppMessageInternal(
+  request: IntegrationsWhatsAppRequest
+): Promise<IntegrationsWhatsAppResponse> {
+  const response = await fetch(`${INTEGRATIONS_SERVICE_URL}/api/integrations/twilio/send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: request.to,
+      message: request.message,
+      conversationId: request.conversationId,
+      mediaUrl: request.mediaUrl,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro ao enviar WhatsApp via Integrations Service: ${errorText}`);
+  }
+
+  return await response.json() as IntegrationsWhatsAppResponse;
+}
+
+const integrationsServiceBreaker = new CircuitBreaker(
+  sendWhatsAppMessageInternal, 
+  integrationsServiceBreakerOptions
+);
+
+integrationsServiceBreaker.on('open', () => {
+  logger.warn('Circuit breaker Integrations Service: ABERTO - Serviço temporariamente indisponível');
+});
+integrationsServiceBreaker.on('halfOpen', () => {
+  logger.info('Circuit breaker Integrations Service: HALF-OPEN - Testando reconexão');
+});
+integrationsServiceBreaker.on('close', () => {
+  logger.info('Circuit breaker Integrations Service: FECHADO - Serviço funcionando normalmente');
+});
+
+/**
+ * Envia mensagem via WhatsApp através do Integrations Service
+ * Usa circuit breaker para resiliência (Regra 16)
+ * 
+ * @param to - Número de telefone do destinatário
+ * @param message - Conteúdo da mensagem
+ * @param conversationId - ID da conversa (opcional, para persistência)
+ * @returns Resultado do envio com messageSid do Twilio
+ */
+async function sendWhatsAppMessage(
+  to: string, 
+  message: string, 
+  conversationId?: string
+): Promise<IntegrationsWhatsAppResponse> {
+  try {
+    const result = await integrationsServiceBreaker.fire({
+      to,
+      message,
+      conversationId,
+    }) as IntegrationsWhatsAppResponse;
+    
+    return result;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Breaker is open')) {
+      logger.warn('Circuit breaker aberto - Integrations Service indisponível');
+      return {
+        success: false,
+        error: 'Serviço de WhatsApp temporariamente indisponível. Tente novamente em alguns segundos.',
+      };
+    }
+    
+    logger.error({ error }, 'Erro ao enviar mensagem WhatsApp');
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    };
+  }
+}
+
+/**
+ * Retorna estatísticas do circuit breaker do Integrations Service
+ * Usado no endpoint /api/chat/health para monitoramento
+ */
+function getIntegrationsBreakerStats() {
+  return {
+    state: integrationsServiceBreaker.opened ? 'open' : (integrationsServiceBreaker.halfOpen ? 'half-open' : 'closed'),
+    stats: integrationsServiceBreaker.stats,
+  };
 }
 
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
@@ -2189,12 +2307,41 @@ app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTena
       });
     }
     
+    // ========================================================================
+    // FASE 1: Buscar conversa com usuário para identificar canal e telefone
+    // Suporta Web (WebSocket) e WhatsApp (Twilio) - Regra 15 Microsserviços
+    // ========================================================================
+    const conversation = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.id, id),
+      with: {
+        user: true,
+      },
+    });
+    
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversa não encontrada' });
+    }
+    
+    // Identificar canal da conversa via metadata
+    const conversationMetadata = conversation.metadata as { canal?: string } | null;
+    const channel = conversationMetadata?.canal || 'web';
+    const userPhone = conversation.user?.telefone;
+    const userId = conversation.userId;
+    
+    // ========================================================================
+    // FASE 2: Salvar mensagem no banco com metadata de canal
+    // ========================================================================
     const [message] = await db.insert(schema.messages).values({
       conversationId: id,
       userId: agentId,
       conteudo: content.trim(),
       tipo: 'text',
       isFromUser: false,
+      metadata: {
+        channel,
+        sentByAgent: true,
+        agentId,
+      },
     }).returning();
     
     await db.update(schema.conversations)
@@ -2204,11 +2351,121 @@ app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTena
       })
       .where(eq(schema.conversations.id, id));
     
-    logger.info({ conversationId: id, agentId, messageId: message.id }, 'Mensagem humana enviada');
+    // ========================================================================
+    // FASE 3: Entregar mensagem ao cliente conforme canal
+    // WhatsApp: Chamar Integrations Service via circuit breaker
+    // Web: Notificar via WebSocket em tempo real
+    // ========================================================================
+    let deliveryResult: { 
+      delivered: boolean; 
+      channel: string; 
+      messageSid?: string; 
+      error?: string;
+    } = { delivered: false, channel };
+    
+    if (channel === 'whatsapp') {
+      // Canal WhatsApp: Enviar via Integrations Service (Twilio)
+      if (!userPhone) {
+        logger.warn({ 
+          conversationId: id, 
+          userId,
+        }, 'Usuário sem telefone cadastrado - mensagem salva mas não enviada via WhatsApp');
+        
+        deliveryResult = {
+          delivered: false,
+          channel: 'whatsapp',
+          error: 'Telefone do usuário não cadastrado',
+        };
+      } else {
+        // Enviar via circuit breaker (Regra 16)
+        const whatsappResult = await sendWhatsAppMessage(userPhone, content.trim(), id);
+        
+        if (whatsappResult.success) {
+          deliveryResult = {
+            delivered: true,
+            channel: 'whatsapp',
+            messageSid: whatsappResult.messageSid,
+          };
+          
+          logger.info({
+            conversationId: id,
+            agentId,
+            messageId: message.id,
+            messageSid: whatsappResult.messageSid,
+            userPhone,
+          }, 'Mensagem humana enviada via WhatsApp');
+        } else {
+          deliveryResult = {
+            delivered: false,
+            channel: 'whatsapp',
+            error: whatsappResult.error,
+          };
+          
+          logger.warn({
+            conversationId: id,
+            agentId,
+            error: whatsappResult.error,
+          }, 'Falha ao enviar mensagem via WhatsApp - mensagem salva no banco');
+        }
+      }
+    } else {
+      // Canal Web: Notificar via WebSocket
+      // Buscar conexão do usuário e enviar mensagem em tempo real
+      if (userId && conversation.user?.tenantId) {
+        const clientKey = getClientKey(conversation.user.tenantId, userId);
+        const userWs = wsClients.get(clientKey);
+        
+        if (userWs && userWs.readyState === WebSocket.OPEN) {
+          userWs.send(JSON.stringify({
+            type: 'agent_message',
+            data: {
+              id: message.id,
+              conversationId: id,
+              conteudo: content.trim(),
+              isFromUser: false,
+              agentId,
+              criadoEm: message.criadoEm,
+            },
+          }));
+          
+          deliveryResult = {
+            delivered: true,
+            channel: 'web',
+          };
+          
+          logger.info({
+            conversationId: id,
+            agentId,
+            messageId: message.id,
+            userId,
+          }, 'Mensagem humana enviada via WebSocket');
+        } else {
+          // Usuário não conectado - mensagem será carregada no próximo acesso
+          deliveryResult = {
+            delivered: false,
+            channel: 'web',
+            error: 'Usuário não conectado ao WebSocket',
+          };
+          
+          logger.info({
+            conversationId: id,
+            agentId,
+            messageId: message.id,
+          }, 'Mensagem humana salva - usuário offline, receberá ao reconectar');
+        }
+      } else {
+        deliveryResult = {
+          delivered: false,
+          channel: 'web',
+          error: 'Conversa sem usuário ou tenant associado',
+        };
+      }
+    }
     
     res.json({ 
       message,
       success: true,
+      delivery: deliveryResult,
     });
   } catch (error) {
     logger.error({ error, conversationId: id, agentId }, 'Erro ao enviar mensagem humana');

@@ -119,7 +119,7 @@ The platform includes several microservices:
 | Observability | 100% | Prometheus, Grafana, Jaeger, Langfuse integrados |
 | Integrações | 100% | Stripe/Wise/ERPNext/Twilio/Resend com secrets configurados |
 | Testes E2E | 75% | Smoke tests no CI, testes unitários pendentes expansão |
-| Handover/Takeover | 100% | Escalação automática por keywords, sentimento, fallback count, confiança proxy |
+| Handover/Takeover | 100% | Escalação automática por keywords, sentimento, fallback count, confiança proxy. Entrega de mensagens do agente via WhatsApp (Twilio/circuit breaker) e Web (WebSocket) |
 
 ### Design Pattern: Graceful Degradation
 
