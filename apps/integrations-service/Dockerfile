@@ -34,4 +34,4 @@ COPY --from=builder --chown=alice:nodejs /app/apps/integrations-service/package.
 
 USER alice
 EXPOSE 3005
-CMD ["node", "--experimental-specifier-resolution=node", "--loader", "tsx/esm", "src/index.ts"]
+CMD ["node", "--experimental-specifier-resolution=node", "--import=tsx", "src/index.ts"]

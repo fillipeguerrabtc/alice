@@ -36,4 +36,4 @@ COPY --from=builder --chown=alice:nodejs /app/apps/auth-service/package.json ./
 
 USER alice
 EXPOSE 3001
-CMD ["node", "--experimental-specifier-resolution=node", "--loader", "tsx/esm", "src/index.ts"]
+CMD ["node", "--experimental-specifier-resolution=node", "--import=tsx", "src/index.ts"]

@@ -34,4 +34,4 @@ COPY --from=builder --chown=alice:nodejs /app/apps/rag-service/package.json ./
 
 USER alice
 EXPOSE 3003
-CMD ["node", "--experimental-specifier-resolution=node", "--loader", "tsx/esm", "src/index.ts"]
+CMD ["node", "--experimental-specifier-resolution=node", "--import=tsx", "src/index.ts"]
