@@ -86,7 +86,18 @@ The platform includes several microservices:
 
 ### System Design Choices
 
--   **Multi-tenant Isolation**: Future plans include adding `NOT NULL` constraints to `tenant_id` columns, implementing PostgreSQL Row Level Security (RLS), and updating queries to filter by `tenant_id`.
+-   **Multi-tenant Isolation**: Implemented PostgreSQL Row Level Security (RLS) with tenant_id isolation policies. Migration available in `drizzle/migrations/0001_rls_security_enterprise.sql`.
+
+### Security Hardening (Novembro 2025)
+
+-   **PostgreSQL RLS**: Row Level Security habilitado em todas as tabelas tenant-scoped (users, namespaces, integrations, training_data, etc.). Funções auxiliares `current_tenant_id()` e `is_super_admin()` para políticas de acesso.
+-   **Índices tenant_id**: Índices compostos criados para performance em queries multi-tenant.
+-   **pgAudit**: Extension habilitada para audit logging de operações DDL e DML.
+-   **Docker Non-Root**: Todos os 9 Dockerfiles (8 serviços Alice + CLIP) rodam como usuários non-root com UIDs específicos.
+-   **Traefik v3.3**: API Gateway com CAP_NET_BIND_SERVICE, rate limiting via ipStrategy (anti-spoofing), security headers middleware.
+-   **Redis ACL**: Autenticação habilitada para Redis cache e queue do ERPNext com comandos perigosos desabilitados.
+-   **GitHub Actions SHA Pinning**: Todas as actions pinadas a commit SHA para supply chain security.
+-   **CSP Hardening**: Content-Security-Policy sem 'unsafe-eval', apenas 'unsafe-inline' mantido para React hydration.
 
 ## External Dependencies
 

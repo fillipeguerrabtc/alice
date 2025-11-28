@@ -95,6 +95,26 @@ export function setupGracefulShutdown(logger?: { info: (msg: string) => void; er
   process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
+// ============================================================================
+// TENANT CONTEXT (RLS Enterprise-Grade - Regra 16 replit.md)
+// Implementação segura sem SQL injection, usando parameterized queries
+// ============================================================================
+
+// Validação UUID para prevenir SQL injection (OWASP API1)
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidUUID(value: string): boolean {
+  return UUID_REGEX.test(value);
+}
+
+function sanitizeTenantId(tenantId: string | null): string {
+  if (!tenantId) return '';
+  if (!isValidUUID(tenantId)) {
+    throw new Error(`[database] Tenant ID inválido: formato UUID esperado`);
+  }
+  return tenantId;
+}
+
 export function getDatabase(): NodePgDatabase<typeof schema> {
   if (!dbInstance) {
     const connectionString = process.env.DATABASE_URL;
@@ -127,6 +147,63 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
   }
   
   return dbInstance;
+}
+
+// ============================================================================
+// FUNÇÃO PARA EXECUTAR QUERY COM CONTEXTO DE TENANT (RLS)
+// Usa conexão dedicada com GUCs configurados via SET LOCAL (transação-scoped)
+// Previne SQL injection via validação UUID
+// ============================================================================
+
+export async function withTenantContext<T>(
+  tenantId: string | null,
+  isSuperAdmin: boolean,
+  fn: (db: NodePgDatabase<typeof schema>) => Promise<T>
+): Promise<T> {
+  const pool = getPool();
+  const client = await pool.connect();
+  
+  try {
+    // Validar e sanitizar tenant ID para prevenir SQL injection
+    const safeTenantId = sanitizeTenantId(tenantId);
+    const safeIsSuperAdmin = isSuperAdmin === true ? 'true' : 'false';
+    
+    // Iniciar transação para usar SET LOCAL (escopo de transação)
+    await client.query('BEGIN');
+    
+    // Configurar contexto RLS usando SET LOCAL (valores só válidos nesta transação)
+    // Usa format() do PostgreSQL para escapar valores corretamente
+    await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [safeTenantId]);
+    await client.query(`SELECT set_config('app.is_super_admin', $1, true)`, [safeIsSuperAdmin]);
+    
+    // Criar instância Drizzle dedicada para esta conexão
+    const tenantDb = drizzle(client, { schema });
+    
+    // Executar função com DB tenant-scoped
+    const result = await fn(tenantDb);
+    
+    // Commit da transação
+    await client.query('COMMIT');
+    
+    return result;
+  } catch (error) {
+    // Rollback em caso de erro
+    await client.query('ROLLBACK').catch(() => {});
+    throw error;
+  } finally {
+    // Liberar conexão de volta para o pool
+    client.release();
+  }
+}
+
+// ============================================================================
+// HELPER PARA CONTEXTO SUPER ADMIN (bypass RLS)
+// ============================================================================
+
+export async function withSuperAdminContext<T>(
+  fn: (db: NodePgDatabase<typeof schema>) => Promise<T>
+): Promise<T> {
+  return withTenantContext(null, true, fn);
 }
 
 export function getPool(): pg.Pool {

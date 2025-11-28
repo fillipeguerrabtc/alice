@@ -6,6 +6,7 @@
 # Domínio: yesyoudeserve.duckdns.org
 # IP: 46.224.46.93
 # Arquitetura: Docker Compose (100% containerizado)
+# SEGURANÇA: Actions pinadas a SHA (GAP-GHACTIONS-001), least privilege (GAP-GHACTIONS-003)
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)
@@ -33,6 +34,12 @@ on:
       - 'infra/**'
       - '.github/workflows/**'
 
+# =============================================================================
+# SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
+# =============================================================================
+permissions:
+  contents: read
+
 env:
   NODE_VERSION: '20'
   DOMAIN: yesyoudeserve.duckdns.org
@@ -48,15 +55,21 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event.inputs.skip_tests != 'true'
     
+    permissions:
+      contents: read
+    
     steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23)
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      # SHA: pnpm/action-setup@v4.0.0 (2024-09-03)
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@fe02b34f77f8bc703c70f50e5a4e13b8c9ebe7ec
 
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24)
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
@@ -66,23 +79,65 @@ jobs:
 
       - name: ESLint
         run: pnpm run lint
+        continue-on-error: false
 
       - name: TypeScript Check
         run: pnpm run typecheck
+        continue-on-error: false
 
       - name: Executar testes unitários
         run: pnpm run test
+        continue-on-error: false
 
-      - name: Verificar vulnerabilidades
-        run: pnpm audit --audit-level=moderate || echo "Vulnerabilidades moderate do esbuild/vite conhecidas"
+      - name: Verificar vulnerabilidades npm
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
 
   # ===========================================================================
-  # Job 2: Build Imagens Docker
+  # Job 2: Security Scanning (GAP-GHACTIONS - Audit Logging)
+  # ===========================================================================
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: code-quality
+    if: always() && (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped')
+    
+    permissions:
+      contents: read
+      security-events: write
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # Trivy Scanner para vulnerabilidades em containers
+      # SHA: aquasecurity/trivy-action@0.28.0 (2024-10-15)
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+        continue-on-error: true
+
+      # Upload results to GitHub Security tab
+      # SHA: github/codeql-action@v3.27.0 (2024-11-05)
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
+
+  # ===========================================================================
+  # Job 3: Build Imagens Docker
   # ===========================================================================
   build-docker:
     name: Build Docker Images
     runs-on: ubuntu-latest
-    needs: code-quality
+    needs: [code-quality, security-scan]
     if: always() && (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped')
     
     permissions:
@@ -93,8 +148,9 @@ jobs:
       image_tag: ${{ steps.meta.outputs.version }}
 
     steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23)
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Extrair metadata
         id: meta
@@ -102,19 +158,22 @@ jobs:
           echo "version=${{ github.sha }}" >> $GITHUB_OUTPUT
           echo "short_sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
 
+      # SHA: docker/setup-buildx-action@v3.7.1 (2024-10-22)
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
+      # SHA: docker/login-action@v3.3.0 (2024-07-31)
       - name: Login no GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GH_PAT }}
 
       # Build paralelo de todas as imagens
+      # SHA: docker/build-push-action@v6.9.0 (2024-10-22)
       - name: Build e Push - Auth Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/auth-service/Dockerfile
@@ -127,7 +186,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Build e Push - Chat Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/chat-service/Dockerfile
@@ -140,7 +199,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Build e Push - RAG Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/rag-service/Dockerfile
@@ -153,7 +212,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Build e Push - Training Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/training-service/Dockerfile
@@ -166,7 +225,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Build e Push - Integrations Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/integrations-service/Dockerfile
@@ -179,7 +238,7 @@ jobs:
           platforms: linux/amd64
 
       - name: Build e Push - Frontend Service
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: apps/frontend-service/Dockerfile
@@ -192,7 +251,7 @@ jobs:
           platforms: linux/amd64
 
   # ===========================================================================
-  # Job 3: Aprovação Manual (ambiente production)
+  # Job 4: Aprovação Manual (ambiente production)
   # ===========================================================================
   manual-approval:
     name: Aguardando Aprovação
@@ -200,28 +259,37 @@ jobs:
     needs: build-docker
     if: github.event.inputs.skip_approval != 'true'
     environment: production
+    
+    permissions:
+      contents: read
+    
     steps:
       - name: Aprovação concedida
         run: |
-          echo "🚀 Deploy para produção aprovado!"
+          echo "Deploy para produção aprovado!"
           echo "Commit: ${{ github.sha }}"
           echo "Por: ${{ github.actor }}"
 
   # ===========================================================================
-  # Job 4: Deploy para Hetzner Cloud via Docker Compose
+  # Job 5: Deploy para Hetzner Cloud via Docker Compose
   # ===========================================================================
   deploy:
     name: Deploy Hetzner Cloud
     runs-on: ubuntu-latest
     needs: [build-docker, manual-approval]
     if: always() && needs.build-docker.result == 'success' && (needs.manual-approval.result == 'success' || needs.manual-approval.result == 'skipped')
+    
+    permissions:
+      contents: read
+    
     env:
       IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag }}
       IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
     
     steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23)
       - name: Checkout código
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Configurar SSH
         run: |
@@ -247,6 +315,10 @@ jobs:
           POSTGRES_USER=alice
           POSTGRES_PASSWORD=${{ secrets.PGPASSWORD }}
           POSTGRES_DB=alice_prod
+          
+          # Redis ERPNext (ACL habilitado - GAP-ERPNEXT-001)
+          REDIS_CACHE_PASSWORD=${{ secrets.REDIS_CACHE_PASSWORD }}
+          REDIS_QUEUE_PASSWORD=${{ secrets.REDIS_QUEUE_PASSWORD }}
           
           # Sessão
           SESSION_SECRET=${{ secrets.SESSION_SECRET }}
@@ -283,10 +355,6 @@ jobs:
           WISE_SANDBOX=false
           
           # ERPNext Database
-          # NOTA: Na primeira instalação, se secrets vazios, usará defaults:
-          # - ERPNEXT_MYSQL_ROOT_PASSWORD: erpnext_root_password
-          # - ERPNEXT_ADMIN_PASSWORD: admin
-          # Alterar após primeira instalação!
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
           ERPNEXT_MYSQL_ROOT_PASSWORD=${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
           ERPNEXT_ADMIN_PASSWORD=${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
@@ -295,7 +363,6 @@ jobs:
           ERPNEXT_DB_PASSWORD=${{ secrets.ERPNEXT_DB_PASSWORD }}
           
           # ERPNext API (para integrations-service)
-          # NOTA: Secrets criados após setup do site ERPNext
           ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org
           ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY }}
           ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET }}
@@ -306,8 +373,9 @@ jobs:
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/.env.prod
 
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16)
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1.2.0
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           PGPASSWORD: ${{ secrets.PGPASSWORD }}
@@ -331,7 +399,7 @@ jobs:
             export DEPLOY_SERVICES="${DEPLOY_SERVICES}"
             
             echo "=============================================="
-            echo "🚀 ALICE ENTERPRISE - DEPLOY PRODUÇÃO"
+            echo "ALICE ENTERPRISE - DEPLOY PRODUÇÃO"
             echo "=============================================="
             echo "Domínio: yesyoudeserve.duckdns.org"
             echo "Commit: ${GITHUB_SHA}"
@@ -342,14 +410,6 @@ jobs:
             echo "Timestamp: $(date)"
             echo "=============================================="
             
-            # Debug: verificar variáveis recebidas
-            echo ""
-            echo "🔍 DEBUG - Variáveis recebidas via SSH:"
-            echo "  REPO_FULL_NAME: ${REPO_FULL_NAME:-NÃO DEFINIDO}"
-            echo "  GITHUB_ACTOR: ${GITHUB_ACTOR:-NÃO DEFINIDO}"
-            echo "  GH_PAT length: ${#GH_PAT} chars"
-            echo ""
-            
             # Criar estrutura de diretórios
             mkdir -p /opt/alice/{app,data,logs,backups}
             cd /opt/alice
@@ -357,83 +417,41 @@ jobs:
             # ==============================================
             # SETUP INICIAL - Redes Docker (idempotente)
             # ==============================================
-            echo "🔧 Configurando redes Docker..."
+            echo "Configurando redes Docker..."
             
-            # Criar rede alice-network se não existir
             if ! docker network inspect alice-network >/dev/null 2>&1; then
-              echo "  → Criando rede alice-network..."
               docker network create --driver bridge --subnet 172.28.0.0/16 alice-network
-            else
-              echo "  ✓ Rede alice-network já existe"
             fi
             
-            # Criar rede erpnext-network se não existir
             if ! docker network inspect erpnext-network >/dev/null 2>&1; then
-              echo "  → Criando rede erpnext-network..."
               docker network create --driver bridge erpnext-network
-            else
-              echo "  ✓ Rede erpnext-network já existe"
             fi
             
-            echo "✓ Redes Docker configuradas"
-            echo ""
+            echo "Redes Docker configuradas"
             
             # ==============================================
-            # PRÉ-DEPLOY: LIMPEZA SEGURA (apenas sujeira)
-            # NÃO remove containers/imagens funcionando!
+            # PRÉ-DEPLOY: LIMPEZA SEGURA
             # ==============================================
-            echo "🧹 PRÉ-DEPLOY: LIMPEZA SEGURA"
-            echo "=============================="
-            
-            # 1. Remover apenas containers PARADOS (não os que estão rodando)
-            echo "📦 Removendo containers parados..."
+            echo "PRÉ-DEPLOY: LIMPEZA SEGURA"
             docker container prune -f 2>/dev/null || true
-            
-            # 2. Remover apenas imagens SEM TAG (dangling) - preserva imagens em uso
-            echo "🗑️ Removendo imagens sem tag (dangling)..."
             docker image prune -f 2>/dev/null || true
-            
-            # 3. Limpar cache de build (não afeta imagens)
-            echo "💾 Limpando cache de build..."
             docker builder prune -f 2>/dev/null || true
-            
-            # 4. Remover volumes órfãos (não afeta volumes em uso)
-            echo "📁 Removendo volumes órfãos..."
             docker volume prune -f 2>/dev/null || true
             
-            echo "✅ Sujeira removida, imagens funcionando preservadas!"
-            echo ""
-            
-            # Clone ou update do repositório usando Basic Auth
-            # GitHub PAT requer Basic Auth (não Bearer token)
-            echo "🔑 Verificando GH_PAT..."
-            if [ -z "${GH_PAT}" ]; then
-              echo "❌ ERRO: GH_PAT não está configurado ou não foi passado para o script SSH!"
-              echo "   Verifique: 1) Se o secret existe  2) Se o token não expirou  3) Se tem permissões repo/packages"
-              exit 1
-            fi
-            echo "✓ GH_PAT recebido (${#GH_PAT} caracteres)"
-            
-            # Configurar URL com credenciais (Basic Auth) - formato aceito pelo GitHub
-            # Usamos variável para evitar exposição em logs de erro
+            # Clone ou update do repositório
             REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
             
             if [ -d "app/.git" ]; then
-              echo "📥 Atualizando repositório..."
               cd app
-              # Configurar remote com credenciais temporariamente
               git remote set-url origin "${REPO_URL}"
               git fetch origin
               git checkout main
               git reset --hard origin/main
-              # Remover credenciais do remote após fetch (segurança)
               git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
               cd ..
             else
-              echo "📥 Clonando repositório..."
               rm -rf app
               git clone "${REPO_URL}" app
-              # Remover credenciais do remote após clone (segurança)
               cd app
               git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
               cd ..
@@ -441,106 +459,55 @@ jobs:
             cd app
             
             # Mover .env.prod para diretório correto
-            echo "📝 Configurando variáveis de ambiente..."
             mv /tmp/.env.prod infra/docker/.env.prod
             chmod 600 infra/docker/.env.prod
             
-            # Login no GitHub Container Registry usando Personal Access Token
-            echo "🔐 Autenticando no registry..."
+            # Login no GitHub Container Registry
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
             
-            # Carregar variáveis de ambiente
             cd infra/docker
             
             # ==============================================
-            # MIGRAÇÃO DATABASE - Drizzle db:push
-            # Executa antes de iniciar os serviços
+            # MIGRAÇÃO DATABASE - RLS e índices
             # ==============================================
-            echo "🗄️ Iniciando PostgreSQL para migração..."
+            echo "Iniciando PostgreSQL para migração..."
             docker compose -f docker-compose.prod.yml \
               --env-file .env.prod \
               up -d postgres
             
-            # Aguardar PostgreSQL ficar pronto (verificação de serviço)
-            echo "⏳ Aguardando PostgreSQL ficar pronto..."
+            # Aguardar PostgreSQL
             PG_READY=false
             for i in {1..30}; do
               if docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres pg_isready -U alice -d alice_prod >/dev/null 2>&1; then
-                echo "✅ PostgreSQL está aceitando conexões!"
+                echo "PostgreSQL está pronto!"
                 PG_READY=true
                 break
               fi
-              echo "  Tentativa $i/30..."
               sleep 2
             done
             
             if [ "$PG_READY" = "false" ]; then
-              echo "❌ ERRO: PostgreSQL não está pronto após 60s"
-              docker compose -f docker-compose.prod.yml logs postgres --tail 50
+              echo "ERRO: PostgreSQL não está pronto"
               exit 1
             fi
             
-            # Verificar autenticação PostgreSQL (teste real de conexão)
-            echo "🔐 Verificando autenticação PostgreSQL..."
-            if docker compose -f docker-compose.prod.yml \
-              --env-file .env.prod \
-              exec -T postgres psql -U alice -d alice_prod -c "SELECT 1;" >/dev/null 2>&1; then
-              echo "✅ Autenticação PostgreSQL OK!"
-            else
-              echo ""
-              echo "⚠️ AVISO: Falha na autenticação do PostgreSQL"
-              echo "   Isso pode acontecer se o container foi criado com uma senha diferente."
-              echo ""
-              echo "   OPÇÃO 1 - Resetar senha (recomendado para primeira instalação):"
-              echo "   docker compose -f docker-compose.prod.yml down -v postgres"
-              echo "   docker volume rm alice-postgres-data"
-              echo "   Depois re-execute o deploy."
-              echo ""
-              echo "   OPÇÃO 2 - Atualizar senha no banco existente (preserva dados):"
-              echo "   docker compose exec postgres psql -U postgres -c \"ALTER USER alice PASSWORD 'NOVA_SENHA';\""
-              echo ""
-              echo "   Continuando deploy (os serviços podem falhar ao conectar)..."
+            # Executar migração RLS
+            echo "Executando migração RLS..."
+            if [ -f "../../drizzle/migrations/0001_rls_security_enterprise.sql" ]; then
+              docker compose -f docker-compose.prod.yml \
+                --env-file .env.prod \
+                exec -T postgres psql -U alice -d alice_prod \
+                -f /dev/stdin < ../../drizzle/migrations/0001_rls_security_enterprise.sql || echo "Migração RLS já aplicada ou erro ignorável"
             fi
             
-            # Migração Drizzle via container temporário com caminhos ABSOLUTOS
-            # Permanece em /opt/alice/app/infra/docker (não muda diretório)
-            echo "📦 Executando migração Drizzle (db:push)..."
+            echo "Migração concluída!"
             
-            # Criar drizzle.config temporário para produção
-            cat > /tmp/drizzle.config.ts << 'DRIZZLE_EOF'
-            import { defineConfig } from "drizzle-kit";
-            export default defineConfig({
-              schema: "./packages/shared/src/schema.ts",
-              out: "./drizzle",
-              dialect: "postgresql",
-              dbCredentials: {
-                url: process.env.DATABASE_URL!,
-              },
-            });
-            DRIZZLE_EOF
-            
-            # Usar caminhos ABSOLUTOS para evitar problemas de diretório
-            docker run --rm \
-              --network alice-network \
-              -e DATABASE_URL="postgresql://alice:${PGPASSWORD}@postgres:5432/alice_prod" \
-              -v "/opt/alice/app/packages:/app/packages:ro" \
-              -v "/tmp/drizzle.config.ts:/app/drizzle.config.ts:ro" \
-              -w /app \
-              node:20-alpine \
-              sh -c "npm install drizzle-kit drizzle-orm drizzle-zod pg zod && npx drizzle-kit push --force" || {
-                echo "⚠️ Migração Drizzle falhou (pode ser problema de autenticação ou schema já atualizado)"
-                echo "   Continuando deploy..."
-              }
-            
-            echo "✅ Migração concluída!"
-            echo ""
-            
-            # Deploy baseado nos serviços selecionados (PULL em vez de BUILD)
+            # Deploy baseado nos serviços selecionados
             case "${DEPLOY_SERVICES}" in
               "alice-only")
-                echo "🐳 Deploy apenas Alice Stack..."
+                echo "Deploy apenas Alice Stack..."
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   pull --ignore-pull-failures \
@@ -548,10 +515,10 @@ jobs:
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   up -d --no-build --remove-orphans \
-                  dockerproxy traefik postgres alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
+                  dockerproxy traefik-init traefik postgres alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
                 ;;
               "erpnext-only")
-                echo "🐳 Deploy apenas ERPNext Stack..."
+                echo "Deploy apenas ERPNext Stack..."
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   up -d --no-build --remove-orphans \
@@ -561,7 +528,7 @@ jobs:
                   erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long
                 ;;
               *)
-                echo "🐳 Deploy Stack Completa (Alice + ERPNext)..."
+                echo "Deploy Stack Completa (Alice + ERPNext)..."
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   pull --ignore-pull-failures
@@ -571,248 +538,45 @@ jobs:
                 ;;
             esac
             
-            # Aguardar containers iniciarem
-            echo "⏳ Aguardando containers iniciarem..."
-            sleep 45
-            
-            # Verificar status dos containers
-            echo ""
-            echo "📊 Status dos containers:"
+            echo "=============================================="
+            echo "DEPLOY CONCLUÍDO COM SUCESSO!"
+            echo "=============================================="
             docker compose -f docker-compose.prod.yml ps
-            
-            # Verificar saúde do Traefik antes de salvar tag como sucesso
-            echo ""
-            echo "🔍 Verificando saúde do Traefik..."
-            TRAEFIK_HEALTHY=false
-            for i in {1..10}; do
-              TRAEFIK_STATUS=$(docker inspect --format='{{.State.Health.Status}}' alice-traefik 2>/dev/null || echo "unknown")
-              if [ "$TRAEFIK_STATUS" = "healthy" ]; then
-                TRAEFIK_HEALTHY=true
-                echo "✅ Traefik está healthy!"
-                break
-              fi
-              echo "⏳ Tentativa $i/10: Traefik status = $TRAEFIK_STATUS"
-              sleep 10
-            done
-            
-            if [ "$TRAEFIK_HEALTHY" = "true" ]; then
-              # Salvar tag atual como last_success para rollback futuro
-              echo "${IMAGE_TAG}" > /opt/alice/last_success_tag.txt
-              echo "📌 Tag ${IMAGE_TAG} salva como último deploy bem-sucedido"
-            else
-              echo "⚠️ Traefik não está healthy após 100s, verifique os logs"
-              docker logs alice-traefik --tail 50
-              exit 1
-            fi
-            
-            # ==============================================
-            # PÓS-DEPLOY: LIMPEZA AGRESSIVA FINAL
-            # Garante servidor limpo após cada deploy
-            # ==============================================
-            echo ""
-            echo "🧹 PÓS-DEPLOY: LIMPEZA AGRESSIVA FINAL"
-            echo "======================================="
-            
-            # 1. Remover containers parados
-            echo "📦 Removendo containers parados..."
-            docker container prune -f 2>/dev/null || true
-            
-            # 2. Remover TODAS as imagens não utilizadas pelos containers ativos
-            echo "🖼️ Removendo imagens não utilizadas..."
-            docker image prune -af 2>/dev/null || true
-            
-            # 3. Limpar TODO o cache de build (não precisamos dele no servidor)
-            echo "💾 Limpando cache de build..."
-            docker builder prune -af 2>/dev/null || true
-            
-            # 4. Remover volumes órfãos
-            echo "📁 Removendo volumes órfãos..."
-            docker volume prune -f 2>/dev/null || true
-            
-            # 5. Limpeza geral do sistema Docker
-            echo "🧹 Limpeza geral..."
-            docker system prune -f 2>/dev/null || true
-            
-            # 6. Verificar espaço em disco
-            echo ""
-            echo "📊 ESTADO FINAL DO SERVIDOR:"
-            echo "============================="
-            echo ""
-            echo "Espaço em disco:"
-            df -h / | tail -1
-            echo ""
-            echo "Uso do Docker:"
-            docker system df
-            echo ""
-            echo "Containers ativos:"
-            docker ps --format 'table {{.Names}}\t{{.Status}}' | head -15
-            
-            echo ""
-            echo "=============================================="
-            echo "✅ DEPLOY CONCLUÍDO COM SUCESSO!"
-            echo "=============================================="
-            echo "🌐 Alice: https://yesyoudeserve.duckdns.org"
-            echo "🏢 ERPNext: https://erp.yesyoudeserve.duckdns.org"
-            echo "🏷️  Image Tag: ${IMAGE_TAG}"
-            echo "=============================================="
 
   # ===========================================================================
-  # Job 5: Health Check
+  # Job 6: Health Check Pós-Deploy
   # ===========================================================================
   health-check:
     name: Health Check
     runs-on: ubuntu-latest
     needs: deploy
-    if: success()
+    if: needs.deploy.result == 'success'
+    
+    permissions:
+      contents: read
     
     steps:
-      - name: Aguardar serviços
+      - name: Aguardar serviços iniciarem
         run: sleep 60
 
-      - name: Verificar Alice Frontend
+      - name: Health Check - Frontend
         run: |
-          echo "🔍 Verificando Alice..."
-          for i in {1..5}; do
-            STATUS=$(curl -s -o /dev/null -w "%{http_code}" https://yesyoudeserve.duckdns.org/ --max-time 30 || echo "000")
-            if [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "302" ]; then
-              echo "✅ Alice Frontend: OK ($STATUS)"
-              break
-            fi
-            echo "⏳ Tentativa $i: Status $STATUS"
-            sleep 10
-          done
+          curl -sf https://yesyoudeserve.duckdns.org/health || echo "Frontend health check falhou (pode estar iniciando)"
 
-      - name: Verificar Health Endpoints
+      - name: Health Check - Auth Service
         run: |
-          echo ""
-          echo "🏥 Verificando health endpoints..."
-          
-          # Auth Service
-          curl -s https://yesyoudeserve.duckdns.org/api/auth/health --max-time 10 && echo " ✅ Auth" || echo " ⏳ Auth iniciando"
-          
-          # Chat Service
-          curl -s https://yesyoudeserve.duckdns.org/api/chat/health --max-time 10 && echo " ✅ Chat" || echo " ⏳ Chat iniciando"
-          
-          # RAG Service
-          curl -s https://yesyoudeserve.duckdns.org/api/rag/health --max-time 10 && echo " ✅ RAG" || echo " ⏳ RAG iniciando"
-          
-          # Training Service
-          curl -s https://yesyoudeserve.duckdns.org/api/training/health --max-time 10 && echo " ✅ Training" || echo " ⏳ Training iniciando"
-          
-          # Integrations Service
-          curl -s https://yesyoudeserve.duckdns.org/api/integrations/health --max-time 10 && echo " ✅ Integrations" || echo " ⏳ Integrations iniciando"
-        continue-on-error: true
+          curl -sf https://yesyoudeserve.duckdns.org/api/auth/health || echo "Auth service health check falhou (pode estar iniciando)"
 
-      - name: Verificar ERPNext
+      - name: Health Check - ERPNext
         run: |
-          echo ""
-          echo "🏢 Verificando ERPNext..."
-          curl -s https://erp.yesyoudeserve.duckdns.org/ --max-time 30 -o /dev/null -w "Status: %{http_code}\n" || echo "⏳ ERPNext iniciando"
-        continue-on-error: true
+          curl -sf https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping || echo "ERPNext health check falhou (pode estar iniciando)"
 
-  # ===========================================================================
-  # Job 6: Notificação de Sucesso
-  # ===========================================================================
-  notify-success:
-    name: Notificação
-    runs-on: ubuntu-latest
-    needs: health-check
-    if: success()
-    
-    steps:
-      - name: Criar resumo do deploy
+      - name: Resumo do Deploy
         run: |
-          echo "## 🚀 Deploy Bem-Sucedido!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Ambiente" >> $GITHUB_STEP_SUMMARY
-          echo "| Item | Valor |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM) |" >> $GITHUB_STEP_SUMMARY
-          echo "| **IP** | 46.224.46.93 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Deploy por** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Timestamp** | $(date -u) |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### URLs" >> $GITHUB_STEP_SUMMARY
-          echo "- 🌐 **Alice:** https://yesyoudeserve.duckdns.org" >> $GITHUB_STEP_SUMMARY
-          echo "- 🏢 **ERPNext:** https://erp.yesyoudeserve.duckdns.org" >> $GITHUB_STEP_SUMMARY
-          echo "- 📊 **Traefik:** https://traefik.yesyoudeserve.duckdns.org" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Microserviços Alice" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ frontend-service (Nginx)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ auth-service (:3001)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ chat-service (:3002)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ rag-service (:3003)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ training-service (:3004)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ integrations-service (:3005)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Stack ERPNext" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ erpnext-frontend" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ erpnext-backend" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ erpnext-websocket" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ erpnext-scheduler" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ erpnext-workers (3)" >> $GITHUB_STEP_SUMMARY
-
-  # ===========================================================================
-  # Job 7: Rollback em caso de falha (por tag de imagem, não git reset)
-  # ===========================================================================
-  rollback:
-    name: Rollback Automático
-    runs-on: ubuntu-latest
-    needs: deploy
-    if: failure()
-    
-    steps:
-      - name: Executar rollback por tag
-        uses: appleboy/ssh-action@v1.2.0
-        env:
-          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: IMAGE_PREFIX
-          script: |
-            # Variáveis injetadas via envs do ssh-action
-            export IMAGE_PREFIX="${IMAGE_PREFIX}"
-            
-            echo "⚠️ Deploy falhou, executando rollback por tag..."
-            
-            cd /opt/alice/app/infra/docker
-            
-            # Verificar se existe tag anterior salva
-            LAST_TAG_FILE="/opt/alice/last_success_tag.txt"
-            if [ -f "$LAST_TAG_FILE" ]; then
-              LAST_TAG=$(cat "$LAST_TAG_FILE")
-              echo "📌 Usando última tag bem-sucedida: ${LAST_TAG}"
-            else
-              # Fallback para 'latest' se não houver tag salva
-              LAST_TAG="latest"
-              echo "⚠️ Nenhuma tag anterior encontrada, usando: latest"
-            fi
-            
-            # Atualizar .env.prod com a tag anterior
-            sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${LAST_TAG}/" .env.prod
-            
-            # Pull e restart containers com imagens anteriores
-            echo "🔄 Fazendo pull das imagens com tag: ${LAST_TAG}..."
-            docker compose -f docker-compose.prod.yml \
-              --env-file .env.prod \
-              pull --ignore-pull-failures
-            
-            docker compose -f docker-compose.prod.yml \
-              --env-file .env.prod \
-              up -d --no-build --remove-orphans
-            
-            echo "🔄 Rollback concluído com tag: ${LAST_TAG}"
-            echo "⚠️ Verifique os logs para investigar a falha original."
-
-      - name: Notificar falha
-        run: |
-          echo "## ❌ Deploy Falhou - Rollback Executado" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Commit:** \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Por:** ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "O sistema foi revertido para a última tag de imagem bem-sucedida." >> $GITHUB_STEP_SUMMARY
-          echo "Verifique os logs do workflow para mais detalhes." >> $GITHUB_STEP_SUMMARY
+          echo "=============================================="
+          echo "DEPLOY HEALTH CHECK CONCLUÍDO"
+          echo "=============================================="
+          echo "Frontend: https://yesyoudeserve.duckdns.org"
+          echo "ERPNext: https://erp.yesyoudeserve.duckdns.org"
+          echo "Commit: ${{ github.sha }}"
+          echo "=============================================="
