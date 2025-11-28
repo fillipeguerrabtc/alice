@@ -434,6 +434,9 @@ importers:
       '@alice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       connect-pg-simple:
         specifier: ^9.0.1
         version: 9.0.1
@@ -507,6 +510,9 @@ importers:
       '@alice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -713,6 +719,9 @@ importers:
       '@alice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -799,6 +808,9 @@ importers:
       '@alice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -857,6 +869,9 @@ importers:
       '@alice/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5

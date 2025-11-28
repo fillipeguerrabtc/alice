@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@alice/shared": "workspace:*",
+    "@alice/shared-utils": "workspace:*",
     "@alice/logger": "workspace:*",
     "@alice/config": "workspace:*",
     "@alice/database": "workspace:*",
