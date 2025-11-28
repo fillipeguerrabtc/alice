@@ -28,7 +28,8 @@
 | Traefik v3 | 2 | 0 | 0 | 2 | 2 |
 | GitHub Actions | 2 | 1 | 0 | 3 | 3 |
 | Docker | 1 | 0 | 0 | 1 | 1 |
-| **TOTAL** | **26** | **8** | **4** | **38** | **38** |
+| **Integrações Stripe/Wise** | **5** | **3** | **0** | **8** | **8** |
+| **TOTAL** | **31** | **11** | **4** | **46** | **46** |
 
 ### STATUS: 100% CONFORMIDADE ENTERPRISE-GRADE
 
@@ -36,7 +37,7 @@
 
 ## Status de Implementação
 
-### IMPLEMENTADO (38/38) - 100% COMPLETO
+### IMPLEMENTADO (46/46) - 100% COMPLETO
 
 | Gap ID | Descrição | Data | Commit |
 |--------|-----------|------|--------|
@@ -63,8 +64,16 @@
 | GAP-GHACTIONS-002 | OIDC/GITHUB_TOKEN para GHCR (elimina PAT para registry) | Nov 2025 | .github/workflows |
 | GAP-GHACTIONS-003 | Permissions least privilege | Nov 2025 | .github/workflows |
 | GAP-DOCKER-001 | USER directive non-root em 9 Dockerfiles | Nov 2025 | apps/*/Dockerfile |
+| GAP-INT-001 | Wise HMAC antes de responder + fail-fast WISE_WEBHOOK_SECRET | Nov 2025 | integrations-service |
+| GAP-INT-002 | Wise timingSafeEqual para comparação de assinatura | Nov 2025 | integrations-service |
+| GAP-INT-003 | Stripe apiVersion 2024-12-18.acacia | Nov 2025 | integrations-service |
+| GAP-INT-004 | Wise WISE_SANDBOX explícito (sem fallback NODE_ENV) | Nov 2025 | integrations-service |
+| GAP-INT-005 | Idempotência webhook via tabela webhook_events | Nov 2025 | shared/schema.ts |
+| GAP-INT-006 | wiseSyncService logger JSON em produção | Nov 2025 | integrations-service |
+| GAP-INT-007 | Stripe-ERPNext mapeamento com state machine | Nov 2025 | integrations-service |
+| GAP-INT-008 | stripeErpnextMapping para rastreabilidade de documentos | Nov 2025 | shared/schema.ts |
 
-### PENDENTE (0/38) - NENHUM GAP PENDENTE
+### PENDENTE (0/46) - NENHUM GAP PENDENTE
 
 ---
 
