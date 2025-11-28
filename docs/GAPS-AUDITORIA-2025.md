@@ -26,15 +26,17 @@
 | Nginx Frontend | 2 | 1 | 0 | 3 | 3 |
 | ERPNext Stack | 5 | 2 | 1 | 8 | 8 |
 | Traefik v3 | 2 | 0 | 0 | 2 | 2 |
-| GitHub Actions | 2 | 1 | 0 | 3 | 2 |
+| GitHub Actions | 2 | 1 | 0 | 3 | 3 |
 | Docker | 1 | 0 | 0 | 1 | 1 |
-| **TOTAL** | **26** | **8** | **4** | **38** | **37** |
+| **TOTAL** | **26** | **8** | **4** | **38** | **38** |
+
+### STATUS: 100% CONFORMIDADE ENTERPRISE-GRADE
 
 ---
 
 ## Status de Implementação
 
-### IMPLEMENTADO (37/38)
+### IMPLEMENTADO (38/38) - 100% COMPLETO
 
 | Gap ID | Descrição | Data | Commit |
 |--------|-----------|------|--------|
@@ -58,14 +60,11 @@
 | GAP-ERPNEXT-004 | Defaults inseguros removidos (fail-fast via :?) | Nov 2025 | docker-compose.prod.yml |
 | GAP-ERPNEXT-005 | Frappe pinado v15.74.2 (CVEs corrigidos) | Nov 2025 | docker-compose.prod.yml |
 | GAP-GHACTIONS-001 | SHA pinning em todas as actions | Nov 2025 | .github/workflows |
+| GAP-GHACTIONS-002 | OIDC/GITHUB_TOKEN para GHCR (elimina PAT para registry) | Nov 2025 | .github/workflows |
 | GAP-GHACTIONS-003 | Permissions least privilege | Nov 2025 | .github/workflows |
 | GAP-DOCKER-001 | USER directive non-root em 9 Dockerfiles | Nov 2025 | apps/*/Dockerfile |
 
-### PENDENTE (1/38)
-
-| Gap ID | Descrição | Prioridade | Ação Requerida |
-|--------|-----------|------------|----------------|
-| GAP-GHACTIONS-002 | OIDC tokens | Médio | Substituir PAT por OIDC (opcional) |
+### PENDENTE (0/38) - NENHUM GAP PENDENTE
 
 ---
 

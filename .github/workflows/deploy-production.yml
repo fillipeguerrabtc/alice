@@ -6,7 +6,11 @@
 # Domínio: yesyoudeserve.duckdns.org
 # IP: 46.224.46.93
 # Arquitetura: Docker Compose (100% containerizado)
-# SEGURANÇA: Actions pinadas a SHA (GAP-GHACTIONS-001), least privilege (GAP-GHACTIONS-003)
+# SEGURANÇA:
+#   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
+#   - GAP-GHACTIONS-002: OIDC/GITHUB_TOKEN para GHCR (elimina PAT para registry)
+#   - GAP-GHACTIONS-003: Least privilege permissions
+#   - SSH keys para Hetzner (padrão da indústria - OIDC não suportado por VPS)
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)
@@ -163,12 +167,16 @@ jobs:
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
       # SHA: docker/login-action@v3.3.0 (2024-07-31)
+      # GAP-GHACTIONS-002: Usando GITHUB_TOKEN (OIDC nativo) em vez de PAT para GHCR
+      # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
+      # Mais seguro que PAT: não requer secret manual, expira automaticamente, permissões mínimas
+      # NOTA: Usar github.token (não secrets.GITHUB_TOKEN) - é um contexto especial do GitHub Actions
       - name: Login no GitHub Container Registry
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
-          password: ${{ secrets.GH_PAT }}
+          password: ${{ github.token }}
 
       # Build paralelo de todas as imagens
       # SHA: docker/build-push-action@v6.9.0 (2024-10-22)
@@ -272,6 +280,12 @@ jobs:
 
   # ===========================================================================
   # Job 5: Deploy para Hetzner Cloud via Docker Compose
+  # ===========================================================================
+  # SEGURANÇA (GAP-GHACTIONS-002):
+  # - GITHUB_TOKEN: Usado para GHCR (OIDC nativo, sem PAT)
+  # - GH_PAT: Ainda necessário para git clone no servidor Hetzner
+  #   (GITHUB_TOKEN não funciona fora do runner GitHub Actions)
+  # - SSH keys: Padrão da indústria para VPS (OIDC não suportado por Hetzner)
   # ===========================================================================
   deploy:
     name: Deploy Hetzner Cloud

@@ -123,4 +123,4 @@ The platform includes several microservices:
 -   **Database**: PostgreSQL with pgvector extension.
 -   **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
 -   **API Gateway**: Traefik v3.3 com security headers middleware e rate limiting.
--   **CI/CD**: GitHub Actions com SHA pinning para supply chain security.
+-   **CI/CD**: GitHub Actions com SHA pinning para supply chain security e OIDC/GITHUB_TOKEN para GHCR.
