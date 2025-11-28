@@ -838,58 +838,90 @@ app.get('/api/auth/user', async (req: Request, res: Response) => {
 });
 
 // ============================================================================
+// SCHEMAS ZOD: Validação de Autenticação (OWASP API3 - Input Validation)
+// ============================================================================
+
+// Schema para registro de usuário
+const registerSchema = z.object({
+  email: z.string()
+    .email('Email inválido')
+    .max(255, 'Email muito longo')
+    .transform(v => v.toLowerCase().trim()),
+  password: z.string()
+    .min(8, 'Senha deve ter pelo menos 8 caracteres')
+    .max(128, 'Senha muito longa')
+    .regex(/[A-Z]/, 'Senha deve conter pelo menos uma letra maiúscula')
+    .regex(/[a-z]/, 'Senha deve conter pelo menos uma letra minúscula')
+    .regex(/[0-9]/, 'Senha deve conter pelo menos um número'),
+  firstName: z.string()
+    .min(1, 'Nome é obrigatório')
+    .max(100, 'Nome muito longo')
+    .optional(),
+  lastName: z.string()
+    .max(100, 'Sobrenome muito longo')
+    .optional(),
+});
+
+// Schema para login
+const loginSchema = z.object({
+  email: z.string()
+    .email('Email inválido')
+    .transform(v => v.toLowerCase().trim()),
+  password: z.string()
+    .min(1, 'Senha é obrigatória'),
+});
+
+// ============================================================================
 // ROTAS: Autenticação Local
 // ============================================================================
 
-app.post('/api/auth/register', async (req: Request, res: Response) => {
-  const { email, password, firstName, lastName } = req.body;
-
-  if (!email || !password) {
-    return res.status(400).json({ error: 'Email e senha são obrigatórios' });
-  }
-
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Senha deve ter pelo menos 8 caracteres' });
-  }
-
-  try {
-    const db = getDatabase();
-    
-    // Verificar se email já existe
-    const existingUser = await db.query.users.findFirst({
-      where: eq(schema.users.email, email.toLowerCase()),
+app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) => {
+  // Validação Zod (OWASP API3 - Injection Prevention)
+  const parseResult = registerSchema.safeParse(req.body);
+  
+  if (!parseResult.success) {
+    const errors = parseResult.error.errors.map(e => e.message);
+    return res.status(400).json({ 
+      error: 'Dados de registro inválidos', 
+      details: errors,
     });
-
-    if (existingUser) {
-      return res.status(409).json({ error: 'Email já cadastrado' });
-    }
-
-    // Hash da senha com bcrypt (custo 12 para segurança enterprise)
-    const passwordHash = await bcrypt.hash(password, 12);
-
-    // Criar novo usuário
-    const [newUser] = await db.insert(schema.users).values({
-      email: email.toLowerCase(),
-      passwordHash,
-      firstName,
-      lastName,
-      authProvider: 'local',
-      emailVerified: false,
-      role: 'viewer',
-      idioma: 'pt-BR',
-      timezone: 'Europe/Lisbon',
-    }).returning();
-
-    logger.info({ userId: newUser.id, email }, 'Novo usuário registrado');
-
-    // Remover campos sensíveis
-    const { passwordHash: _, ...safeUser } = newUser;
-    res.status(201).json({ user: safeUser, message: 'Conta criada com sucesso' });
-  } catch (error) {
-    logger.error({ error }, 'Falha no registro');
-    res.status(500).json({ error: 'Erro interno do servidor' });
   }
-});
+
+  const { email, password, firstName, lastName } = parseResult.data;
+
+  const db = getDatabase();
+  
+  // Verificar se email já existe
+  const existingUser = await db.query.users.findFirst({
+    where: eq(schema.users.email, email),
+  });
+
+  if (existingUser) {
+    return res.status(409).json({ error: 'Email já cadastrado' });
+  }
+
+  // Hash da senha com bcrypt (custo 12 para segurança enterprise)
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  // Criar novo usuário
+  const [newUser] = await db.insert(schema.users).values({
+    email,
+    passwordHash,
+    firstName,
+    lastName,
+    authProvider: 'local',
+    emailVerified: false,
+    role: 'viewer',
+    idioma: 'pt-BR',
+    timezone: 'Europe/Lisbon',
+  }).returning();
+
+  logger.info({ userId: newUser.id, email }, 'Novo usuário registrado');
+
+  // Remover campos sensíveis
+  const { passwordHash: _, ...safeUser } = newUser;
+  res.status(201).json({ user: safeUser, message: 'Conta criada com sucesso' });
+}));
 
 // Rate limiting para login - 5 tentativas por minuto por IP (Regra 16 - Proteção Brute-force)
 const loginRateLimiter = rateLimit({
@@ -905,7 +937,24 @@ const loginRateLimiter = rateLimit({
   },
 });
 
-app.post('/api/auth/login', loginRateLimiter, passport.authenticate('local'), (req: Request, res: Response) => {
+// Middleware de validação Zod para login (OWASP API3)
+const validateLogin = (req: Request, res: Response, next: NextFunction) => {
+  const parseResult = loginSchema.safeParse(req.body);
+  
+  if (!parseResult.success) {
+    const errors = parseResult.error.errors.map(e => e.message);
+    return res.status(400).json({ 
+      error: 'Dados de login inválidos', 
+      details: errors,
+    });
+  }
+  
+  // Substituir body com dados validados/normalizados
+  req.body = parseResult.data;
+  next();
+};
+
+app.post('/api/auth/login', loginRateLimiter, validateLogin, passport.authenticate('local'), (req: Request, res: Response) => {
   if (!req.user) {
     return res.status(401).json({ error: 'Falha na autenticação' });
   }

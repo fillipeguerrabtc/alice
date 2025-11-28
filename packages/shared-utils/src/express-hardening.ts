@@ -127,7 +127,9 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
     // NOTA: Rate limiter roda ANTES do auth middleware, então lê tenant de headers
     // x-tenant-id é injetado pelo API Gateway (Traefik) ou extraído de JWT pelo frontend
     keyGenerator: (req: Request): string => {
-      const ip = ipKeyGenerator(req.ip);
+      // req.ip pode ser undefined em alguns casos (connections sem IP)
+      const rawIp = req.ip || req.socket?.remoteAddress || '0.0.0.0';
+      const ip = ipKeyGenerator(rawIp);
       // Prioriza header x-tenant-id (set by API Gateway/frontend)
       // Fallback para req.tenantId (set by auth middleware - pode não estar disponível aqui)
       const tenantId = (req.headers['x-tenant-id'] as string) || req.tenantId || 'anonymous';
