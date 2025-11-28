@@ -16,6 +16,7 @@ import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
@@ -81,6 +82,81 @@ function toAuthContext(dbUser: DbUser): Express.User {
     email: dbUser.email || undefined,
     permissions: [],
   };
+}
+
+// ============================================================================
+// CSRF Protection (Regra 16 - Segurança Enterprise)
+// ============================================================================
+
+// Extensão de tipos para sessão com CSRF token
+declare module 'express-session' {
+  interface SessionData {
+    csrfToken?: string;
+  }
+}
+
+/**
+ * Gera ou retorna CSRF token da sessão
+ * Token é criptograficamente seguro (32 bytes hex = 64 chars)
+ */
+function getOrCreateCsrfToken(session: session.Session): string {
+  if (!session.csrfToken) {
+    session.csrfToken = crypto.randomBytes(32).toString('hex');
+  }
+  return session.csrfToken;
+}
+
+/**
+ * Middleware para validar CSRF token em requests mutating
+ * Aplica apenas a POST, PUT, PATCH, DELETE
+ */
+function csrfProtection(req: Request, res: Response, next: NextFunction): void {
+  const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
+  
+  // Ignorar métodos não-mutating
+  if (!mutatingMethods.includes(req.method)) {
+    return next();
+  }
+  
+  // Rotas isentas (login inicial, webhooks, health checks)
+  const exemptRoutes = [
+    '/api/auth/login',
+    '/api/auth/register', 
+    '/api/auth/google',
+    '/api/auth/github',
+    '/api/auth/microsoft',
+    '/api/auth/saml',
+    '/api/auth/health',
+    '/api/stripe/webhook',
+    '/api/twilio/webhook',
+  ];
+  
+  if (exemptRoutes.some(route => req.path.startsWith(route))) {
+    return next();
+  }
+  
+  // Token vem do header X-CSRF-Token
+  const tokenFromHeader = req.headers['x-csrf-token'] as string | undefined;
+  const tokenFromSession = req.session?.csrfToken;
+  
+  // Em desenvolvimento sem sessão, permitir
+  if (config.NODE_ENV !== 'production' && !tokenFromSession) {
+    return next();
+  }
+  
+  // Validar token
+  if (!tokenFromHeader || !tokenFromSession || tokenFromHeader !== tokenFromSession) {
+    logger.warn({ 
+      path: req.path, 
+      method: req.method,
+      hasHeaderToken: !!tokenFromHeader,
+      hasSessionToken: !!tokenFromSession,
+    }, 'CSRF token inválido ou ausente');
+    
+    return res.status(403).json({ error: 'CSRF token inválido ou ausente' });
+  }
+  
+  next();
 }
 
 // Schema de configuração do auth-service
@@ -193,6 +269,9 @@ app.use(session({
 // Inicializar Passport
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Proteção CSRF em rotas mutating (após sessão estar disponível)
+app.use(csrfProtection);
 
 // Serialização de usuário para sessão
 passport.serializeUser((user: Express.User, done) => {
@@ -705,9 +784,17 @@ app.get('/api/auth/user', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Usuário não encontrado' });
     }
 
+    // Gerar/obter CSRF token para a sessão (Regra 16 - Segurança Enterprise)
+    const csrfToken = getOrCreateCsrfToken(req.session);
+
     // Remover campos sensíveis
     const { passwordHash, ...safeUser } = user;
-    res.json({ user: safeUser });
+    
+    // Incluir CSRF token no response para o frontend usar em mutations
+    res.json({ 
+      user: safeUser,
+      csrfToken,
+    });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar usuário');
     res.status(500).json({ error: 'Erro interno do servidor' });

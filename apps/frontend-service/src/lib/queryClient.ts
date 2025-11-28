@@ -2,6 +2,17 @@ import { QueryClient, QueryFunction } from '@tanstack/react-query';
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+// CSRF Token storage (Regra 16 - Segurança Enterprise)
+let csrfToken: string | null = null;
+
+export function setCsrfToken(token: string): void {
+  csrfToken = token;
+}
+
+export function getCsrfToken(): string | null {
+  return csrfToken;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = await res.text();
@@ -21,9 +32,20 @@ export async function apiRequest(
   url: string,
   data?: unknown
 ): Promise<Response> {
+  const headers: Record<string, string> = {};
+  
+  if (data) {
+    headers['Content-Type'] = 'application/json';
+  }
+  
+  // Incluir CSRF token em requests mutating (Regra 16 - Segurança Enterprise)
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(method.toUpperCase()) && csrfToken) {
+    headers['X-CSRF-Token'] = csrfToken;
+  }
+  
   const res = await fetch(`${API_BASE}${url}`, {
     method,
-    headers: data ? { 'Content-Type': 'application/json' } : undefined,
+    headers: Object.keys(headers).length > 0 ? headers : undefined,
     body: data ? JSON.stringify(data) : undefined,
     credentials: 'include',
   });

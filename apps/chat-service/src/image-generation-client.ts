@@ -14,6 +14,7 @@ import CircuitBreaker from 'opossum';
 import pino from 'pino';
 import { eq } from 'drizzle-orm';
 import * as schema from '@alice/shared/schema';
+import type { Database } from '@alice/database';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -27,11 +28,9 @@ const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const FLUX_ENDPOINT = process.env.FLUX_ENDPOINT || 'https://api.salad.com/api/public';
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbClient = any;
-let db: DbClient;
+let db: Database;
 
-export function initImageGeneration(dbClient: DbClient): void {
+export function initImageGeneration(dbClient: Database): void {
   db = dbClient;
   logger.info('Image generation client inicializado com conexão compartilhada');
 }

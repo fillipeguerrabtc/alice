@@ -1,5 +1,5 @@
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { queryClient, apiRequest, getQueryFn } from '@/lib/queryClient';
+import { queryClient, apiRequest, getQueryFn, setCsrfToken } from '@/lib/queryClient';
 
 interface User {
   id: string;
@@ -10,12 +10,24 @@ interface User {
   tenantId?: string;
 }
 
+interface AuthResponse {
+  user: User;
+  csrfToken?: string;
+}
+
 export function useAuth() {
-  const { data: user, isLoading, error } = useQuery<User | null>({
-    queryKey: ['/api/auth/me'],
+  const { data, isLoading, error } = useQuery<AuthResponse | null>({
+    queryKey: ['/api/auth/user'],
     queryFn: getQueryFn({ on401: 'returnNull' }),
     staleTime: 1000 * 60 * 5,
   });
+
+  // Armazenar CSRF token quando recebido (Regra 16 - Segurança Enterprise)
+  if (data?.csrfToken) {
+    setCsrfToken(data.csrfToken);
+  }
+
+  const user = data?.user || null;
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: { email: string; password: string }) => {
@@ -23,7 +35,7 @@ export function useAuth() {
       return res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/user'] });
     },
   });
 
@@ -32,7 +44,8 @@ export function useAuth() {
       await apiRequest('POST', '/api/auth/logout');
     },
     onSuccess: () => {
-      queryClient.setQueryData(['/api/auth/me'], null);
+      setCsrfToken(''); // Limpar CSRF token no logout
+      queryClient.setQueryData(['/api/auth/user'], null);
       queryClient.clear();
     },
   });

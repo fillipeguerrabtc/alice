@@ -61,6 +61,342 @@ function detectMediaType(mimeType: string): MediaType | null {
   return null;
 }
 
+// ============================================================================
+// VALIDAÇÃO DE SEGURANÇA DE UPLOADS (Regra 16 - Segurança Enterprise)
+// ============================================================================
+
+// Magic bytes para validação de conteúdo real
+// Suporta múltiplos padrões por MIME type (ex: MP3 com/sem ID3 tag)
+const MAGIC_BYTES: Record<string, { bytes: number[]; offset?: number }[]> = {
+  'image/jpeg': [{ bytes: [0xFF, 0xD8, 0xFF] }],
+  'image/png': [{ bytes: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] }],
+  'image/gif': [{ bytes: [0x47, 0x49, 0x46, 0x38] }], // GIF87a ou GIF89a
+  'image/webp': [{ bytes: [0x52, 0x49, 0x46, 0x46], offset: 0 }], // RIFF
+  'application/pdf': [{ bytes: [0x25, 0x50, 0x44, 0x46] }], // %PDF
+  // MP3: Pode começar com ID3 tag (ID3v2) ou sync word (0xFF 0xFB/0xFF 0xFA)
+  'audio/mpeg': [
+    { bytes: [0x49, 0x44, 0x33] }, // ID3 tag (maioria dos MP3s)
+    { bytes: [0xFF, 0xFB] }, // MPEG Audio Layer 3 sync
+    { bytes: [0xFF, 0xFA] }, // MPEG Audio Layer 3 sync (variante)
+  ],
+  // MP4/M4A: ftyp box (vários tipos)
+  'video/mp4': [
+    { bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // "ftyp" at offset 4
+  ],
+  'audio/mp4': [
+    { bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // "ftyp" at offset 4
+  ],
+};
+
+// MIME types de documentos que não têm magic bytes consistentes
+const TEXT_BASED_MIMES = [
+  'text/plain',
+  'text/markdown',
+  'application/json',
+];
+
+// Whitelist de MIME types permitidos para upload de documentos RAG
+const DOCUMENT_UPLOAD_WHITELIST = [
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/json',
+  'application/pdf',
+  'application/xml',
+  'text/xml',
+  'text/html',
+];
+
+// Magic bytes de formatos binários conhecidos que NÃO devem ser aceitos como documentos de texto
+// CRÍTICO: Inclui todos os formatos que podem ser usados para bypass de segurança
+const BINARY_FORMAT_SIGNATURES: { name: string; bytes: number[]; offset?: number }[] = [
+  // Imagens
+  { name: 'JPEG', bytes: [0xFF, 0xD8, 0xFF] },
+  { name: 'PNG', bytes: [0x89, 0x50, 0x4E, 0x47] },
+  { name: 'GIF', bytes: [0x47, 0x49, 0x46, 0x38] },
+  { name: 'WebP', bytes: [0x52, 0x49, 0x46, 0x46] },
+  { name: 'BMP', bytes: [0x42, 0x4D] },
+  { name: 'ICO', bytes: [0x00, 0x00, 0x01, 0x00] },
+  { name: 'TIFF-LE', bytes: [0x49, 0x49, 0x2A, 0x00] },
+  { name: 'TIFF-BE', bytes: [0x4D, 0x4D, 0x00, 0x2A] },
+  // Documentos (PDF NÃO deve ser aceito como text/csv etc)
+  { name: 'PDF', bytes: [0x25, 0x50, 0x44, 0x46] }, // %PDF
+  // Arquivos compactados
+  { name: 'ZIP', bytes: [0x50, 0x4B, 0x03, 0x04] },
+  { name: 'ZIP-empty', bytes: [0x50, 0x4B, 0x05, 0x06] },
+  { name: 'RAR', bytes: [0x52, 0x61, 0x72, 0x21] },
+  { name: 'GZIP', bytes: [0x1F, 0x8B] },
+  { name: '7Z', bytes: [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C] },
+  { name: 'TAR', bytes: [0x75, 0x73, 0x74, 0x61, 0x72], offset: 257 }, // "ustar"
+  // Executáveis
+  { name: 'EXE/DLL', bytes: [0x4D, 0x5A] },
+  { name: 'ELF', bytes: [0x7F, 0x45, 0x4C, 0x46] },
+  { name: 'Mach-O-32', bytes: [0xFE, 0xED, 0xFA, 0xCE] },
+  { name: 'Mach-O-64', bytes: [0xFE, 0xED, 0xFA, 0xCF] },
+  // Áudio/Vídeo
+  { name: 'MP3-ID3', bytes: [0x49, 0x44, 0x33] },
+  { name: 'MP3-SYNC', bytes: [0xFF, 0xFB] },
+  { name: 'MP3-SYNC2', bytes: [0xFF, 0xFA] },
+  { name: 'MP4/M4A', bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 },
+  { name: 'OGG', bytes: [0x4F, 0x67, 0x67, 0x53] },
+  { name: 'FLAC', bytes: [0x66, 0x4C, 0x61, 0x43] },
+  { name: 'WAV', bytes: [0x52, 0x49, 0x46, 0x46] }, // RIFF (também cobre WebP e outros)
+  // Outros binários
+  { name: 'WASM', bytes: [0x00, 0x61, 0x73, 0x6D] },
+  { name: 'CLASS', bytes: [0xCA, 0xFE, 0xBA, 0xBE] },
+  { name: 'SQLite', bytes: [0x53, 0x51, 0x4C, 0x69, 0x74, 0x65] }, // SQLite
+];
+
+/**
+ * Detecta se buffer é um formato binário conhecido (não documento)
+ */
+function detectBinaryFormat(buffer: Buffer): string | null {
+  for (const sig of BINARY_FORMAT_SIGNATURES) {
+    const offset = sig.offset || 0;
+    if (buffer.length < offset + sig.bytes.length) continue;
+    
+    let matches = true;
+    for (let i = 0; i < sig.bytes.length; i++) {
+      if (buffer[offset + i] !== sig.bytes[i]) {
+        matches = false;
+        break;
+      }
+    }
+    
+    if (matches) return sig.name;
+  }
+  return null;
+}
+
+/**
+ * Valida upload de documento para RAG
+ * Mais rigoroso que upload de mídia - verifica se texto é realmente texto
+ */
+function validateDocumentUpload(file: Express.Multer.File): { valid: boolean; error?: string } {
+  // 1. Sanitizar nome
+  file.originalname = sanitizeFilename(file.originalname);
+  
+  // 2. Tamanho mínimo
+  if (file.buffer.length < 8) {
+    return { valid: false, error: 'Arquivo muito pequeno ou corrompido' };
+  }
+  
+  // 3. MIME type na whitelist
+  if (!DOCUMENT_UPLOAD_WHITELIST.includes(file.mimetype)) {
+    return { 
+      valid: false, 
+      error: `Tipo de arquivo não permitido: ${file.mimetype}. Permitidos: ${DOCUMENT_UPLOAD_WHITELIST.join(', ')}` 
+    };
+  }
+  
+  // 4. Para PDFs, validar magic bytes
+  if (file.mimetype === 'application/pdf') {
+    if (!validateMagicBytes(file.buffer, file.mimetype)) {
+      return { valid: false, error: 'Arquivo PDF corrompido ou inválido' };
+    }
+    return { valid: true };
+  }
+  
+  // 5. Para tipos texto, verificar que não é formato binário disfarçado
+  if (file.mimetype.startsWith('text/') || file.mimetype === 'application/json' || file.mimetype === 'application/xml') {
+    // CRÍTICO: Detectar formatos binários conhecidos (JPEG, PNG, GIF, PDF, etc)
+    const detectedBinary = detectBinaryFormat(file.buffer);
+    if (detectedBinary) {
+      return { 
+        valid: false, 
+        error: `Arquivo detectado como ${detectedBinary}, não é documento de texto válido` 
+      };
+    }
+    
+    // Verificar se é UTF-8 válido usando TextDecoder com fatal=true
+    // Isso aceita texto multilíngue (chinês, japonês, português acentuado)
+    // mas rejeita binários que produzem sequências UTF-8 inválidas
+    try {
+      const decoder = new TextDecoder('utf-8', { fatal: true });
+      decoder.decode(file.buffer);
+    } catch {
+      // Tentar Latin-1 como fallback (alguns documentos antigos)
+      try {
+        const latin1Decoder = new TextDecoder('iso-8859-1', { fatal: false });
+        const decoded = latin1Decoder.decode(file.buffer);
+        // Verificar se tem muitos caracteres de controle (exceto whitespace)
+        let controlCount = 0;
+        for (let i = 0; i < Math.min(decoded.length, 1024); i++) {
+          const code = decoded.charCodeAt(i);
+          // Caracteres de controle: 0x00-0x08, 0x0B, 0x0C, 0x0E-0x1F (exceto tab, newline, carriage return)
+          if (code < 0x09 || (code > 0x0D && code < 0x20)) {
+            controlCount++;
+          }
+        }
+        // Mais de 5% de caracteres de controle indica binário
+        if (controlCount / Math.min(decoded.length, 1024) > 0.05) {
+          return { valid: false, error: 'Arquivo contém muitos caracteres de controle - parece binário' };
+        }
+      } catch {
+        return { valid: false, error: 'Arquivo não é texto válido (encoding inválido)' };
+      }
+    }
+    
+    // Verificação final: null bytes são inaceitáveis em texto
+    for (let i = 0; i < Math.min(file.buffer.length, 4096); i++) {
+      if (file.buffer[i] === 0x00) {
+        return { valid: false, error: 'Arquivo contém bytes nulos - não é texto válido' };
+      }
+    }
+  }
+  
+  return { valid: true };
+}
+
+/**
+ * Calcula o tamanho do header ID3v2 em MP3
+ * ID3v2 usa syncsafe integers (7 bits por byte)
+ */
+function getID3v2Size(buffer: Buffer): number {
+  // ID3v2 header: "ID3" + 2 bytes version + 1 byte flags + 4 bytes size (syncsafe)
+  if (buffer.length < 10) return 0;
+  if (buffer[0] !== 0x49 || buffer[1] !== 0x44 || buffer[2] !== 0x33) return 0;
+  
+  // Syncsafe integer: each byte only uses 7 bits
+  const size = ((buffer[6] & 0x7F) << 21) |
+               ((buffer[7] & 0x7F) << 14) |
+               ((buffer[8] & 0x7F) << 7) |
+               (buffer[9] & 0x7F);
+  
+  return 10 + size; // Header (10 bytes) + tag size
+}
+
+/**
+ * Valida magic bytes do arquivo para confirmar MIME type real
+ * Previne ataques de upload de arquivos maliciosos disfarçados
+ * Suporta múltiplos padrões por MIME type (ex: MP3 com ID3 ou sync word)
+ */
+function validateMagicBytes(buffer: Buffer, declaredMime: string): boolean {
+  // Documentos de texto não têm magic bytes consistentes
+  if (TEXT_BASED_MIMES.includes(declaredMime)) {
+    return true;
+  }
+  
+  // Tratamento especial para MP3: pular ID3 tag e verificar sync word
+  if (declaredMime === 'audio/mpeg') {
+    let offset = 0;
+    
+    // Pular ID3v2 tag se presente
+    if (buffer.length >= 10 && buffer[0] === 0x49 && buffer[1] === 0x44 && buffer[2] === 0x33) {
+      // Calcular tamanho do ID3v2 (syncsafe integer)
+      const id3Size = getID3v2Size(buffer);
+      if (id3Size > 0 && id3Size < buffer.length) {
+        offset = id3Size;
+      }
+    }
+    
+    // Buscar sync word MPEG após ID3 (se houver)
+    // Procurar em todo o buffer após o ID3 (alguns MP3s têm ID3 muito grande)
+    const maxSearchLength = Math.min(buffer.length - 2, 1024 * 1024); // Max 1MB de busca
+    for (let i = offset; i < maxSearchLength; i++) {
+      // Sync word: 0xFF seguido de byte com bits 5-7 = 111
+      if (buffer[i] === 0xFF && (buffer[i + 1] & 0xE0) === 0xE0) {
+        // Verificar que não é falso positivo
+        // Layer válido (não 00) e version válida (não 01)
+        const version = (buffer[i + 1] >> 3) & 0x03;
+        const layer = (buffer[i + 1] >> 1) & 0x03;
+        if (version !== 1 && layer !== 0) {
+          return true;
+        }
+      }
+    }
+    
+    // CRÍTICO: NÃO aceitar apenas por ter ID3 tag
+    // Requer sync word válido para confirmar que é realmente MP3
+    return false;
+  }
+  
+  const magicPatterns = MAGIC_BYTES[declaredMime];
+  
+  // Se não temos magic bytes configurados, aceitar
+  if (!magicPatterns || magicPatterns.length === 0) {
+    return true;
+  }
+  
+  // Testar cada padrão possível - basta um corresponder
+  for (const pattern of magicPatterns) {
+    const offset = pattern.offset || 0;
+    const expectedBytes = pattern.bytes;
+    
+    if (buffer.length < offset + expectedBytes.length) {
+      continue; // Tentar próximo padrão
+    }
+    
+    let matches = true;
+    for (let i = 0; i < expectedBytes.length; i++) {
+      if (buffer[offset + i] !== expectedBytes[i]) {
+        matches = false;
+        break;
+      }
+    }
+    
+    if (matches) {
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Sanitiza nome de arquivo para prevenir path traversal e caracteres maliciosos
+ */
+function sanitizeFilename(filename: string): string {
+  // Remover path components
+  const basename = path.basename(filename);
+  
+  // Substituir caracteres perigosos
+  const sanitized = basename
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '_') // Caracteres proibidos
+    .replace(/\.{2,}/g, '.') // Múltiplos pontos
+    .replace(/^\.+/, '') // Pontos no início
+    .trim();
+  
+  // Limitar tamanho
+  const maxLength = 255;
+  if (sanitized.length > maxLength) {
+    const ext = path.extname(sanitized);
+    const name = path.basename(sanitized, ext);
+    return name.slice(0, maxLength - ext.length - 1) + ext;
+  }
+  
+  // Fallback se vazio
+  return sanitized || `file_${Date.now()}`;
+}
+
+/**
+ * Valida upload de arquivo com múltiplas camadas de segurança
+ */
+function validateUpload(file: Express.Multer.File): { valid: boolean; error?: string } {
+  // 1. Validar MIME type na whitelist
+  if (!ALL_SUPPORTED_MIMES.includes(file.mimetype as typeof ALL_SUPPORTED_MIMES[number])) {
+    return { valid: false, error: `Tipo de arquivo não suportado: ${file.mimetype}` };
+  }
+  
+  // 2. Validar magic bytes (conteúdo real vs declarado)
+  if (!validateMagicBytes(file.buffer, file.mimetype)) {
+    return { 
+      valid: false, 
+      error: 'Conteúdo do arquivo não corresponde ao tipo declarado. Possível arquivo malicioso.' 
+    };
+  }
+  
+  // 3. Verificar tamanho mínimo (arquivos vazios/corrompidos)
+  if (file.buffer.length < 8) {
+    return { valid: false, error: 'Arquivo muito pequeno ou corrompido' };
+  }
+  
+  // 4. Sanitizar nome do arquivo
+  file.originalname = sanitizeFilename(file.originalname);
+  
+  return { valid: true };
+}
+
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
   transport: {
@@ -521,6 +857,17 @@ app.post('/api/rag/documents', requirePermission('rag:documents:write'), async (
 app.post('/api/rag/documents/upload', requirePermission('rag:documents:upload'), upload.single('file'), async (req: MulterRequest, res: Response) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
+  // Validação de segurança enterprise unificada (Regra 16)
+  const validation = validateDocumentUpload(req.file);
+  if (!validation.valid) {
+    logger.warn({ 
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      error: validation.error,
+    }, 'Upload de documento rejeitado por validação de segurança');
+    return res.status(400).json({ error: validation.error });
   }
 
   try {
@@ -1043,6 +1390,18 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
 
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  }
+
+  // Validação de segurança enterprise (Regra 16)
+  const validation = validateUpload(req.file);
+  if (!validation.valid) {
+    logger.warn({ 
+      tenantId, 
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
+      error: validation.error,
+    }, 'Upload rejeitado por validação de segurança');
+    return res.status(400).json({ error: validation.error });
   }
 
   try {

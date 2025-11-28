@@ -14,6 +14,7 @@
 import { eq, and, isNull, lt, desc } from 'drizzle-orm';
 import pino from 'pino';
 import * as schema from '@alice/shared/schema';
+import type { Database } from '@alice/database';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -23,11 +24,9 @@ const logger = pino({
   }
 }).child({ module: 'conversation-orchestrator' });
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type DbClient = any;
-let db: DbClient;
+let db: Database;
 
-export function initOrchestrator(dbClient: DbClient): void {
+export function initOrchestrator(dbClient: Database): void {
   db = dbClient;
   logger.info('Conversation orchestrator inicializado com conexão compartilhada');
 }
