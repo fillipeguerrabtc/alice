@@ -1,0 +1,31 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "composite": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alice/shared": ["./shared/src/index.ts"],
+      "@alice/shared/*": ["./shared/src/*"],
+      "@alice/shared-utils": ["./shared-utils/src/index.ts"],
+      "@alice/shared-utils/*": ["./shared-utils/src/*"],
+      "@alice/config": ["./config/src/index.ts"],
+      "@alice/logger": ["./logger/src/index.ts"],
+      "@alice/database": ["./database/src/index.ts"]
+    }
+  }
+}

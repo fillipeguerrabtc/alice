@@ -1,0 +1,103 @@
+Erro principal encontrado
+- Mensagem do build (trecho do log):  
+  "src/index.ts(4,25): error TS2307: Cannot find module '@alice/shared/schema' or its corresponding type declarations."  
+  Isso fez o passo do Docker falhar em: Dockerfile (linha 53) -> RUN pnpm --filter @alice/database run build — exit code 1.
+
+Resumo da causa raiz
+1. Dependência interna não disponível na hora da compilação
+   - O pacote @alice/database importa '@alice/shared/schema', mas o compilador tsc não consegue resolver esse módulo porque o código/transpilado de @alice/shared (ou o mapeamento de paths) não está presente ou não foi construído antes do build do database.
+2. Falta de build topológico/ordem de compilação no pipeline
+   - O comando executado (pnpm --filter @alice/database run build) tenta compilar só o pacote database sem garantir que seus pacotes dependentes (shared, shared-utils, etc.) já estejam compilados.
+3. Possível configuração faltante de TypeScript project references / paths / exports
+   - Se a resolução usa imports por subpath ('@alice/shared/schema'), o package @alice/shared precisa expor esse subpath (exports/types) ou as tsconfig paths devem apontar para o source correto. Sem isso a importação falha durante um tsc isolado.
+
+Como reproduzir localmente (passos)
+1. Clonar e instalar: git clone ... && cd alice
+2. Remover build prévio: pnpm -w -r run clean (se existir) ou rm -rf node_modules pnpm-store **/dist
+3. Instalar: pnpm install
+4. Executar o mesmo comando que o Docker fez: pnpm --filter @alice/database run build  
+   — Você deverá ver o mesmo erro TS2307.
+
+Correções imediatas (rápidas) — para recuperar o deploy
+A) Construir dependências antes do database (alteração no Dockerfile):
+- Substitua a instrução que falha:
+  RUN pnpm --filter @alice/database run build
+- Por uma sequência que garante build das dependências (exemplo prático):
+  RUN pnpm --filter @alice/shared run build \
+      && pnpm --filter @alice/shared-utils run build \
+      && pnpm --filter @alice/config run build \
+      && pnpm --filter @alice/logger run build \
+      && pnpm --filter @alice/database run build
+
+Ou (mais simples, build de todos os pacotes):
+  RUN pnpm -w -r run build
+
+Observação: use a opção -w -r (workspace, recursive) para compilar todos os pacotes em ordem topológica.
+
+Correções recomendadas (robustas, enterprise-grade)
+1. Habilitar TypeScript Project References (recomendado)
+   - Em cada package (packages/* e apps/*) que produz artefato e é dependência, ajustar tsconfig.json:
+     - "composite": true
+     - "declaration": true
+     - "declarationMap": true
+     - Adicionar "references": [ { "path": "../shared" }, ... ] com as dependências reais.
+   - Criar tsconfig.base.json compartilhado e um tsconfig.build.ts no root que referencie todos os pacotes.
+   - Benefício: tsc -b construirá no order correto e fará cache incremental, evitando esse tipo de falha.
+
+2. Padronizar resolução de imports internos
+   - Opção A (export subpaths): No package.json de @alice/shared, garantir:
+     {
+       "name":"@alice/shared",
+       "main":"dist/index.js",
+       "types":"dist/index.d.ts",
+       "exports": {
+         ".": "./dist/index.js",
+         "./schema": "./dist/schema/index.js"   // se houver subpath
+       }
+     }
+   - Opção B (usar index central): Evitar imports como '@alice/shared/schema' — usar '@alice/shared' e exportar schema em index do shared.
+   - Opção C (paths): Adicionar "paths" no tsconfig de cada pacote para mapear '@alice/shared/*' -> '../shared/src/*' (apenas enquanto compila do source).
+
+3. Ajustar scripts PNPM/CI
+   - No root package.json, adicionar um script workspace build:
+     "scripts": { "build:packages": "pnpm -w -r run build" }
+   - No pipeline (GitHub Actions / Docker builder) executar:
+     - pnpm install --frozen-lockfile
+     - pnpm -w -r run build
+   - Isso garante que todos os packages sejam compilados na ordem correta antes de empacotar containers.
+
+4. Verificar package.json de cada pacote
+   - Incluir "types" apontando para *.d.ts gerado.
+   - Assegurar "files": ["dist"] e "main"/"module"/"exports" consistentes.
+
+5. Expor/Documentar dependências internas
+   - Documentar convenção de imports entre pacotes (subpath vs index) para manter consistência.
+
+Melhorias no Dockerfile/CI para desempenho e confiabilidade
+- Use cache do pnpm store (já havia mount no Dockerfile do auth-service). Garantir uso em todos Dockerfiles:
+  RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
+- Separe build de pacotes e build do serviço:
+  1) Instalar (com cache)
+  2) pnpm -w -r run build   (build de todos os pacotes)
+  3) pnpm --filter @alice/<service> deploy ...  (extrair artefatos para /prod)
+- Adicionar um job CI separado que rode apenas "pnpm -w -r build" para falhar rápido se houver regressão de compilação.
+
+Checklist rápido para aplicar agora
+- [ ] Reproduzir localmente o erro com pnpm --filter @alice/database run build.
+- [ ] Ajustar Dockerfile para rodar pnpm -w -r run build (ou build das dependências explícitas) antes da instrução que falha.
+- [ ] No root, adicionar script build:packages e no CI usar esse script.
+- [ ] Implementar TypeScript project references (médio prazo).
+- [ ] Atualizar package.json de @alice/shared para expor types/exports adequados (se usar subpath imports).
+- [ ] Adicionar job CI que apenas roda o workspace build e falha rápido.
+- [ ] Validar com build local e depois rodar novo deploy.
+
+Arquivos e locais úteis (referências apontadas para o commit do job)
+- Dockerfile que falhou: https://github.com/fillipeguerrabtc/alice/blob/7dade0362195fbaa281ad12dcbb50dd661243d3f/Dockerfile (ref: 7dade0362195fbaa281ad12dcbb50dd661243d3f)  
+- Logs da execução do job (conteúdo relevante já inspecionado): job ref 7dade0362195fbaa281ad12dcbb50dd661243d3f
+
+Se quiser, eu:
+- Posso gerar o diff exato (patch) para o Dockerfile sugerindo a alteração (ex.: trocar a linha RUN pnpm --filter @alice/database run build por pnpm -w -r run build).
+- Posso listar quais packages dependem de @alice/shared (fazendo uma busca no monorepo) para montar ordem ideal de build.
+- Posso ajudar a criar os tsconfig references e um script de build no root e abrir um PR com as mudanças.
+
+Quer que eu gere o patch do Dockerfile imediato (fix rápido) ou prefira que eu implemente a solução completa com TypeScript Project References e mudanças em package.json/CI?
