@@ -10,7 +10,7 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
 # ==============================================================================
-# Stage: builder - Compilar pacotes e criar bundle
+# Stage: builder - Compilar pacotes e criar bundle (determinístico)
 # ==============================================================================
 FROM base AS builder
 WORKDIR /app
@@ -31,7 +31,7 @@ COPY apps/integrations-service/package.json ./apps/integrations-service/
 # Copiar script de build
 COPY scripts/build-service.mjs ./scripts/
 
-# Instalar TODAS as dependências (incluindo devDependencies para build)
+# Instalar TODAS as dependências (determinístico via frozen-lockfile)
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
@@ -46,24 +46,15 @@ RUN pnpm run build:packages
 RUN pnpm --filter @alice/integrations-service run build
 
 # ==============================================================================
-# Stage: deps - Instalar apenas dependências de produção
+# Stage: pruner - Extrair apenas dependências de produção do serviço
+# Usa pnpm deploy para extrair produção (determinístico via lockfile original)
 # ==============================================================================
-FROM base AS deps
+FROM builder AS pruner
 WORKDIR /app
 
-# Instalar jq para manipulação JSON (ESM-compatible)
-RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
-
-# Copiar package.json e lockfile do serviço
-COPY apps/integrations-service/package.json ./package.json.original
-COPY pnpm-lock.yaml ./
-
-# Remover dependências @alice/* do package.json usando jq (ESM-compatible)
-RUN jq 'del(.dependencies[] | select(startswith("@alice/"))) | del(.dependencies | to_entries[] | select(.key | startswith("@alice/"))) | .dependencies = (.dependencies // {} | with_entries(select(.key | startswith("@alice/") | not)))' package.json.original > package.json
-
-# Instalar apenas dependências de produção externas (determinístico)
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --prod --frozen-lockfile
+# Usar pnpm deploy para extrair dependências de produção
+# O bundle.js já contém @alice/*, então precisamos apenas das deps externas
+RUN pnpm --filter @alice/integrations-service deploy --prod /prod/integrations-service
 
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)
@@ -79,10 +70,10 @@ RUN groupadd --system --gid 1001 nodejs && \
 
 WORKDIR /app
 
-# Copiar dependências de produção
-COPY --from=deps --chown=alice:nodejs /app/node_modules ./node_modules
+# Copiar dependências de produção extraídas pelo pnpm deploy
+COPY --from=pruner --chown=alice:nodejs /prod/integrations-service/node_modules ./node_modules
 
-# Copiar bundle compilado
+# Copiar bundle compilado (com @alice/* inline)
 COPY --from=builder --chown=alice:nodejs /app/apps/integrations-service/dist/bundle.js ./dist/bundle.js
 COPY --from=builder --chown=alice:nodejs /app/apps/integrations-service/dist/bundle.js.map ./dist/bundle.js.map
 
