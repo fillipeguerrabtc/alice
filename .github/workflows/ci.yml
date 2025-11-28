@@ -2,7 +2,7 @@
 # GitHub Actions Workflow - CI Build & Test
 # =============================================================================
 # Descrição: Pipeline de integração contínua para Alice Enterprise Platform
-# Usa npm (package-lock.json) para gerenciamento de dependências
+# Usa pnpm (pnpm-lock.yaml) para gerenciamento de dependências
 # =============================================================================
 
 name: CI - Build & Test
@@ -19,6 +19,7 @@ concurrency:
 
 env:
   NODE_VERSION: '20'
+  PNPM_VERSION: '10.12.4'
 
 jobs:
   detect-changes:
@@ -58,21 +59,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: TypeScript Check
-        run: npm run typecheck 2>/dev/null || echo "TypeCheck concluído"
+        run: pnpm run typecheck 2>/dev/null || echo "TypeCheck concluído"
         continue-on-error: true
 
       - name: ESLint
-        run: npm run lint 2>/dev/null || echo "Lint concluído"
+        run: pnpm run lint 2>/dev/null || echo "Lint concluído"
         continue-on-error: true
 
   build-packages:
@@ -82,20 +88,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build shared packages
         run: |
-          if [ -d "packages/shared" ]; then
-            cd packages/shared && npm run build 2>/dev/null || echo "Build packages concluído"
-          fi
+          pnpm --filter @alice/shared run build
+          pnpm --filter @alice/shared-utils run build
+          pnpm --filter @alice/config run build
+          pnpm --filter @alice/logger run build
+          pnpm --filter @alice/database run build
         continue-on-error: true
 
   build-services:
@@ -114,14 +127,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Check service exists
         id: check
@@ -152,17 +170,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build frontend
-        run: npm run build 2>/dev/null || echo "Build frontend concluído"
+        run: pnpm run build 2>/dev/null || echo "Build frontend concluído"
         env:
           VITE_API_URL: ""
         continue-on-error: true
