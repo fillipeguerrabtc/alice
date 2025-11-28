@@ -17,6 +17,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware, Options } from 'http-proxy-middleware';
 import CircuitBreaker from 'opossum';
@@ -72,6 +73,9 @@ app.set('trust proxy', true);
 app.use(helmet({
   contentSecurityPolicy: config.NODE_ENV === 'production',
 }));
+
+// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
+app.use(compression());
 
 // CORS configurado
 const corsOrigins = config.CORS_ORIGIN.split(',').map(o => o.trim());
@@ -315,6 +319,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ port: PORT }, 'API Gateway iniciado');
   logger.info({ services: services.map(s => ({ name: s.name, url: s.url })) }, 'Serviços configurados');
 });
+
+// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+server.timeout = 30000; // 30s timeout para requisições
+server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // Graceful shutdown
 const gracefulShutdown = async () => {

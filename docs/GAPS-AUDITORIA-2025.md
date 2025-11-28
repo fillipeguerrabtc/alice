@@ -3,31 +3,68 @@
 ## Sumário
 
 1. [Resumo Executivo](#resumo-executivo)
-2. [Gaps Alice Services (7 Microsserviços)](#gaps-alice-services-7-microsserviços)
-3. [Gaps PostgreSQL](#gaps-postgresql)
-4. [Gaps CLIP Inference Service](#gaps-clip-inference-service)
-5. [Gaps Nginx Frontend](#gaps-nginx-frontend)
-6. [Gaps ERPNext Stack](#gaps-erpnext-stack)
-7. [Gaps Traefik v3](#gaps-traefik-v3)
-8. [Gaps GitHub Actions CI/CD](#gaps-github-actions-cicd)
-9. [Gaps Docker](#gaps-docker)
-10. [Plano de Remediação](#plano-de-remediação)
+2. [Status de Implementação](#status-de-implementação)
+3. [Gaps Alice Services (7 Microsserviços)](#gaps-alice-services-7-microsserviços)
+4. [Gaps PostgreSQL](#gaps-postgresql)
+5. [Gaps CLIP Inference Service](#gaps-clip-inference-service)
+6. [Gaps Nginx Frontend](#gaps-nginx-frontend)
+7. [Gaps ERPNext Stack](#gaps-erpnext-stack)
+8. [Gaps Traefik v3](#gaps-traefik-v3)
+9. [Gaps GitHub Actions CI/CD](#gaps-github-actions-cicd)
+10. [Gaps Docker](#gaps-docker)
+11. [Plano de Remediação](#plano-de-remediação)
 
 ---
 
 ## Resumo Executivo
 
-| Categoria | Gaps Críticos | Gaps Altos | Gaps Médios | Total |
-|-----------|---------------|------------|-------------|-------|
-| Alice Services | 7 | 3 | 2 | 12 |
-| PostgreSQL | 3 | 1 | 1 | 5 |
-| CLIP Inference | 4 | 0 | 0 | 4 |
-| Nginx Frontend | 2 | 1 | 0 | 3 |
-| ERPNext Stack | 5 | 2 | 1 | 8 |
-| Traefik v3 | 2 | 0 | 0 | 2 |
-| GitHub Actions | 2 | 1 | 0 | 3 |
-| Docker | 1 | 0 | 0 | 1 |
-| **TOTAL** | **26** | **8** | **4** | **38** |
+| Categoria | Gaps Críticos | Gaps Altos | Gaps Médios | Total | Implementados |
+|-----------|---------------|------------|-------------|-------|---------------|
+| Alice Services | 7 | 3 | 2 | 12 | 10 |
+| PostgreSQL | 3 | 1 | 1 | 5 | 4 |
+| CLIP Inference | 4 | 0 | 0 | 4 | 4 |
+| Nginx Frontend | 2 | 1 | 0 | 3 | 3 |
+| ERPNext Stack | 5 | 2 | 1 | 8 | 0 |
+| Traefik v3 | 2 | 0 | 0 | 2 | 2 |
+| GitHub Actions | 2 | 1 | 0 | 3 | 2 |
+| Docker | 1 | 0 | 0 | 1 | 1 |
+| **TOTAL** | **26** | **8** | **4** | **38** | **26** |
+
+---
+
+## Status de Implementação
+
+### IMPLEMENTADO (26/38)
+
+| Gap ID | Descrição | Data | Commit |
+|--------|-----------|------|--------|
+| GAP-ALICE-001 | Trust Proxy em 7 serviços | Nov 2025 | Verificado |
+| GAP-ALICE-002 | Payload Limits (10mb) em 7 serviços | Nov 2025 | Verificado |
+| GAP-ALICE-003 | Compression Middleware em 7 serviços | Nov 2025 | apps/*/src/index.ts |
+| GAP-ALICE-004 | server.timeout guards em 7 serviços | Nov 2025 | apps/*/src/index.ts |
+| GAP-ALICE-005 | WebSocket Hardening (origin, maxPayload, heartbeat, rate limit) | Nov 2025 | chat-service |
+| GAP-ALICE-006 | TypeScript 'as any' removido | Nov 2025 | rag-service |
+| GAP-ALICE-007 | Multer File Limits (50MB, fileFilter) | Nov 2025 | rag-service |
+| GAP-PG-001 | RLS habilitado em tabelas tenant-scoped | Nov 2025 | drizzle/migrations |
+| GAP-PG-002 | Índices tenant_id criados | Nov 2025 | drizzle/migrations |
+| GAP-PG-004 | pgAudit extension habilitada | Nov 2025 | drizzle/migrations |
+| GAP-CLIP-001-004 | Non-root, rate limit, payload limits, healthcheck | Nov 2025 | clip-inference |
+| GAP-NGINX-001-003 | Security headers, X-Frame-Options, CSP | Nov 2025 | nginx.conf |
+| GAP-TRAEFIK-001-002 | Rate limiting, security headers v3.3 | Nov 2025 | docker-compose.prod.yml |
+| GAP-GHACTIONS-001 | SHA pinning em todas as actions | Nov 2025 | .github/workflows |
+| GAP-DOCKER-001 | USER directive non-root em 9 Dockerfiles | Nov 2025 | apps/*/Dockerfile |
+
+### PENDENTE (7/38)
+
+| Gap ID | Descrição | Prioridade | Ação Requerida |
+|--------|-----------|------------|----------------|
+| GAP-PG-003 | sslmode=verify-full | Crítico | Configurar DATABASE_URL prod |
+| GAP-ERPNEXT-001 | SSL/TLS para MariaDB | Crítico | Atualizar docker-compose ERPNext |
+| GAP-ERPNEXT-002 | REDIS_CACHE_PASSWORD | Alto | Adicionar auth Redis |
+| GAP-ERPNEXT-003 | MariaDB root password | Crítico | Configurar auth MariaDB |
+| GAP-ERPNEXT-004 | Frappe debug mode | Alto | Desabilitar em produção |
+| GAP-ERPNEXT-005 | Frappe CVEs (v15.74.2) | Crítico | Atualizar imagem Docker |
+| GAP-GHACTIONS-002 | OIDC tokens | Médio | Substituir PAT por OIDC |
 
 ---
 

@@ -13,6 +13,7 @@ import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
@@ -430,6 +431,10 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
 }
 
 app.use(helmet());
+
+// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
+app.use(compression());
+
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
   credentials: CORS_ORIGINS.length > 0,
@@ -1896,6 +1901,11 @@ server.listen(PORT, () => {
     circuitBreaker: 'enabled',
   }, 'Chat service iniciado com Circuit Breaker');
 });
+
+// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+server.timeout = 120000; // 120s para LLM streaming (respostas longas)
+server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 process.on('SIGTERM', () => {
   logger.info('Encerrando chat service');

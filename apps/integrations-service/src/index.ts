@@ -2,6 +2,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import crypto from 'crypto';
@@ -107,6 +108,10 @@ async function syncToERPNext(type: 'customer' | 'sales_order' | 'payment', data:
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
 app.use(helmet());
+
+// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
+app.use(compression());
+
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
   credentials: CORS_ORIGINS.length > 0,
@@ -1495,9 +1500,14 @@ try {
   logger.warn({ error }, 'WiseSyncService não inicializado (database não disponível)');
 }
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ port: PORT }, 'Integrations service started');
 });
+
+// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+server.timeout = 30000; // 30s timeout para requisições
+server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 process.on('SIGTERM', () => {
   logger.info('Shutting down integrations service');

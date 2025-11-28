@@ -10,6 +10,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import multer from 'multer';
 import crypto from 'crypto';
@@ -701,6 +702,10 @@ function classifyQuery(query: string): ClassificationResult {
 }
 
 app.use(helmet());
+
+// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
+app.use(compression());
+
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
   credentials: CORS_ORIGINS.length > 0,
@@ -2353,13 +2358,18 @@ const errorHandler = (err: Error, _req: Request, res: Response, _next: NextFunct
 
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info({ 
     port: PORT, 
     embeddingsConfigured: !!SALAD_API_KEY,
     circuitBreaker: 'enabled',
   }, 'RAG service iniciado com Circuit Breaker');
 });
+
+// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+server.timeout = 60000; // 60s para processamento de embeddings/uploads
+server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 process.on('SIGTERM', () => {
   logger.info('Encerrando RAG service');

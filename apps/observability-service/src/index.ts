@@ -14,6 +14,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import pino from 'pino';
 
@@ -189,6 +190,10 @@ app.set('trust proxy', true);
 
 // Segurança (Regra 16 - Melhores práticas)
 app.use(helmet());
+
+// PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
+app.use(compression());
+
 app.use(cors({
   origin: process.env.CORS_ORIGINS?.split(',') || [],
   credentials: true,
@@ -386,7 +391,7 @@ app.get('/api/observability/urls', (_req: Request, res: Response) => {
 // STARTUP
 // ============================================================================
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   logger.info({ port: PORT }, 'Observability Health Checker iniciado');
   logger.info({ 
     prometheus: PROMETHEUS_URL,
@@ -395,3 +400,8 @@ app.listen(PORT, () => {
     langfuse: LANGFUSE_URL,
   }, 'Monitorando serviços de observabilidade');
 });
+
+// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+server.timeout = 30000; // 30s timeout para requisições
+server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
