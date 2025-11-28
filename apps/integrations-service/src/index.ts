@@ -12,7 +12,7 @@ import { getDatabase, schema } from '@alice/database';
 import { eq, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
-import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient.js';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
 import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService.js';
 import { 
   requirePermission, 
@@ -34,11 +34,16 @@ app.disable('x-powered-by');
 // Necessário para: rate limiting por IP real, secure cookies, req.ip correto
 app.set('trust proxy', true);
 
+// STRIPE API VERSION: Versão estável atual (Novembro 2025)
+// Referência: https://docs.stripe.com/changelog
+const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
+
 let stripe: Stripe | null = null;
 if (config.STRIPE_SECRET_KEY) {
   stripe = new Stripe(config.STRIPE_SECRET_KEY, {
-    apiVersion: '2025-08-27.basil' as const,
+    apiVersion: STRIPE_API_VERSION,
   });
+  logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
 }
 
 // Circuit Breaker para chamadas ao ERPNext
@@ -70,7 +75,11 @@ erpNextBreaker.on('halfOpen', () => logger.info('Circuit breaker ERPNext: HALF-O
 erpNextBreaker.on('close', () => logger.info('Circuit breaker ERPNext: FECHADO'));
 
 // Sincronizar cliente/pedido com ERPNext (com Circuit Breaker)
-async function syncToERPNext(type: 'customer' | 'sales_order' | 'payment', data: Record<string, unknown>) {
+// Fluxo correto ERPNext: Customer → Sales Order → Sales Invoice → Payment Entry com referência
+async function syncToERPNext(
+  type: 'customer' | 'sales_order' | 'sales_invoice' | 'payment' | 'payment_from_invoice', 
+  data: Record<string, unknown>
+) {
   if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
     logger.warn('ERPNext não configurado, sincronização ignorada');
     return null;
@@ -79,10 +88,58 @@ async function syncToERPNext(type: 'customer' | 'sales_order' | 'payment', data:
   const doctypes: Record<string, string> = {
     customer: 'Customer',
     sales_order: 'Sales Order',
+    sales_invoice: 'Sales Invoice',
     payment: 'Payment Entry',
+    payment_from_invoice: 'Payment Entry', // Usado quando temos referência a invoice
   };
 
   try {
+    // Para Payment Entry com referência a invoice, usar API especial do ERPNext
+    if (type === 'payment_from_invoice' && data.against_invoice) {
+      // Usar o método get_payment_entry para criar Payment Entry corretamente linkado
+      const getPaymentResult = await erpNextBreaker.fire({
+        url: `${config.ERPNEXT_URL}/api/method/erpnext.accounts.doctype.payment_entry.payment_entry.get_payment_entry`,
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dt: 'Sales Invoice',
+          dn: data.against_invoice,
+          party_amount: data.paid_amount,
+          payment_type: 'Receive',
+        }),
+      }) as { message: Record<string, unknown> };
+
+      // Salvar o Payment Entry gerado
+      const paymentEntry = getPaymentResult.message;
+      paymentEntry.reference_no = data.reference_no;
+      paymentEntry.reference_date = data.reference_date;
+      paymentEntry.mode_of_payment = data.mode_of_payment;
+      
+      // Adicionar campos custom se existirem
+      if (data.custom_stripe_payment_intent_id) {
+        paymentEntry.custom_stripe_payment_intent_id = data.custom_stripe_payment_intent_id;
+      }
+      if (data.custom_wise_transfer_id) {
+        paymentEntry.custom_wise_transfer_id = data.custom_wise_transfer_id;
+      }
+
+      const result = await erpNextBreaker.fire({
+        url: `${config.ERPNEXT_URL}/api/resource/Payment%20Entry`,
+        method: 'POST',
+        headers: {
+          'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(paymentEntry),
+      }) as { data: { name: string } };
+
+      logger.info({ type: 'payment_from_invoice', erpnextId: result.data.name, invoice: data.against_invoice }, 'Payment Entry criado com referência a Invoice');
+      return result.data;
+    }
+
     const result = await erpNextBreaker.fire({
       url: `${config.ERPNEXT_URL}/api/resource/${doctypes[type]}`,
       method: 'POST',
@@ -101,6 +158,44 @@ async function syncToERPNext(type: 'customer' | 'sales_order' | 'payment', data:
     } else {
       logger.error({ error, type }, 'Falha ao sincronizar com ERPNext');
     }
+    return null;
+  }
+}
+
+// Criar Sales Invoice a partir de Sales Order
+async function createInvoiceFromOrder(salesOrderName: string): Promise<string | null> {
+  if (!config.ERPNEXT_URL || !config.ERPNEXT_API_KEY || !config.ERPNEXT_API_SECRET) {
+    return null;
+  }
+
+  try {
+    // Usar API do ERPNext para criar Invoice a partir de Sales Order
+    const result = await erpNextBreaker.fire({
+      url: `${config.ERPNEXT_URL}/api/method/erpnext.selling.doctype.sales_order.sales_order.make_sales_invoice`,
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ source_name: salesOrderName }),
+    }) as { message: Record<string, unknown> };
+
+    // Salvar a invoice gerada
+    const invoice = result.message;
+    const saveResult = await erpNextBreaker.fire({
+      url: `${config.ERPNEXT_URL}/api/resource/Sales%20Invoice`,
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(invoice),
+    }) as { data: { name: string } };
+
+    logger.info({ salesOrder: salesOrderName, invoice: saveResult.data.name }, 'Sales Invoice criada a partir de Sales Order');
+    return saveResult.data.name;
+  } catch (error) {
+    logger.error({ error, salesOrder: salesOrderName }, 'Falha ao criar Sales Invoice a partir de Sales Order');
     return null;
   }
 }
@@ -346,13 +441,80 @@ app.post('/api/integrations/stripe/create-payment-intent', requirePermission('in
   }
 });
 
-// Validar STRIPE_WEBHOOK_SECRET obrigatório em produção (Regra 16 - Segurança Enterprise)
+// Validar secrets obrigatórios em produção (Regra 16 - Segurança Enterprise)
 const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
+const WISE_WEBHOOK_SECRET = process.env.WISE_WEBHOOK_SECRET;
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
+// STRIPE: Fail-fast se produção sem webhook secret
 if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
   logger.error('CRITICAL: STRIPE_WEBHOOK_SECRET é OBRIGATÓRIO em produção com Stripe ativo. Abortando.');
   process.exit(1);
+}
+
+// WISE: Fail-fast se produção sem webhook secret e Wise configurado
+if (!WISE_WEBHOOK_SECRET && IS_PRODUCTION && isWiseConfigured()) {
+  logger.error('CRITICAL: WISE_WEBHOOK_SECRET é OBRIGATÓRIO em produção com Wise ativo. Abortando.');
+  process.exit(1);
+}
+
+// Função auxiliar para verificar idempotência de webhooks
+async function checkWebhookIdempotency(
+  db: ReturnType<typeof getDatabase>,
+  source: 'stripe' | 'wise' | 'twilio' | 'erpnext',
+  eventId: string,
+  eventType: string,
+  payload: Record<string, unknown>
+): Promise<{ isDuplicate: boolean; existingEvent?: typeof schema.webhookEvents.$inferSelect }> {
+  // Verificar se evento já foi processado
+  const existingEvent = await db.query.webhookEvents.findFirst({
+    where: and(
+      eq(schema.webhookEvents.source, source),
+      eq(schema.webhookEvents.eventId, eventId)
+    ),
+  });
+
+  if (existingEvent) {
+    logger.info({ 
+      source, 
+      eventId, 
+      processedAt: existingEvent.processedAt,
+    }, 'Webhook duplicado detectado - ignorando (idempotência)');
+    return { isDuplicate: true, existingEvent };
+  }
+
+  // Registrar evento para garantir idempotência
+  await db.insert(schema.webhookEvents).values({
+    source,
+    eventId,
+    eventType,
+    payload,
+    processed: false,
+  });
+
+  return { isDuplicate: false };
+}
+
+// Função auxiliar para marcar webhook como processado
+async function markWebhookProcessed(
+  db: ReturnType<typeof getDatabase>,
+  source: 'stripe' | 'wise' | 'twilio' | 'erpnext',
+  eventId: string,
+  result: Record<string, unknown>,
+  error?: string
+): Promise<void> {
+  await db.update(schema.webhookEvents)
+    .set({
+      processed: !error,
+      processedAt: new Date(),
+      result,
+      error,
+      retryCount: error ? sql`retry_count + 1` : undefined,
+    })
+    .where(and(
+      eq(schema.webhookEvents.source, source),
+      eq(schema.webhookEvents.eventId, eventId)
+    ));
 }
 
 app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response) => {
@@ -371,94 +533,313 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
     const event = stripe.webhooks.constructEvent(req.body, sig, STRIPE_WEBHOOK_SECRET);
     const db = getDatabase();
 
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const userId = session.metadata?.userId;
+    // IDEMPOTÊNCIA: Verificar se evento já foi processado
+    const { isDuplicate } = await checkWebhookIdempotency(
+      db,
+      'stripe',
+      event.id,
+      event.type,
+      event.data.object as Record<string, unknown>
+    );
 
-        if (userId && session.subscription) {
-          await db.update(schema.users)
-            .set({ stripeSubscriptionId: session.subscription as string })
-            .where(eq(schema.users.id, userId));
-
-          logger.info({ userId, subscriptionId: session.subscription }, 'Subscription created');
-        }
-
-        // Sincronizar com ERPNext como Sales Order
-        if (session.customer && session.amount_total) {
-          const customer = await stripe.customers.retrieve(session.customer as string);
-          if (customer && !customer.deleted) {
-            await syncToERPNext('sales_order', {
-              customer: customer.email || customer.id,
-              transaction_date: new Date().toISOString().split('T')[0],
-              delivery_date: new Date().toISOString().split('T')[0],
-              currency: (session.currency || 'EUR').toUpperCase(),
-              items: [{
-                item_code: session.metadata?.productId || 'SUBSCRIPTION',
-                qty: 1,
-                rate: (session.amount_total || 0) / 100,
-              }],
-              custom_stripe_session_id: session.id,
-              custom_stripe_customer_id: session.customer,
-            });
-          }
-        }
-        break;
-      }
-
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-        const customerId = subscription.customer as string;
-
-        const user = await db.query.users.findFirst({
-          where: eq(schema.users.stripeCustomerId, customerId),
-        });
-
-        if (user) {
-          await db.update(schema.users)
-            .set({ stripeSubscriptionId: null })
-            .where(eq(schema.users.id, user.id));
-
-          logger.info({ userId: user.id }, 'Subscription cancelled');
-        }
-        break;
-      }
-
-      case 'payment_intent.succeeded': {
-        const paymentIntent = event.data.object as Stripe.PaymentIntent;
-        
-        // Sincronizar pagamento com ERPNext
-        if (paymentIntent.amount && paymentIntent.customer) {
-          await syncToERPNext('payment', {
-            payment_type: 'Receive',
-            party_type: 'Customer',
-            party: paymentIntent.customer as string,
-            paid_amount: paymentIntent.amount / 100,
-            received_amount: paymentIntent.amount / 100,
-            reference_no: paymentIntent.id,
-            reference_date: new Date().toISOString().split('T')[0],
-            mode_of_payment: 'Stripe',
-            custom_stripe_payment_intent_id: paymentIntent.id,
-          });
-        }
-        break;
-      }
-
-      case 'customer.created': {
-        const customer = event.data.object as Stripe.Customer;
-        
-        // Sincronizar cliente com ERPNext
-        await syncToERPNext('customer', {
-          customer_name: customer.name || customer.email || customer.id,
-          customer_type: 'Individual',
-          customer_group: 'Individual',
-          territory: 'Portugal',
-          email_id: customer.email,
-          custom_stripe_customer_id: customer.id,
-        });
-        break;
-      }
+    if (isDuplicate) {
+      return res.json({ received: true, duplicate: true });
     }
+
+    let processingResult: Record<string, unknown> = {};
+    let processingError: string | undefined;
+
+    try {
+      switch (event.type) {
+        case 'checkout.session.completed': {
+          const session = event.data.object as Stripe.Checkout.Session;
+          const userId = session.metadata?.userId;
+
+          if (userId && session.subscription) {
+            await db.update(schema.users)
+              .set({ stripeSubscriptionId: session.subscription as string })
+              .where(eq(schema.users.id, userId));
+
+            logger.info({ userId, subscriptionId: session.subscription }, 'Subscription created');
+            processingResult = { userId, subscriptionId: session.subscription };
+          }
+
+          // FLUXO ERPNEXT COMPLETO: Customer → Sales Order → Sales Invoice → Payment Entry
+          // Step 1: Criar registro de mapeamento para rastreabilidade
+          const [mapping] = await db.insert(schema.stripeErpnextMapping).values({
+            stripeSessionId: session.id,
+            stripeCustomerId: session.customer as string,
+            stripePaymentIntentId: session.payment_intent as string || null,
+            stripeSubscriptionId: session.subscription as string || null,
+            flowStatus: 'pending',
+          }).returning();
+
+          // Step 2: Criar Sales Order quando checkout completa
+          if (session.customer && session.amount_total) {
+            const customer = await stripe.customers.retrieve(session.customer as string);
+            if (customer && !customer.deleted) {
+              const salesOrderResult = await syncToERPNext('sales_order', {
+                customer: customer.email || customer.id,
+                transaction_date: new Date().toISOString().split('T')[0],
+                delivery_date: new Date().toISOString().split('T')[0],
+                currency: (session.currency || 'EUR').toUpperCase(),
+                items: [{
+                  item_code: session.metadata?.productId || 'SUBSCRIPTION',
+                  qty: 1,
+                  rate: (session.amount_total || 0) / 100,
+                }],
+                custom_stripe_session_id: session.id,
+                custom_stripe_customer_id: session.customer,
+              });
+              
+              if (salesOrderResult?.name) {
+                // Atualizar mapeamento com Sales Order
+                await db.update(schema.stripeErpnextMapping)
+                  .set({ 
+                    erpnextSalesOrder: salesOrderResult.name,
+                    erpnextCustomer: customer.email || customer.id,
+                    flowStatus: 'order_created',
+                    atualizadoEm: new Date(),
+                  })
+                  .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+              }
+              
+              // Step 3: Se pagamento já foi feito (status=paid), criar Invoice + Payment Entry
+              if (session.payment_status === 'paid' && salesOrderResult?.name) {
+                // Criar Invoice a partir do Sales Order
+                const invoiceName = await createInvoiceFromOrder(salesOrderResult.name);
+                
+                if (invoiceName) {
+                  // Atualizar mapeamento com Invoice
+                  await db.update(schema.stripeErpnextMapping)
+                    .set({ 
+                      erpnextSalesInvoice: invoiceName,
+                      flowStatus: 'invoice_created',
+                      atualizadoEm: new Date(),
+                    })
+                    .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+
+                  // Criar Payment Entry com referência à Invoice
+                  const paymentResult = await syncToERPNext('payment_from_invoice', {
+                    against_invoice: invoiceName,
+                    paid_amount: (session.amount_total || 0) / 100,
+                    reference_no: session.payment_intent as string || session.id,
+                    reference_date: new Date().toISOString().split('T')[0],
+                    mode_of_payment: 'Stripe',
+                    custom_stripe_session_id: session.id,
+                    custom_stripe_payment_intent_id: session.payment_intent,
+                  });
+                  
+                  // Atualizar mapeamento com Payment Entry
+                  if (paymentResult?.name) {
+                    await db.update(schema.stripeErpnextMapping)
+                      .set({ 
+                        erpnextPaymentEntry: paymentResult.name,
+                        flowStatus: 'complete',
+                        atualizadoEm: new Date(),
+                      })
+                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+                  }
+                  
+                  logger.info({ 
+                    salesOrder: salesOrderResult.name, 
+                    invoice: invoiceName,
+                    sessionId: session.id 
+                  }, 'Fluxo ERPNext completo: Sales Order → Invoice → Payment Entry');
+                  
+                  processingResult = { 
+                    ...processingResult, 
+                    salesOrder: salesOrderResult.name, 
+                    invoice: invoiceName,
+                    erpnextFlowComplete: true 
+                  };
+                }
+              } else if (salesOrderResult?.name) {
+                // Pagamento pendente - apenas Sales Order criado
+                logger.info({ 
+                  salesOrder: salesOrderResult.name, 
+                  sessionId: session.id,
+                  paymentStatus: session.payment_status 
+                }, 'Sales Order criado - Invoice será criada quando pagamento confirmar');
+                processingResult = { ...processingResult, salesOrder: salesOrderResult.name };
+              }
+            }
+          }
+          break;
+        }
+
+        case 'customer.subscription.deleted': {
+          const subscription = event.data.object as Stripe.Subscription;
+          const customerId = subscription.customer as string;
+
+          const user = await db.query.users.findFirst({
+            where: eq(schema.users.stripeCustomerId, customerId),
+          });
+
+          if (user) {
+            await db.update(schema.users)
+              .set({ stripeSubscriptionId: null })
+              .where(eq(schema.users.id, user.id));
+
+            logger.info({ userId: user.id }, 'Subscription cancelled');
+            processingResult = { userId: user.id, action: 'subscription_cancelled' };
+          }
+          break;
+        }
+
+        case 'payment_intent.succeeded': {
+          const paymentIntent = event.data.object as Stripe.PaymentIntent;
+          
+          // Completar fluxo ERPNext se pagamento foi feito após checkout
+          // Usar tabela de mapeamento para encontrar o Sales Order correto
+          
+          if (paymentIntent.amount && paymentIntent.customer) {
+            // Buscar mapeamento pelo payment_intent_id
+            const mapping = await db.query.stripeErpnextMapping.findFirst({
+              where: eq(schema.stripeErpnextMapping.stripePaymentIntentId, paymentIntent.id),
+            });
+
+            if (mapping && mapping.erpnextSalesOrder) {
+              // Verificar se fluxo já está completo
+              if (mapping.flowStatus === 'complete') {
+                logger.info({ paymentIntentId: paymentIntent.id, mappingId: mapping.id }, 
+                  'Fluxo ERPNext já completo - ignorando payment_intent.succeeded');
+                processingResult = { 
+                  paymentIntentId: paymentIntent.id, 
+                  amount: paymentIntent.amount,
+                  alreadyComplete: true 
+                };
+              } else if (mapping.flowStatus === 'order_created') {
+                // Sales Order existe mas Invoice não - criar Invoice + Payment Entry
+                try {
+                  const invoiceName = await createInvoiceFromOrder(mapping.erpnextSalesOrder);
+                  
+                  if (invoiceName) {
+                    // Atualizar mapeamento com Invoice
+                    await db.update(schema.stripeErpnextMapping)
+                      .set({ 
+                        erpnextSalesInvoice: invoiceName,
+                        flowStatus: 'invoice_created',
+                        atualizadoEm: new Date(),
+                      })
+                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+
+                    // Criar Payment Entry com referência à Invoice
+                    const paymentResult = await syncToERPNext('payment_from_invoice', {
+                      against_invoice: invoiceName,
+                      paid_amount: paymentIntent.amount / 100,
+                      reference_no: paymentIntent.id,
+                      reference_date: new Date().toISOString().split('T')[0],
+                      mode_of_payment: 'Stripe',
+                      custom_stripe_payment_intent_id: paymentIntent.id,
+                    });
+                    
+                    // Atualizar mapeamento com Payment Entry
+                    if (paymentResult?.name) {
+                      await db.update(schema.stripeErpnextMapping)
+                        .set({ 
+                          erpnextPaymentEntry: paymentResult.name,
+                          flowStatus: 'complete',
+                          atualizadoEm: new Date(),
+                        })
+                        .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+                    }
+                    
+                    logger.info({ 
+                      salesOrder: mapping.erpnextSalesOrder, 
+                      invoice: invoiceName,
+                      paymentIntentId: paymentIntent.id 
+                    }, 'Fluxo ERPNext completado via payment_intent.succeeded');
+                    
+                    processingResult = { 
+                      paymentIntentId: paymentIntent.id, 
+                      amount: paymentIntent.amount,
+                      salesOrder: mapping.erpnextSalesOrder,
+                      invoice: invoiceName,
+                      erpnextFlowComplete: true
+                    };
+                  }
+                } catch (erpnextError) {
+                  logger.error({ error: erpnextError, paymentIntentId: paymentIntent.id, mapping }, 
+                    'Falha ao completar fluxo ERPNext via payment_intent.succeeded');
+                  
+                  processingResult = { 
+                    paymentIntentId: paymentIntent.id, 
+                    amount: paymentIntent.amount,
+                    error: 'ERPNext flow failed',
+                    salesOrder: mapping.erpnextSalesOrder
+                  };
+                }
+              } else if (mapping.flowStatus === 'invoice_created' && mapping.erpnextSalesInvoice) {
+                // Invoice existe mas Payment Entry não - criar apenas Payment Entry
+                try {
+                  const paymentResult = await syncToERPNext('payment_from_invoice', {
+                    against_invoice: mapping.erpnextSalesInvoice,
+                    paid_amount: paymentIntent.amount / 100,
+                    reference_no: paymentIntent.id,
+                    reference_date: new Date().toISOString().split('T')[0],
+                    mode_of_payment: 'Stripe',
+                    custom_stripe_payment_intent_id: paymentIntent.id,
+                  });
+                  
+                  if (paymentResult?.name) {
+                    await db.update(schema.stripeErpnextMapping)
+                      .set({ 
+                        erpnextPaymentEntry: paymentResult.name,
+                        flowStatus: 'complete',
+                        atualizadoEm: new Date(),
+                      })
+                      .where(eq(schema.stripeErpnextMapping.id, mapping.id));
+                  }
+                  
+                  processingResult = { 
+                    paymentIntentId: paymentIntent.id, 
+                    amount: paymentIntent.amount,
+                    invoice: mapping.erpnextSalesInvoice,
+                    paymentCreated: true
+                  };
+                } catch (paymentError) {
+                  logger.error({ error: paymentError, paymentIntentId: paymentIntent.id }, 
+                    'Falha ao criar Payment Entry');
+                }
+              }
+            } else {
+              // Sem mapeamento encontrado - registrar apenas metadados
+              logger.info({ paymentIntentId: paymentIntent.id }, 
+                'Payment intent sem mapeamento - provavelmente processado por checkout.session.completed');
+              processingResult = { 
+                paymentIntentId: paymentIntent.id, 
+                amount: paymentIntent.amount,
+                note: 'No mapping found - may be handled by checkout.session.completed'
+              };
+            }
+          }
+          break;
+        }
+
+        case 'customer.created': {
+          const customer = event.data.object as Stripe.Customer;
+          
+          // Sincronizar cliente com ERPNext
+          await syncToERPNext('customer', {
+            customer_name: customer.name || customer.email || customer.id,
+            customer_type: 'Individual',
+            customer_group: 'Individual',
+            territory: 'Portugal',
+            email_id: customer.email,
+            custom_stripe_customer_id: customer.id,
+          });
+          processingResult = { customerId: customer.id };
+          break;
+        }
+      }
+    } catch (processingErr) {
+      processingError = processingErr instanceof Error ? processingErr.message : String(processingErr);
+      logger.error({ error: processingErr, eventId: event.id }, 'Erro ao processar webhook Stripe');
+    }
+
+    // Marcar webhook como processado (ou com erro)
+    await markWebhookProcessed(db, 'stripe', event.id, processingResult, processingError);
 
     res.json({ received: true });
   } catch (error) {
@@ -865,63 +1246,98 @@ app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('
 });
 
 // Webhook Wise - Receber notificações de transferências
+// SEGURANÇA: Validar assinatura ANTES de responder (OWASP API4)
 app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) => {
   const signature = req.headers['x-signature-sha256'] as string;
   const isTestNotification = req.headers['x-test-notification'] === 'true';
   const deliveryId = req.headers['x-delivery-id'] as string;
+  const payload = req.body.toString('utf8');
 
-  // Responder imediatamente para o Wise
+  // Verificar se é notificação de teste
+  if (isTestNotification) {
+    logger.info({ deliveryId }, 'Webhook Wise: Notificação de teste recebida');
+    res.status(200).json({ received: true });
+    return;
+  }
+
+  // CRÍTICO: Validar assinatura ANTES de responder (não depois!)
+  const webhookSecret = WISE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    logger.error({ deliveryId }, 'Webhook Wise: WISE_WEBHOOK_SECRET não configurado');
+    res.status(500).json({ error: 'Webhook secret not configured' });
+    return;
+  }
+
+  const validation = validateWiseWebhook(signature, payload, webhookSecret);
+  if (!validation.valid) {
+    logger.warn({ 
+      deliveryId, 
+      reason: validation.reason,
+      signaturePresent: !!signature,
+    }, 'Webhook Wise: Assinatura inválida - rejeitando');
+    res.status(403).json({ error: 'Invalid signature' });
+    return;
+  }
+
+  // Parse event early to get event_type for idempotency check
+  let event: {
+    event_type: string;
+    data: {
+      resource: {
+        id: number;
+        type: string;
+        profile_id: number;
+        state?: string;
+        source_amount?: number;
+        source_currency?: string;
+        target_amount?: number;
+        target_currency?: string;
+        reference?: string;
+      };
+      current_state?: string;
+      previous_state?: string;
+      occurred_at: string;
+    };
+  };
+
+  try {
+    event = JSON.parse(payload);
+  } catch (parseError) {
+    logger.error({ error: parseError, deliveryId }, 'Webhook Wise: Falha ao parsear payload');
+    res.status(400).json({ error: 'Invalid JSON payload' });
+    return;
+  }
+
+  // IDEMPOTÊNCIA: Verificar se evento já foi processado usando deliveryId
+  const db = getDatabase();
+  const eventId = deliveryId || `wise-${event.data.resource.id}-${event.event_type}-${event.data.occurred_at}`;
+  
+  const { isDuplicate } = await checkWebhookIdempotency(
+    db,
+    'wise',
+    eventId,
+    event.event_type,
+    event as unknown as Record<string, unknown>
+  );
+
+  if (isDuplicate) {
+    res.status(200).json({ received: true, duplicate: true });
+    return;
+  }
+
+  // Assinatura válida e não duplicado - responder 200 e processar
   res.status(200).json({ received: true });
 
-  // Processar webhook de forma assíncrona
+  // Processar webhook de forma assíncrona (após validação e resposta)
+  let processingResult: Record<string, unknown> = {};
+  let processingError: string | undefined;
+
   try {
-    const payload = req.body.toString('utf8');
-    
-    // Verificar se é notificação de teste
-    if (isTestNotification) {
-      logger.info({ deliveryId }, 'Webhook Wise: Notificação de teste recebida');
-      return;
-    }
-
-    // Validar assinatura (se webhook secret configurado)
-    const webhookSecret = process.env.WISE_WEBHOOK_SECRET;
-    if (webhookSecret && signature) {
-      const expectedSignature = crypto
-        .createHmac('sha256', webhookSecret)
-        .update(payload)
-        .digest('hex');
-      
-      if (signature !== expectedSignature) {
-        logger.warn({ deliveryId }, 'Webhook Wise: Assinatura inválida');
-        return;
-      }
-    }
-
-    const event = JSON.parse(payload) as {
-      event_type: string;
-      data: {
-        resource: {
-          id: number;
-          type: string;
-          profile_id: number;
-          state?: string;
-          source_amount?: number;
-          source_currency?: string;
-          target_amount?: number;
-          target_currency?: string;
-          reference?: string;
-        };
-        current_state?: string;
-        previous_state?: string;
-        occurred_at: string;
-      };
-    };
-
     logger.info({ 
       eventType: event.event_type, 
       resourceId: event.data.resource.id,
       deliveryId,
-    }, 'Webhook Wise recebido');
+    }, 'Webhook Wise recebido e validado');
 
     // Processar eventos de transferência
     if (event.event_type === 'transfers#state-change') {
@@ -945,6 +1361,7 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
         });
 
         logger.info({ transferId: transfer.id, state: newState }, 'Transferência Wise sincronizada com ERPNext');
+        processingResult = { transferId: transfer.id, state: newState, action: 'synced_to_erpnext' };
       }
     }
 
@@ -966,11 +1383,16 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
       });
 
       logger.info({ balanceId: balance.id }, 'Depósito Wise sincronizado com ERPNext');
+      processingResult = { balanceId: balance.id, action: 'credit_synced' };
     }
 
   } catch (error) {
+    processingError = error instanceof Error ? error.message : String(error);
     logger.error({ error, deliveryId }, 'Falha ao processar webhook Wise');
   }
+
+  // Marcar webhook como processado (ou com erro)
+  await markWebhookProcessed(db, 'wise', eventId, processingResult, processingError);
 });
 
 // Obter requisitos de conta por moeda

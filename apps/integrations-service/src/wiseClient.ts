@@ -2,9 +2,17 @@
 // Documentação: https://docs.wise.com/api-docs/
 // Produção: Hetzner Cloud com variáveis de ambiente padrão
 // Padrões Enterprise: Circuit Breaker, Retry, Timeout (Regra 16)
+// SEGURANÇA: WISE_SANDBOX deve ser explicitamente configurado (sem fallback NODE_ENV)
 
-import { logger } from '@alice/logger';
+import pino from 'pino';
 import CircuitBreaker from 'opossum';
+import crypto from 'crypto';
+
+// Logger usando pino diretamente (evita dependência circular)
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  name: 'wise-client',
+});
 
 // URLs da API Wise
 const WISE_API_URL = process.env.WISE_API_URL || 'https://api.transferwise.com';
@@ -33,8 +41,28 @@ export function isWiseConfigured(): boolean {
 }
 
 // Obtém status do sandbox de forma segura
+// SEGURANÇA: WISE_SANDBOX DEVE ser explicitamente configurado
+// Em produção, se não configurado, assume sandbox para segurança (fail-safe)
 export function getSandboxStatus(): boolean {
-  return process.env.WISE_SANDBOX === 'true' || process.env.NODE_ENV !== 'production';
+  const wiseSandbox = process.env.WISE_SANDBOX;
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // WISE_SANDBOX deve ser explicitamente 'false' para usar produção
+  if (wiseSandbox === 'false') {
+    return false; // Produção Wise
+  }
+  
+  if (wiseSandbox === 'true') {
+    return true; // Sandbox Wise
+  }
+  
+  // WISE_SANDBOX não configurado
+  if (isProduction) {
+    logger.warn('WISE_SANDBOX não configurado em produção - usando sandbox por segurança. Configure WISE_SANDBOX=false para usar produção Wise.');
+  }
+  
+  // Default: sandbox para segurança (fail-safe)
+  return true;
 }
 
 // Obtém Profile ID de forma segura (retorna null se não configurado)
@@ -46,7 +74,7 @@ export function getProfileIdSafe(): string | null {
 function getWiseConfig(): WiseClientConfig {
   const apiKey = process.env.WISE_API_KEY;
   const profileId = process.env.WISE_PROFILE_ID;
-  const useSandbox = process.env.WISE_SANDBOX === 'true' || process.env.NODE_ENV !== 'production';
+  const useSandbox = getSandboxStatus();
 
   if (!apiKey) {
     throw new Error('WISE_API_KEY não configurada nas variáveis de ambiente');
@@ -172,18 +200,44 @@ export function isWiseSandbox(): boolean {
 }
 
 // Valida assinatura de webhook Wise
+// SEGURANÇA: Usa timingSafeEqual para prevenir timing attacks (OWASP)
 export function validateWiseWebhook(
   signature: string,
   payload: string,
   webhookSecret: string
-): boolean {
-  const crypto = require('crypto');
-  const expectedSignature = crypto
-    .createHmac('sha256', webhookSecret)
-    .update(payload)
-    .digest('hex');
+): { valid: boolean; reason?: string } {
+  if (!signature) {
+    return { valid: false, reason: 'SIGNATURE_MISSING' };
+  }
   
-  return signature === expectedSignature;
+  if (!webhookSecret) {
+    return { valid: false, reason: 'SECRET_MISSING' };
+  }
+
+  try {
+    const expectedSignature = crypto
+      .createHmac('sha256', webhookSecret)
+      .update(payload)
+      .digest('hex');
+    
+    // SEGURANÇA: Usar timingSafeEqual para prevenir timing attacks
+    const signatureBuffer = Buffer.from(signature, 'hex');
+    const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+    
+    // Verificar comprimento primeiro (timingSafeEqual requer mesmo tamanho)
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return { valid: false, reason: 'SIGNATURE_LENGTH_MISMATCH' };
+    }
+    
+    const isValid = crypto.timingSafeEqual(signatureBuffer, expectedBuffer);
+    return { 
+      valid: isValid, 
+      reason: isValid ? 'VALID' : 'SIGNATURE_MISMATCH' 
+    };
+  } catch (error) {
+    logger.error({ error }, 'Erro ao validar assinatura Wise webhook');
+    return { valid: false, reason: 'VALIDATION_ERROR' };
+  }
 }
 
 // Tipos exportados para uso externo

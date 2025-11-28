@@ -1,9 +1,19 @@
 // Cliente Stripe para Alice Enterprise Platform
 // Produção: Hetzner Cloud com variáveis de ambiente padrão
+// Documentação: https://docs.stripe.com/api/versioning
 import Stripe from 'stripe';
-import { createLogger } from '@alice/logger';
+import pino from 'pino';
 
-const logger = createLogger('stripe-client');
+// Logger usando pino diretamente (evita dependência circular com @alice/logger)
+const logger = pino({
+  level: process.env.LOG_LEVEL || 'info',
+  name: 'stripe-client',
+});
+
+// STRIPE API VERSION: Versão estável atual (Novembro 2025)
+// Referência: https://docs.stripe.com/changelog
+// IMPORTANTE: Atualizar periodicamente conforme novas versões são lançadas
+const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
 
 // Obtém a chave secreta do Stripe das variáveis de ambiente
 function getStripeSecretKeySync(): string {
@@ -29,8 +39,9 @@ let stripeClient: Stripe | null = null;
 export function getStripeClient(): Stripe {
   if (!stripeClient) {
     stripeClient = new Stripe(getStripeSecretKeySync(), {
-      apiVersion: '2025-08-27.basil' as const,
+      apiVersion: STRIPE_API_VERSION,
     });
+    logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
   }
   return stripeClient;
 }
@@ -38,7 +49,7 @@ export function getStripeClient(): Stripe {
 // Funções assíncronas para compatibilidade com código existente
 export async function getUncachableStripeClient(): Promise<Stripe> {
   return new Stripe(getStripeSecretKeySync(), {
-    apiVersion: '2025-08-27.basil' as const,
+    apiVersion: STRIPE_API_VERSION,
   });
 }
 

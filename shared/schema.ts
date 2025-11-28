@@ -594,6 +594,76 @@ export const wiseSyncLog = pgTable(
 );
 
 // ============================================================================
+// WEBHOOK EVENTS (Idempotência para Stripe/Wise - Segurança Enterprise)
+// Previne processamento duplicado de webhooks em caso de retry
+// ============================================================================
+
+export const webhookSourceEnum = pgEnum("webhook_source", [
+  "stripe",
+  "wise",
+  "twilio",
+  "erpnext",
+]);
+
+export const webhookEvents = pgTable(
+  "webhook_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    source: webhookSourceEnum("source").notNull(),
+    eventId: varchar("event_id", { length: 255 }).notNull(), // ID único do evento (ex: evt_xxx do Stripe)
+    eventType: varchar("event_type", { length: 255 }).notNull(), // ex: checkout.session.completed
+    processed: boolean("processed").default(false),
+    processedAt: timestamp("processed_at"),
+    payload: jsonb("payload").default({}),
+    result: jsonb("result").default({}),
+    error: text("error"),
+    retryCount: integer("retry_count").default(0),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    // Índice único para garantir idempotência por source+eventId
+    idxWebhookEventsUnique: index("idx_webhook_events_unique").on(table.source, table.eventId),
+    idxWebhookEventsTenant: index("idx_webhook_events_tenant").on(table.tenantId),
+    idxWebhookEventsSource: index("idx_webhook_events_source").on(table.source),
+    idxWebhookEventsProcessed: index("idx_webhook_events_processed").on(table.processed),
+    idxWebhookEventsCreated: index("idx_webhook_events_created").on(table.criadoEm),
+  })
+);
+
+// ============================================================================
+// STRIPE-ERPNEXT MAPPING (Rastreabilidade de documentos entre sistemas)
+// Permite encontrar documentos ERPNext a partir de IDs Stripe
+// ============================================================================
+
+export const stripeErpnextMapping = pgTable(
+  "stripe_erpnext_mapping",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    stripeSessionId: varchar("stripe_session_id", { length: 255 }).notNull(),
+    stripeCustomerId: varchar("stripe_customer_id", { length: 255 }),
+    stripePaymentIntentId: varchar("stripe_payment_intent_id", { length: 255 }),
+    stripeSubscriptionId: varchar("stripe_subscription_id", { length: 255 }),
+    erpnextCustomer: varchar("erpnext_customer", { length: 255 }),
+    erpnextSalesOrder: varchar("erpnext_sales_order", { length: 255 }),
+    erpnextSalesInvoice: varchar("erpnext_sales_invoice", { length: 255 }),
+    erpnextPaymentEntry: varchar("erpnext_payment_entry", { length: 255 }),
+    flowStatus: varchar("flow_status", { length: 50 }).default("pending"), // pending, order_created, invoice_created, payment_created, complete
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    // Índice único por session_id para busca rápida
+    idxStripeSession: index("idx_stripe_erpnext_session").on(table.stripeSessionId),
+    idxStripePaymentIntent: index("idx_stripe_erpnext_payment_intent").on(table.stripePaymentIntentId),
+    idxStripeCustomer: index("idx_stripe_erpnext_customer").on(table.stripeCustomerId),
+    idxStripeFlowStatus: index("idx_stripe_erpnext_flow_status").on(table.flowStatus),
+  })
+);
+
+// ============================================================================
 // TAKEOVER/HANDOVER (FASE 6.5 - Controle de Conversas Humano/IA)
 // ============================================================================
 
@@ -1145,6 +1215,14 @@ export type InsertFineTuningJob = typeof fineTuningJobs.$inferInsert;
 // Wise-ERPNext Sync Types (FASE 5.5)
 export type WiseSyncLog = typeof wiseSyncLog.$inferSelect;
 export type InsertWiseSyncLog = typeof wiseSyncLog.$inferInsert;
+
+// Webhook Events Types (Idempotência - Segurança Enterprise)
+export type WebhookEvent = typeof webhookEvents.$inferSelect;
+export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
+
+// Stripe ERPNext Mapping Types (Rastreabilidade de documentos)
+export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
+export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;

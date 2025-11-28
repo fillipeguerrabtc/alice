@@ -12,13 +12,25 @@ import { schema, type Database } from '@alice/database';
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ module: 'wise-sync' });
+// Logger configurado para produção (JSON) ou desenvolvimento (pretty)
+// Segue padrão @alice/logger - JSON em produção para observabilidade enterprise
+const isDevelopment = process.env.NODE_ENV !== 'production';
+
+const logger = isDevelopment
+  ? pino({
+      level: process.env.LOG_LEVEL || 'info',
+      transport: {
+        target: 'pino-pretty',
+        options: { colorize: true }
+      }
+    }).child({ module: 'wise-sync' })
+  : pino({
+      level: process.env.LOG_LEVEL || 'info',
+      formatters: {
+        level: (label) => ({ level: label }),
+      },
+      timestamp: pino.stdTimeFunctions.isoTime,
+    }).child({ module: 'wise-sync' });
 
 const ERPNEXT_URL = process.env.ERPNEXT_URL;
 const ERPNEXT_API_KEY = process.env.ERPNEXT_API_KEY;
