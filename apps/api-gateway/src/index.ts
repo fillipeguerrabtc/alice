@@ -65,9 +65,9 @@ const app: express.Application = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
-// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
-// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
-app.set('trust proxy', true);
+// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
+// Evita bypass de rate limiting (express-rate-limit 2025 best practice)
+app.set('trust proxy', 1);
 
 // Middleware de segurança
 app.use(helmet({

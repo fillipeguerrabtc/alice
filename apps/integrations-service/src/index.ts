@@ -9,7 +9,7 @@ import crypto from 'crypto';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema } from '@alice/database';
+import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
 import { eq, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -26,14 +26,17 @@ process.setMaxListeners(20);
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
 
+// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
+setupGracefulShutdown(logger);
+
 const app = express();
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
-// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
-// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
-app.set('trust proxy', true);
+// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
+// Evita bypass de rate limiting (express-rate-limit 2025 best practice)
+app.set('trust proxy', 1);
 
 // STRIPE API VERSION: Versão estável atual (Novembro 2025)
 // Referência: https://docs.stripe.com/changelog
@@ -1936,7 +1939,20 @@ server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
 process.on('SIGTERM', () => {
-  logger.info('Shutting down integrations service');
-  process.exit(0);
+  logger.info('Encerrando integrations service (SIGTERM)...');
+  server.close(() => {
+    logger.info('HTTP server fechado');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('Encerrando integrations service (SIGINT)...');
+  server.close(() => {
+    logger.info('HTTP server fechado');
+    process.exit(0);
+  });
 });

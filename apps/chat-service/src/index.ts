@@ -17,7 +17,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema } from '@alice/database';
+import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
 import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
@@ -59,6 +59,9 @@ import {
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
+
+// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
+setupGracefulShutdown(logger);
 
 const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -102,9 +105,9 @@ const app = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
-// SEGURANÇA: Trust proxy para correto funcionamento atrás de Traefik (Express.js 2025)
-// Necessário para: rate limiting por IP real, secure cookies, req.ip correto
-app.set('trust proxy', true);
+// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
+// Evita bypass de rate limiting (express-rate-limit 2025 best practice)
+app.set('trust proxy', 1);
 
 const server = createServer(app);
 
@@ -1907,9 +1910,26 @@ server.timeout = 120000; // 120s para LLM streaming (respostas longas)
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
 process.on('SIGTERM', () => {
-  logger.info('Encerrando chat service');
-  wss.close();
-  server.close();
-  process.exit(0);
+  logger.info('Encerrando chat service (SIGTERM)...');
+  wss.close(() => {
+    logger.info('WebSocket server fechado');
+  });
+  server.close(() => {
+    logger.info('HTTP server fechado');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  logger.info('Encerrando chat service (SIGINT)...');
+  wss.close(() => {
+    logger.info('WebSocket server fechado');
+  });
+  server.close(() => {
+    logger.info('HTTP server fechado');
+    process.exit(0);
+  });
 });
