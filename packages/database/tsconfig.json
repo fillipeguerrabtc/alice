@@ -21,8 +21,8 @@
     "allowSyntheticDefaultImports": true,
     "baseUrl": ".",
     "paths": {
-      "@alice/shared": ["../shared/dist/index.js"],
-      "@alice/shared/schema": ["../shared/dist/schema.js"]
+      "@alice/shared": ["../shared/dist/index.d.ts"],
+      "@alice/shared/schema": ["../shared/dist/schema.d.ts"]
     }
   },
   "include": ["src/**/*"],
