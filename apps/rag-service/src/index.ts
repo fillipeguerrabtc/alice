@@ -397,7 +397,8 @@ function validateUpload(file: Express.Multer.File): { valid: boolean; error?: st
 }
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
-import { createLogger } from '@alice/logger';
+import { createLogger, runWithLogContext } from '@alice/logger';
+import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 const logger = createLogger('rag-service');
 
 const PORT = process.env.PORT || 3003;
@@ -697,6 +698,10 @@ function classifyQuery(query: string): ClassificationResult {
 }
 
 app.use(helmet());
+
+// OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
+// Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
+app.use(createCorrelationMiddleware({ serviceName: 'rag-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());

@@ -131,6 +131,9 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
       // Enterprise-Grade: statement_timeout padrão de 30s para prevenir queries runaway
       // Pode ser overriden por query específica via SET LOCAL
       statement_timeout: 30000,
+      // Enterprise-Grade: idle_in_transaction_session_timeout para prevenir transações órfãs
+      // Fecha conexões que ficam idle em transação por mais de 60s (PostgreSQL 2025 best practice)
+      idle_in_transaction_session_timeout: 60000,
     });
     
     // Listener para erros de conexão (enterprise-grade)

@@ -27,7 +27,8 @@ import { Strategy as MicrosoftStrategy } from './types/passport-microsoft.js';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
-import { createLogger } from '@alice/logger';
+import { createLogger, runWithLogContext } from '@alice/logger';
+import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -238,6 +239,10 @@ app.set('trust proxy', true);
 
 // Middleware de segurança
 app.use(helmet());
+
+// OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
+// Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
+app.use(createCorrelationMiddleware({ serviceName: 'auth-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());

@@ -6,7 +6,8 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import crypto from 'crypto';
-import { createLogger } from '@alice/logger';
+import { createLogger, runWithLogContext } from '@alice/logger';
+import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema } from '@alice/database';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -203,6 +204,10 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
 app.use(helmet());
+
+// OBSERVABILITY: Correlation ID middleware para rastreamento distribuído (Node.js 20 LTS 2025)
+// Propaga correlation IDs entre microsserviços e injeta nos logs automaticamente
+app.use(createCorrelationMiddleware({ serviceName: 'integrations-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());
