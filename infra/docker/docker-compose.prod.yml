@@ -204,6 +204,12 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
 
   # ===========================================================================
   # ALICE AUTH SERVICE - Autenticação OAuth/SAML/Local
@@ -247,6 +253,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   # ===========================================================================
   # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
@@ -285,6 +297,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Embeddings
@@ -315,6 +333,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
@@ -347,6 +371,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+        reservations:
+          memory: 256M
 
   # ===========================================================================
   # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
@@ -406,6 +436,12 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
 
   # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial

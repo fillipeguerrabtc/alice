@@ -712,6 +712,73 @@ app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromReque
   }
 });
 
+// ============================================================================
+// WEBSOCKET RATE LIMITING (Enterprise-Grade - Regra 16 replit.md)
+// ============================================================================
+
+interface WsRateLimitState {
+  messageCount: number;
+  windowStart: number;
+  blocked: boolean;
+  blockUntil: number;
+}
+
+const WS_RATE_LIMIT = {
+  windowMs: 60000,
+  maxMessages: 60,
+  blockDurationMs: 60000,
+};
+
+const wsRateLimits = new Map<string, WsRateLimitState>();
+
+function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: number; retryAfter?: number } {
+  const now = Date.now();
+  let state = wsRateLimits.get(clientKey);
+  
+  if (!state) {
+    state = { messageCount: 0, windowStart: now, blocked: false, blockUntil: 0 };
+    wsRateLimits.set(clientKey, state);
+  }
+  
+  if (state.blocked) {
+    if (now < state.blockUntil) {
+      return { allowed: false, remaining: 0, retryAfter: Math.ceil((state.blockUntil - now) / 1000) };
+    }
+    state.blocked = false;
+    state.messageCount = 0;
+    state.windowStart = now;
+    logger.info({ clientKey }, 'WebSocket rate limit desbloqueado - nova janela iniciada');
+  }
+  
+  if (now - state.windowStart > WS_RATE_LIMIT.windowMs) {
+    state.messageCount = 0;
+    state.windowStart = now;
+  }
+  
+  state.messageCount++;
+  
+  if (state.messageCount > WS_RATE_LIMIT.maxMessages) {
+    state.blocked = true;
+    state.blockUntil = now + WS_RATE_LIMIT.blockDurationMs;
+    logger.warn({ clientKey, messageCount: state.messageCount }, 'WebSocket rate limit excedido - cliente bloqueado');
+    return { allowed: false, remaining: 0, retryAfter: WS_RATE_LIMIT.blockDurationMs / 1000 };
+  }
+  
+  return { allowed: true, remaining: WS_RATE_LIMIT.maxMessages - state.messageCount };
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, state] of wsRateLimits.entries()) {
+    const windowExpired = now - state.windowStart > WS_RATE_LIMIT.windowMs * 2;
+    const blockExpired = state.blocked && now >= state.blockUntil;
+    
+    if (windowExpired || blockExpired) {
+      wsRateLimits.delete(key);
+    }
+  }
+}, 300000);
+
 // Mapa keyed por tenantId:userId para evitar colisão cross-tenant
 const wsClients = new Map<string, WebSocket>();
 const getClientKey = (tenantId: string, userId: string) => `${tenantId}:${userId}`;
@@ -737,6 +804,16 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', async (data) => {
     try {
+      const rateLimitCheck = checkWsRateLimit(clientKey);
+      if (!rateLimitCheck.allowed) {
+        ws.send(JSON.stringify({ 
+          type: 'rate_limited', 
+          error: 'Limite de mensagens excedido',
+          retryAfter: rateLimitCheck.retryAfter,
+        }));
+        return;
+      }
+
       const message = JSON.parse(data.toString()) as {
         type: string;
         conversationId: string;

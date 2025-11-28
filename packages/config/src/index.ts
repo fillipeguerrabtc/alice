@@ -122,3 +122,52 @@ export function getServiceUrl(serviceName: string): string {
   
   return serviceUrls[serviceName] || `http://localhost:3000`;
 }
+
+// ============================================================================
+// SECRETS SANITIZATION (Enterprise-Grade - Regra 16 replit.md)
+// ============================================================================
+
+const SECRET_KEYS = new Set([
+  'SESSION_SECRET',
+  'DATABASE_URL',
+  'SALAD_API_KEY',
+  'GOOGLE_CLIENT_SECRET',
+  'GITHUB_CLIENT_SECRET',
+  'MICROSOFT_CLIENT_SECRET',
+  'STRIPE_SECRET_KEY',
+  'STRIPE_WEBHOOK_SECRET',
+  'ERPNEXT_API_SECRET',
+  'GRAFANA_LOKI_API_KEY',
+  'TWILIO_AUTH_TOKEN',
+  'RESEND_API_KEY',
+  'WISE_API_KEY',
+  'WISE_WEBHOOK_SECRET',
+  'INTERNAL_API_TOKEN',
+  'CLIP_API_TOKEN',
+  'SAML_CERT',
+]);
+
+export function sanitizeConfig<T extends Record<string, unknown>>(config: T): Record<string, unknown> {
+  const sanitized: Record<string, unknown> = {};
+  
+  for (const [key, value] of Object.entries(config)) {
+    if (SECRET_KEYS.has(key)) {
+      sanitized[key] = value ? '[REDACTED]' : '[NOT SET]';
+    } else if (typeof value === 'string' && key.toLowerCase().includes('password')) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'string' && key.toLowerCase().includes('secret')) {
+      sanitized[key] = '[REDACTED]';
+    } else if (typeof value === 'string' && key.toLowerCase().includes('token')) {
+      sanitized[key] = '[REDACTED]';
+    } else {
+      sanitized[key] = value;
+    }
+  }
+  
+  return sanitized;
+}
+
+export function logConfigSafe<T extends Record<string, unknown>>(config: T, serviceName: string): void {
+  const sanitized = sanitizeConfig(config);
+  configLogger.info({ config: sanitized, service: serviceName }, 'Configuração carregada');
+}

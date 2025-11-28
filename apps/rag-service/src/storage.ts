@@ -20,6 +20,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import pino from 'pino';
+import CircuitBreaker from 'opossum';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -28,6 +29,65 @@ const logger = pino({
     options: { colorize: true }
   }
 }).child({ service: 'storage-service' });
+
+// ============================================================================
+// CIRCUIT BREAKER S3 (Enterprise-Grade - Regra 16 replit.md)
+// ============================================================================
+
+const s3CircuitBreakerOptions = {
+  timeout: 30000,
+  errorThresholdPercentage: 50,
+  resetTimeout: 30000,
+  volumeThreshold: 5,
+};
+
+interface S3Request {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+  body?: Uint8Array;
+}
+
+async function s3FetchInternal(request: S3Request): Promise<Response> {
+  const response = await fetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+  });
+  
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`S3 request failed: ${response.status} ${response.statusText}`);
+  }
+  
+  return response;
+}
+
+const s3Breaker = new CircuitBreaker(s3FetchInternal, s3CircuitBreakerOptions);
+
+s3Breaker.on('open', () => logger.warn('Circuit breaker S3: ABERTO - Storage temporariamente indisponível'));
+s3Breaker.on('halfOpen', () => logger.info('Circuit breaker S3: HALF-OPEN - Testando reconexão'));
+s3Breaker.on('close', () => logger.info('Circuit breaker S3: FECHADO - Storage operacional'));
+
+export interface S3CircuitBreakerStatus {
+  state: 'closed' | 'open' | 'halfOpen';
+  stats: {
+    failures: number;
+    successes: number;
+    timeouts: number;
+  };
+}
+
+export function getS3CircuitBreakerStatus(): S3CircuitBreakerStatus {
+  const state = s3Breaker.opened ? 'open' : s3Breaker.halfOpen ? 'halfOpen' : 'closed';
+  return {
+    state,
+    stats: {
+      failures: s3Breaker.stats.failures,
+      successes: s3Breaker.stats.successes,
+      timeouts: s3Breaker.stats.timeouts,
+    },
+  };
+}
 
 // Configuração de storage
 const STORAGE_TYPE = process.env.STORAGE_TYPE || 'local';
@@ -212,66 +272,64 @@ class S3StorageService implements StorageService {
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
     const { tenantId, mediaType, originalFilename, mimeType } = options;
     
-    // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
     const bufferData = new Uint8Array(buffer);
     
-    // Gerar nome de arquivo único
     const timestamp = Date.now();
     const hash = crypto.createHash('md5').update(bufferData).digest('hex').substring(0, 8);
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
-    // Estrutura: {tenantId}/{mediaType}/{filename}
     const objectKey = `${tenantId}/${mediaType}/${filename}`;
-    
-    // Upload para S3 usando fetch com presigned URL
-    // (Implementação simplificada - em produção usar @aws-sdk/client-s3)
     const url = `${this.endpoint}/${this.bucket}/${objectKey}`;
     
-    const response = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': mimeType,
-        'Content-Length': buffer.length.toString(),
-        // Autenticação básica para MinIO local (em produção usar AWS Signature V4)
-        'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
-      },
-      body: bufferData,
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Falha ao salvar no S3: ${response.status} ${response.statusText}`);
+    try {
+      // Usar circuit breaker para resiliência (Regra 16)
+      await s3Breaker.fire({
+        url,
+        method: 'PUT',
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': buffer.length.toString(),
+          'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
+        },
+        body: bufferData,
+      });
+      
+      logger.info({ tenantId, mediaType, objectKey, size: buffer.length }, 'Arquivo salvo no S3');
+      
+      return {
+        filePath: objectKey,
+        fileUrl: `${this.baseUrl}/${objectKey}`,
+        fileSize: buffer.length,
+      };
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Breaker is open')) {
+        logger.warn({ objectKey }, 'Circuit breaker S3 aberto - storage temporariamente indisponível');
+        throw new Error('Serviço de storage temporariamente indisponível');
+      }
+      throw error;
     }
-    
-    logger.info({ 
-      tenantId, 
-      mediaType, 
-      objectKey, 
-      size: buffer.length 
-    }, 'Arquivo salvo no S3');
-    
-    return {
-      filePath: objectKey,
-      fileUrl: `${this.baseUrl}/${objectKey}`,
-      fileSize: buffer.length,
-    };
   }
 
   async deleteFile(filePath: string): Promise<void> {
     const url = `${this.endpoint}/${this.bucket}/${filePath}`;
     
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: {
-        'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
-      },
-    });
-    
-    if (!response.ok && response.status !== 404) {
-      logger.warn({ filePath, status: response.status }, 'Erro ao deletar arquivo do S3');
+    try {
+      await s3Breaker.fire({
+        url,
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
+        },
+      });
+      logger.info({ filePath }, 'Arquivo deletado do S3');
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Breaker is open')) {
+        logger.warn({ filePath }, 'Circuit breaker S3 aberto - delete ignorado');
+        return;
+      }
+      logger.warn({ filePath, error }, 'Erro ao deletar arquivo do S3');
     }
-    
-    logger.info({ filePath }, 'Arquivo deletado do S3');
   }
 
   getFileUrl(filePath: string): string {
@@ -281,31 +339,43 @@ class S3StorageService implements StorageService {
   async fileExists(filePath: string): Promise<boolean> {
     const url = `${this.endpoint}/${this.bucket}/${filePath}`;
     
-    const response = await fetch(url, {
-      method: 'HEAD',
-      headers: {
-        'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
-      },
-    });
-    
-    return response.ok;
+    try {
+      const response = await s3Breaker.fire({
+        url,
+        method: 'HEAD',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
+        },
+      }) as Response;
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   async readFile(filePath: string): Promise<Buffer> {
     const url = `${this.endpoint}/${this.bucket}/${filePath}`;
     
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
-      },
-    });
-    
-    if (!response.ok) {
-      throw new Error(`Arquivo não encontrado no S3: ${filePath}`);
+    try {
+      const response = await s3Breaker.fire({
+        url,
+        method: 'GET',
+        headers: {
+          'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
+        },
+      }) as Response;
+      
+      if (!response.ok) {
+        throw new Error(`Arquivo não encontrado no S3: ${filePath}`);
+      }
+      
+      return Buffer.from(await response.arrayBuffer());
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Breaker is open')) {
+        throw new Error('Serviço de storage temporariamente indisponível');
+      }
+      throw error;
     }
-    
-    return Buffer.from(await response.arrayBuffer());
   }
 
   private getExtension(filename: string, mimeType: string): string {

@@ -8,6 +8,92 @@ const { Pool } = pg;
 let dbInstance: NodePgDatabase<typeof schema> | null = null;
 let poolInstance: pg.Pool | null = null;
 let pgvectorRegistered = false;
+let shutdownRegistered = false;
+let isShuttingDown = false;
+
+// ============================================================================
+// POOL METRICS (Enterprise-Grade - Regra 16 replit.md)
+// ============================================================================
+
+export interface PoolMetrics {
+  totalConnections: number;
+  idleConnections: number;
+  waitingClients: number;
+  maxConnections: number;
+  isHealthy: boolean;
+  isShuttingDown: boolean;
+}
+
+export function getPoolMetrics(): PoolMetrics {
+  if (!poolInstance) {
+    return {
+      totalConnections: 0,
+      idleConnections: 0,
+      waitingClients: 0,
+      maxConnections: 0,
+      isHealthy: false,
+      isShuttingDown,
+    };
+  }
+  
+  return {
+    totalConnections: poolInstance.totalCount,
+    idleConnections: poolInstance.idleCount,
+    waitingClients: poolInstance.waitingCount,
+    maxConnections: 10,
+    isHealthy: !isShuttingDown && poolInstance.totalCount > 0,
+    isShuttingDown,
+  };
+}
+
+export async function isPoolHealthy(): Promise<boolean> {
+  if (!poolInstance || isShuttingDown) {
+    return false;
+  }
+  
+  try {
+    const client = await poolInstance.connect();
+    await client.query('SELECT 1');
+    client.release();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// ============================================================================
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// ============================================================================
+
+export function setupGracefulShutdown(logger?: { info: (msg: string) => void; error: (obj: unknown, msg: string) => void }): void {
+  if (shutdownRegistered) {
+    return;
+  }
+  shutdownRegistered = true;
+  
+  const log = logger || {
+    info: (msg: string) => console.log(`[database] ${msg}`),
+    error: (obj: unknown, msg: string) => console.error(`[database] ${msg}`, obj),
+  };
+  
+  const shutdown = async (signal: string) => {
+    if (isShuttingDown) {
+      return;
+    }
+    isShuttingDown = true;
+    log.info(`Recebido ${signal}, encerrando pool de conexões...`);
+    
+    try {
+      await closeDatabase();
+      log.info('Pool de conexões encerrado com sucesso');
+    } catch (error) {
+      log.error({ error }, 'Erro ao encerrar pool de conexões');
+    }
+  };
+  
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
 
 export function getDatabase(): NodePgDatabase<typeof schema> {
   if (!dbInstance) {
@@ -22,6 +108,11 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
+    });
+    
+    // Listener para erros de conexão (enterprise-grade)
+    poolInstance.on('error', (err) => {
+      console.error('[database] Erro inesperado no pool:', err.message);
     });
     
     // Registrar tipos pgvector em novas conexões (enterprise-grade)

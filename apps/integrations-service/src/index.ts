@@ -19,6 +19,8 @@ import {
   extractAuthContext,
 } from '@alice/shared-utils';
 
+process.setMaxListeners(20);
+
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
 
