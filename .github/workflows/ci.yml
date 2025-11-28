@@ -52,8 +52,8 @@ jobs:
               - 'infra/**'
               - '.github/workflows/**'
 
-  lint-and-typecheck:
-    name: Lint & Typecheck
+  build-and-check:
+    name: Build & Typecheck
     runs-on: ubuntu-latest
     needs: detect-changes
     steps:
@@ -73,6 +73,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build shared packages first
+        run: |
+          pnpm --filter @alice/shared run build
+          pnpm --filter @alice/shared-utils run build
+          pnpm --filter @alice/config run build
+          pnpm --filter @alice/logger run build
+          pnpm --filter @alice/database run build
+
       - name: TypeScript Check
         run: pnpm run typecheck 2>/dev/null || echo "TypeCheck concluído"
         continue-on-error: true
@@ -81,40 +89,10 @@ jobs:
         run: pnpm run lint 2>/dev/null || echo "Lint concluído"
         continue-on-error: true
 
-  build-packages:
-    name: Build Shared Packages
-    runs-on: ubuntu-latest
-    needs: lint-and-typecheck
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build shared packages
-        run: |
-          pnpm --filter @alice/shared run build
-          pnpm --filter @alice/shared-utils run build
-          pnpm --filter @alice/config run build
-          pnpm --filter @alice/logger run build
-          pnpm --filter @alice/database run build
-        continue-on-error: true
-
   build-services:
     name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
-    needs: build-packages
+    needs: build-and-check
     strategy:
       matrix:
         service:
@@ -166,7 +144,7 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
-    needs: build-packages
+    needs: build-and-check
     steps:
       - uses: actions/checkout@v4
 
