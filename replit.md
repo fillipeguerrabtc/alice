@@ -250,17 +250,19 @@ error TS2307: Cannot find module '@alice/shared' or its corresponding type decla
 
 ### Solução Implementada: esbuild Bundling + Topological Sort
 
-#### Correção 1: Ordem de Build (package.json)
+#### Correção 1: Ordem de Build + Limpeza de Cache (package.json)
 
 ```json
 // ANTES (paralelo - causava erro de ordem)
 "build:packages": "pnpm --filter '@alice/*' --stream run build"
 
-// DEPOIS (topological - respeita dependências)
-"build:packages": "pnpm -r --filter '@alice/*' run build"
+// DEPOIS (cross-platform cleanup + topological sort)
+"build:packages": "node -e \"...cleanup...\" && pnpm -r --filter '@alice/*' run build"
 ```
 
-A flag `-r` (recursive) do pnpm **respeita ordem de dependências** automaticamente, garantindo que `@alice/shared` seja buildado ANTES de `@alice/database`.
+**Duas correções combinadas:**
+1. **Limpeza cross-platform**: Script Node.js inline deleta `.tsbuildinfo` de todos os pacotes antes do build (evita builds incrementais que "skipam" emissão)
+2. **Topological sort**: Flag `-r` (recursive) do pnpm respeita ordem de dependências, garantindo `@alice/shared` → `@alice/database` → serviços
 
 #### Correção 2: Dockerfiles Enterprise 3-Stage
 
