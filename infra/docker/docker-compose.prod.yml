@@ -171,7 +171,28 @@ services:
       - alice-network
       - erpnext-network
     labels:
-      - "traefik.enable=false"
+      - "traefik.enable=true"
+      # Middleware: Security Headers (OWASP 2025)
+      - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
+      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
+      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
+      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
+      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
+      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
+      - "traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=DENY"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
+      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=geolocation=(), microphone=(), camera=()"
+      # Middleware: Rate Limiting (100 req/s média, burst 200)
+      - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=200"
+      - "traefik.http.middlewares.rate-limit.ratelimit.period=1s"
+      - "traefik.http.middlewares.rate-limit.ratelimit.sourcecriterion.ipstrategy.depth=1"
+      # Middleware: Auth Rate Limiting (10 req/min para login)
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.average=10"
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.burst=20"
+      - "traefik.http.middlewares.auth-rate-limit.ratelimit.period=60s"
     healthcheck:
       test: ["CMD-SHELL", "wget -q --tries=1 --spider http://127.0.0.1:8082/ping || exit 1"]
       interval: 30s
@@ -240,6 +261,7 @@ services:
       - "traefik.http.routers.alice-frontend.rule=Host(`yesyoudeserve.duckdns.org`)"
       - "traefik.http.routers.alice-frontend.entrypoints=websecure"
       - "traefik.http.routers.alice-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-frontend.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-frontend.loadbalancer.server.port=8080"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
@@ -292,6 +314,7 @@ services:
       - "traefik.http.routers.alice-auth.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/auth`)"
       - "traefik.http.routers.alice-auth.entrypoints=websecure"
       - "traefik.http.routers.alice-auth.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-auth.middlewares=security-headers@docker,auth-rate-limit@docker"
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3001/api/auth/health"]
@@ -335,11 +358,13 @@ services:
       - "traefik.http.routers.alice-chat.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/chat`)"
       - "traefik.http.routers.alice-chat.entrypoints=websecure"
       - "traefik.http.routers.alice-chat.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-chat.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-chat.loadbalancer.server.port=3002"
       # WebSocket
       - "traefik.http.routers.alice-ws.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/ws`)"
       - "traefik.http.routers.alice-ws.entrypoints=websecure"
       - "traefik.http.routers.alice-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-ws.middlewares=rate-limit@docker"
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3002/api/chat/health"]
@@ -379,6 +404,7 @@ services:
       - "traefik.http.routers.alice-rag.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/rag`)"
       - "traefik.http.routers.alice-rag.entrypoints=websecure"
       - "traefik.http.routers.alice-rag.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-rag.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3003/api/rag/health"]
@@ -420,6 +446,7 @@ services:
       - "traefik.http.routers.alice-training.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/training`)"
       - "traefik.http.routers.alice-training.entrypoints=websecure"
       - "traefik.http.routers.alice-training.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-training.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3004/api/training/health"]
@@ -483,11 +510,13 @@ services:
       - "traefik.http.routers.alice-integrations.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/integrations`)"
       - "traefik.http.routers.alice-integrations.entrypoints=websecure"
       - "traefik.http.routers.alice-integrations.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-integrations.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-integrations.loadbalancer.server.port=3005"
       # Webhook Stripe (rota específica)
       - "traefik.http.routers.alice-webhook.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/webhook`)"
       - "traefik.http.routers.alice-webhook.entrypoints=websecure"
       - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-webhook.middlewares=security-headers@docker"
       - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3005/api/integrations/health"]

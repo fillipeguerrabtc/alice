@@ -110,10 +110,11 @@ The platform includes several microservices:
 
 ### Integrations
 
--   **Payments**: Stripe Portugal, Wise.
--   **CRM/ERP**: ERPNext (via `frappe_docker`).
+-   **Payments - Stripe**: Integração NATIVA do ERPNext (módulo Stripe payments). Alice usa ERPNext para efetuar vendas e tudo fica registrado no ERPNext como sistema central. Não existe dashboard Stripe na Alice.
+-   **Payments - Wise**: Dashboard Admin na Alice (`client/src/pages/WisePayments.tsx`) para gerenciar pagamentos globais. Sincronização automática com ERPNext via `wiseSyncService.ts` para manter controle centralizado de todas as transferências.
+-   **CRM/ERP**: ERPNext (via `frappe_docker`) - Sistema central e absoluto onde TUDO fica registrado (vendas Stripe, pagamentos Wise, clientes, pedidos).
 -   **Communication**: Twilio (WhatsApp, SMS), Resend (transactional emails).
 -   **Database**: PostgreSQL with pgvector extension.
 -   **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
--   **API Gateway**: Traefik.
--   **CI/CD**: GitHub Actions.
+-   **API Gateway**: Traefik v3.3 com security headers middleware e rate limiting.
+-   **CI/CD**: GitHub Actions com SHA pinning para supply chain security.
