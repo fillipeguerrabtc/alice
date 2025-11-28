@@ -714,19 +714,23 @@ app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromReque
 
 // ============================================================================
 // WEBSOCKET RATE LIMITING (Enterprise-Grade - Regra 16 replit.md)
+// Implementa sliding window com cooldown progressivo após bloqueio
 // ============================================================================
 
 interface WsRateLimitState {
-  messageCount: number;
-  windowStart: number;
+  timestamps: number[];
   blocked: boolean;
   blockUntil: number;
+  cooldownMultiplier: number;
+  lastActivity: number;
 }
 
 const WS_RATE_LIMIT = {
   windowMs: 60000,
   maxMessages: 60,
   blockDurationMs: 60000,
+  maxCooldownMultiplier: 4,
+  cooldownDecayMs: 300000,
 };
 
 const wsRateLimits = new Map<string, WsRateLimitState>();
@@ -736,45 +740,66 @@ function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: num
   let state = wsRateLimits.get(clientKey);
   
   if (!state) {
-    state = { messageCount: 0, windowStart: now, blocked: false, blockUntil: 0 };
+    state = { timestamps: [], blocked: false, blockUntil: 0, cooldownMultiplier: 1, lastActivity: now };
     wsRateLimits.set(clientKey, state);
   }
+  
+  state.lastActivity = now;
   
   if (state.blocked) {
     if (now < state.blockUntil) {
       return { allowed: false, remaining: 0, retryAfter: Math.ceil((state.blockUntil - now) / 1000) };
     }
     state.blocked = false;
-    state.messageCount = 0;
-    state.windowStart = now;
-    logger.info({ clientKey }, 'WebSocket rate limit desbloqueado - nova janela iniciada');
+    state.timestamps = [];
+    state.cooldownMultiplier = Math.min(state.cooldownMultiplier * 2, WS_RATE_LIMIT.maxCooldownMultiplier);
+    logger.info({ clientKey, cooldownMultiplier: state.cooldownMultiplier }, 'WebSocket rate limit desbloqueado - cooldown progressivo ativo');
   }
   
-  if (now - state.windowStart > WS_RATE_LIMIT.windowMs) {
-    state.messageCount = 0;
-    state.windowStart = now;
-  }
+  const windowStart = now - WS_RATE_LIMIT.windowMs;
+  state.timestamps = state.timestamps.filter(t => t > windowStart);
   
-  state.messageCount++;
+  const effectiveMaxMessages = Math.ceil(WS_RATE_LIMIT.maxMessages / state.cooldownMultiplier);
   
-  if (state.messageCount > WS_RATE_LIMIT.maxMessages) {
+  if (state.timestamps.length >= effectiveMaxMessages) {
     state.blocked = true;
     state.blockUntil = now + WS_RATE_LIMIT.blockDurationMs;
-    logger.warn({ clientKey, messageCount: state.messageCount }, 'WebSocket rate limit excedido - cliente bloqueado');
+    logger.warn({ clientKey, messageCount: state.timestamps.length, effectiveMaxMessages }, 'WebSocket rate limit excedido - cliente bloqueado');
     return { allowed: false, remaining: 0, retryAfter: WS_RATE_LIMIT.blockDurationMs / 1000 };
   }
   
-  return { allowed: true, remaining: WS_RATE_LIMIT.maxMessages - state.messageCount };
+  state.timestamps.push(now);
+  
+  if (state.cooldownMultiplier > 1 && state.timestamps.length === 1) {
+    setTimeout(() => {
+      const currentState = wsRateLimits.get(clientKey);
+      if (currentState && !currentState.blocked && currentState.cooldownMultiplier > 1) {
+        currentState.cooldownMultiplier = Math.max(1, currentState.cooldownMultiplier / 2);
+        logger.info({ clientKey, cooldownMultiplier: currentState.cooldownMultiplier }, 'WebSocket cooldown reduzido por bom comportamento');
+      }
+    }, WS_RATE_LIMIT.cooldownDecayMs);
+  }
+  
+  return { allowed: true, remaining: effectiveMaxMessages - state.timestamps.length };
+}
+
+function cleanupWsRateLimit(clientKey: string) {
+  wsRateLimits.delete(clientKey);
 }
 
 setInterval(() => {
   const now = Date.now();
+  const inactivityThreshold = WS_RATE_LIMIT.windowMs * 5;
+  
   for (const [key, state] of wsRateLimits.entries()) {
-    const windowExpired = now - state.windowStart > WS_RATE_LIMIT.windowMs * 2;
+    const inactiveTime = now - state.lastActivity;
+    const isInactive = inactiveTime > inactivityThreshold;
     const blockExpired = state.blocked && now >= state.blockUntil;
+    const canRemove = isInactive || (blockExpired && state.timestamps.length === 0);
     
-    if (windowExpired || blockExpired) {
+    if (canRemove) {
       wsRateLimits.delete(key);
+      logger.debug({ clientKey: key, reason: isInactive ? 'inactivity' : 'block_expired' }, 'Rate limit state removido');
     }
   }
 }, 300000);
@@ -1240,6 +1265,7 @@ wss.on('connection', (ws, req) => {
 
   ws.on('close', () => {
     wsClients.delete(clientKey);
+    cleanupWsRateLimit(clientKey);
     logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket desconectado');
   });
 });

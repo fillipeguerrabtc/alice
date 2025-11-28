@@ -102,3 +102,64 @@ The platform is composed of several microservices, including:
 -   **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
 -   **API Gateway**: Traefik for routing and SSL termination.
 -   **CI/CD**: GitHub Actions.
+
+---
+
+## FASE 3 - Resiliência e Performance (28/11/2024)
+
+### Implementações Concluídas
+
+| Componente | Arquivo | Descrição |
+|------------|---------|-----------|
+| **Connection Pool Lifecycle** | `packages/database/src/index.ts` | Métricas de pool, graceful shutdown, health check |
+| **Circuit Breaker S3** | `apps/rag-service/src/storage.ts` | Opossum CB para operações S3/MinIO |
+| **WebSocket Rate Limiting** | `apps/chat-service/src/index.ts` | Sliding window + cooldown progressivo |
+| **Docker Resource Limits** | `infra/docker/docker-compose.prod.yml` | Memory + CPU limits para todos os serviços |
+| **Config Secrets Sanitization** | `packages/config/src/index.ts` | Redact de secrets nos logs |
+
+### Connection Pool (packages/database)
+
+```typescript
+getPoolMetrics(): PoolMetrics           // Métricas em tempo real
+isPoolHealthy(): Promise<boolean>       // Health check async
+setupGracefulShutdown(logger?)          // SIGTERM/SIGINT handlers
+```
+
+### Circuit Breaker S3 (apps/rag-service)
+
+- Timeout: 30s
+- Error Threshold: 50%
+- Reset Timeout: 30s
+- Status: `getS3CircuitBreakerStatus()`
+
+### WebSocket Rate Limiting (Sliding Window + Cooldown)
+
+- Limite base: 60 mensagens por 60 segundos (sliding window real)
+- Block Duration: 60 segundos
+- Cooldown Progressivo: Após bloqueio, limite reduzido por fator 2x, 4x (máximo)
+- Cooldown Decay: 5 minutos de bom comportamento reduz penalidade pela metade
+- Response: `{ type: 'rate_limited', retryAfter: number }`
+
+### Docker Resource Limits (Produção)
+
+| Serviço | Memory | CPU | Memory Res | CPU Res |
+|---------|--------|-----|------------|---------|
+| postgres | 2G | 2.0 | 512M | 0.5 |
+| chat | 1G | 1.5 | 256M | 0.25 |
+| rag | 1G | 1.5 | 256M | 0.25 |
+| training | 1G | 1.5 | 256M | 0.25 |
+| auth | 512M | 1.0 | 128M | 0.25 |
+| integrations | 512M | 1.0 | 128M | 0.25 |
+| frontend | 256M | 0.5 | 64M | 0.1 |
+
+### Config Secrets Sanitization
+
+Secrets automaticamente redactados nos logs:
+- SESSION_SECRET, DATABASE_URL, SALAD_API_KEY
+- *_CLIENT_SECRET, *_WEBHOOK_SECRET, *_API_KEY
+- Padrões: password, secret, token
+
+---
+
+*Documento em Português Brasileiro*
+*Versão 5.6 - Novembro 2025*
