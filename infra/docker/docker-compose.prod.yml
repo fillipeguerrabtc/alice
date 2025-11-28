@@ -151,11 +151,14 @@ services:
 
   # ===========================================================================
   # POSTGRESQL - Banco de dados Alice com pgvector
+  # Docs: PostgreSQL 16 recomenda 25% RAM para shared_buffers, shm_size > 64MB
+  # Configuração: 3GB RAM (750MB shared_buffers), 1.5 CPU limit
   # ===========================================================================
   postgres:
     image: pgvector/pgvector:pg16
     container_name: alice-postgres
     restart: always
+    shm_size: '1g'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alice}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -174,10 +177,10 @@ services:
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '2.0'
+          memory: 3G
+          cpus: '1.5'
         reservations:
-          memory: 512M
+          memory: 1G
           cpus: '0.5'
 
   # ===========================================================================
@@ -210,13 +213,14 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: '0.25'
         reservations:
           memory: 64M
           cpus: '0.1'
 
   # ===========================================================================
   # ALICE AUTH SERVICE - Autenticação OAuth/SAML/Local
+  # Docs: Node.js single-thread 0.5-1.0 CPU, 512MB RAM standard
   # ===========================================================================
   alice-auth:
     image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:-latest}
