@@ -98,6 +98,8 @@ The platform includes several microservices:
 -   **Redis ACL**: Autenticação habilitada para Redis cache e queue do ERPNext com comandos perigosos desabilitados.
 -   **GitHub Actions SHA Pinning**: Todas as actions pinadas a commit SHA para supply chain security.
 -   **CSP Hardening**: Content-Security-Policy sem 'unsafe-eval', apenas 'unsafe-inline' mantido para React hydration.
+-   **Compression Middleware**: Todos os 7 microsserviços Node.js usam compression() após helmet() para otimização de banda (Express.js 2025).
+-   **Server Timeouts**: Configurados em todos os serviços seguindo Node.js 20 LTS: server.timeout (30s padrão, 60s RAG, 120s chat), keepAliveTimeout (65s), headersTimeout (66s).
 
 ## External Dependencies
 
