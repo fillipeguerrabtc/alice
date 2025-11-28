@@ -75,11 +75,24 @@ jobs:
 
       - name: Build shared packages first
         run: |
+          # Limpar .tsbuildinfo para garantir emissão de arquivos .js
+          # (Segue instrução do Copilot: garantir @alice/shared buildado ANTES de @alice/database)
+          rm -f packages/shared/tsconfig.tsbuildinfo
+          rm -f packages/shared-utils/tsconfig.tsbuildinfo
+          rm -f packages/config/tsconfig.tsbuildinfo
+          rm -f packages/logger/tsconfig.tsbuildinfo
+          rm -f packages/database/tsconfig.tsbuildinfo
+          
+          # Build na ordem correta de dependências
           pnpm --filter @alice/shared run build
           pnpm --filter @alice/shared-utils run build
           pnpm --filter @alice/config run build
           pnpm --filter @alice/logger run build
           pnpm --filter @alice/database run build
+          
+          # Verificar se dist/ foi gerado
+          ls -la packages/shared/dist/ || echo "ERRO: shared/dist não existe"
+          ls -la packages/database/dist/ || echo "ERRO: database/dist não existe"
 
       - name: TypeScript Check
         run: pnpm run typecheck 2>/dev/null || echo "TypeCheck concluído"
