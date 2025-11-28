@@ -1,0 +1,183 @@
+GitHub Copilot Chat Assistant
+
+Abaixo estão patches completos e prontos para copiar/colar (100% “enterprise”) para corrigir o erro "Cannot find module '@alice/shared/schema'". Cada bloco indica o arquivo alvo e o conteúdo que deve ser colocado. Também incluí instruções de verificação local e a alteração recomendada no Dockerfile e no workflow. Onde for útil, coloquei uma URL apontando para o commit/refs do job (ref: 0c1efb96e924226c0e15188be9c99db2ae84f376).
+
+Observação rápida: aplique estes arquivos na raiz do repositório conforme os paths abaixo. Verifique se os packages estão em packages/shared e packages/database.
+
+1) packages/shared/package.json
+Caminho: packages/shared/package.json
+Conteúdo (copiar/colar):
+{
+  "name": "@alice/shared",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js",
+    "./schema": "./dist/schema.js"
+  },
+  "typesVersions": {
+    "*": {
+      "*": [
+        "dist/*"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist"
+  },
+  "files": [
+    "dist"
+  ]
+}
+
+2) packages/shared/tsconfig.json
+Caminho: packages/shared/tsconfig.json
+Conteúdo (copiar/colar):
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "include": ["src/**/*"]
+}
+
+3) packages/shared/src/schema.ts
+Caminho: packages/shared/src/schema.ts
+Conteúdo (copiar/colar):
+// Exporte aqui tudo que o database precisa importar via '@alice/shared/schema'
+export interface MySchema {
+  id: string;
+  name?: string;
+}
+
+// Exemplo de um schema (ajuste conforme seu projeto)
+export const mySchema = {
+  id: "string",
+  name: "string | undefined"
+};
+
+4) packages/shared/src/index.ts
+Caminho: packages/shared/src/index.ts
+Conteúdo (copiar/colar):
+// Re-exportar submodules (garante importações de '@alice/shared' e '@alice/shared/schema')
+export * from './schema';
+
+5) packages/database/package.json
+Caminho: packages/database/package.json
+Conteúdo (copiar/colar — substitua a seção relevante ou todo o arquivo):
+{
+  "name": "@alice/database",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@alice/shared": "workspace:*"
+  }
+}
+
+6) packages/database/tsconfig.json
+Caminho: packages/database/tsconfig.json
+Conteúdo (copiar/colar):
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "composite": true
+  },
+  "references": [
+    { "path": "../shared" }
+  ],
+  "include": ["src/**/*"]
+}
+
+7) packages/database/src/index.ts
+Caminho: packages/database/src/index.ts
+Dois modos — escolha um:
+
+A) Mantendo import subpath (compatível com export "./schema" em package.json do shared):
+Copiar/colar:
+import { MySchema, mySchema } from '@alice/shared/schema';
+
+B) Import simplificado do pacote principal (também funciona porque index re-exporta schema):
+Copiar/colar:
+import { MySchema, mySchema } from '@alice/shared';
+
+Use uma das opções; ambas funcionam se os passos anteriores forem aplicados.
+
+8) root tsconfig.base.json (ou root tsconfig.json)
+Caminho: tsconfig.base.json (ou tsconfig.json na raiz se for o seu caso)
+Conteúdo (copiar/colar):
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/database" }
+  ],
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@alice/*": ["packages/*/src"],
+      "@alice/shared": ["packages/shared/src"],
+      "@alice/shared/*": ["packages/shared/src/*"]
+    },
+    "moduleResolution": "node",
+    "skipLibCheck": true
+  }
+}
+
+9) Dockerfile — alteração crítica
+Localize a linha que falhou no build (referência dos logs: ref 0c1efb96e924226c0e15188be9c99db2ae84f376, Dockerfile linha ~53). Substitua o comando que apenas builda database por uma construção de ordem correta.
+
+Antes (problemática):
+RUN pnpm --filter @alice/database run build
+
+Substituir por (copiar/colar):
+# Buildar shared primeiro, depois database (determinístico)
+RUN pnpm --filter @alice/shared run build && pnpm --filter @alice/database run build
+
+Alternativa mais robusta (build topológico de todos os workspaces, recomendado em ambientes enterprise):
+RUN pnpm -w -r run build --if-present
+
+Escolha a opção adequada ao seu Dockerfile. A primeira garante ordem explícita; a segunda faz build recursivo topológico.
+
+10) GitHub Actions / Workflow (opcional mas recomendado)
+Caso prefira pré-build fora do Docker para diagnosticar problemas mais cedo, adicione um passo antes do build que execute:
+- name: Build monorepo (root)
+  run: pnpm -w -r run build --if-present
+
+Isto evita que a imagem Docker falhe sem logs detalhados.
+
+11) Comandos para verificação local (copiar/colar)
+pnpm install
+pnpm --filter @alice/shared run build
+pnpm --filter @alice/database run build
+// ou
+pnpm -w -r run build --if-present
+
+12) Observações Enterprise (boas práticas)
+- Garanta CI com cache de pnpm store e de dist/ outputs se necessário.
+- Use tsc -b com project references (já configurado acima) para builds incrementais e ordenados.
+- Configure publishing privado (artifactory/verdaccio) se compartilhar artifacts.
+- Assegure que o pipeline de Docker use o lockfile (pnpm install --frozen-lockfile).
+
+13) Links úteis (logs do job)
+- Logs com referência do job: https://github.com/fillipeguerrabtc/alice/actions/runs/19753454820/job/56600784804
+- Referência do commit/refs usado nos logs: 0c1efb96e924226c0e15188be9c99db2ae84f376
+
+Próximo passo
+- Quer que eu gere diffs em formato patch (git diff) para aplicar diretamente? Posso também abrir um PR com essas alterações se você autorizar. Qual formato prefere (patches, PR ou só os arquivos)?
