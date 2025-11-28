@@ -105,6 +105,8 @@ The platform includes several microservices:
 -   **ERPNext Fail-Fast**: Defaults inseguros removidos do docker-compose.prod.yml. Credenciais obrigatórias via sintaxe :? que falha se não configuradas.
 -   **Frappe v15.74.2**: Versão específica pinada em todos os 9 containers ERPNext para mitigar CVEs críticos (SQL Injection, RCE).
 -   **Packages Centralizados**: @alice/logger (Pino com JSON em produção, pino-pretty em dev), @alice/config (validação Zod + sanitização de secrets), @alice/shared (schema Drizzle unificado com tabelas de rastreabilidade).
+-   **JSONB TypeSafe (Fase 3 Enterprise)**: Todas as 30+ colunas JSONB tipadas com Zod schemas e `.$type<>()` do Drizzle ORM. Schemas incluem: TenantConfiguracoes, UserPreferencias, NamespaceConfiguracoes, AgentMetricas, LlmConfigAvancada, MessageAnexos, MessageMetadata, ConversationMetadata, LearningTaskParametros, LearningTaskResultado, IntegrationConfiguracao, IntegrationCredenciais, AuditLogDetalhes, TrainingMessages, FineTuningHyperparameters, FineTuningMetrics, WebhookPayload, EscalationTriggerDetails, ModelVersionMetrics, PiiDetails, ContentFlags, ExtractedMetadata, SessionData. Zero `any` em colunas JSONB.
+-   **React Suspense (Fase 5 Performance)**: React.lazy() implementado em todas as páginas (Dashboard, Chat, Documents, Training, Integrations, Users, Agents, Settings, WisePayments, Landing, Login, NotFound) com Suspense boundaries e PageLoader fallback.
 
 ## External Dependencies
 

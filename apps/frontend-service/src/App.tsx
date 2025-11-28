@@ -107,16 +107,20 @@ function AppContent() {
 
   if (!isAuthenticated) {
     return (
-      <Switch>
-        <Route path="/login" component={Login} />
-        <Route component={Landing} />
-      </Switch>
+      <Suspense fallback={<PageLoader />}>
+        <Switch>
+          <Route path="/login" component={Login} />
+          <Route component={Landing} />
+        </Switch>
+      </Suspense>
     );
   }
 
   return (
     <AuthenticatedLayout>
-      <Router />
+      <Suspense fallback={<PageLoader />}>
+        <Router />
+      </Suspense>
     </AuthenticatedLayout>
   );
 }

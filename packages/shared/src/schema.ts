@@ -16,6 +16,296 @@ import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
 // ============================================================================
+// ZOD SCHEMAS PARA JSONB COLUMNS (TypeSafe - Fase 3 Enterprise 2025)
+// Tipagem forte para todas as colunas JSONB no banco de dados
+// ============================================================================
+
+// --- Configurações de Tenant ---
+export const TenantConfiguracoesSchema = z.object({
+  theme: z.enum(["light", "dark", "system"]).optional(),
+  logoPosition: z.enum(["left", "center"]).optional(),
+  features: z.object({
+    chat: z.boolean().optional(),
+    rag: z.boolean().optional(),
+    imageGen: z.boolean().optional(),
+    training: z.boolean().optional(),
+  }).optional(),
+  customBranding: z.object({
+    primaryColor: z.string().optional(),
+    accentColor: z.string().optional(),
+  }).optional(),
+}).passthrough();
+export type TenantConfiguracoes = z.infer<typeof TenantConfiguracoesSchema>;
+
+// --- Preferências de Usuário ---
+export const UserPreferenciasSchema = z.object({
+  theme: z.enum(["light", "dark", "system"]).optional(),
+  notificacoes: z.object({
+    email: z.boolean().optional(),
+    push: z.boolean().optional(),
+    sound: z.boolean().optional(),
+  }).optional(),
+  dashboardLayout: z.enum(["compact", "comfortable", "spacious"]).optional(),
+  sidebarCollapsed: z.boolean().optional(),
+  defaultNamespace: z.string().uuid().optional(),
+}).passthrough();
+export type UserPreferencias = z.infer<typeof UserPreferenciasSchema>;
+
+// --- Configurações de Namespace ---
+export const NamespaceConfiguracoesSchema = z.object({
+  modelOverride: z.string().optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  maxTokens: z.number().int().positive().optional(),
+  systemPromptPrefix: z.string().optional(),
+  ragEnabled: z.boolean().optional(),
+  imageGenEnabled: z.boolean().optional(),
+}).passthrough();
+export type NamespaceConfiguracoes = z.infer<typeof NamespaceConfiguracoesSchema>;
+
+// --- Métricas de Agente ---
+export const AgentMetricasSchema = z.object({
+  totalConversations: z.number().int().nonnegative().optional(),
+  totalMessages: z.number().int().nonnegative().optional(),
+  avgResponseTime: z.number().nonnegative().optional(),
+  avgTokensPerResponse: z.number().nonnegative().optional(),
+  satisfactionScore: z.number().min(0).max(5).optional(),
+  lastUsed: z.string().datetime().optional(),
+}).passthrough();
+export type AgentMetricas = z.infer<typeof AgentMetricasSchema>;
+
+// --- Configuração Avançada LLM ---
+export const LlmConfigAvancadaSchema = z.object({
+  repetitionPenalty: z.number().optional(),
+  presencePenalty: z.number().optional(),
+  frequencyPenalty: z.number().optional(),
+  stopSequences: z.array(z.string()).optional(),
+  seed: z.number().int().optional(),
+  contextWindow: z.number().int().positive().optional(),
+}).passthrough();
+export type LlmConfigAvancada = z.infer<typeof LlmConfigAvancadaSchema>;
+
+// --- Metadata Genérico (usado em várias tabelas) ---
+export const GenericMetadataSchema = z.record(z.string(), z.unknown()).optional();
+export type GenericMetadata = z.infer<typeof GenericMetadataSchema>;
+
+// --- Anexo de Mensagem ---
+export const MessageAnexoSchema = z.object({
+  id: z.string().uuid(),
+  type: z.enum(["image", "audio", "video", "document", "file"]),
+  filename: z.string(),
+  mimeType: z.string(),
+  size: z.number().int().nonnegative(),
+  url: z.string().url().optional(),
+  thumbnailUrl: z.string().url().optional(),
+});
+export const MessageAnexosSchema = z.array(MessageAnexoSchema);
+export type MessageAnexo = z.infer<typeof MessageAnexoSchema>;
+export type MessageAnexos = z.infer<typeof MessageAnexosSchema>;
+
+// --- Metadata de Mensagem ---
+export const MessageMetadataSchema = z.object({
+  model: z.string().optional(),
+  promptTokens: z.number().int().nonnegative().optional(),
+  completionTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional(),
+  finishReason: z.enum(["stop", "length", "content_filter", "tool_calls"]).optional(),
+  ragContext: z.array(z.object({
+    documentId: z.string().uuid(),
+    chunkId: z.string().uuid().optional(),
+    score: z.number(),
+    snippet: z.string(),
+  })).optional(),
+  generatedImages: z.array(z.string().uuid()).optional(),
+}).passthrough();
+export type MessageMetadata = z.infer<typeof MessageMetadataSchema>;
+
+// --- Metadata de Conversa ---
+export const ConversationMetadataSchema = z.object({
+  source: z.enum(["web", "whatsapp", "api", "telegram"]).optional(),
+  externalId: z.string().optional(),
+  customerInfo: z.object({
+    name: z.string().optional(),
+    email: z.string().email().optional(),
+    phone: z.string().optional(),
+  }).optional(),
+  tags: z.array(z.string()).optional(),
+}).passthrough();
+export type ConversationMetadata = z.infer<typeof ConversationMetadataSchema>;
+
+// --- Parâmetros de Learning Task ---
+export const LearningTaskParametrosSchema = z.object({
+  epochs: z.number().int().positive().optional(),
+  batchSize: z.number().int().positive().optional(),
+  learningRate: z.number().positive().optional(),
+  warmupSteps: z.number().int().nonnegative().optional(),
+  validationSplit: z.number().min(0).max(1).optional(),
+  loraRank: z.number().int().positive().optional(),
+  loraAlpha: z.number().positive().optional(),
+}).passthrough();
+export type LearningTaskParametros = z.infer<typeof LearningTaskParametrosSchema>;
+
+// --- Resultado de Learning Task ---
+export const LearningTaskResultadoSchema = z.object({
+  loss: z.number().optional(),
+  validationLoss: z.number().optional(),
+  accuracy: z.number().optional(),
+  modelPath: z.string().optional(),
+  trainingTimeSeconds: z.number().optional(),
+  samplesProcessed: z.number().int().optional(),
+}).passthrough();
+export type LearningTaskResultado = z.infer<typeof LearningTaskResultadoSchema>;
+
+// --- Configuração de Integração ---
+export const IntegrationConfiguracaoSchema = z.object({
+  baseUrl: z.string().url().optional(),
+  timeout: z.number().int().positive().optional(),
+  retries: z.number().int().nonnegative().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  features: z.record(z.string(), z.boolean()).optional(),
+}).passthrough();
+export type IntegrationConfiguracao = z.infer<typeof IntegrationConfiguracaoSchema>;
+
+// --- Credenciais de Integração (armazenadas criptografadas) ---
+export const IntegrationCredenciaisSchema = z.object({
+  apiKey: z.string().optional(),
+  apiSecret: z.string().optional(),
+  token: z.string().optional(),
+  refreshToken: z.string().optional(),
+  expiresAt: z.string().datetime().optional(),
+}).passthrough();
+export type IntegrationCredenciais = z.infer<typeof IntegrationCredenciaisSchema>;
+
+// --- Detalhes de Audit Log ---
+export const AuditLogDetalhesSchema = z.object({
+  before: z.record(z.string(), z.unknown()).optional(),
+  after: z.record(z.string(), z.unknown()).optional(),
+  reason: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
+}).passthrough();
+export type AuditLogDetalhes = z.infer<typeof AuditLogDetalhesSchema>;
+
+// --- Messages de Training Data ---
+export const TrainingMessageSchema = z.object({
+  role: z.enum(["system", "user", "assistant"]),
+  content: z.string(),
+  timestamp: z.string().datetime().optional(),
+});
+export const TrainingMessagesSchema = z.array(TrainingMessageSchema);
+export type TrainingMessage = z.infer<typeof TrainingMessageSchema>;
+export type TrainingMessages = z.infer<typeof TrainingMessagesSchema>;
+
+// --- Hyperparameters de Fine-tuning ---
+export const FineTuningHyperparametersSchema = z.object({
+  epochs: z.number().int().positive().optional(),
+  batchSize: z.number().int().positive().optional(),
+  learningRate: z.number().positive().optional(),
+  warmupRatio: z.number().min(0).max(1).optional(),
+  weightDecay: z.number().optional(),
+  loraRank: z.number().int().positive().optional(),
+  loraAlpha: z.number().positive().optional(),
+  loraDropout: z.number().min(0).max(1).optional(),
+}).passthrough();
+export type FineTuningHyperparameters = z.infer<typeof FineTuningHyperparametersSchema>;
+
+// --- Métricas de Fine-tuning ---
+export const FineTuningMetricsSchema = z.object({
+  trainLoss: z.number().optional(),
+  validationLoss: z.number().optional(),
+  trainAccuracy: z.number().optional(),
+  validationAccuracy: z.number().optional(),
+  epochsCompleted: z.number().int().optional(),
+  stepsCompleted: z.number().int().optional(),
+  trainingTimeSeconds: z.number().optional(),
+}).passthrough();
+export type FineTuningMetrics = z.infer<typeof FineTuningMetricsSchema>;
+
+// --- Payload de Webhook ---
+export const WebhookPayloadSchema = z.record(z.string(), z.unknown());
+export type WebhookPayload = z.infer<typeof WebhookPayloadSchema>;
+
+// --- Detalhes de Trigger de Escalation ---
+export const EscalationTriggerDetailsSchema = z.object({
+  confidenceScore: z.number().optional(),
+  sentimentScore: z.number().optional(),
+  fallbackCount: z.number().int().optional(),
+  matchedKeywords: z.array(z.string()).optional(),
+  slaTimeRemaining: z.number().optional(),
+  customerMessage: z.string().optional(),
+}).passthrough();
+export type EscalationTriggerDetails = z.infer<typeof EscalationTriggerDetailsSchema>;
+
+// --- Métricas de Model Version ---
+export const ModelVersionMetricsSchema = z.object({
+  accuracy: z.number().optional(),
+  f1Score: z.number().optional(),
+  perplexity: z.number().optional(),
+  avgResponseTime: z.number().optional(),
+  humanEvalScore: z.number().optional(),
+  samplesEvaluated: z.number().int().optional(),
+}).passthrough();
+export type ModelVersionMetrics = z.infer<typeof ModelVersionMetricsSchema>;
+
+// --- PII Details para Media ---
+export const PiiDetailsSchema = z.object({
+  detected: z.boolean(),
+  types: z.array(z.enum(["email", "phone", "cpf", "cnpj", "credit_card", "address", "name"])).optional(),
+  locations: z.array(z.object({
+    type: z.string(),
+    start: z.number().int(),
+    end: z.number().int(),
+  })).optional(),
+  redacted: z.boolean().optional(),
+}).passthrough();
+export type PiiDetails = z.infer<typeof PiiDetailsSchema>;
+
+// --- Content Flags para Media ---
+export const ContentFlagsSchema = z.array(z.enum([
+  "nsfw",
+  "violence",
+  "hate_speech",
+  "self_harm",
+  "dangerous",
+  "spam",
+  "copyright",
+]));
+export type ContentFlags = z.infer<typeof ContentFlagsSchema>;
+
+// --- Metadata Extraída de Media (EXIF, etc.) ---
+export const ExtractedMetadataSchema = z.object({
+  exif: z.record(z.string(), z.unknown()).optional(),
+  gps: z.object({
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+  }).optional(),
+  camera: z.object({
+    make: z.string().optional(),
+    model: z.string().optional(),
+  }).optional(),
+  dimensions: z.object({
+    width: z.number().int().optional(),
+    height: z.number().int().optional(),
+  }).optional(),
+  colorProfile: z.string().optional(),
+  orientation: z.number().int().optional(),
+}).passthrough();
+export type ExtractedMetadata = z.infer<typeof ExtractedMetadataSchema>;
+
+// --- Session Data (express-session) ---
+export const SessionDataSchema = z.object({
+  cookie: z.object({
+    originalMaxAge: z.number().nullable().optional(),
+    expires: z.string().datetime().nullable().optional(),
+    secure: z.boolean().optional(),
+    httpOnly: z.boolean().optional(),
+    path: z.string().optional(),
+    sameSite: z.enum(["strict", "lax", "none"]).optional(),
+  }).optional(),
+  userId: z.string().optional(),
+  tenantId: z.string().uuid().optional(),
+}).passthrough();
+export type SessionData = z.infer<typeof SessionDataSchema>;
+
+// ============================================================================
 // ENUMS
 // ============================================================================
 
@@ -66,7 +356,7 @@ export const sessions = pgTable(
   "sessions",
   {
     sid: varchar("sid").primaryKey(),
-    sess: jsonb("sess").notNull(),
+    sess: jsonb("sess").$type<SessionData>().notNull(),
     expire: timestamp("expire").notNull(),
   },
   (table) => ({
@@ -88,7 +378,7 @@ export const tenants = pgTable("tenants", {
   limiteUsuarios: integer("limite_usuarios").default(10),
   limiteConversas: integer("limite_conversas").default(1000),
   limiteArmazenamento: integer("limite_armazenamento_gb").default(10),
-  configuracoes: jsonb("configuracoes").default({}),
+  configuracoes: jsonb("configuracoes").$type<TenantConfiguracoes>().default({}),
   ativo: boolean("ativo").default(true),
   criadoEm: timestamp("criado_em").defaultNow(),
   atualizadoEm: timestamp("atualizado_em").defaultNow(),
@@ -114,7 +404,7 @@ export const users = pgTable(
     telefone: varchar("telefone", { length: 20 }),
     idioma: varchar("idioma", { length: 10 }).default("pt-BR"),
     timezone: varchar("timezone", { length: 50 }).default("Europe/Lisbon"),
-    preferencias: jsonb("preferencias").default({}),
+    preferencias: jsonb("preferencias").$type<UserPreferencias>().default({}),
     ultimoAcesso: timestamp("ultimo_acesso"),
     ativo: boolean("ativo").default(true),
     // Autenticação Multi-provedor
@@ -189,7 +479,7 @@ export const namespaces = pgTable(
     icone: varchar("icone", { length: 50 }),
     cor: varchar("cor", { length: 7 }),
     contextoSistema: text("contexto_sistema"),
-    configuracoes: jsonb("configuracoes").default({}),
+    configuracoes: jsonb("configuracoes").$type<NamespaceConfiguracoes>().default({}),
     ordem: integer("ordem").default(0),
     ativo: boolean("ativo").default(true),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -223,7 +513,7 @@ export const agents = pgTable(
     temperaturaModelo: real("temperatura_modelo").default(0.7),
     maxTokens: integer("max_tokens").default(4096),
     status: agentStatusEnum("status").default("active"),
-    metricas: jsonb("metricas").default({}),
+    metricas: jsonb("metricas").$type<AgentMetricas>().default({}),
     versao: integer("versao").default(1),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
@@ -249,7 +539,7 @@ export const conversations = pgTable(
     resumo: text("resumo"),
     status: conversationStatusEnum("status").default("active"),
     isPublic: boolean("is_public").default(false),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<ConversationMetadata>().default({}),
     totalMensagens: integer("total_mensagens").default(0),
     ultimaMensagemEm: timestamp("ultima_mensagem_em"),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -278,8 +568,8 @@ export const messages = pgTable(
     agentId: uuid("agent_id").references(() => agents.id),
     tipo: messageTypeEnum("tipo").default("text"),
     conteudo: text("conteudo"),
-    anexos: jsonb("anexos").default([]),
-    metadata: jsonb("metadata").default({}),
+    anexos: jsonb("anexos").$type<MessageAnexos>().default([]),
+    metadata: jsonb("metadata").$type<MessageMetadata>().default({}),
     tokensUsados: integer("tokens_usados"),
     latenciaMs: integer("latencia_ms"),
     isFromUser: boolean("is_from_user").default(true),
@@ -310,7 +600,7 @@ export const documents = pgTable(
     hashConteudo: varchar("hash_conteudo", { length: 64 }),
     semhash: varchar("semhash", { length: 128 }),
     embedding: real("embedding").array(),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     processado: boolean("processado").default(false),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
@@ -336,7 +626,7 @@ export const documentChunks = pgTable(
     conteudo: text("conteudo").notNull(),
     posicao: integer("posicao").notNull(),
     embedding: real("embedding").array(),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
@@ -357,8 +647,8 @@ export const learningTasks = pgTable(
     status: taskStatusEnum("status").default("pending"),
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
-    parametros: jsonb("parametros").default({}),
-    resultado: jsonb("resultado"),
+    parametros: jsonb("parametros").$type<LearningTaskParametros>().default({}),
+    resultado: jsonb("resultado").$type<LearningTaskResultado>(),
     erro: text("erro"),
     progresso: integer("progresso").default(0),
     iniciadoEm: timestamp("iniciado_em"),
@@ -382,8 +672,8 @@ export const integrations = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id),
     tipo: varchar("tipo", { length: 50 }).notNull(),
     nome: varchar("nome", { length: 255 }).notNull(),
-    configuracao: jsonb("configuracao").default({}),
-    credenciais: jsonb("credenciais").default({}),
+    configuracao: jsonb("configuracao").$type<IntegrationConfiguracao>().default({}),
+    credenciais: jsonb("credenciais").$type<IntegrationCredenciais>().default({}),
     webhookUrl: text("webhook_url"),
     ultimaSincronizacao: timestamp("ultima_sincronizacao"),
     ativo: boolean("ativo").default(true),
@@ -409,7 +699,7 @@ export const llmConfig = pgTable("llm_config", {
   maxTokens: integer("max_tokens").default(4096),
   temperatura: real("temperatura").default(0.7),
   topP: real("top_p").default(0.9),
-  configuracaoAvancada: jsonb("configuracao_avancada").default({}),
+  configuracaoAvancada: jsonb("configuracao_avancada").$type<LlmConfigAvancada>().default({}),
   ativo: boolean("ativo").default(true),
   criadoEm: timestamp("criado_em").defaultNow(),
   atualizadoEm: timestamp("atualizado_em").defaultNow(),
@@ -428,7 +718,7 @@ export const auditLogs = pgTable(
     acao: varchar("acao", { length: 100 }).notNull(),
     recurso: varchar("recurso", { length: 100 }).notNull(),
     recursoId: varchar("recurso_id", { length: 255 }),
-    detalhes: jsonb("detalhes").default({}),
+    detalhes: jsonb("detalhes").$type<AuditLogDetalhes>().default({}),
     ip: varchar("ip", { length: 45 }),
     userAgent: text("user_agent"),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -492,7 +782,7 @@ export const trainingData = pgTable(
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
     source: varchar("source", { length: 50 }).notNull(),
-    messages: jsonb("messages").notNull(),
+    messages: jsonb("messages").$type<TrainingMessages>().notNull(),
     rating: integer("rating"),
     status: trainingDataStatusEnum("status").default("pending"),
     semhash: varchar("semhash", { length: 64 }),
@@ -539,8 +829,8 @@ export const fineTuningJobs = pgTable(
     containerGroupId: varchar("container_group_id", { length: 255 }),
     trainingDataCount: integer("training_data_count").default(0),
     validationDataCount: integer("validation_data_count").default(0),
-    hyperparameters: jsonb("hyperparameters").default({}),
-    metrics: jsonb("metrics").default({}),
+    hyperparameters: jsonb("hyperparameters").$type<FineTuningHyperparameters>().default({}),
+    metrics: jsonb("metrics").$type<FineTuningMetrics>().default({}),
     resultModel: varchar("result_model", { length: 255 }),
     errorMessage: text("error_message"),
     iniciadoEm: timestamp("iniciado_em"),
@@ -581,7 +871,7 @@ export const wiseSyncLog = pgTable(
     syncAttempts: integer("sync_attempts").default(0),
     lastSyncAttempt: timestamp("last_sync_attempt"),
     lastError: text("last_error"),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
     sincronizadoEm: timestamp("sincronizado_em"),
   },
@@ -615,8 +905,8 @@ export const webhookEvents = pgTable(
     eventType: varchar("event_type", { length: 255 }).notNull(),
     processed: boolean("processed").default(false),
     processedAt: timestamp("processed_at"),
-    payload: jsonb("payload").default({}),
-    result: jsonb("result").default({}),
+    payload: jsonb("payload").$type<WebhookPayload>().default({}),
+    result: jsonb("result").$type<WebhookPayload>().default({}),
     error: text("error"),
     retryCount: integer("retry_count").default(0),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -649,7 +939,7 @@ export const stripeErpnextMapping = pgTable(
     erpnextSalesInvoice: varchar("erpnext_sales_invoice", { length: 255 }),
     erpnextPaymentEntry: varchar("erpnext_payment_entry", { length: 255 }),
     flowStatus: varchar("flow_status", { length: 50 }).default("pending"),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -708,7 +998,7 @@ export const conversationStates = pgTable(
     slaDeadline: timestamp("sla_deadline"),
     slaBreached: boolean("sla_breached").default(false),
     notes: text("notes"),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -733,7 +1023,7 @@ export const conversationParticipants = pgTable(
     joinedAt: timestamp("joined_at").defaultNow(),
     leftAt: timestamp("left_at"),
     isActive: boolean("is_active").default(true),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
   },
   (table) => ({
     idxConvParticipantsConversation: index("idx_conv_participants_conversation").on(table.conversationId),
@@ -757,7 +1047,7 @@ export const conversationEscalations = pgTable(
     confidenceAtEscalation: real("confidence_at_escalation"),
     sentimentAtEscalation: real("sentiment_at_escalation"),
     fallbackCountAtEscalation: integer("fallback_count_at_escalation"),
-    triggerDetails: jsonb("trigger_details").default({}),
+    triggerDetails: jsonb("trigger_details").$type<EscalationTriggerDetails>().default({}),
     resolutionNotes: text("resolution_notes"),
     resolvedAt: timestamp("resolved_at"),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -795,8 +1085,8 @@ export const modelVersions = pgTable(
     fineTuningJobId: uuid("fine_tuning_job_id").references(() => fineTuningJobs.id),
     trainingDataCount: integer("training_data_count").default(0),
     imageDataCount: integer("image_data_count").default(0),
-    metrics: jsonb("metrics").default({}),
-    baselineMetrics: jsonb("baseline_metrics").default({}),
+    metrics: jsonb("metrics").$type<ModelVersionMetrics>().default({}),
+    baselineMetrics: jsonb("baseline_metrics").$type<ModelVersionMetrics>().default({}),
     improvementPercent: real("improvement_percent"),
     isActive: boolean("is_active").default(false),
     rolledBackFrom: uuid("rolled_back_from"),
@@ -839,7 +1129,7 @@ export const autoLearningSchedule = pgTable(
     dataCollected: integer("data_collected").default(0),
     imagesCollected: integer("images_collected").default(0),
     errorMessage: text("error_message"),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
@@ -897,7 +1187,7 @@ export const generatedImages = pgTable(
     // Métricas
     generationTimeMs: integer("generation_time_ms"),
     errorMessage: text("error_message"),
-    metadata: jsonb("metadata").default({}),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     
     criadoEm: timestamp("criado_em").defaultNow(),
   },
@@ -969,11 +1259,11 @@ export const mediaUploads = pgTable(
     // Análise de conteúdo (guardrails)
     nsfwScore: real("nsfw_score"),
     piiDetected: boolean("pii_detected").default(false),
-    piiDetails: jsonb("pii_details").default({}),
-    contentFlags: jsonb("content_flags").default([]),
+    piiDetails: jsonb("pii_details").$type<PiiDetails>().default({}),
+    contentFlags: jsonb("content_flags").$type<ContentFlags>().default([]),
     
     // Metadata extraída (EXIF, etc.)
-    extractedMetadata: jsonb("extracted_metadata").default({}),
+    extractedMetadata: jsonb("extracted_metadata").$type<ExtractedMetadata>().default({}),
     
     // Integração com LLM
     sentToLlm: boolean("sent_to_llm").default(false),
