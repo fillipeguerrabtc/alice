@@ -80,3 +80,12 @@ Alice is a production-ready enterprise autonomous AI platform leveraging the **L
 - **Traefik**: API Gateway for routing and SSL termination.
 - **GitHub Actions**: CI/CD pipeline for automated builds and deployments.
 - **Hetzner Cloud**: Production infrastructure hosting.
+
+## Acesso ao Servidor Hetzner (IMPORTANTE - NÃO ESQUECER)
+
+- **IP do Servidor**: 46.224.46.93
+- **Domínio**: yesyoudeserve.duckdns.org
+- **Usuário SSH**: root
+- **Chave SSH**: Localizada em `infra/scripts/setup-ssh-key.sh`
+- **Para configurar a chave**: Execute `bash infra/scripts/setup-ssh-key.sh`
+- **Para conectar**: `ssh root@46.224.46.93`
