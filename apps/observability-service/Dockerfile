@@ -1,6 +1,6 @@
 # ==============================================================================
 # Alice Enterprise Platform - Observability Service
-# Dockerfile Enterprise usando pnpm deploy --filter (padrão oficial pnpm.io)
+# Dockerfile Enterprise - Serviço simples sem dependências @alice/*
 # Health Checker para stack de observabilidade (Prometheus, Grafana, Jaeger)
 # Documentação PT-BR (Regra 10 replit.md)
 # ==============================================================================
@@ -11,47 +11,34 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
 # ==============================================================================
-# Stage: deps - Copiar package.jsons para cache de dependências
-# ==============================================================================
-FROM base AS deps
-WORKDIR /app
-
-# Copiar arquivos de configuração do workspace
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
-
-# Copiar package.json de cada pacote interno (observability não usa muitos)
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/shared-utils/package.json ./packages/shared-utils/
-
-# Copiar package.json do serviço alvo
-COPY apps/observability-service/package.json ./apps/observability-service/
-
-# Instalar todas as dependências (aproveitando cache)
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
-
-# ==============================================================================
-# Stage: builder - Compilar pacotes e serviço
+# Stage: builder - Compilar serviço
 # ==============================================================================
 FROM base AS builder
 WORKDIR /app
 
-# Copiar todo o código fonte
-COPY . .
+# Copiar apenas o necessário para o observability-service
+COPY apps/observability-service/package.json ./package.json
+COPY apps/observability-service/tsconfig.json ./tsconfig.json
+COPY apps/observability-service/src ./src
 
-# Instalar dependências (com cache)
+# Instalar dependências
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# Compilar pacotes internos na ordem de dependências
-RUN pnpm --filter @alice/shared run build
-RUN pnpm --filter @alice/shared-utils run build
+# Compilar TypeScript
+RUN pnpm run build
 
-# Compilar o serviço
-RUN pnpm --filter @alice/observability-service run build
+# ==============================================================================
+# Stage: deps - Apenas dependências de produção
+# ==============================================================================
+FROM base AS deps
+WORKDIR /app
 
-# Usar pnpm deploy para extrair apenas produção (padrão oficial)
-RUN pnpm --filter @alice/observability-service deploy --prod /prod/observability-service
+COPY apps/observability-service/package.json ./package.json
+
+# Instalar apenas dependências de produção
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --prod --no-frozen-lockfile
 
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)
@@ -67,8 +54,11 @@ RUN groupadd --system --gid 1001 nodejs && \
 
 WORKDIR /app
 
-# Copiar apenas o resultado do pnpm deploy (dependências de produção + código compilado)
-COPY --from=builder --chown=alice:nodejs /prod/observability-service ./
+# Copiar dependências de produção
+COPY --from=deps --chown=alice:nodejs /app/node_modules ./node_modules
+
+# Copiar código compilado
+COPY --from=builder --chown=alice:nodejs /app/dist ./dist
 
 USER alice
 EXPOSE 3007

@@ -1,6 +1,6 @@
 # ==============================================================================
 # Alice Enterprise Platform - Auth Service
-# Dockerfile Enterprise usando pnpm deploy --filter (padrão oficial pnpm.io)
+# Dockerfile Enterprise com esbuild bundling para pacotes @alice/*
 # Documentação em PT-BR (Regra 10 replit.md)
 # ==============================================================================
 
@@ -10,9 +10,9 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
 # ==============================================================================
-# Stage: deps - Copiar package.jsons para cache de dependências
+# Stage: builder - Compilar pacotes e criar bundle
 # ==============================================================================
-FROM base AS deps
+FROM base AS builder
 WORKDIR /app
 
 # Copiar arquivos de configuração do workspace
@@ -25,35 +25,45 @@ COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
 COPY packages/database/package.json ./packages/database/
 
-# Copiar package.json do serviço alvo
+# Copiar package.json do serviço
 COPY apps/auth-service/package.json ./apps/auth-service/
 
-# Instalar todas as dependências (aproveitando cache)
+# Copiar script de build
+COPY scripts/build-service.mjs ./scripts/
+
+# Instalar TODAS as dependências (incluindo devDependencies para build)
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# ==============================================================================
-# Stage: builder - Compilar pacotes e serviço
-# ==============================================================================
-FROM base AS builder
-WORKDIR /app
+# Copiar código fonte dos pacotes e serviço
+COPY packages/ ./packages/
+COPY apps/auth-service/ ./apps/auth-service/
 
-# Copiar todo o código fonte
-COPY . .
-
-# Instalar dependências (com cache)
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
-
-# Compilar TODOS os pacotes na ordem correta de dependências
-# Usa pnpm workspace recursivo para garantir ordem de build
+# Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
 
-# Compilar o serviço
+# Criar bundle com esbuild (inclui @alice/* inline)
 RUN pnpm --filter @alice/auth-service run build
 
-# Usar pnpm deploy para extrair apenas produção (padrão oficial)
-RUN pnpm --filter @alice/auth-service deploy --prod /prod/auth-service
+# ==============================================================================
+# Stage: deps - Instalar apenas dependências de produção
+# ==============================================================================
+FROM base AS deps
+WORKDIR /app
+
+# Instalar jq para manipulação JSON (ESM-compatible)
+RUN apt-get update && apt-get install -y --no-install-recommends jq && rm -rf /var/lib/apt/lists/*
+
+# Copiar package.json e lockfile do serviço
+COPY apps/auth-service/package.json ./package.json.original
+COPY pnpm-lock.yaml ./
+
+# Remover dependências @alice/* do package.json usando jq (ESM-compatible)
+RUN jq 'del(.dependencies[] | select(startswith("@alice/"))) | del(.dependencies | to_entries[] | select(.key | startswith("@alice/"))) | .dependencies = (.dependencies // {} | with_entries(select(.key | startswith("@alice/") | not)))' package.json.original > package.json
+
+# Instalar apenas dependências de produção externas (determinístico)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --prod --frozen-lockfile
 
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)
@@ -69,8 +79,12 @@ RUN groupadd --system --gid 1001 nodejs && \
 
 WORKDIR /app
 
-# Copiar apenas o resultado do pnpm deploy (dependências de produção + código compilado)
-COPY --from=builder --chown=alice:nodejs /prod/auth-service ./
+# Copiar dependências de produção
+COPY --from=deps --chown=alice:nodejs /app/node_modules ./node_modules
+
+# Copiar bundle compilado
+COPY --from=builder --chown=alice:nodejs /app/apps/auth-service/dist/bundle.js ./dist/bundle.js
+COPY --from=builder --chown=alice:nodejs /app/apps/auth-service/dist/bundle.js.map ./dist/bundle.js.map
 
 USER alice
 EXPOSE 3001
@@ -79,4 +93,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD node -e "require('http').get('http://localhost:3001/api/auth/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
-CMD ["node", "dist/index.js"]
+CMD ["node", "dist/bundle.js"]

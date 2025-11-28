@@ -73,7 +73,7 @@ Alice emprega arquitetura de microsserviços, com cada serviço rodando em seu p
 | `rag` | 3003 | Embeddings, busca vetorial |
 | `training` | 3004 | Coleta de dados, deduplicação, fine-tuning |
 | `integrations` | 3005 | Proxies de serviços externos |
-| `observability` | 9090/3000/16686/3006 | Stack de monitoramento |
+| `observability` | 3007/9090/3000/16686 | Stack de monitoramento |
 
 ### Decisões UI/UX
 
@@ -233,46 +233,57 @@ Modo **strict**. `any` é **PROIBIDO**.
 
 ---
 
-## TypeScript Build System (2024-11-28)
+## TypeScript Build System - SOLUÇÃO ENTERPRISE (28/11/2024)
 
-### Problema Identificado
+### Problema Original
 
-Os `paths` no `packages/tsconfig.base.json` apontavam para arquivos fonte (.ts), causando falhas no Docker quando buscava arquivos compilados (.d.ts).
-
-### Solução Aplicada
-
-1. **Criado `tsconfig.build.json`** no root com project references para ordem correta de build
-2. **Removidos `paths`** do `packages/tsconfig.base.json` - causavam confusão no Docker
-3. **Adicionado script `build:packages`**: `pnpm --filter '@alice/*' --stream run build`
-4. **Atualizados todos os 6 Dockerfiles** para usar `pnpm run build:packages`
-5. **Corrigida limpeza PRÉ-DEPLOY** no workflow - preserva containers/imagens funcionando
-
-### Ordem de Build (automático via pnpm workspace)
-
-1. `@alice/shared`
-2. `@alice/shared-utils`, `@alice/config`, `@alice/logger`
-3. `@alice/database`
-4. Todos os serviços (`auth`, `chat`, `rag`, `training`, `integrations`, `frontend`)
-
-### Arquivos Modificados
-
-| Arquivo | Mudança |
-|---------|---------|
-| `tsconfig.build.json` | NOVO - project references |
-| `packages/tsconfig.base.json` | Removidos paths problemáticos |
-| `package.json` | Adicionados scripts build:packages, build:tsc |
-| `apps/*/Dockerfile` | Todos 6 atualizados para build unificado |
-| `.github/workflows/deploy-production.yml` | Limpeza segura PRÉ-DEPLOY |
-
-### Problema Atual (28/11/2024)
-
-Os serviços estão em crash loop no servidor Hetzner com erro:
+O `pnpm deploy` não copiava os pacotes internos (`@alice/shared`, `@alice/database`, etc.) para o container final, causando erro:
 
 ```
 Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/packages/shared/src/schema'
 ```
 
-**Causa**: O `pnpm deploy` não está incluindo os pacotes internos compilados no container final. Os imports ainda apontam para source files em vez de arquivos compilados.
+### Solução Implementada: esbuild Bundling
+
+Substituímos a abordagem `pnpm deploy` por **esbuild bundling**, que:
+
+1. **Bundla pacotes `@alice/*` inline** no arquivo final
+2. **Mantém dependências externas** (express, pg, etc.) como imports separados
+3. **Garante builds determinísticos** com `pnpm-lock.yaml` e `--frozen-lockfile`
+
+### Arquivos Criados/Modificados
+
+| Arquivo | Função |
+|---------|--------|
+| `scripts/build-service.mjs` | Script de build com esbuild para microsserviços |
+| `apps/*/package.json` | Scripts atualizados: `build` usa esbuild |
+| `apps/*/Dockerfile` | Dockerfiles enterprise com jq para manipulação JSON ESM-compatible |
+
+### Como Funciona o Build
+
+1. **Builder Stage**: Compila pacotes `@alice/*` e cria bundle com esbuild
+2. **Deps Stage**: Usa `jq` para remover dependências `@alice/*` do package.json (ESM-compatible)
+3. **Runner Stage**: Copia apenas `node_modules` externo + `bundle.js`
+
+### Comando de Build
+
+```bash
+# Build de todos os pacotes e serviços
+pnpm run build:packages
+
+# Build de um serviço específico
+node scripts/build-service.mjs auth-service
+```
+
+### Tamanho dos Bundles
+
+| Serviço | Tamanho |
+|---------|---------|
+| auth-service | 121.2kb |
+| chat-service | 303.9kb |
+| rag-service | 323.3kb |
+| training-service | 274.8kb |
+| integrations-service | 295.2kb |
 
 ### Servidor Limpo (28/11/2024)
 
@@ -285,4 +296,4 @@ O servidor Hetzner foi **completamente limpo** para o próximo deploy:
 ---
 
 *Documento em Português Brasileiro*
-*Versão 5.3 - Novembro 2025*
+*Versão 5.4 - Novembro 2025*
