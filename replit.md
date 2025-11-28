@@ -130,7 +130,25 @@ As integrações (Stripe, Wise, ERPNext, Twilio, Resend) são **opcionais por de
 
 ### Requisitos para Deploy
 
-- [ ] Configurar secrets no GitHub: `HETZNER_SSH_KEY`, `GHCR_TOKEN`, `REDIS_URL`
+**Secrets GitHub - Configurados:**
+- [x] `GH_PAT` - GitHub Personal Access Token
+- [x] `HETZNER_SSH_PRIVATE_KEY`, `HETZNER_VM_HOST`, `HETZNER_VM_USER`
+- [x] `PGPASSWORD`, `SESSION_SECRET`
+- [x] `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- [x] `OAUTH_GITHUB_CLIENT_ID`, `OAUTH_GITHUB_CLIENT_SECRET`
+- [x] `SALAD_API_KEY`, `SALAD_ORGANIZATION_ID`
+- [x] `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`
+- [x] `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_NUMBER`
+- [x] `RESEND_API_KEY`
+- [x] `WISE_API_KEY`, `WISE_PROFILE_ID`
+
+**Secrets GitHub - Pendentes (ERPNext/Redis):**
+- [ ] `WISE_WEBHOOK_SECRET`
+- [ ] `REDIS_CACHE_PASSWORD`, `REDIS_QUEUE_PASSWORD`
+- [ ] `ERPNEXT_MYSQL_ROOT_PASSWORD`, `ERPNEXT_ADMIN_PASSWORD`
+- [ ] `ERPNEXT_DB_PASSWORD`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`
+
+**Outras Tarefas:**
 - [ ] Configurar Redis ACL em produção
 - [ ] Executar migrações RLS no PostgreSQL de produção
 - [ ] Configurar webhooks Stripe/Wise em produção
