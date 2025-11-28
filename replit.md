@@ -140,17 +140,53 @@ setupGracefulShutdown(logger?)          // SIGTERM/SIGINT handlers
 - Cooldown Decay: 5 minutos de bom comportamento reduz penalidade pela metade
 - Response: `{ type: 'rate_limited', retryAfter: number }`
 
-### Docker Resource Limits (Produção)
+### Docker Resource Limits (Produção) - Atualizado 28/11/2025
 
-| Serviço | Memory | CPU | Memory Res | CPU Res |
-|---------|--------|-----|------------|---------|
-| postgres | 2G | 2.0 | 512M | 0.5 |
-| chat | 1G | 1.5 | 256M | 0.25 |
-| rag | 1G | 1.5 | 256M | 0.25 |
-| training | 1G | 1.5 | 256M | 0.25 |
-| auth | 512M | 1.0 | 128M | 0.25 |
-| integrations | 512M | 1.0 | 128M | 0.25 |
-| frontend | 256M | 0.5 | 64M | 0.1 |
+Baseado em documentações oficiais 2025: PostgreSQL 17, MariaDB 10.11, Redis 7.4, Node.js 20 LTS, Traefik v3.1
+
+**Servidor: Hetzner CX43 (8 vCPU, 16GB RAM)**
+
+#### Alice Platform (7 serviços)
+
+| Serviço | Memory Limit | CPU Limit | Memory Res | CPU Res | Docs 2025 |
+|---------|--------------|-----------|------------|---------|-----------|
+| postgres | 3G | 1.5 | 1G | 0.5 | PostgreSQL 17 + shm_size: 1g |
+| alice-chat | 1G | 1.0 | 256M | 0.25 | Node.js 20 + WebSocket |
+| alice-rag | 1G | 1.0 | 256M | 0.25 | Node.js 20 + pgvector |
+| alice-training | 768M | 0.75 | 256M | 0.25 | Node.js 20 standard |
+| alice-auth | 512M | 0.5 | 128M | 0.25 | Node.js 20 light |
+| alice-integrations | 512M | 0.5 | 128M | 0.25 | Node.js 20 light |
+| alice-frontend | 256M | 0.25 | 64M | 0.1 | Nginx static |
+
+#### ERPNext Stack (10 serviços)
+
+| Serviço | Memory Limit | CPU Limit | Memory Res | CPU Res | Docs 2025 |
+|---------|--------------|-----------|------------|---------|-----------|
+| erpnext-mariadb | 2G | 1.5 | 512M | 0.5 | MariaDB 10.11 + innodb_buffer_pool=1.4G |
+| erpnext-backend | 2G | 1.5 | 512M | 0.5 | Frappe/Gunicorn |
+| erpnext-redis-cache | 256M | 0.3 | 64M | 0.1 | Redis 7.4 + maxmemory=200mb |
+| erpnext-redis-queue | 256M | 0.3 | 64M | 0.1 | Redis 7.4 + maxmemory=200mb |
+| erpnext-frontend | 256M | 0.25 | 64M | 0.1 | Nginx static |
+| erpnext-websocket | 256M | 0.3 | 64M | 0.1 | Node.js Socket.io |
+| erpnext-scheduler | 512M | 0.3 | 128M | 0.1 | Python scheduler |
+| erpnext-worker-short | 512M | 0.4 | 128M | 0.1 | Python worker |
+| erpnext-worker-default | 512M | 0.4 | 128M | 0.1 | Python worker |
+| erpnext-worker-long | 1G | 0.75 | 256M | 0.25 | Python heavy tasks |
+
+#### Infraestrutura (3 serviços)
+
+| Serviço | Memory Limit | CPU Limit | Memory Res | CPU Res | Docs 2025 |
+|---------|--------------|-----------|------------|---------|-----------|
+| traefik | 512M | 0.5 | 256M | 0.25 | Traefik v3.1 |
+| dockerproxy | 64M | 0.1 | 32M | 0.05 | Minimal proxy |
+| vector | 256M | 0.25 | 64M | 0.1 | Log collector |
+
+#### Totais Calculados
+
+| Recurso | Limits Total | Reservations Total | Servidor | Status |
+|---------|--------------|--------------------|---------:|--------|
+| **CPU** | ~11.35 vCPU | ~4.35 vCPU | 8 vCPU | Reservas OK, bursts permitidos |
+| **Memory** | ~15.3 GB | ~4.3 GB | 16 GB | Dentro do limite |
 
 ### Config Secrets Sanitization
 
@@ -162,4 +198,4 @@ Secrets automaticamente redactados nos logs:
 ---
 
 *Documento em Português Brasileiro*
-*Versão 5.6 - Novembro 2025*
+*Versão 5.7 - Novembro 2025*

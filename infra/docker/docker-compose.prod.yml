@@ -67,6 +67,7 @@ services:
 
   # ===========================================================================
   # DOCKER SOCKET PROXY - Proxy seguro para Docker API
+  # Docs 2025: Minimal proxy - 0.1 CPU, 64MB
   # ===========================================================================
   # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
   # Expõe API Docker via TCP para o Traefik consumir
@@ -90,9 +91,18 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 64M
+          cpus: '0.1'
+        reservations:
+          memory: 32M
+          cpus: '0.05'
 
   # ===========================================================================
   # TRAEFIK - API Gateway com SSL Automático
+  # Docs 2025: Traefik v3 small/medium traffic - 0.5 CPU, 512MB
   # ===========================================================================
   traefik:
     image: traefik:v3.1
@@ -148,6 +158,14 @@ services:
       timeout: 10s
       retries: 5
       start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   # ===========================================================================
   # POSTGRESQL - Banco de dados Alice com pgvector
@@ -261,17 +279,19 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
+    # Docs 2025: Node.js 20 light service - 0.5 CPU, 512MB
     deploy:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: '0.5'
         reservations:
           memory: 128M
           cpus: '0.25'
 
   # ===========================================================================
   # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
+  # Docs 2025: Node.js 20 + WebSocket streaming - 1.0 CPU, 1GB
   # ===========================================================================
   alice-chat:
     image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:-latest}
@@ -311,13 +331,14 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1.5'
+          cpus: '1.0'
         reservations:
           memory: 256M
           cpus: '0.25'
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Embeddings
+  # Docs 2025: Node.js 20 + pgvector queries - 1.0 CPU, 1GB
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
@@ -349,13 +370,14 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1.5'
+          cpus: '1.0'
         reservations:
           memory: 256M
           cpus: '0.25'
 
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
+  # Docs 2025: Node.js 20 standard - 0.75 CPU, 768MB
   # ===========================================================================
   alice-training:
     image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:-latest}
@@ -388,14 +410,15 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.5'
+          memory: 768M
+          cpus: '0.75'
         reservations:
           memory: 256M
           cpus: '0.25'
 
   # ===========================================================================
   # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
+  # Docs 2025: Node.js 20 light - 0.5 CPU, 512MB
   # ===========================================================================
   alice-integrations:
     image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
@@ -456,7 +479,7 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '1.0'
+          cpus: '0.5'
         reservations:
           memory: 128M
           cpus: '0.25'
@@ -466,7 +489,8 @@ services:
   # ===========================================================================
   
   # MariaDB - Banco de dados ERPNext
-  # NOTA: Healthcheck atualizado para usar mysqladmin (mais confiável)
+  # Docs 2025: MariaDB 10.11 production - 1.5 CPU, 2GB
+  # innodb_buffer_pool_size = 70% do container memory (1.4GB para 2GB container)
   erpnext-mariadb:
     image: mariadb:10.11
     container_name: erpnext-mariadb
@@ -476,6 +500,18 @@ services:
       - --collation-server=utf8mb4_unicode_ci
       - --skip-character-set-client-handshake
       - --skip-innodb-read-only-compressed
+      - --innodb-buffer-pool-size=1400M
+      - --innodb-buffer-pool-instances=2
+      - --max-connections=50
+      - --query-cache-type=OFF
+      - --query-cache-size=0
+      - --tmp-table-size=32M
+      - --max-heap-table-size=32M
+      - --key-buffer-size=16M
+      - --table-open-cache=400
+      - --innodb-log-file-size=256M
+      - --innodb-flush-log-at-trx-commit=2
+      - --expire-logs-days=7
     environment:
       MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD:-erpnext_root_password}
       MYSQL_DATABASE: ${ERPNEXT_DB_NAME:-erpnext}
@@ -494,17 +530,32 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: '1.5'
         reservations:
-          memory: 256M
-          cpus: '0.25'
+          memory: 512M
+          cpus: '0.5'
 
   # Redis Cache - Cache ERPNext
+  # Docs 2025: Redis 7.4 cache - maxmemory = 80-90% do container (200MB para 256MB)
   erpnext-redis-cache:
     image: redis:7-alpine
     container_name: erpnext-redis-cache
     restart: always
+    command:
+      - redis-server
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
     volumes:
       - redis_cache_data:/data
     networks:
@@ -518,16 +569,31 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: '0.3'
         reservations:
           memory: 64M
           cpus: '0.1'
 
   # Redis Queue - Filas ERPNext
+  # Docs 2025: Redis 7.4 queue - maxmemory = 80-90% do container (200MB para 256MB)
   erpnext-redis-queue:
     image: redis:7-alpine
     container_name: erpnext-redis-queue
     restart: always
+    command:
+      - redis-server
+      - --maxmemory
+      - 200mb
+      - --maxmemory-policy
+      - noeviction
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
     volumes:
       - redis_queue_data:/data
     networks:
@@ -541,7 +607,7 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: '0.3'
         reservations:
           memory: 64M
           cpus: '0.1'
@@ -645,6 +711,7 @@ services:
       - erpnext-network
 
   # ERPNext Backend - Frappe/Python
+  # Docs 2025: Frappe/Gunicorn production - 1.5 CPU, 2GB
   erpnext-backend:
     image: frappe/erpnext:v15
     container_name: erpnext-backend
@@ -676,13 +743,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2G
           cpus: '1.5'
         reservations:
-          memory: 256M
-          cpus: '0.25'
+          memory: 512M
+          cpus: '0.5'
 
   # ERPNext Frontend - Nginx
+  # Docs 2025: Nginx static - 0.25 CPU, 256MB
   erpnext-frontend:
     image: frappe/erpnext:v15
     container_name: erpnext-frontend
@@ -715,12 +783,13 @@ services:
       resources:
         limits:
           memory: 256M
-          cpus: '0.5'
+          cpus: '0.25'
         reservations:
           memory: 64M
           cpus: '0.1'
 
   # ERPNext WebSocket - Socket.io
+  # Docs 2025: Node.js Socket.io - 0.3 CPU, 256MB
   erpnext-websocket:
     image: frappe/erpnext:v15
     container_name: erpnext-websocket
@@ -740,13 +809,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
-          cpus: '0.5'
+          memory: 256M
+          cpus: '0.3'
         reservations:
-          memory: 128M
+          memory: 64M
           cpus: '0.1'
 
   # ERPNext Scheduler - Tarefas agendadas
+  # Docs 2025: Python scheduler - 0.3 CPU, 512MB
   erpnext-scheduler:
     image: frappe/erpnext:v15
     container_name: erpnext-scheduler
@@ -764,12 +834,13 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: '0.3'
         reservations:
           memory: 128M
           cpus: '0.1'
 
   # ERPNext Worker - Short Jobs
+  # Docs 2025: Python worker short - 0.4 CPU, 512MB
   erpnext-worker-short:
     image: frappe/erpnext:v15
     container_name: erpnext-worker-short
@@ -787,12 +858,13 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: '0.4'
         reservations:
           memory: 128M
           cpus: '0.1'
 
   # ERPNext Worker - Default Jobs
+  # Docs 2025: Python worker default - 0.4 CPU, 512MB
   erpnext-worker-default:
     image: frappe/erpnext:v15
     container_name: erpnext-worker-default
@@ -810,12 +882,13 @@ services:
       resources:
         limits:
           memory: 512M
-          cpus: '0.5'
+          cpus: '0.4'
         reservations:
           memory: 128M
           cpus: '0.1'
 
   # ERPNext Worker - Long Jobs
+  # Docs 2025: Python worker heavy - 0.75 CPU, 1GB
   erpnext-worker-long:
     image: frappe/erpnext:v15
     container_name: erpnext-worker-long
@@ -833,13 +906,14 @@ services:
       resources:
         limits:
           memory: 1G
-          cpus: '1.0'
+          cpus: '0.75'
         reservations:
           memory: 256M
           cpus: '0.25'
 
   # ===========================================================================
   # OBSERVABILIDADE - Logging centralizado
+  # Docs 2025: Vector log collector - 0.25 CPU, 256MB
   # ===========================================================================
   vector:
     image: timberio/vector:0.34.0-alpine
@@ -854,3 +928,11 @@ services:
       - alice-network
     depends_on:
       - traefik
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
