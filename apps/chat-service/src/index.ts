@@ -1175,8 +1175,23 @@ wss.on('connection', (ws, req) => {
         }
 
         // Verificar isolamento multi-tenant (SEGURANÇA - derivar tenantId da conversa)
+        // CRÍTICO: Conversa DEVE ter namespace configurado para operações seguras
         const conversationTenantId = conversation?.agent?.namespace?.tenantId;
-        if (conversationTenantId && conversationTenantId !== tenantId) {
+        
+        if (!conversationTenantId) {
+          logger.warn({ 
+            conversationId: message.conversationId,
+            hasAgent: !!conversation.agent,
+            hasNamespace: !!conversation.agent?.namespace,
+          }, 'Conversa sem namespace/tenant configurado - operação bloqueada');
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Conversa não está configurada corretamente. Entre em contato com o suporte.' 
+          }));
+          return;
+        }
+        
+        if (conversationTenantId !== tenantId) {
           logger.warn({ 
             tenantId, 
             conversationTenantId, 
@@ -1189,8 +1204,8 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
-        // Usar tenantId derivado da conversa (mais seguro que confiar no parâmetro)
-        const safeTenantId = conversationTenantId || tenantId;
+        // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
+        const safeTenantId = conversationTenantId;
         
         // Verificar estado da conversa ANTES de inserir mensagem
         const conversationState = await getOrCreateConversationState(message.conversationId);
@@ -1495,8 +1510,23 @@ wss.on('connection', (ws, req) => {
         }
 
         // Verificar se a conversa pertence ao tenant correto
+        // CRÍTICO: Conversa DEVE ter namespace configurado para operações seguras
         const mediaConversationTenantId = conversation.agent?.namespace?.tenantId;
-        if (mediaConversationTenantId && mediaConversationTenantId !== tenantId) {
+        
+        if (!mediaConversationTenantId) {
+          logger.warn({ 
+            conversationId: mediaMessage.conversationId,
+            hasAgent: !!conversation.agent,
+            hasNamespace: !!conversation.agent?.namespace,
+          }, 'Conversa sem namespace/tenant configurado - upload bloqueado');
+          ws.send(JSON.stringify({ 
+            type: 'error', 
+            error: 'Conversa não está configurada corretamente. Entre em contato com o suporte.' 
+          }));
+          return;
+        }
+        
+        if (mediaConversationTenantId !== tenantId) {
           logger.warn({ 
             tenantId, 
             mediaConversationTenantId, 
@@ -1509,8 +1539,8 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
-        // Usar tenantId derivado da conversa (mais seguro)
-        const mediaSafeTenantId = mediaConversationTenantId || tenantId;
+        // Usar tenantId derivado da conversa (SEMPRE da fonte confiável)
+        const mediaSafeTenantId = mediaConversationTenantId;
 
         // Determinar tipo de mídia
         const mimeType = mediaMessage.media.mimeType.toLowerCase();
