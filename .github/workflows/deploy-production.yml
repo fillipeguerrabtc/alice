@@ -378,6 +378,36 @@ jobs:
             echo "✓ Redes Docker configuradas"
             echo ""
             
+            # ==============================================
+            # PRÉ-DEPLOY: LIMPEZA AGRESSIVA DO SERVIDOR
+            # Remove TODA sujeira antes de iniciar o deploy
+            # ==============================================
+            echo "🧹 PRÉ-DEPLOY: LIMPEZA AGRESSIVA"
+            echo "================================="
+            
+            # 1. Parar e remover containers Alice antigos (preserva infra)
+            echo "📦 Removendo containers Alice antigos..."
+            docker ps -a --format '{{.Names}}' | grep -E '^alice-(auth|chat|rag|training|frontend|integrations)' | xargs -r docker rm -f 2>/dev/null || true
+            
+            # 2. Remover TODAS as imagens Alice (forçar pull de novas)
+            echo "🖼️ Removendo TODAS as imagens Alice..."
+            docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'alice|fillipeguerrabtc' | xargs -r docker rmi -f 2>/dev/null || true
+            
+            # 3. Remover imagens dangling
+            echo "🗑️ Removendo imagens sem tag..."
+            docker image prune -af 2>/dev/null || true
+            
+            # 4. Limpar cache de build
+            echo "💾 Limpando cache de build..."
+            docker builder prune -af 2>/dev/null || true
+            
+            # 5. Remover volumes órfãos
+            echo "📁 Removendo volumes órfãos..."
+            docker volume prune -f 2>/dev/null || true
+            
+            echo "✅ Servidor limpo, pronto para deploy!"
+            echo ""
+            
             # Clone ou update do repositório usando Basic Auth
             # GitHub PAT requer Basic Auth (não Bearer token)
             echo "🔑 Verificando GH_PAT..."
@@ -579,10 +609,47 @@ jobs:
               exit 1
             fi
             
-            # Limpar imagens antigas
+            # ==============================================
+            # PÓS-DEPLOY: LIMPEZA AGRESSIVA FINAL
+            # Garante servidor limpo após cada deploy
+            # ==============================================
             echo ""
-            echo "🧹 Limpando imagens antigas..."
-            docker image prune -f
+            echo "🧹 PÓS-DEPLOY: LIMPEZA AGRESSIVA FINAL"
+            echo "======================================="
+            
+            # 1. Remover containers parados
+            echo "📦 Removendo containers parados..."
+            docker container prune -f 2>/dev/null || true
+            
+            # 2. Remover TODAS as imagens não utilizadas pelos containers ativos
+            echo "🖼️ Removendo imagens não utilizadas..."
+            docker image prune -af 2>/dev/null || true
+            
+            # 3. Limpar TODO o cache de build (não precisamos dele no servidor)
+            echo "💾 Limpando cache de build..."
+            docker builder prune -af 2>/dev/null || true
+            
+            # 4. Remover volumes órfãos
+            echo "📁 Removendo volumes órfãos..."
+            docker volume prune -f 2>/dev/null || true
+            
+            # 5. Limpeza geral do sistema Docker
+            echo "🧹 Limpeza geral..."
+            docker system prune -f 2>/dev/null || true
+            
+            # 6. Verificar espaço em disco
+            echo ""
+            echo "📊 ESTADO FINAL DO SERVIDOR:"
+            echo "============================="
+            echo ""
+            echo "Espaço em disco:"
+            df -h / | tail -1
+            echo ""
+            echo "Uso do Docker:"
+            docker system df
+            echo ""
+            echo "Containers ativos:"
+            docker ps --format 'table {{.Names}}\t{{.Status}}' | head -15
             
             echo ""
             echo "=============================================="
