@@ -16,7 +16,7 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { getDatabase, schema } from '@alice/database';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
@@ -56,13 +56,8 @@ import {
   getImageGenBreakerStats,
 } from './image-generation-client.js';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'chat-service' });
+// Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
+const logger = createLogger('chat-service');
 
 const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;

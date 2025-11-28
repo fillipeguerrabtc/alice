@@ -128,6 +128,9 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
+      // Enterprise-Grade: statement_timeout padrão de 30s para prevenir queries runaway
+      // Pode ser overriden por query específica via SET LOCAL
+      statement_timeout: 30000,
     });
     
     // Listener para erros de conexão (enterprise-grade)
