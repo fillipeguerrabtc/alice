@@ -379,33 +379,29 @@ jobs:
             echo ""
             
             # ==============================================
-            # PRÉ-DEPLOY: LIMPEZA AGRESSIVA DO SERVIDOR
-            # Remove TODA sujeira antes de iniciar o deploy
+            # PRÉ-DEPLOY: LIMPEZA SEGURA (apenas sujeira)
+            # NÃO remove containers/imagens funcionando!
             # ==============================================
-            echo "🧹 PRÉ-DEPLOY: LIMPEZA AGRESSIVA"
-            echo "================================="
+            echo "🧹 PRÉ-DEPLOY: LIMPEZA SEGURA"
+            echo "=============================="
             
-            # 1. Parar e remover containers Alice antigos (preserva infra)
-            echo "📦 Removendo containers Alice antigos..."
-            docker ps -a --format '{{.Names}}' | grep -E '^alice-(auth|chat|rag|training|frontend|integrations)' | xargs -r docker rm -f 2>/dev/null || true
+            # 1. Remover apenas containers PARADOS (não os que estão rodando)
+            echo "📦 Removendo containers parados..."
+            docker container prune -f 2>/dev/null || true
             
-            # 2. Remover TODAS as imagens Alice (forçar pull de novas)
-            echo "🖼️ Removendo TODAS as imagens Alice..."
-            docker images --format '{{.Repository}}:{{.Tag}}' | grep -E 'alice|fillipeguerrabtc' | xargs -r docker rmi -f 2>/dev/null || true
+            # 2. Remover apenas imagens SEM TAG (dangling) - preserva imagens em uso
+            echo "🗑️ Removendo imagens sem tag (dangling)..."
+            docker image prune -f 2>/dev/null || true
             
-            # 3. Remover imagens dangling
-            echo "🗑️ Removendo imagens sem tag..."
-            docker image prune -af 2>/dev/null || true
-            
-            # 4. Limpar cache de build
+            # 3. Limpar cache de build (não afeta imagens)
             echo "💾 Limpando cache de build..."
-            docker builder prune -af 2>/dev/null || true
+            docker builder prune -f 2>/dev/null || true
             
-            # 5. Remover volumes órfãos
+            # 4. Remover volumes órfãos (não afeta volumes em uso)
             echo "📁 Removendo volumes órfãos..."
             docker volume prune -f 2>/dev/null || true
             
-            echo "✅ Servidor limpo, pronto para deploy!"
+            echo "✅ Sujeira removida, imagens funcionando preservadas!"
             echo ""
             
             # Clone ou update do repositório usando Basic Auth

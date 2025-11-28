@@ -43,10 +43,9 @@ COPY . .
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install --frozen-lockfile
 
-# Compilar pacotes internos na ordem de dependências
-RUN pnpm --filter @alice/shared run build
-RUN pnpm --filter @alice/shared-utils run build
-RUN pnpm --filter @alice/config run build
+# Compilar TODOS os pacotes na ordem correta de dependências
+# Usa pnpm workspace recursivo para garantir ordem de build
+RUN pnpm run build:packages
 
 # Compilar o frontend (gera assets estáticos)
 RUN pnpm --filter @alice/frontend-service run build

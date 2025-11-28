@@ -1,0 +1,170 @@
+GitHub Copilot Chat Assistant
+
+Abaixo estão os arquivos completos sugeridos para corrigir o erro de build (TypeScript project references + build order). Cada arquivo vem com uma breve explicação e deve ser colocado no caminho indicado no repositório (use o ref: 3c48293f8f974e37c608a7bce7f8a5b2ce59cd6c se quiser referenciar o commit exibido nos logs).
+
+1) packages/shared/tsconfig.json
+Explicação: habilita "composite" e geração de declarações (.d.ts). Necessário para que outros projetos (database) possam referenciar o shared via tsc -b.
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "commonjs",
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+
+2) packages/shared/package.json
+Explicação: garante que `types` aponta para o .d.ts gerado e define o script de build (tsc -b).
+
+```json
+{
+  "name": "@alice/shared",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": false,
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {}
+}
+```
+
+3) packages/database/tsconfig.json
+Explicação: adiciona referência ao projeto shared para que tsc -b saiba compilar shared antes do database.
+
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "commonjs",
+    "target": "ES2020",
+    "moduleResolution": "node",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  },
+  "references": [
+    { "path": "../shared" }
+  ],
+  "include": ["src/**/*"]
+}
+```
+
+4) packages/database/package.json
+Explicação: declara dependência local para @alice/shared usando workspace: para que pnpm reconheça dependência local, e define script de build.
+
+```json
+{
+  "name": "@alice/database",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "private": false,
+  "scripts": {
+    "build": "tsc -b"
+  },
+  "dependencies": {
+    "@alice/shared": "workspace:^"
+  }
+}
+```
+
+5) tsconfig.build.json (no root)
+Explicação: um tsconfig de build no root com referências a todos os pacotes relevantes. Permite rodar `tsc -b tsconfig.build.json` no root para compilar todos os projetos na ordem correta.
+
+```json
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/database" }
+    /* Se houver outros pacotes que dependam entre si, adicione aqui em ordem lógica */
+  ]
+}
+```
+
+6) package.json (root) — trecho recomendado
+Explicação: script root para executar builds recursivos do workspace via pnpm. Use `pnpm -w -r --stream run build` para construir todos os pacotes respeitando dependências declaradas no package.json (workspace) e os references do TypeScript.
+
+```json
+{
+  "name": "alice-monorepo",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "pnpm -w -r --stream run build",
+    "build:tsc-root": "tsc -b tsconfig.build.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.2.0"
+  }
+}
+```
+
+7) Dockerfile (atualizado — multi-stage)
+Explicação: no estágio builder instala dependências e executa um build do workspace inteiro (resolve ordem). No estágio runtime copia apenas artefatos necessários (ex.: packages/database/dist). Ajuste os COPY/ENTRYPOINT conforme sua app real.
+
+```dockerfile
+# --- Build stage ---
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+# Ativa Corepack e pnpm
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Copia arquivos de lock e package manifests primeiro para aproveitar cache
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml ./
+
+# Copia o resto do código
+COPY . .
+
+# Instala dependências do monorepo
+RUN pnpm install --frozen-lockfile
+
+# Build de todos os pacotes na ordem correta
+RUN pnpm -w -r --stream run build
+# ou, se preferir usar tsc -b do root:
+# RUN pnpm install && pnpm run build:tsc-root
+
+# --- Runtime stage (exemplo para serviço 'database') ---
+FROM node:20-alpine AS runtime
+WORKDIR /app
+
+# Copia apenas os artefatos necessários (ajuste se precisar de mais pacotes)
+COPY --from=builder /app/packages/database/dist ./packages/database/dist
+# Se precisar do node_modules de runtime:
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+# Ajuste a porta e o comando conforme seu serviço
+EXPOSE 3000
+CMD ["node", "packages/database/dist/index.js"]
+```
+
+Observações e passos para aplicar:
+- Coloque os arquivos acima nos caminhos indicados (substitua os existentes conforme necessário).
+- Verifique se `packages/shared/src/index.ts` exporta corretamente os símbolos usados por `packages/database`.
+- Rodar localmente para testar:
+  - pnpm install
+  - pnpm -w -r --stream run build
+  - ou: pnpm run build:tsc-root (se usar tsconfig.build.json)
+- Atualize o Dockerfile do pipeline para usar o novo fluxo de build (substitua o trecho que chamava só `pnpm --filter @alice/database run build` por `pnpm -w -r --stream run build` ou construa shared antes do database).
+
+Se quiser, eu posso gerar os diffs prontos (patches) para você aplicar/commitar no repositório e posso abrir um pull request — quer que eu gere esses patches agora?

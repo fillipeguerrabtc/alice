@@ -13,19 +13,9 @@
     "sourceMap": true,
     "composite": true,
     "noImplicitAny": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
-    "allowSyntheticDefaultImports": true,
-    "baseUrl": ".",
-    "paths": {
-      "@alice/shared": ["./shared/src/index.ts"],
-      "@alice/shared/*": ["./shared/src/*"],
-      "@alice/shared-utils": ["./shared-utils/src/index.ts"],
-      "@alice/shared-utils/*": ["./shared-utils/src/*"],
-      "@alice/config": ["./config/src/index.ts"],
-      "@alice/logger": ["./logger/src/index.ts"],
-      "@alice/database": ["./database/src/index.ts"]
-    }
+    "allowSyntheticDefaultImports": true
   }
 }

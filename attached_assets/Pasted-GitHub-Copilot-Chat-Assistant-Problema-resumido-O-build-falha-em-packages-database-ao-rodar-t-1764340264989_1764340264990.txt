@@ -1,0 +1,192 @@
+GitHub Copilot Chat Assistant
+
+Problema resumido
+- O build falha em: packages/database ao rodar tsc -b porque falta o arquivo de saída /app/packages/shared/dist/index.d.ts — ou seja, o pacote @alice/database depende de artefatos gerados por @alice/shared que não foram construídos antes.
+- Mensagem relevante do log: "Output file '/app/packages/shared/dist/index.d.ts' has not been built from source file '/app/packages/shared/src/index.ts'." (ref: 3c48293f8f974e37c608a7bce7f8a5b2ce59cd6c)
+
+Causas prováveis
+1. packages/shared não está sendo buildado antes de packages/database.
+2. tsconfig.json do shared não está configurado como projeto "composite"/gerador de declarations (necessário para tsc -b e project references).
+3. package.json / workspace dependencies não indicam corretamente a dependência "workspace" entre os pacotes (isto impede builds recursivos em ordem correta).
+
+Soluções (com correções completas e explicações)
+
+A. Garantir que packages/shared seja um projeto TypeScript compostable
+- Em packages/shared/tsconfig.json habilite composite e declaration e defina outDir para dist.
+
+Exemplo (substitua/adicione no arquivo):
+```json
+{
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "declarationMap": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "commonjs",
+    "target": "ES2020",
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*"]
+}
+```
+Por que: tsc -b (project references) exige "composite": true para que o projeto gere .d.ts e permita referências por outros projetos.
+
+B. Declarar referência ao shared no database (project references)
+- Em packages/database/tsconfig.json adicione uma seção references apontando para ../shared.
+
+Exemplo:
+```json
+{
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "module": "commonjs",
+    "target": "ES2020",
+    "skipLibCheck": true
+  },
+  "references": [
+    { "path": "../shared" }
+  ],
+  "include": ["src/**/*"]
+}
+```
+Por que: tsc -b usa estas referências para validar dependências e ordenação de build.
+
+C. Garantir que package.json dos pacotes e workspace indiquem dependency por workspace
+- Em packages/database/package.json, certifique-se de ter:
+```json
+{
+  "name": "@alice/database",
+  ...
+  "dependencies": {
+    "@alice/shared": "workspace:^"
+  },
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
+```
+- Em packages/shared/package.json:
+```json
+{
+  "name": "@alice/shared",
+  ...
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -b"
+  }
+}
+```
+Por que: usar "workspace:^" faz com que pnpm saiba que é dependência local; também torna possível o comando recursivo construir no order correto.
+
+D. Atualizar scripts no root para builds recursivos ordenados
+- No package.json root adicione um script build que faça build de todo o monorepo respeitando dependências:
+
+```json
+{
+  "scripts": {
+    "build": "pnpm -w -r --filter ... build", // alternativa mostrada abaixo
+    // ou versão mais simples:
+    "build:all": "pnpm -w -r --stream build"
+  }
+}
+```
+
+Uso recomendado local:
+- Para construir tudo na ordem correta localmente:
+  pnpm -w -r --stream build
+  (ou) pnpm -w -r run build
+
+Por que: pnpm com -w -r (workspace, recursivo) irá executar os scripts build segundo as dependências do workspace; com project references do TypeScript, tsc também consegue ordenar se você invocar tsc -b no root com um tsconfig que referencia os projetos — outra opção.
+
+E. Correção no Dockerfile (build stage)
+Nos logs a falha ocorreu durante um RUN pnpm --filter @alice/database run build (Dockerfile linha ~53). Alterar para construir o pacote shared antes do database, ou construir todo o workspace.
+
+Opção 1 — construir shared, depois database (mais direta):
+```dockerfile
+# Antes da linha com RUN pnpm --filter @alice/database run build
+RUN pnpm --filter @alice/shared run build
+RUN pnpm --filter @alice/database run build
+```
+
+Opção 2 — construir todo o workspace (recomendado se quiser garantir todos os pacotes):
+```dockerfile
+# executa o build em todos os pacotes na ordem correta
+RUN pnpm -w -r --stream run build
+```
+
+Se preferir um build multi-stage para imagens finais menores, faça as builds no estágio de builder (mantendo a ordem):
+
+```dockerfile
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY . .
+RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN pnpm install --frozen-lockfile
+RUN pnpm -w -r --stream run build
+
+# Depois copiar apenas artefatos necessários para runtime
+FROM node:20-alpine AS runtime
+WORKDIR /app
+COPY --from=builder /app/packages/database/dist ./packages/database/dist
+# ... copiar outros artefatos necessários
+```
+
+Por que: o comando anterior tentava buildar database sem ter os .d.ts do shared; construir shared primeiro resolve.
+
+F. Alternativa: usar um tsconfig raíz com referências e tsc -b no root
+- Crie um tsconfig.build.json no root com references para os pacotes (isso permite rodar tsc -b no root para compilar todos na ordem):
+```json
+{
+  "files": [],
+  "references": [
+    { "path": "packages/shared" },
+    { "path": "packages/database" },
+    { "path": "packages/other" }
+  ]
+}
+```
+E no root package.json:
+```json
+"scripts": {
+  "build": "tsc -b tsconfig.build.json"
+}
+```
+Depois no Dockerfile:
+RUN pnpm install && pnpm run build
+
+Por que: tsc -b no root compilará os projetos na ordem correta.
+
+G. Passos práticos para aplicar e testar localmente
+1. Verificar e ajustar tsconfig.json de packages/shared (adicionar composite/declaration).
+2. Verificar packages/database/tsconfig.json (adicionar references).
+3. Verificar package.json dos pacotes (dependência workspace e scripts build).
+4. Teste local:
+   - pnpm install
+   - pnpm -w -r --stream run build
+   - ou tsc -b tsconfig.build.json (se optar por tsconfig raiz)
+5. Atualize Dockerfile conforme mostrado e re-teste build da imagem localmente:
+   - docker build -t alice-test .
+
+H. Pequena checagem adicional
+- Confirme que shared/src/index.ts exporta o que database importa e que paths não estão inconsistentes.
+- Confirme que não há output de TypeScript com caminhos relativos diferentes (por exemplo, caso package.json de shared defina "types" diferente do generated file).
+
+Links úteis no seu repo (usando o ref do job)
+- Dockerfile (linha apontada no log): https://github.com/fillipeguerrabtc/alice/blob/3c48293f8f974e37c608a7bce7f8a5b2ce59cd6c/Dockerfile
+- Workflow que rodou o job: .github/workflows/deploy-production.yml
+  https://github.com/fillipeguerrabtc/alice/blob/3c48293f8f974e37c608a7bce7f8a5b2ce59cd6c/.github/workflows/deploy-production.yml
+
+Resumo curto de ação recomendada (ordem)
+1. Ajustar packages/shared/tsconfig.json para composite + declarations.
+2. Adicionar references em packages/database/tsconfig.json.
+3. Garantir "workspace:^" dependency e build scripts nos package.json dos pacotes.
+4. Mudar Dockerfile para construir shared antes do database — ou usar pnpm -w -r run build.
+5. Testar localmente com pnpm -w -r --stream run build e rebuild da imagem Docker.
+
+Se quiser, eu posso:
+- Gerar patches prontos (diffs/arquivos) para aplicar diretamente;
+- Criar um pull request com as correções (preciso da sua confirmação para abrir PR no repo fillipeguerrabtc/alice).
+
+Deseja que eu gere os arquivos exatos conforme seu repositório (posso criar os diffs/patches e instruções para commit/PR)?

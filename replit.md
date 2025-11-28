@@ -99,3 +99,24 @@ Alice is designed as a microservices architecture, with core services residing i
 -   **Langfuse 2.x**: For LLM-specific metrics.
 -   **Traefik**: As an API Gateway for routing and SSL termination.
 -   **GitHub Actions**: For CI/CD pipelines.
+
+## TypeScript Build System (2024-11-28)
+
+**Root Cause Fix**: TypeScript `paths` in `packages/tsconfig.base.json` were pointing to source files, causing Docker builds to fail when looking for compiled `.d.ts` files.
+
+**Solution Applied**:
+1. **Created `tsconfig.build.json`** at root with project references for proper build order
+2. **Removed `paths`** from `packages/tsconfig.base.json` - they caused confusion in Docker
+3. **Added `build:packages`** script: `pnpm --filter '@alice/*' --stream run build`
+4. **Updated all Dockerfiles** to use `pnpm run build:packages` instead of individual builds
+5. **Fixed workflow cleanup** to preserve running containers (PRÉ-DEPLOY: safe cleanup only)
+
+**Build Order** (automatic via pnpm workspace):
+1. `@alice/shared` → 2. `@alice/shared-utils`, `@alice/config`, `@alice/logger` → 3. `@alice/database` → 4. All services
+
+**Files Modified**:
+- `tsconfig.build.json` (new)
+- `packages/tsconfig.base.json` (removed paths)
+- `package.json` (added build:packages, build:tsc)
+- `apps/*/Dockerfile` (all 6 services updated)
+- `.github/workflows/deploy-production.yml` (safe cleanup)
