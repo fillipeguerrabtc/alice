@@ -84,9 +84,12 @@ class LocalStorageService implements StorageService {
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
     const { tenantId, mediaType, originalFilename, mimeType } = options;
     
+    // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
+    const bufferData = new Uint8Array(buffer);
+    
     // Gerar nome de arquivo único
     const timestamp = Date.now();
-    const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 8);
+    const hash = crypto.createHash('md5').update(bufferData).digest('hex').substring(0, 8);
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
@@ -98,7 +101,7 @@ class LocalStorageService implements StorageService {
     await this.ensureDirectoryExists(path.dirname(absolutePath));
     
     // Salvar arquivo
-    await fs.writeFile(absolutePath, buffer);
+    await fs.writeFile(absolutePath, bufferData);
     
     logger.info({ 
       tenantId, 
@@ -209,9 +212,12 @@ class S3StorageService implements StorageService {
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
     const { tenantId, mediaType, originalFilename, mimeType } = options;
     
+    // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
+    const bufferData = new Uint8Array(buffer);
+    
     // Gerar nome de arquivo único
     const timestamp = Date.now();
-    const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 8);
+    const hash = crypto.createHash('md5').update(bufferData).digest('hex').substring(0, 8);
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
@@ -230,7 +236,7 @@ class S3StorageService implements StorageService {
         // Autenticação básica para MinIO local (em produção usar AWS Signature V4)
         'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
       },
-      body: buffer,
+      body: bufferData,
     });
     
     if (!response.ok) {

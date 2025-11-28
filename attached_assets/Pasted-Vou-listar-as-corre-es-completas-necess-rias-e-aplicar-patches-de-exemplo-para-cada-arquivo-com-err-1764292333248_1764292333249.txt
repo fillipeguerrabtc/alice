@@ -1,0 +1,134 @@
+Vou listar as correções completas necessárias e aplicar patches de exemplo para cada arquivo com erro. Estou assumindo que as linhas indicadas nos logs correspondem às localizações descritas — adapte os trechos se as linhas exatas estiverem deslocadas. Links para os arquivos no commit de execução: https://github.com/fillipeguerrabtc/alice/blob/c73416d9e0ce041cf8f7cfd010d0681235e80674/
+
+Resumo dos problemas
+- apps/api-gateway/src/index.ts — uso incorreto / tipagem do middleware de rate-limit (RateLimitRequestHandler está sendo passado onde o tipo esperado é PathParams ou Application). Provavelmente middleware está sendo passado na posição errada em chamadas a app.use / app.METHOD / em construtor de server.
+- apps/rag-service/src/storage.ts — passar um Buffer (Node.js Buffer) diretamente como body para fetch — TypeScript reclama porque Buffer não está em BodyInit. Converter para ArrayBuffer/Uint8Array.
+
+Correções propostas (patches e explicações) — aplique exatamente nos arquivos citados.
+
+1) apps/api-gateway/src/index.ts
+- Objetivo: garantir que o rate limiter seja criado como middleware e usado apenas como middleware (app.use ou como handler em rotas), nunca passado como primeiro argumento (path) nem como Application.
+- Também garantir imports corretos e que a ordem dos parâmetros em app.use/app.METHOD esteja correta: primeiro path (opcional), depois middleware/handlers.
+
+Antes (exemplo problemático que gera TS2769 — adapte se seu código for diferente):
+```ts
+// POSSÍVEL TRECHO COM PROBLEMA
+import rateLimit from 'express-rate-limit';
+
+const limiter = rateLimit({...});
+
+// Erro: passando middleware na posição de path por engano
+app.use(limiter, someOtherHandler);
+
+// Ou: passando limiter onde se espera Application
+createServer(limiter);
+```
+
+Depois (correção sugerida):
+```ts
+import express from 'express';
+import rateLimit from 'express-rate-limit';
+
+// Crie o app normalmente
+const app = express();
+
+// Cria o middleware do limiter
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutos, ajuste conforme necessário
+  max: 100, // limite por IP
+  // outras opções...
+});
+
+// USO CORRETO: aplicar como middleware global ou por rota
+// middleware global
+app.use(limiter);
+
+// ou para rotas específicas:
+// app.use('/api/', limiter);
+
+// Exemplos de rota com ordem correta: (path primeiro, handlers depois)
+app.get('/health', (req, res) => res.send('ok'));
+
+// Exemplo de criação de server: passe a instância app (APPLICATION), não o limiter
+import http from 'http';
+const server = http.createServer(app);
+server.listen(process.env.PORT ?? 3000);
+```
+
+Notas importantes:
+- Verifique se não há chamadas como app.use(limiter, someHandler) — a ordem está invertida: se quiser usar vários handlers sem path use app.use(handler1, handler2), mas se o primeiro argumento for um middleware sem path, não cause ambiguidade com sobrecargas. Se a chamada foi app.use(limiter) ela é correta; se for app.use(limiter, app) está errada.
+- Se o erro ocorre em linhas 282/283 do arquivo (logs), procure por chamadas que recebam um "app" ou "limiter" na posição do outro parâmetro (ex.: code que chama algo como startServer(limiter) ou someFunction(app, limiter) com assinatura invertida). Ajuste para passar app como Application e limiter como middleware.
+- Se quiser forçar compatibilidade de tipo enquanto corrige a lógica, pode (temporariamente) usar um cast: app.use(limiter as express.RequestHandler) — mas prefira consertar a ordem/uso.
+
+2) apps/rag-service/src/storage.ts
+- Objetivo: converter o Buffer para um ArrayBuffer antes de usá-lo como corpo do fetch, para satisfazer BodyInit esperado pelo TypeScript.
+
+Antes (problema: Buffer usado diretamente em fetch):
+```ts
+// Exemplo problemático encontrado no log (linha ~233)
+const buffer: Buffer = await getBufferSomehow();
+const res = await fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/octet-stream' },
+  body: buffer, // => erro TS: Buffer não é BodyInit
+});
+```
+
+Depois (corrigido):
+```ts
+// helper para converter Buffer -> ArrayBuffer
+function bufferToArrayBuffer(buf: Buffer): ArrayBuffer {
+  // Garante usar a fatia correta do ArrayBuffer subjacente
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+}
+
+// Uso:
+const buffer: Buffer = await getBufferSomehow();
+const arrayBuffer = bufferToArrayBuffer(buffer);
+
+const res = await fetch(url, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/octet-stream' },
+  body: arrayBuffer, // OK para TypeScript (ArrayBuffer é BodyInit)
+});
+```
+
+Alternativa (se preferir Uint8Array):
+```ts
+const uint8 = new Uint8Array(buffer);
+const res = await fetch(url, { method: 'POST', body: uint8 });
+```
+
+Observações:
+- Em versões recentes do Node.js, fetch pode aceitar Buffer, mas a lib de tipos/tsconfig do seu projeto pode não ter essa aceitação como BodyInit. Converter explicitamente evita o erro.
+- Se múltiplos pontos usam Buffer como body, crie a função bufferToArrayBuffer em um util e reuse.
+
+3) Dependências / tipagens (opcional mas recomendado)
+- Pode haver incompatibilidade entre versões de express, @types/express e express-rate-limit. Garanta compatibilidade:
+  - express ^4.x, @types/express correspondente
+  - express-rate-limit versão estável compatível com sua versão do express (ex.: express-rate-limit ^6)
+- Se após as mudanças de código ainda houver problemas de tipagem, execute:
+  - npm ls express-rate-limit @types/express express
+  - Atualize pacotes para versões compatíveis, por exemplo:
+    npm install express@4 @types/express@4 express-rate-limit@6 --save
+  (Ajuste versões conforme suas dependências)
+
+4) Testes locais
+- Rode localmente:
+  - npm run typecheck (ou tsc --noEmit) para validar tipagem
+  - npm run build (se tiver)
+- Corrija quaisquer advertências/erros remanescentes.
+
+Resumo das edições que você precisa fazer
+- apps/api-gateway/src/index.ts
+  - Criar/use o limiter como middleware: const limiter = rateLimit(...); app.use(limiter);
+  - Não passe limiter no lugar de path, nem passe limiter onde se espera um Application (ex.: createServer deve receber app).
+  - Verifique chamadas perto das linhas 87, 282, 283 e corrija a ordem/uso dos argumentos.
+
+- apps/rag-service/src/storage.ts
+  - Converter Buffer -> ArrayBuffer (ou Uint8Array) antes de passar para fetch; aplicar função bufferToArrayBuffer conforme exemplo.
+
+Se quiser, eu posso:
+- Gerar os diffs/patches prontos para commit (ex.: formato patch/PR). Quer que eu crie os arquivos com as mudanças e abra um PR automaticamente? (preciso de confirmação para criar PR).
+
+Se preferir, cole aqui os trechos exatos (ou permita eu ler os arquivos) e eu retorno patches prontos adaptados às linhas atuais.

@@ -59,7 +59,7 @@ try {
   config = gatewayConfigSchema.parse({});
 }
 
-const app = express();
+const app: express.Application = express();
 
 // Middleware de segurança
 app.use(helmet({
