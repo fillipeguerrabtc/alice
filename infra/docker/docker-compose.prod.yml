@@ -242,11 +242,11 @@ services:
       - "traefik.http.routers.alice-auth.tls.certresolver=letsencrypt"
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3001/api/auth/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
@@ -280,11 +280,11 @@ services:
       - "traefik.http.routers.alice-ws.tls.certresolver=letsencrypt"
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3002/api/chat/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Embeddings
@@ -310,11 +310,11 @@ services:
       - "traefik.http.routers.alice-rag.tls.certresolver=letsencrypt"
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3003/api/rag/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
@@ -342,11 +342,11 @@ services:
       - "traefik.http.routers.alice-training.tls.certresolver=letsencrypt"
       - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3004/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3004/api/training/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
@@ -401,11 +401,11 @@ services:
       - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
       - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3005/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:3005/api/integrations/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
 
   # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial
