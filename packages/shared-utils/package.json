@@ -41,6 +41,10 @@
     "./rbac": {
       "types": "./dist/rbac/index.d.ts",
       "import": "./dist/rbac/index.js"
+    },
+    "./async-context": {
+      "types": "./dist/async-context.d.ts",
+      "import": "./dist/async-context.js"
     }
   },
   "scripts": {
