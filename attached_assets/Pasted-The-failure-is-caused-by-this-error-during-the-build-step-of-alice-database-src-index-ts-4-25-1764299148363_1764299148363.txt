@@ -1,0 +1,60 @@
+The failure is caused by this error during the build step of @alice/database:
+
+> src/index.ts(4,25): error TS2307: Cannot find module '@alice/shared/schema' or its corresponding type declarations.
+
+### Solution
+
+1. **Check If @alice/shared/schema Exists:**
+   - Verify that the module `@alice/shared/schema` exists in your repository, typically in `packages/shared/schema`.
+   - If it's missing, create it or restore it.
+
+2. **Ensure Proper Type Declaration:**
+   - If the module exists but lacks type declarations, add an index.d.ts or ensure tsconfig includes the appropriate paths.
+
+3. **Fix Import Path or Project References:**
+   - If your project uses TypeScript project references or path mappings, make sure the database package can resolve `@alice/shared/schema`. 
+   - In `packages/database/tsconfig.json`, add or update:
+     ```json
+     {
+       "compilerOptions": {
+         "baseUrl": ".",
+         "paths": {
+           "@alice/shared/schema": ["../shared/schema/src"]
+         }
+       }
+     }
+     ```
+   - Or use the appropriate relative path for imports.
+
+4. **Install/Link Local Packages:**
+   - If you're using a monorepo (e.g., with pnpm workspaces), ensure you’ve run the correct install commands:
+     ```
+     pnpm install
+     pnpm build --filter @alice/shared/schema
+     ```
+   - Check the package’s `package.json` and dependencies.
+
+5. **Check CI Workflow (ci.yml):**
+   - Confirm that your workflow is installing and building dependencies in the correct order.
+
+### Example Fix in src/index.ts
+
+If the module exists at `packages/shared/schema/src/index.ts`, your import should look like:
+
+```typescript
+import { SchemaType } from '../../shared/schema/src'; // relative import if path mappings are not configured
+```
+
+Or, if using path mapping (as shown above):
+
+```typescript
+import { SchemaType } from '@alice/shared/schema';
+```
+
+### Next Steps
+
+- Ensure the shared schema package exists and is built before the database package.
+- Confirm the import path is correct and matches your tsconfig setup.
+- Run `pnpm install` and try building locally to verify the issue is fixed.
+
+If you need help with a specific path, let me know the structure under `packages/shared/schema`!
