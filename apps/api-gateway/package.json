@@ -16,7 +16,7 @@
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "http-proxy-middleware": "^3.0.3",
-    "opossum": "^9.2.1",
+    "opossum": "^9.0.0",
     "pino": "^9.6.0"
   },
   "devDependencies": {
