@@ -52,26 +52,29 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: 'pnpm'
 
       - name: Instalar dependências
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: ESLint
-        run: npm run lint
+        run: pnpm run lint
 
       - name: TypeScript Check
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Executar testes unitários
-        run: npm run test
+        run: pnpm run test
 
       - name: Verificar vulnerabilidades
-        run: npm audit --audit-level=moderate || echo "Vulnerabilidades moderate do esbuild/vite conhecidas"
+        run: pnpm audit --audit-level=moderate || echo "Vulnerabilidades moderate do esbuild/vite conhecidas"
 
   # ===========================================================================
   # Job 2: Build Imagens Docker
