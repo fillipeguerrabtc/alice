@@ -1,0 +1,80 @@
+The failing job encountered this error:
+
+```
+src/index.ts(4,25): error TS2307: Cannot find module '@alice/shared/schema' or its corresponding type declarations.
+```
+
+This means that TypeScript cannot locate the `@alice/shared/schema` module when building `packages/database`.
+
+**Solution Steps:**
+
+1. **Check Package Existence:**
+   - Ensure that `@alice/shared/schema` is present in your monorepo, typically at `packages/shared/schema` or similar.
+
+2. **Update Dependencies:**
+   - Add `@alice/shared` as a dependency in `packages/database/package.json`:
+     ```json
+     // packages/database/package.json
+     {
+       "dependencies": {
+         "@alice/shared": "workspace:*"
+       }
+     }
+     ```
+
+3. **Install & Build All Packages:**
+   - If using a monorepo tool (like pnpm, yarn workspaces, or turbo), always run the install/build command from the root directory:
+     ```sh
+     pnpm install
+     pnpm build --filter ./packages/shared
+     pnpm build --filter ./packages/database
+     ```
+   - Or, build all at once if the tool supports it:
+     ```sh
+     pnpm build
+     ```
+
+4. **Check Path and Types:**
+   - Verify the import path in `src/index.ts` is correct:
+     ```ts
+     import { Schema } from '@alice/shared/schema'; // Must match package/module structure
+     ```
+   - Confirm that `@alice/shared/schema` exports types, and that its `index.d.ts` (if it uses types) is present.
+
+5. **Ensure Type Declarations:**
+   - If `@alice/shared/schema` is a TypeScript package, ensure it has a `tsconfig.json` and is built before downstream packages.
+
+**Code Suggestion Example:**  
+If your folder structure is as follows, and `schema.ts` exists:
+```
+packages/
+  shared/
+    schema.ts
+    package.json
+  database/
+    src/
+      index.ts
+    package.json
+```
+
+Your import in `src/index.ts` should be:
+```ts
+import { Schema } from '@alice/shared/schema';
+```
+
+And, in `packages/shared/package.json` you should have:
+```json
+{
+  "name": "@alice/shared",
+  // ...
+}
+```
+
+**Summary:**  
+Fix the dependency by:
+- Ensuring `@alice/shared` and its exports exist.
+- Adding it to `packages/database/package.json` dependencies.
+- Building shared packages before database.
+- Verifying import paths and type declarations.
+
+If you need help with a specific file or dependency setup, let me know!
