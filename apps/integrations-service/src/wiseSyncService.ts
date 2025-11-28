@@ -22,6 +22,7 @@ const logger = pino({
 
 const ERPNEXT_URL = process.env.ERPNEXT_URL;
 const ERPNEXT_API_KEY = process.env.ERPNEXT_API_KEY;
+const ERPNEXT_API_SECRET = process.env.ERPNEXT_API_SECRET;
 
 type DbClient = Database;
 type WiseSyncLogRow = typeof schema.wiseSyncLog.$inferSelect;
@@ -91,15 +92,15 @@ const wiseBreakerOptions = {
 };
 
 async function fetchERPNextPaymentInternal(reference: string): Promise<ERPNextPayment | null> {
-  if (!ERPNEXT_URL || !ERPNEXT_API_KEY) {
-    throw new Error('ERPNext não configurado');
+  if (!ERPNEXT_URL || !ERPNEXT_API_KEY || !ERPNEXT_API_SECRET) {
+    throw new Error('ERPNext não configurado (ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET)');
   }
 
   const response = await fetch(
     `${ERPNEXT_URL}/api/resource/Payment Entry?filters=[["reference_no","=","${reference}"]]`,
     {
       headers: {
-        'Authorization': `token ${ERPNEXT_API_KEY}`,
+        'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
         'Content-Type': 'application/json',
       },
     }
@@ -114,14 +115,14 @@ async function fetchERPNextPaymentInternal(reference: string): Promise<ERPNextPa
 }
 
 async function createERPNextPaymentInternal(transfer: WiseTransfer): Promise<string> {
-  if (!ERPNEXT_URL || !ERPNEXT_API_KEY) {
-    throw new Error('ERPNext não configurado');
+  if (!ERPNEXT_URL || !ERPNEXT_API_KEY || !ERPNEXT_API_SECRET) {
+    throw new Error('ERPNext não configurado (ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET)');
   }
 
   const response = await fetch(`${ERPNEXT_URL}/api/resource/Payment Entry`, {
     method: 'POST',
     headers: {
-      'Authorization': `token ${ERPNEXT_API_KEY}`,
+      'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
