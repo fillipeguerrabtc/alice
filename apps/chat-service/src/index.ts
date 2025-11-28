@@ -489,11 +489,14 @@ app.get('/api/chat/usage', async (_req: Request, res: Response) => {
 });
 
 app.get('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
-  const userId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const auth = req.user;
   
-  if (!userId) {
+  if (!auth?.userId) {
     return res.status(401).json({ error: 'ID do usuário necessário' });
   }
+
+  const userId = auth.userId;
 
   try {
     const conversations = await db.query.conversations.findMany({

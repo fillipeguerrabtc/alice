@@ -22,7 +22,10 @@ export {
   requireSameTenant,
   extractAuthContext,
   checkPermission,
+  generateInternalAuthHeaders,
+  isInternalAuthEnabled,
 } from './rbac/middleware.js';
+export type { InternalAuthHeaders } from './rbac/middleware.js';
 export { 
   hasPermission, 
   hasMinimumRole, 

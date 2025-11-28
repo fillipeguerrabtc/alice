@@ -8,6 +8,8 @@
  * 
  * Segue best practices 2025 para microserviços (Regra 16 replit.md)
  * Documentação em PT-BR (Regra 10 replit.md)
+ * 
+ * REFATORADO: Usa @alice/database centralizado (Regra 2 - Não Duplicar)
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -25,9 +27,6 @@ import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
 import pino from 'pino';
-import pg from 'pg';
-import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
-import * as schema from '@alice/shared/schema';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -35,8 +34,14 @@ import {
   requireAuth,
   requireRole,
 } from '@alice/shared-utils';
-
-const { Pool } = pg;
+import { 
+  getDatabase, 
+  getPool, 
+  schema, 
+  setupGracefulShutdown,
+  getPoolMetrics,
+  isPoolHealthy,
+} from '@alice/database';
 
 const logger = pino({
   name: 'auth-service',
@@ -47,30 +52,8 @@ const logger = pino({
   } : undefined,
 });
 
-let poolInstance: pg.Pool | null = null;
-let dbInstance: NodePgDatabase<typeof schema> | null = null;
-
-function getPool(): pg.Pool {
-  if (!poolInstance) {
-    const connectionString = process.env.DATABASE_URL;
-    if (!connectionString) {
-      throw new Error('DATABASE_URL é obrigatório');
-    }
-    poolInstance = new Pool({ 
-      connectionString,
-      max: 10,
-      idleTimeoutMillis: 30000,
-    });
-  }
-  return poolInstance;
-}
-
-function getDatabase(): NodePgDatabase<typeof schema> {
-  if (!dbInstance) {
-    dbInstance = drizzle(getPool(), { schema });
-  }
-  return dbInstance;
-}
+// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
+setupGracefulShutdown(logger);
 
 type DbUser = typeof schema.users.$inferSelect;
 
@@ -144,16 +127,41 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
     return next();
   }
   
-  // Validar token
-  if (!tokenFromHeader || !tokenFromSession || tokenFromHeader !== tokenFromSession) {
+  // Validar presença dos tokens
+  if (!tokenFromHeader || !tokenFromSession) {
     logger.warn({ 
       path: req.path, 
       method: req.method,
       hasHeaderToken: !!tokenFromHeader,
       hasSessionToken: !!tokenFromSession,
-    }, 'CSRF token inválido ou ausente');
+    }, 'CSRF token ausente');
     
-    return res.status(403).json({ error: 'CSRF token inválido ou ausente' });
+    return res.status(403).json({ error: 'CSRF token ausente' });
+  }
+  
+  // SEGURANÇA: Usar comparação timing-safe para evitar timing attacks (OWASP 2025)
+  // Comparação com === expõe timing side-channel que permite brute-force do token
+  const headerBuffer = Buffer.from(tokenFromHeader, 'utf8');
+  const sessionBuffer = Buffer.from(tokenFromSession, 'utf8');
+  
+  // Tokens devem ter o mesmo tamanho para comparação segura
+  if (headerBuffer.length !== sessionBuffer.length) {
+    logger.warn({ 
+      path: req.path, 
+      method: req.method,
+    }, 'CSRF token com tamanho inválido');
+    
+    return res.status(403).json({ error: 'CSRF token inválido' });
+  }
+  
+  // Comparação timing-safe
+  if (!crypto.timingSafeEqual(headerBuffer, sessionBuffer)) {
+    logger.warn({ 
+      path: req.path, 
+      method: req.method,
+    }, 'CSRF token não corresponde');
+    
+    return res.status(403).json({ error: 'CSRF token inválido' });
   }
   
   next();

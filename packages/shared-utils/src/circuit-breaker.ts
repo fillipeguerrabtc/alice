@@ -4,6 +4,9 @@
  * Implementa Circuit Breaker pattern conforme Regra 16 (Best Practices 2025).
  * Protege contra falhas em cascata em serviços externos.
  * 
+ * SEGURANÇA 2025: Integra AbortController para cancelar requisições HTTP em timeout.
+ * Evita resource leaks quando o circuit breaker atinge timeout (Salad Cloud Guide 2025).
+ * 
  * @module @alice/shared-utils/circuit-breaker
  */
 
@@ -212,6 +215,156 @@ export function getCircuitBreakerStats(breaker: CircuitBreaker): CircuitBreakerS
  */
 export function isCircuitHealthy(breaker: CircuitBreaker): boolean {
   return !breaker.opened && !breaker.halfOpen;
+}
+
+/**
+ * Opções para fetch com AbortController
+ */
+export interface AbortableFetchOptions extends RequestInit {
+  /** Timeout em ms após o qual a requisição será abortada (padrão: 30000) */
+  timeoutMs?: number;
+}
+
+/**
+ * Wrapper de fetch com AbortController integrado.
+ * 
+ * SEGURANÇA 2025: Cancela requisições HTTP pendentes quando timeout é atingido.
+ * Evita resource leaks em cenários de alta latência (Salad Cloud, APIs externas).
+ * 
+ * @param url - URL da requisição
+ * @param options - Opções de fetch com timeout
+ * @returns Response da requisição
+ * @throws Error com name='AbortError' se timeout for atingido
+ * 
+ * @example
+ * ```typescript
+ * import { fetchWithAbort } from '@alice/shared-utils/circuit-breaker';
+ * 
+ * const response = await fetchWithAbort('https://api.example.com/data', {
+ *   method: 'POST',
+ *   body: JSON.stringify({ message: 'Hello' }),
+ *   headers: { 'Content-Type': 'application/json' },
+ *   timeoutMs: 10000, // 10 segundos
+ * });
+ * ```
+ */
+export async function fetchWithAbort(
+  url: string,
+  options: AbortableFetchOptions = {}
+): Promise<Response> {
+  const { timeoutMs = 30000, signal: externalSignal, ...fetchOptions } = options;
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    controller.abort();
+    logger.warn({ url, timeoutMs }, 'Requisição abortada por timeout');
+  }, timeoutMs);
+  
+  // Combinar com signal externo se fornecido
+  if (externalSignal) {
+    externalSignal.addEventListener('abort', () => controller.abort());
+  }
+  
+  try {
+    const response = await fetch(url, {
+      ...fetchOptions,
+      signal: controller.signal,
+    });
+    return response;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
+ * Cria uma função fetch protegida por circuit breaker com AbortController.
+ * 
+ * RECOMENDADO: Use esta função para todas as chamadas HTTP externas (Salad Cloud, APIs).
+ * Combina proteção de circuit breaker com cancelamento de requisições.
+ * 
+ * @param config - Configuração do circuit breaker
+ * @returns Objeto com breaker e função fetch protegida
+ * 
+ * @example
+ * ```typescript
+ * import { createProtectedFetch, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils/circuit-breaker';
+ * 
+ * const { breaker, fetch: protectedFetch } = createProtectedFetch({
+ *   name: 'salad-llm',
+ *   ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+ * });
+ * 
+ * const response = await protectedFetch('https://api.salad.com/v1/chat', {
+ *   method: 'POST',
+ *   body: JSON.stringify({ model: 'llama4-maverick', messages: [] }),
+ *   headers: { 'Authorization': 'Bearer xxx' },
+ * });
+ * ```
+ */
+export function createProtectedFetch(config: CircuitBreakerConfig): {
+  breaker: CircuitBreaker<[string, AbortableFetchOptions?], Response>;
+  fetch: (url: string, options?: AbortableFetchOptions) => Promise<Response>;
+} {
+  const timeoutMs = config.timeout || 30000;
+  
+  const fetchAction = async (url: string, options: AbortableFetchOptions = {}): Promise<Response> => {
+    return fetchWithAbort(url, {
+      ...options,
+      timeoutMs: options.timeoutMs || timeoutMs,
+    });
+  };
+  
+  const breaker = createCircuitBreaker(fetchAction, config);
+  
+  return {
+    breaker,
+    fetch: (url: string, options?: AbortableFetchOptions) => breaker.fire(url, options),
+  };
+}
+
+/**
+ * Tipo utilitário para funções que aceitam AbortSignal.
+ * Use para criar funções canceláveis integradas com circuit breaker.
+ */
+export type AbortableFunction<TArgs extends unknown[], TResult> = (
+  signal: AbortSignal,
+  ...args: TArgs
+) => Promise<TResult>;
+
+/**
+ * Wraps uma função com AbortController para uso em circuit breaker.
+ * 
+ * @param fn - Função que aceita AbortSignal como primeiro parâmetro
+ * @param timeoutMs - Timeout em ms
+ * @returns Função wrapped que pode ser usada com createCircuitBreaker
+ * 
+ * @example
+ * ```typescript
+ * const fetchData = async (signal: AbortSignal, id: string) => {
+ *   const response = await fetch(`/api/data/${id}`, { signal });
+ *   return response.json();
+ * };
+ * 
+ * const abortableAction = wrapWithAbort(fetchData, 30000);
+ * const breaker = createCircuitBreaker(abortableAction, { name: 'data-fetcher' });
+ * ```
+ */
+export function wrapWithAbort<TArgs extends unknown[], TResult>(
+  fn: AbortableFunction<TArgs, TResult>,
+  timeoutMs: number
+): (...args: TArgs) => Promise<TResult> {
+  return async (...args: TArgs): Promise<TResult> => {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, timeoutMs);
+    
+    try {
+      return await fn(controller.signal, ...args);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 }
 
 export { CircuitBreaker };
