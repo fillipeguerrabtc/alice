@@ -26,7 +26,7 @@ Capacidades principais: chat em tempo real com streaming, deduplicação, multi-
 | 4 | **APROVAÇÃO OBRIGATÓRIA** | Pedir aprovação antes de mudanças grandes |
 | 5 | **NÃO MENTIR** | Dizer "não sei" quando não souber |
 | 6 | **SEM SOLUÇÕES TEMPORÁRIAS** | **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
-| 7 | **MUDANÇAS MÍNIMAS** | Foco cirúrgico no problema |
+| 7 | **MUDANÇAS CIRÚRGICAS** | Diagnosticar causa raiz antes de agir. Analisar impacto em componentes dependentes. Implementar mudança isolada. |
 | 8 | **QUALIDADE OBRIGATÓRIA** | TypeScript strict, zero any, Pino |
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
