@@ -141,30 +141,53 @@ http:
     frontend-service:
       loadBalancer:
         servers:
-          - url: "http://frontend:80"
+          - url: "http://frontend:8080"
 
   middlewares:
+    # SEGURANÇA: Rate limiting (OWASP API4 - Unrestricted Resource Consumption)
+    # IMPORTANTE: Usa IP real do cliente via ipStrategy, NÃO confia em headers spoofáveis
     rate-limit:
       rateLimit:
         average: 100
         burst: 50
         period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 0  # Usa IP direto da conexão (mais seguro)
 
+    # SEGURANÇA: Headers de segurança enterprise (Traefik v3 + OWASP)
+    # NOTA CSP: React/Vite requerem 'unsafe-inline' para styled-components e HMR.
+    # Em produção, considerar implementar nonces CSP no build.
+    # Ref: https://vitejs.dev/guide/features.html#content-security-policy-csp
     security-headers:
       headers:
+        # XSS e Content Type
         browserXssFilter: true
         contentTypeNosniff: true
+        # HSTS
         forceSTSHeader: true
         stsIncludeSubdomains: true
         stsPreload: true
         stsSeconds: 31536000
-        customFrameOptionsValue: "SAMEORIGIN"
+        # Frame Options
+        customFrameOptionsValue: "DENY"
+        # Referrer Policy
+        referrerPolicy: "strict-origin-when-cross-origin"
+        # Content Security Policy (CSP) - OWASP
+        # NOTA: 'unsafe-inline' em script-src é necessário para React hydration e styled-components
+        # 'unsafe-eval' pode ser removido após build otimizado (sem HMR)
+        contentSecurityPolicy: "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests;"
+        # Permissions Policy
+        permissionsPolicy: "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
+        # Custom Response Headers
         customResponseHeaders:
           X-Content-Type-Options: "nosniff"
-          X-Frame-Options: "SAMEORIGIN"
+          X-Frame-Options: "DENY"
           X-XSS-Protection: "1; mode=block"
           Referrer-Policy: "strict-origin-when-cross-origin"
+          Permissions-Policy: "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()"
 
+    # SEGURANÇA: Auth forward com headers seguros
     auth-forward:
       forwardAuth:
         address: "http://auth-service:3001/api/auth/verify"
@@ -179,6 +202,7 @@ http:
         excludedContentTypes:
           - "text/event-stream"
 
+    # SEGURANÇA: CORS restrito (não ['*'] em produção) - OWASP API7
     cors:
       headers:
         accessControlAllowMethods:
@@ -188,8 +212,16 @@ http:
           - DELETE
           - OPTIONS
         accessControlAllowHeaders:
-          - "*"
+          - Content-Type
+          - Authorization
+          - X-Requested-With
+          - X-API-Key
+          - X-User-Id
+          - X-Tenant-Id
         accessControlAllowOriginList:
-          - "*"
-        accessControlMaxAge: 100
+          - "https://alice.yesyoudeserve.duckdns.org"
+          - "https://api.yesyoudeserve.duckdns.org"
+          - "https://erp.yesyoudeserve.duckdns.org"
+        accessControlMaxAge: 600
         addVaryHeader: true
+        accessControlAllowCredentials: true

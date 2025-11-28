@@ -101,16 +101,36 @@ services:
           cpus: '0.05'
 
   # ===========================================================================
+  # TRAEFIK INIT - Inicializa diretório ACME com permissões corretas
+  # SEGURANÇA: Necessário para Traefik rodar como non-root
+  # ===========================================================================
+  traefik-init:
+    image: busybox:1.36
+    container_name: alice-traefik-init
+    volumes:
+      - traefik_acme:/acme
+    command: ["sh", "-c", "chown -R 1001:1001 /acme && chmod 700 /acme"]
+    restart: "no"
+    networks:
+      - alice-network
+
+  # ===========================================================================
   # TRAEFIK - API Gateway com SSL Automático
   # Docs 2025: Traefik v3 small/medium traffic - 0.5 CPU, 512MB
+  # SEGURANÇA: CAP_NET_BIND_SERVICE para portas < 1024 (Docker 2025)
   # ===========================================================================
   traefik:
-    image: traefik:v3.1
+    image: traefik:v3.3
     container_name: alice-traefik
     restart: unless-stopped
+    user: "1001:1001"
+    cap_add:
+      - NET_BIND_SERVICE
     depends_on:
       dockerproxy:
         condition: service_healthy
+      traefik-init:
+        condition: service_completed_successfully
     command:
       # API e Dashboard (desabilitado em produção por segurança)
       - "--api.dashboard=false"
@@ -220,9 +240,9 @@ services:
       - "traefik.http.routers.alice-frontend.rule=Host(`yesyoudeserve.duckdns.org`)"
       - "traefik.http.routers.alice-frontend.entrypoints=websecure"
       - "traefik.http.routers.alice-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.alice-frontend.loadbalancer.server.port=80"
+      - "traefik.http.services.alice-frontend.loadbalancer.server.port=8080"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
       timeout: 10s
       retries: 3
