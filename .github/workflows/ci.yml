@@ -181,7 +181,7 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
-    needs: build-packages
+    needs: build-and-check
     steps:
       - uses: actions/checkout@v4
 
@@ -205,7 +205,7 @@ jobs:
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [lint-and-typecheck, build-services, build-frontend, security-scan]
+    needs: [build-and-check, build-services, build-frontend, security-scan]
     if: always()
     steps:
       - name: Check CI Status
@@ -213,13 +213,13 @@ jobs:
           echo "=============================================="
           echo "Resumo do CI"
           echo "=============================================="
-          echo "Lint & Typecheck: ${{ needs.lint-and-typecheck.result }}"
+          echo "Build & Check: ${{ needs.build-and-check.result }}"
           echo "Build Services: ${{ needs.build-services.result }}"
           echo "Build Frontend: ${{ needs.build-frontend.result }}"
           echo "Security Scan: ${{ needs.security-scan.result }}"
           echo "=============================================="
           
-          if [[ "${{ needs.lint-and-typecheck.result }}" != "failure" ]]; then
+          if [[ "${{ needs.build-and-check.result }}" != "failure" ]]; then
             echo "CI passou com sucesso!"
             exit 0
           else
