@@ -1,5 +1,5 @@
 // Blueprint: stripe integration - Serviço Stripe
-import { getUncachableStripeClient } from './stripeClient';
+import { getUncachableStripeClient } from './stripeClient.js';
 import { getDatabase, schema } from '@alice/database';
 import { eq, sql } from 'drizzle-orm';
 

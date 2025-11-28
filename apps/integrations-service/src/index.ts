@@ -10,9 +10,9 @@ import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema } from '@alice/database';
 import { eq, desc, sql } from 'drizzle-orm';
 import { z } from 'zod';
-import { wiseService } from './wiseService';
-import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient';
-import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService';
+import { wiseService } from './wiseService.js';
+import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus } from './wiseClient.js';
+import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService.js';
 import { 
   requirePermission, 
   requireAuth,

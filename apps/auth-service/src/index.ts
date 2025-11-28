@@ -18,7 +18,7 @@ import helmet from 'helmet';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
-import { Strategy as MicrosoftStrategy } from './types/passport-microsoft';
+import { Strategy as MicrosoftStrategy } from './types/passport-microsoft.js';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';

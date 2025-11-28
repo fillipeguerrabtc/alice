@@ -13,7 +13,7 @@
 import CircuitBreaker from 'opossum';
 import pino from 'pino';
 import { eq } from 'drizzle-orm';
-import * as schema from '../../../shared/schema.js';
+import * as schema from '@alice/shared/schema';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',

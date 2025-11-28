@@ -13,7 +13,7 @@
 
 import { eq, and, isNull, lt, desc } from 'drizzle-orm';
 import pino from 'pino';
-import * as schema from '../../../shared/schema.js';
+import * as schema from '@alice/shared/schema';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',

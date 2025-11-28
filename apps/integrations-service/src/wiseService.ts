@@ -2,7 +2,7 @@
 // Implementa todas as funcionalidades da API Wise
 // Documentação: https://docs.wise.com/api-docs/
 
-import { wiseRequest, getWiseProfileId, isWiseSandbox } from './wiseClient';
+import { wiseRequest, getWiseProfileId, isWiseSandbox } from './wiseClient.js';
 import { logger } from '@alice/logger';
 
 // Tipos para a API Wise
