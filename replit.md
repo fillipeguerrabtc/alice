@@ -324,7 +324,24 @@ O servidor Hetzner foi **completamente limpo** para o próximo deploy:
 - 0 volumes
 - Disco: 2.5G usado de 150G (2%)
 
+### Correção pnpm v10 - inject-workspace-packages (28/11/2024)
+
+**Problema**: pnpm v10 mudou comportamento de `pnpm deploy` em workspaces.
+
+**Erro no CI**:
+```
+ERR_PNPM_DEPLOY_NONINJECTED_WORKSPACE  By default, starting from pnpm v10, 
+we only deploy from workspaces that have "inject-workspace-packages=true" set
+```
+
+**Solução**: Criado arquivo `.npmrc` na raiz do projeto com:
+```
+inject-workspace-packages=true
+```
+
+Esta configuração permite que `pnpm deploy` funcione corretamente dentro dos containers Docker, injetando automaticamente as dependências do workspace (`@alice/shared`, `@alice/database`, etc.).
+
 ---
 
 *Documento em Português Brasileiro*
-*Versão 5.4 - Novembro 2025*
+*Versão 5.5 - Novembro 2025*
