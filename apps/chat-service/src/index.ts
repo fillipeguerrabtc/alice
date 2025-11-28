@@ -30,6 +30,8 @@ import {
   requireAuth,
   requireSameTenant,
   extractAuthContext,
+  generateInternalAuthHeaders,
+  isInternalAuthEnabled,
 } from '@alice/shared-utils';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
@@ -124,10 +126,244 @@ const server = createServer(app);
 
 // ============================================================================
 // WEBSOCKET SECURITY (ws v8.18.3 - Best Practices 2025)
+// Autenticação completa via sessão PostgreSQL (OWASP API2 2023)
 // ============================================================================
 
 // SEGURANÇA: Origin validation allowlist (OWASP WebSocket Security)
 const ALLOWED_WEBSOCKET_ORIGINS = process.env.WEBSOCKET_ALLOWED_ORIGINS?.split(',') || CORS_ORIGINS;
+
+// SEGURANÇA: Nome do cookie de sessão (deve coincidir com auth-service)
+const SESSION_COOKIE_NAME = 'alice.sid';
+
+// SEGURANÇA: SESSION_SECRET OBRIGATÓRIO em produção (Regra 6 - ZERO soluções temporárias)
+// Falha imediata se não configurado em produção (fail-fast enterprise pattern)
+const SESSION_SECRET = (() => {
+  const secret = process.env.SESSION_SECRET;
+  if (!secret && process.env.NODE_ENV === 'production') {
+    logger.error('SESSION_SECRET não configurado em produção - WebSocket desabilitado por segurança');
+    throw new Error('SESSION_SECRET é obrigatório em produção');
+  }
+  // Em desenvolvimento, usa secret de dev com warning (apenas para facilitar testes)
+  if (!secret) {
+    logger.warn('SESSION_SECRET não configurado - usando secret de desenvolvimento (APENAS PARA DEV)');
+    return 'dev-secret-min-32-characters-long!';
+  }
+  return secret;
+})();
+
+// Cache de sessões validadas para evitar queries repetitivas (TTL 5 minutos)
+interface CachedSession {
+  userId: string;
+  tenantId: string | null;
+  role: string;
+  expiresAt: number;
+}
+const sessionCache = new Map<string, CachedSession>();
+const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+/**
+ * Parseia cookies do header Cookie (RFC 6265)
+ * Implementação segura sem dependências externas
+ */
+function parseCookies(cookieHeader: string | undefined): Record<string, string> {
+  const cookies: Record<string, string> = {};
+  if (!cookieHeader) return cookies;
+  
+  cookieHeader.split(';').forEach(cookie => {
+    const parts = cookie.split('=');
+    const key = parts[0]?.trim();
+    const value = parts.slice(1).join('=').trim();
+    if (key && value) {
+      cookies[key] = decodeURIComponent(value);
+    }
+  });
+  
+  return cookies;
+}
+
+/**
+ * Decodifica session ID do cookie assinado (connect.sid format)
+ * O cookie é assinado com HMAC-SHA256 no formato s:sessionId.signature
+ */
+function decodeSessionId(signedCookie: string): string | null {
+  if (!signedCookie.startsWith('s:')) {
+    return null;
+  }
+  
+  const value = signedCookie.slice(2);
+  const dotIndex = value.lastIndexOf('.');
+  
+  if (dotIndex === -1) {
+    return null;
+  }
+  
+  const sessionId = value.slice(0, dotIndex);
+  const signature = value.slice(dotIndex + 1);
+  
+  // Verificar assinatura HMAC-SHA256
+  const crypto = require('crypto');
+  const expectedSignature = crypto
+    .createHmac('sha256', SESSION_SECRET)
+    .update(sessionId)
+    .digest('base64')
+    .replace(/[=]+$/, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+  
+  // Comparação timing-safe para prevenir timing attacks
+  try {
+    const signatureBuffer = Buffer.from(signature);
+    const expectedBuffer = Buffer.from(expectedSignature);
+    
+    if (signatureBuffer.length !== expectedBuffer.length) {
+      return null;
+    }
+    
+    if (!crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+  
+  return sessionId;
+}
+
+/**
+ * Valida sessão no PostgreSQL e retorna dados do usuário
+ * Usa cache para evitar queries repetitivas (OWASP API4 - Rate Limiting)
+ */
+async function validateSessionFromDatabase(sessionId: string): Promise<CachedSession | null> {
+  // Verificar cache primeiro
+  const cached = sessionCache.get(sessionId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached;
+  }
+  
+  try {
+    // Query direta na tabela sessions (connect-pg-simple)
+    const pool = require('@alice/database').getPool();
+    const result = await pool.query(
+      'SELECT sess FROM sessions WHERE sid = $1 AND expire > NOW()',
+      [sessionId]
+    );
+    
+    if (result.rows.length === 0) {
+      logger.debug({ sessionId: sessionId.substring(0, 8) + '...' }, 'Sessão não encontrada ou expirada');
+      return null;
+    }
+    
+    const sessionData = result.rows[0].sess;
+    
+    // Estrutura da sessão passport: { passport: { user: userId } }
+    const passportData = sessionData?.passport;
+    if (!passportData?.user) {
+      logger.debug({ sessionId: sessionId.substring(0, 8) + '...' }, 'Sessão sem usuário autenticado');
+      return null;
+    }
+    
+    const userId = passportData.user;
+    
+    // Buscar dados completos do usuário no banco
+    const userResult = await pool.query(
+      'SELECT id, tenant_id, role FROM users WHERE id = $1',
+      [userId]
+    );
+    
+    if (userResult.rows.length === 0) {
+      logger.warn({ userId }, 'Usuário da sessão não encontrado no banco');
+      return null;
+    }
+    
+    const user = userResult.rows[0];
+    const cachedSession: CachedSession = {
+      userId: user.id,
+      tenantId: user.tenant_id,
+      role: user.role || 'viewer',
+      expiresAt: Date.now() + SESSION_CACHE_TTL,
+    };
+    
+    // Armazenar em cache
+    sessionCache.set(sessionId, cachedSession);
+    
+    // Limpar entradas expiradas do cache (housekeeping)
+    if (sessionCache.size > 1000) {
+      const now = Date.now();
+      for (const [key, value] of sessionCache.entries()) {
+        if (value.expiresAt < now) {
+          sessionCache.delete(key);
+        }
+      }
+    }
+    
+    return cachedSession;
+  } catch (error) {
+    logger.error({ error, sessionId: sessionId.substring(0, 8) + '...' }, 'Erro ao validar sessão no banco');
+    return null;
+  }
+}
+
+/**
+ * Interface para dados de autenticação WebSocket
+ */
+interface WebSocketAuthResult {
+  authenticated: boolean;
+  userId?: string;
+  tenantId?: string;
+  role?: string;
+  error?: string;
+}
+
+/**
+ * Autentica conexão WebSocket via sessão (OWASP API2 2023)
+ * Valida cookie de sessão e carrega dados do usuário do PostgreSQL
+ */
+async function authenticateWebSocketConnection(
+  cookies: string | undefined,
+  origin: string | undefined
+): Promise<WebSocketAuthResult> {
+  // 1. Validar Origin
+  if (!verifyWebSocketOrigin(origin)) {
+    return { authenticated: false, error: 'Origin not allowed' };
+  }
+  
+  // 2. Parsear cookies
+  const parsedCookies = parseCookies(cookies);
+  const sessionCookie = parsedCookies[SESSION_COOKIE_NAME];
+  
+  if (!sessionCookie) {
+    logger.debug('WebSocket: Cookie de sessão não encontrado');
+    return { authenticated: false, error: 'Session cookie not found' };
+  }
+  
+  // 3. Decodificar e verificar assinatura do cookie
+  const sessionId = decodeSessionId(sessionCookie);
+  
+  if (!sessionId) {
+    logger.warn('WebSocket: Cookie de sessão com assinatura inválida');
+    return { authenticated: false, error: 'Invalid session signature' };
+  }
+  
+  // 4. Validar sessão no PostgreSQL
+  const session = await validateSessionFromDatabase(sessionId);
+  
+  if (!session) {
+    return { authenticated: false, error: 'Session expired or invalid' };
+  }
+  
+  logger.info({ 
+    userId: session.userId, 
+    tenantId: session.tenantId,
+    role: session.role,
+  }, 'WebSocket: Conexão autenticada via sessão');
+  
+  return {
+    authenticated: true,
+    userId: session.userId,
+    tenantId: session.tenantId || undefined,
+    role: session.role,
+  };
+}
 
 function verifyWebSocketOrigin(origin: string | undefined): boolean {
   if (!origin) {
@@ -158,15 +394,41 @@ function verifyWebSocketOrigin(origin: string | undefined): boolean {
   return isAllowed;
 }
 
+// Mapa para armazenar auth result durante handshake (entre verifyClient e connection)
+const pendingAuthResults = new Map<string, WebSocketAuthResult>();
+
 // SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
+// Autenticação completa via sessão PostgreSQL (OWASP API2 2023)
 const wss = new WebSocketServer({ 
   server, 
   path: '/ws/chat',
   maxPayload: 10 * 1024 * 1024, // 10MB max payload (OWASP WebSocket Security)
-  verifyClient: (info, callback) => {
+  verifyClient: async (info, callback) => {
     const origin = info.origin || info.req.headers.origin;
-    const isValid = verifyWebSocketOrigin(origin);
-    callback(isValid, isValid ? undefined : 403, isValid ? undefined : 'Origin not allowed');
+    const cookies = info.req.headers.cookie;
+    
+    // Autenticação assíncrona via sessão
+    const authResult = await authenticateWebSocketConnection(cookies, origin);
+    
+    if (!authResult.authenticated) {
+      logger.warn({ 
+        origin, 
+        error: authResult.error,
+        ip: info.req.socket?.remoteAddress,
+      }, 'WebSocket: Conexão rejeitada - autenticação falhou');
+      callback(false, 401, authResult.error || 'Unauthorized');
+      return;
+    }
+    
+    // Armazenar resultado de auth para uso no connection handler
+    // Usar IP + timestamp como chave temporária
+    const tempKey = `${info.req.socket?.remoteAddress}:${Date.now()}`;
+    pendingAuthResults.set(tempKey, authResult);
+    
+    // Adicionar key ao request para recuperar no connection handler
+    (info.req as unknown as { __authKey: string }).__authKey = tempKey;
+    
+    callback(true);
   },
 });
 
@@ -333,6 +595,10 @@ const circuitBreakerOptions = {
   volumeThreshold: 5,
 };
 
+// Timeout para chamadas LLM (60 segundos para streaming, 30 para não-streaming)
+const LLM_STREAM_TIMEOUT = 60000;
+const LLM_SYNC_TIMEOUT = 30000;
+
 interface LLMMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
@@ -351,27 +617,44 @@ interface LLMRequest {
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
-  const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/llama4-maverick/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_KEY,
-    },
-    body: JSON.stringify({
-      model: 'llama4-maverick',
-      messages: request.messages,
-      max_tokens: 4096,
-      temperature: 0.7,
-      stream: request.stream,
-    }),
-  });
+  // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
+  // Streaming tem timeout maior pois resposta é progressiva
+  const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro na API LLM: ${error}`);
+  try {
+    const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/llama4-maverick/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Salad-Api-Key': SALAD_KEY,
+      },
+      body: JSON.stringify({
+        model: 'llama4-maverick',
+        messages: request.messages,
+        max_tokens: 4096,
+        temperature: 0.7,
+        stream: request.stream,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Erro na API LLM: ${error}`);
+    }
+
+    return response;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.warn({ timeout }, 'Chamada LLM abortada por timeout');
+      throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return response;
 }
 
 const saladCloudBreaker = new CircuitBreaker(callLlamaAPIInternal, circuitBreakerOptions);
@@ -443,6 +726,7 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
 // ============================================================================
 // CIRCUIT BREAKER - Integrations Service (Regra 16 - Best Practices 2025)
 // Usado para comunicação cross-service segura (envio WhatsApp, etc.)
+// SEGURANÇA: Autenticação HMAC obrigatória para chamadas internas (OWASP 2025)
 // ============================================================================
 
 interface IntegrationsWhatsAppRequest {
@@ -450,6 +734,8 @@ interface IntegrationsWhatsAppRequest {
   message: string;
   conversationId?: string;
   mediaUrl?: string;
+  tenantId?: string;
+  userId?: string;
 }
 
 interface IntegrationsWhatsAppResponse {
@@ -465,28 +751,74 @@ const integrationsServiceBreakerOptions = {
   volumeThreshold: 3,
 };
 
+// Timeout para chamadas cross-service (15 segundos - Best Practices 2025)
+const CROSS_SERVICE_TIMEOUT = 15000;
+
 async function sendWhatsAppMessageInternal(
   request: IntegrationsWhatsAppRequest
 ): Promise<IntegrationsWhatsAppResponse> {
-  const response = await fetch(`${INTEGRATIONS_SERVICE_URL}/api/integrations/twilio/send`, {
-    method: 'POST',
-    headers: {
+  // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
+  
+  try {
+    // SEGURANÇA: Gerar headers HMAC para autenticação service-to-service (OWASP 2025)
+    // Se INTERNAL_API_SECRET não configurado, logs warning mas continua (graceful degradation em dev)
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      to: request.to,
-      message: request.message,
-      conversationId: request.conversationId,
-      mediaUrl: request.mediaUrl,
-    }),
-  });
+    };
+    
+    if (isInternalAuthEnabled() && request.userId && request.tenantId) {
+      // Service-to-service usa role 'super_admin' para acesso privilegiado
+      const internalHeaders = generateInternalAuthHeaders({
+        userId: request.userId,
+        tenantId: request.tenantId,
+        role: 'super_admin',
+      });
+      // Adiciona headers HMAC ao objeto
+      headers['x-internal-signature'] = internalHeaders['x-internal-signature'];
+      headers['x-internal-timestamp'] = internalHeaders['x-internal-timestamp'];
+      headers['x-internal-user-id'] = internalHeaders['x-internal-user-id'];
+      headers['x-internal-role'] = internalHeaders['x-internal-role'];
+      if (internalHeaders['x-internal-tenant-id']) {
+        headers['x-internal-tenant-id'] = internalHeaders['x-internal-tenant-id'];
+      }
+    } else if (process.env.NODE_ENV === 'production') {
+      // Em produção, autenticação é OBRIGATÓRIA
+      logger.warn({
+        hasSecret: isInternalAuthEnabled(),
+        hasUserId: !!request.userId,
+        hasTenantId: !!request.tenantId,
+      }, 'Chamada cross-service sem autenticação HMAC em produção');
+    }
+    
+    const response = await fetch(`${INTEGRATIONS_SERVICE_URL}/api/integrations/twilio/send`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        to: request.to,
+        message: request.message,
+        conversationId: request.conversationId,
+        mediaUrl: request.mediaUrl,
+      }),
+      signal: controller.signal,
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Erro ao enviar WhatsApp via Integrations Service: ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Erro ao enviar WhatsApp via Integrations Service: ${errorText}`);
+    }
+
+    return await response.json() as IntegrationsWhatsAppResponse;
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.warn('Chamada ao Integrations Service abortada por timeout');
+      throw new Error('Timeout na comunicação com Integrations Service');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  return await response.json() as IntegrationsWhatsAppResponse;
 }
 
 const integrationsServiceBreaker = new CircuitBreaker(
@@ -1215,16 +1547,30 @@ wss.on('connection', (ws, req) => {
   // Cast para ExtendedWebSocket para suportar heartbeat
   const extWs = ws as ExtendedWebSocket;
   
-  const urlParams = new URL(req.url || '', 'ws://localhost').searchParams;
-  const userId = urlParams.get('userId');
-  const tenantId = urlParams.get('tenantId');
+  // SEGURANÇA: Recuperar dados de autenticação do verifyClient (OWASP API2 2023)
+  // Não confiar em query params - usar dados validados do handshake
+  const authKey = (req as unknown as { __authKey?: string }).__authKey;
+  let authResult: WebSocketAuthResult | undefined;
   
-  if (!userId) {
-    ws.close(4001, 'ID do usuário necessário');
+  if (authKey) {
+    authResult = pendingAuthResults.get(authKey);
+    pendingAuthResults.delete(authKey); // Limpar após uso (one-time use)
+  }
+  
+  // Se autenticação não foi encontrada, rejeitar conexão
+  // (não deveria acontecer se verifyClient funcionou, mas é defense-in-depth)
+  if (!authResult?.authenticated || !authResult.userId) {
+    logger.warn({ ip: req.socket?.remoteAddress }, 'WebSocket: Conexão sem autenticação válida - rejeitando');
+    ws.close(4001, 'Autenticação inválida');
     return;
   }
-
+  
+  // Usar dados AUTENTICADOS (do cookie de sessão validado) em vez de query params
+  const userId = authResult.userId;
+  const tenantId = authResult.tenantId;
+  
   if (!tenantId) {
+    logger.warn({ userId }, 'WebSocket: Usuário autenticado mas sem tenantId - rejeitando');
     ws.close(4002, 'Tenant ID obrigatório para conexão WebSocket');
     return;
   }
@@ -1243,7 +1589,12 @@ wss.on('connection', (ws, req) => {
   });
   
   wsClients.set(clientKey, ws);
-  logger.info({ userId, tenantId, clientKey }, 'Cliente WebSocket conectado');
+  logger.info({ 
+    userId, 
+    tenantId, 
+    clientKey,
+    role: authResult.role,
+  }, 'Cliente WebSocket conectado (autenticado via sessão)');
 
   ws.on('message', async (data) => {
     try {

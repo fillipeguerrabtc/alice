@@ -103,27 +103,39 @@ const wiseBreakerOptions = {
   volumeThreshold: 3,
 };
 
+// Timeout padrão para chamadas ERPNext (10 segundos - Best Practices 2025)
+const ERPNEXT_FETCH_TIMEOUT = 10000;
+
 async function fetchERPNextPaymentInternal(reference: string): Promise<ERPNextPayment | null> {
   if (!ERPNEXT_URL || !ERPNEXT_API_KEY || !ERPNEXT_API_SECRET) {
     throw new Error('ERPNext não configurado (ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET)');
   }
 
-  const response = await fetch(
-    `${ERPNEXT_URL}/api/resource/Payment Entry?filters=[["reference_no","=","${reference}"]]`,
-    {
-      headers: {
-        'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
-        'Content-Type': 'application/json',
-      },
+  // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ERPNEXT_FETCH_TIMEOUT);
+
+  try {
+    const response = await fetch(
+      `${ERPNEXT_URL}/api/resource/Payment Entry?filters=[["reference_no","=","${reference}"]]`,
+      {
+        headers: {
+          'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        signal: controller.signal,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Erro ao buscar pagamento no ERPNext: ${response.statusText}`);
     }
-  );
 
-  if (!response.ok) {
-    throw new Error(`Erro ao buscar pagamento no ERPNext: ${response.statusText}`);
+    const data = await response.json() as { data: ERPNextPayment[] };
+    return data.data[0] || null;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = await response.json() as { data: ERPNextPayment[] };
-  return data.data[0] || null;
 }
 
 async function createERPNextPaymentInternal(transfer: WiseTransfer): Promise<string> {
@@ -131,33 +143,42 @@ async function createERPNextPaymentInternal(transfer: WiseTransfer): Promise<str
     throw new Error('ERPNext não configurado (ERPNEXT_URL, ERPNEXT_API_KEY, ERPNEXT_API_SECRET)');
   }
 
-  const response = await fetch(`${ERPNEXT_URL}/api/resource/Payment Entry`, {
-    method: 'POST',
-    headers: {
-      'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      doctype: 'Payment Entry',
-      payment_type: 'Pay',
-      mode_of_payment: 'Wire Transfer',
-      paid_amount: transfer.sourceAmount,
-      paid_from_account_currency: transfer.sourceCurrency,
-      received_amount: transfer.targetAmount,
-      paid_to_account_currency: transfer.targetCurrency,
-      reference_no: transfer.id,
-      reference_date: transfer.created.split('T')[0],
-      remarks: `Wise Transfer: ${transfer.reference || transfer.id}`,
-    }),
-  });
+  // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ERPNEXT_FETCH_TIMEOUT);
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro ao criar pagamento no ERPNext: ${error}`);
+  try {
+    const response = await fetch(`${ERPNEXT_URL}/api/resource/Payment Entry`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${ERPNEXT_API_KEY}:${ERPNEXT_API_SECRET}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        doctype: 'Payment Entry',
+        payment_type: 'Pay',
+        mode_of_payment: 'Wire Transfer',
+        paid_amount: transfer.sourceAmount,
+        paid_from_account_currency: transfer.sourceCurrency,
+        received_amount: transfer.targetAmount,
+        paid_to_account_currency: transfer.targetCurrency,
+        reference_no: transfer.id,
+        reference_date: transfer.created.split('T')[0],
+        remarks: `Wise Transfer: ${transfer.reference || transfer.id}`,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Erro ao criar pagamento no ERPNext: ${error}`);
+    }
+
+    const data = await response.json() as { data: { name: string } };
+    return data.data.name;
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  const data = await response.json() as { data: { name: string } };
-  return data.data.name;
 }
 
 const erpnextFetchBreaker = new CircuitBreaker(fetchERPNextPaymentInternal, erpnextBreakerOptions);
