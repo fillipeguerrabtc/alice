@@ -2,121 +2,79 @@
 
 ## Overview
 
-Alice is a production-ready, autonomous enterprise AI platform powered by the **Llama 4 Maverick (400B parameters)** model hosted on Salad Cloud. Its primary purpose is to provide a fully autonomous AI solution that addresses critical enterprise challenges:
-- **Absolute Privacy**: All data remains within controlled infrastructure.
-- **Predictable Costs**: No third-party token-based charges.
-- **Unlimited Customization**: Fine-tuning capabilities for specific client needs.
+Alice is a production-ready enterprise autonomous AI platform leveraging the **Llama 4 Maverick (400B parameters)** model, self-hosted on Salad Cloud. Its core purpose is to provide an AI solution with **total autonomy, absolute data privacy, predictable costs, and unlimited customization** through fine-tuning.
 
-Alice aims to solve the problems of reliance on external APIs (pricing changes, discontinuations), data privacy concerns with third-party servers, and unpredictable costs associated with token-based billing.
+The platform addresses critical industry problems such as reliance on third-party APIs, data privacy concerns with external servers, and unpredictable costs associated with token-based pricing.
 
-Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, Role-Based Access Control (RBAC), RAG backend for embeddings and vector search, and integrations with payment (Stripe, Wise), CRM (ERPNext), and communication (Twilio, Resend) services. The platform also features advanced AI capabilities like image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack.
+Key capabilities include: real-time chat with streaming, deduplication, multi-tenancy, Role-Based Access Control (RBAC), RAG (Retrieval Augmented Generation) backend, multimodal image generation (FLUX.1 Schnell), and a comprehensive observability stack. The business vision is to deliver a robust, secure, and cost-effective AI solution tailored for enterprise needs, ensuring data sovereignty and flexibility.
 
 ## User Preferences
 
-- **Read Before Acting**: Always inspect files and existing code before implementing any changes.
-- **No Duplication**: Verify existing code for functionality before writing new code.
-- **Structured Workflow**: Follow a strict workflow: Diagnosis → Plan → Approval → Implementation.
-- **Approval Required**: Always ask for approval before making significant changes.
-- **Honesty**: State "I don't know" when unsure.
-- **No Temporary Solutions**: Avoid workarounds, mocks, hardcoded data, in-memory storage, or false default values. All logic must be enterprise-grade with real PostgreSQL persistence.
-- **Official Data**: Focus on the problem and current best practices from official documentation.
-- **Quality Mandatory**: Use TypeScript strict mode, no `any`, and Pino for logging.
-- **Continuous Validation**: Test after every micro-step.
-- **Documentation in PT-BR**: All documentation must be in Brazilian Portuguese.
-- **Follow Official Docs**: Adhere to 2025 best practices.
-- **Production on Hetzner**: Deploy via GitHub Actions.
-- **Internationalization**: PT-BR primary, EN secondary.
-- **Verify Secrets**: Check for existing environment variables.
-- **Microservices**: Code in `apps/`, shared utilities in `packages/`.
-- **Best Practices**: Implement API Gateway, health checks, and circuit breakers.
-- **Language Preferences**:
-    - Documentation: Portuguese (Brazil)
-    - Code Comments: Portuguese (Brazil)
-    - Log Messages: Portuguese (Brazil)
-    - Variable Names: English
-    - Technical Terms: English (e.g., OAuth, JWT)
-- **Development vs. Production**:
-    - **Development (Replit)**: Used as an IDE and for UI preview. Preview data is allowed only in `server/index-dev.ts`.
-    - **Production (Hetzner Cloud)**: The real enterprise system. Mocks/hardcoded values are strictly forbidden (Rule 6).
-    - Code in `apps/` (microservices) goes to production via GitHub Actions. `server/index-dev.ts` is ONLY for Replit preview and is not deployed to production.
-- **Logging**: Use Pino for all logging; `console.log` is forbidden.
-- **TypeScript**: Use strict mode; `any` is forbidden.
-- **Health Checks**: Mandatory at `/api/service/health` for all services.
+- **LER ANTES DE AGIR**: Inspecionar arquivos antes de implementar.
+- **NÃO DUPLICAR**: Verificar código existente primeiro.
+- **WORKFLOW ESTRUTURADO**: Diagnóstico → Plano → Aprovação → Implementação.
+- **APROVAÇÃO OBRIGATÓRIA**: Pedir aprovação antes de mudanças grandes.
+- **NÃO MENTIR**: Dizer "não sei" quando não souber.
+- **SEM SOLUÇÕES TEMPORÁRIAS**: **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL.
+- **MUDANÇAS MÍNIMAS**: Foco cirúrgico no problema.
+- **QUALIDADE OBRIGATÓRIA**: TypeScript strict, zero any, Pino.
+- **VALIDAÇÃO CONTÍNUA**: Testar após cada micro-passo.
+- **DOCUMENTAÇÃO PT-BR**: TODA documentação em português.
+- **SEGUIR DOCS OFICIAIS**: Melhores práticas 2025.
+- **PRODUÇÃO HETZNER**: Deploy via GitHub Actions.
+- **INTERNACIONALIZAÇÃO**: PT-BR primário, EN secundário.
+- **VERIFICAR SECRETS**: Checar variáveis existentes.
+- **MICROSSERVIÇOS**: Código em apps/, compartilhado em packages/.
+- **MELHORES PRÁTICAS**: API Gateway, health checks, circuit breakers.
+
+### Preferências de Idioma
+
+- **Documentação**: Português Brasileiro
+- **Comentários no código**: Português Brasileiro
+- **Mensagens de log**: Português Brasileiro
+- **Nomes de variáveis**: Inglês
+- **Termos técnicos**: Inglês (OAuth, JWT, etc.)
 
 ## System Architecture
 
-Alice is designed as a microservices architecture, with core services residing in `apps/` and shared packages in `packages/`. The system emphasizes a verticalized learning schedule for RAG updates, aggressive auto-indexing, and incremental fine-tuning. Real-time communication leverages PostgreSQL NOTIFY for simplicity and scalability, with Redis as a future fallback.
+Alice employs a microservices architecture, with each service (`frontend`, `auth`, `chat`, `rag`, `training`, `integrations`, `observability`) running in its own container and communicating via an API Gateway (Traefik). The system prioritizes enterprise-grade solutions, data privacy, and scalability.
 
-**UI/UX Decisions:**
-- Frontend: React 18, TypeScript 5, Vite 5.
-- Styling: shadcn/ui and Tailwind CSS.
-- State Management/Routing: TanStack Query and Wouter.
-- Internationalization: `react-i18next` for PT-BR/EN.
+### UI/UX Decisions
+- **Frontend**: Built with React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CSS for a modern and responsive user interface.
+- **Internationalization**: Supports PT-BR (primary) and EN using `react-i18next`.
+- **Dashboard IA**: Provides metrics for conversations, images, SLA, and circuit breakers.
+- **Takeover/Handover Panel**: Custom-built within the Alice dashboard for human agents, integrating Web and WhatsApp interactions.
 
-**Technical Implementations:**
+### Technical Implementations
+- **Authentication**: Implements OAuth 2.0 (Google, GitHub, Microsoft) and SAML 2.0 (Azure AD, Okta), with local authentication using bcrypt and a 6-level RBAC system.
+- **Real-time Chat**: Utilizes WebSockets for streaming LLM tokens and ensuring real-time interaction.
+- **RAG Backend**: Employs pgvector for vector search and self-hosted embeddings via Salad Cloud, with a circuit breaker for robustness. Chunking is configured at 500 characters with 50 overlap.
+- **Training**: Manages fine-tuning jobs, collects training data, and uses SemHash for deduplication. Incremental fine-tuning occurs every 4 days using LoRA, with full fine-tuning every two weeks.
+- **Image Generation**: Leverages FLUX.1 Schnell (Apache 2.0) self-hosted on Salad Cloud with progressive LoRA for continuous learning from approved images. Image storage uses Object Storage with CLIP embeddings for multimodal RAG.
+- **Observability**: A separate, independent microservice (`apps/observability-service/`) provides comprehensive monitoring using Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, and Langfuse 2.x for LLM-specific metrics (Token Usage, TTFT, Latency, Error Rate, Cost per Request, RAG Retrieval Time).
+- **Pub/Sub**: Initially uses PostgreSQL NOTIFY for real-time updates, with a fallback to `conversation_states` table for persistence.
+- **Security**: Implements bcrypt for passwords, HttpOnly/Secure/SameSite cookies, CSRF protection, rate limiting, and `tenant_id` isolation in queries.
+- **Code Standards**: Strict TypeScript (`no-any`), Pino for logging (no `console.log`), and mandatory health checks at `/api/servico/health`.
 
--   **Model Hosting**: Llama 4 Maverick (400B params) and FLUX.1 Schnell for image generation, both self-hosted on Salad Cloud for autonomy and cost control.
--   **Observability**: A separate, independent microservice for monitoring, guaranteeing observability even if the main system fails. It integrates Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, and Langfuse 2.x for LLM-specific metrics.
--   **Security**: Implements `bcrypt` for passwords, HttpOnly/Secure/SameSite cookies, CSRF protection via OAuth state parameter, IP and endpoint rate limiting, and `tenant_id` based isolation.
--   **RBAC**: Features a 6-level hierarchy (super_admin, admin, manager, operator, viewer, guest).
--   **RAG**: Uses Salad Cloud for embeddings, `pgvector` for vector search, with chunking (500 chars, 50 overlap) and a circuit breaker (30s/50%/30s).
--   **Image Generation**: Leverages FLUX.1 Schnell model (Apache 2.0), self-hosted on Salad Cloud using RTX 3090/4090 GPUs. Approved images contribute to training via Progressive LoRA. Object Storage combined with CLIP embeddings enables multimodal RAG.
--   **Multimodal Embeddings**: CLIP ViT-L/14 (MIT License) self-hosted on Salad Cloud, providing 768-dimension embeddings for cross-modal search.
--   **Takeover/Handover**: Custom panel integrated into the dashboard, with automated triggers based on confidence scores, fallbacks, and sentiment analysis.
--   **CI/CD**: Automated pipeline on GitHub Actions for builds, Docker image pushes, SSH deployment to Hetzner, and health checks.
-
-**System Design Choices:**
-
--   **Microservices**:
-    -   `frontend` (5000): React SPA.
-    -   `api-gateway` (80/443): Traefik.
-    -   `auth` (3001): OAuth/SAML, local auth, RBAC.
-    -   `chat` (3002): LLM, WebSocket, streaming, persistence.
-    -   `rag` (3003): Embeddings, vector search.
-    -   `training` (3004): Data collection, deduplication, fine-tuning job management.
-    -   `integrations` (3005): External service proxies.
-    -   `observability` (9090/3000/16686/3006): Monitoring stack.
--   **Production Infrastructure**: Hosted on Hetzner Cloud (CX43 server: 8 vCPUs, 16GB RAM, 160GB SSD).
--   **ERPNext Deployment**: Utilizes the official `frappe_docker` setup, ensuring idempotency for site creation and robust database/cache management.
+### System Design Choices
+- **Microservices Architecture**: Code is organized into `apps/` for microservices and `packages/` for shared code, facilitating independent deployment and scalability.
+- **Deployment**: Production deployments are automated via GitHub Actions to Hetzner Cloud.
+- **Development Environment**: Replit is used as the IDE and for UI preview, with `server/index-dev.ts` providing preview data (not used in production).
+- **TypeScript Build System**: A refined build process using `tsconfig.build.json` and `pnpm workspace` ensures correct build order and Docker compatibility.
 
 ## External Dependencies
 
--   **Salad Cloud**:
-    -   **LLM**: Llama 4 Maverick (400B parameters) for core AI capabilities (text input, text output).
-    -   **Embeddings**: `text-embedding-3-small` for RAG.
-    -   **Image Generation**: FLUX.1 Schnell (Apache 2.0) for visual content creation.
-    -   **CLIP Inference**: CLIP ViT-L/14 (MIT) for multimodal embeddings (self-hosted container group).
--   **Stripe Portugal**: For EUR payments via SEPA, including webhook integration.
--   **Wise**: For global money transfers in 50+ currencies.
--   **ERPNext**: Integrated CRM and ERP system. Utilizes `frappe_docker` for deployment.
--   **Twilio**: For WhatsApp and SMS communication.
--   **Resend**: For transactional email services.
--   **PostgreSQL**: Primary database with `pgvector` extension for vector search.
--   **Prometheus 3.0**: For metrics collection and alerting.
--   **Grafana OSS 11.3**: For dashboards and visualization.
--   **Jaeger 1.62**: For distributed tracing.
--   **OpenTelemetry Collector**: For unified instrumentation.
--   **Langfuse 2.x**: For LLM-specific metrics.
--   **Traefik**: As an API Gateway for routing and SSL termination.
--   **GitHub Actions**: For CI/CD pipelines.
-
-## TypeScript Build System (2024-11-28)
-
-**Root Cause Fix**: TypeScript `paths` in `packages/tsconfig.base.json` were pointing to source files, causing Docker builds to fail when looking for compiled `.d.ts` files.
-
-**Solution Applied**:
-1. **Created `tsconfig.build.json`** at root with project references for proper build order
-2. **Removed `paths`** from `packages/tsconfig.base.json` - they caused confusion in Docker
-3. **Added `build:packages`** script: `pnpm --filter '@alice/*' --stream run build`
-4. **Updated all Dockerfiles** to use `pnpm run build:packages` instead of individual builds
-5. **Fixed workflow cleanup** to preserve running containers (PRÉ-DEPLOY: safe cleanup only)
-
-**Build Order** (automatic via pnpm workspace):
-1. `@alice/shared` → 2. `@alice/shared-utils`, `@alice/config`, `@alice/logger` → 3. `@alice/database` → 4. All services
-
-**Files Modified**:
-- `tsconfig.build.json` (new)
-- `packages/tsconfig.base.json` (removed paths)
-- `package.json` (added build:packages, build:tsc)
-- `apps/*/Dockerfile` (all 6 services updated)
-- `.github/workflows/deploy-production.yml` (safe cleanup)
+- **Salad Cloud**:
+  - **LLM**: Llama 4 Maverick (400B parameters, 17B active MoE) for text processing (input multimodal, output text only).
+  - **Embeddings**: text-embedding-3-small (self-hosted).
+  - **Image Generation**: FLUX.1 Schnell (Apache 2.0) self-hosted on RTX 3090/4090 GPUs.
+  - **CLIP Inference**: CLIP ViT-L/14 (MIT license) for multimodal embeddings, self-hosted on RTX 3060+ GPUs.
+- **PostgreSQL**: Primary database for all persistent data and initial real-time Pub/Sub.
+- **Stripe Portugal**: For processing EUR payments and webhooks.
+- **Wise**: For global money transfers in 50+ currencies.
+- **ERPNext**: Integrated CRM and ERP system.
+- **Twilio**: For WhatsApp and SMS communication.
+- **Resend**: For transactional email services.
+- **Hetzner Cloud**: Production hosting environment.
+- **GitHub Actions**: For CI/CD pipelines.
+- **Let's Encrypt**: For SSL/TLS certificates.
