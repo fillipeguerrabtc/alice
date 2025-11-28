@@ -18,7 +18,12 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alice/shared": ["../shared/dist/index.js"],
+      "@alice/shared/schema": ["../shared/dist/schema.js"]
+    }
   },
   "include": ["src/**/*"],
   "references": [
