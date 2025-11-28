@@ -1,5 +1,6 @@
 import { Switch, Route } from 'wouter';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { lazy, Suspense } from 'react';
 import { queryClient } from '@/lib/queryClient';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
@@ -10,21 +11,33 @@ import { ThemeProvider } from '@/components/theme-provider';
 import { Toaster } from '@/components/ui/toaster';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { useAuth } from '@/hooks/use-auth';
+import { Loader2 } from 'lucide-react';
 
-import Dashboard from '@/pages/Dashboard';
-import Chat from '@/pages/Chat';
-import Documents from '@/pages/Documents';
-import Training from '@/pages/Training';
-import Integrations from '@/pages/Integrations';
-import Settings from '@/pages/Settings';
-import Login from '@/pages/Login';
-import Landing from '@/pages/Landing';
-import Agents from '@/pages/Agents';
-import Namespaces from '@/pages/Namespaces';
-import WisePayments from '@/pages/WisePayments';
-import TakeoverPanel from '@/pages/TakeoverPanel';
-import ImageGalleryPage from '@/pages/ImageGalleryPage';
-import NotFound from '@/pages/NotFound';
+// PERFORMANCE: Lazy loading de páginas (React 18+ Best Practices 2025)
+// Reduz bundle inicial e carrega páginas sob demanda
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const Chat = lazy(() => import('@/pages/Chat'));
+const Documents = lazy(() => import('@/pages/Documents'));
+const Training = lazy(() => import('@/pages/Training'));
+const Integrations = lazy(() => import('@/pages/Integrations'));
+const Settings = lazy(() => import('@/pages/Settings'));
+const Login = lazy(() => import('@/pages/Login'));
+const Landing = lazy(() => import('@/pages/Landing'));
+const Agents = lazy(() => import('@/pages/Agents'));
+const Namespaces = lazy(() => import('@/pages/Namespaces'));
+const WisePayments = lazy(() => import('@/pages/WisePayments'));
+const TakeoverPanel = lazy(() => import('@/pages/TakeoverPanel'));
+const ImageGalleryPage = lazy(() => import('@/pages/ImageGalleryPage'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
+
+// Loading spinner para Suspense fallback
+function PageLoader() {
+  return (
+    <div className="flex h-full items-center justify-center" data-testid="loader-page">
+      <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 function AuthenticatedLayout({ children }: { children: React.ReactNode }) {
   const sidebarStyle = {

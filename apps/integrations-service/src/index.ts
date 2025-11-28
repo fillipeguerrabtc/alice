@@ -50,11 +50,13 @@ if (config.STRIPE_SECRET_KEY) {
   logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
 }
 
-// Circuit Breaker para chamadas ao ERPNext
+// Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
+// volumeThreshold: mínimo de requisições antes de calcular threshold
 const circuitBreakerOptions = {
   timeout: 10000,
   errorThresholdPercentage: 50,
   resetTimeout: 30000,
+  volumeThreshold: 5, // Evita falsos positivos com poucas requisições
 };
 
 const erpNextBreaker = new CircuitBreaker(async (options: {
