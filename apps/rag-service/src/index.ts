@@ -404,8 +404,6 @@ function validateUpload(file: Express.Multer.File): { valid: boolean; error?: st
 }
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
-import { createLogger, runWithLogContext } from '@alice/logger';
-import { createCorrelationMiddleware, getContextHeaders } from '@alice/shared-utils';
 const logger = createLogger('rag-service');
 
 // Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)

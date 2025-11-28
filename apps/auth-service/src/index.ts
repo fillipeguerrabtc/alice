@@ -84,11 +84,11 @@ declare module 'express-session' {
  * Gera ou retorna CSRF token da sessão
  * Token é criptograficamente seguro (32 bytes hex = 64 chars)
  */
-function getOrCreateCsrfToken(session: session.Session): string {
-  if (!session.csrfToken) {
-    session.csrfToken = crypto.randomBytes(32).toString('hex');
+function getOrCreateCsrfToken(sessionData: session.Session & session.SessionData): string {
+  if (!sessionData.csrfToken) {
+    sessionData.csrfToken = crypto.randomBytes(32).toString('hex');
   }
-  return session.csrfToken;
+  return sessionData.csrfToken;
 }
 
 /**
@@ -138,7 +138,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
       hasSessionToken: !!tokenFromSession,
     }, 'CSRF token ausente');
     
-    return res.status(403).json({ error: 'CSRF token ausente' });
+    res.status(403).json({ error: 'CSRF token ausente' });
+    return;
   }
   
   // SEGURANÇA: Usar comparação timing-safe para evitar timing attacks (OWASP 2025)
@@ -153,7 +154,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
       method: req.method,
     }, 'CSRF token com tamanho inválido');
     
-    return res.status(403).json({ error: 'CSRF token inválido' });
+    res.status(403).json({ error: 'CSRF token inválido' });
+    return;
   }
   
   // Comparação timing-safe
@@ -163,7 +165,8 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
       method: req.method,
     }, 'CSRF token não corresponde');
     
-    return res.status(403).json({ error: 'CSRF token inválido' });
+    res.status(403).json({ error: 'CSRF token inválido' });
+    return;
   }
   
   next();

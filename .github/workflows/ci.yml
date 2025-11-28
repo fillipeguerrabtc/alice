@@ -215,24 +215,124 @@ jobs:
           sarif_file: 'trivy-results.sarif'
         continue-on-error: true
 
+  compliance-checks:
+    name: Enterprise Compliance
+    runs-on: ubuntu-latest
+    needs: build-and-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for hardcoded secrets
+        run: |
+          echo "Verificando secrets hardcoded..."
+          
+          PATTERNS=(
+            'password\s*[=:]\s*["\047][a-zA-Z0-9]+'
+            'api[_-]?key\s*[=:]\s*["\047][a-zA-Z0-9]+'
+            'secret[_-]?key\s*[=:]\s*["\047][a-zA-Z0-9]+'
+            'OPENAI_API_KEY\s*[=:]\s*["\047]sk-'
+            'DATABASE_URL\s*[=:]\s*["\047]postgres://'
+          )
+          
+          FOUND=0
+          for pattern in "${PATTERNS[@]}"; do
+            if grep -rE "$pattern" apps/ packages/ --include="*.ts" --include="*.js" 2>/dev/null | grep -v "node_modules" | grep -v ".test."; then
+              echo "ALERTA: Possível secret hardcoded encontrado!"
+              FOUND=1
+            fi
+          done
+          
+          if [ $FOUND -eq 1 ]; then
+            echo "Favor revisar os matches acima"
+          else
+            echo "Nenhum secret hardcoded detectado"
+          fi
+
+      - name: Verify RLS migrations exist
+        run: |
+          echo "Verificando migrações RLS..."
+          
+          if [ -f "drizzle/migrations/0001_rls_security_enterprise.sql" ]; then
+            echo "Migração RLS encontrada"
+            grep -l "CREATE POLICY\|ENABLE ROW LEVEL SECURITY" drizzle/migrations/*.sql || echo "ALERTA: Policies RLS não encontradas"
+          else
+            echo "ALERTA: Migração RLS não encontrada em drizzle/migrations/"
+          fi
+
+      - name: Verify Express hardening in all services
+        run: |
+          echo "Verificando express-hardening em microsserviços..."
+          
+          SERVICES=(
+            "apps/auth-service/src/index.ts"
+            "apps/chat-service/src/index.ts"
+            "apps/rag-service/src/index.ts"
+            "apps/training-service/src/index.ts"
+            "apps/integrations-service/src/index.ts"
+            "apps/api-gateway/src/index.ts"
+            "apps/observability-service/src/index.ts"
+          )
+          
+          MISSING=0
+          for service in "${SERVICES[@]}"; do
+            if [ -f "$service" ]; then
+              if grep -q "@alice/shared-utils" "$service" && grep -q "createSecurityMiddleware\|createRateLimiter" "$service"; then
+                echo "$service: Express hardening configurado"
+              else
+                echo "ALERTA: $service sem express-hardening!"
+                MISSING=1
+              fi
+            fi
+          done
+          
+          if [ $MISSING -eq 1 ]; then
+            exit 1
+          fi
+
+      - name: Verify server timeouts
+        run: |
+          echo "Verificando server timeouts (Node.js 20 LTS)..."
+          
+          SERVICES=(
+            "apps/auth-service/src/index.ts"
+            "apps/chat-service/src/index.ts"
+            "apps/rag-service/src/index.ts"
+            "apps/training-service/src/index.ts"
+            "apps/integrations-service/src/index.ts"
+            "apps/api-gateway/src/index.ts"
+            "apps/observability-service/src/index.ts"
+          )
+          
+          for service in "${SERVICES[@]}"; do
+            if [ -f "$service" ]; then
+              if grep -q "server.timeout" "$service" && grep -q "keepAliveTimeout" "$service" && grep -q "headersTimeout" "$service"; then
+                echo "$service: Timeouts configurados"
+              else
+                echo "ALERTA: $service sem timeouts configurados!"
+                exit 1
+              fi
+            fi
+          done
+
   ci-success:
     name: CI Success
     runs-on: ubuntu-latest
-    needs: [build-and-check, build-services, build-frontend, security-scan]
+    needs: [build-and-check, build-services, build-frontend, security-scan, compliance-checks]
     if: always()
     steps:
       - name: Check CI Status
         run: |
           echo "=============================================="
-          echo "Resumo do CI"
+          echo "Resumo do CI - Alice Enterprise Platform"
           echo "=============================================="
           echo "Build & Check: ${{ needs.build-and-check.result }}"
           echo "Build Services: ${{ needs.build-services.result }}"
           echo "Build Frontend: ${{ needs.build-frontend.result }}"
           echo "Security Scan: ${{ needs.security-scan.result }}"
+          echo "Compliance: ${{ needs.compliance-checks.result }}"
           echo "=============================================="
           
-          if [[ "${{ needs.build-and-check.result }}" != "failure" ]]; then
+          if [[ "${{ needs.build-and-check.result }}" != "failure" && "${{ needs.compliance-checks.result }}" != "failure" ]]; then
             echo "CI passou com sucesso!"
             exit 0
           else

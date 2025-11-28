@@ -2,13 +2,13 @@
  * Express Hardening Module - Alice Enterprise Platform
  * 
  * Módulo centralizado para configuração de segurança Express.js 2025.
- * Implementa best practices: Helmet, Rate Limiting, Error Handling.
+ * Implementa best practices: Helmet, Rate Limiting com Redis, Error Handling.
  * 
  * Referências:
  * - Express.js 4.21+ Security Best Practices
  * - OWASP API Security Top 10 2023
- * - Helmet 7.x Configuration Guide
- * - express-rate-limit 2025 Patterns
+ * - Helmet 8.x Configuration Guide
+ * - express-rate-limit 8.2.1 + rate-limit-redis 4.3.0 (2025)
  * 
  * Documentação em PT-BR (Regra 10 replit.md)
  * 
@@ -17,11 +17,98 @@
 
 import { Request, Response, NextFunction, Express, RequestHandler } from 'express';
 import helmet from 'helmet';
-import rateLimit, { Options as RateLimitOptions, ipKeyGenerator } from 'express-rate-limit';
+import rateLimit, { Options as RateLimitOptions, Store, ipKeyGenerator } from 'express-rate-limit';
+import { RedisStore } from 'rate-limit-redis';
+import { createClient, RedisClientType } from 'redis';
 import compression from 'compression';
 
 /**
- * Configuração de Helmet para segurança enterprise (OWASP 2023 + Helmet 7.x)
+ * Cliente Redis singleton para rate limiting distribuído
+ * OWASP API4/8: Distribuído para funcionar em escala multi-pod
+ */
+let redisClient: RedisClientType | null = null;
+let redisConnectionPromise: Promise<RedisClientType | null> | null = null;
+
+/**
+ * Obtém ou cria cliente Redis para rate limiting
+ * Usa padrão singleton para reutilizar conexão entre serviços
+ */
+async function getRedisClient(): Promise<RedisClientType | null> {
+  const redisUrl = process.env.REDIS_URL;
+  
+  if (!redisUrl) {
+    return null;
+  }
+  
+  if (redisClient?.isOpen) {
+    return redisClient;
+  }
+  
+  if (redisConnectionPromise) {
+    return redisConnectionPromise;
+  }
+  
+  redisConnectionPromise = (async () => {
+    try {
+      const client = createClient({
+        url: redisUrl,
+        socket: {
+          connectTimeout: 5000,
+          reconnectStrategy: (retries) => {
+            if (retries > 3) {
+              console.warn('[express-hardening] Redis: máximo de tentativas atingido, usando fallback');
+              return new Error('Max retries reached');
+            }
+            return Math.min(retries * 100, 2000);
+          },
+        },
+      });
+      
+      client.on('error', (err) => {
+        console.error('[express-hardening] Erro Redis:', err.message);
+      });
+      
+      client.on('connect', () => {
+        console.info('[express-hardening] Redis conectado para rate limiting distribuído');
+      });
+      
+      await client.connect();
+      redisClient = client as RedisClientType;
+      return redisClient;
+    } catch (error) {
+      console.warn('[express-hardening] Falha ao conectar Redis, usando MemoryStore:', (error as Error).message);
+      redisConnectionPromise = null;
+      return null;
+    }
+  })();
+  
+  return redisConnectionPromise;
+}
+
+/**
+ * Cria Redis Store para rate limiting (OWASP API4/8 2025)
+ * Retorna null se Redis não está disponível (fallback para MemoryStore)
+ */
+async function createRedisStoreIfAvailable(prefix: string): Promise<Store | null> {
+  const client = await getRedisClient();
+  
+  if (!client) {
+    return null;
+  }
+  
+  try {
+    return new RedisStore({
+      sendCommand: (...args: string[]) => client.sendCommand(args),
+      prefix: `rl:${prefix}:`,
+    });
+  } catch (error) {
+    console.warn('[express-hardening] Falha ao criar RedisStore:', (error as Error).message);
+    return null;
+  }
+}
+
+/**
+ * Configuração de Helmet para segurança enterprise (OWASP 2023 + Helmet 8.x)
  * CSP, HSTS, X-Frame-Options, etc.
  */
 export function createSecurityMiddleware(options?: {
@@ -32,18 +119,12 @@ export function createSecurityMiddleware(options?: {
   const enableCSP = options?.contentSecurityPolicy ?? true;
 
   return helmet({
-    // Content Security Policy - previne XSS e injeção de scripts
-    // PRODUÇÃO: CSP strict sem unsafe-inline (exceto styles para Tailwind)
-    // DESENVOLVIMENTO: Relaxa para React HMR e debugging
     contentSecurityPolicy: enableCSP ? {
       directives: {
         defaultSrc: ["'self'"],
-        // Produção: sem unsafe-inline para scripts (OWASP 2023)
-        // Desenvolvimento: permite unsafe-inline para React Fast Refresh
         scriptSrc: isDev 
           ? ["'self'", "'unsafe-inline'"] 
           : ["'self'"],
-        // Styles precisam de unsafe-inline para Tailwind CSS em ambos ambientes
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "https:"],
         fontSrc: ["'self'", "https:", "data:"],
@@ -56,35 +137,19 @@ export function createSecurityMiddleware(options?: {
       },
     } : false,
     
-    // HTTP Strict Transport Security - força HTTPS
     strictTransportSecurity: {
-      maxAge: 31536000, // 1 ano
+      maxAge: 31536000,
       includeSubDomains: true,
       preload: true,
     },
     
-    // X-Frame-Options - previne clickjacking
     frameguard: { action: 'deny' },
-    
-    // X-Content-Type-Options - previne MIME sniffing
     noSniff: true,
-    
-    // X-XSS-Protection - legacy browser protection
     xssFilter: true,
-    
-    // Referrer-Policy - controla informação de referrer
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
-    
-    // X-DNS-Prefetch-Control - controla DNS prefetch
     dnsPrefetchControl: { allow: false },
-    
-    // X-Download-Options - previne download automático em IE
     ieNoOpen: true,
-    
-    // X-Permitted-Cross-Domain-Policies - controla Flash/PDF
     permittedCrossDomainPolicies: { permittedPolicies: 'none' },
-    
-    // Remove X-Powered-By (já fazemos via app.disable, mas double-check)
     hidePoweredBy: true,
   });
 }
@@ -98,98 +163,137 @@ export interface MultiTenantRateLimitOptions {
   message?: string | object;
   skipRoutes?: string[];
   serviceName?: string;
+  useRedis?: boolean;
 }
 
 /**
- * Rate Limiter com suporte multi-tenant (express-rate-limit 2025)
+ * Rate Limiter com suporte multi-tenant e Redis distribuído (express-rate-limit 8.2.1 + rate-limit-redis 4.3.0)
+ * 
+ * OWASP API4/8 2025:
+ * - Produção: Redis Store para consistência entre pods
+ * - Desenvolvimento: MemoryStore (fallback automático)
+ * 
+ * Features:
  * - keyGenerator baseado em IP + tenantId
  * - skip para health checks
  * - handler customizado com logging
+ * - standardHeaders: 'draft-8' (IETF 2025)
  */
 export function createRateLimiter(options?: MultiTenantRateLimitOptions): RequestHandler {
   const {
-    windowMs = 60 * 1000, // 1 minuto
+    windowMs = 60 * 1000,
     max = 100,
     message = { error: 'Muitas requisições. Tente novamente em 1 minuto.' },
     skipRoutes = ['/health', '/api/*/health'],
     serviceName = 'unknown',
+    useRedis = process.env.NODE_ENV === 'production',
   } = options || {};
 
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  const keyGenerator = (req: Request): string => {
+    const rawIp = req.ip || req.socket?.remoteAddress || '0.0.0.0';
+    const ip = ipKeyGenerator(rawIp);
+    const tenantId = (req.headers['x-tenant-id'] as string) || req.tenantId || 'anonymous';
+    return `${ip}:${tenantId}`;
+  };
+  
+  const skip = (req: Request): boolean => {
+    const path = req.path.toLowerCase();
+    
+    if (path.includes('/health')) {
+      return true;
+    }
+    
+    for (const route of skipRoutes) {
+      if (route.includes('*')) {
+        const pattern = route.replace(/\*/g, '.*');
+        if (new RegExp(`^${pattern}$`).test(path)) {
+          return true;
+        }
+      } else if (path === route || path.startsWith(route)) {
+        return true;
+      }
+    }
+    
+    return false;
+  };
+  
+  const handler = (req: Request, res: Response, _next: NextFunction, optionsUsed: RateLimitOptions) => {
+    const tenantId = req.tenantId || 'unknown';
+    const ip = req.ip || 'unknown';
+    
+    console.warn(JSON.stringify({
+      level: 'warn',
+      service: serviceName,
+      event: 'rate_limit_exceeded',
+      tenantId,
+      ip,
+      path: req.path,
+      method: req.method,
+      windowMs: optionsUsed.windowMs,
+      max: optionsUsed.limit,
+      timestamp: new Date().toISOString(),
+    }));
+    
+    res.status(429).json(message);
+  };
+
+  if (useRedis && process.env.REDIS_URL) {
+    let redisLimiter: RequestHandler | null = null;
+    
+    const baseLimiterOptions: Partial<RateLimitOptions> = {
+      windowMs,
+      limit: max,
+      message,
+      standardHeaders: 'draft-8' as const,
+      legacyHeaders: false,
+      keyGenerator,
+      skip,
+      handler,
+    };
+    
+    const fallbackLimiter: RequestHandler = rateLimit(baseLimiterOptions);
+    
+    createRedisStoreIfAvailable(serviceName).then(store => {
+      if (store) {
+        console.info(`[${serviceName}] Rate limiting atualizado para Redis Store (OWASP API4/8 compliant)`);
+        redisLimiter = rateLimit({
+          ...baseLimiterOptions,
+          store,
+        });
+      } else {
+        console.warn(`[${serviceName}] Rate limiting mantido em MemoryStore (Redis indisponível)`);
+      }
+    }).catch(err => {
+      console.error(`[${serviceName}] Erro ao inicializar Redis Store:`, err);
+    });
+    
+    return (req: Request, res: Response, next: NextFunction) => {
+      const limiter = redisLimiter || fallbackLimiter;
+      return limiter(req, res, next);
+    };
+  }
+  
+  if (isProduction && !process.env.REDIS_URL) {
+    console.warn(`[${serviceName}] AVISO: REDIS_URL não configurado em produção. Rate limiting usando MemoryStore (OWASP API4/8 violação em escala multi-pod)`);
+  }
+  
   return rateLimit({
     windowMs,
     limit: max,
     message,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
-    
-    // keyGenerator multi-tenant: combina IP + tenantId para isolamento
-    // Usa ipKeyGenerator helper para IPv6 subnet handling (express-rate-limit 8.x)
-    // NOTA: Rate limiter roda ANTES do auth middleware, então lê tenant de headers
-    // x-tenant-id é injetado pelo API Gateway (Traefik) ou extraído de JWT pelo frontend
-    keyGenerator: (req: Request): string => {
-      // req.ip pode ser undefined em alguns casos (connections sem IP)
-      const rawIp = req.ip || req.socket?.remoteAddress || '0.0.0.0';
-      const ip = ipKeyGenerator(rawIp);
-      // Prioriza header x-tenant-id (set by API Gateway/frontend)
-      // Fallback para req.tenantId (set by auth middleware - pode não estar disponível aqui)
-      const tenantId = (req.headers['x-tenant-id'] as string) || req.tenantId || 'anonymous';
-      return `${ip}:${tenantId}`;
-    },
-    
-    // skip para health checks e rotas configuradas
-    skip: (req: Request): boolean => {
-      const path = req.path.toLowerCase();
-      
-      // Sempre skip health checks
-      if (path.includes('/health')) {
-        return true;
-      }
-      
-      // Verificar rotas customizadas
-      for (const route of skipRoutes) {
-        if (route.includes('*')) {
-          const pattern = route.replace(/\*/g, '.*');
-          if (new RegExp(`^${pattern}$`).test(path)) {
-            return true;
-          }
-        } else if (path === route || path.startsWith(route)) {
-          return true;
-        }
-      }
-      
-      return false;
-    },
-    
-    // handler customizado com logging
-    handler: (req: Request, res: Response, next: NextFunction, optionsUsed: RateLimitOptions) => {
-      const tenantId = req.tenantId || 'unknown';
-      const ip = req.ip || 'unknown';
-      
-      // Log estruturado para monitoramento
-      console.warn(JSON.stringify({
-        level: 'warn',
-        service: serviceName,
-        event: 'rate_limit_exceeded',
-        tenantId,
-        ip,
-        path: req.path,
-        method: req.method,
-        windowMs: optionsUsed.windowMs,
-        max: optionsUsed.max,
-        timestamp: new Date().toISOString(),
-      }));
-      
-      res.status(429).json(message);
-    },
+    keyGenerator,
+    skip,
+    handler,
   });
 }
 
 /**
  * Wrapper para rotas async (Express.js 2025)
  * Captura erros de funções async e passa para error handler
- * 
- * Uso:
- *   app.get('/rota', asyncHandler(async (req, res) => { ... }))
  */
 export function asyncHandler<T extends Request = Request>(
   fn: (req: T, res: Response, next: NextFunction) => Promise<void | Response>
@@ -201,10 +305,6 @@ export function asyncHandler<T extends Request = Request>(
 
 /**
  * Error Handler Global (Express.js 2025 + OWASP)
- * - Captura todos os erros não tratados
- * - Resposta padronizada
- * - Logging estruturado
- * - Não expõe stack traces em produção
  */
 export interface ErrorHandlerOptions {
   serviceName?: string;
@@ -226,8 +326,6 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
     includeStackInDev = true,
   } = options || {};
 
-  // SEGURANÇA: Verificação estrita de produção para evitar vazamento de stack
-  // Usa NODE_ENV diretamente para evitar config drift entre serviços
   const isProduction = process.env.NODE_ENV === 'production';
   const showStackTrace = !isProduction && includeStackInDev;
 
@@ -236,7 +334,6 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
     const correlationId = req.headers['x-correlation-id'] || 'unknown';
     const tenantId = req.tenantId || (req.headers['x-tenant-id'] as string) || 'unknown';
 
-    // Log estruturado (sempre inclui stack internamente para debug)
     const logEntry = {
       service: serviceName,
       event: 'unhandled_error',
@@ -248,7 +345,7 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
       error: {
         message: err.message,
         name: err.name,
-        stack: err.stack, // Stack sempre no log interno
+        stack: err.stack,
       },
       timestamp: new Date().toISOString(),
     };
@@ -259,7 +356,6 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
       console.error(JSON.stringify(logEntry));
     }
 
-    // Resposta padronizada (OWASP 2023 - não vaza info em produção)
     const response: {
       error: string;
       message?: string;
@@ -270,13 +366,11 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
       correlationId: correlationId as string,
     };
 
-    // Stack trace APENAS em desenvolvimento (verificação estrita)
     if (showStackTrace) {
       response.message = err.message;
       response.stack = err.stack;
     }
 
-    // Garantir que não enviamos resposta dupla
     if (!res.headersSent) {
       res.status(status).json(response);
     }
@@ -285,7 +379,6 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
 
 /**
  * Middleware 404 Not Found (Express.js 2025)
- * Deve ser adicionado ANTES do error handler
  */
 export function createNotFoundHandler(options?: {
   serviceName?: string;
@@ -307,7 +400,6 @@ export function createNotFoundHandler(options?: {
 
 /**
  * Configura Express app com todas as configurações de segurança
- * Ordem correta de middlewares (Express.js 2025)
  */
 export interface HardeningConfig {
   serviceName: string;
@@ -317,6 +409,7 @@ export interface HardeningConfig {
   rateLimitMax?: number;
   rateLimitWindowMs?: number;
   skipRateLimitRoutes?: string[];
+  useRedis?: boolean;
   logger?: {
     error: (obj: object, msg: string) => void;
   };
@@ -331,50 +424,124 @@ export function applySecurityHardening(app: Express, config: HardeningConfig): v
     rateLimitMax = 100,
     rateLimitWindowMs = 60 * 1000,
     skipRateLimitRoutes = [],
-    logger,
+    useRedis = process.env.NODE_ENV === 'production',
   } = config;
 
-  // 1. Desabilitar X-Powered-By
   app.disable('x-powered-by');
-
-  // 2. Trust proxy (Traefik)
   app.set('trust proxy', trustProxy);
 
-  // 3. Helmet (segurança HTTP headers)
   app.use(createSecurityMiddleware({
     contentSecurityPolicy: enableCSP,
     isDevelopment: process.env.NODE_ENV !== 'production',
   }));
 
-  // 4. Compression (performance)
   if (enableCompression) {
     app.use(compression());
   }
 
-  // 5. Rate limiting (após compression, antes de rotas)
   app.use(createRateLimiter({
     max: rateLimitMax,
     windowMs: rateLimitWindowMs,
     skipRoutes: skipRateLimitRoutes,
     serviceName,
+    useRedis,
   }));
+}
 
-  // Nota: Error handler deve ser adicionado APÓS todas as rotas
-  // Usar: app.use(createNotFoundHandler({ serviceName }));
-  // Usar: app.use(createErrorHandler({ serviceName, logger }));
+/**
+ * Configura timeouts do servidor HTTP (Node.js 20 LTS 2025)
+ * 
+ * Best practices:
+ * - server.timeout: tempo máximo para requisição completa
+ * - keepAliveTimeout: deve ser maior que ALB timeout (60s default)
+ * - headersTimeout: ligeiramente maior que keepAliveTimeout
+ */
+export interface ServerTimeoutConfig {
+  timeout?: number;
+  keepAliveTimeout?: number;
+  headersTimeout?: number;
+}
+
+export function configureServerTimeouts(
+  server: { timeout: number; keepAliveTimeout: number; headersTimeout: number },
+  config?: ServerTimeoutConfig
+): void {
+  const {
+    timeout = 30000,
+    keepAliveTimeout = 65000,
+    headersTimeout = 66000,
+  } = config || {};
+
+  server.timeout = timeout;
+  server.keepAliveTimeout = keepAliveTimeout;
+  server.headersTimeout = headersTimeout;
+}
+
+/**
+ * Configura graceful shutdown para servidor HTTP (Node.js 20 LTS 2025)
+ */
+export function setupGracefulHttpShutdown(
+  server: { close: (callback?: (err?: Error) => void) => void },
+  options?: {
+    logger?: { info: (msg: string) => void; warn: (msg: string) => void };
+    shutdownTimeout?: number;
+    onShutdown?: () => Promise<void>;
+  }
+): void {
+  const {
+    logger = { info: console.info, warn: console.warn },
+    shutdownTimeout = 10000,
+    onShutdown,
+  } = options || {};
+
+  const shutdown = async (signal: string) => {
+    logger.info(`Recebido ${signal}, iniciando graceful shutdown...`);
+    
+    server.close(() => {
+      logger.info('Conexões HTTP encerradas');
+    });
+
+    if (onShutdown) {
+      try {
+        await onShutdown();
+      } catch (error) {
+        logger.warn(`Erro durante shutdown: ${(error as Error).message}`);
+      }
+    }
+
+    setTimeout(() => {
+      logger.warn('Forçando encerramento após timeout');
+      process.exit(1);
+    }, shutdownTimeout);
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}
+
+/**
+ * Encerra cliente Redis de rate limiting
+ * Chamar durante graceful shutdown
+ */
+export async function closeRedisRateLimitClient(): Promise<void> {
+  if (redisClient?.isOpen) {
+    try {
+      await redisClient.quit();
+      console.info('[express-hardening] Cliente Redis de rate limiting encerrado');
+    } catch (error) {
+      console.warn('[express-hardening] Erro ao encerrar Redis:', (error as Error).message);
+    }
+  }
+  redisClient = null;
+  redisConnectionPromise = null;
 }
 
 /**
  * Schemas Zod comuns para validação de rotas
  */
 export const CommonSchemas = {
-  // UUID validation
   uuid: /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
-  
-  // Email validation (RFC 5322 simplificado)
   email: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-  
-  // Pagination defaults
   paginationDefaults: {
     page: 1,
     limit: 50,
