@@ -139,6 +139,8 @@ setupGracefulShutdown(logger?)          // SIGTERM/SIGINT handlers
 - Cooldown Progressivo: Após bloqueio, limite reduzido por fator 2x, 4x (máximo)
 - Cooldown Decay: 5 minutos de bom comportamento reduz penalidade pela metade
 - Response: `{ type: 'rate_limited', retryAfter: number }`
+- **Timer Cleanup**: Timers de cooldown decay cancelados no disconnect via `cooldownDecayTimers` Map
+- **Session Token**: `sessionId` único por conexão previne callbacks de timers obsoletos após reconexão rápida
 
 ### Docker Resource Limits (Produção) - Atualizado 28/11/2025
 
@@ -198,4 +200,4 @@ Secrets automaticamente redactados nos logs:
 ---
 
 *Documento em Português Brasileiro*
-*Versão 5.7 - Novembro 2025*
+*Versão 5.8 - Novembro 2025*

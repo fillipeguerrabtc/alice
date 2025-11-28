@@ -723,6 +723,7 @@ interface WsRateLimitState {
   blockUntil: number;
   cooldownMultiplier: number;
   lastActivity: number;
+  sessionId: number; // Token único para validar timers após reconexão
 }
 
 const WS_RATE_LIMIT = {
@@ -736,13 +737,23 @@ const WS_RATE_LIMIT = {
 const wsRateLimits = new Map<string, WsRateLimitState>();
 // Mapa para guardar timers de cooldown decay - corrige memory leak no disconnect
 const wsCooldownTimers = new Map<string, NodeJS.Timeout>();
+// Contador global para gerar sessionIds únicos
+let wsSessionIdCounter = 0;
 
 function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: number; retryAfter?: number } {
   const now = Date.now();
   let state = wsRateLimits.get(clientKey);
   
   if (!state) {
-    state = { timestamps: [], blocked: false, blockUntil: 0, cooldownMultiplier: 1, lastActivity: now };
+    wsSessionIdCounter += 1;
+    state = { 
+      timestamps: [], 
+      blocked: false, 
+      blockUntil: 0, 
+      cooldownMultiplier: 1, 
+      lastActivity: now,
+      sessionId: wsSessionIdCounter,
+    };
     wsRateLimits.set(clientKey, state);
   }
   
@@ -773,6 +784,7 @@ function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: num
   state.timestamps.push(now);
   
   // Cooldown decay com timer cancelável (corrige memory leak no disconnect)
+  // Usa sessionId para invalidar callbacks de sessões antigas após reconexão rápida
   if (state.cooldownMultiplier > 1 && state.timestamps.length === 1) {
     // Cancelar timer anterior se existir
     const existingTimer = wsCooldownTimers.get(clientKey);
@@ -780,14 +792,23 @@ function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: num
       clearTimeout(existingTimer);
     }
     
+    // Capturar sessionId atual para validação no callback
+    const timerSessionId = state.sessionId;
+    
     const decayTimer = setTimeout(() => {
       const currentState = wsRateLimits.get(clientKey);
-      if (currentState && !currentState.blocked && currentState.cooldownMultiplier > 1) {
-        currentState.cooldownMultiplier = Math.max(1, currentState.cooldownMultiplier / 2);
-        logger.info({ clientKey, cooldownMultiplier: currentState.cooldownMultiplier }, 'WebSocket cooldown reduzido por bom comportamento');
+      // Validar que o state pertence à mesma sessão (evita bug de reconexão rápida)
+      if (currentState && currentState.sessionId === timerSessionId) {
+        if (!currentState.blocked && currentState.cooldownMultiplier > 1) {
+          currentState.cooldownMultiplier = Math.max(1, currentState.cooldownMultiplier / 2);
+          logger.info({ clientKey, cooldownMultiplier: currentState.cooldownMultiplier, sessionId: timerSessionId }, 'WebSocket cooldown reduzido por bom comportamento');
+        }
+        // Limpar referência do timer após execução válida
+        wsCooldownTimers.delete(clientKey);
+      } else {
+        // Timer obsoleto - sessão diferente ou cliente desconectado e reconectado
+        logger.debug({ clientKey, timerSessionId, currentSessionId: currentState?.sessionId }, 'Timer de cooldown ignorado - sessão inválida');
       }
-      // Limpar referência do timer após execução
-      wsCooldownTimers.delete(clientKey);
     }, WS_RATE_LIMIT.cooldownDecayMs);
     
     wsCooldownTimers.set(clientKey, decayTimer);
