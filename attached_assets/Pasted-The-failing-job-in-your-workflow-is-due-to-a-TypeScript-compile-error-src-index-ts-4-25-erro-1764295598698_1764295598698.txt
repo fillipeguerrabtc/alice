@@ -1,0 +1,72 @@
+The failing job in your workflow is due to a TypeScript compile error:
+
+> src/index.ts(4,25): error TS2307: Cannot find module '@alice/shared/schema' or its corresponding type declarations.
+
+This error means the @alice/database package depends on @alice/shared/schema, but TypeScript cannot find it. Here's how you can solve it:
+
+## Solution Steps
+
+1. **Verify the Dependency Exists:**
+   - Ensure there's a package called `@alice/shared` and it contains a `schema` export.
+   - Check that the package’s path is correct in the monorepo (likely at `packages/shared`).
+
+2. **Install/Link the Dependency:**
+   - If using `pnpm`, ensure you've run `pnpm install` at the project root so workspace packages are correctly linked.
+   - In `packages/database/package.json`, confirm `@alice/shared` is listed under `dependencies` or `devDependencies`.
+
+   ```json
+   {
+     "dependencies": {
+       "@alice/shared": "*"
+     }
+   }
+   ```
+
+3. **Check Type Declarations:**
+   - Make sure `packages/shared/schema` either has a `.d.ts` typing file or is written in TypeScript.
+   - If missing, add one:
+
+   ```typescript
+   // packages/shared/schema.d.ts
+   export interface MySchema { /* ... */ }
+   ```
+
+4. **Correct Import Path (if necessary):**
+   - In `packages/database/src/index.ts`, the import should look like:
+     ```typescript
+     import { /* ... */ } from '@alice/shared/schema';
+     ```
+
+   - If the shared package does not export a `schema` module, you may need to fix the import to point to the correct file:
+     ```typescript
+     import { ... } from '@alice/shared/dist/schema';
+     ```
+     Or update the shared package to re-export the schema.
+
+5. **Build Order:**
+   - The shared package should be built before the database package.
+   - Ensure your build steps reflect this (e.g., in your `pnpm` workspace scripts).
+
+## Example Fix
+
+If `@alice/shared/schema` is actually at `packages/shared/src/schema.ts`, update `packages/shared/package.json` to include:
+```json
+{
+  "main": "src/index.ts",
+  "exports": {
+    "./schema": "./src/schema.ts"
+  }
+}
+```
+
+Then, make sure `@alice/shared` is correctly installed/linked and exported.
+
+## Final Checklist
+
+- [ ] `pnpm install` ran successfully?
+- [ ] Is `@alice/shared/schema` actually in the right location?
+- [ ] Are type declarations available?
+- [ ] Is build order correct?
+- [ ] Are `pnpm` workspace dependencies configured?
+
+Apply these steps, and the build should succeed. If you want exact code from the relevant files or package.json, let me know!
