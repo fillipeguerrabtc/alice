@@ -104,6 +104,7 @@ The platform includes several microservices:
 -   **Server Timeouts**: Configurados em todos os serviços seguindo Node.js 20 LTS: server.timeout (30s padrão, 60s RAG, 120s chat), keepAliveTimeout (65s), headersTimeout (66s).
 -   **ERPNext Fail-Fast**: Defaults inseguros removidos do docker-compose.prod.yml. Credenciais obrigatórias via sintaxe :? que falha se não configuradas.
 -   **Frappe v15.74.2**: Versão específica pinada em todos os 9 containers ERPNext para mitigar CVEs críticos (SQL Injection, RCE).
+-   **Packages Centralizados**: @alice/logger (Pino com JSON em produção, pino-pretty em dev), @alice/config (validação Zod + sanitização de secrets), @alice/shared (schema Drizzle unificado com tabelas de rastreabilidade).
 
 ## External Dependencies
 
