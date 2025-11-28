@@ -82,8 +82,11 @@ The platform includes several microservices:
 - **CI/CD**: Automated GitHub Actions for Docker image building, pushing, SSH deployment to Hetzner, and health checks.
 - **Code Quality**: Enforces Pino for logging, TypeScript strict mode, and mandatory health checks.
 - **Build System**: `esbuild` for bundling and 3-stage Dockerfiles.
-- **Resilience & Performance**: Includes connection pool lifecycle management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, and sanitization of secrets in logs. CSRF token comparison uses `crypto.timingSafeEqual`. AbortController is integrated with `fetchWithAbort` and `createProtectedFetch`.
+- **Resilience & Performance**: Includes connection pool lifecycle management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, and sanitization of secrets in logs. CSRF token comparison uses `crypto.timingSafeEqual`. AbortController integrado em todas chamadas externas (ERPNext 10s, LLM streaming 60s, LLM sync 30s, cross-service 15s).
 - **Security Hardening**: PostgreSQL RLS, sslmode=prefer, tenant_id indices, pgAudit, Docker Non-Root, Traefik v3.3, Redis ACL, GitHub Actions SHA Pinning and Permissions, CSP Hardening, Compression Middleware, Server Timeouts, ERPNext Fail-Fast, Frappe v15.74.2, central packages (`@alice/logger`, `@alice/config`, `@alice/shared`), JSONB TypeSafe with Zod schemas, React Suspense, Express Hardening Module (`createSecurityMiddleware`, `createRateLimiter`, `createErrorHandler`, `createNotFoundHandler`, `asyncHandler`), Zod Input Validation.
+- **Stripe Idempotency**: `generateIdempotencyKey()` com crypto.randomUUID(). Fail-fast em produção se idempotencyKey não fornecida (Regra 6). Previne cobranças duplicadas em retries.
+- **WebSocket Auth**: Validação de sessão PostgreSQL (connect-pg-simple) com SESSION_SECRET obrigatório em produção. Cache de sessões validadas (TTL 5min).
+- **Service-to-Service Auth**: HMAC-SHA256 com headers assinados (`x-internal-signature`, `x-internal-timestamp`). Validação de 5 minutos. Guard `isInternalAuthEnabled()` antes de gerar headers.
 
 ### System Design Choices
 
