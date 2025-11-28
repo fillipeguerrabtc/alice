@@ -1,0 +1,71 @@
+The job is failing due to missing module errors for @alice/shared-utils in several TypeScript files:
+
+- apps/auth-service/src/index.ts
+- apps/chat-service/src/index.ts
+- apps/integrations-service/src/index.ts
+- apps/rag-service/src/index.ts
+- apps/training-service/src/index.ts
+
+**Error Example:**
+```
+error TS2307: Cannot find module '@alice/shared-utils' or its corresponding type declarations.
+```
+
+## Solution
+
+1. **Ensure @alice/shared-utils Is Installed**
+   
+   - If it's a local package, confirm it exists in your monorepo structure (likely under `packages/shared-utils` or similar).
+   - If published to npm or GitHub, add it to your `package.json`:
+     ```json
+     "dependencies": {
+       "@alice/shared-utils": "<version>"
+     }
+     ```
+   - Then run:
+     ```bash
+     npm install
+     # or
+     yarn install
+     ```
+
+2. **Check TypeScript Path Mappings**
+   
+   If using TypeScript path aliases, confirm `tsconfig.json` contains:
+   ```json
+   "compilerOptions": {
+     "baseUrl": ".",
+     "paths": {
+       "@alice/shared-utils": ["packages/shared-utils/src"]
+     }
+   }
+   ```
+
+3. **Build Local Packages Before Usage**
+   
+   If `@alice/shared-utils` is a local package:
+   - Ensure it is built before running `tsc --noEmit`.
+   - In a monorepo setup, add a pre-typecheck step:
+     ```json
+     "scripts": {
+       "build:shared-utils": "tsc -p packages/shared-utils",
+       "typecheck": "npm run build:shared-utils && tsc --noEmit"
+     }
+     ```
+
+4. **Check Relative Imports If Not Using Aliases**
+   
+   If you aren’t using path aliases, update imports to be relative:
+   ```typescript
+   import { someUtil } from '../../shared-utils/src';
+   ```
+
+---
+
+### Next Steps
+
+- Confirm the presence and build of `@alice/shared-utils`.
+- Update dependencies and path mappings as shown above.
+- Re-run your workflow.
+
+If you need to reference or edit any specific `package.json`, `tsconfig.json`, or the code in the failing files, let me know!
