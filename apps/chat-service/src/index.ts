@@ -670,6 +670,36 @@ const sendMessageSchema = z.object({
   tipo: z.enum(['text', 'image', 'audio', 'video', 'document', 'mixed']).default('text'),
 });
 
+// OWASP API3 - Schemas Zod para validação de input em todas as rotas
+const streamMessageSchema = z.object({
+  messages: z.array(z.object({
+    role: z.enum(['user', 'assistant', 'system']),
+    content: z.string().min(1).max(32000),
+  })).min(1).max(50),
+  conversationId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid().optional(),
+});
+
+const takeoverNoteSchema = z.object({
+  notes: z.string().max(2000).optional(),
+});
+
+const handbackSchema = z.object({
+  resolutionNotes: z.string().max(2000).optional(),
+});
+
+const takeoverMessageSchema = z.object({
+  content: z.string().min(1).max(4000),
+});
+
+const imageScoreSchema = z.object({
+  score: z.number().int().min(1).max(5),
+});
+
+const imageApproveSchema = z.object({
+  approved: z.boolean(),
+});
+
 app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
@@ -771,11 +801,12 @@ app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(
 });
 
 app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
-  const { messages: inputMessages, conversationId, namespaceId } = req.body as { 
-    messages: Array<{ role: string; content: string }>;
-    conversationId?: string;
-    namespaceId?: string;
-  };
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = streamMessageSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { messages: inputMessages, conversationId, namespaceId } = parseResult.data;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -1460,7 +1491,13 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(
   const { id } = req.params;
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
-  const { notes } = req.body as { notes?: string };
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = takeoverNoteSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { notes } = parseResult.data;
   
   if (!agentId) {
     return res.status(401).json({ error: 'ID do agente necessário' });
@@ -1487,7 +1524,13 @@ app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(
   const { id } = req.params;
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
-  const { resolutionNotes } = req.body as { resolutionNotes?: string };
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = handbackSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { resolutionNotes } = parseResult.data;
   
   if (!agentId) {
     return res.status(401).json({ error: 'ID do agente necessário' });
@@ -1629,7 +1672,13 @@ app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTena
   const { id } = req.params;
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
-  const { content } = req.body as { content: string };
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = takeoverMessageSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { content } = parseResult.data;
   
   if (!agentId) {
     return res.status(401).json({ error: 'ID do agente necessário' });
@@ -1757,7 +1806,13 @@ app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantId
   const { id } = req.params;
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { score } = req.body as { score: number };
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = imageScoreSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { score } = parseResult.data;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });
@@ -1784,7 +1839,13 @@ app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenan
   const { id } = req.params;
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { approved } = req.body as { approved: boolean };
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = imageApproveSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { approved } = parseResult.data;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });

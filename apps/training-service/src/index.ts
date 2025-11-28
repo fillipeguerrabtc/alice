@@ -772,6 +772,12 @@ const webhookSchema = z.object({
   timestamp: z.string().optional(),
 });
 
+// OWASP API3 - Schema para aprovação em lote
+const batchApproveSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(1000),
+  action: z.enum(['approve', 'reject']),
+});
+
 app.post('/api/training/webhook', async (req: Request, res: Response) => {
   const webhookSecret = req.headers['x-webhook-secret'] as string | undefined;
   const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
@@ -848,15 +854,12 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
 // ============================================================================
 
 app.post('/api/training/data/approve-batch', requirePermission('training:training_data:update'), async (req: Request, res: Response) => {
-  const { ids, action } = req.body as { ids: string[]; action: 'approve' | 'reject' };
-
-  if (!ids || !Array.isArray(ids) || ids.length === 0) {
-    return res.status(400).json({ error: 'IDs são obrigatórios' });
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = batchApproveSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
   }
-
-  if (!action || !['approve', 'reject'].includes(action)) {
-    return res.status(400).json({ error: 'Action deve ser "approve" ou "reject"' });
-  }
+  const { ids, action } = parseResult.data;
 
   try {
     const newStatus = action === 'approve' ? 'approved' : 'rejected';

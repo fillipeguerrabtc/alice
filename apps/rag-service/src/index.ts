@@ -1679,6 +1679,13 @@ const jsonUploadSchema = z.object({
   description: z.string().optional(),
 });
 
+// OWASP API3 - Schema para busca de mídia
+const mediaSearchSchema = z.object({
+  query: z.string().max(2000).optional(),
+  imageId: z.string().uuid().optional(),
+  limit: z.number().int().min(1).max(100).default(10),
+});
+
 app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId e req.user populados pelo middleware
   const tenantId = req.tenantId;
@@ -2142,13 +2149,14 @@ app.post('/api/media/search', requireAuth(), async (req: Request, res: Response)
     return res.status(401).json({ error: 'Tenant não identificado' });
   }
 
-  try {
-    const { query, imageId, limit = 10 } = req.body as {
-      query?: string;
-      imageId?: string; // UUID string, não number
-      limit?: number;
-    };
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = mediaSearchSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
+  }
+  const { query, imageId, limit } = parseResult.data;
 
+  try {
     if (!query && !imageId) {
       return res.status(400).json({ 
         error: 'Forneça "query" (texto) ou "imageId" (busca por imagem similar)' 

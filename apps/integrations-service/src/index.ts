@@ -290,6 +290,52 @@ const createIntegrationSchema = z.object({
   credenciais: z.record(z.unknown()).optional(),
 });
 
+// OWASP API3 - Schemas Zod para Twilio webhooks e rotas
+// Referência: https://www.twilio.com/docs/messaging/webhooks/message-webhooks
+// Regex para formato Twilio: "whatsapp:+xxxxxxxxxxx" ou "+xxxxxxxxxxx"
+const twilioPhoneRegex = /^(whatsapp:)?\+?[1-9]\d{9,14}$/;
+// Regex para MessageSid webhook incoming: MM + 32 hex chars (MMS) ou SM + 32 (SMS)
+const twilioIncomingSidRegex = /^(SM|MM)[0-9a-fA-F]{32}$/;
+const twilioWebhookSchema = z.object({
+  MessageSid: z.string().regex(twilioIncomingSidRegex), // SM/MM + 32 hex chars
+  From: z.string().min(10).max(30).regex(twilioPhoneRegex), // whatsapp:+xxxxxxxxxxx ou +xxxxxxxxxxx
+  To: z.string().min(10).max(30).regex(twilioPhoneRegex),
+  Body: z.string().max(1600).default(''), // WhatsApp max message size
+  NumMedia: z.string().regex(/^\d+$/).optional(),
+  MediaUrl0: z.string().url().optional(),
+  MediaContentType0: z.string().max(100).optional(),
+});
+
+// Twilio message status enum completo
+// Docs: https://www.twilio.com/docs/messaging/guides/outbound-message-statuses
+// Inclui todos os status: outbound, inbound e WhatsApp específicos
+const twilioMessageStatuses = [
+  // Outbound statuses
+  'accepted', 'queued', 'sending', 'sent', 'delivered', 'undelivered', 'failed',
+  // Inbound statuses
+  'receiving', 'received',
+  // Scheduled message statuses
+  'scheduled', 'canceled',
+  // WhatsApp specific statuses
+  'read',
+] as const;
+// Regex para MessageSid: SM + 32 hex chars
+const twilioSidRegex = /^SM[0-9a-fA-F]{32}$/;
+const twilioStatusSchema = z.object({
+  MessageSid: z.string().regex(twilioSidRegex), // SM + 32 hex chars
+  MessageStatus: z.enum(twilioMessageStatuses),
+  ErrorCode: z.string().max(10).optional(),
+  ErrorMessage: z.string().max(500).optional(),
+  To: z.string().min(10).max(30).regex(twilioPhoneRegex), // whatsapp:+xxxxxxxxxxx ou +xxxxxxxxxxx
+});
+
+const twilioSendSchema = z.object({
+  to: z.string().min(10).max(30).regex(twilioPhoneRegex), // whatsapp:+xxxxxxxxxxx ou +xxxxxxxxxxx
+  message: z.string().min(1).max(1600), // WhatsApp max message size
+  conversationId: z.string().uuid().optional(),
+  mediaUrl: z.string().url().optional(),
+});
+
 app.post('/api/integrations', requirePermission('integrations:integrations:write'), async (req: Request, res: Response) => {
   try {
     const body = createIntegrationSchema.parse(req.body);
@@ -1630,6 +1676,12 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
 
   // Processar webhook de forma assíncrona (após resposta enviada)
   try {
+    // OWASP API3 - Validação Zod (não rejeita por falha pois já respondemos 200)
+    const parseResult = twilioWebhookSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      logger.warn({ errors: parseResult.error.flatten() }, 'Payload Twilio inválido');
+      return;
+    }
     const {
       MessageSid,
       From,
@@ -1638,15 +1690,7 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
       NumMedia,
       MediaUrl0,
       MediaContentType0,
-    } = req.body as {
-      MessageSid: string;
-      From: string;
-      To: string;
-      Body: string;
-      NumMedia?: string;
-      MediaUrl0?: string;
-      MediaContentType0?: string;
-    };
+    } = parseResult.data;
 
     logger.info({
       messageSid: MessageSid,
@@ -1810,19 +1854,19 @@ app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Re
   res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 
   try {
+    // OWASP API3 - Validação Zod (não rejeita por falha pois já respondemos 200)
+    const parseResult = twilioStatusSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      logger.warn({ errors: parseResult.error.flatten() }, 'Payload status Twilio inválido');
+      return;
+    }
     const {
       MessageSid,
       MessageStatus,
       ErrorCode,
       ErrorMessage,
       To,
-    } = req.body as {
-      MessageSid: string;
-      MessageStatus: string;
-      ErrorCode?: string;
-      ErrorMessage?: string;
-      To: string;
-    };
+    } = parseResult.data;
 
     logger.info({
       messageSid: MessageSid,
@@ -1864,16 +1908,12 @@ app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Re
  * Rota: POST /api/integrations/twilio/send
  */
 app.post('/api/integrations/twilio/send', requirePermission('integrations:twilio:write'), async (req: Request, res: Response) => {
-  const { to, message, conversationId, mediaUrl } = req.body as {
-    to: string;
-    message: string;
-    conversationId?: string;
-    mediaUrl?: string;
-  };
-
-  if (!to || !message) {
-    return res.status(400).json({ error: 'Parâmetros to e message são obrigatórios' });
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = twilioSendSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido' });
   }
+  const { to, message, conversationId, mediaUrl } = parseResult.data;
 
   try {
     const result = await sendWhatsAppMessage(to, message, mediaUrl);
