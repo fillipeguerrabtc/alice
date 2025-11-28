@@ -1037,12 +1037,12 @@ function validateTwilioSignature(
     
     const expectedSignature = crypto
       .createHmac('sha1', TWILIO_AUTH_TOKEN)
-      .update(Buffer.from(dataToSign, 'utf-8'))
+      .update(new Uint8Array(Buffer.from(dataToSign, 'utf-8')))
       .digest('base64');
 
     // Usar timingSafeEqual para prevenir timing attacks
-    const signatureBuffer = Buffer.from(signature);
-    const expectedBuffer = Buffer.from(expectedSignature);
+    const signatureBuffer = new Uint8Array(Buffer.from(signature));
+    const expectedBuffer = new Uint8Array(Buffer.from(expectedSignature));
     
     if (signatureBuffer.length !== expectedBuffer.length) {
       return { valid: false, reason: 'SIGNATURE_LENGTH_MISMATCH' };

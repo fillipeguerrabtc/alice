@@ -1059,7 +1059,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     }
 
     // Gerar hash único para o arquivo
-    const fileHash = crypto.createHash('sha256').update(req.file.buffer).digest('hex');
+    const fileHash = crypto.createHash('sha256').update(new Uint8Array(req.file.buffer)).digest('hex');
     
     // Verificar duplicatas no mesmo tenant
     const existingMedia = await db.query.mediaUploads.findFirst({
@@ -1329,7 +1329,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     }
 
     // Gerar hash para deduplicação
-    const fileHash = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+    const fileHash = crypto.createHash('sha256').update(new Uint8Array(fileBuffer)).digest('hex');
     
     // Verificar duplicatas
     const existingMedia = await db.query.mediaUploads.findFirst({
