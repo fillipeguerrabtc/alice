@@ -734,6 +734,8 @@ const WS_RATE_LIMIT = {
 };
 
 const wsRateLimits = new Map<string, WsRateLimitState>();
+// Mapa para guardar timers de cooldown decay - corrige memory leak no disconnect
+const wsCooldownTimers = new Map<string, NodeJS.Timeout>();
 
 function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: number; retryAfter?: number } {
   const now = Date.now();
@@ -770,20 +772,38 @@ function checkWsRateLimit(clientKey: string): { allowed: boolean; remaining: num
   
   state.timestamps.push(now);
   
+  // Cooldown decay com timer cancelável (corrige memory leak no disconnect)
   if (state.cooldownMultiplier > 1 && state.timestamps.length === 1) {
-    setTimeout(() => {
+    // Cancelar timer anterior se existir
+    const existingTimer = wsCooldownTimers.get(clientKey);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+    }
+    
+    const decayTimer = setTimeout(() => {
       const currentState = wsRateLimits.get(clientKey);
       if (currentState && !currentState.blocked && currentState.cooldownMultiplier > 1) {
         currentState.cooldownMultiplier = Math.max(1, currentState.cooldownMultiplier / 2);
         logger.info({ clientKey, cooldownMultiplier: currentState.cooldownMultiplier }, 'WebSocket cooldown reduzido por bom comportamento');
       }
+      // Limpar referência do timer após execução
+      wsCooldownTimers.delete(clientKey);
     }, WS_RATE_LIMIT.cooldownDecayMs);
+    
+    wsCooldownTimers.set(clientKey, decayTimer);
   }
   
   return { allowed: true, remaining: effectiveMaxMessages - state.timestamps.length };
 }
 
 function cleanupWsRateLimit(clientKey: string) {
+  // Cancelar timer de cooldown decay pendente (evita memory leak)
+  const pendingTimer = wsCooldownTimers.get(clientKey);
+  if (pendingTimer) {
+    clearTimeout(pendingTimer);
+    wsCooldownTimers.delete(clientKey);
+    logger.debug({ clientKey }, 'Timer de cooldown decay cancelado no disconnect');
+  }
   wsRateLimits.delete(clientKey);
 }
 
