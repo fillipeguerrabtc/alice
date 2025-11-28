@@ -70,8 +70,10 @@ const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
+// SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
+// Alinhado com Express.js 2025 + OWASP 2025 best practices
 const getTenantIdFromRequest = (req: Request): string | undefined => {
-  return req.headers['x-tenant-id'] as string | undefined;
+  return req.tenantId;
 };
 
 if (!DATABASE_URL) {
@@ -519,11 +521,14 @@ const createConversationSchema = z.object({
 });
 
 app.post('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
-  const userId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const auth = req.user;
   
-  if (!userId) {
+  if (!auth?.userId) {
     return res.status(401).json({ error: 'ID do usuário necessário' });
   }
+
+  const userId = auth.userId;
 
   try {
     const body = createConversationSchema.parse(req.body);
@@ -566,7 +571,12 @@ const sendMessageSchema = z.object({
 
 app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const userId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const userId = req.user?.userId;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'ID do usuário necessário' });
+  }
 
   try {
     const body = sendMessageSchema.parse(req.body);
@@ -1332,7 +1342,8 @@ app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getT
 
 app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const agentId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const agentId = req.user?.userId;
   const { notes } = req.body as { notes?: string };
   
   if (!agentId) {
@@ -1358,7 +1369,8 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(
 
 app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:handoff:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const agentId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const agentId = req.user?.userId;
   const { resolutionNotes } = req.body as { resolutionNotes?: string };
   
   if (!agentId) {
@@ -1499,7 +1511,8 @@ app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantI
 
 app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const agentId = req.headers['x-user-id'] as string;
+  // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
+  const agentId = req.user?.userId;
   const { content } = req.body as { content: string };
   
   if (!agentId) {
@@ -1595,8 +1608,13 @@ const imageGenerationSchema = z.object({
 });
 
 app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
-  const userId = req.headers['x-user-id'] as string;
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.user e req.tenantId populados pelo middleware
+  const userId = req.user?.userId;
+  const tenantId = req.tenantId;
+  
+  if (!userId || !tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
   
   try {
     const body = imageGenerationSchema.parse(req.body);
@@ -1621,8 +1639,13 @@ app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantId
 
 app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { score } = req.body as { score: number };
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
   
   try {
     const image = await db.query.generatedImages.findFirst({
@@ -1643,8 +1666,13 @@ app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantId
 
 app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { approved } = req.body as { approved: boolean };
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
   
   try {
     const image = await db.query.generatedImages.findFirst({
@@ -1675,11 +1703,12 @@ app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFrom
 });
 
 app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { status, approved, limit, offset } = req.query;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
   
   try {
@@ -1723,7 +1752,12 @@ app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromReques
 
 app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
   const { id } = req.params;
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
   
   try {
     const image = await db.query.generatedImages.findFirst({

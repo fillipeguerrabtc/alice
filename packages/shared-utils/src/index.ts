@@ -7,6 +7,10 @@
  * @module @alice/shared-utils
  */
 
+// IMPORTANTE: Importação side-effect para aplicar declarações globais do Express
+// Extensões: Express.User extends AuthContext, Express.Request tem tenantId
+import './rbac/types.js';
+
 export * from './logger.js';
 export * from './circuit-breaker.js';
 export * from './config.js';

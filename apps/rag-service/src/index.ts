@@ -1187,15 +1187,18 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
   }
 });
 
+// SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
+// Alinhado com Express.js 2025 + OWASP 2025 best practices
 function getTenantIdFromRequest(req: Request): string {
-  return req.headers['x-tenant-id'] as string;
+  return req.tenantId as string;
 }
 
 app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1380,12 +1383,13 @@ const mediaUploadSchema = z.object({
 });
 
 app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRequest), mediaUpload.single('file'), async (req: MulterRequest, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
-  const userId = req.headers['x-user-id'] as string | undefined;
+  // SEGURANÇA: Usar req.tenantId e req.user populados pelo middleware
+  const tenantId = req.tenantId;
+  const userId = req.user?.userId;
   const startTime = Date.now();
 
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   if (!req.file) {
@@ -1653,12 +1657,13 @@ const jsonUploadSchema = z.object({
 });
 
 app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
-  const userId = req.headers['x-user-id'] as string | undefined;
+  // SEGURANÇA: Usar req.tenantId e req.user populados pelo middleware
+  const tenantId = req.tenantId;
+  const userId = req.user?.userId;
   const startTime = Date.now();
 
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1849,11 +1854,12 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 
 // GET status de um upload específico
 app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { id } = req.params;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1888,10 +1894,11 @@ app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromReques
 
 // Listar uploads de mídia do tenant
 app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1937,11 +1944,12 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
 
 // Detalhes de um upload específico
 app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { id } = req.params;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1965,11 +1973,12 @@ app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFr
 
 // Deletar upload
 app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   const { id } = req.params;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
@@ -1997,10 +2006,11 @@ app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantI
 
 // Estatísticas de uploads do tenant
 app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
-  const tenantId = req.headers['x-tenant-id'] as string;
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
   
   if (!tenantId) {
-    return res.status(400).json({ error: 'Tenant ID obrigatório' });
+    return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
   try {
