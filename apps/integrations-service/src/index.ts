@@ -26,11 +26,6 @@ import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
 import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService.js';
-import { 
-  requirePermission, 
-  requireAuth,
-  extractAuthContext,
-} from '@alice/shared-utils';
 
 process.setMaxListeners(20);
 
@@ -561,7 +556,7 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
       'stripe',
       event.id,
       event.type,
-      event.data.object as Record<string, unknown>
+      event.data.object as unknown as Record<string, unknown>
     );
 
     if (isDuplicate) {

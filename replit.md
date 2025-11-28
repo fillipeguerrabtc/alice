@@ -104,3 +104,40 @@ The platform includes several microservices:
 - **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
+
+## Prontidão para Produção (Atualizado: Novembro 2025)
+
+### Status Geral: ~92% Pronto
+
+| Categoria | Status | Detalhes |
+|-----------|--------|----------|
+| Segurança Enterprise | 100% | RLS, RBAC 6-níveis, CSRF timingSafe, CSP, Helmet 8.x |
+| Rate Limiting | 100% | Redis Store distribuído com fallback MemoryStore (express-rate-limit 8.2.1) |
+| Server Timeouts | 100% | Todos os 7 serviços com timeout/keepAliveTimeout/headersTimeout |
+| Input Validation | 100% | Zod schemas em todas rotas críticas (OWASP API3) |
+| CI/CD | 100% | GitHub Actions com compliance checks automatizados |
+| Observability | 100% | Prometheus, Grafana, Jaeger, Langfuse integrados |
+| Integrações | 85% | Stripe/Wise/ERPNext com graceful degradation. Twilio/Resend pendentes |
+| Testes E2E | 75% | Smoke tests no CI, testes unitários pendentes expansão |
+
+### Design Pattern: Graceful Degradation
+
+As integrações (Stripe, Wise, ERPNext, Twilio, Resend) são **opcionais por design**:
+- Configs são opcionais no schema Zod
+- Serviços verificam disponibilidade antes de usar
+- Retornam HTTP 503 se integração não configurada
+- Em produção, fail-fast se secrets críticas faltam
+
+### Requisitos para Deploy
+
+- [ ] Configurar secrets no GitHub: `HETZNER_SSH_KEY`, `GHCR_TOKEN`, `REDIS_URL`
+- [ ] Configurar Redis ACL em produção
+- [ ] Executar migrações RLS no PostgreSQL de produção
+- [ ] Configurar webhooks Stripe/Wise em produção
+- [ ] Validar DNS entries para subdomínios
+
+### Gaps Identificados (Novembro 2025)
+
+1. **Twilio/Resend**: Integrações pendentes de configuração e testes
+2. **Testes E2E**: Cobertura parcial, precisa expansão
+3. **Feature Flags**: Sistema de feature flags para habilitar/desabilitar integrações em runtime
