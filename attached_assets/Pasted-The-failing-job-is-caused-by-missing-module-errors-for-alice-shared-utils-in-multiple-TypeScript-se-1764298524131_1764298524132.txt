@@ -1,0 +1,56 @@
+The failing job is caused by missing module errors for @alice/shared-utils in multiple TypeScript service entry points. Specifically, files such as apps/auth-service/src/index.ts, apps/chat-service/src/index.ts, apps/integrations-service/src/index.ts, apps/rag-service/src/index.ts, and apps/training-service/src/index.ts cannot find the '@alice/shared-utils' module or its type declarations.
+
+## Solution Steps
+
+1. **Ensure the @alice/shared-utils package is present:**
+   - If this is a local package (e.g., in a packages/shared-utils or libs/shared-utils folder), verify that its path is correct and included in your project’s configuration.
+   - If it’s meant to be published to npm, run `npm install @alice/shared-utils` in the root directory or add it to your dependencies.
+
+2. **Check TypeScript configuration (tsconfig.json):**
+   - Confirm that paths are mapped for local packages:
+     ```json
+     {
+       "compilerOptions": {
+         "baseUrl": ".",
+         "paths": {
+           "@alice/shared-utils": ["packages/shared-utils/src"]
+         }
+       }
+     }
+     ```
+   - If using workspaces (e.g., with pnpm or yarn), make sure the workspace configuration includes shared-utils.
+
+3. **Run dependency installation:**
+   - Execute the following from your project root:
+     ```bash
+     npm install
+     # or, if using pnpm:
+     pnpm install
+     # or yarn:
+     yarn install
+     ```
+
+4. **Build local packages (for monorepo setups):**
+   - If your repo uses a monorepo architecture (with multiple packages/apps), ensure shared-utils is built before dependent services:
+     ```bash
+     cd packages/shared-utils
+     npm run build
+     cd ../..
+     npm run build
+     ```
+
+## Direct Code Suggestions
+
+- If missing, add shared-utils as a dependency in the affected apps’ package.json files:
+  ```json
+  "dependencies": {
+    "@alice/shared-utils": "workspace:*"
+  }
+  ```
+- Ensure the import path in your TypeScript files matches your monorepo/project setup.
+
+## Next Steps
+
+After correcting the missing module issue, re-run the workflow. If failures persist, share the structure of your repo (especially where @alice/shared-utils is meant to be) to further diagnose the import path resolution.
+
+If you need help with your workspace or tsconfig configuration, please provide your folder structure or package manager details for targeted suggestions.
