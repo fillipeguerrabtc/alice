@@ -101,6 +101,10 @@ initOrchestrator(db);
 initImageGeneration(db);
 
 const app = express();
+
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws/chat' });
 

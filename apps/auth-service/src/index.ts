@@ -234,6 +234,9 @@ try {
 
 const app = express();
 
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 // Middleware de segurança
 app.use(helmet());
 

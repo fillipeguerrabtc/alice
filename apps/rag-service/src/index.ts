@@ -438,6 +438,9 @@ const db = getDatabase();
 
 const app = express();
 
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 // Upload para documentos RAG (texto)
 const upload = multer({ 
   storage: multer.memoryStorage(),

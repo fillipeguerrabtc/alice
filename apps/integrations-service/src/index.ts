@@ -26,6 +26,9 @@ const config = loadConfig(integrationsServiceConfigSchema);
 
 const app = express();
 
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 let stripe: Stripe | null = null;
 if (config.STRIPE_SECRET_KEY) {
   stripe = new Stripe(config.STRIPE_SECRET_KEY, {

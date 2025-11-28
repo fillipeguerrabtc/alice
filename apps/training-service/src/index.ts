@@ -71,6 +71,9 @@ const db = getDatabase();
 
 const app = express();
 
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 // ============================================================================
 // CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
 // ============================================================================

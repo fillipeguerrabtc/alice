@@ -180,6 +180,9 @@ async function checkAllServices(): Promise<StackHealth> {
 
 const app = express();
 
+// SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
+app.disable('x-powered-by');
+
 // Segurança (Regra 16 - Melhores práticas)
 app.use(helmet());
 app.use(cors({
