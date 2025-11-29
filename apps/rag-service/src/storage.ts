@@ -45,14 +45,14 @@ interface S3Request {
   url: string;
   method: string;
   headers: Record<string, string>;
-  body?: Uint8Array;
+  body?: Buffer;
 }
 
 async function s3FetchInternal(request: S3Request): Promise<Response> {
   const response = await fetch(request.url, {
     method: request.method,
     headers: request.headers,
-    body: request.body,
+    body: request.body ? new Blob([request.body]) : undefined,
   });
   
   if (!response.ok && response.status !== 404) {
@@ -144,12 +144,9 @@ class LocalStorageService implements StorageService {
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
     const { tenantId, mediaType, originalFilename, mimeType } = options;
     
-    // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
-    const bufferData = new Uint8Array(buffer);
-    
     // Gerar nome de arquivo único
     const timestamp = Date.now();
-    const hash = crypto.createHash('md5').update(bufferData).digest('hex').substring(0, 8);
+    const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 8);
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
@@ -160,8 +157,8 @@ class LocalStorageService implements StorageService {
     // Garantir que o diretório existe
     await this.ensureDirectoryExists(path.dirname(absolutePath));
     
-    // Salvar arquivo
-    await fs.writeFile(absolutePath, bufferData);
+    // Salvar arquivo (Buffer é diretamente compatível com fs.writeFile)
+    await fs.writeFile(absolutePath, buffer);
     
     logger.info({ 
       tenantId, 
@@ -272,10 +269,8 @@ class S3StorageService implements StorageService {
   async saveFile(buffer: Buffer, options: SaveFileOptions): Promise<StoredFile> {
     const { tenantId, mediaType, originalFilename, mimeType } = options;
     
-    const bufferData = new Uint8Array(buffer);
-    
     const timestamp = Date.now();
-    const hash = crypto.createHash('md5').update(bufferData).digest('hex').substring(0, 8);
+    const hash = crypto.createHash('md5').update(buffer).digest('hex').substring(0, 8);
     const ext = this.getExtension(originalFilename, mimeType);
     const filename = `${timestamp}-${hash}${ext}`;
     
@@ -292,7 +287,7 @@ class S3StorageService implements StorageService {
           'Content-Length': buffer.length.toString(),
           'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
         },
-        body: bufferData,
+        body: buffer,
       });
       
       logger.info({ tenantId, mediaType, objectKey, size: buffer.length }, 'Arquivo salvo no S3');
