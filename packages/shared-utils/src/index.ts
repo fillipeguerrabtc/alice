@@ -33,8 +33,13 @@ export {
   checkPermission,
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
+  initRbacPrometheusMetrics,
+  getRbacCacheStats,
+  invalidateUserPermissions,
+  invalidateTenantPermissions,
+  clearPermissionCache,
 } from './rbac/middleware.js';
-export type { InternalAuthHeaders } from './rbac/middleware.js';
+export type { InternalAuthHeaders, RbacPrometheusMetrics } from './rbac/middleware.js';
 export { 
   hasPermission, 
   hasMinimumRole, 

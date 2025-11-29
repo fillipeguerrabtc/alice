@@ -40,6 +40,7 @@ import {
   createAlicePrometheus,
   instrumentCircuitBreaker,
 } from '@alice/shared-utils';
+import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -2449,17 +2450,28 @@ agentWss.on('connection', async (ws, req) => {
       return;
     }
     
-    // Verificar se o agente tem permissão de takeover
-    // Schema RBAC: users.role é um enum, rolePermissions liga role->permission
-    const userRole = user.role;
+    // Verificar permissão de takeover via RBAC centralizado (Regra 2 - NÃO DUPLICAR)
+    // Usa checkPermission do @alice/shared-utils com cache de permissões
+    const userRole = user.role as Role;
     
-    // Roles com permissão de takeover: super_admin, admin, manager, operator
-    // (viewer e guest não podem fazer takeover)
-    const rolesWithTakeoverPermission = ['super_admin', 'admin', 'manager', 'operator'];
-    const hasPermission = userRole && rolesWithTakeoverPermission.includes(userRole);
+    if (!userRole) {
+      logger.warn({ agentId, safeTenantId }, 'Agente sem role definida');
+      ws.close(4006, 'Sem permissão para takeover');
+      return;
+    }
     
-    if (!hasPermission) {
-      logger.warn({ agentId, safeTenantId, role: userRole }, 'Agente sem permissão de takeover');
+    const permissionCheck = checkPermission(
+      { userId: agentId, tenantId: safeTenantId, role: userRole },
+      'chat:takeover:write'
+    );
+    
+    if (!permissionCheck.allowed) {
+      logger.warn({ 
+        agentId, 
+        safeTenantId, 
+        role: userRole,
+        reason: permissionCheck.reason,
+      }, 'Agente sem permissão de takeover');
       ws.close(4006, 'Sem permissão para takeover');
       return;
     }

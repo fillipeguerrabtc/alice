@@ -158,6 +158,20 @@ export interface AliceMetrics {
     /** Total de erros */
     errorsTotal: Counter;
   };
+  
+  /** Métricas RBAC - Role-Based Access Control */
+  rbac: {
+    /** Cache hits de permissões */
+    cacheHitsTotal: Counter;
+    /** Cache misses de permissões */
+    cacheMissesTotal: Counter;
+    /** Invalidações de cache */
+    cacheInvalidationsTotal: Counter;
+    /** Duração da verificação de permissão */
+    checkDuration: Histogram;
+    /** Taxa de cache hit (0-1) */
+    cacheHitRate: Gauge;
+  };
 }
 
 /**
@@ -464,6 +478,45 @@ export function createAlicePrometheus(config: PrometheusConfig): {
   });
   
   // ============================================================================
+  // MÉTRICAS RBAC
+  // ============================================================================
+  
+  const rbacCacheHitsTotal = new Counter({
+    name: `${prefix}rbac_cache_hits_total`,
+    help: 'Total de cache hits no sistema RBAC',
+    labelNames: ['tenant_id'] as const,
+    registers: [registry],
+  });
+  
+  const rbacCacheMissesTotal = new Counter({
+    name: `${prefix}rbac_cache_misses_total`,
+    help: 'Total de cache misses no sistema RBAC',
+    labelNames: ['tenant_id'] as const,
+    registers: [registry],
+  });
+  
+  const rbacCacheInvalidationsTotal = new Counter({
+    name: `${prefix}rbac_cache_invalidations_total`,
+    help: 'Total de invalidações de cache RBAC',
+    labelNames: ['reason'] as const,
+    registers: [registry],
+  });
+  
+  const rbacCheckDuration = new Histogram({
+    name: `${prefix}rbac_check_duration_seconds`,
+    help: 'Duração da verificação de permissão RBAC em segundos',
+    labelNames: ['permission'] as const,
+    buckets: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1],
+    registers: [registry],
+  });
+  
+  const rbacCacheHitRate = new Gauge({
+    name: `${prefix}rbac_cache_hit_rate`,
+    help: 'Taxa de cache hit RBAC (0-1)',
+    registers: [registry],
+  });
+  
+  // ============================================================================
   // OBJETO DE MÉTRICAS
   // ============================================================================
   
@@ -514,6 +567,13 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       callDuration: integrationCallDuration,
       callsTotal: integrationCallsTotal,
       errorsTotal: integrationErrorsTotal,
+    },
+    rbac: {
+      cacheHitsTotal: rbacCacheHitsTotal,
+      cacheMissesTotal: rbacCacheMissesTotal,
+      cacheInvalidationsTotal: rbacCacheInvalidationsTotal,
+      checkDuration: rbacCheckDuration,
+      cacheHitRate: rbacCacheHitRate,
     },
   };
   

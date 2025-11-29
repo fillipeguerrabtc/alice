@@ -443,11 +443,13 @@ function getCachedPermissions(
   
   if (cached) {
     cacheStats.hits++;
+    updateRbacMetrics('hit', tenantId);
     logger.debug({ userId, tenantId, cacheHit: true }, 'Cache hit para permissões RBAC');
     return cached;
   }
   
   cacheStats.misses++;
+  updateRbacMetrics('miss', tenantId);
   
   const permissions = new Set(getRolePermissions(role));
   permissionCache.set(userId, tenantId, permissions);
@@ -537,6 +539,7 @@ export function checkPermissionDirect(
 export function invalidateUserPermissions(userId: string, tenantId?: string): void {
   permissionCache.invalidate(userId, tenantId);
   cacheStats.invalidations++;
+  updateRbacMetrics('invalidation', tenantId, 'user_change');
   logger.info({ userId, tenantId }, 'Cache de permissões do usuário invalidado');
 }
 
@@ -552,6 +555,7 @@ export function invalidateUserPermissions(userId: string, tenantId?: string): vo
 export function invalidateTenantPermissions(tenantId: string): void {
   permissionCache.invalidateTenant(tenantId);
   cacheStats.invalidations++;
+  updateRbacMetrics('invalidation', tenantId, 'tenant_change');
   logger.info({ tenantId }, 'Cache de permissões do tenant invalidado');
 }
 
@@ -565,6 +569,7 @@ export function invalidateTenantPermissions(tenantId: string): void {
 export function clearPermissionCache(): void {
   permissionCache.clear();
   cacheStats.invalidations++;
+  updateRbacMetrics('invalidation', undefined, 'full_clear');
   logger.info('Cache de permissões limpo completamente');
 }
 
@@ -652,4 +657,86 @@ export function generateInternalAuthHeaders(auth: AuthContext): InternalAuthHead
  */
 export function isInternalAuthEnabled(): boolean {
   return !!INTERNAL_API_SECRET;
+}
+
+/**
+ * Interface para métricas RBAC do Prometheus
+ * Corresponde às métricas definidas em prometheus.ts
+ */
+export interface RbacPrometheusMetrics {
+  cacheHitsTotal: { inc: (labels?: { tenant_id?: string }) => void };
+  cacheMissesTotal: { inc: (labels?: { tenant_id?: string }) => void };
+  cacheInvalidationsTotal: { inc: (labels?: { reason: string }) => void };
+  checkDuration: { observe: (labels: { permission: string }, value: number) => void };
+  cacheHitRate: { set: (value: number) => void };
+}
+
+let prometheusMetrics: RbacPrometheusMetrics | null = null;
+
+/**
+ * Inicializa métricas Prometheus para o RBAC.
+ * 
+ * Deve ser chamado uma vez na inicialização do serviço após criar
+ * as métricas Prometheus com createAlicePrometheus().
+ * 
+ * @param metrics - Objeto metrics.rbac do Prometheus
+ * 
+ * @example
+ * ```typescript
+ * import { createAlicePrometheus } from '@alice/shared-utils/prometheus';
+ * import { initRbacPrometheusMetrics } from '@alice/shared-utils/rbac';
+ * 
+ * const { metrics } = createAlicePrometheus({ serviceName: 'auth-service' });
+ * initRbacPrometheusMetrics(metrics.rbac);
+ * ```
+ */
+export function initRbacPrometheusMetrics(metrics: RbacPrometheusMetrics): void {
+  prometheusMetrics = metrics;
+  logger.info('Métricas Prometheus RBAC inicializadas');
+}
+
+/**
+ * Atualiza métricas Prometheus do RBAC.
+ * 
+ * Chamada internamente pelo cache para reportar hits/misses.
+ * Também atualiza a taxa de cache hit.
+ * 
+ * @internal
+ */
+export function updateRbacMetrics(
+  event: 'hit' | 'miss' | 'invalidation',
+  tenantId?: string,
+  invalidationReason?: string
+): void {
+  if (!prometheusMetrics) return;
+  
+  switch (event) {
+    case 'hit':
+      prometheusMetrics.cacheHitsTotal.inc({ tenant_id: tenantId || 'unknown' });
+      break;
+    case 'miss':
+      prometheusMetrics.cacheMissesTotal.inc({ tenant_id: tenantId || 'unknown' });
+      break;
+    case 'invalidation':
+      prometheusMetrics.cacheInvalidationsTotal.inc({ reason: invalidationReason || 'manual' });
+      break;
+  }
+  
+  // Atualizar taxa de cache hit
+  const total = cacheStats.hits + cacheStats.misses;
+  if (total > 0) {
+    prometheusMetrics.cacheHitRate.set(cacheStats.hits / total);
+  }
+}
+
+/**
+ * Registra duração de verificação de permissão no Prometheus.
+ * 
+ * @param permission - Código da permissão verificada
+ * @param durationSeconds - Duração em segundos
+ * @internal
+ */
+export function recordPermissionCheckDuration(permission: string, durationSeconds: number): void {
+  if (!prometheusMetrics) return;
+  prometheusMetrics.checkDuration.observe({ permission }, durationSeconds);
 }
