@@ -161,16 +161,16 @@ export interface AliceMetrics {
   
   /** Métricas RBAC - Role-Based Access Control */
   rbac: {
-    /** Cache hits de permissões */
-    cacheHitsTotal: Counter;
-    /** Cache misses de permissões */
-    cacheMissesTotal: Counter;
-    /** Invalidações de cache */
-    cacheInvalidationsTotal: Counter;
-    /** Duração da verificação de permissão */
-    checkDuration: Histogram;
-    /** Taxa de cache hit (0-1) */
-    cacheHitRate: Gauge;
+    /** Cache hits de permissões (label: tenant_id) */
+    cacheHitsTotal: Counter<'tenant_id'>;
+    /** Cache misses de permissões (label: tenant_id) */
+    cacheMissesTotal: Counter<'tenant_id'>;
+    /** Invalidações de cache (label: reason) */
+    cacheInvalidationsTotal: Counter<'reason'>;
+    /** Duração da verificação de permissão (label: permission) */
+    checkDuration: Histogram<'permission'>;
+    /** Taxa de cache hit (0-1) - sem labels */
+    cacheHitRate: Gauge<string>;
   };
 }
 
@@ -520,7 +520,11 @@ export function createAlicePrometheus(config: PrometheusConfig): {
   // OBJETO DE MÉTRICAS
   // ============================================================================
   
-  const metrics: AliceMetrics = {
+  // Usa 'satisfies AliceMetrics' para:
+  // 1. Preservar tipos literais dos labels (Counter<'tenant_id'> vs Counter<string>)
+  // 2. Manter contrato de tipo AliceMetrics para Regra 8 (TypeScript strict)
+  // prom-client 15.x + TypeScript 5.x: satisfies é a melhor prática 2025
+  const metrics = {
     registry,
     http: {
       requestDuration: httpRequestDuration,
@@ -575,7 +579,7 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       checkDuration: rbacCheckDuration,
       cacheHitRate: rbacCacheHitRate,
     },
-  };
+  } satisfies AliceMetrics;
   
   // ============================================================================
   // MIDDLEWARE HTTP

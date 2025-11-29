@@ -132,10 +132,17 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 
 ### 2025-11-29: Code Review Enterprise
 
-**P0 - Tipos RBAC Prometheus (CORRIGIDO)**
-- Interface `RbacPrometheusMetrics` corrigida para usar tipos nativos do prom-client
-- Tipos: `Counter<string>`, `Histogram<string>`, `Gauge<string>`
-- Cache TypeScript (tsbuildinfo) limpo para forçar recompilação
+**P0 - Tipos prom-client 15.x RBAC (CORRIGIDO)**
+- Interface `RbacPrometheusMetrics` refatorada com assinaturas exatas do prom-client 15.x:
+  - `Counter.inc(value?: number): void;`
+  - `Counter.inc(labels: Record<string, string | number>, value?: number): void;`
+  - `Histogram.observe(value: number): void;`
+  - `Histogram.observe(labels: Record<string, string | number>, value: number): void;`
+  - `Gauge.set(value: number): void;`
+- Uso de `satisfies AliceMetrics` em `createAlicePrometheus` para:
+  - Preservar tipos literais dos labels (Counter<'tenant_id'>)
+  - Manter contrato de tipo AliceMetrics (Regra 8)
+- Todos os 7 microsserviços compilam sem erros TypeScript strict
 
 **P1 - Storage S3 Hetzner (CORRIGIDO)**
 - Eliminado fallback local em ambientes não-development (Regra 6)

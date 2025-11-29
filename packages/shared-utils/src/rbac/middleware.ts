@@ -12,7 +12,6 @@
 
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
-import type { Counter, Histogram, Gauge } from 'prom-client';
 import { createLogger, Logger } from '../logger.js';
 import { 
   Role, 
@@ -27,9 +26,17 @@ const logger = createLogger('rbac');
 
 /**
  * Token interno para comunicação service-to-service segura.
- * DEVE ser configurado via variável de ambiente em produção.
+ * OBRIGATÓRIO em produção (Regra 14 replit.md).
+ * Em desenvolvimento, permite operação sem token para facilitar testes locais.
  */
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// FAIL-FAST em produção (Regra 6 - SEM SOLUÇÕES TEMPORÁRIAS)
+if (IS_PRODUCTION && !INTERNAL_API_SECRET) {
+  logger.error('CRITICAL: INTERNAL_API_SECRET é OBRIGATÓRIO em produção. Configure a variável de ambiente.');
+  process.exit(1);
+}
 
 /**
  * Valida token HMAC para comunicação interna entre serviços.
@@ -661,18 +668,48 @@ export function isInternalAuthEnabled(): boolean {
 }
 
 /**
- * Interface para métricas RBAC do Prometheus
- * Usa tipos nativos do prom-client para compatibilidade total
+ * Tipo genérico para métricas RBAC do Prometheus
  * 
- * prom-client 2025: Counter/Histogram/Gauge têm múltiplas sobrecargas
- * TypeScript strict: Usar tipos nativos evita incompatibilidade
+ * Reflete EXATAMENTE as assinaturas do prom-client 15.x (verificado em index.d.ts):
+ * 
+ * Counter.inc:
+ *   - inc(value?: number): void;
+ *   - inc(labels: LabelValues<T>, value?: number): void;
+ * 
+ * Histogram.observe:
+ *   - observe(value: number): void;
+ *   - observe(labels: LabelValues<T>, value: number): void;
+ * 
+ * Gauge.set:
+ *   - set(value: number): void;
+ * 
+ * (Regra 8 - TypeScript strict, Regra 11 - Melhores Práticas 2025)
  */
 export interface RbacPrometheusMetrics {
-  cacheHitsTotal: Counter<string>;
-  cacheMissesTotal: Counter<string>;
-  cacheInvalidationsTotal: Counter<string>;
-  checkDuration: Histogram<string>;
-  cacheHitRate: Gauge<string>;
+  /** Cache hits de permissões */
+  cacheHitsTotal: {
+    inc(value?: number): void;
+    inc(labels: Record<string, string | number>, value?: number): void;
+  };
+  /** Cache misses de permissões */
+  cacheMissesTotal: {
+    inc(value?: number): void;
+    inc(labels: Record<string, string | number>, value?: number): void;
+  };
+  /** Invalidações de cache */
+  cacheInvalidationsTotal: {
+    inc(value?: number): void;
+    inc(labels: Record<string, string | number>, value?: number): void;
+  };
+  /** Duração da verificação de permissão */
+  checkDuration: {
+    observe(value: number): void;
+    observe(labels: Record<string, string | number>, value: number): void;
+  };
+  /** Taxa de cache hit (0-1) */
+  cacheHitRate: {
+    set(value: number): void;
+  };
 }
 
 let prometheusMetrics: RbacPrometheusMetrics | null = null;
