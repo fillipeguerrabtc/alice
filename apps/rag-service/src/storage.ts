@@ -49,10 +49,11 @@ interface S3Request {
 }
 
 async function s3FetchInternal(request: S3Request): Promise<Response> {
+  // Node.js fetch aceita Buffer diretamente como body
   const response = await fetch(request.url, {
     method: request.method,
     headers: request.headers,
-    body: request.body ? new Blob([request.body]) : undefined,
+    body: request.body,
   });
   
   if (!response.ok && response.status !== 404) {
