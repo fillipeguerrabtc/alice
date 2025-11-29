@@ -89,9 +89,10 @@ async function s3FetchInternal(request: S3Request): Promise<S3Response> {
       // Consumir response body para liberar recursos
       res.on('data', () => {});
       res.on('end', () => {
+        // REGRA 6: Apenas 2xx é sucesso. 404 NÃO é ok (arquivo não existe)
         const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
         resolve({
-          ok: ok || res.statusCode === 404,
+          ok,
           status: res.statusCode || 0,
           statusText: res.statusMessage || '',
         });
@@ -532,7 +533,8 @@ class S3StorageService implements StorageService {
         headers: {
           'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
         },
-      }) as Response;
+      }) as S3Response;
+      // 404 = arquivo não existe (ok será false após correção Regra 6)
       return response.ok;
     } catch {
       return false;
