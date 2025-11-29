@@ -378,8 +378,9 @@ jobs:
           REDIS_CACHE_PASSWORD=${{ secrets.REDIS_CACHE_PASSWORD }}
           REDIS_QUEUE_PASSWORD=${{ secrets.REDIS_QUEUE_PASSWORD }}
           
-          # Sessão
+          # Sessão e Segurança S2S
           SESSION_SECRET=${{ secrets.SESSION_SECRET }}
+          INTERNAL_API_SECRET=${{ secrets.INTERNAL_API_SECRET }}
           
           # OAuth Google
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}

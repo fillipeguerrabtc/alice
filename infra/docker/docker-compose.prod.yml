@@ -292,6 +292,7 @@ services:
       SERVICE_NAME: auth-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       SESSION_SECRET: ${SESSION_SECRET}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # OAuth Google
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
@@ -341,6 +342,7 @@ services:
       PORT: 3002
       SERVICE_NAME: chat-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # Salad Cloud LLM
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
@@ -390,6 +392,7 @@ services:
       PORT: 3003
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
     depends_on:
       postgres:
         condition: service_healthy
@@ -430,6 +433,7 @@ services:
       PORT: 3004
       SERVICE_NAME: training-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
     depends_on:
@@ -472,6 +476,7 @@ services:
       PORT: 3005
       SERVICE_NAME: integrations-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # Stripe Portugal
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
@@ -541,6 +546,7 @@ services:
       NODE_ENV: production
       PORT: 3007
       SERVICE_NAME: observability-service
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # URLs internas dos serviços de observabilidade
       PROMETHEUS_URL: http://prometheus:9090
       GRAFANA_URL: http://grafana:3000
