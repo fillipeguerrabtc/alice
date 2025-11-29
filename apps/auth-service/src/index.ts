@@ -23,7 +23,8 @@ import crypto from 'crypto';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
-import { Strategy as MicrosoftStrategy } from './types/passport-microsoft.js';
+// Microsoft OAuth desabilitado - aguardando credenciais
+// import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
@@ -121,7 +122,6 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
     '/api/auth/register', 
     '/api/auth/google',
     '/api/auth/github',
-    '/api/auth/microsoft',
     '/api/auth/saml',
     '/api/auth/health',
     '/api/stripe/webhook',
@@ -275,7 +275,7 @@ app.use(compression());
 app.use(createRateLimiter({
   windowMs: 60 * 1000,
   max: 100,
-  skipRoutes: ['/api/auth/health', '/api/auth/google', '/api/auth/github', '/api/auth/microsoft', '/api/auth/saml'],
+  skipRoutes: ['/api/auth/health', '/api/auth/google', '/api/auth/github', '/api/auth/saml'],
   serviceName: 'auth-service',
 }));
 
@@ -603,86 +603,21 @@ if (githubClientId && githubClientSecret) {
 }
 
 // ============================================================================
-// ESTRATÉGIA: OAuth Microsoft
+// ESTRATÉGIA: OAuth Microsoft (DESABILITADO - aguardando credenciais)
 // ============================================================================
+// TODO: Quando as credenciais Microsoft estiverem disponíveis:
+// 1. Descomentar import do passport-microsoft no topo do arquivo
+// 2. Descomentar e implementar a estratégia abaixo
+// 3. Adicionar MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID aos secrets
 
 const microsoftClientId = process.env.MICROSOFT_CLIENT_ID;
 const microsoftClientSecret = process.env.MICROSOFT_CLIENT_SECRET;
-const microsoftTenantId = process.env.MICROSOFT_TENANT_ID || 'common';
 
 if (microsoftClientId && microsoftClientSecret) {
-  passport.use(new MicrosoftStrategy(
-    {
-      clientID: microsoftClientId,
-      clientSecret: microsoftClientSecret,
-      callbackURL: `${getBaseUrl()}/api/auth/microsoft/callback`,
-      scope: ['user.read', 'openid', 'profile', 'email'],
-      tenant: microsoftTenantId,
-    },
-    async (accessToken: string, refreshToken: string, profile: { id: string; displayName?: string; emails?: { value: string }[] }, done: (error: Error | null, user?: Express.User) => void) => {
-      try {
-        const db = getDatabase();
-        const email = profile.emails?.[0]?.value?.toLowerCase();
-        const microsoftId = profile.id;
-
-        if (!email) {
-          recordAuthAttempt('microsoft', false);
-          logger.error({ microsoftId }, 'Email não encontrado no perfil Microsoft');
-          return done(new Error('Email não disponível no perfil Microsoft'));
-        }
-
-        // Buscar usuário por microsoftId ou email
-        let user = await db.query.users.findFirst({
-          where: or(
-            eq(schema.users.microsoftId, microsoftId),
-            eq(schema.users.email, email)
-          ),
-        });
-
-        if (!user) {
-          // Criar novo usuário
-          const displayName = profile.displayName || '';
-          const [newUser] = await db.insert(schema.users).values({
-            email,
-            firstName: displayName.split(' ')[0],
-            lastName: displayName.split(' ').slice(1).join(' ') || null,
-            microsoftId,
-            authProvider: 'microsoft',
-            emailVerified: true,
-            role: 'viewer',
-            idioma: 'pt-BR',
-            timezone: 'Europe/Lisbon',
-          }).returning();
-          user = newUser;
-          logger.info({ userId: user.id, email }, 'Novo usuário criado via Microsoft');
-        } else if (!user.microsoftId) {
-          // Vincular conta Microsoft existente
-          await db.update(schema.users)
-            .set({ 
-              microsoftId,
-              emailVerified: true,
-              ultimoAcesso: new Date(),
-            })
-            .where(eq(schema.users.id, user.id));
-          logger.info({ userId: user.id, email }, 'Conta Microsoft vinculada a usuário existente');
-        } else {
-          await db.update(schema.users)
-            .set({ ultimoAcesso: new Date() })
-            .where(eq(schema.users.id, user.id));
-        }
-
-        recordAuthAttempt('microsoft', true);
-        return done(null, toAuthContext(user));
-      } catch (error) {
-        recordAuthAttempt('microsoft', false);
-        logger.error({ error }, 'Erro na autenticação Microsoft');
-        return done(error as Error);
-      }
-    }
-  ));
-  logger.info('OAuth Microsoft configurado');
+  // Credenciais detectadas mas implementação ainda não ativada
+  logger.warn('Credenciais Microsoft detectadas mas OAuth Microsoft ainda não implementado - aguardando ativação');
 } else {
-  logger.warn('OAuth Microsoft não configurado - MICROSOFT_CLIENT_ID ou MICROSOFT_CLIENT_SECRET ausentes');
+  logger.info('OAuth Microsoft desabilitado - credenciais não configuradas');
 }
 
 // ============================================================================
@@ -1012,21 +947,9 @@ if (githubClientId) {
 }
 
 // ============================================================================
-// ROTAS: OAuth Microsoft
+// ROTAS: OAuth Microsoft (DESABILITADO - aguardando credenciais)
 // ============================================================================
-
-if (microsoftClientId) {
-  app.get('/api/auth/microsoft', passport.authenticate('microsoft', {
-    prompt: 'select_account'
-  }));
-
-  app.get('/api/auth/microsoft/callback',
-    passport.authenticate('microsoft', {
-      failureRedirect: '/login?error=microsoft_auth_failed',
-      successRedirect: '/dashboard'
-    })
-  );
-}
+// Rotas serão habilitadas quando as credenciais Microsoft estiverem disponíveis
 
 // ============================================================================
 // ROTAS: SAML 2.0 (Azure AD, Okta)
@@ -1123,7 +1046,8 @@ app.get('/api/auth/providers', (_req: Request, res: Response) => {
       { id: 'local', name: 'Email/Senha', enabled: true },
       { id: 'google', name: 'Google', enabled: !!googleClientId },
       { id: 'github', name: 'GitHub', enabled: !!githubClientId },
-      { id: 'microsoft', name: 'Microsoft', enabled: !!microsoftClientId },
+      // Microsoft OAuth desabilitado - aguardando credenciais
+      // { id: 'microsoft', name: 'Microsoft', enabled: false },
       { id: 'saml', name: 'SSO Empresarial (SAML)', enabled: !!(samlEntryPoint && samlIssuer && samlCert) },
     ].filter(p => p.enabled)
   });
