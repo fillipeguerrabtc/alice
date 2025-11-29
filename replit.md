@@ -74,7 +74,8 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **Takeover/Handover**: Custom panel with automatic triggers based on confidence scores, fallbacks, and sentiment analysis.
 - **CI/CD**: Automated GitHub Actions for Docker image building, deployment to Hetzner, and health checks.
 - **Code Quality**: Pino for logging, TypeScript strict mode, health checks.
-- **Build System**: `esbuild` and 3-stage Dockerfiles.
+- **Build System**: `esbuild` and 3-stage Dockerfiles. Vite build isolado no diretório `client/` para evitar conflitos com pnpm workspace.
+- **Monorepo Build Fix**: Build script usa `cd client && vite build` para isolar o build do frontend, evitando que o Vite detecte `apps/frontend-service/index.html` como entrada adicional.
 - **Resilience & Performance**: Connection pool lifecycle management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, sanitization of secrets, CSRF token comparison, AbortController for external calls.
 - **Security Hardening**: PostgreSQL RLS, sslmode=prefer, tenant_id indices, pgAudit, Docker Non-Root, Traefik v3.3, Redis ACL, GitHub Actions hardening, CSP Hardening, Compression Middleware, Server Timeouts, ERPNext Fail-Fast, central packages, JSONB TypeSafe with Zod schemas, React Suspense, Express Hardening Module, Zod Input Validation.
 - **Stripe Idempotency**: `generateIdempotencyKey()` with `crypto.randomUUID()`, fail-fast in production if not provided.
