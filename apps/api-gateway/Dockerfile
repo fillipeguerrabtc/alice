@@ -6,8 +6,8 @@
 FROM traefik:v3.3
 
 # Copiar configurações do Traefik
-COPY config/traefik.yml /etc/traefik/traefik.yml
-COPY config/dynamic /etc/traefik/dynamic
+COPY apps/api-gateway/config/traefik.yml /etc/traefik/traefik.yml
+COPY apps/api-gateway/config/dynamic /etc/traefik/dynamic
 
 # Criar diretório para certificados Let's Encrypt com permissões seguras
 RUN mkdir -p /letsencrypt && \

@@ -36,7 +36,7 @@ WORKDIR /app
 RUN chown -R clipservice:clipservice /app
 
 # Instalar dependências Python (como root para cache)
-COPY requirements.txt .
+COPY apps/clip-inference-service/requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Baixar modelo CLIP durante build (evita cold start)
@@ -49,7 +49,7 @@ RUN python3 -c "import clip; clip.load('ViT-L/14', device='cpu')" \
     && chown -R clipservice:clipservice /app/.cache
 
 # Copiar código da aplicação
-COPY --chown=clipservice:clipservice server.py .
+COPY --chown=clipservice:clipservice apps/clip-inference-service/server.py .
 
 # SEGURANÇA: Mudar para usuário non-root
 USER clipservice
