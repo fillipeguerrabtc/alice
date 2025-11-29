@@ -121,7 +121,8 @@ erpNextBreaker.on('halfOpen', () => logger.info('Circuit breaker ERPNext: HALF-O
 erpNextBreaker.on('close', () => logger.info('Circuit breaker ERPNext: FECHADO'));
 
 // Instrumentar circuit breaker com métricas Prometheus
-instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker);
+// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
+instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 // Sincronizar cliente/pedido com ERPNext (com Circuit Breaker)
 // Fluxo correto ERPNext: Customer → Sales Order → Sales Invoice → Payment Entry com referência

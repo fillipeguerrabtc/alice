@@ -719,7 +719,8 @@ saladCloudBreaker.on('fallback', () => {
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
-instrumentCircuitBreaker(metrics, 'salad-llm', saladCloudBreaker);
+// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
+instrumentCircuitBreaker(metrics, 'salad-llm', saladCloudBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 // Mensagem de fallback quando LLM está indisponível (graceful degradation)
 const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.';

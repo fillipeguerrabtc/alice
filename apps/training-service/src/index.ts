@@ -179,7 +179,8 @@ embeddingsBreaker.on('close', () => {
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
-instrumentCircuitBreaker(metrics, 'salad-embeddings', embeddingsBreaker);
+// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
+instrumentCircuitBreaker(metrics, 'salad-embeddings', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
