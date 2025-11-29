@@ -6,6 +6,7 @@
 
 import { motion } from 'framer-motion';
 import { Headphones, PhoneCall, AlertTriangle, Bot, UserCheck, Timer } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TakeoverStats, itemVariants } from './types';
@@ -16,6 +17,8 @@ interface TakeoverStatsCardProps {
 }
 
 export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <Card>
@@ -46,8 +49,12 @@ export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) 
             <Headphones className="h-4 w-4" />
           </div>
           <div className="flex-1">
-            <CardTitle className="text-sm font-medium">Takeover / Handover</CardTitle>
-            <CardDescription className="text-xs">Conversas com agentes humanos</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              {t('dashboard.takeover.title')}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {t('dashboard.takeover.description')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -58,7 +65,9 @@ export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) 
                 <p className="text-lg font-bold" data-testid="stat-pending-handoffs">
                   {stats.pendingHandoffs}
                 </p>
-                <p className="text-xs text-muted-foreground">Handoffs Pendentes</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('dashboard.takeover.pendingHandoffs')}
+                </p>
               </div>
             </div>
             <div className="flex items-center gap-2 p-2 rounded-md bg-muted/50">
@@ -67,21 +76,27 @@ export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) 
                 <p className="text-lg font-bold" data-testid="stat-urgent-conversations">
                   {stats.urgentConversations}
                 </p>
-                <p className="text-xs text-muted-foreground">Urgentes</p>
+                <p className="text-xs text-muted-foreground">
+                  {t('dashboard.takeover.urgent')}
+                </p>
               </div>
             </div>
           </div>
           <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
             <div className="flex items-center gap-2">
               <Bot className="h-4 w-4 text-blue-500" />
-              <span className="text-sm">Resolvidas por IA</span>
+              <span className="text-sm">
+                {t('dashboard.takeover.resolvedByAI')}
+              </span>
             </div>
             <span className="font-semibold">{stats.resolvedByAI}</span>
           </div>
           <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
             <div className="flex items-center gap-2">
               <UserCheck className="h-4 w-4 text-green-500" />
-              <span className="text-sm">Resolvidas por Humano</span>
+              <span className="text-sm">
+                {t('dashboard.takeover.resolvedByHuman')}
+              </span>
             </div>
             <span className="font-semibold">{stats.resolvedByHuman}</span>
           </div>
@@ -89,7 +104,9 @@ export function TakeoverStatsCard({ stats, isLoading }: TakeoverStatsCardProps) 
             <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
               <div className="flex items-center gap-2">
                 <Timer className="h-4 w-4 text-muted-foreground" />
-                <span className="text-sm">Tempo Médio Resposta</span>
+                <span className="text-sm">
+                  {t('dashboard.takeover.avgResponseTime')}
+                </span>
               </div>
               <span className="font-semibold">{Math.round(stats.avgResponseTime / 60)}min</span>
             </div>

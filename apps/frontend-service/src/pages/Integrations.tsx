@@ -389,10 +389,10 @@ export default function Integrations() {
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-integrations-title">
-              {t('integrations.title') || 'Integrações'}
+              {t('integrations.title')}
             </h1>
             <p className="text-muted-foreground text-sm">
-              {t('integrations.subtitle') || 'Configure serviços externos para expandir as capacidades da Alice'}
+              {t('integrations.subtitle')}
             </p>
           </div>
 

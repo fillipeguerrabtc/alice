@@ -21,10 +21,7 @@ import {
   Loader2, 
   Plus, 
   MessageSquare,
-  Sparkles,
-  FileText,
   Paperclip,
-  Settings,
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
@@ -49,6 +46,7 @@ import {
 import { MessageBubble } from './components/MessageBubble';
 import { ConversationItem } from './components/ConversationItem';
 import { MediaPreview } from './components/MediaPreview';
+import { WelcomeScreen } from './components/WelcomeScreen';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -63,69 +61,6 @@ const sidebarVariants = {
   visible: { x: 0, opacity: 1, transition: { type: 'spring', stiffness: 100 } },
   exit: { x: -300, opacity: 0 },
 };
-
-function WelcomeScreen() {
-  const { t } = useTranslation();
-  
-  const suggestions = [
-    { icon: Sparkles, text: 'Explique um conceito complexo de forma simples' },
-    { icon: FileText, text: 'Ajude-me a escrever um documento' },
-    { icon: Settings, text: 'Como configurar a plataforma Alice?' },
-  ];
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="flex flex-col items-center justify-center h-full text-center p-6"
-    >
-      <motion.div
-        initial={{ scale: 0.8 }}
-        animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 100 }}
-        className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground mb-6 shadow-lg"
-      >
-        <Bot className="h-10 w-10" />
-      </motion.div>
-      
-      <h2 className="text-2xl font-bold mb-2">
-        {t('chat.welcome') || 'Alice IA Enterprise'}
-      </h2>
-      <p className="text-muted-foreground max-w-md mb-8">
-        {t('chat.welcomeMessage') || 'Olá! Sou a Alice, sua assistente de IA enterprise com Llama 4 Maverick. Como posso ajudar você hoje?'}
-      </p>
-
-      <div className="grid gap-3 w-full max-w-lg">
-        {suggestions.map((suggestion, index) => (
-          <motion.button
-            key={index}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-            className="flex items-center gap-3 p-4 rounded-lg bg-muted/50 hover-elevate text-left transition-colors"
-          >
-            <div className="p-2 rounded-md bg-primary/10">
-              <suggestion.icon className="h-4 w-4 text-primary" />
-            </div>
-            <span className="text-sm">{suggestion.text}</span>
-          </motion.button>
-        ))}
-      </div>
-
-      <div className="flex items-center gap-2 mt-8">
-        <Badge variant="outline" className="text-xs">
-          Llama 4 Maverick
-        </Badge>
-        <Badge variant="outline" className="text-xs">
-          400B parâmetros
-        </Badge>
-        <Badge variant="outline" className="text-xs">
-          RAG integrado
-        </Badge>
-      </div>
-    </motion.div>
-  );
-}
 
 export default function Chat() {
   const { t } = useTranslation();
@@ -157,8 +92,8 @@ export default function Chat() {
           mimeType: file.type 
         });
         toast({
-          title: t('chat.upload.unsupportedType', 'Tipo não suportado'),
-          description: t('chat.upload.unsupportedTypeDesc', 'Este tipo de arquivo não é suportado: {{type}}', { type: file.type }),
+          title: t('chat.upload.unsupportedType'),
+          description: t('chat.upload.unsupportedTypeDesc', { type: file.type }),
           variant: 'destructive',
         });
         continue;
@@ -172,8 +107,8 @@ export default function Chat() {
           limit 
         });
         toast({
-          title: t('chat.upload.fileTooLarge', 'Arquivo muito grande'),
-          description: t('chat.upload.fileTooLargeDesc', 'Tamanho: {{size}}. Limite: {{limit}}', { 
+          title: t('chat.upload.fileTooLarge'),
+          description: t('chat.upload.fileTooLargeDesc', { 
             size: formatFileSize(file.size), 
             limit: formatFileSize(limit) 
           }),
@@ -551,7 +486,7 @@ export default function Chat() {
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
                 }}
                 onKeyDown={handleKeyDown}
-                placeholder={pendingMedia.length > 0 ? 'Adicione uma mensagem (opcional)...' : (t('chat.placeholder') || 'Digite sua mensagem...')}
+                placeholder={pendingMedia.length > 0 ? t('chat.placeholderWithMedia') : t('chat.placeholder')}
                 className="flex-1 min-h-[36px] max-h-[200px] resize-none bg-transparent text-sm focus-visible:outline-none"
                 disabled={isStreaming}
                 data-testid="input-chat-message"

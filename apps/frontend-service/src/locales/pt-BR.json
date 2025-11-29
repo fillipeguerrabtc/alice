@@ -180,14 +180,40 @@
   "dashboard": {
     "title": "Painel de Controle",
     "welcome": "Olá",
-    "overview": "Visão Geral",
+    "overview": "Últimas ações na plataforma",
     "quickActions": "Ações Rápidas",
     "recentActivity": "Atividade Recente",
-    "summary": "Resumo das suas operações",
+    "summary": "Visão geral da plataforma Alice Enterprise",
     "noActivity": "Nenhuma atividade recente",
     "noAgents": "Nenhum agente cadastrado",
     "systemStatus": "Status do Sistema",
+    "systemOnline": "Sistema Online",
+    "systemOverview": "Visão Geral do Sistema",
     "resourceUsage": "Uso de Recursos",
+    "usageDescription": "Conversas e tokens nos últimos 7 dias",
+    "tabs": {
+      "usage": "Uso",
+      "distribution": "Distribuição",
+      "services": "Serviços"
+    },
+    "charts": {
+      "conversations": "Conversas"
+    },
+    "distribution": {
+      "title": "Distribuição de Dados",
+      "description": "Proporção entre conversas, documentos e training",
+      "noData": "Sem dados para exibir"
+    },
+    "system": {
+      "llm": "Llama 4 Maverick",
+      "llmParams": "400B parâmetros",
+      "database": "PostgreSQL + pgvector",
+      "databaseFeature": "Busca vetorial",
+      "rbac": "RBAC Enterprise",
+      "rbacPermissions": "160+ permissões",
+      "server": "Hetzner CX43",
+      "serverSpecs": "8 vCPUs, 16GB RAM"
+    },
     "stats": {
       "activeConversations": "Conversas Ativas",
       "totalConversations": "Total de Conversas",
@@ -215,13 +241,60 @@
       "integrationsLabel": "Integrações"
     },
     "usage": {
-      "tokens": "Tokens utilizados",
+      "tokens": "utilizados esta semana",
       "storage": "Armazenamento",
       "users": "Usuários"
     },
     "popularAgents": "Agentes Populares",
-    "conversations": "conversas",
-    "training": "Treinando"
+    "conversations": {
+      "label": "conversas",
+      "title": "Conversas por Período",
+      "description": "Resoluções IA vs Humano nos últimos 7 dias",
+      "ai": "IA",
+      "human": "Humano",
+      "noData": "Sem dados de conversas"
+    },
+    "training": "dados aprovados",
+    "serviceHealth": "Status dos Serviços",
+    "serviceStatus": {
+      "online": "Online",
+      "degraded": "Degradado",
+      "offline": "Offline"
+    },
+    "takeover": {
+      "title": "Takeover / Handover",
+      "description": "Conversas com agentes humanos",
+      "pendingHandoffs": "Handoffs Pendentes",
+      "urgent": "Urgentes",
+      "resolvedByAI": "Resolvidas por IA",
+      "resolvedByHuman": "Resolvidas por Humano",
+      "avgResponseTime": "Tempo Médio Resposta"
+    },
+    "imageGen": {
+      "title": "Geração de Imagens",
+      "description": "FLUX.1 + Training RLHF",
+      "totalGenerated": "Total Geradas",
+      "approvalRate": "Taxa Aprovação",
+      "avgRating": "Rating Médio",
+      "inTraining": "Em Training"
+    },
+    "sla": {
+      "title": "SLA Monitoring",
+      "description": "Acordos de nível de serviço",
+      "onTrack": "No Prazo",
+      "atRisk": "Em Risco",
+      "breached": "Violado",
+      "firstResponse": "1ª Resposta",
+      "resolution": "Resolução",
+      "noData": "Sem dados de SLA"
+    },
+    "circuitBreaker": {
+      "title": "Circuit Breakers",
+      "description": "Proteção contra falhas em cascata",
+      "closed": "Fechado",
+      "open": "Aberto",
+      "halfOpen": "Semi-Aberto"
+    }
   },
   "chat": {
     "title": "Chat",
@@ -229,6 +302,7 @@
     "welcome": "Bem-vindo a Alice",
     "welcomeMessage": "Sou sua assistente de IA enterprise. Como posso ajudar?",
     "placeholder": "Digite sua mensagem...",
+    "placeholderWithMedia": "Adicione uma mensagem (opcional)...",
     "typeMessage": "Digite sua mensagem...",
     "send": "Enviar",
     "attachFile": "Anexar arquivo",
@@ -240,6 +314,17 @@
     "processing": "Processando...",
     "thinking": "Pensando...",
     "typing": "Digitando...",
+    "agent": {
+      "ai": "Alice IA",
+      "human": "Agente Humano",
+      "transferring": "Transferindo..."
+    },
+    "upload": {
+      "unsupportedType": "Tipo não suportado",
+      "unsupportedTypeDesc": "Este tipo de arquivo não é suportado: {{type}}",
+      "fileTooLarge": "Arquivo muito grande",
+      "fileTooLargeDesc": "Tamanho: {{size}}. Limite: {{limit}}"
+    },
     "messageTypes": {
       "text": "Texto",
       "image": "Imagem",
@@ -294,7 +379,8 @@
     }
   },
   "documents": {
-    "title": "Documentos",
+    "title": "Documentos RAG",
+    "subtitle": "Gerencie documentos para o sistema de recuperação aumentada",
     "upload": "Upload",
     "uploadDocument": "Upload de Documento",
     "dragDrop": "Arraste e solte arquivos aqui",
@@ -315,6 +401,7 @@
   },
   "integrations": {
     "title": "Integrações",
+    "subtitle": "Configure serviços externos para expandir as capacidades da Alice",
     "available": "Disponíveis",
     "configured": "Configuradas",
     "connect": "Conectar",
@@ -526,6 +613,7 @@
       "receive": "Você Recebe",
       "getQuote": "Obter Cotação",
       "expires": "Expira em",
+      "expiresIn": "Expira em {{minutes}} minutos",
       "delivery": "Entrega Estimada"
     },
     "batch": {
@@ -565,8 +653,13 @@
       "transferCreated": "Transferência criada com sucesso",
       "recipientCreated": "Destinatário criado com sucesso",
       "recipientDeleted": "Destinatário excluído com sucesso",
-      "batchCompleted": "Lote completado com sucesso"
+      "batchCompleted": "Lote completado com sucesso",
+      "quoteCreated": "Cotação criada com sucesso"
     }
+  },
+  "training": {
+    "title": "Fine-tuning & Treinamento",
+    "subtitle": "Gerencie dados e jobs de fine-tuning para o Llama 4 Maverick"
   },
   "erpnext": {
     "title": "ERPNext",

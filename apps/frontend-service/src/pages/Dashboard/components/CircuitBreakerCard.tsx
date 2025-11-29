@@ -6,6 +6,7 @@
 
 import { motion } from 'framer-motion';
 import { Shield } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,6 +18,8 @@ interface CircuitBreakerCardProps {
 }
 
 export function CircuitBreakerCard({ breakers, isLoading }: CircuitBreakerCardProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <Card>
@@ -39,9 +42,9 @@ export function CircuitBreakerCard({ breakers, isLoading }: CircuitBreakerCardPr
   };
 
   const statusLabels: Record<string, string> = {
-    closed: 'Fechado',
-    open: 'Aberto',
-    'half-open': 'Semi-Aberto',
+    closed: t('dashboard.circuitBreaker.closed'),
+    open: t('dashboard.circuitBreaker.open'),
+    'half-open': t('dashboard.circuitBreaker.halfOpen'),
   };
 
   return (
@@ -52,8 +55,12 @@ export function CircuitBreakerCard({ breakers, isLoading }: CircuitBreakerCardPr
             <Shield className="h-4 w-4 text-orange-500" />
           </div>
           <div className="flex-1">
-            <CardTitle className="text-sm font-medium">Circuit Breakers</CardTitle>
-            <CardDescription className="text-xs">Proteção contra falhas em cascata</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              {t('dashboard.circuitBreaker.title')}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {t('dashboard.circuitBreaker.description')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-2">

@@ -6,6 +6,7 @@
 
 import { motion } from 'framer-motion';
 import { MessageSquare } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { 
@@ -26,6 +27,8 @@ interface ConversationsBarChartProps {
 }
 
 export function ConversationsBarChart({ data, isLoading }: ConversationsBarChartProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <Card>
@@ -45,9 +48,11 @@ export function ConversationsBarChart({ data, isLoading }: ConversationsBarChart
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-base">
             <MessageSquare className="h-4 w-4" />
-            Conversas por Período
+            {t('dashboard.conversations.title')}
           </CardTitle>
-          <CardDescription>Resoluções IA vs Humano nos últimos 7 dias</CardDescription>
+          <CardDescription>
+            {t('dashboard.conversations.description')}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="h-[200px]">
@@ -74,14 +79,14 @@ export function ConversationsBarChart({ data, isLoading }: ConversationsBarChart
                   <Legend 
                     formatter={(value: string) => <span className="text-xs">{value}</span>}
                   />
-                  <Bar dataKey="ai" name="IA" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="human" name="Humano" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="ai" name={t('dashboard.conversations.ai')} fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="human" name={t('dashboard.conversations.human')} fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                 <MessageSquare className="h-8 w-8 mb-2 opacity-50" />
-                <p className="text-sm">Sem dados de conversas</p>
+                <p className="text-sm">{t('dashboard.conversations.noData')}</p>
               </div>
             )}
           </div>

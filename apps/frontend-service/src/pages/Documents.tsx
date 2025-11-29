@@ -448,10 +448,10 @@ export default function Documents() {
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-documents-title">
-              {t('documents.title') || 'Documentos RAG'}
+              {t('documents.title')}
             </h1>
             <p className="text-muted-foreground text-sm">
-              {t('documents.subtitle') || 'Gerencie documentos para o sistema de recuperação aumentada'}
+              {t('documents.subtitle')}
             </p>
           </div>
           

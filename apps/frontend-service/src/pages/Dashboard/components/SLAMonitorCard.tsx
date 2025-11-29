@@ -6,6 +6,7 @@
 
 import { motion } from 'framer-motion';
 import { Clock } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { 
@@ -23,6 +24,8 @@ interface SLAMonitorCardProps {
 }
 
 export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <Card>
@@ -38,9 +41,9 @@ export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
 
   const total = metrics.breachedCount + metrics.atRiskCount + metrics.onTrackCount;
   const slaData: ConversationBreakdown[] = [
-    { name: 'On Track', value: metrics.onTrackCount, color: '#10b981' },
-    { name: 'At Risk', value: metrics.atRiskCount, color: '#f59e0b' },
-    { name: 'Breached', value: metrics.breachedCount, color: '#ef4444' },
+    { name: t('dashboard.sla.onTrack'), value: metrics.onTrackCount, color: '#10b981' },
+    { name: t('dashboard.sla.atRisk'), value: metrics.atRiskCount, color: '#f59e0b' },
+    { name: t('dashboard.sla.breached'), value: metrics.breachedCount, color: '#ef4444' },
   ].filter(d => d.value > 0);
 
   return (
@@ -51,8 +54,12 @@ export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
             <Clock className="h-4 w-4 text-blue-500" />
           </div>
           <div className="flex-1">
-            <CardTitle className="text-sm font-medium">SLA Monitoring</CardTitle>
-            <CardDescription className="text-xs">Acordos de nível de serviço</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              {t('dashboard.sla.title')}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {t('dashboard.sla.description')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -84,11 +91,15 @@ export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
               </div>
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                  <span className="text-muted-foreground">1ª Resposta</span>
+                  <span className="text-muted-foreground">
+                    {t('dashboard.sla.firstResponse')}
+                  </span>
                   <span className="font-medium">{Math.round(metrics.avgFirstResponseTime / 60)}min</span>
                 </div>
                 <div className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                  <span className="text-muted-foreground">Resolução</span>
+                  <span className="text-muted-foreground">
+                    {t('dashboard.sla.resolution')}
+                  </span>
                   <span className="font-medium">{Math.round(metrics.avgResolutionTime / 60)}min</span>
                 </div>
               </div>
@@ -96,7 +107,7 @@ export function SLAMonitorCard({ metrics, isLoading }: SLAMonitorCardProps) {
           ) : (
             <div className="flex flex-col items-center justify-center h-[150px] text-muted-foreground">
               <Clock className="h-8 w-8 mb-2 opacity-50" />
-              <p className="text-sm">Sem dados de SLA</p>
+              <p className="text-sm">{t('dashboard.sla.noData')}</p>
             </div>
           )}
         </CardContent>

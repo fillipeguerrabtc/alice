@@ -209,8 +209,8 @@ export default function WisePayments() {
     },
     onSuccess: () => {
       toast({
-        title: t('wise.success.quoteCreated', 'Quote created'),
-        description: t('wise.quotes.expires', 'Expires in') + ' 30 ' + t('common.minutes', 'minutes'),
+        title: t('wise.success.quoteCreated'),
+        description: t('wise.quotes.expiresIn', { minutes: 30 }),
       });
     },
     onError: () => {
@@ -313,7 +313,7 @@ export default function WisePayments() {
             data-testid="button-wise-refresh"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            {t('common.refresh', 'Atualizar')}
+            {t('common.refresh')}
           </Button>
           <Button
             variant="outline"

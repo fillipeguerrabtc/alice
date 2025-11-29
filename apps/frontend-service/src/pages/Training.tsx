@@ -505,10 +505,10 @@ export default function Training() {
         <div className="flex items-center justify-between gap-4 mb-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold" data-testid="text-training-title">
-              {t('training.title') || 'Fine-tuning & Treinamento'}
+              {t('training.title')}
             </h1>
             <p className="text-muted-foreground text-sm">
-              {t('training.subtitle') || 'Gerencie dados e jobs de fine-tuning para o Llama 4 Maverick'}
+              {t('training.subtitle')}
             </p>
           </div>
 

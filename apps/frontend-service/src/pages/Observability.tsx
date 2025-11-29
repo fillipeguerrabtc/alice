@@ -505,7 +505,7 @@ export default function Observability() {
             data-testid="button-refresh"
           >
             <RefreshCw className="h-4 w-4 mr-2" />
-            {t('common.refresh') || 'Atualizar'}
+            {t('common.refresh')}
           </Button>
         </motion.div>
 

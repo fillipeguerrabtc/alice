@@ -92,19 +92,10 @@ export default function Dashboard() {
     staleTime: 1000 * 60,
   });
 
-  const defaultServices: ServiceHealth[] = [
-    { service: 'Auth Service', status: 'ok', latency: 45 },
-    { service: 'Chat Service', status: 'ok', latency: 120 },
-    { service: 'RAG Service', status: 'ok', latency: 85 },
-    { service: 'Training Service', status: 'ok', latency: 65 },
-    { service: 'Integrations', status: 'ok', latency: 55 },
-  ];
-
-  const { data: healthData } = useQuery<{ services: ServiceHealth[] }>({
+  const { data: healthData, isLoading: healthLoading } = useQuery<{ services: ServiceHealth[] }>({
     queryKey: ['/api/chat/health'],
     staleTime: 1000 * 30,
     refetchInterval: 1000 * 30,
-    select: () => ({ services: defaultServices }),
   });
 
   const { data: integrationData } = useQuery<{ integrations: { stripe: boolean; wise: boolean; erpnext: boolean } }>({
@@ -162,7 +153,7 @@ export default function Dashboard() {
 
   const displayUsage: UsageData[] = usageData || [];
   const displayActivity: RecentActivity[] = recentActivity || [];
-  const displayServices = healthData?.services || defaultServices;
+  const displayServices = healthData?.services || [];
 
   const distributionData = [
     { name: 'Conversas', value: displayStats.conversations, color: '#3b82f6' },
@@ -209,16 +200,16 @@ export default function Dashboard() {
               className="text-3xl font-bold tracking-tight" 
               data-testid="text-page-title"
             >
-              {t('dashboard.title') || 'Dashboard'}
+              {t('dashboard.title')}
             </h1>
             <p className="text-muted-foreground">
-              {t('dashboard.summary') || 'Visão geral da plataforma Alice Enterprise'}
+              {t('dashboard.summary')}
             </p>
           </div>
           <div className="flex items-center gap-2 mt-2 sm:mt-0">
             <Badge variant="outline" className="flex items-center gap-1">
               <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
-              Sistema Online
+              {t('dashboard.systemOnline')}
             </Badge>
           </div>
         </div>
@@ -226,36 +217,36 @@ export default function Dashboard() {
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          title={t('dashboard.stats.activeConversations') || 'Conversas'}
+          title={t('dashboard.stats.activeConversations')}
           value={displayStats.conversations}
-          description={t('dashboard.stats.totalConversations') || 'total acumulado'}
+          description={t('dashboard.stats.totalConversations')}
           icon={MessageSquare}
           trend={displayStats.trend?.conversations}
           isLoading={statsLoading}
           accent="default"
         />
         <StatCard
-          title={t('dashboard.stats.ragDocuments') || 'Documentos RAG'}
+          title={t('dashboard.stats.ragDocuments')}
           value={displayStats.documents}
-          description={t('nav.knowledge') || 'base de conhecimento'}
+          description={t('nav.knowledge')}
           icon={FileText}
           trend={displayStats.trend?.documents}
           isLoading={statsLoading}
           accent="success"
         />
         <StatCard
-          title={t('nav.training') || 'Training Data'}
+          title={t('nav.training')}
           value={displayStats.trainingData}
-          description={t('dashboard.training') || 'dados aprovados'}
+          description={t('dashboard.training')}
           icon={Brain}
           trend={displayStats.trend?.trainingData}
           isLoading={statsLoading}
           accent="warning"
         />
         <StatCard
-          title={t('dashboard.stats.tokensUsed') || 'Tokens'}
+          title={t('dashboard.stats.tokensUsed')}
           value={displayStats.tokensUsed > 0 ? `${(displayStats.tokensUsed / 1000).toFixed(1)}K` : '0'}
-          description={t('dashboard.usage.tokens') || 'utilizados esta semana'}
+          description={t('dashboard.usage.tokens')}
           icon={Zap}
           trend={displayStats.trend?.tokensUsed}
           isLoading={statsLoading}
@@ -376,15 +367,15 @@ export default function Dashboard() {
         <TabsList>
           <TabsTrigger value="usage" className="flex items-center gap-2">
             <TrendingUp className="h-4 w-4" />
-            Uso
+            {t('dashboard.tabs.usage')}
           </TabsTrigger>
           <TabsTrigger value="distribution" className="flex items-center gap-2">
             <Database className="h-4 w-4" />
-            Distribuição
+            {t('dashboard.tabs.distribution')}
           </TabsTrigger>
           <TabsTrigger value="services" className="flex items-center gap-2">
             <Cpu className="h-4 w-4" />
-            Serviços
+            {t('dashboard.tabs.services')}
           </TabsTrigger>
         </TabsList>
 
@@ -395,10 +386,10 @@ export default function Dashboard() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <TrendingUp className="h-4 w-4" />
-                    {t('dashboard.resourceUsage') || 'Uso de Recursos'}
+                    {t('dashboard.resourceUsage')}
                   </CardTitle>
                   <CardDescription>
-                    Conversas e tokens nos últimos 7 dias
+                    {t('dashboard.usageDescription')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -440,14 +431,14 @@ export default function Dashboard() {
                             strokeWidth={2}
                             fillOpacity={1}
                             fill="url(#colorConversations)"
-                            name="Conversas"
+                            name={t('dashboard.charts.conversations')}
                           />
                         </AreaChart>
                       </ResponsiveContainer>
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                         <TrendingUp className="h-12 w-12 mb-2 opacity-50" />
-                        <p className="text-sm">{t('common.noResults') || 'Sem dados disponíveis'}</p>
+                        <p className="text-sm">{t('common.noResults')}</p>
                       </div>
                     )}
                   </div>
@@ -462,10 +453,10 @@ export default function Dashboard() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Database className="h-4 w-4" />
-                    Distribuição de Dados
+                    {t('dashboard.distribution.title')}
                   </CardTitle>
                   <CardDescription>
-                    Proporção entre conversas, documentos e training
+                    {t('dashboard.distribution.description')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -500,7 +491,7 @@ export default function Dashboard() {
                     ) : (
                       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                         <Database className="h-12 w-12 mb-2 opacity-50" />
-                        <p className="text-sm">Sem dados para exibir</p>
+                        <p className="text-sm">{t('dashboard.distribution.noData')}</p>
                       </div>
                     )}
                   </div>
@@ -510,7 +501,7 @@ export default function Dashboard() {
           </TabsContent>
 
           <TabsContent value="services" className="md:col-span-2 mt-0">
-            <ServiceHealthCard services={displayServices} isLoading={false} />
+            <ServiceHealthCard services={displayServices} isLoading={healthLoading} />
           </TabsContent>
 
           <div className="md:row-span-1">
@@ -519,10 +510,10 @@ export default function Dashboard() {
                 <CardHeader className="pb-3">
                   <CardTitle className="flex items-center gap-2 text-base">
                     <Users className="h-4 w-4" />
-                    {t('dashboard.recentActivity') || 'Atividade Recente'}
+                    {t('dashboard.recentActivity')}
                   </CardTitle>
                   <CardDescription>
-                    {t('dashboard.overview') || 'Últimas ações na plataforma'}
+                    {t('dashboard.overview')}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -549,7 +540,7 @@ export default function Dashboard() {
                       ) : (
                         <div className="flex flex-col items-center justify-center py-8 text-muted-foreground">
                           <Activity className="h-8 w-8 mb-2 opacity-50" />
-                          <p className="text-sm">{t('dashboard.noActivity') || 'Nenhuma atividade recente'}</p>
+                          <p className="text-sm">{t('dashboard.noActivity')}</p>
                         </div>
                       )}
                     </motion.div>
@@ -566,7 +557,7 @@ export default function Dashboard() {
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
               <Globe className="h-4 w-4" />
-              Visão Geral do Sistema
+              {t('dashboard.systemOverview')}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -576,8 +567,8 @@ export default function Dashboard() {
                   <Cpu className="h-5 w-5 text-blue-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Llama 4 Maverick</p>
-                  <p className="text-xs text-muted-foreground">400B parâmetros</p>
+                  <p className="text-sm font-medium">{t('dashboard.system.llm')}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.system.llmParams')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
@@ -585,8 +576,8 @@ export default function Dashboard() {
                   <Database className="h-5 w-5 text-green-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">PostgreSQL + pgvector</p>
-                  <p className="text-xs text-muted-foreground">Busca vetorial</p>
+                  <p className="text-sm font-medium">{t('dashboard.system.database')}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.system.databaseFeature')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
@@ -594,8 +585,8 @@ export default function Dashboard() {
                   <Shield className="h-5 w-5 text-purple-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">RBAC Enterprise</p>
-                  <p className="text-xs text-muted-foreground">160+ permissões</p>
+                  <p className="text-sm font-medium">{t('dashboard.system.rbac')}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.system.rbacPermissions')}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
@@ -603,8 +594,8 @@ export default function Dashboard() {
                   <Server className="h-5 w-5 text-orange-500" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium">Hetzner CX43</p>
-                  <p className="text-xs text-muted-foreground">8 vCPUs, 16GB RAM</p>
+                  <p className="text-sm font-medium">{t('dashboard.system.server')}</p>
+                  <p className="text-xs text-muted-foreground">{t('dashboard.system.serverSpecs')}</p>
                 </div>
               </div>
             </div>

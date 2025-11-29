@@ -53,9 +53,9 @@ export function ServiceHealthCard({ services, isLoading }: ServiceHealthCardProp
       down: 'destructive',
     };
     const labels: Record<string, string> = {
-      ok: 'Online',
-      degraded: 'Degradado',
-      down: 'Offline',
+      ok: t('dashboard.serviceStatus.online'),
+      degraded: t('dashboard.serviceStatus.degraded'),
+      down: t('dashboard.serviceStatus.offline'),
     };
     return (
       <Badge variant={variants[status] || 'outline'} className="text-xs">
@@ -70,7 +70,7 @@ export function ServiceHealthCard({ services, isLoading }: ServiceHealthCardProp
         <CardHeader className="pb-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
-            {t('dashboard.serviceHealth') || 'Status dos Serviços'}
+            {t('dashboard.serviceHealth')}
           </CardTitle>
         </CardHeader>
         <CardContent>

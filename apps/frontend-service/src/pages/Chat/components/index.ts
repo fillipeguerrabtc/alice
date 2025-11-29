@@ -14,3 +14,7 @@ export { InlineMediaAttachment } from './InlineMediaAttachment';
 export { MessageBubble } from './MessageBubble';
 export { ConversationItem } from './ConversationItem';
 export { MediaPreview } from './MediaPreview';
+export { WelcomeScreen } from './WelcomeScreen';
+export { ChatInput } from './ChatInput';
+export { AgentStatusBadge } from './AgentStatusBadge';
+export { MessageActions } from './MessageActions';

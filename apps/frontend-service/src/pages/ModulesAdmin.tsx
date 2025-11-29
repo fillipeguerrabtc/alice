@@ -716,10 +716,10 @@ export default function ModulesAdmin() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
-              {t('modules.title') || 'Gestão de Módulos'}
+              {t('modules.title')}
             </h1>
             <p className="text-muted-foreground">
-              {t('modules.description') || 'Gerencie os módulos do sistema e suas permissões'}
+              {t('modules.description')}
             </p>
           </div>
           <Button

@@ -6,6 +6,7 @@
 
 import { motion } from 'framer-motion';
 import { Image, Star } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
@@ -18,6 +19,8 @@ interface ImageGenerationCardProps {
 }
 
 export function ImageGenerationCard({ stats, isLoading }: ImageGenerationCardProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <Card>
@@ -45,20 +48,28 @@ export function ImageGenerationCard({ stats, isLoading }: ImageGenerationCardPro
             <Image className="h-4 w-4 text-purple-500" />
           </div>
           <div className="flex-1">
-            <CardTitle className="text-sm font-medium">Geração de Imagens</CardTitle>
-            <CardDescription className="text-xs">FLUX.1 + Training RLHF</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              {t('dashboard.imageGen.title')}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              {t('dashboard.imageGen.description')}
+            </CardDescription>
           </div>
         </CardHeader>
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Total Geradas</span>
+            <span className="text-sm text-muted-foreground">
+              {t('dashboard.imageGen.totalGenerated')}
+            </span>
             <span className="font-semibold" data-testid="stat-total-images">
               {stats.totalGenerated}
             </span>
           </div>
           <div className="space-y-1">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Taxa Aprovação</span>
+              <span className="text-muted-foreground">
+                {t('dashboard.imageGen.approvalRate')}
+              </span>
               <span className="font-medium">{approvalRate}%</span>
             </div>
             <Progress value={approvalRate} className="h-1.5" />
@@ -66,12 +77,16 @@ export function ImageGenerationCard({ stats, isLoading }: ImageGenerationCardPro
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1">
               <Star className="h-4 w-4 text-yellow-500" />
-              <span className="text-sm text-muted-foreground">Rating Médio</span>
+              <span className="text-sm text-muted-foreground">
+                {t('dashboard.imageGen.avgRating')}
+              </span>
             </div>
             <span className="font-semibold">{stats.avgRating.toFixed(1)}/5</span>
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-sm text-muted-foreground">Em Training</span>
+            <span className="text-sm text-muted-foreground">
+              {t('dashboard.imageGen.inTraining')}
+            </span>
             <Badge variant="secondary">{stats.inTraining}</Badge>
           </div>
         </CardContent>
