@@ -40,6 +40,11 @@ import {
   requirePermission, 
   requireAuth,
   requireRole,
+  createAlicePrometheus,
+  instrumentCircuitBreaker,
+  Counter as PromCounter,
+  Gauge as PromGauge,
+  type AliceMetrics,
 } from '@alice/shared-utils';
 import { eq, or } from 'drizzle-orm';
 import { z } from 'zod';
@@ -257,6 +262,20 @@ try {
 
 const app = express();
 
+// ============================================================================
+// PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
+// ============================================================================
+const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'auth-service',
+  collectDefaultMetrics: true,
+});
+
+// Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
+app.use(metricsRouter);
+
+// Middleware para coletar métricas HTTP automaticamente
+app.use(httpMetricsMiddleware);
+
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
@@ -367,9 +386,24 @@ const getBaseUrl = (): string => {
 };
 
 // ============================================================================
-// MÉTRICAS DE AUTENTICAÇÃO
+// MÉTRICAS DE AUTENTICAÇÃO (Prometheus + Legacy)
 // Monitoramento de resiliência para provedores OAuth/SAML
 // ============================================================================
+
+// Métricas Prometheus customizadas para autenticação
+// Usar metrics.registry do createAlicePrometheus para métricas adicionais
+const authAttemptsCounter = new PromCounter({
+  name: 'alice_auth_attempts_total',
+  help: 'Total de tentativas de autenticação',
+  labelNames: ['provider', 'status'] as const,
+  registers: [metrics.registry],
+});
+
+const authActiveSessionsGauge = new PromGauge({
+  name: 'alice_auth_active_sessions',
+  help: 'Número de sessões ativas',
+  registers: [metrics.registry],
+});
 
 const authMetrics = {
   attempts: { google: 0, github: 0, microsoft: 0, saml: 0, local: 0 },
@@ -381,6 +415,10 @@ const authMetrics = {
 
 function recordAuthAttempt(provider: 'google' | 'github' | 'microsoft' | 'saml' | 'local', success: boolean): void {
   authMetrics.attempts[provider]++;
+  
+  // Prometheus metrics
+  authAttemptsCounter.inc({ provider, status: success ? 'success' : 'failure' });
+  
   if (success) {
     authMetrics.successes[provider]++;
     authMetrics.lastSuccess[provider] = new Date();

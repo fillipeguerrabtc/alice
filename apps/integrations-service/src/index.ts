@@ -26,6 +26,8 @@ import {
   featureFlagsMiddleware,
   FEATURE_FLAGS,
   isFeatureEnabled,
+  createAlicePrometheus,
+  instrumentCircuitBreaker,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
@@ -42,6 +44,20 @@ const config = loadConfig(integrationsServiceConfigSchema);
 setupGracefulShutdown(logger);
 
 const app = express();
+
+// ============================================================================
+// PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
+// ============================================================================
+const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'integrations-service',
+  collectDefaultMetrics: true,
+});
+
+// Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
+app.use(metricsRouter);
+
+// Middleware para coletar métricas HTTP automaticamente
+app.use(httpMetricsMiddleware);
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
@@ -103,6 +119,9 @@ const erpNextBreaker = new CircuitBreaker(async (options: {
 erpNextBreaker.on('open', () => logger.warn('Circuit breaker ERPNext: ABERTO'));
 erpNextBreaker.on('halfOpen', () => logger.info('Circuit breaker ERPNext: HALF-OPEN'));
 erpNextBreaker.on('close', () => logger.info('Circuit breaker ERPNext: FECHADO'));
+
+// Instrumentar circuit breaker com métricas Prometheus
+instrumentCircuitBreaker(metrics, 'erpnext', erpNextBreaker);
 
 // Sincronizar cliente/pedido com ERPNext (com Circuit Breaker)
 // Fluxo correto ERPNext: Customer → Sales Order → Sales Invoice → Payment Entry com referência

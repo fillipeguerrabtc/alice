@@ -36,6 +36,8 @@ import {
   featureFlagsMiddleware,
   FEATURE_FLAGS,
   isFeatureEnabled,
+  createAlicePrometheus,
+  instrumentCircuitBreaker,
 } from '@alice/shared-utils';
 import { eq, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -123,6 +125,20 @@ initOrchestrator(db);
 initImageGeneration(db);
 
 const app = express();
+
+// ============================================================================
+// PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
+// ============================================================================
+const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'chat-service',
+  collectDefaultMetrics: true,
+});
+
+// Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
+app.use(metricsRouter);
+
+// Middleware para coletar métricas HTTP automaticamente
+app.use(httpMetricsMiddleware);
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
@@ -701,6 +717,9 @@ saladCloudBreaker.on('close', () => {
 saladCloudBreaker.on('fallback', () => {
   logger.warn('Circuit breaker Salad Cloud LLM: Usando fallback');
 });
+
+// Instrumentar circuit breaker com métricas Prometheus
+instrumentCircuitBreaker(metrics, 'salad-llm', saladCloudBreaker);
 
 // Mensagem de fallback quando LLM está indisponível (graceful degradation)
 const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.';

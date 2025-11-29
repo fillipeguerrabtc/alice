@@ -28,6 +28,8 @@ import {
   featureFlagsMiddleware,
   FEATURE_FLAGS,
   isFeatureEnabled,
+  createAlicePrometheus,
+  instrumentCircuitBreaker,
 } from '@alice/shared-utils';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
@@ -87,6 +89,20 @@ initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
 const app = express();
+
+// ============================================================================
+// PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
+// ============================================================================
+const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
+  serviceName: 'training-service',
+  collectDefaultMetrics: true,
+});
+
+// Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
+app.use(metricsRouter);
+
+// Middleware para coletar métricas HTTP automaticamente
+app.use(httpMetricsMiddleware);
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
@@ -161,6 +177,9 @@ embeddingsBreaker.on('halfOpen', () => {
 embeddingsBreaker.on('close', () => {
   logger.info('Circuit breaker Salad Cloud Embeddings: FECHADO - API funcionando normalmente');
 });
+
+// Instrumentar circuit breaker com métricas Prometheus
+instrumentCircuitBreaker(metrics, 'salad-embeddings', embeddingsBreaker);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {

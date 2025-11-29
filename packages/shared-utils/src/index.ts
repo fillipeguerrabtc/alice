@@ -21,6 +21,7 @@ export * from './async-context.js';
 export * from './express-hardening.js';
 export * from './feature-flags.js';
 export * from './feature-flags-storage.js';
+export * from './prometheus.js';
 
 export * as rbac from './rbac/index.js';
 export { 
