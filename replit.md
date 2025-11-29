@@ -147,6 +147,12 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
   - 404 = bucket não existe (FATAL)
   - 5xx = erro servidor (FATAL)
 - Região default: `fsn1` (Hetzner Falkenstein)
+- **BUG CRÍTICO readFile() CORRIGIDO**: s3FetchInternal não retornava body
+  - Criado `S3ResponseWithBody` interface com campo `body: Buffer`
+  - Criado `s3GetWithBody()` que coleta chunks e retorna body
+  - Criado `s3GetBreaker` dedicado para GET (timeout 60s para downloads)
+  - `readFile()` agora usa `s3GetBreaker` e retorna `response.body`
+  - Tratamento específico: 404 = arquivo não encontrado, 403 = acesso negado
 
 **P2 - Validação Zod WebSocket/RAG (JÁ IMPLEMENTADO)**
 - Schemas por domínio: `packages/shared/src/schema/{chat,rag,media,shared-zod}.ts`

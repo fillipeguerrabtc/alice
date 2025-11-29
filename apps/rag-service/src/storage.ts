@@ -53,12 +53,20 @@ interface S3Request {
 }
 
 /**
- * Resposta simplificada da requisição S3
+ * Resposta simplificada da requisição S3 (sem body)
+ * Usado para PUT, DELETE, HEAD
  */
 interface S3Response {
   ok: boolean;
   status: number;
   statusText: string;
+}
+
+/**
+ * Resposta S3 com body (para GET)
+ */
+interface S3ResponseWithBody extends S3Response {
+  body: Buffer;
 }
 
 /**
@@ -120,6 +128,67 @@ async function s3FetchInternal(request: S3Request): Promise<S3Response> {
 const s3Breaker = createCircuitBreaker(s3FetchInternal, {
   name: 's3-storage',
   ...CIRCUIT_BREAKER_PRESETS.s3Storage,
+});
+
+/**
+ * Executa requisição GET para S3 retornando o body
+ * Usado por readFile para download de arquivos
+ * 
+ * @param request - Objeto com url, method='GET', headers
+ * @returns Promise com resposta incluindo body como Buffer
+ */
+async function s3GetWithBody(request: S3Request): Promise<S3ResponseWithBody> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(request.url);
+    const isHttps = urlObj.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+    
+    const options: http.RequestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: request.headers,
+      timeout: 60000, // Timeout maior para downloads
+    };
+    
+    const req = httpModule.request(options, (res) => {
+      const chunks: Buffer[] = [];
+      
+      res.on('data', (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      
+      res.on('end', () => {
+        const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
+        const body = Buffer.concat(chunks);
+        
+        resolve({
+          ok,
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || '',
+          body,
+        });
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(new Error(`S3 GET request failed: ${error.message}`));
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('S3 GET request timeout'));
+    });
+    
+    req.end();
+  });
+}
+
+const s3GetBreaker = createCircuitBreaker(s3GetWithBody, {
+  name: 's3-storage-get',
+  ...CIRCUIT_BREAKER_PRESETS.s3Storage,
+  timeout: 60000, // Timeout maior para downloads
 });
 
 export interface S3CircuitBreakerStatus {
@@ -545,19 +614,26 @@ class S3StorageService implements StorageService {
     const url = `${this.endpoint}/${this.bucket}/${filePath}`;
     
     try {
-      const response = await s3Breaker.fire({
+      // Usa s3GetBreaker que retorna body (diferente de s3Breaker)
+      const response = await s3GetBreaker.fire({
         url,
         method: 'GET',
         headers: {
           'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
         },
-      }) as Response;
+      }) as S3ResponseWithBody;
       
       if (!response.ok) {
-        throw new Error(`Arquivo não encontrado no S3: ${filePath}`);
+        if (response.status === 404) {
+          throw new Error(`Arquivo não encontrado no S3: ${filePath}`);
+        }
+        if (response.status === 403) {
+          throw new Error(`Acesso negado ao arquivo S3: ${filePath}`);
+        }
+        throw new Error(`Erro S3 ${response.status}: ${response.statusText}`);
       }
       
-      return Buffer.from(await response.arrayBuffer());
+      return response.body;
     } catch (error) {
       if (error instanceof Error && error.message.includes('Breaker is open')) {
         throw new Error('Serviço de storage temporariamente indisponível');
