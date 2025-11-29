@@ -534,6 +534,55 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
+  # ALICE OBSERVABILITY SERVICE - Health Checker para Stack de Observabilidade
+  # Docs 2025: Node.js 20 light - 0.25 CPU, 256MB
+  # ===========================================================================
+  alice-observability:
+    image: ${IMAGE_PREFIX}-observability:${IMAGE_TAG:-latest}
+    container_name: alice-observability
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3007
+      SERVICE_NAME: observability-service
+      # URLs internas dos serviços de observabilidade
+      PROMETHEUS_URL: http://prometheus:9090
+      GRAFANA_URL: http://grafana:3000
+      JAEGER_URL: http://jaeger:16686
+      LANGFUSE_URL: http://langfuse:3000
+      # URLs externas para UI
+      GRAFANA_EXTERNAL_URL: https://observability.yesyoudeserve.duckdns.org
+      PROMETHEUS_EXTERNAL_URL: https://metrics.yesyoudeserve.duckdns.org
+      JAEGER_EXTERNAL_URL: https://traces.yesyoudeserve.duckdns.org
+      LANGFUSE_EXTERNAL_URL: https://langfuse.yesyoudeserve.duckdns.org
+    depends_on:
+      traefik:
+        condition: service_healthy
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-observability.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/observability`)"
+      - "traefik.http.routers.alice-observability.entrypoints=websecure"
+      - "traefik.http.routers.alice-observability.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-observability.middlewares=security-headers@docker,rate-limit@docker"
+      - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial
   # ===========================================================================
   
