@@ -139,13 +139,15 @@ jobs:
             ### 🐳 Docker Images
             Todas as imagens estão disponíveis no GitHub Container Registry:
             ```
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-auth-service:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-chat-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-clip-inference-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability-service:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-rag-service:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-training-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
             ```
             
             ### 📋 Deploy
@@ -167,13 +169,15 @@ jobs:
     strategy:
       matrix:
         service:
+          - api-gateway
           - auth-service
           - chat-service
-          - rag-service
-          - training-service
-          - integrations-service
           - clip-inference-service
           - frontend-service
+          - integrations-service
+          - observability-service
+          - rag-service
+          - training-service
     
     steps:
       - name: Checkout código
