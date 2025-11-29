@@ -5,6 +5,24 @@
  * Documentação em PT-BR (Regra 10 replit.md).
  * 
  * @module @alice/shared-utils/rbac/cache
+ * 
+ * ## Uso Planejado (Arquitetura RBAC Enterprise)
+ * 
+ * Este cache é parte da arquitetura RBAC centralizada. Integração pendente:
+ * 
+ * 1. **auth-service**: Deve popular o cache ao resolver sessões/permissões
+ *    e publicar eventos de invalidação quando roles ou tenants mudarem.
+ * 
+ * 2. **Microsserviços** (chat, rag, training, integrations): Devem usar
+ *    requirePermission() do @alice/shared-utils ao invés de verificações
+ *    inline de roles (ex: rolesWithTakeoverPermission.includes()).
+ * 
+ * 3. **Invalidação**: auth-service deve chamar permissionCache.invalidate()
+ *    ou permissionCache.invalidateTenant() em mudanças de permissão.
+ * 
+ * @see replit.md - OIDC Provider e 6-level RBAC
+ * @todo Implementar requirePermission() helper em packages/shared-utils/rbac
+ * @todo Migrar verificações inline de roles nos microsserviços
  */
 
 import { createLogger } from '../logger.js';
