@@ -142,16 +142,54 @@ export function getS3CircuitBreakerStatus(): S3CircuitBreakerStatus {
   };
 }
 
-// Configuração de storage
-const STORAGE_TYPE = process.env.STORAGE_TYPE || 'local';
-const STORAGE_BASE_DIR = process.env.STORAGE_BASE_DIR || './uploads';
+// ============================================================================
+// CONFIGURAÇÃO DE STORAGE (Regra 6 replit.md - SEM SOLUÇÕES TEMPORÁRIAS)
+// 
+// PRODUÇÃO (NODE_ENV=production): OBRIGA S3 - Hetzner Object Storage
+// DESENVOLVIMENTO: Permite local OU S3 (deve ser explícito)
+// ============================================================================
 
-// Configuração S3/MinIO (para produção)
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PRODUCTION = NODE_ENV === 'production';
+
+// Configuração S3/Hetzner Object Storage
 const S3_ENDPOINT = process.env.S3_ENDPOINT;
 const S3_ACCESS_KEY = process.env.S3_ACCESS_KEY;
 const S3_SECRET_KEY = process.env.S3_SECRET_KEY;
 const S3_BUCKET = process.env.S3_BUCKET || 'alice-media';
-const S3_REGION = process.env.S3_REGION || 'us-east-1';
+// Hetzner Object Storage - regiões disponíveis: fsn1, nbg1, hel1
+const S3_REGION = process.env.S3_REGION || 'fsn1';
+
+// Validação OBRIGATÓRIA em produção (Regra 6 - fail-fast)
+if (IS_PRODUCTION) {
+  const missingVars: string[] = [];
+  if (!S3_ENDPOINT) missingVars.push('S3_ENDPOINT');
+  if (!S3_ACCESS_KEY) missingVars.push('S3_ACCESS_KEY');
+  if (!S3_SECRET_KEY) missingVars.push('S3_SECRET_KEY');
+  
+  if (missingVars.length > 0) {
+    const errorMsg = `[FATAL] Produção Hetzner requer Object Storage S3. ` +
+      `Variáveis faltando: ${missingVars.join(', ')}. ` +
+      `Endpoints Hetzner: https://fsn1.your-objectstorage.com (Falkenstein), ` +
+      `https://nbg1.your-objectstorage.com (Nuremberg), ` +
+      `https://hel1.your-objectstorage.com (Helsinki)`;
+    logger.fatal({ missingVars }, errorMsg);
+    throw new Error(errorMsg);
+  }
+}
+
+// STORAGE_TYPE: 's3' em produção, 'local' apenas em desenvolvimento
+const STORAGE_TYPE = IS_PRODUCTION ? 's3' : (process.env.STORAGE_TYPE || 'local');
+const STORAGE_BASE_DIR = process.env.STORAGE_BASE_DIR || './uploads';
+
+// Log de configuração
+logger.info({ 
+  environment: NODE_ENV,
+  storageType: STORAGE_TYPE,
+  s3Endpoint: S3_ENDPOINT ? S3_ENDPOINT.replace(/\/\/[^@]*@/, '//***@') : undefined,
+  s3Region: S3_REGION,
+  s3Bucket: S3_BUCKET,
+}, 'Configuração de storage inicializada');
 
 export interface StoredFile {
   filePath: string;
@@ -455,18 +493,39 @@ class S3StorageService implements StorageService {
 
 // ============================================================================
 // FACTORY - Seleciona o serviço de storage baseado na configuração
+// (Regra 6 replit.md - fail-fast em produção)
 // ============================================================================
 
 let storageInstance: StorageService | null = null;
 
+/**
+ * Retorna instância do serviço de storage apropriado.
+ * 
+ * PRODUÇÃO: Sempre retorna S3StorageService (Hetzner Object Storage)
+ * DESENVOLVIMENTO: Retorna LocalStorageService ou S3StorageService conforme config
+ * 
+ * @throws Error se produção e S3 não configurado (Regra 6 - fail-fast)
+ */
 export function getStorageService(): LocalStorageService | S3StorageService {
   if (!storageInstance) {
-    if (STORAGE_TYPE === 's3' && S3_ENDPOINT) {
-      logger.info('Usando S3 Storage Service (produção)');
+    if (STORAGE_TYPE === 's3') {
+      // S3 obrigatório - validação já feita no módulo para produção
+      logger.info({ 
+        endpoint: S3_ENDPOINT,
+        bucket: S3_BUCKET,
+        region: S3_REGION,
+      }, 'Inicializando S3 Storage Service (Hetzner Object Storage)');
       storageInstance = new S3StorageService();
-    } else {
-      logger.info({ baseDir: STORAGE_BASE_DIR }, 'Usando Local Storage Service (desenvolvimento)');
+    } else if (!IS_PRODUCTION) {
+      // Local SOMENTE permitido em desenvolvimento
+      logger.info({ 
+        baseDir: STORAGE_BASE_DIR,
+        warning: 'Storage local - APENAS para desenvolvimento',
+      }, 'Inicializando Local Storage Service');
       storageInstance = new LocalStorageService();
+    } else {
+      // Nunca deve chegar aqui - validação fail-fast já disparou
+      throw new Error('[FATAL] Storage local não permitido em produção (Regra 6 replit.md)');
     }
   }
   return storageInstance as LocalStorageService | S3StorageService;
