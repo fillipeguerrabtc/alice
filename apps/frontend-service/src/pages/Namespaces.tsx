@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -56,14 +57,12 @@ interface Namespace {
   cor?: string | null;
 }
 
-const namespaceSchema = z.object({
-  nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-  slug: z.string().min(2, "Slug deve ter pelo menos 2 caracteres").regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minúsculas, números e hífens"),
-  descricao: z.string().optional(),
-  cor: z.string().default("#3B82F6"),
-});
-
-type NamespaceFormData = z.infer<typeof namespaceSchema>;
+type NamespaceFormData = {
+  nome: string;
+  slug: string;
+  descricao?: string;
+  cor: string;
+};
 
 const defaultColors = [
   "#3B82F6",
@@ -96,9 +95,17 @@ function NamespaceCardSkeleton() {
 }
 
 export default function Namespaces() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
+
+  const namespaceSchema = z.object({
+    nome: z.string().min(2, t('namespaces.validation.nameMin')),
+    slug: z.string().min(2, t('namespaces.validation.slugMin')).regex(/^[a-z0-9-]+$/, t('namespaces.validation.slugFormat')),
+    descricao: z.string().optional(),
+    cor: z.string().default("#3B82F6"),
+  });
 
   const form = useForm<NamespaceFormData>({
     resolver: zodResolver(namespaceSchema),
@@ -122,12 +129,12 @@ export default function Namespaces() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
-      toast({ title: "Namespace criado com sucesso" });
+      toast({ title: t('namespaces.success.created') });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: () => {
-      toast({ title: "Erro ao criar namespace", variant: "destructive" });
+      toast({ title: t('namespaces.errors.create'), variant: "destructive" });
     },
   });
 
@@ -138,13 +145,13 @@ export default function Namespaces() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
-      toast({ title: "Namespace atualizado" });
+      toast({ title: t('namespaces.success.updated') });
       setIsDialogOpen(false);
       setEditingNamespace(null);
       form.reset();
     },
     onError: () => {
-      toast({ title: "Erro ao atualizar", variant: "destructive" });
+      toast({ title: t('namespaces.errors.update'), variant: "destructive" });
     },
   });
 
@@ -154,10 +161,10 @@ export default function Namespaces() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
-      toast({ title: "Namespace removido" });
+      toast({ title: t('namespaces.success.removed') });
     },
     onError: () => {
-      toast({ title: "Erro ao remover", variant: "destructive" });
+      toast({ title: t('namespaces.errors.remove'), variant: "destructive" });
     },
   });
 
@@ -198,26 +205,26 @@ export default function Namespaces() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
-            Namespaces
+            {t('namespaces.title')}
           </h1>
           <p className="text-muted-foreground mt-1">
-            {namespaces?.length || 0} namespaces ativos
+            {t('namespaces.subtitle', { count: namespaces?.length || 0 })}
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={handleNewNamespace} data-testid="button-criar-namespace">
               <Plus className="mr-2 h-4 w-4" />
-              Criar Namespace
+              {t('namespaces.create')}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>
-                {editingNamespace ? "Editar Namespace" : "Criar Namespace"}
+                {editingNamespace ? t('namespaces.edit') : t('namespaces.create')}
               </DialogTitle>
               <DialogDescription>
-                Organize seus agentes e documentos em namespaces separados
+                {t('namespaces.dialogDesc')}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -227,10 +234,10 @@ export default function Namespaces() {
                   name="nome"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nome</FormLabel>
+                      <FormLabel>{t('namespaces.name')}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Ex: Vendas, Suporte, Marketing"
+                          placeholder={t('namespaces.placeholders.name')}
                           {...field}
                           onChange={(e) => {
                             field.onChange(e);
@@ -250,16 +257,16 @@ export default function Namespaces() {
                   name="slug"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Slug</FormLabel>
+                      <FormLabel>{t('namespaces.slug')}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="ex: vendas, suporte"
+                          placeholder={t('namespaces.placeholders.slug')}
                           {...field}
                           data-testid="input-namespace-slug"
                         />
                       </FormControl>
                       <FormDescription>
-                        URL: /namespace/{field.value || "slug"}
+                        {t('namespaces.slugUrl', { slug: field.value || "slug" })}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -270,10 +277,10 @@ export default function Namespaces() {
                   name="descricao"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Descrição</FormLabel>
+                      <FormLabel>{t('namespaces.description')}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Descrição do namespace"
+                          placeholder={t('namespaces.placeholders.description')}
                           className="resize-none"
                           rows={2}
                           {...field}
@@ -289,7 +296,7 @@ export default function Namespaces() {
                   name="cor"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Cor</FormLabel>
+                      <FormLabel>{t('namespaces.color')}</FormLabel>
                       <FormControl>
                         <div className="flex flex-wrap gap-2">
                           {defaultColors.map((color) => (
@@ -318,14 +325,14 @@ export default function Namespaces() {
                     variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
-                    Cancelar
+                    {t('namespaces.actions.cancel')}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createNamespaceMutation.isPending || updateNamespaceMutation.isPending}
                     data-testid="button-salvar-namespace"
                   >
-                    Salvar
+                    {t('namespaces.actions.save')}
                   </Button>
                 </DialogFooter>
               </form>
@@ -365,18 +372,18 @@ export default function Namespaces() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleEdit(namespace)}>
                         <Edit className="mr-2 h-4 w-4" />
-                        Editar
+                        {t('namespaces.actions.edit')}
                       </DropdownMenuItem>
                       <DropdownMenuItem>
                         <Settings className="mr-2 h-4 w-4" />
-                        Configurações
+                        {t('namespaces.actions.settings')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive"
                         onClick={() => deleteNamespaceMutation.mutate(namespace.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        Remover
+                        {t('namespaces.actions.remove')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -388,15 +395,15 @@ export default function Namespaces() {
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline" className="gap-1 text-xs">
                     <Bot className="h-3 w-3" />
-                    0 agentes
+                    {t('namespaces.stats.agents', { count: 0 })}
                   </Badge>
                   <Badge variant="outline" className="gap-1 text-xs">
                     <FileText className="h-3 w-3" />
-                    0 docs
+                    {t('namespaces.stats.docs', { count: 0 })}
                   </Badge>
                   <Badge variant="outline" className="gap-1 text-xs">
                     <Users className="h-3 w-3" />
-                    0 usuários
+                    {t('namespaces.stats.users', { count: 0 })}
                   </Badge>
                 </div>
               </CardContent>
@@ -409,13 +416,13 @@ export default function Namespaces() {
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
               <Folder className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="font-semibold text-foreground mb-2">Nenhum namespace criado</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('namespaces.noNamespaces')}</h3>
             <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-              Crie namespaces para organizar seus agentes e documentos por departamento ou projeto
+              {t('namespaces.noNamespacesDesc')}
             </p>
             <Button onClick={handleNewNamespace} data-testid="button-criar-primeiro-namespace">
               <Plus className="mr-2 h-4 w-4" />
-              Criar Namespace
+              {t('namespaces.create')}
             </Button>
           </CardContent>
         </Card>

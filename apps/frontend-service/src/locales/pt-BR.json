@@ -402,19 +402,50 @@
   },
   "namespaces": {
     "title": "Namespaces",
+    "subtitle": "{{count}} namespaces ativos",
     "create": "Criar Namespace",
     "edit": "Editar Namespace",
     "deleteNamespace": "Excluir Namespace",
     "name": "Nome",
     "slug": "Slug",
+    "slugUrl": "URL: /namespace/{{slug}}",
     "description": "Descrição",
+    "color": "Cor",
     "tenant": "Tenant",
-    "noNamespaces": "Nenhum namespace cadastrado",
-    "createFirst": "Crie seu primeiro namespace para organizar seus agentes",
+    "noNamespaces": "Nenhum namespace criado",
+    "noNamespacesDesc": "Crie namespaces para organizar seus agentes e documentos por departamento ou projeto",
+    "dialogDesc": "Organize seus agentes e documentos em namespaces separados",
     "placeholders": {
-      "name": "Ex: Vendas",
-      "slug": "ex: vendas",
-      "description": "Descrição do namespace..."
+      "name": "Ex: Vendas, Suporte, Marketing",
+      "slug": "ex: vendas, suporte",
+      "description": "Descrição do namespace"
+    },
+    "validation": {
+      "nameMin": "Nome deve ter pelo menos 2 caracteres",
+      "slugMin": "Slug deve ter pelo menos 2 caracteres",
+      "slugFormat": "Slug deve conter apenas letras minúsculas, números e hífens"
+    },
+    "actions": {
+      "edit": "Editar",
+      "settings": "Configurações",
+      "remove": "Remover",
+      "cancel": "Cancelar",
+      "save": "Salvar"
+    },
+    "stats": {
+      "agents": "{{count}} agentes",
+      "docs": "{{count}} docs",
+      "users": "{{count}} usuários"
+    },
+    "success": {
+      "created": "Namespace criado com sucesso",
+      "updated": "Namespace atualizado",
+      "removed": "Namespace removido"
+    },
+    "errors": {
+      "create": "Erro ao criar namespace",
+      "update": "Erro ao atualizar",
+      "remove": "Erro ao remover"
     }
   },
   "documents": {
