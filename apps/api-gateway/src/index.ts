@@ -43,6 +43,8 @@ const logger = pino({
 const gatewayConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
+  // Segurança S2S (HMAC-SHA256 para comunicação entre microsserviços)
+  INTERNAL_API_SECRET: z.string().min(32).optional(),
   // URLs dos microserviços
   AUTH_SERVICE_URL: z.string().default('http://localhost:3001'),
   CHAT_SERVICE_URL: z.string().default('http://localhost:3002'),
@@ -81,6 +83,14 @@ try {
   }
   logger.warn({ error }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
   config = gatewayConfigSchema.parse({});
+}
+
+// Validação fail-fast para INTERNAL_API_SECRET em produção (Regra 6 - Sem gambiarras)
+if (nodeEnv === 'production' && !config.INTERNAL_API_SECRET) {
+  logger.error('INTERNAL_API_SECRET é obrigatório em produção para autenticação S2S. Abortando.');
+  process.exit(1);
+} else if (!config.INTERNAL_API_SECRET) {
+  logger.warn('INTERNAL_API_SECRET não configurado. Autenticação S2S desabilitada (apenas desenvolvimento).');
 }
 
 const app: express.Application = express();
