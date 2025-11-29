@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,23 +75,21 @@ interface Agent {
   atualizadoEm: Date | null;
 }
 
-const agentFormSchema = z.object({
-  nome: z.string().min(2, "Nome deve ter pelo menos 2 caracteres"),
-  slug: z.string().min(2, "Slug deve ter pelo menos 2 caracteres").regex(/^[a-z0-9-]+$/, "Slug deve conter apenas letras minúsculas, números e hífens"),
-  descricao: z.string().optional().nullable(),
-  instrucoes: z.string().min(10, "Instruções devem ter pelo menos 10 caracteres").optional().nullable(),
-  personalidade: z.string().optional().nullable(),
-  status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
-});
-
-type AgentFormData = z.infer<typeof agentFormSchema>;
-
-const statusOptions = [
-  { value: "active", icon: Power, color: "text-green-500", label: "Ativo" },
-  { value: "training", icon: Bot, color: "text-blue-500", label: "Treinando" },
-  { value: "paused", icon: MessageSquare, color: "text-orange-500", label: "Pausado" },
-  { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", label: "Descontinuado" },
+const statusOptionsConfig = [
+  { value: "active", icon: Power, color: "text-green-500", labelKey: "agents.status.active" },
+  { value: "training", icon: Bot, color: "text-blue-500", labelKey: "agents.status.training" },
+  { value: "paused", icon: MessageSquare, color: "text-orange-500", labelKey: "agents.status.paused" },
+  { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", labelKey: "agents.status.deprecated" },
 ];
+
+type AgentFormData = {
+  nome: string;
+  slug: string;
+  descricao?: string | null;
+  instrucoes?: string | null;
+  personalidade?: string | null;
+  status: "active" | "training" | "paused" | "deprecated";
+};
 
 function AgentCardSkeleton() {
   return (
@@ -109,9 +108,24 @@ function AgentCardSkeleton() {
 }
 
 export default function Agents() {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
+  const agentFormSchema = z.object({
+    nome: z.string().min(2, t('agents.validation.nameMin')),
+    slug: z.string().min(2, t('agents.validation.slugMin')).regex(/^[a-z0-9-]+$/, t('agents.validation.slugFormat')),
+    descricao: z.string().optional().nullable(),
+    instrucoes: z.string().min(10, t('agents.validation.instructionsMin')).optional().nullable(),
+    personalidade: z.string().optional().nullable(),
+    status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
+  });
+
+  const statusOptions = statusOptionsConfig.map(opt => ({
+    ...opt,
+    label: t(opt.labelKey)
+  }));
 
   const form = useForm<AgentFormData>({
     resolver: zodResolver(agentFormSchema),
@@ -137,12 +151,12 @@ export default function Agents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
-      toast({ title: "Agente criado com sucesso" });
+      toast({ title: t('agents.success.created') });
       setIsDialogOpen(false);
       form.reset();
     },
     onError: () => {
-      toast({ title: "Erro ao criar agente", variant: "destructive" });
+      toast({ title: t('agents.errors.create'), variant: "destructive" });
     },
   });
 
@@ -153,13 +167,13 @@ export default function Agents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
-      toast({ title: "Agente atualizado" });
+      toast({ title: t('agents.success.updated') });
       setIsDialogOpen(false);
       setEditingAgent(null);
       form.reset();
     },
     onError: () => {
-      toast({ title: "Erro ao atualizar", variant: "destructive" });
+      toast({ title: t('agents.errors.update'), variant: "destructive" });
     },
   });
 
@@ -169,10 +183,10 @@ export default function Agents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
-      toast({ title: "Agente removido" });
+      toast({ title: t('agents.success.removed') });
     },
     onError: () => {
-      toast({ title: "Erro ao remover", variant: "destructive" });
+      toast({ title: t('agents.errors.remove'), variant: "destructive" });
     },
   });
 
@@ -225,26 +239,26 @@ export default function Agents() {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
-            Agentes IA
+            {t('agents.title')}
           </h1>
           <p className="text-muted-foreground mt-1">
-            Ativos: {activeAgents} / {totalAgents}
+            {t('agents.subtitle', { active: activeAgents, total: totalAgents })}
           </p>
         </div>
         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
           <DialogTrigger asChild>
             <Button onClick={handleNewAgent} data-testid="button-criar-agente">
               <Plus className="mr-2 h-4 w-4" />
-              Criar Agente
+              {t('agents.create')}
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-[500px]">
             <DialogHeader>
               <DialogTitle>
-                {editingAgent ? "Editar Agente" : "Criar Agente"}
+                {editingAgent ? t('agents.form.dialogTitleEdit') : t('agents.form.dialogTitle')}
               </DialogTitle>
               <DialogDescription>
-                Configure o agente com suas instruções personalizadas
+                {t('agents.form.dialogDesc')}
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
@@ -254,10 +268,10 @@ export default function Agents() {
                   name="nome"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Nome</FormLabel>
+                      <FormLabel>{t('agents.form.name')}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Ex: Assistente de Vendas"
+                          placeholder={t('agents.placeholders.name')}
                           {...field}
                           data-testid="input-agente-nome"
                         />
@@ -271,16 +285,16 @@ export default function Agents() {
                   name="slug"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Slug</FormLabel>
+                      <FormLabel>{t('agents.form.slug')}</FormLabel>
                       <FormControl>
                         <Input
-                          placeholder="Ex: assistente-vendas"
+                          placeholder={t('agents.placeholders.slug')}
                           {...field}
                           data-testid="input-agente-slug"
                         />
                       </FormControl>
                       <FormDescription>
-                        Identificador único (letras minúsculas, números e hífens)
+                        {t('agents.form.slugDesc')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -291,11 +305,11 @@ export default function Agents() {
                   name="status"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Status</FormLabel>
+                      <FormLabel>{t('agents.status.label')}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger data-testid="select-agente-status">
-                            <SelectValue placeholder="Selecione o status" />
+                            <SelectValue placeholder={t('agents.status.selectPlaceholder')} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -315,10 +329,10 @@ export default function Agents() {
                   name="descricao"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Descrição</FormLabel>
+                      <FormLabel>{t('agents.form.description')}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Descrição breve do agente"
+                          placeholder={t('agents.placeholders.description')}
                           className="resize-none"
                           rows={2}
                           {...field}
@@ -335,10 +349,10 @@ export default function Agents() {
                   name="instrucoes"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Instruções do Sistema</FormLabel>
+                      <FormLabel>{t('agents.form.instructions')}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Você é um assistente especializado em..."
+                          placeholder={t('agents.placeholders.instructions')}
                           className="resize-none"
                           rows={4}
                           {...field}
@@ -347,7 +361,7 @@ export default function Agents() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Define o comportamento e personalidade do agente
+                        {t('agents.form.instructionsDesc')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -358,10 +372,10 @@ export default function Agents() {
                   name="personalidade"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Personalidade</FormLabel>
+                      <FormLabel>{t('agents.form.personality')}</FormLabel>
                       <FormControl>
                         <Textarea
-                          placeholder="Ex: Amigável, profissional, objetivo..."
+                          placeholder={t('agents.placeholders.personality')}
                           className="resize-none"
                           rows={2}
                           {...field}
@@ -370,7 +384,7 @@ export default function Agents() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Traços de personalidade do agente
+                        {t('agents.form.personalityDesc')}
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
@@ -382,14 +396,14 @@ export default function Agents() {
                     variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
-                    Cancelar
+                    {t('agents.actions.cancel')}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
                     data-testid="button-salvar-agente"
                   >
-                    Salvar
+                    {t('agents.actions.save')}
                   </Button>
                 </DialogFooter>
               </form>
@@ -438,7 +452,7 @@ export default function Agents() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(agent)}>
                             <Edit className="mr-2 h-4 w-4" />
-                            Editar
+                            {t('agents.actions.edit')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
@@ -449,14 +463,14 @@ export default function Agents() {
                             }
                           >
                             <Power className="mr-2 h-4 w-4" />
-                            {agent.status === 'active' ? "Pausar" : "Ativar"}
+                            {agent.status === 'active' ? t('agents.actions.pause') : t('agents.actions.activate')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive"
                             onClick={() => deleteAgentMutation.mutate(agent.id)}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            Remover
+                            {t('agents.actions.remove')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
@@ -464,12 +478,12 @@ export default function Agents() {
                   </div>
                   <h3 className="font-semibold text-foreground mb-1">{agent.nome}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {agent.descricao || (agent.instrucoes ? agent.instrucoes.substring(0, 100) : "Sem descrição")}
+                    {agent.descricao || (agent.instrucoes ? agent.instrucoes.substring(0, 100) : t('agents.noDescription'))}
                   </p>
                   <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
                     <div className="flex items-center gap-1">
                       <MessageSquare className="h-3 w-3" />
-                      <span>0 conversas</span>
+                      <span>{t('agents.conversations', { count: 0 })}</span>
                     </div>
                     <Badge variant="outline" className="text-xs">
                       {statusInfo.label}
@@ -486,13 +500,13 @@ export default function Agents() {
             <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
               <Bot className="h-8 w-8 text-primary" />
             </div>
-            <h3 className="font-semibold text-foreground mb-2">Nenhum agente configurado</h3>
+            <h3 className="font-semibold text-foreground mb-2">{t('agents.noAgents')}</h3>
             <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
-              Crie seu primeiro agente IA para automatizar interações
+              {t('agents.noAgentsDesc')}
             </p>
             <Button onClick={handleNewAgent} data-testid="button-criar-primeiro-agente">
               <Plus className="mr-2 h-4 w-4" />
-              Criar Agente
+              {t('agents.create')}
             </Button>
           </CardContent>
         </Card>

@@ -334,7 +334,8 @@
     }
   },
   "agents": {
-    "title": "Agentes",
+    "title": "Agentes IA",
+    "subtitle": "Ativos: {{active}} / {{total}}",
     "create": "Criar Agente",
     "edit": "Editar Agente",
     "deleteAgent": "Excluir Agente",
@@ -342,23 +343,61 @@
     "description": "Descrição",
     "systemPrompt": "System Prompt",
     "capabilities": "Capacidades",
-    "status": "Status",
-    "active": "Ativo",
-    "inactive": "Inativo",
-    "noAgents": "Nenhum agente cadastrado",
-    "createFirst": "Crie seu primeiro agente para começar",
-    "types": {
-      "general": "Geral",
-      "support": "Suporte",
-      "sales": "Vendas",
-      "hr": "RH",
-      "finance": "Finanças",
-      "custom": "Personalizado"
+    "status": {
+      "label": "Status",
+      "active": "Ativo",
+      "training": "Treinando",
+      "paused": "Pausado",
+      "deprecated": "Descontinuado",
+      "selectPlaceholder": "Selecione o status"
+    },
+    "noAgents": "Nenhum agente configurado",
+    "noAgentsDesc": "Crie seu primeiro agente IA para automatizar interações",
+    "noDescription": "Sem descrição",
+    "conversations": "{{count}} conversas",
+    "form": {
+      "name": "Nome",
+      "slug": "Slug",
+      "slugDesc": "Identificador único (letras minúsculas, números e hífens)",
+      "description": "Descrição",
+      "instructions": "Instruções do Sistema",
+      "instructionsDesc": "Define o comportamento e personalidade do agente",
+      "personality": "Personalidade",
+      "personalityDesc": "Traços de personalidade do agente",
+      "dialogTitle": "Criar Agente",
+      "dialogTitleEdit": "Editar Agente",
+      "dialogDesc": "Configure o agente com suas instruções personalizadas"
     },
     "placeholders": {
       "name": "Ex: Assistente de Vendas",
-      "description": "Descrição do agente...",
-      "systemPrompt": "Você é um assistente especializado em..."
+      "slug": "Ex: assistente-vendas",
+      "description": "Descrição breve do agente",
+      "instructions": "Você é um assistente especializado em...",
+      "personality": "Ex: Amigável, profissional, objetivo..."
+    },
+    "validation": {
+      "nameMin": "Nome deve ter pelo menos 2 caracteres",
+      "slugMin": "Slug deve ter pelo menos 2 caracteres",
+      "slugFormat": "Slug deve conter apenas letras minúsculas, números e hífens",
+      "instructionsMin": "Instruções devem ter pelo menos 10 caracteres"
+    },
+    "actions": {
+      "edit": "Editar",
+      "pause": "Pausar",
+      "activate": "Ativar",
+      "remove": "Remover",
+      "cancel": "Cancelar",
+      "save": "Salvar"
+    },
+    "success": {
+      "created": "Agente criado com sucesso",
+      "updated": "Agente atualizado",
+      "removed": "Agente removido"
+    },
+    "errors": {
+      "create": "Erro ao criar agente",
+      "update": "Erro ao atualizar",
+      "remove": "Erro ao remover"
     }
   },
   "namespaces": {

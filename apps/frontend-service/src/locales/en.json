@@ -334,7 +334,8 @@
     }
   },
   "agents": {
-    "title": "Agents",
+    "title": "AI Agents",
+    "subtitle": "Active: {{active}} / {{total}}",
     "create": "Create Agent",
     "edit": "Edit Agent",
     "deleteAgent": "Delete Agent",
@@ -342,23 +343,61 @@
     "description": "Description",
     "systemPrompt": "System Prompt",
     "capabilities": "Capabilities",
-    "status": "Status",
-    "active": "Active",
-    "inactive": "Inactive",
-    "noAgents": "No agents registered",
-    "createFirst": "Create your first agent to get started",
-    "types": {
-      "general": "General",
-      "support": "Support",
-      "sales": "Sales",
-      "hr": "HR",
-      "finance": "Finance",
-      "custom": "Custom"
+    "status": {
+      "label": "Status",
+      "active": "Active",
+      "training": "Training",
+      "paused": "Paused",
+      "deprecated": "Deprecated",
+      "selectPlaceholder": "Select status"
+    },
+    "noAgents": "No agents configured",
+    "noAgentsDesc": "Create your first AI agent to automate interactions",
+    "noDescription": "No description",
+    "conversations": "{{count}} conversations",
+    "form": {
+      "name": "Name",
+      "slug": "Slug",
+      "slugDesc": "Unique identifier (lowercase letters, numbers and hyphens)",
+      "description": "Description",
+      "instructions": "System Instructions",
+      "instructionsDesc": "Defines the behavior and personality of the agent",
+      "personality": "Personality",
+      "personalityDesc": "Personality traits of the agent",
+      "dialogTitle": "Create Agent",
+      "dialogTitleEdit": "Edit Agent",
+      "dialogDesc": "Configure the agent with custom instructions"
     },
     "placeholders": {
       "name": "E.g.: Sales Assistant",
-      "description": "Agent description...",
-      "systemPrompt": "You are a specialized assistant in..."
+      "slug": "E.g.: sales-assistant",
+      "description": "Brief agent description",
+      "instructions": "You are an assistant specialized in...",
+      "personality": "E.g.: Friendly, professional, objective..."
+    },
+    "validation": {
+      "nameMin": "Name must be at least 2 characters",
+      "slugMin": "Slug must be at least 2 characters",
+      "slugFormat": "Slug must contain only lowercase letters, numbers and hyphens",
+      "instructionsMin": "Instructions must be at least 10 characters"
+    },
+    "actions": {
+      "edit": "Edit",
+      "pause": "Pause",
+      "activate": "Activate",
+      "remove": "Remove",
+      "cancel": "Cancel",
+      "save": "Save"
+    },
+    "success": {
+      "created": "Agent created successfully",
+      "updated": "Agent updated",
+      "removed": "Agent removed"
+    },
+    "errors": {
+      "create": "Error creating agent",
+      "update": "Error updating",
+      "remove": "Error removing"
     }
   },
   "namespaces": {
