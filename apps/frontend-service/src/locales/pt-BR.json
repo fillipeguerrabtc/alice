@@ -271,32 +271,52 @@
       "resolvedByAI": "Resolvidas por IA",
       "resolvedByHuman": "Resolvidas por Humano",
       "avgResponseTime": "Tempo Médio Resposta"
-    },
-    "imageGen": {
-      "title": "Geração de Imagens",
-      "description": "FLUX.1 + Training RLHF",
-      "totalGenerated": "Total Geradas",
-      "approvalRate": "Taxa Aprovação",
-      "avgRating": "Rating Médio",
-      "inTraining": "Em Training"
-    },
-    "sla": {
-      "title": "SLA Monitoring",
-      "description": "Acordos de nível de serviço",
-      "onTrack": "No Prazo",
-      "atRisk": "Em Risco",
-      "breached": "Violado",
-      "firstResponse": "1ª Resposta",
-      "resolution": "Resolução",
-      "noData": "Sem dados de SLA"
-    },
-    "circuitBreaker": {
-      "title": "Circuit Breakers",
-      "description": "Proteção contra falhas em cascata",
-      "closed": "Fechado",
-      "open": "Aberto",
-      "halfOpen": "Semi-Aberto"
     }
+  },
+  "takeover": {
+    "title": "Painel de Atendimento",
+    "noMessages": "Sem mensagens",
+    "success": {
+      "messageSent": "Mensagem enviada",
+      "conversationTaken": "Conversa assumida com sucesso",
+      "conversationReturned": "Conversa devolvida para IA"
+    },
+    "errors": {
+      "sendMessage": "Erro ao enviar mensagem",
+      "takeConversation": "Erro ao assumir conversa",
+      "returnConversation": "Erro ao devolver conversa"
+    }
+  },
+  "imageGen": {
+    "title": "Geração de Imagens",
+    "description": "FLUX.1 + Training RLHF",
+    "totalGenerated": "Total Geradas",
+    "approvalRate": "Taxa Aprovação",
+    "avgRating": "Rating Médio",
+    "inTraining": "Em Training"
+  },
+  "sla": {
+    "title": "SLA Monitoring",
+    "description": "Acordos de nível de serviço",
+    "onTrack": "No Prazo",
+    "atRisk": "Em Risco",
+    "breached": "Violado",
+    "firstResponse": "1ª Resposta",
+    "resolution": "Resolução",
+    "noData": "Sem dados de SLA"
+  },
+  "circuitBreaker": {
+    "title": "Circuit Breakers",
+    "description": "Proteção contra falhas em cascata",
+    "closed": "Fechado",
+    "open": "Aberto",
+    "halfOpen": "Semi-Aberto"
+  },
+  "notFound": {
+    "title": "Página não encontrada",
+    "message": "A página que você está procurando não existe ou foi movida.",
+    "goBack": "Voltar",
+    "goHome": "Página Inicial"
   },
   "chat": {
     "title": "Chat",
@@ -548,11 +568,15 @@
     },
     "stripe": {
       "title": "Stripe",
-      "description": "Pagamentos online em EUR via SEPA e cartões"
+      "description": "Pagamentos online em EUR via SEPA e cartões",
+      "configureHint": "Configure as credenciais do Stripe para ativar pagamentos.",
+      "productsConfigured": "{{count}} produto(s) configurado(s)",
+      "moreProducts": "+{{count}} mais produtos"
     },
     "wise": {
       "title": "Wise",
-      "description": "Transferências internacionais em 50+ moedas"
+      "description": "Transferências internacionais em 50+ moedas",
+      "configureHint": "Configure as credenciais do Wise para transferências internacionais."
     },
     "erpnext": {
       "title": "ERPNext",
@@ -913,7 +937,23 @@
   },
   "modules": {
     "title": "Gestão de Módulos",
-    "description": "Gerencie os módulos do sistema e suas permissões"
+    "description": "Gerencie os módulos do sistema e suas permissões",
+    "noDescription": "Sem descrição",
+    "assign": "Atribuir",
+    "success": {
+      "created": "Módulo criado com sucesso",
+      "updated": "Módulo atualizado com sucesso",
+      "deleted": "Módulo excluído com sucesso",
+      "assigned": "Módulo atribuído à role com sucesso",
+      "unassigned": "Módulo removido da role com sucesso"
+    },
+    "errors": {
+      "create": "Erro ao criar módulo",
+      "update": "Erro ao atualizar módulo",
+      "delete": "Erro ao excluir módulo",
+      "assign": "Erro ao atribuir módulo",
+      "unassign": "Erro ao remover módulo"
+    }
   },
   "observability": {
     "title": "Portal de Observabilidade",

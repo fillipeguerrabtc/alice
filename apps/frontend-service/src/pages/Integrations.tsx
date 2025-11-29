@@ -129,6 +129,7 @@ interface IntegrationCardProps {
   onTest?: () => void;
   testLoading?: boolean;
   children?: React.ReactNode;
+  t: (key: string) => string;
 }
 
 function IntegrationCard({ 
@@ -139,7 +140,8 @@ function IntegrationCard({
   onConfigure, 
   onTest, 
   testLoading,
-  children 
+  children,
+  t
 }: IntegrationCardProps) {
   return (
     <motion.div variants={itemVariants}>
@@ -158,12 +160,12 @@ function IntegrationCard({
             {configured ? (
               <Badge className="bg-green-500/10 text-green-600 shrink-0">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
-                Ativo
+                {t('common.active')}
               </Badge>
             ) : (
               <Badge variant="secondary" className="shrink-0">
                 <XCircle className="h-3 w-3 mr-1" />
-                Pendente
+                {t('integrations.pending')}
               </Badge>
             )}
           </div>
@@ -179,7 +181,7 @@ function IntegrationCard({
           {onConfigure && (
             <Button variant="outline" size="sm" onClick={onConfigure} data-testid={`button-config-${name.toLowerCase()}`}>
               <Settings className="h-3 w-3 mr-1" />
-              Configurar
+              {t('integrations.configure')}
             </Button>
           )}
           {onTest && (
@@ -195,7 +197,7 @@ function IntegrationCard({
               ) : (
                 <RefreshCw className="h-3 w-3 mr-1" />
               )}
-              Testar
+              {t('integrations.test')}
             </Button>
           )}
         </CardFooter>
@@ -204,7 +206,7 @@ function IntegrationCard({
   );
 }
 
-function StripeSection({ configured }: { configured: boolean }) {
+function StripeSection({ configured, t }: { configured: boolean; t: (key: string, options?: Record<string, unknown>) => string }) {
   const { data, isLoading } = useQuery<StripeProductsResponse>({
     queryKey: ['/api/integrations/stripe/products'],
     enabled: configured,
@@ -214,7 +216,7 @@ function StripeSection({ configured }: { configured: boolean }) {
   if (!configured) {
     return (
       <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-        Configure as credenciais do Stripe para ativar pagamentos.
+        {t('integrations.stripe.configureHint')}
       </div>
     );
   }
@@ -229,16 +231,16 @@ function StripeSection({ configured }: { configured: boolean }) {
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <CreditCard className="h-3 w-3" />
-        <span>{products.length} produto(s) configurado(s)</span>
+        <span>{t('integrations.stripe.productsConfigured', { count: products.length })}</span>
       </div>
       {products.slice(0, 3).map((product) => (
         <div key={product.id} className="p-2 bg-muted/50 rounded text-xs">
           <div className="flex items-center justify-between gap-2">
             <span className="font-medium">{product.name}</span>
             {product.active ? (
-              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600">Ativo</Badge>
+              <Badge variant="outline" className="text-xs bg-green-500/10 text-green-600">{t('common.active')}</Badge>
             ) : (
-              <Badge variant="secondary" className="text-xs">Inativo</Badge>
+              <Badge variant="secondary" className="text-xs">{t('common.inactive')}</Badge>
             )}
           </div>
           {product.prices.length > 0 && (
@@ -251,13 +253,13 @@ function StripeSection({ configured }: { configured: boolean }) {
         </div>
       ))}
       {products.length > 3 && (
-        <p className="text-xs text-muted-foreground">+{products.length - 3} mais produtos</p>
+        <p className="text-xs text-muted-foreground">{t('integrations.stripe.moreProducts', { count: products.length - 3 })}</p>
       )}
     </div>
   );
 }
 
-function WiseSection({ configured }: { configured: boolean }) {
+function WiseSection({ configured, t }: { configured: boolean; t: (key: string) => string }) {
   const { data: status } = useQuery<WiseStatusResponse>({
     queryKey: ['/api/integrations/wise/status'],
     enabled: configured,
@@ -273,7 +275,7 @@ function WiseSection({ configured }: { configured: boolean }) {
   if (!configured) {
     return (
       <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-        Configure as credenciais do Wise para transferências internacionais.
+        {t('integrations.wise.configureHint')}
       </div>
     );
   }
@@ -488,8 +490,9 @@ export default function Integrations() {
                 icon={CreditCard}
                 configured={services.stripe.configured}
                 onConfigure={() => setShowConfigDialog('stripe')}
+                t={t}
               >
-                <StripeSection configured={services.stripe.configured} />
+                <StripeSection configured={services.stripe.configured} t={t} />
               </IntegrationCard>
 
               <IntegrationCard
@@ -498,8 +501,9 @@ export default function Integrations() {
                 icon={Send}
                 configured={services.wise.configured}
                 onConfigure={() => setShowConfigDialog('wise')}
+                t={t}
               >
-                <WiseSection configured={services.wise.configured} />
+                <WiseSection configured={services.wise.configured} t={t} />
               </IntegrationCard>
             </motion.div>
           </TabsContent>
@@ -522,6 +526,7 @@ export default function Integrations() {
                   testErpnext.mutate();
                 }}
                 testLoading={testingIntegration === 'erpnext'}
+                t={t}
               >
                 {services.erpnext.configured ? (
                   <div className="space-y-2">
@@ -563,6 +568,7 @@ export default function Integrations() {
                 icon={MessageSquare}
                 configured={services.twilio.configured}
                 onConfigure={() => setShowConfigDialog('twilio')}
+                t={t}
               >
                 {services.twilio.configured ? (
                   <div className="space-y-2">
@@ -584,6 +590,7 @@ export default function Integrations() {
                 icon={Mail}
                 configured={services.resend.configured}
                 onConfigure={() => setShowConfigDialog('resend')}
+                t={t}
               >
                 {services.resend.configured ? (
                   <div className="space-y-2">

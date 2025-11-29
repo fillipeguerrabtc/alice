@@ -44,6 +44,7 @@ import {
 import { SiWhatsapp } from "react-icons/si";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { useTranslation } from "react-i18next";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
@@ -255,6 +256,8 @@ function ConversationDetailPanel({
   const [replyText, setReplyText] = useState('');
   const { user } = useAuth();
   
+  const { t } = useTranslation();
+  
   const sendMessageMutation = useMutation({
     mutationFn: async ({ conversationId, message }: { conversationId: string; message: string }) => {
       const res = await apiRequest('POST', `/api/takeover/conversations/${conversationId}/message`, { 
@@ -266,10 +269,10 @@ function ConversationDetailPanel({
       setReplyText('');
       queryClient.invalidateQueries({ queryKey: [`/api/chat/conversations/${conversation?.id}/messages`] });
       queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
-      toast({ title: 'Mensagem enviada' });
+      toast({ title: t('takeover.success.messageSent') });
     },
     onError: () => {
-      toast({ title: 'Erro ao enviar mensagem', variant: 'destructive' });
+      toast({ title: t('takeover.errors.sendMessage'), variant: 'destructive' });
     },
   });
   
@@ -482,6 +485,7 @@ function ConversationDetailPanel({
 
 export default function TakeoverPanel() {
   const { user } = useAuth();
+  const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [filterChannel, setFilterChannel] = useState<string>('all');
   const [filterPriority, setFilterPriority] = useState<string>('all');
@@ -654,10 +658,10 @@ export default function TakeoverPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
       queryClient.invalidateQueries({ queryKey: ['/api/chat/conversations', selectedId] });
-      toast({ title: 'Conversa assumida com sucesso' });
+      toast({ title: t('takeover.success.conversationTaken') });
     },
     onError: () => {
-      toast({ title: 'Erro ao assumir conversa', variant: 'destructive' });
+      toast({ title: t('takeover.errors.takeConversation'), variant: 'destructive' });
     },
   });
   
@@ -669,10 +673,10 @@ export default function TakeoverPanel() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/takeover/conversations'] });
       queryClient.invalidateQueries({ queryKey: [`/api/chat/conversations/${selectedId}/messages`] });
-      toast({ title: 'Conversa devolvida para IA' });
+      toast({ title: t('takeover.success.conversationReturned') });
     },
     onError: () => {
-      toast({ title: 'Erro ao devolver conversa', variant: 'destructive' });
+      toast({ title: t('takeover.errors.returnConversation'), variant: 'destructive' });
     },
   });
   
@@ -695,10 +699,10 @@ export default function TakeoverPanel() {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-xl font-bold" data-testid="text-page-title">
-                Painel de Atendimento
+                {t('takeover.title')}
               </h1>
               <p className="text-sm text-muted-foreground">
-                {pendingCount} pendentes, {inProgressCount} em progresso
+                {pendingCount} {t('integrations.pending')}, {inProgressCount} {t('agents.statuses.in_progress')}
               </p>
             </div>
             <Button variant="outline" size="icon" onClick={() => refetch()} data-testid="button-refresh">

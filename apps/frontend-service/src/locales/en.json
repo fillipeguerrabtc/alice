@@ -298,6 +298,26 @@
       "halfOpen": "Half-Open"
     }
   },
+  "takeover": {
+    "title": "Service Panel",
+    "noMessages": "No messages",
+    "success": {
+      "messageSent": "Message sent",
+      "conversationTaken": "Conversation taken successfully",
+      "conversationReturned": "Conversation returned to AI"
+    },
+    "errors": {
+      "sendMessage": "Error sending message",
+      "takeConversation": "Error taking conversation",
+      "returnConversation": "Error returning conversation"
+    }
+  },
+  "notFound": {
+    "title": "Page not found",
+    "message": "The page you are looking for does not exist or has been moved.",
+    "goBack": "Go Back",
+    "goHome": "Home Page"
+  },
   "chat": {
     "title": "Chat",
     "newConversation": "New Conversation",
@@ -548,11 +568,15 @@
     },
     "stripe": {
       "title": "Stripe",
-      "description": "Online payments in EUR via SEPA and cards"
+      "description": "Online payments in EUR via SEPA and cards",
+      "configureHint": "Configure Stripe credentials to enable payments.",
+      "productsConfigured": "{{count}} product(s) configured",
+      "moreProducts": "+{{count}} more products"
     },
     "wise": {
       "title": "Wise",
-      "description": "International transfers in 50+ currencies"
+      "description": "International transfers in 50+ currencies",
+      "configureHint": "Configure Wise credentials for international transfers."
     },
     "erpnext": {
       "title": "ERPNext",
@@ -913,7 +937,23 @@
   },
   "modules": {
     "title": "Module Management",
-    "description": "Manage system modules and their permissions"
+    "description": "Manage system modules and their permissions",
+    "noDescription": "No description",
+    "assign": "Assign",
+    "success": {
+      "created": "Module created successfully",
+      "updated": "Module updated successfully",
+      "deleted": "Module deleted successfully",
+      "assigned": "Module assigned to role successfully",
+      "unassigned": "Module removed from role successfully"
+    },
+    "errors": {
+      "create": "Error creating module",
+      "update": "Error updating module",
+      "delete": "Error deleting module",
+      "assign": "Error assigning module",
+      "unassign": "Error removing module"
+    }
   },
   "observability": {
     "title": "Observability Portal",

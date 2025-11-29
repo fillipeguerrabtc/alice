@@ -520,16 +520,18 @@ function RoleModulesTab() {
     enabled: !!selectedRole,
   });
 
+  const { t } = useTranslation();
+  
   const assignMutation = useMutation({
     mutationFn: async ({ moduleId, role }: { moduleId: string; role: string }) => {
       return apiRequest('POST', `/api/auth/roles/${role}/modules`, { moduleId, acessoLeitura: true });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/roles', selectedRole, 'modules'] });
-      toast({ title: 'Módulo atribuído à role com sucesso' });
+      toast({ title: t('modules.success.assigned') });
     },
     onError: () => {
-      toast({ title: 'Erro ao atribuir módulo', variant: 'destructive' });
+      toast({ title: t('modules.errors.assign'), variant: 'destructive' });
     },
   });
 
@@ -539,10 +541,10 @@ function RoleModulesTab() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/roles', selectedRole, 'modules'] });
-      toast({ title: 'Módulo removido da role com sucesso' });
+      toast({ title: t('modules.success.unassigned') });
     },
     onError: () => {
-      toast({ title: 'Erro ao remover módulo', variant: 'destructive' });
+      toast({ title: t('modules.errors.unassign'), variant: 'destructive' });
     },
   });
 
@@ -609,7 +611,7 @@ function RoleModulesTab() {
                 disabled={assignMutation.isPending || unassignMutation.isPending}
                 data-testid={`button-assign-module-${module.id}`}
               >
-                {assignedModuleIds.has(module.id) ? 'Remover' : 'Atribuir'}
+                {assignedModuleIds.has(module.id) ? t('common.remove') : t('modules.assign')}
               </Button>
             </div>
           ))}
@@ -637,11 +639,11 @@ export default function ModulesAdmin() {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
       setIsFormOpen(false);
       setSelectedModule(null);
-      toast({ title: 'Módulo criado com sucesso' });
+      toast({ title: t('modules.success.created') });
     },
     onError: (error: Error) => {
       toast({ 
-        title: 'Erro ao criar módulo', 
+        title: t('modules.errors.create'), 
         description: error.message,
         variant: 'destructive' 
       });
@@ -656,11 +658,11 @@ export default function ModulesAdmin() {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
       setIsFormOpen(false);
       setSelectedModule(null);
-      toast({ title: 'Módulo atualizado com sucesso' });
+      toast({ title: t('modules.success.updated') });
     },
     onError: (error: Error) => {
       toast({ 
-        title: 'Erro ao atualizar módulo',
+        title: t('modules.errors.update'),
         description: error.message,
         variant: 'destructive' 
       });
@@ -673,11 +675,11 @@ export default function ModulesAdmin() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
-      toast({ title: 'Módulo excluído com sucesso' });
+      toast({ title: t('modules.success.deleted') });
     },
     onError: (error: Error) => {
       toast({ 
-        title: 'Erro ao excluir módulo',
+        title: t('modules.errors.delete'),
         description: error.message,
         variant: 'destructive' 
       });
