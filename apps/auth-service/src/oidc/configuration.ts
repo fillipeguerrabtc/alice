@@ -21,8 +21,14 @@ import { createLogger } from '@alice/logger';
 
 const logger = createLogger('oidc-config');
 
-// URL base do OIDC Provider (produção Hetzner)
-const ISSUER_URL = process.env.OIDC_ISSUER || 'https://auth.alice.yesyoudeserve.duckdns.org';
+// URL base do OIDC Provider
+// Produção: OIDC_ISSUER definido via variável de ambiente
+// Desenvolvimento: usa APP_BASE_URL ou default localhost
+const ISSUER_URL = process.env.OIDC_ISSUER 
+  || process.env.APP_BASE_URL 
+  || (process.env.NODE_ENV === 'production' 
+    ? 'https://auth.alice.yesyoudeserve.duckdns.org' 
+    : 'http://localhost:3001');
 
 /**
  * Buscar conta de usuário para OIDC
@@ -149,35 +155,10 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
     adapter: createAdapter,
 
     // =========================================================================
-    // CLIENTES REGISTRADOS
+    // CLIENTES REGISTRADOS (100% do banco - Regra 6)
+    // Os clientes grafana-sso e erpnext-sso são carregados via getRegisteredClients()
     // =========================================================================
-    clients: [
-      // Clientes estáticos (Grafana, ERPNext)
-      {
-        client_id: 'grafana',
-        client_name: 'Grafana Observability',
-        redirect_uris: [
-          'https://observabilidade.yesyoudeserve.duckdns.org/login/generic_oauth',
-        ],
-        response_types: ['code'],
-        grant_types: ['authorization_code', 'refresh_token'],
-        token_endpoint_auth_method: 'client_secret_post',
-        scope: 'openid profile email alice',
-      },
-      {
-        client_id: 'erpnext',
-        client_name: 'ERPNext CRM',
-        redirect_uris: [
-          'https://erp.yesyoudeserve.duckdns.org/api/method/frappe.integrations.oauth2_logins.custom/oidc',
-        ],
-        response_types: ['code'],
-        grant_types: ['authorization_code', 'refresh_token'],
-        token_endpoint_auth_method: 'client_secret_post',
-        scope: 'openid profile email alice',
-      },
-      // Clientes dinâmicos do banco
-      ...registeredClients,
-    ],
+    clients: registeredClients,
 
     // =========================================================================
     // JWKS: Chaves para assinatura de tokens (Tarefa 42 - RS256)

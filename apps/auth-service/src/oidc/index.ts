@@ -15,7 +15,7 @@
 
 import Provider from 'oidc-provider';
 import type { Express, Request, Response } from 'express';
-import { createOIDCConfiguration, getIssuerUrl, ISSUER_URL } from './configuration.js';
+import { createOIDCConfiguration, getIssuerUrl } from './configuration.js';
 import { getPublicJWKS } from './jwks.js';
 import { createLogger } from '@alice/logger';
 
@@ -100,18 +100,21 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
   // =========================================================================
 
   // /.well-known/openid-configuration (Tarefa 1)
-  // Rota customizada para incluir informações adicionais
+  // Rota customizada - usa mesma lógica do Provider para consistência
   app.get('/.well-known/openid-configuration', async (_req: Request, res: Response) => {
     try {
+      // Usar mesma URL do Provider para garantir consistência entre issuer do token e discovery
+      const issuer = getIssuerUrl();
+      
       const baseConfig = {
-        issuer: ISSUER_URL,
-        authorization_endpoint: `${ISSUER_URL}/oauth/authorize`,
-        token_endpoint: `${ISSUER_URL}/oauth/token`,
-        userinfo_endpoint: `${ISSUER_URL}/oauth/userinfo`,
-        jwks_uri: `${ISSUER_URL}/.well-known/jwks.json`,
-        revocation_endpoint: `${ISSUER_URL}/oauth/revoke`,
-        introspection_endpoint: `${ISSUER_URL}/oauth/introspect`,
-        end_session_endpoint: `${ISSUER_URL}/oauth/end_session`,
+        issuer,
+        authorization_endpoint: `${issuer}/oauth/authorize`,
+        token_endpoint: `${issuer}/oauth/token`,
+        userinfo_endpoint: `${issuer}/oauth/userinfo`,
+        jwks_uri: `${issuer}/.well-known/jwks.json`,
+        revocation_endpoint: `${issuer}/oauth/revoke`,
+        introspection_endpoint: `${issuer}/oauth/introspect`,
+        end_session_endpoint: `${issuer}/oauth/end_session`,
         
         // Scopes suportados
         scopes_supported: ['openid', 'profile', 'email', 'offline_access', 'alice'],
@@ -157,6 +160,7 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
         ui_locales_supported: ['pt-BR', 'en'],
       };
 
+      logger.debug({ issuer }, 'Discovery endpoint acessado');
       res.json(baseConfig);
     } catch (error) {
       logger.error({ error }, 'Erro ao gerar openid-configuration');
