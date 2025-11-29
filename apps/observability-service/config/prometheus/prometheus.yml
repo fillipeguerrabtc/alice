@@ -112,3 +112,23 @@ scrape_configs:
       - targets: ['alertmanager:9093']
     metrics_path: /metrics
     scrape_interval: 30s
+
+  # ============================================================================
+  # NODE EXPORTER - Métricas de infraestrutura (CPU, memória, disco, rede)
+  # Exporta: node_cpu_seconds_total, node_memory_*, node_filesystem_*, node_network_*
+  # ============================================================================
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    metrics_path: /metrics
+    scrape_interval: 15s
+
+  # ============================================================================
+  # CADVISOR - Métricas de containers Docker
+  # Exporta: container_cpu_usage_seconds_total, container_memory_usage_bytes
+  # ============================================================================
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    metrics_path: /metrics
+    scrape_interval: 15s
