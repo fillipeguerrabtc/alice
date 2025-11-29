@@ -172,8 +172,8 @@ jobs:
           - rag-service
           - training-service
           - integrations-service
-          - clip-inference
-          - frontend
+          - clip-inference-service
+          - frontend-service
     
     steps:
       - name: Checkout código
@@ -194,7 +194,8 @@ jobs:
       - name: Build e Push
         uses: docker/build-push-action@v6
         with:
-          context: ./apps/${{ matrix.service }}
+          context: .
+          file: ./apps/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ needs.create-release.outputs.version }}
