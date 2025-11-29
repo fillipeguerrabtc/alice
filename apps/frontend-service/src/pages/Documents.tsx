@@ -96,11 +96,13 @@ function DocumentCard({
   onView, 
   onDelete,
   viewMode,
+  t,
 }: { 
   document: Document;
   onView: () => void;
   onDelete: () => void;
   viewMode: 'grid' | 'list';
+  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
   const getFileIcon = (tipo: string | null) => {
     if (!tipo) return FileText;
@@ -126,12 +128,12 @@ function DocumentCard({
                 {document.processado ? (
                   <Badge variant="outline" className="bg-green-500/10 text-green-600 shrink-0">
                     <CheckCircle2 className="h-3 w-3 mr-1" />
-                    Processado
+                    {t('documents.status.processed')}
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="bg-amber-500/10 text-amber-600 shrink-0">
                     <Clock className="h-3 w-3 mr-1" />
-                    Pendente
+                    {t('documents.status.pending')}
                   </Badge>
                 )}
               </div>
@@ -145,7 +147,7 @@ function DocumentCard({
                     <Eye className="h-4 w-4" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Visualizar</TooltipContent>
+                <TooltipContent>{t('documents.actions.view')}</TooltipContent>
               </Tooltip>
               
               <Tooltip>
@@ -154,7 +156,7 @@ function DocumentCard({
                     <Trash2 className="h-4 w-4 text-destructive" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Excluir</TooltipContent>
+                <TooltipContent>{t('documents.actions.delete')}</TooltipContent>
               </Tooltip>
             </div>
           </div>
@@ -174,12 +176,12 @@ function DocumentCard({
             {document.processado ? (
               <Badge variant="outline" className="bg-green-500/10 text-green-600">
                 <CheckCircle2 className="h-3 w-3 mr-1" />
-                OK
+                {t('documents.status.ok')}
               </Badge>
             ) : (
               <Badge variant="outline" className="bg-amber-500/10 text-amber-600">
                 <Clock className="h-3 w-3 mr-1" />
-                Pendente
+                {t('documents.status.pending')}
               </Badge>
             )}
           </div>
@@ -205,7 +207,7 @@ function DocumentCard({
         <CardFooter className="pt-2 gap-1">
           <Button variant="outline" size="sm" className="flex-1" onClick={onView} data-testid={`button-view-doc-${document.id}`}>
             <Eye className="h-3 w-3 mr-1" />
-            Ver
+            {t('documents.actions.view')}
           </Button>
           <Button variant="ghost" size="icon" onClick={onDelete} data-testid={`button-delete-doc-${document.id}`}>
             <Trash2 className="h-4 w-4 text-destructive" />
@@ -216,7 +218,7 @@ function DocumentCard({
   );
 }
 
-function UploadZone({ onUpload, isUploading }: { onUpload: (file: File) => void; isUploading: boolean }) {
+function UploadZone({ onUpload, isUploading, t }: { onUpload: (file: File) => void; isUploading: boolean; t: (key: string) => string }) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
@@ -273,10 +275,10 @@ function UploadZone({ onUpload, isUploading }: { onUpload: (file: File) => void;
           )}
           <div>
             <p className="font-medium">
-              {isUploading ? 'Enviando...' : 'Arraste arquivos ou clique para enviar'}
+              {isUploading ? t('documents.uploadZone.sending') : t('documents.uploadZone.dragOrClick')}
             </p>
             <p className="text-sm text-muted-foreground mt-1">
-              Suporta: TXT, MD, PDF, DOCX, CSV, JSON (até 50MB)
+              {t('documents.uploadZone.supportedTypes')}
             </p>
           </div>
         </div>
@@ -285,7 +287,15 @@ function UploadZone({ onUpload, isUploading }: { onUpload: (file: File) => void;
   );
 }
 
-function DocumentViewer({ document, onClose }: { document: Document; onClose: () => void }) {
+function DocumentViewer({ document, onClose, t }: { document: Document; onClose: () => void; t: (key: string, options?: Record<string, unknown>) => string }) {
+  const formattedDate = new Date(document.criadoEm).toLocaleDateString('pt-BR', { 
+    day: '2-digit', 
+    month: 'long', 
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+  
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-3xl max-h-[80vh]">
@@ -295,13 +305,7 @@ function DocumentViewer({ document, onClose }: { document: Document; onClose: ()
             {document.titulo}
           </DialogTitle>
           <DialogDescription>
-            Criado em {new Date(document.criadoEm).toLocaleDateString('pt-BR', { 
-              day: '2-digit', 
-              month: 'long', 
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-            })}
+            {t('documents.viewer.createdAt', { date: formattedDate })}
           </DialogDescription>
         </DialogHeader>
 
@@ -309,12 +313,12 @@ function DocumentViewer({ document, onClose }: { document: Document; onClose: ()
           {document.processado ? (
             <Badge className="bg-green-500/10 text-green-600">
               <CheckCircle2 className="h-3 w-3 mr-1" />
-              Processado com embeddings
+              {t('documents.status.processedWithEmbeddings')}
             </Badge>
           ) : (
             <Badge className="bg-amber-500/10 text-amber-600">
               <Clock className="h-3 w-3 mr-1" />
-              Aguardando processamento
+              {t('documents.status.awaitingProcessing')}
             </Badge>
           )}
           {document.tipo && (
@@ -325,7 +329,7 @@ function DocumentViewer({ document, onClose }: { document: Document; onClose: ()
           )}
           {document.fonte && (
             <Badge variant="outline">
-              Fonte: {document.fonte}
+              {t('documents.viewer.source', { source: document.fonte })}
             </Badge>
           )}
         </div>
@@ -336,7 +340,7 @@ function DocumentViewer({ document, onClose }: { document: Document; onClose: ()
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} data-testid="button-close-viewer">
-            Fechar
+            {t('documents.actions.close')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -372,17 +376,17 @@ export default function Documents() {
       });
 
       if (!response.ok) {
-        throw new Error('Falha ao enviar documento');
+        throw new Error(t('documents.errors.uploadFailed'));
       }
 
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
-      toast({ title: 'Documento enviado com sucesso' });
+      toast({ title: t('documents.success.uploaded') });
     },
     onError: () => {
-      toast({ title: 'Erro ao enviar documento', variant: 'destructive' });
+      toast({ title: t('documents.errors.uploadFailed'), variant: 'destructive' });
     },
   });
 
@@ -393,10 +397,10 @@ export default function Documents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] });
       setDeleteDocument(null);
-      toast({ title: 'Documento excluído com sucesso' });
+      toast({ title: t('documents.success.deleted') });
     },
     onError: () => {
-      toast({ title: 'Erro ao excluir documento', variant: 'destructive' });
+      toast({ title: t('documents.errors.deleteFailed'), variant: 'destructive' });
     },
   });
 
@@ -423,16 +427,16 @@ export default function Documents() {
     return (
       <div className="flex flex-col items-center justify-center h-full p-6">
         <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-        <h2 className="text-lg font-semibold mb-2">Erro ao carregar documentos</h2>
+        <h2 className="text-lg font-semibold mb-2">{t('documents.errors.loadFailed')}</h2>
         <p className="text-muted-foreground text-center max-w-md">
-          Não foi possível carregar a lista de documentos. Tente novamente mais tarde.
+          {t('documents.errors.loadFailedDesc')}
         </p>
         <Button 
           className="mt-4" 
           onClick={() => queryClient.invalidateQueries({ queryKey: ['/api/rag/documents'] })}
           data-testid="button-retry-load"
         >
-          Tentar novamente
+          {t('documents.actions.retry')}
         </Button>
       </div>
     );
@@ -458,11 +462,11 @@ export default function Documents() {
           <div className="flex items-center gap-2 flex-wrap">
             <Badge variant="secondary" className="gap-1">
               <Layers className="h-3 w-3" />
-              {stats.total} documentos
+              {t('documents.stats.documentsCount', { count: stats.total })}
             </Badge>
             <Badge variant="outline" className="bg-green-500/10 text-green-600 gap-1">
               <CheckCircle2 className="h-3 w-3" />
-              {stats.processed} processados
+              {t('documents.stats.processedCount', { count: stats.processed })}
             </Badge>
           </div>
         </div>
@@ -473,22 +477,23 @@ export default function Documents() {
               <UploadZone 
                 onUpload={(file) => uploadMutation.mutate(file)} 
                 isUploading={uploadMutation.isPending}
+                t={t}
               />
             </CardContent>
           </Card>
           
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">Estatísticas</CardTitle>
+              <CardTitle className="text-sm font-medium">{t('documents.stats.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <div className="flex justify-between text-sm">
-                <span>Processados</span>
+                <span>{t('documents.stats.processed')}</span>
                 <span className="font-medium">{stats.processed}/{stats.total}</span>
               </div>
               <Progress value={(stats.processed / Math.max(stats.total, 1)) * 100} className="h-2" />
               <div className="flex justify-between text-xs text-muted-foreground">
-                <span>{stats.pending} pendentes</span>
+                <span>{t('documents.stats.pendingCount', { count: stats.pending })}</span>
                 <span>{Math.round((stats.processed / Math.max(stats.total, 1)) * 100)}%</span>
               </div>
             </CardContent>
@@ -499,7 +504,7 @@ export default function Documents() {
           <div className="relative flex-1 min-w-[200px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="Buscar documentos..."
+              placeholder={t('documents.search.placeholder')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="pl-9"
@@ -510,12 +515,12 @@ export default function Documents() {
           <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as typeof filterStatus)}>
             <SelectTrigger className="w-[160px]" data-testid="select-filter-status">
               <Filter className="h-4 w-4 mr-2" />
-              <SelectValue placeholder="Filtrar" />
+              <SelectValue placeholder={t('documents.search.filter')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              <SelectItem value="processed">Processados</SelectItem>
-              <SelectItem value="pending">Pendentes</SelectItem>
+              <SelectItem value="all">{t('documents.search.all')}</SelectItem>
+              <SelectItem value="processed">{t('documents.search.processed')}</SelectItem>
+              <SelectItem value="pending">{t('documents.search.pending')}</SelectItem>
             </SelectContent>
           </Select>
 
@@ -558,12 +563,12 @@ export default function Documents() {
           >
             <FileText className="h-12 w-12 text-muted-foreground/50 mb-4" />
             <h3 className="font-medium mb-1">
-              {searchQuery ? 'Nenhum documento encontrado' : 'Nenhum documento ainda'}
+              {searchQuery ? t('documents.empty.noResults') : t('documents.empty.noDocuments')}
             </h3>
             <p className="text-sm text-muted-foreground max-w-md">
               {searchQuery 
-                ? 'Tente buscar com outros termos ou limpe os filtros.' 
-                : 'Faça upload de documentos para começar a usar o sistema RAG.'}
+                ? t('documents.empty.tryOtherTerms') 
+                : t('documents.empty.uploadToStart')}
             </p>
           </motion.div>
         ) : (
@@ -584,6 +589,7 @@ export default function Documents() {
                   viewMode={viewMode}
                   onView={() => setSelectedDocument(doc)}
                   onDelete={() => setDeleteDocument(doc)}
+                  t={t}
                 />
               ))}
             </AnimatePresence>
@@ -594,7 +600,8 @@ export default function Documents() {
       {selectedDocument && (
         <DocumentViewer 
           document={selectedDocument} 
-          onClose={() => setSelectedDocument(null)} 
+          onClose={() => setSelectedDocument(null)}
+          t={t}
         />
       )}
 
@@ -602,15 +609,14 @@ export default function Documents() {
         <Dialog open onOpenChange={() => setDeleteDocument(null)}>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Confirmar exclusão</DialogTitle>
+              <DialogTitle>{t('documents.delete.title')}</DialogTitle>
               <DialogDescription>
-                Tem certeza que deseja excluir o documento &quot;{deleteDocument.titulo}&quot;? 
-                Esta ação não pode ser desfeita e todos os embeddings associados serão removidos.
+                {t('documents.delete.description', { title: deleteDocument.titulo })}
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button variant="outline" onClick={() => setDeleteDocument(null)} data-testid="button-cancel-delete">
-                Cancelar
+                {t('documents.actions.cancel')}
               </Button>
               <Button 
                 variant="destructive" 
@@ -623,7 +629,7 @@ export default function Documents() {
                 ) : (
                   <Trash2 className="h-4 w-4 mr-2" />
                 )}
-                Excluir
+                {t('documents.actions.delete')}
               </Button>
             </DialogFooter>
           </DialogContent>

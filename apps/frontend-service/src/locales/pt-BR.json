@@ -397,6 +397,63 @@
     "size": "Tamanho",
     "type": "Tipo",
     "uploadedAt": "Enviado em",
+    "status": {
+      "processed": "Processado",
+      "pending": "Pendente",
+      "ok": "OK",
+      "processedWithEmbeddings": "Processado com embeddings",
+      "awaitingProcessing": "Aguardando processamento"
+    },
+    "actions": {
+      "view": "Visualizar",
+      "delete": "Excluir",
+      "close": "Fechar",
+      "retry": "Tentar novamente",
+      "cancel": "Cancelar"
+    },
+    "uploadZone": {
+      "sending": "Enviando...",
+      "dragOrClick": "Arraste arquivos ou clique para enviar",
+      "supportedTypes": "Suporta: TXT, MD, PDF, DOCX, CSV, JSON (até 50MB)"
+    },
+    "viewer": {
+      "createdAt": "Criado em {{date}}",
+      "source": "Fonte: {{source}}"
+    },
+    "stats": {
+      "title": "Estatísticas",
+      "processed": "Processados",
+      "pendingCount": "{{count}} pendentes",
+      "documentsCount": "{{count}} documentos",
+      "processedCount": "{{count}} processados"
+    },
+    "search": {
+      "placeholder": "Buscar documentos...",
+      "filter": "Filtrar",
+      "all": "Todos",
+      "processed": "Processados",
+      "pending": "Pendentes"
+    },
+    "empty": {
+      "noResults": "Nenhum documento encontrado",
+      "noDocuments": "Nenhum documento ainda",
+      "tryOtherTerms": "Tente buscar com outros termos ou limpe os filtros.",
+      "uploadToStart": "Faça upload de documentos para começar a usar o sistema RAG."
+    },
+    "delete": {
+      "title": "Confirmar exclusão",
+      "description": "Tem certeza que deseja excluir o documento \"{{title}}\"? Esta ação não pode ser desfeita e todos os embeddings associados serão removidos."
+    },
+    "errors": {
+      "loadFailed": "Erro ao carregar documentos",
+      "loadFailedDesc": "Não foi possível carregar a lista de documentos. Tente novamente mais tarde.",
+      "uploadFailed": "Falha ao enviar documento",
+      "deleteFailed": "Erro ao excluir documento"
+    },
+    "success": {
+      "uploaded": "Documento enviado com sucesso",
+      "deleted": "Documento excluído com sucesso"
+    },
     "uploadedBy": "Enviado por"
   },
   "integrations": {

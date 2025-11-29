@@ -397,7 +397,64 @@
     "size": "Size",
     "type": "Type",
     "uploadedAt": "Uploaded at",
-    "uploadedBy": "Uploaded by"
+    "uploadedBy": "Uploaded by",
+    "status": {
+      "processed": "Processed",
+      "pending": "Pending",
+      "ok": "OK",
+      "processedWithEmbeddings": "Processed with embeddings",
+      "awaitingProcessing": "Awaiting processing"
+    },
+    "actions": {
+      "view": "View",
+      "delete": "Delete",
+      "close": "Close",
+      "retry": "Try again",
+      "cancel": "Cancel"
+    },
+    "uploadZone": {
+      "sending": "Sending...",
+      "dragOrClick": "Drag files or click to upload",
+      "supportedTypes": "Supports: TXT, MD, PDF, DOCX, CSV, JSON (up to 50MB)"
+    },
+    "viewer": {
+      "createdAt": "Created on {{date}}",
+      "source": "Source: {{source}}"
+    },
+    "stats": {
+      "title": "Statistics",
+      "processed": "Processed",
+      "pendingCount": "{{count}} pending",
+      "documentsCount": "{{count}} documents",
+      "processedCount": "{{count}} processed"
+    },
+    "search": {
+      "placeholder": "Search documents...",
+      "filter": "Filter",
+      "all": "All",
+      "processed": "Processed",
+      "pending": "Pending"
+    },
+    "empty": {
+      "noResults": "No documents found",
+      "noDocuments": "No documents yet",
+      "tryOtherTerms": "Try searching with other terms or clear the filters.",
+      "uploadToStart": "Upload documents to start using the RAG system."
+    },
+    "delete": {
+      "title": "Confirm deletion",
+      "description": "Are you sure you want to delete the document \"{{title}}\"? This action cannot be undone and all associated embeddings will be removed."
+    },
+    "errors": {
+      "loadFailed": "Error loading documents",
+      "loadFailedDesc": "Could not load the document list. Please try again later.",
+      "uploadFailed": "Failed to upload document",
+      "deleteFailed": "Error deleting document"
+    },
+    "success": {
+      "uploaded": "Document uploaded successfully",
+      "deleted": "Document deleted successfully"
+    }
   },
   "integrations": {
     "title": "Integrations",
