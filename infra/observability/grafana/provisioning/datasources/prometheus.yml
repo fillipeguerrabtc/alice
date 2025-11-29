@@ -1,0 +1,34 @@
+# =============================================================================
+# Alice Enterprise Platform - Grafana Datasource: Prometheus
+# =============================================================================
+# Configuração automática de datasource Prometheus
+# Documentação: https://grafana.com/docs/grafana/latest/datasources/prometheus/
+# =============================================================================
+
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    uid: prometheus
+    access: proxy
+    url: ${PROMETHEUS_URL:-http://prometheus:9090}
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      manageAlerts: true
+      prometheusType: Prometheus
+      prometheusVersion: "3.0.0"
+      incrementalQuerying: true
+      incrementalQueryOverlapWindow: 10m
+      disableRecordingRules: false
+      cacheLevel: 'High'
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: jaeger
+    secureJsonFields: {}

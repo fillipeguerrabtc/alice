@@ -1,0 +1,35 @@
+# =============================================================================
+# Alice Enterprise Platform - Grafana Datasource: Jaeger
+# =============================================================================
+# Configuração automática de datasource Jaeger
+# Documentação: https://grafana.com/docs/grafana/latest/datasources/jaeger/
+# =============================================================================
+
+apiVersion: 1
+
+deleteDatasources:
+  - name: Jaeger
+    orgId: 1
+
+datasources:
+  - name: Jaeger
+    type: jaeger
+    uid: jaeger
+    access: proxy
+    url: ${JAEGER_URL:-http://jaeger:16686}
+    isDefault: false
+    editable: false
+    jsonData:
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+        filterByTraceID: true
+        filterBySpanID: true
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: '-1h'
+        spanEndTimeShift: '1h'
+      nodeGraph:
+        enabled: true
+    secureJsonFields: {}
