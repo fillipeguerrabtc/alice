@@ -1490,6 +1490,494 @@ app.post('/api/auth/modules/role/assign', requireAuth(), requireRole('super_admi
 }));
 
 // ============================================================================
+// ROTAS: Gestão de Usuários (Identity Provisioning → Grafana/ERPNext)
+// Regra 6: Persistência real em PostgreSQL, propagação automática
+// ============================================================================
+
+// Zod schemas para validação de entrada (OWASP API3 - Input Validation)
+const updateUserProfileSchema = z.object({
+  firstName: z.string().min(1).max(100).optional(),
+  lastName: z.string().max(100).optional(),
+  email: z.string().email().max(255).transform(v => v.toLowerCase().trim()).optional(),
+  cargo: z.string().max(100).optional(),
+  departamento: z.string().max(100).optional(),
+  telefone: z.string().max(20).optional(),
+  idioma: z.enum(['pt-BR', 'en-US', 'es-ES']).optional(),
+  timezone: z.string().max(50).optional(),
+  profileImageUrl: z.string().url().max(2048).optional().nullable(),
+});
+
+const updateUserRoleSchema = z.object({
+  role: z.enum(['super_admin', 'admin', 'manager', 'operator', 'viewer', 'guest']),
+});
+
+const updateUserStatusSchema = z.object({
+  ativo: z.boolean(),
+});
+
+// GET /api/users - Listar usuários do tenant (admin+ only)
+app.get('/api/users', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const tenantId = req.tenantId;
+  
+  // Multi-tenant: Filtrar por tenant (RLS via aplicação)
+  const whereClause = tenantId 
+    ? eq(schema.users.tenantId, tenantId)
+    : undefined;
+  
+  const users = await db.query.users.findMany({
+    where: whereClause,
+    columns: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      cargo: true,
+      departamento: true,
+      ativo: true,
+      ultimoAcesso: true,
+      createdAt: true,
+      profileImageUrl: true,
+      authProvider: true,
+    },
+    orderBy: (users, { desc }) => [desc(users.createdAt)],
+  });
+
+  res.json({ users });
+}));
+
+// GET /api/users/:id - Buscar usuário específico
+app.get('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  
+  // Usuário pode ver apenas seu próprio perfil, admin+ pode ver qualquer um
+  const isAdmin = ['super_admin', 'admin'].includes(requestingUser?.role || '');
+  const isSelf = requestingUser?.userId === userId;
+  
+  if (!isAdmin && !isSelf) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+  
+  const user = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+    columns: {
+      id: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      cargo: true,
+      departamento: true,
+      telefone: true,
+      idioma: true,
+      timezone: true,
+      ativo: true,
+      ultimoAcesso: true,
+      createdAt: true,
+      updatedAt: true,
+      profileImageUrl: true,
+      authProvider: true,
+      emailVerified: true,
+      tenantId: true,
+    },
+  });
+
+  if (!user) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  
+  // Multi-tenant: Verificar se pertence ao mesmo tenant
+  if (req.tenantId && user.tenantId !== req.tenantId && !['super_admin'].includes(requestingUser?.role || '')) {
+    return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+  }
+
+  res.json({ user });
+}));
+
+// PATCH /api/users/:id - Atualizar perfil do usuário
+// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// SEGURANÇA OWASP: Usuário edita próprio perfil OU admin/super_admin do mesmo tenant
+app.patch('/api/users/:id', requireAuth(), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const isAdmin = ['super_admin', 'admin'].includes(requestingUser?.role || '');
+  const isSelf = requestingUser?.userId === userId;
+  
+  // Derivar tenant do usuário autenticado (não do request)
+  const requesterTenantId = requestingUser?.tenantId;
+  
+  // Buscar usuário alvo primeiro para verificar tenant
+  const currentUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+  });
+  
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  
+  // SEGURANÇA: Verificação de tenant rigorosa usando tenant do usuário autenticado
+  // Super_admin pode acessar qualquer tenant
+  // Admin só pode acessar usuários do próprio tenant (ambos DEVEM ter tenantId definido)
+  // Usuário comum só pode editar a si mesmo
+  
+  if (!isSelf) {
+    if (!isAdmin) {
+      return res.status(403).json({ error: 'Acesso negado - apenas admins podem editar outros usuários' });
+    }
+    // Admin (não super_admin) DEVE ter tenantId definido E target DEVE ter tenantId definido E devem ser iguais
+    if (!isSuperAdmin) {
+      if (!requesterTenantId) {
+        return res.status(403).json({ error: 'Acesso negado - admin sem tenant definido' });
+      }
+      if (!currentUser.tenantId) {
+        return res.status(403).json({ error: 'Acesso negado - usuário alvo sem tenant definido' });
+      }
+      if (requesterTenantId !== currentUser.tenantId) {
+        return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+      }
+    }
+  }
+  
+  // Validação Zod (OWASP API3)
+  const parseResult = updateUserProfileSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ 
+      error: 'Dados inválidos', 
+      details: parseResult.error.format(),
+    });
+  }
+  
+  // SEGURANÇA: Usuário comum não pode alterar email (apenas admin+)
+  if (!isAdmin && parseResult.data.email && parseResult.data.email !== currentUser.email) {
+    return res.status(403).json({ error: 'Apenas administradores podem alterar email' });
+  }
+  
+  // Se email está sendo alterado, verificar duplicidade
+  if (parseResult.data.email && parseResult.data.email !== currentUser.email) {
+    const existingEmail = await db.query.users.findFirst({
+      where: eq(schema.users.email, parseResult.data.email),
+    });
+    if (existingEmail) {
+      return res.status(409).json({ error: 'Email já está em uso' });
+    }
+  }
+  
+  // Atualizar usuário
+  const [updatedUser] = await db.update(schema.users)
+    .set({
+      ...parseResult.data,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  logger.info({ 
+    userId, 
+    updatedFields: Object.keys(parseResult.data),
+    updatedBy: requestingUser?.userId,
+  }, 'Perfil de usuário atualizado');
+
+  // Identity Provisioning: Propagar alteração para Grafana/ERPNext
+  publishProvisioningEvent('user.updated', {
+    userId: updatedUser.id,
+    email: updatedUser.email || currentUser.email || '',
+    firstName: updatedUser.firstName || undefined,
+    lastName: updatedUser.lastName || undefined,
+    role: updatedUser.role || 'viewer',
+    tenantId: updatedUser.tenantId || undefined,
+  }).catch((error) => {
+    logger.error({ error, userId }, 'Erro ao publicar evento user.updated');
+  });
+
+  // Remover campos sensíveis
+  const { passwordHash: _, ...safeUser } = updatedUser;
+  res.json({ user: safeUser, message: 'Perfil atualizado com sucesso' });
+}));
+
+// PATCH /api/users/:id/role - Atualizar role do usuário (admin+ only)
+// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// SEGURANÇA OWASP: Admin pode alterar roles de usuários do mesmo tenant (exceto super_admin)
+//                  Super_admin pode alterar qualquer role de qualquer tenant
+//                  PROIBIDO: auto-elevação de role (admin não pode se promover a super_admin)
+app.patch('/api/users/:id/role', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const isSelf = requestingUser?.userId === userId;
+  const requesterTenantId = requestingUser?.tenantId;
+  
+  // Validação Zod (OWASP API3)
+  const parseResult = updateUserRoleSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ 
+      error: 'Dados inválidos', 
+      details: parseResult.error.format(),
+    });
+  }
+  
+  const { role: newRole } = parseResult.data;
+  
+  // SEGURANÇA: Proibir auto-alteração de role (exceto super_admin rebaixando a si mesmo - já protegido abaixo)
+  if (isSelf && !isSuperAdmin) {
+    return res.status(403).json({ error: 'Não pode alterar a própria role' });
+  }
+  
+  // Buscar usuário atual
+  const currentUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+  });
+  
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  
+  // SEGURANÇA: Verificação de tenant rigorosa usando tenant do usuário autenticado
+  // Admin (não super_admin) DEVE ter tenantId definido E target DEVE ter tenantId definido E devem ser iguais
+  if (!isSuperAdmin) {
+    if (!requesterTenantId) {
+      return res.status(403).json({ error: 'Acesso negado - admin sem tenant definido' });
+    }
+    if (!currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - usuário alvo sem tenant definido' });
+    }
+    if (requesterTenantId !== currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+  
+  // Hierarquia de roles: super_admin > admin > manager > operator > viewer > guest
+  const roleHierarchy: Record<string, number> = {
+    super_admin: 6,
+    admin: 5,
+    manager: 4,
+    operator: 3,
+    viewer: 2,
+    guest: 1,
+  };
+  
+  const requestingRoleLevel = roleHierarchy[requestingUser?.role || 'guest'] || 0;
+  const targetRoleLevel = roleHierarchy[newRole] || 0;
+  const currentRoleLevel = roleHierarchy[currentUser.role || 'viewer'] || 0;
+  
+  // Não pode atribuir role igual ou superior à própria (exceto super_admin)
+  if (requestingUser?.role !== 'super_admin') {
+    if (targetRoleLevel >= requestingRoleLevel) {
+      return res.status(403).json({ 
+        error: 'Não pode atribuir role igual ou superior à sua',
+      });
+    }
+    // Não pode alterar role de alguém com role igual ou superior
+    if (currentRoleLevel >= requestingRoleLevel) {
+      return res.status(403).json({ 
+        error: 'Não pode alterar role de usuário com permissão igual ou superior',
+      });
+    }
+  }
+  
+  // Não permitir que super_admin rebaixe a si mesmo
+  if (requestingUser?.userId === userId && requestingUser?.role === 'super_admin' && newRole !== 'super_admin') {
+    return res.status(403).json({ 
+      error: 'Super admin não pode rebaixar a si mesmo',
+    });
+  }
+  
+  const previousRole = currentUser.role;
+  
+  // Atualizar role
+  const [updatedUser] = await db.update(schema.users)
+    .set({
+      role: newRole,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  logger.info({ 
+    userId, 
+    previousRole,
+    newRole,
+    updatedBy: requestingUser?.userId,
+  }, 'Role de usuário atualizada');
+
+  // Identity Provisioning: Propagar mudança de role para Grafana/ERPNext
+  publishProvisioningEvent('user.role_changed', {
+    userId: updatedUser.id,
+    email: updatedUser.email || '',
+    firstName: updatedUser.firstName || undefined,
+    lastName: updatedUser.lastName || undefined,
+    role: newRole,
+    tenantId: updatedUser.tenantId || undefined,
+  }).catch((error) => {
+    logger.error({ error, userId, newRole }, 'Erro ao publicar evento user.role_changed');
+  });
+
+  res.json({ 
+    user: { 
+      id: updatedUser.id, 
+      role: updatedUser.role,
+      previousRole,
+    }, 
+    message: 'Role atualizada com sucesso',
+  });
+}));
+
+// PATCH /api/users/:id/status - Ativar/desativar usuário (admin+ only)
+// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+// SEGURANÇA OWASP: Admin pode ativar/desativar usuários do mesmo tenant
+//                  Super_admin pode ativar/desativar qualquer usuário
+app.patch('/api/users/:id/status', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  
+  const isSuperAdmin = requestingUser?.role === 'super_admin';
+  const requesterTenantId = requestingUser?.tenantId;
+  
+  // Validação Zod (OWASP API3)
+  const parseResult = updateUserStatusSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ 
+      error: 'Dados inválidos', 
+      details: parseResult.error.format(),
+    });
+  }
+  
+  const { ativo } = parseResult.data;
+  
+  // Buscar usuário atual
+  const currentUser = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+  });
+  
+  if (!currentUser) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  
+  // SEGURANÇA: Verificação de tenant rigorosa usando tenant do usuário autenticado
+  // Admin (não super_admin) DEVE ter tenantId definido E target DEVE ter tenantId definido E devem ser iguais
+  if (!isSuperAdmin) {
+    if (!requesterTenantId) {
+      return res.status(403).json({ error: 'Acesso negado - admin sem tenant definido' });
+    }
+    if (!currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - usuário alvo sem tenant definido' });
+    }
+    if (requesterTenantId !== currentUser.tenantId) {
+      return res.status(403).json({ error: 'Acesso negado - tenant diferente' });
+    }
+  }
+  
+  // Não permitir desativar a si mesmo
+  if (requestingUser?.userId === userId && !ativo) {
+    return res.status(403).json({ 
+      error: 'Não pode desativar a própria conta',
+    });
+  }
+  
+  // Não permitir desativar super_admin (exceto por outro super_admin)
+  if (currentUser.role === 'super_admin' && !ativo && !isSuperAdmin) {
+    return res.status(403).json({ 
+      error: 'Apenas super admin pode desativar outro super admin',
+    });
+  }
+  
+  // Atualizar status
+  const [updatedUser] = await db.update(schema.users)
+    .set({
+      ativo,
+      updatedAt: new Date(),
+    })
+    .where(eq(schema.users.id, userId))
+    .returning();
+
+  logger.info({ 
+    userId, 
+    ativo,
+    updatedBy: requestingUser?.userId,
+  }, ativo ? 'Usuário ativado' : 'Usuário desativado');
+
+  // Identity Provisioning: Propagar desativação para Grafana/ERPNext
+  publishProvisioningEvent('user.disabled', {
+    userId: updatedUser.id,
+    email: updatedUser.email || '',
+    firstName: updatedUser.firstName || undefined,
+    lastName: updatedUser.lastName || undefined,
+    role: updatedUser.role || 'viewer',
+    tenantId: updatedUser.tenantId || undefined,
+    disabled: !ativo, // true = desativado
+  }).catch((error) => {
+    logger.error({ error, userId, ativo }, 'Erro ao publicar evento user.disabled');
+  });
+
+  res.json({ 
+    user: { 
+      id: updatedUser.id, 
+      ativo: updatedUser.ativo,
+    }, 
+    message: ativo ? 'Usuário ativado com sucesso' : 'Usuário desativado com sucesso',
+  });
+}));
+
+// DELETE /api/users/:id - Deletar usuário (super_admin only)
+// Propaga automaticamente para Grafana/ERPNext via Identity Provisioning
+app.delete('/api/users/:id', requireAuth(), requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
+  const db = getDatabase();
+  const userId = req.params.id;
+  const requestingUser = req.user;
+  
+  // Não permitir deletar a si mesmo
+  if (requestingUser?.userId === userId) {
+    return res.status(403).json({ 
+      error: 'Não pode deletar a própria conta',
+    });
+  }
+  
+  // Buscar usuário antes de deletar
+  const userToDelete = await db.query.users.findFirst({
+    where: eq(schema.users.id, userId),
+  });
+  
+  if (!userToDelete) {
+    return res.status(404).json({ error: 'Usuário não encontrado' });
+  }
+  
+  // Deletar usuário
+  await db.delete(schema.users)
+    .where(eq(schema.users.id, userId));
+
+  logger.info({ 
+    userId, 
+    email: userToDelete.email,
+    deletedBy: requestingUser?.userId,
+  }, 'Usuário deletado');
+
+  // Identity Provisioning: Propagar deleção para Grafana/ERPNext
+  publishProvisioningEvent('user.deleted', {
+    userId: userToDelete.id,
+    email: userToDelete.email || '',
+    firstName: userToDelete.firstName || undefined,
+    lastName: userToDelete.lastName || undefined,
+    role: userToDelete.role || 'viewer',
+    tenantId: userToDelete.tenantId || undefined,
+  }).catch((error) => {
+    logger.error({ error, userId }, 'Erro ao publicar evento user.deleted');
+  });
+
+  res.json({ 
+    success: true, 
+    message: 'Usuário deletado com sucesso',
+  });
+}));
+
+// ============================================================================
 // OIDC PROVIDER: Alice como IdP único para Grafana e ERPNext
 // ============================================================================
 

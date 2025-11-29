@@ -81,6 +81,7 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **Stripe Idempotency**: `generateIdempotencyKey()` with `crypto.randomUUID()`, fail-fast in production if not provided.
 - **WebSocket Auth**: PostgreSQL session validation (`connect-pg-simple`) with mandatory `SESSION_SECRET` and cached validated sessions.
 - **Feature Flags**: Enterprise system with PostgreSQL persistence, TTL 60s cache, multi-tenant support, and Express middleware.
+- **Identity Provisioning**: Propagação automática Alice → Grafana/ERPNext via Outbox Pattern. Eventos suportados: `user.created`, `user.updated`, `user.role_changed`, `user.disabled`, `user.deleted`. Endpoints: `PATCH /api/users/:id`, `PATCH /api/users/:id/role`, `PATCH /api/users/:id/status`, `DELETE /api/users/:id`.
 
 ### System Design Choices
 

@@ -35,6 +35,7 @@ interface UserEventPayload {
   role?: string;
   previousRole?: string;
   tenantId?: string;
+  disabled?: boolean; // true = usuário desativado
 }
 
 // Configuração do processor
@@ -348,12 +349,17 @@ export class IdentityProvisioningProcessor {
         });
 
         if (mapping) {
-          await this.grafana.disableUser(parseInt(mapping.externalUserId));
+          // Verificar se é desativar ou reativar
+          if (payload.disabled) {
+            await this.grafana.disableUser(parseInt(mapping.externalUserId));
+          } else {
+            await this.grafana.enableUser(parseInt(mapping.externalUserId));
+          }
 
           // Atualizar status no mapeamento
           await db.update(externalUserMappings)
             .set({ 
-              status: 'disabled',
+              status: payload.disabled ? 'disabled' : 'active',
               lastSyncAt: new Date(),
             })
             .where(eq(externalUserMappings.id, mapping.id));
@@ -479,12 +485,17 @@ export class IdentityProvisioningProcessor {
         });
 
         if (mapping) {
-          await this.erpnext.disableUser(payload.email);
+          // Verificar se é desativar ou reativar
+          if (payload.disabled) {
+            await this.erpnext.disableUser(payload.email);
+          } else {
+            await this.erpnext.enableUser(payload.email);
+          }
 
           // Atualizar status no mapeamento
           await db.update(externalUserMappings)
             .set({ 
-              status: 'disabled',
+              status: payload.disabled ? 'disabled' : 'active',
               lastSyncAt: new Date(),
             })
             .where(eq(externalUserMappings.id, mapping.id));
