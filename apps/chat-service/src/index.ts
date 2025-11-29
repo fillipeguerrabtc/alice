@@ -1490,7 +1490,7 @@ function cleanupWsRateLimit(clientKey: string) {
   wsRateLimits.delete(clientKey);
 }
 
-setInterval(() => {
+const rateLimitCleanupInterval = setInterval(() => {
   const now = Date.now();
   const inactivityThreshold = WS_RATE_LIMIT.windowMs * 5;
   
@@ -3474,9 +3474,17 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 // Usamos process.once() em vez de process.on() para evitar listeners duplicados
 const gracefulShutdown = (signal: string) => {
   logger.info({ signal }, `Encerrando chat service (${signal})...`);
+  
+  // Limpar intervals para evitar timers pendentes (Regra 16)
+  clearInterval(heartbeatInterval);
+  clearInterval(rateLimitCleanupInterval);
+  logger.info('Background intervals limpos');
+  
+  // Fechar conexões WebSocket
   wss.close(() => {
     logger.info('WebSocket server fechado');
   });
+  
   server.close(() => {
     logger.info('HTTP server fechado');
     process.exit(0);
