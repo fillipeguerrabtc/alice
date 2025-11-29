@@ -54,6 +54,11 @@ import {
 } from '@alice/database';
 import { mountOIDCRoutes } from './oidc/index.js';
 import { 
+  startProcessor as startIdentityProvisioning, 
+  stopProcessor as stopIdentityProvisioning,
+  publishProvisioningEvent,
+} from './identity-provisioning/index.js';
+import { 
   initFeatureFlags,
   featureFlagsMiddleware,
   FEATURE_FLAGS,
@@ -488,6 +493,18 @@ if (googleClientId && googleClientSecret) {
           }).returning();
           user = newUser;
           logger.info({ userId: user.id, email }, 'Novo usuário criado via Google');
+          
+          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          publishProvisioningEvent('user.created', {
+            userId: user.id,
+            email: user.email || email,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+            role: user.role || 'viewer',
+            tenantId: user.tenantId || undefined,
+          }).catch((error) => {
+            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          });
         } else if (!user.googleId) {
           // Vincular conta Google existente
           await db.update(schema.users)
@@ -572,6 +589,18 @@ if (githubClientId && githubClientSecret) {
           }).returning();
           user = newUser;
           logger.info({ userId: user.id, email }, 'Novo usuário criado via GitHub');
+          
+          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          publishProvisioningEvent('user.created', {
+            userId: user.id,
+            email: user.email || email,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+            role: user.role || 'viewer',
+            tenantId: user.tenantId || undefined,
+          }).catch((error) => {
+            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          });
         } else if (!user.githubId) {
           // Vincular conta GitHub existente
           await db.update(schema.users)
@@ -686,6 +715,18 @@ if (samlEntryPoint && samlIssuer && samlCert) {
           }).returning();
           user = newUser;
           logger.info({ userId: user.id, email }, 'Novo usuário criado via SAML');
+          
+          // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+          publishProvisioningEvent('user.created', {
+            userId: user.id,
+            email: user.email || email,
+            firstName: user.firstName || undefined,
+            lastName: user.lastName || undefined,
+            role: user.role || 'viewer',
+            tenantId: user.tenantId || undefined,
+          }).catch((error) => {
+            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          });
         } else if (!user.samlNameId) {
           // Vincular conta SAML existente
           await db.update(schema.users)
@@ -868,6 +909,19 @@ app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) 
   }).returning();
 
   logger.info({ userId: newUser.id, email }, 'Novo usuário registrado');
+
+  // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
+  publishProvisioningEvent('user.created', {
+    userId: newUser.id,
+    email: newUser.email || email,
+    firstName: newUser.firstName || undefined,
+    lastName: newUser.lastName || undefined,
+    role: newUser.role || 'viewer',
+    tenantId: newUser.tenantId || undefined,
+  }).catch((error) => {
+    // Log error mas não falhar a requisição principal
+    logger.error({ error, userId: newUser.id }, 'Erro ao publicar evento de provisioning');
+  });
 
   // Remover campos sensíveis
   const { passwordHash: _, ...safeUser } = newUser;
@@ -1145,6 +1199,16 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       saml: !!(samlEntryPoint && samlIssuer && samlCert),
     }
   }, 'Provedores de autenticação disponíveis');
+  
+  // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
+  // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
+  startIdentityProvisioning()
+    .then(() => {
+      logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
+    })
+    .catch((error) => {
+      logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
+    });
 });
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
@@ -1154,8 +1218,17 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // Usamos process.once() em vez de process.on() para evitar listeners duplicados
-const gracefulShutdown = (signal: string) => {
+const gracefulShutdown = async (signal: string) => {
   logger.info({ signal }, `Encerrando auth service (${signal})...`);
+  
+  // Parar Identity Provisioning primeiro
+  try {
+    await stopIdentityProvisioning();
+    logger.info('Identity Provisioning parado');
+  } catch (error) {
+    logger.error({ error }, 'Erro ao parar Identity Provisioning');
+  }
+  
   server.close(() => {
     logger.info('HTTP server fechado');
     process.exit(0);

@@ -8,6 +8,7 @@ import {
   integer,
   jsonb,
   index,
+  uniqueIndex,
   uuid,
   real,
   pgEnum,
@@ -1603,6 +1604,96 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 }));
 
 // ============================================================================
+// IDENTITY PROVISIONING (Outbox Pattern - Tarefa 6)
+// Sincronização Alice → Grafana/ERPNext
+// ============================================================================
+
+// Eventos de provisionamento (Outbox Pattern)
+export const identityProvisioningEvents = pgTable('identity_provisioning_events', {
+  id: varchar('id').primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Tipo de evento: user.created, user.updated, user.deleted, user.role_changed
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  
+  // Payload JSON do evento
+  payload: jsonb('payload').notNull(),
+  
+  // Sistema de destino: grafana, erpnext, all
+  targetSystem: varchar('target_system', { length: 50 }).notNull(),
+  
+  // Status do evento: pending, processing, completed, failed, retrying
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  
+  // Número de tentativas de processamento
+  retryCount: integer('retry_count').notNull().default(0),
+  maxRetries: integer('max_retries').notNull().default(5),
+  
+  // Timestamps
+  criadoEm: timestamp('criado_em').notNull().defaultNow(),
+  processadoEm: timestamp('processado_em'),
+  proximaTentativa: timestamp('proxima_tentativa'),
+  
+  // Mensagem de erro (se houver)
+  errorMessage: text('error_message'),
+  
+  // Correlation ID para rastreamento
+  correlationId: varchar('correlation_id', { length: 100 }),
+  
+  // Tenant para isolamento multi-tenant
+  tenantId: varchar('tenant_id', { length: 100 }),
+});
+
+// Mapeamento de usuários externos (Alice ↔ Grafana/ERPNext)
+export const externalUserMappings = pgTable('external_user_mappings', {
+  id: varchar('id').primaryKey().default(sql`gen_random_uuid()`),
+  
+  // Usuário Alice
+  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  
+  // Sistema externo: grafana, erpnext
+  externalSystem: varchar('external_system', { length: 50 }).notNull(),
+  
+  // ID do usuário no sistema externo
+  externalUserId: varchar('external_user_id', { length: 255 }).notNull(),
+  
+  // Username no sistema externo
+  externalUsername: varchar('external_username', { length: 255 }),
+  
+  // Role mapeada no sistema externo
+  externalRole: varchar('external_role', { length: 100 }),
+  
+  // Status: active, pending, disabled, error
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  
+  // Última sincronização
+  lastSyncAt: timestamp('last_sync_at'),
+  
+  // Timestamps
+  criadoEm: timestamp('criado_em').notNull().defaultNow(),
+  atualizadoEm: timestamp('atualizado_em').notNull().defaultNow(),
+  
+  // Metadata adicional
+  metadata: jsonb('metadata'),
+}, (table) => [
+  uniqueIndex('idx_external_user_mapping').on(table.userId, table.externalSystem),
+]);
+
+// Relações Identity Provisioning
+export const identityProvisioningEventsRelations = relations(identityProvisioningEvents, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [identityProvisioningEvents.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const externalUserMappingsRelations = relations(externalUserMappings, ({ one }) => ({
+  user: one(users, {
+    fields: [externalUserMappings.userId],
+    references: [users.id],
+  }),
+}));
+
+// ============================================================================
 // INSERT SCHEMAS (Zod Validation)
 // ============================================================================
 // NOTA: Usando z.ZodType<unknown> para resolver erro TS2742 (inferência de tipos)
@@ -1831,6 +1922,25 @@ export type FeatureFlag = typeof featureFlags.$inferSelect;
 export type InsertFeatureFlag = typeof featureFlags.$inferInsert;
 
 export const insertFeatureFlagSchema = createInsertSchema(featureFlags).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+// Identity Provisioning Types (Outbox Pattern - Tarefa 6)
+export type IdentityProvisioningEvent = typeof identityProvisioningEvents.$inferSelect;
+export type InsertIdentityProvisioningEvent = typeof identityProvisioningEvents.$inferInsert;
+
+export type ExternalUserMapping = typeof externalUserMappings.$inferSelect;
+export type InsertExternalUserMapping = typeof externalUserMappings.$inferInsert;
+
+export const insertIdentityProvisioningEventSchema: z.ZodType<unknown> = createInsertSchema(identityProvisioningEvents).omit({
+  id: true,
+  criadoEm: true,
+  processadoEm: true,
+});
+
+export const insertExternalUserMappingSchema: z.ZodType<unknown> = createInsertSchema(externalUserMappings).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
