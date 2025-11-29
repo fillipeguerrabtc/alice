@@ -29,6 +29,7 @@ const WisePayments = lazy(() => import('@/pages/WisePayments'));
 const TakeoverPanel = lazy(() => import('@/pages/TakeoverPanel'));
 const ImageGalleryPage = lazy(() => import('@/pages/ImageGalleryPage'));
 const ModulesAdmin = lazy(() => import('@/pages/ModulesAdmin'));
+const Observability = lazy(() => import('@/pages/Observability'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 
 // Loading spinner para Suspense fallback
@@ -82,6 +83,7 @@ function Router() {
       <Route path="/integrations" component={Integrations} />
       <Route path="/wise" component={WisePayments} />
       <Route path="/modules" component={ModulesAdmin} />
+      <Route path="/observability" component={Observability} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />
     </Switch>

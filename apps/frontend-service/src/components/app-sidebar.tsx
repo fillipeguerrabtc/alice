@@ -56,12 +56,6 @@ const financeItems = [
 
 const adminExternalLinks = [
   { 
-    title: 'Observabilidade', 
-    url: 'https://observabilidade.yesyoudeserve.duckdns.org', 
-    icon: Activity,
-    description: 'Portal de Monitoramento Enterprise'
-  },
-  { 
     title: 'ERPNext CRM', 
     url: 'https://erp.yesyoudeserve.duckdns.org', 
     icon: Building2,
@@ -70,6 +64,7 @@ const adminExternalLinks = [
 ];
 
 const adminItems = [
+  { title: 'Observabilidade', url: '/observability', icon: Activity },
   { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
   { title: 'Módulos', url: '/modules', icon: Boxes },
 ];

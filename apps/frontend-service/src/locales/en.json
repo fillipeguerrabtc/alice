@@ -32,7 +32,8 @@
     "stable": "Stable",
     "download": "Download",
     "color": "Color",
-    "view": "View"
+    "view": "View",
+    "refresh": "Refresh"
   },
   "auth": {
     "title": "Alice AI Enterprise",
@@ -580,5 +581,40 @@
   "modules": {
     "title": "Module Management",
     "description": "Manage system modules and their permissions"
+  },
+  "observability": {
+    "title": "Observability Portal",
+    "description": "Unified monitoring of metrics, traces, and alerts",
+    "stackStatus": "Stack Status",
+    "healthy": "Healthy",
+    "degraded": "Degraded",
+    "unhealthy": "Unhealthy",
+    "servicesHealthy": "services healthy",
+    "uptime": "Uptime",
+    "lastCheck": "Last check",
+    "latency": "Latency",
+    "openDashboard": "Open Dashboard",
+    "quickLinks": "Quick Access",
+    "quickLinksDesc": "Direct links to monitoring tools",
+    "services": "Observability Services",
+    "metricsOverview": "Metrics Overview",
+    "metricsCollected": "Metrics Collected",
+    "activeAlerts": "Active Alerts",
+    "tracesProcessed": "Traces Processed",
+    "llmRequests": "LLM Requests",
+    "connectToGrafana": "Connect to Grafana for real-time metrics",
+    "securityInfo": "Security & Compliance",
+    "ssoEnabled": "SSO via Alice IdP enabled",
+    "tlsEnabled": "TLS/SSL enabled on all endpoints",
+    "dataRetention": "Data retention: 30 days",
+    "grafanaDesc": "Dashboards and visualization",
+    "prometheusDesc": "Metrics and alerts",
+    "jaegerDesc": "Distributed tracing",
+    "langfuseDesc": "LLM-specific metrics",
+    "unknown": "Unknown",
+    "statusUnavailable": "Status currently unavailable",
+    "useExternalLinks": "Use the quick access links to check services directly",
+    "apiUnavailable": "Observability API Unavailable",
+    "apiUnavailableDesc": "Status data is not available. Use the quick access links to access the tools directly."
   }
 }

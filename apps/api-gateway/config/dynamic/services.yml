@@ -73,6 +73,17 @@ http:
       tls: {}
       priority: 100
 
+    observability-router:
+      rule: "PathPrefix(`/api/observability`)"
+      service: observability-service
+      entryPoints:
+        - websecure
+      middlewares:
+        - rate-limit
+        - security-headers
+        - auth-forward
+      tls: {}
+
     frontend-router:
       rule: "PathPrefix(`/`)"
       service: frontend-service
@@ -135,6 +146,15 @@ http:
           - url: "http://integrations-service:3005"
         healthCheck:
           path: /api/integrations/health
+          interval: "30s"
+          timeout: "10s"
+
+    observability-service:
+      loadBalancer:
+        servers:
+          - url: "http://observability-health:3007"
+        healthCheck:
+          path: /health
           interval: "30s"
           timeout: "10s"
 

@@ -32,7 +32,8 @@
     "stable": "Estável",
     "download": "Baixar",
     "color": "Cor",
-    "view": "Visualizar"
+    "view": "Visualizar",
+    "refresh": "Atualizar"
   },
   "auth": {
     "title": "Alice IA Enterprise",
@@ -580,5 +581,40 @@
   "modules": {
     "title": "Gestão de Módulos",
     "description": "Gerencie os módulos do sistema e suas permissões"
+  },
+  "observability": {
+    "title": "Portal de Observabilidade",
+    "description": "Monitoramento unificado de métricas, traces e alertas",
+    "stackStatus": "Status do Stack",
+    "healthy": "Saudável",
+    "degraded": "Degradado",
+    "unhealthy": "Indisponível",
+    "servicesHealthy": "serviços saudáveis",
+    "uptime": "Uptime",
+    "lastCheck": "Última verificação",
+    "latency": "Latência",
+    "openDashboard": "Abrir Dashboard",
+    "quickLinks": "Acesso Rápido",
+    "quickLinksDesc": "Links diretos para as ferramentas de monitoramento",
+    "services": "Serviços de Observabilidade",
+    "metricsOverview": "Visão Geral de Métricas",
+    "metricsCollected": "Métricas Coletadas",
+    "activeAlerts": "Alertas Ativos",
+    "tracesProcessed": "Traces Processados",
+    "llmRequests": "Requisições LLM",
+    "connectToGrafana": "Conecte ao Grafana para métricas em tempo real",
+    "securityInfo": "Segurança e Conformidade",
+    "ssoEnabled": "SSO via Alice IdP habilitado",
+    "tlsEnabled": "TLS/SSL habilitado em todos os endpoints",
+    "dataRetention": "Retenção de dados: 30 dias",
+    "grafanaDesc": "Dashboards e visualização",
+    "prometheusDesc": "Métricas e alertas",
+    "jaegerDesc": "Distributed tracing",
+    "langfuseDesc": "Métricas LLM específicas",
+    "unknown": "Desconhecido",
+    "statusUnavailable": "Status não disponível no momento",
+    "useExternalLinks": "Use os links de acesso rápido para verificar os serviços diretamente",
+    "apiUnavailable": "API de Observabilidade Indisponível",
+    "apiUnavailableDesc": "Os dados de status não estão disponíveis. Use os links de acesso rápido para acessar as ferramentas diretamente."
   }
 }

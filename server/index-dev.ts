@@ -214,6 +214,12 @@ async function startDevServer() {
     res.status(201).json({ userModule: { ...req.body, id: `preview-um-${Date.now()}` } });
   });
 
+  // ============================================================================
+  // ROTAS OBSERVABILIDADE - Removidas conforme Regra 6 (SEM MOCKS)
+  // Produção: apps/observability-service/src/index.ts (Porta 3007)
+  // Frontend: Mostra estado de erro gracioso quando API indisponível
+  // ============================================================================
+
   // Rotas do Dashboard para desenvolvimento
   app.get('/api/chat/stats', (_req: Request, res: Response) => {
     res.json({

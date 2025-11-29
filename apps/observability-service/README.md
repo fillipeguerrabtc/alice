@@ -69,6 +69,45 @@ docker-compose down
 | Langfuse | https://llm-metrics.yesyoudeserve.duckdns.org |
 | Health API | https://yesyoudeserve.duckdns.org/observability/health |
 
+## Configuração do API Gateway (Traefik)
+
+O frontend Alice acessa os endpoints `/api/observability/*` através do API Gateway.
+Em produção, configure o Traefik para rotear essas requisições para o observability-service:
+
+```yaml
+# docker-compose.yml ou traefik/dynamic/observability.yml
+http:
+  routers:
+    observability-api:
+      rule: "PathPrefix(`/api/observability`)"
+      service: observability-service
+      middlewares:
+        - auth-session
+      entryPoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    observability-service:
+      loadBalancer:
+        servers:
+          - url: "http://observability-health:3007"
+
+  middlewares:
+    auth-session:
+      forwardAuth:
+        address: "http://auth-service:3001/api/auth/verify"
+        trustForwardHeader: true
+```
+
+### Autenticação
+
+- **Desenvolvimento (Replit)**: Sem autenticação (INTERNAL_API_TOKEN não configurado)
+- **Produção**: ForwardAuth middleware valida sessão do usuário via auth-service
+
+O frontend usa `credentials: 'include'` para enviar cookies de sessão automaticamente.
+
 ## Endpoints do Health Checker
 
 | Endpoint | Método | Descrição |

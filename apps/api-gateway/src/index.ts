@@ -47,6 +47,7 @@ const gatewayConfigSchema = z.object({
   RAG_SERVICE_URL: z.string().default('http://localhost:3003'),
   TRAINING_SERVICE_URL: z.string().default('http://localhost:3004'),
   INTEGRATIONS_SERVICE_URL: z.string().default('http://localhost:3005'),
+  OBSERVABILITY_SERVICE_URL: z.string().default('http://localhost:3007'),
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
@@ -123,6 +124,7 @@ const services: ServiceConfig[] = [
   { name: 'rag-service', url: config.RAG_SERVICE_URL, healthPath: '/api/rag/health', pathPrefix: '/api/rag' },
   { name: 'training-service', url: config.TRAINING_SERVICE_URL, healthPath: '/api/training/health', pathPrefix: '/api/training' },
   { name: 'integrations-service', url: config.INTEGRATIONS_SERVICE_URL, healthPath: '/api/integrations/health', pathPrefix: '/api/integrations' },
+  { name: 'observability-service', url: config.OBSERVABILITY_SERVICE_URL, healthPath: '/health', pathPrefix: '/api/observability' },
 ];
 
 // Circuit Breaker para cada serviço
