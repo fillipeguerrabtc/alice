@@ -405,14 +405,14 @@ const authActiveSessionsGauge = new PromGauge({
 });
 
 const authMetrics = {
-  attempts: { google: 0, github: 0, microsoft: 0, saml: 0, local: 0 },
-  successes: { google: 0, github: 0, microsoft: 0, saml: 0, local: 0 },
-  failures: { google: 0, github: 0, microsoft: 0, saml: 0, local: 0 },
-  lastSuccess: { google: null, github: null, microsoft: null, saml: null, local: null } as Record<string, Date | null>,
-  lastFailure: { google: null, github: null, microsoft: null, saml: null, local: null } as Record<string, Date | null>,
+  attempts: { google: 0, github: 0, saml: 0, local: 0 },
+  successes: { google: 0, github: 0, saml: 0, local: 0 },
+  failures: { google: 0, github: 0, saml: 0, local: 0 },
+  lastSuccess: { google: null, github: null, saml: null, local: null } as Record<string, Date | null>,
+  lastFailure: { google: null, github: null, saml: null, local: null } as Record<string, Date | null>,
 };
 
-function recordAuthAttempt(provider: 'google' | 'github' | 'microsoft' | 'saml' | 'local', success: boolean): void {
+function recordAuthAttempt(provider: 'google' | 'github' | 'saml' | 'local', success: boolean): void {
   authMetrics.attempts[provider]++;
   
   // Prometheus metrics

@@ -70,7 +70,6 @@ const authHealthSchema = baseHealthSchema.extend({
     local: z.boolean(),
     google: z.boolean(),
     github: z.boolean(),
-    microsoft: z.boolean(),
     saml: z.boolean(),
   }),
   metrics: z.object({
@@ -191,16 +190,15 @@ const mockAuthHealthResponse = {
     local: true,
     google: true,
     github: true,
-    microsoft: false,
     saml: false,
   },
   metrics: {
     totalProvidersConfigured: 3,
-    attempts: { google: 10, github: 5, microsoft: 0, saml: 0, local: 20 },
-    successes: { google: 9, github: 5, microsoft: 0, saml: 0, local: 18 },
-    failures: { google: 1, github: 0, microsoft: 0, saml: 0, local: 2 },
-    lastSuccess: { google: FIXED_TIMESTAMP, github: null, microsoft: null, saml: null, local: FIXED_TIMESTAMP },
-    lastFailure: { google: null, github: null, microsoft: null, saml: null, local: null },
+    attempts: { google: 10, github: 5, saml: 0, local: 20 },
+    successes: { google: 9, github: 5, saml: 0, local: 18 },
+    failures: { google: 1, github: 0, saml: 0, local: 2 },
+    lastSuccess: { google: FIXED_TIMESTAMP, github: null, saml: null, local: FIXED_TIMESTAMP },
+    lastFailure: { google: null, github: null, saml: null, local: null },
   },
   note: 'OAuth/SAML usam redirecionamentos HTTP do navegador - circuit breakers não são aplicáveis para fluxos de redirecionamento',
 };
@@ -317,7 +315,6 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockAuthHealthResponse.providers).toHaveProperty('local');
       expect(mockAuthHealthResponse.providers).toHaveProperty('google');
       expect(mockAuthHealthResponse.providers).toHaveProperty('github');
-      expect(mockAuthHealthResponse.providers).toHaveProperty('microsoft');
       expect(mockAuthHealthResponse.providers).toHaveProperty('saml');
     });
 

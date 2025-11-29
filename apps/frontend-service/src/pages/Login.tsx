@@ -60,12 +60,6 @@ export default function Login() {
         return <Chrome className="h-5 w-5" />;
       case 'github':
         return <Github className="h-5 w-5" />;
-      case 'microsoft':
-        return (
-          <svg className="h-5 w-5" viewBox="0 0 23 23" fill="currentColor">
-            <path d="M11 11H0V0h11v11zm12 0H12V0h11v11zM11 23H0V12h11v11zm12 0H12V12h11v11z" />
-          </svg>
-        );
       default:
         return <Mail className="h-5 w-5" />;
     }

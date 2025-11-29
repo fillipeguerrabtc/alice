@@ -66,19 +66,6 @@ Estes são necessários para o deploy funcionar:
 
 ⚠️ **IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.
 
-**Microsoft/Azure AD OAuth (Opcional):**
-
-| Secret | Onde Obter |
-|--------|------------|
-| `MICROSOFT_CLIENT_ID` | [portal.azure.com](https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps) |
-| `MICROSOFT_CLIENT_SECRET` | Azure Portal |
-| `MICROSOFT_TENANT_ID` | Azure Portal |
-
-**Configuração:**
-1. Azure Portal → App registrations → Nova aplicação
-2. Authentication → Platform configurations → Web
-3. Redirect URIs: `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft`
-
 ### FASE 3: Chat com IA (LLM)
 
 | Secret | Onde Obter |
@@ -252,7 +239,6 @@ Estes são necessários para o deploy funcionar:
 |----------|-----------------|
 | Google | `https://yesyoudeserve.duckdns.org/api/auth/callback/google` |
 | GitHub | `https://yesyoudeserve.duckdns.org/api/auth/callback/github` |
-| Microsoft | `https://yesyoudeserve.duckdns.org/api/auth/callback/microsoft` |
 
 ### Webhooks
 
@@ -310,7 +296,6 @@ openssl rand -hex 64
 | Stripe | https://stripe.com/docs/webhooks |
 | Google OAuth | https://developers.google.com/identity/protocols/oauth2 |
 | GitHub OAuth | https://docs.github.com/en/developers/apps/building-oauth-apps |
-| Microsoft OAuth | https://docs.microsoft.com/en-us/azure/active-directory/develop/ |
 | Twilio | https://www.twilio.com/docs/usage/webhooks |
 | Resend | https://resend.com/docs |
 | Wise | https://docs.wise.com/ |

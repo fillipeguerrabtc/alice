@@ -120,8 +120,7 @@ VALUES
     ('resend_enabled', false, 'Integração Resend (requer configuração)'),
     ('saml_enabled', false, 'Autenticação SAML 2.0 (requer configuração)'),
     ('google_oauth_enabled', false, 'OAuth Google (requer configuração)'),
-    ('github_oauth_enabled', false, 'OAuth GitHub (requer configuração)'),
-    ('microsoft_oauth_enabled', false, 'OAuth Microsoft (requer configuração)')
+    ('github_oauth_enabled', false, 'OAuth GitHub (requer configuração)')
 ON CONFLICT DO NOTHING;
 
 -- ============================================================================

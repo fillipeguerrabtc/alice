@@ -61,7 +61,6 @@ const FEATURE_FLAGS = {
   SAML_ENABLED: 'saml_enabled',
   GOOGLE_OAUTH_ENABLED: 'google_oauth_enabled',
   GITHUB_OAUTH_ENABLED: 'github_oauth_enabled',
-  MICROSOFT_OAUTH_ENABLED: 'microsoft_oauth_enabled',
   
   // Funcionalidades
   HANDOVER_ENABLED: 'handover_enabled',
@@ -98,7 +97,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.SAML_ENABLED]: false,
   [FEATURE_FLAGS.GOOGLE_OAUTH_ENABLED]: false,
   [FEATURE_FLAGS.GITHUB_OAUTH_ENABLED]: false,
-  [FEATURE_FLAGS.MICROSOFT_OAUTH_ENABLED]: false,
   
   // Funcionalidades - HABILITADAS
   [FEATURE_FLAGS.HANDOVER_ENABLED]: true,
@@ -117,8 +115,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
 
 describe('Feature Flags - Keys e Constantes', () => {
   describe('FEATURE_FLAGS constantes', () => {
-    it('deve ter todas as 19 feature flags definidas', () => {
-      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(19);
+    it('deve ter todas as 18 feature flags definidas', () => {
+      expect(Object.keys(FEATURE_FLAGS)).toHaveLength(18);
     });
 
     it('todas as keys devem seguir padrão lowercase_underscore', () => {
@@ -147,7 +145,6 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(FEATURE_FLAGS.SAML_ENABLED).toBe('saml_enabled');
       expect(FEATURE_FLAGS.GOOGLE_OAUTH_ENABLED).toBe('google_oauth_enabled');
       expect(FEATURE_FLAGS.GITHUB_OAUTH_ENABLED).toBe('github_oauth_enabled');
-      expect(FEATURE_FLAGS.MICROSOFT_OAUTH_ENABLED).toBe('microsoft_oauth_enabled');
     });
 
     it('deve ter flags de funcionalidades', () => {
@@ -183,7 +180,6 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.SAML_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.GOOGLE_OAUTH_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.GITHUB_OAUTH_ENABLED]).toBe(false);
-      expect(DEFAULT_FLAGS[FEATURE_FLAGS.MICROSOFT_OAUTH_ENABLED]).toBe(false);
     });
 
     it('funcionalidades core devem estar HABILITADAS por padrão', () => {
@@ -621,7 +617,6 @@ describe('Feature Flags - Padrão Enterprise', () => {
         FEATURE_FLAGS.SAML_ENABLED,
         FEATURE_FLAGS.GOOGLE_OAUTH_ENABLED,
         FEATURE_FLAGS.GITHUB_OAUTH_ENABLED,
-        FEATURE_FLAGS.MICROSOFT_OAUTH_ENABLED,
       ];
       
       authFlags.forEach(flag => {

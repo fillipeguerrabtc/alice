@@ -410,12 +410,11 @@ export const users = pgTable(
     ativo: boolean("ativo").default(true),
     // Autenticação Multi-provedor
     passwordHash: text("password_hash"), // Para autenticação local (email/senha)
-    authProvider: varchar("auth_provider", { length: 50 }), // google, github, microsoft, saml, local
+    authProvider: varchar("auth_provider", { length: 50 }), // google, github, saml, local
     authProviderId: varchar("auth_provider_id", { length: 255 }), // ID do usuário no provedor
     // IDs OAuth específicos por provedor
     googleId: varchar("google_id", { length: 255 }), // ID do Google OAuth
     githubId: varchar("github_id", { length: 255 }), // ID do GitHub OAuth
-    microsoftId: varchar("microsoft_id", { length: 255 }), // ID do Microsoft OAuth
     samlNameId: varchar("saml_name_id", { length: 255 }), // NameID do SAML 2.0
     emailVerified: boolean("email_verified").default(false), // Se o email foi verificado
     // Stripe (Blueprint: stripe integration)
@@ -431,7 +430,6 @@ export const users = pgTable(
     idxUsersAuthProvider: index("idx_users_auth_provider").on(table.authProvider),
     idxUsersGoogleId: index("idx_users_google_id").on(table.googleId),
     idxUsersGithubId: index("idx_users_github_id").on(table.githubId),
-    idxUsersMicrosoftId: index("idx_users_microsoft_id").on(table.microsoftId),
     idxUsersSamlNameId: index("idx_users_saml_name_id").on(table.samlNameId),
   })
 );

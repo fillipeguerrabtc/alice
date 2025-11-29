@@ -78,7 +78,6 @@ export const FEATURE_FLAGS = {
   SAML_ENABLED: 'saml_enabled',
   GOOGLE_OAUTH_ENABLED: 'google_oauth_enabled',
   GITHUB_OAUTH_ENABLED: 'github_oauth_enabled',
-  MICROSOFT_OAUTH_ENABLED: 'microsoft_oauth_enabled',
   
   // Funcionalidades
   HANDOVER_ENABLED: 'handover_enabled',
@@ -242,7 +241,6 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.SAML_ENABLED]: false,
   [FEATURE_FLAGS.GOOGLE_OAUTH_ENABLED]: false,
   [FEATURE_FLAGS.GITHUB_OAUTH_ENABLED]: false,
-  [FEATURE_FLAGS.MICROSOFT_OAUTH_ENABLED]: false,
   
   // Funcionalidades - HABILITADAS
   [FEATURE_FLAGS.HANDOVER_ENABLED]: true,

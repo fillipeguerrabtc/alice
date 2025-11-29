@@ -26,10 +26,6 @@ const authConfigSchema = z.object({
   // OAuth GitHub
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
-  // OAuth Microsoft
-  MICROSOFT_CLIENT_ID: z.string().optional(),
-  MICROSOFT_CLIENT_SECRET: z.string().optional(),
-  MICROSOFT_TENANT_ID: z.string().optional(),
   // SAML 2.0
   SAML_ENTRY_POINT: z.string().url().optional(),
   SAML_ISSUER: z.string().optional(),
@@ -133,7 +129,6 @@ const SECRET_KEYS = new Set([
   'SALAD_API_KEY',
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_SECRET',
-  'MICROSOFT_CLIENT_SECRET',
   'STRIPE_SECRET_KEY',
   'STRIPE_WEBHOOK_SECRET',
   'ERPNEXT_API_SECRET',

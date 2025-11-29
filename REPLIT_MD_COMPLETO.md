@@ -242,7 +242,7 @@ O arquivo `server/index-dev.ts` é APENAS para preview no Replit e NÃO vai para
 
 ### 2. Autenticação (Porta 3001)
 
-- OAuth 2.0: Google, GitHub, Microsoft
+- OAuth 2.0: Google, GitHub
 - SAML 2.0: Azure AD, Okta
 - Autenticação local com bcrypt
 - RBAC com 6 roles

@@ -98,7 +98,6 @@ export const users = pgTable(
     // IDs OAuth específicos por provedor
     googleId: varchar("google_id", { length: 255 }),
     githubId: varchar("github_id", { length: 255 }),
-    microsoftId: varchar("microsoft_id", { length: 255 }),
     samlNameId: varchar("saml_name_id", { length: 255 }),
     emailVerified: boolean("email_verified").default(false),
     // Stripe
@@ -114,7 +113,6 @@ export const users = pgTable(
     idxUsersAuthProvider: index("idx_users_auth_provider").on(table.authProvider),
     idxUsersGoogleId: index("idx_users_google_id").on(table.googleId),
     idxUsersGithubId: index("idx_users_github_id").on(table.githubId),
-    idxUsersMicrosoftId: index("idx_users_microsoft_id").on(table.microsoftId),
     idxUsersSamlNameId: index("idx_users_saml_name_id").on(table.samlNameId),
   })
 );
