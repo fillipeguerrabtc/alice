@@ -37,7 +37,7 @@ import {
   FEATURE_FLAGS,
   isFeatureEnabled,
 } from '@alice/shared-utils';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
   buscarContextoRAG, 
@@ -950,35 +950,61 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/chat/stats', async (_req: Request, res: Response) => {
+app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
+    const tenantId = (req as TenantRequest).tenantId;
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
-    const allConversations = await db.query.conversations.findMany();
-    const allDocuments = await db.query.documents.findMany();
-    const allTraining = await db.query.trainingData.findMany();
-    const allMessages = await db.query.messages.findMany();
+    // RBAC: Filtrar dados apenas do tenant do usuário (multi-tenancy seguro)
+    const allConversations = await db.query.conversations.findMany({
+      with: { agent: { with: { namespace: true } } },
+    });
+    const tenantConversations = allConversations.filter(c => 
+      c.agent?.namespace?.tenantId === tenantId
+    );
+    
+    const allDocuments = await db.query.documents.findMany({
+      with: { namespace: true },
+    });
+    const tenantDocuments = allDocuments.filter(d => 
+      d.namespace?.tenantId === tenantId
+    );
+    
+    const allTraining = await db.query.trainingData.findMany({
+      with: { namespace: true },
+    });
+    const tenantTraining = allTraining.filter(t => 
+      t.namespace?.tenantId === tenantId
+    );
+    
+    // Obter mensagens das conversas do tenant
+    const conversationIds = tenantConversations.map(c => c.id);
+    const allMessages = conversationIds.length > 0
+      ? await db.query.messages.findMany({
+          where: inArray(schema.messages.conversationId, conversationIds),
+        })
+      : [];
 
-    const currentConversations = allConversations.filter(c => 
+    const currentConversations = tenantConversations.filter(c => 
       c.criadoEm && new Date(c.criadoEm) >= weekAgo
     ).length;
-    const previousConversations = allConversations.filter(c => 
+    const previousConversations = tenantConversations.filter(c => 
       c.criadoEm && new Date(c.criadoEm) >= twoWeeksAgo && new Date(c.criadoEm) < weekAgo
     ).length;
 
-    const currentDocuments = allDocuments.filter(d => 
+    const currentDocuments = tenantDocuments.filter(d => 
       d.criadoEm && new Date(d.criadoEm) >= weekAgo
     ).length;
-    const previousDocuments = allDocuments.filter(d => 
+    const previousDocuments = tenantDocuments.filter(d => 
       d.criadoEm && new Date(d.criadoEm) >= twoWeeksAgo && new Date(d.criadoEm) < weekAgo
     ).length;
 
-    const currentTraining = allTraining.filter(t => 
+    const currentTraining = tenantTraining.filter(t => 
       t.criadoEm && new Date(t.criadoEm) >= weekAgo
     ).length;
-    const previousTraining = allTraining.filter(t => 
+    const previousTraining = tenantTraining.filter(t => 
       t.criadoEm && new Date(t.criadoEm) >= twoWeeksAgo && new Date(t.criadoEm) < weekAgo
     ).length;
 
@@ -996,9 +1022,9 @@ app.get('/api/chat/stats', async (_req: Request, res: Response) => {
     };
 
     res.json({
-      conversations: allConversations.length,
-      documents: allDocuments.length,
-      trainingData: allTraining.length,
+      conversations: tenantConversations.length,
+      documents: tenantDocuments.length,
+      trainingData: tenantTraining.length,
       tokensUsed: totalTokens,
       trend: {
         conversations: calcTrend(currentConversations, previousConversations),
@@ -1013,13 +1039,27 @@ app.get('/api/chat/stats', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/api/chat/usage', async (_req: Request, res: Response) => {
+app.get('/api/chat/usage', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
+    const tenantId = (req as TenantRequest).tenantId;
     const today = new Date();
     const usageData = [];
 
-    const allConversations = await db.query.conversations.findMany();
-    const allMessages = await db.query.messages.findMany();
+    // RBAC: Filtrar conversas apenas do tenant do usuário
+    const allConversationsRaw = await db.query.conversations.findMany({
+      with: { agent: { with: { namespace: true } } },
+    });
+    const tenantConversations = allConversationsRaw.filter(c => 
+      c.agent?.namespace?.tenantId === tenantId
+    );
+    
+    // Obter mensagens das conversas do tenant
+    const conversationIds = tenantConversations.map(c => c.id);
+    const tenantMessages = conversationIds.length > 0
+      ? await db.query.messages.findMany({
+          where: inArray(schema.messages.conversationId, conversationIds),
+        })
+      : [];
     
     for (let i = 6; i >= 0; i--) {
       const date = new Date(today);
@@ -1028,11 +1068,11 @@ app.get('/api/chat/usage', async (_req: Request, res: Response) => {
       const endOfDay = new Date(date.setHours(23, 59, 59, 999));
       const dateStr = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
 
-      const dayConversations = allConversations.filter(c => 
+      const dayConversations = tenantConversations.filter(c => 
         c.criadoEm && new Date(c.criadoEm) >= startOfDay && new Date(c.criadoEm) <= endOfDay
       ).length;
 
-      const dayMessages = allMessages.filter(m =>
+      const dayMessages = tenantMessages.filter(m =>
         m.criadoEm && new Date(m.criadoEm) >= startOfDay && new Date(m.criadoEm) <= endOfDay
       );
       const dayTokens = dayMessages.reduce((sum, m) => sum + (m.tokensUsados || 0), 0);
