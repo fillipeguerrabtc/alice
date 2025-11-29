@@ -126,3 +126,36 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
+- **Object Storage**: Hetzner Object Storage (S3-compatible) - regiões: fsn1, nbg1, hel1.
+
+## Mudanças Recentes
+
+### 2025-11-29: Code Review Enterprise
+
+**P0 - Tipos RBAC Prometheus (CORRIGIDO)**
+- Interface `RbacPrometheusMetrics` corrigida para usar tipos nativos do prom-client
+- Tipos: `Counter<string>`, `Histogram<string>`, `Gauge<string>`
+- Cache TypeScript (tsbuildinfo) limpo para forçar recompilação
+
+**P1 - Storage S3 Hetzner (CORRIGIDO)**
+- Eliminado fallback local em ambientes não-development (Regra 6)
+- `REQUIRES_S3 = !IS_DEVELOPMENT` - staging/preview/production/test exigem S3
+- Validação de formato de endpoint S3 no boot
+- Verificação de conectividade via HEAD bucket com fail-fast:
+  - 2xx = sucesso
+  - 403 = credenciais inválidas (FATAL)
+  - 404 = bucket não existe (FATAL)
+  - 5xx = erro servidor (FATAL)
+- Região default: `fsn1` (Hetzner Falkenstein)
+
+**P2 - Validação Zod WebSocket/RAG (JÁ IMPLEMENTADO)**
+- Schemas por domínio: `packages/shared/src/schema/{chat,rag,media,shared-zod}.ts`
+- WebSocket: `wsMessageSchema.safeParse()` já em uso
+- Endpoints REST: Validação Zod em todos os handlers críticos
+
+**P3 - Health Checks e Circuit Breakers (JÁ IMPLEMENTADOS)**
+- API Gateway: CircuitBreaker por microsserviço com PRESETS
+- Chat Service: ragBreaker, createBreaker (Flux)
+- RAG Service: s3Breaker, clipBreaker
+- Training Service: Salad Cloud breakers
+- Observability: Health checks agregados com latência

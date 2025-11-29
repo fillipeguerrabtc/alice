@@ -145,12 +145,14 @@ export function getS3CircuitBreakerStatus(): S3CircuitBreakerStatus {
 // ============================================================================
 // CONFIGURAÇÃO DE STORAGE (Regra 6 replit.md - SEM SOLUÇÕES TEMPORÁRIAS)
 // 
-// PRODUÇÃO (NODE_ENV=production): OBRIGA S3 - Hetzner Object Storage
+// NÃO-DESENVOLVIMENTO: OBRIGA S3 - Hetzner Object Storage (fail-fast)
 // DESENVOLVIMENTO: Permite local OU S3 (deve ser explícito)
 // ============================================================================
 
 const NODE_ENV = process.env.NODE_ENV || 'development';
-const IS_PRODUCTION = NODE_ENV === 'production';
+// QUALQUER ambiente não-development requer S3 (production, staging, preview, test)
+const IS_DEVELOPMENT = NODE_ENV === 'development';
+const REQUIRES_S3 = !IS_DEVELOPMENT;
 
 // Configuração S3/Hetzner Object Storage
 const S3_ENDPOINT = process.env.S3_ENDPOINT;
@@ -160,31 +162,129 @@ const S3_BUCKET = process.env.S3_BUCKET || 'alice-media';
 // Hetzner Object Storage - regiões disponíveis: fsn1, nbg1, hel1
 const S3_REGION = process.env.S3_REGION || 'fsn1';
 
-// Validação OBRIGATÓRIA em produção (Regra 6 - fail-fast)
-if (IS_PRODUCTION) {
+/**
+ * Valida formato do endpoint S3 (Regra 6 - fail-fast)
+ * Aceita URLs válidas para Hetzner, MinIO, AWS S3 ou compatíveis
+ */
+function validateS3EndpointFormat(endpoint: string): void {
+  try {
+    const url = new URL(endpoint);
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      throw new Error(`Protocolo inválido: ${url.protocol}. Use http: ou https:`);
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'URL malformada';
+    throw new Error(`S3_ENDPOINT inválido (${endpoint}): ${msg}`);
+  }
+}
+
+/**
+ * Verifica conectividade S3 via HEAD bucket (Regra 6 - fail-fast no boot)
+ * CRÍTICO: Deve ser chamado durante inicialização do serviço
+ */
+async function verifyS3Connectivity(): Promise<void> {
+  if (!S3_ENDPOINT || !S3_ACCESS_KEY || !S3_SECRET_KEY) {
+    throw new Error('S3 não configurado - verificação de conectividade impossível');
+  }
+  
+  const url = `${S3_ENDPOINT}/${S3_BUCKET}`;
+  
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(url);
+    const isHttps = urlObj.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+    
+    const options: http.RequestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname,
+      method: 'HEAD',
+      headers: {
+        'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
+      },
+      timeout: 10000,
+    };
+    
+    const req = httpModule.request(options, (res) => {
+      res.on('data', () => {});
+      res.on('end', () => {
+        // REGRA 6 (fail-fast): APENAS 2xx é sucesso
+        // 403 = credenciais inválidas -> FATAL
+        // 404 = bucket não existe -> FATAL
+        // 5xx = servidor com problema -> FATAL
+        if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+          logger.info({ 
+            endpoint: S3_ENDPOINT,
+            bucket: S3_BUCKET,
+            statusCode: res.statusCode,
+          }, 'S3 conectividade verificada com sucesso');
+          resolve();
+        } else if (res.statusCode === 403) {
+          reject(new Error(`S3 credenciais inválidas (403 Forbidden). Verifique S3_ACCESS_KEY e S3_SECRET_KEY`));
+        } else if (res.statusCode === 404) {
+          reject(new Error(`S3 bucket '${S3_BUCKET}' não existe (404 Not Found). Crie o bucket antes do deploy`));
+        } else {
+          reject(new Error(`S3 retornou erro HTTP ${res.statusCode}: ${res.statusMessage}`));
+        }
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(new Error(`S3 inacessível (${S3_ENDPOINT}): ${error.message}`));
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error(`S3 timeout após 10s (${S3_ENDPOINT})`));
+    });
+    
+    req.end();
+  });
+}
+
+// Validação OBRIGATÓRIA para ambientes não-development (Regra 6 - fail-fast)
+if (REQUIRES_S3) {
   const missingVars: string[] = [];
   if (!S3_ENDPOINT) missingVars.push('S3_ENDPOINT');
   if (!S3_ACCESS_KEY) missingVars.push('S3_ACCESS_KEY');
   if (!S3_SECRET_KEY) missingVars.push('S3_SECRET_KEY');
   
   if (missingVars.length > 0) {
-    const errorMsg = `[FATAL] Produção Hetzner requer Object Storage S3. ` +
+    const errorMsg = `[FATAL] Ambiente ${NODE_ENV} requer Object Storage S3. ` +
       `Variáveis faltando: ${missingVars.join(', ')}. ` +
       `Endpoints Hetzner: https://fsn1.your-objectstorage.com (Falkenstein), ` +
       `https://nbg1.your-objectstorage.com (Nuremberg), ` +
       `https://hel1.your-objectstorage.com (Helsinki)`;
-    logger.fatal({ missingVars }, errorMsg);
+    logger.fatal({ missingVars, environment: NODE_ENV }, errorMsg);
     throw new Error(errorMsg);
   }
+  
+  // Validar formato do endpoint (fail-fast)
+  validateS3EndpointFormat(S3_ENDPOINT!);
+  
+  // Verificar conectividade S3 no boot (fail-fast async)
+  // Nota: Executado via IIFE para não bloquear import do módulo
+  (async () => {
+    try {
+      await verifyS3Connectivity();
+      logger.info({ environment: NODE_ENV }, 'S3 verificado e pronto para uso');
+    } catch (error) {
+      const errorMsg = `[FATAL] S3 inacessível em ambiente ${NODE_ENV}: ${error instanceof Error ? error.message : 'Erro desconhecido'}`;
+      logger.fatal({ error, environment: NODE_ENV }, errorMsg);
+      // Em ambientes não-dev, falha de S3 é fatal
+      process.exit(1);
+    }
+  })();
 }
 
-// STORAGE_TYPE: 's3' em produção, 'local' apenas em desenvolvimento
-const STORAGE_TYPE = IS_PRODUCTION ? 's3' : (process.env.STORAGE_TYPE || 'local');
+// STORAGE_TYPE: 's3' em ambientes não-dev, 'local' apenas em development
+const STORAGE_TYPE = REQUIRES_S3 ? 's3' : (process.env.STORAGE_TYPE || 'local');
 const STORAGE_BASE_DIR = process.env.STORAGE_BASE_DIR || './uploads';
 
 // Log de configuração
 logger.info({ 
   environment: NODE_ENV,
+  requiresS3: REQUIRES_S3,
   storageType: STORAGE_TYPE,
   s3Endpoint: S3_ENDPOINT ? S3_ENDPOINT.replace(/\/\/[^@]*@/, '//***@') : undefined,
   s3Region: S3_REGION,
@@ -501,22 +601,22 @@ let storageInstance: StorageService | null = null;
 /**
  * Retorna instância do serviço de storage apropriado.
  * 
- * PRODUÇÃO: Sempre retorna S3StorageService (Hetzner Object Storage)
+ * NÃO-DESENVOLVIMENTO: Sempre retorna S3StorageService (Hetzner Object Storage)
  * DESENVOLVIMENTO: Retorna LocalStorageService ou S3StorageService conforme config
  * 
- * @throws Error se produção e S3 não configurado (Regra 6 - fail-fast)
+ * @throws Error se ambiente não-dev e S3 não configurado (Regra 6 - fail-fast)
  */
 export function getStorageService(): LocalStorageService | S3StorageService {
   if (!storageInstance) {
     if (STORAGE_TYPE === 's3') {
-      // S3 obrigatório - validação já feita no módulo para produção
+      // S3 obrigatório - validação já feita no módulo para ambientes não-dev
       logger.info({ 
         endpoint: S3_ENDPOINT,
         bucket: S3_BUCKET,
         region: S3_REGION,
       }, 'Inicializando S3 Storage Service (Hetzner Object Storage)');
       storageInstance = new S3StorageService();
-    } else if (!IS_PRODUCTION) {
+    } else if (IS_DEVELOPMENT) {
       // Local SOMENTE permitido em desenvolvimento
       logger.info({ 
         baseDir: STORAGE_BASE_DIR,
@@ -525,7 +625,7 @@ export function getStorageService(): LocalStorageService | S3StorageService {
       storageInstance = new LocalStorageService();
     } else {
       // Nunca deve chegar aqui - validação fail-fast já disparou
-      throw new Error('[FATAL] Storage local não permitido em produção (Regra 6 replit.md)');
+      throw new Error(`[FATAL] Storage local não permitido em ambiente ${NODE_ENV} (Regra 6 replit.md)`);
     }
   }
   return storageInstance as LocalStorageService | S3StorageService;
