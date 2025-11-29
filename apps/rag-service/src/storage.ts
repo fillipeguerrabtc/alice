@@ -41,15 +41,28 @@ const s3CircuitBreakerOptions = {
   volumeThreshold: 5,
 };
 
+/**
+ * Converte Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
+ * 
+ * O BodyInit do fetch no Node.js 20 não aceita Buffer<ArrayBufferLike> diretamente
+ * porque Buffer.buffer pode ser SharedArrayBuffer, que não é compatível com BodyInit.
+ * Uint8Array é um tipo válido para BodyInit e funciona corretamente com fetch.
+ * 
+ * @param buffer - Buffer Node.js a ser convertido
+ * @returns Uint8Array compatível com fetch BodyInit
+ */
+function bufferToUint8Array(buffer: Buffer): Uint8Array {
+  return new Uint8Array(buffer);
+}
+
 interface S3Request {
   url: string;
   method: string;
   headers: Record<string, string>;
-  body?: Buffer;
+  body?: Uint8Array;
 }
 
 async function s3FetchInternal(request: S3Request): Promise<Response> {
-  // Node.js fetch aceita Buffer diretamente como body
   const response = await fetch(request.url, {
     method: request.method,
     headers: request.headers,
@@ -280,6 +293,7 @@ class S3StorageService implements StorageService {
     
     try {
       // Usar circuit breaker para resiliência (Regra 16)
+      // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
       await s3Breaker.fire({
         url,
         method: 'PUT',
@@ -288,7 +302,7 @@ class S3StorageService implements StorageService {
           'Content-Length': buffer.length.toString(),
           'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
         },
-        body: buffer,
+        body: bufferToUint8Array(buffer),
       });
       
       logger.info({ tenantId, mediaType, objectKey, size: buffer.length }, 'Arquivo salvo no S3');
