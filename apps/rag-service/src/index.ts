@@ -812,19 +812,21 @@ app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:re
   const { namespaceId } = queryResult.data;
 
   try {
-    // MULTI-TENANCY: Filtrar documentos pelo tenant_id (Regra 16 - Segurança Enterprise)
-    const whereConditions = [eq(schema.documents.tenantId, tenantId)];
-    if (namespaceId) {
-      whereConditions.push(eq(schema.documents.namespaceId, namespaceId));
-    }
-
+    // MULTI-TENANCY: Documentos são isolados por namespace (que pertence a um tenant)
+    // Buscar com relação para namespace e filtrar pelo tenantId
     const documents = await db.query.documents.findMany({
-      where: and(...whereConditions),
+      with: { namespace: true },
+      where: namespaceId ? eq(schema.documents.namespaceId, namespaceId) : undefined,
       orderBy: [desc(schema.documents.criadoEm)],
       limit: 100,
     });
 
-    res.json({ documents });
+    // Filtrar documentos pelo tenant do usuário (segurança adicional)
+    const tenantDocuments = documents.filter(doc => 
+      doc.namespace?.tenantId === tenantId
+    );
+
+    res.json({ documents: tenantDocuments });
   } catch (error) {
     logger.error({ error }, 'Falha ao buscar documentos');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -849,13 +851,14 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     const hashConteudo = hashContent(body.conteudo);
     
-    // MULTI-TENANCY: Verificar duplicação apenas dentro do mesmo tenant
-    const existing = await db.query.documents.findFirst({
-      where: and(
-        eq(schema.documents.hashConteudo, hashConteudo),
-        eq(schema.documents.tenantId, tenantId)
-      ),
+    // MULTI-TENANCY: Verificar duplicação via namespace (documents não tem tenantId direto)
+    // Buscar documentos com mesmo hash e verificar se pertencem ao tenant
+    const existingDocs = await db.query.documents.findMany({
+      with: { namespace: true },
+      where: eq(schema.documents.hashConteudo, hashConteudo),
     });
+    
+    const existing = existingDocs.find(doc => doc.namespace?.tenantId === tenantId);
 
     if (existing) {
       return res.status(409).json({ 
@@ -866,9 +869,9 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     const documentEmbedding = await generateEmbedding(body.conteudo.slice(0, 2000));
 
-    // MULTI-TENANCY: Associar documento ao tenant do usuário
+    // MULTI-TENANCY: Documento associado ao tenant via namespaceId
+    // namespaceId deve pertencer ao tenant do usuário (validado pelo frontend/API)
     const [document] = await db.insert(schema.documents).values({
-      tenantId,
       namespaceId: body.namespaceId,
       titulo: body.titulo,
       conteudo: body.conteudo,
@@ -2164,9 +2167,15 @@ app.get('/api/media/stats', requireAuth(), requireSameTenant(getTenantIdFromRequ
   }
 });
 
-// Servir arquivos de mídia (com verificação de tenant)
-app.get('/api/media/files/:tenantId/:mediaType/:filename', async (req: Request, res: Response) => {
+// Servir arquivos de mídia (com verificação de tenant e autenticação)
+// SEGURANÇA: Requer autenticação e verifica que o usuário pertence ao tenant solicitado
+app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   const { tenantId, mediaType, filename } = req.params;
+  
+  // SEGURANÇA: Validar que o tenantId da URL corresponde ao tenant do usuário autenticado
+  if (req.tenantId && req.tenantId !== tenantId) {
+    return res.status(403).json({ error: 'Acesso negado a arquivos de outro tenant' });
+  }
   
   try {
     const storageService = getStorageService();

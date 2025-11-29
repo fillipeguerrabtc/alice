@@ -952,7 +952,8 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
 
 app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as TenantRequest).tenantId;
+    // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
+    const tenantId = req.tenantId;
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const twoWeeksAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
@@ -972,12 +973,9 @@ app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest
       d.namespace?.tenantId === tenantId
     );
     
-    const allTraining = await db.query.trainingData.findMany({
-      with: { namespace: true },
-    });
-    const tenantTraining = allTraining.filter(t => 
-      t.namespace?.tenantId === tenantId
-    );
+    // NOTA: trainingData tem tenantId diretamente (não precisa de join com namespace)
+    const allTraining = await db.query.trainingData.findMany();
+    const tenantTraining = allTraining.filter(t => t.tenantId === tenantId);
     
     // Obter mensagens das conversas do tenant
     const conversationIds = tenantConversations.map(c => c.id);
@@ -1041,7 +1039,8 @@ app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest
 
 app.get('/api/chat/usage', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
-    const tenantId = (req as TenantRequest).tenantId;
+    // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
+    const tenantId = req.tenantId;
     const today = new Date();
     const usageData = [];
 
@@ -2591,12 +2590,21 @@ app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantId
   }
 });
 
+// OWASP API3: Schema para validação de query params de takeover conversations
+// Inclui 'all' como opção válida para indicar "sem filtro"
+const takeoverConversationsQuerySchema = z.object({
+  status: z.enum(['all', 'bot', 'human', 'pending_takeover']).optional(),
+  channel: z.enum(['all', 'web', 'whatsapp', 'sms', 'email']).optional(),
+  priority: z.enum(['all', 'high', 'medium', 'low']).optional(),
+});
+
 app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
-  const { status, channel, priority } = req.query as { 
-    status?: string; 
-    channel?: string; 
-    priority?: string;
-  };
+  // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
+  const queryResult = takeoverConversationsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { status, channel, priority } = queryResult.data;
   
   try {
     const allConversations = await db.query.conversations.findMany({

@@ -1133,7 +1133,7 @@ app.get('/api/auth/providers', (_req: Request, res: Response) => {
 // ROTAS: Audit Logs (Atividades Recentes)
 // ============================================================================
 
-app.get('/api/audit/recent', async (req: Request, res: Response) => {
+app.get('/api/audit/recent', requireAuth(), requirePermission('audit:logs:read'), async (req: Request, res: Response) => {
   try {
     const db = getDatabase();
     const recentAudit = await db.query.auditLogs.findMany({
