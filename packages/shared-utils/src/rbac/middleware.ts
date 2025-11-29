@@ -12,6 +12,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import type { Counter, Histogram, Gauge } from 'prom-client';
 import { createLogger, Logger } from '../logger.js';
 import { 
   Role, 
@@ -661,14 +662,17 @@ export function isInternalAuthEnabled(): boolean {
 
 /**
  * Interface para métricas RBAC do Prometheus
- * Corresponde às métricas definidas em prometheus.ts
+ * Usa tipos nativos do prom-client para compatibilidade total
+ * 
+ * prom-client 2025: Counter/Histogram/Gauge têm múltiplas sobrecargas
+ * TypeScript strict: Usar tipos nativos evita incompatibilidade
  */
 export interface RbacPrometheusMetrics {
-  cacheHitsTotal: { inc: (labels?: { tenant_id?: string }) => void };
-  cacheMissesTotal: { inc: (labels?: { tenant_id?: string }) => void };
-  cacheInvalidationsTotal: { inc: (labels?: { reason: string }) => void };
-  checkDuration: { observe: (labels: { permission: string }, value: number) => void };
-  cacheHitRate: { set: (value: number) => void };
+  cacheHitsTotal: Counter<string>;
+  cacheMissesTotal: Counter<string>;
+  cacheInvalidationsTotal: Counter<string>;
+  checkDuration: Histogram<string>;
+  cacheHitRate: Gauge<string>;
 }
 
 let prometheusMetrics: RbacPrometheusMetrics | null = null;
