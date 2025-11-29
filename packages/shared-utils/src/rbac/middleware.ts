@@ -19,7 +19,8 @@ import {
   AuthorizationOptions,
   PermissionCheckResult,
 } from './types.js';
-import { hasPermission, hasMinimumRole } from './permissions.js';
+import { hasPermission, hasMinimumRole, getRolePermissions } from './permissions.js';
+import { permissionCache, PermissionCache } from './cache.js';
 
 const logger = createLogger('rbac');
 
@@ -391,13 +392,124 @@ export function requireSameTenant(
 }
 
 /**
- * Verifica permissão programaticamente (sem middleware)
+ * Estatísticas do cache RBAC para métricas
+ */
+interface RbacCacheStats {
+  hits: number;
+  misses: number;
+  invalidations: number;
+}
+
+const cacheStats: RbacCacheStats = {
+  hits: 0,
+  misses: 0,
+  invalidations: 0,
+};
+
+/**
+ * Obtém estatísticas do cache RBAC (para Prometheus)
+ */
+export function getRbacCacheStats(): RbacCacheStats {
+  return { ...cacheStats };
+}
+
+/**
+ * Reseta estatísticas do cache (para testes)
+ */
+export function resetRbacCacheStats(): void {
+  cacheStats.hits = 0;
+  cacheStats.misses = 0;
+  cacheStats.invalidations = 0;
+}
+
+/**
+ * Obtém permissões do usuário com cache.
+ * 
+ * Implementa cache multi-tenant com TTL para evitar lookups repetidos
+ * no PERMISSION_MAP a cada requisição. O cache é invalidado quando
+ * roles ou permissões do usuário mudam.
+ * 
+ * @param userId - ID do usuário
+ * @param tenantId - ID do tenant (opcional)
+ * @param role - Role do usuário
+ * @returns Set de permissões do usuário
+ */
+function getCachedPermissions(
+  userId: string,
+  tenantId: string | undefined,
+  role: Role
+): Set<string> {
+  const cached = permissionCache.get(userId, tenantId);
+  
+  if (cached) {
+    cacheStats.hits++;
+    logger.debug({ userId, tenantId, cacheHit: true }, 'Cache hit para permissões RBAC');
+    return cached;
+  }
+  
+  cacheStats.misses++;
+  
+  const permissions = new Set(getRolePermissions(role));
+  permissionCache.set(userId, tenantId, permissions);
+  
+  logger.debug({ 
+    userId, 
+    tenantId, 
+    role, 
+    permissionCount: permissions.size,
+    cacheHit: false,
+  }, 'Cache miss - permissões calculadas e armazenadas');
+  
+  return permissions;
+}
+
+/**
+ * Verifica permissão programaticamente com cache (sem middleware)
+ * 
+ * Usa permissionCache para evitar lookups repetidos no PERMISSION_MAP.
+ * Cache é multi-tenant e respeita TTL configurado.
+ * 
+ * @param auth - Contexto de autenticação
+ * @param permission - Código da permissão
+ * @returns Resultado da verificação
+ * 
+ * @example
+ * ```typescript
+ * import { checkPermission } from '@alice/shared-utils/rbac';
+ * 
+ * const result = checkPermission(
+ *   { userId: 'user-123', tenantId: 'tenant-456', role: 'operator' },
+ *   'chat:takeover:write'
+ * );
+ * 
+ * if (!result.allowed) {
+ *   throw new Error(result.reason);
+ * }
+ * ```
+ */
+export function checkPermission(
+  auth: AuthContext,
+  permission: string
+): PermissionCheckResult {
+  const permissions = getCachedPermissions(auth.userId, auth.tenantId, auth.role);
+  const allowed = permissions.has(permission);
+
+  return {
+    allowed,
+    permission,
+    userRole: auth.role,
+    reason: allowed ? undefined : `Role ${auth.role} não tem permissão ${permission}`,
+  };
+}
+
+/**
+ * Verifica permissão sem cache (para casos especiais)
  * 
  * @param auth - Contexto de autenticação
  * @param permission - Código da permissão
  * @returns Resultado da verificação
  */
-export function checkPermission(
+export function checkPermissionDirect(
   auth: AuthContext,
   permission: string
 ): PermissionCheckResult {
@@ -409,6 +521,51 @@ export function checkPermission(
     userRole: auth.role,
     reason: allowed ? undefined : `Role ${auth.role} não tem permissão ${permission}`,
   };
+}
+
+/**
+ * Invalida cache de permissões de um usuário.
+ * 
+ * Deve ser chamado quando:
+ * - Role do usuário muda
+ * - Permissões customizadas são adicionadas/removidas
+ * - Usuário é removido do tenant
+ * 
+ * @param userId - ID do usuário
+ * @param tenantId - ID do tenant (opcional)
+ */
+export function invalidateUserPermissions(userId: string, tenantId?: string): void {
+  permissionCache.invalidate(userId, tenantId);
+  cacheStats.invalidations++;
+  logger.info({ userId, tenantId }, 'Cache de permissões do usuário invalidado');
+}
+
+/**
+ * Invalida cache de permissões de todo um tenant.
+ * 
+ * Deve ser chamado quando:
+ * - Configuração de roles do tenant muda
+ * - Políticas de permissão são atualizadas
+ * 
+ * @param tenantId - ID do tenant
+ */
+export function invalidateTenantPermissions(tenantId: string): void {
+  permissionCache.invalidateTenant(tenantId);
+  cacheStats.invalidations++;
+  logger.info({ tenantId }, 'Cache de permissões do tenant invalidado');
+}
+
+/**
+ * Limpa todo o cache de permissões.
+ * 
+ * Deve ser chamado quando:
+ * - PERMISSION_MAP é atualizado
+ * - Sistema reinicia
+ */
+export function clearPermissionCache(): void {
+  permissionCache.clear();
+  cacheStats.invalidations++;
+  logger.info('Cache de permissões limpo completamente');
 }
 
 /**

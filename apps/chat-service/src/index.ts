@@ -32,6 +32,7 @@ import {
   extractAuthContext,
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
+  checkPermission,
   initFeatureFlags,
   featureFlagsMiddleware,
   FEATURE_FLAGS,
