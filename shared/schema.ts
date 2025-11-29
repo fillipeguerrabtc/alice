@@ -255,6 +255,37 @@ export type OAuthToken = typeof oauthTokens.$inferSelect;
 export type InsertOAuthToken = typeof oauthTokens.$inferInsert;
 
 // ============================================================================
+// OIDC PAYLOADS (node-oidc-provider v9.5.2 - Persistência PostgreSQL)
+// Armazena tokens, codes, grants, sessions para OIDC Provider
+// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// ============================================================================
+
+export const oidcPayloads = pgTable(
+  "oidc_payloads",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    type: varchar("type", { length: 50 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    grantId: varchar("grant_id", { length: 255 }),
+    userCode: varchar("user_code", { length: 255 }),
+    uid: varchar("uid", { length: 255 }),
+    expiresAt: timestamp("expires_at"),
+    consumedAt: timestamp("consumed_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOidcPayloadsType: index("idx_oidc_payloads_type").on(table.type),
+    idxOidcPayloadsGrantId: index("idx_oidc_payloads_grant_id").on(table.grantId),
+    idxOidcPayloadsUserCode: index("idx_oidc_payloads_user_code").on(table.userCode),
+    idxOidcPayloadsUid: index("idx_oidc_payloads_uid").on(table.uid),
+    idxOidcPayloadsExpires: index("idx_oidc_payloads_expires").on(table.expiresAt),
+  })
+);
+
+export type OidcPayload = typeof oidcPayloads.$inferSelect;
+export type InsertOidcPayload = typeof oidcPayloads.$inferInsert;
+
+// ============================================================================
 // MÓDULOS DO SISTEMA (RBAC Granular por Funcionalidade)
 // Controle de acesso a funcionalidades específicas independente da role
 // ============================================================================

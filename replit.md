@@ -66,6 +66,7 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 ### Technical Implementations
 
 - **Authentication**: OAuth 2.0, SAML 2.0, bcrypt local auth, 6-level RBAC, HMAC-SHA256 for service-to-service.
+- **OIDC Provider**: node-oidc-provider v9.5.2 (OpenID Certified) com Alice como IdP único para Grafana e ERPNext. PKCE obrigatório (S256), RS256 JWT signing, PostgreSQL adapter (Regra 6 - sem in-memory). Claims customizados: role, tenant_id, modules, auth_provider.
 - **Real-time Chat**: WebSockets for streaming LLM tokens with rate limiting.
 - **RAG Backend**: Salad Cloud for embeddings, pgvector for vector search.
 - **Image Generation**: Self-hosted FLUX.1 Schnell on Salad Cloud.

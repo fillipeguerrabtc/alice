@@ -465,6 +465,195 @@ export const rolePermissions = pgTable(
 );
 
 // ============================================================================
+// OAUTH CLIENTS (SSO - Alice como OAuth Provider para Grafana/ERPNext)
+// RFC 6749 + OIDC Best Practices 2025
+// ============================================================================
+
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: varchar("client_id", { length: 255 }).notNull().unique(),
+    clientSecret: text("client_secret").notNull(),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    descricao: text("descricao"),
+    redirectUris: text("redirect_uris").array().notNull(),
+    scopes: text("scopes").array().default(["openid", "profile", "email"]),
+    grantTypes: text("grant_types").array().default(["authorization_code", "refresh_token"]),
+    tokenEndpointAuthMethod: varchar("token_endpoint_auth_method", { length: 50 }).default("client_secret_post"),
+    accessTokenTtl: integer("access_token_ttl").default(3600),
+    refreshTokenTtl: integer("refresh_token_ttl").default(86400),
+    autoConsent: boolean("auto_consent").default(true),
+    ativo: boolean("ativo").default(true),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthClientsClientId: index("idx_oauth_clients_client_id").on(table.clientId),
+  })
+);
+
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: varchar("code", { length: 255 }).notNull().unique(),
+    clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    scopes: text("scopes").array().notNull(),
+    codeChallenge: text("code_challenge"),
+    codeChallengeMethod: varchar("code_challenge_method", { length: 10 }),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthCodesCode: index("idx_oauth_codes_code").on(table.code),
+    idxOauthCodesExpires: index("idx_oauth_codes_expires").on(table.expiresAt),
+  })
+);
+
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accessToken: text("access_token").notNull().unique(),
+    refreshToken: text("refresh_token").unique(),
+    tokenType: varchar("token_type", { length: 50 }).default("Bearer"),
+    clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    scopes: text("scopes").array().notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at").notNull(),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthTokensAccess: index("idx_oauth_tokens_access").on(table.accessToken),
+    idxOauthTokensRefresh: index("idx_oauth_tokens_refresh").on(table.refreshToken),
+    idxOauthTokensUser: index("idx_oauth_tokens_user").on(table.userId),
+    idxOauthTokensExpires: index("idx_oauth_tokens_expires").on(table.accessTokenExpiresAt),
+  })
+);
+
+// ============================================================================
+// OIDC PAYLOADS (node-oidc-provider v9.5.2 - Persistência PostgreSQL)
+// Armazena tokens, codes, grants, sessions para OIDC Provider
+// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// ============================================================================
+
+export const oidcPayloads = pgTable(
+  "oidc_payloads",
+  {
+    id: varchar("id", { length: 255 }).primaryKey(),
+    type: varchar("type", { length: 50 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    grantId: varchar("grant_id", { length: 255 }),
+    userCode: varchar("user_code", { length: 255 }),
+    uid: varchar("uid", { length: 255 }),
+    expiresAt: timestamp("expires_at"),
+    consumedAt: timestamp("consumed_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOidcPayloadsType: index("idx_oidc_payloads_type").on(table.type),
+    idxOidcPayloadsGrantId: index("idx_oidc_payloads_grant_id").on(table.grantId),
+    idxOidcPayloadsUserCode: index("idx_oidc_payloads_user_code").on(table.userCode),
+    idxOidcPayloadsUid: index("idx_oidc_payloads_uid").on(table.uid),
+    idxOidcPayloadsExpires: index("idx_oidc_payloads_expires").on(table.expiresAt),
+  })
+);
+
+// ============================================================================
+// OIDC JWKS (Persistência de Chaves RS256 - Regra 6 replit.md)
+// Armazena chaves de assinatura JWT para sobreviver reinicializações
+// ============================================================================
+
+export const oidcJwks = pgTable(
+  "oidc_jwks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kid: varchar("kid", { length: 64 }).notNull().unique(),
+    alg: varchar("alg", { length: 16 }).notNull().default("RS256"),
+    use: varchar("use", { length: 8 }).notNull().default("sig"),
+    privateKey: jsonb("private_key").notNull(),
+    publicKey: jsonb("public_key").notNull(),
+    ativo: boolean("ativo").default(true),
+    rotacionadoEm: timestamp("rotacionado_em"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOidcJwksKid: index("idx_oidc_jwks_kid").on(table.kid),
+    idxOidcJwksAtivo: index("idx_oidc_jwks_ativo").on(table.ativo),
+  })
+);
+
+// ============================================================================
+// MÓDULOS DO SISTEMA (RBAC Granular por Funcionalidade)
+// Controle de acesso a funcionalidades específicas independente da role
+// ============================================================================
+
+export const systemModules = pgTable(
+  "system_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codigo: varchar("codigo", { length: 100 }).notNull().unique(),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    descricao: text("descricao"),
+    icone: varchar("icone", { length: 50 }),
+    categoria: varchar("categoria", { length: 100 }).notNull(),
+    urlExterna: text("url_externa"),
+    ordem: integer("ordem").default(0),
+    ativo: boolean("ativo").default(true),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxModulesCodigo: index("idx_modules_codigo").on(table.codigo),
+    idxModulesCategoria: index("idx_modules_categoria").on(table.categoria),
+  })
+);
+
+export const roleModules = pgTable(
+  "role_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    role: userRoleEnum("role").notNull(),
+    moduleId: uuid("module_id").references(() => systemModules.id, { onDelete: "cascade" }).notNull(),
+    acessoLeitura: boolean("acesso_leitura").default(true),
+    acessoEscrita: boolean("acesso_escrita").default(false),
+    acessoAdmin: boolean("acesso_admin").default(false),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxRoleModulesRole: index("idx_role_modules_role").on(table.role),
+    idxRoleModulesModule: index("idx_role_modules_module").on(table.moduleId),
+    uniqueRoleModule: index("unique_role_module").on(table.role, table.moduleId),
+  })
+);
+
+export const userModules = pgTable(
+  "user_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    moduleId: uuid("module_id").references(() => systemModules.id, { onDelete: "cascade" }).notNull(),
+    permitido: boolean("permitido").notNull(),
+    acessoLeitura: boolean("acesso_leitura").default(true),
+    acessoEscrita: boolean("acesso_escrita").default(false),
+    acessoAdmin: boolean("acesso_admin").default(false),
+    criadoPor: varchar("criado_por").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxUserModulesUser: index("idx_user_modules_user").on(table.userId),
+    idxUserModulesModule: index("idx_user_modules_module").on(table.moduleId),
+    uniqueUserModule: index("unique_user_module").on(table.userId, table.moduleId),
+  })
+);
+
+// ============================================================================
 // NAMESPACES (Contextos de Negócio Verticalizados)
 // ============================================================================
 
@@ -1489,6 +1678,20 @@ export type UpsertUser = typeof users.$inferInsert;
 
 export type Permission = typeof permissions.$inferSelect;
 export type RolePermission = typeof rolePermissions.$inferSelect;
+
+export type OAuthClient = typeof oauthClients.$inferSelect;
+export type InsertOAuthClient = typeof oauthClients.$inferInsert;
+export type OAuthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
+export type OAuthToken = typeof oauthTokens.$inferSelect;
+export type OidcPayload = typeof oidcPayloads.$inferSelect;
+export type InsertOidcPayload = typeof oidcPayloads.$inferInsert;
+export type OidcJwk = typeof oidcJwks.$inferSelect;
+export type InsertOidcJwk = typeof oidcJwks.$inferInsert;
+export type SystemModule = typeof systemModules.$inferSelect;
+export type InsertSystemModule = typeof systemModules.$inferInsert;
+export type RoleModule = typeof roleModules.$inferSelect;
+export type UserModule = typeof userModules.$inferSelect;
+export type InsertUserModule = typeof userModules.$inferInsert;
 
 export type Namespace = typeof namespaces.$inferSelect;
 export type InsertNamespace = z.infer<typeof insertNamespaceSchema>;
