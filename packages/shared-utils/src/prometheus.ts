@@ -654,10 +654,8 @@ export function circuitBreakerStateToNumber(state: CircuitBreakerState): number 
 export function instrumentCircuitBreaker(
   metrics: AliceMetrics,
   circuitName: string,
-  opossum: {
-    on: (event: string, handler: () => void) => void;
-    status: { stats: { failures: number; successes: number; timeouts: number; rejects: number } };
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  opossum: any
 ): void {
   const { circuitBreaker } = metrics;
   
