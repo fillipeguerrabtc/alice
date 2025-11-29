@@ -46,7 +46,8 @@ services:
       start_period: 30s
 
   # ============================================================================
-  # GRAFANA - Visualização e dashboards
+  # GRAFANA - Portal Unificado de Observabilidade (Single Pane of Glass)
+  # URL única: https://observabilidade.yesyoudeserve.duckdns.org
   # ============================================================================
   grafana:
     image: grafana/grafana-oss:11.3.0
@@ -58,8 +59,14 @@ services:
       - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-alice2025}
       - GF_USERS_ALLOW_SIGN_UP=false
-      - GF_SERVER_ROOT_URL=https://observability.yesyoudeserve.duckdns.org
-      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource
+      - GF_SERVER_ROOT_URL=https://observabilidade.yesyoudeserve.duckdns.org
+      - GF_SERVER_SERVE_FROM_SUB_PATH=false
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/var/lib/grafana/dashboards/00-home.json
+      - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel,yesoreyeram-infinity-datasource
+      - GF_PANELS_DISABLE_SANITIZE_HTML=true
+      - GF_SECURITY_ALLOW_EMBEDDING=true
+      - GF_AUTH_ANONYMOUS_ENABLED=false
+      - GF_FEATURE_TOGGLES_ENABLE=tempoSearch,traceQLStreaming,correlations
     volumes:
       - ./config/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./config/grafana/dashboards:/var/lib/grafana/dashboards:ro
@@ -75,6 +82,46 @@ services:
       timeout: 10s
       retries: 3
       start_period: 60s
+
+  # ============================================================================
+  # ALERTMANAGER - Notificações de alertas
+  # ============================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: alice-alertmanager
+    restart: unless-stopped
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
+      - '--cluster.listen-address='
+    environment:
+      - SMTP_HOST=${SMTP_HOST:-smtp.resend.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_FROM=${SMTP_FROM:-alertas@alice.yesyoudeserve.duckdns.org}
+      - SMTP_USERNAME=${SMTP_USERNAME:-resend}
+      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      - ALERT_EMAIL=${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
+      - CRITICAL_EMAIL=${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
+      - ONCALL_EMAIL=${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
+      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
+      - SLACK_WEBHOOK_TOKEN=${SLACK_WEBHOOK_TOKEN}
+    networks:
+      - observability
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
 
   # ============================================================================
   # JAEGER - Distributed tracing
@@ -236,3 +283,5 @@ volumes:
     name: alice-jaeger-data
   langfuse_db_data:
     name: alice-langfuse-db-data
+  alertmanager_data:
+    name: alice-alertmanager-data

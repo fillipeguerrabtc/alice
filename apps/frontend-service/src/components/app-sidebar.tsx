@@ -12,6 +12,10 @@ import {
   ExternalLink,
   Headphones,
   Sparkles,
+  Activity,
+  Building2,
+  FolderKanban,
+  Shield,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -47,6 +51,25 @@ const operationsItems = [
 
 const financeItems = [
   { title: 'Wise Pagamentos', url: '/wise', icon: Wallet },
+];
+
+const adminExternalLinks = [
+  { 
+    title: 'Observabilidade', 
+    url: 'https://observabilidade.yesyoudeserve.duckdns.org', 
+    icon: Activity,
+    description: 'Portal de Monitoramento Enterprise'
+  },
+  { 
+    title: 'ERPNext CRM', 
+    url: 'https://erp.yesyoudeserve.duckdns.org', 
+    icon: Building2,
+    description: 'Gestão de Clientes e Vendas'
+  },
+];
+
+const adminItems = [
+  { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
 ];
 
 export function AppSidebar() {
@@ -135,19 +158,49 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
-              <SidebarMenuItem>
-                <SidebarMenuButton asChild>
-                  <a
-                    href="https://erp.yesyoudeserve.duckdns.org"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    data-testid="link-erpnext"
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        <Separator className="my-2" />
+
+        <SidebarGroup>
+          <SidebarGroupLabel className="flex items-center gap-1">
+            <Shield className="h-3 w-3" />
+            Administração
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {adminItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === item.url || location.startsWith(item.url)}
                   >
-                    <ExternalLink className="h-4 w-4" />
-                    <span>ERPNext</span>
-                  </a>
-                </SidebarMenuButton>
-              </SidebarMenuItem>
+                    <Link href={item.url} data-testid={`link-${item.title.toLowerCase().replace(' ', '-')}`}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+              {adminExternalLinks.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild>
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="group"
+                      data-testid={`link-external-${item.title.toLowerCase().replace(' ', '-')}`}
+                    >
+                      <item.icon className="h-4 w-4" />
+                      <span className="flex-1">{item.title}</span>
+                      <ExternalLink className="h-3 w-3 opacity-50 group-hover:opacity-100 transition-opacity" />
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>

@@ -175,6 +175,86 @@ export const rolePermissions = pgTable(
 );
 
 // ============================================================================
+// OAUTH CLIENTS (SSO - Alice como OAuth Provider para Grafana/ERPNext)
+// RFC 6749 + OIDC Best Practices 2025
+// ============================================================================
+
+export const oauthClients = pgTable(
+  "oauth_clients",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: varchar("client_id", { length: 255 }).notNull().unique(),
+    clientSecret: text("client_secret").notNull(),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    descricao: text("descricao"),
+    redirectUris: text("redirect_uris").array().notNull(),
+    scopes: text("scopes").array().default(["openid", "profile", "email"]),
+    grantTypes: text("grant_types").array().default(["authorization_code", "refresh_token"]),
+    tokenEndpointAuthMethod: varchar("token_endpoint_auth_method", { length: 50 }).default("client_secret_post"),
+    accessTokenTtl: integer("access_token_ttl").default(3600),
+    refreshTokenTtl: integer("refresh_token_ttl").default(86400),
+    autoConsent: boolean("auto_consent").default(true),
+    ativo: boolean("ativo").default(true),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthClientsClientId: index("idx_oauth_clients_client_id").on(table.clientId),
+  })
+);
+
+export const oauthAuthorizationCodes = pgTable(
+  "oauth_authorization_codes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    code: varchar("code", { length: 255 }).notNull().unique(),
+    clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    redirectUri: text("redirect_uri").notNull(),
+    scopes: text("scopes").array().notNull(),
+    codeChallenge: text("code_challenge"),
+    codeChallengeMethod: varchar("code_challenge_method", { length: 10 }),
+    expiresAt: timestamp("expires_at").notNull(),
+    usedAt: timestamp("used_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthCodesCode: index("idx_oauth_codes_code").on(table.code),
+    idxOauthCodesExpires: index("idx_oauth_codes_expires").on(table.expiresAt),
+  })
+);
+
+export const oauthTokens = pgTable(
+  "oauth_tokens",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    accessToken: text("access_token").notNull().unique(),
+    refreshToken: text("refresh_token").unique(),
+    tokenType: varchar("token_type", { length: 50 }).default("Bearer"),
+    clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    scopes: text("scopes").array().notNull(),
+    accessTokenExpiresAt: timestamp("access_token_expires_at").notNull(),
+    refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+    revokedAt: timestamp("revoked_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOauthTokensAccess: index("idx_oauth_tokens_access").on(table.accessToken),
+    idxOauthTokensRefresh: index("idx_oauth_tokens_refresh").on(table.refreshToken),
+    idxOauthTokensUser: index("idx_oauth_tokens_user").on(table.userId),
+    idxOauthTokensExpires: index("idx_oauth_tokens_expires").on(table.accessTokenExpiresAt),
+  })
+);
+
+export type OAuthClient = typeof oauthClients.$inferSelect;
+export type InsertOAuthClient = typeof oauthClients.$inferInsert;
+export type OAuthAuthorizationCode = typeof oauthAuthorizationCodes.$inferSelect;
+export type InsertOAuthAuthorizationCode = typeof oauthAuthorizationCodes.$inferInsert;
+export type OAuthToken = typeof oauthTokens.$inferSelect;
+export type InsertOAuthToken = typeof oauthTokens.$inferInsert;
+
+// ============================================================================
 // NAMESPACES (Contextos de Negócio Verticalizados)
 // ============================================================================
 
