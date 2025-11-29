@@ -576,5 +576,9 @@
   "externalLinks": {
     "erpnext": "Go to ERPNext",
     "openInNewTab": "Opens in new tab"
+  },
+  "modules": {
+    "title": "Module Management",
+    "description": "Manage system modules and their permissions"
   }
 }

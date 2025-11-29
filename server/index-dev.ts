@@ -90,6 +90,20 @@ async function startDevServer() {
   });
 
   // Rotas de autenticação para desenvolvimento
+  const devUser = {
+    id: 'dev-user-001',
+    email: 'dev@alice.local',
+    firstName: 'Desenvolvedor',
+    lastName: 'Local',
+    role: 'admin',
+    tenantId: 'dev-tenant',
+    permissions: ['*'],
+  };
+
+  app.get('/api/auth/user', (_req: Request, res: Response) => {
+    res.json({ user: devUser, csrfToken: 'dev-csrf-token' });
+  });
+
   app.get('/api/auth/me', (_req: Request, res: Response) => {
     res.json({
       id: 'dev-user-001',
@@ -116,6 +130,88 @@ async function startDevServer() {
 
   app.post('/api/auth/logout', (_req: Request, res: Response) => {
     res.json({ success: true });
+  });
+
+  // Rotas de módulos para preview (Regra 6: dados de preview APENAS em index-dev.ts)
+  const previewModules = [
+    { id: 'preview-mod-001', codigo: 'chat', nome: 'Chat IA', descricao: 'Conversas com assistente de IA', icone: 'MessageSquare', categoria: 'core', urlExterna: null, ordem: 1, ativo: true, criadoEm: new Date().toISOString() },
+    { id: 'preview-mod-002', codigo: 'documents', nome: 'Documentos', descricao: 'Gestão de documentos e RAG', icone: 'FileText', categoria: 'core', urlExterna: null, ordem: 2, ativo: true, criadoEm: new Date().toISOString() },
+    { id: 'preview-mod-003', codigo: 'training', nome: 'Treinamento', descricao: 'Treinamento de modelos', icone: 'Brain', categoria: 'ai', urlExterna: null, ordem: 3, ativo: true, criadoEm: new Date().toISOString() },
+    { id: 'preview-mod-004', codigo: 'observability', nome: 'Observabilidade', descricao: 'Monitoramento e métricas', icone: 'Activity', categoria: 'observability', urlExterna: 'https://grafana.example.com', ordem: 4, ativo: true, criadoEm: new Date().toISOString() },
+    { id: 'preview-mod-005', codigo: 'payments', nome: 'Pagamentos', descricao: 'Gestão de pagamentos Stripe/Wise', icone: 'CreditCard', categoria: 'finance', urlExterna: null, ordem: 5, ativo: true, criadoEm: new Date().toISOString() },
+  ];
+
+  app.get('/api/auth/modules', (_req: Request, res: Response) => {
+    res.json({ modules: previewModules });
+  });
+
+  app.get('/api/auth/modules/:id', (req: Request, res: Response) => {
+    const module = previewModules.find(m => m.id === req.params.id);
+    if (module) {
+      res.json({ module });
+    } else {
+      res.status(404).json({ error: 'Módulo não encontrado' });
+    }
+  });
+
+  app.post('/api/auth/modules', (req: Request, res: Response) => {
+    const newModule = {
+      id: `preview-mod-${Date.now()}`,
+      ...req.body,
+      criadoEm: new Date().toISOString(),
+    };
+    previewModules.push(newModule);
+    res.status(201).json({ module: newModule });
+  });
+
+  app.patch('/api/auth/modules/:id', (req: Request, res: Response) => {
+    const index = previewModules.findIndex(m => m.id === req.params.id);
+    if (index !== -1) {
+      previewModules[index] = { ...previewModules[index], ...req.body };
+      res.json({ module: previewModules[index] });
+    } else {
+      res.status(404).json({ error: 'Módulo não encontrado' });
+    }
+  });
+
+  app.delete('/api/auth/modules/:id', (req: Request, res: Response) => {
+    const index = previewModules.findIndex(m => m.id === req.params.id);
+    if (index !== -1) {
+      const deleted = previewModules.splice(index, 1)[0];
+      res.json({ success: true, module: deleted });
+    } else {
+      res.status(404).json({ error: 'Módulo não encontrado' });
+    }
+  });
+
+  app.get('/api/auth/roles/:roleId/modules', (req: Request, res: Response) => {
+    res.json({ roleModules: [], roleId: req.params.roleId });
+  });
+
+  app.post('/api/auth/roles/:roleId/modules', (req: Request, res: Response) => {
+    res.status(201).json({ 
+      roleModule: { 
+        ...req.body, 
+        roleId: req.params.roleId,
+        id: `preview-rm-${Date.now()}` 
+      } 
+    });
+  });
+
+  app.delete('/api/auth/roles/:roleId/modules/:moduleId', (req: Request, res: Response) => {
+    res.json({ 
+      success: true, 
+      roleId: req.params.roleId, 
+      moduleId: req.params.moduleId 
+    });
+  });
+
+  app.get('/api/auth/users/:userId/modules', (_req: Request, res: Response) => {
+    res.json({ userModules: [] });
+  });
+
+  app.post('/api/auth/users/:userId/modules', (req: Request, res: Response) => {
+    res.status(201).json({ userModule: { ...req.body, id: `preview-um-${Date.now()}` } });
   });
 
   // Rotas do Dashboard para desenvolvimento

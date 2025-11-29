@@ -16,6 +16,7 @@ import {
   Building2,
   FolderKanban,
   Shield,
+  Boxes,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -70,6 +71,7 @@ const adminExternalLinks = [
 
 const adminItems = [
   { title: 'Namespaces', url: '/namespaces', icon: FolderKanban },
+  { title: 'Módulos', url: '/modules', icon: Boxes },
 ];
 
 export function AppSidebar() {
