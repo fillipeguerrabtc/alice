@@ -255,6 +255,77 @@ export type OAuthToken = typeof oauthTokens.$inferSelect;
 export type InsertOAuthToken = typeof oauthTokens.$inferInsert;
 
 // ============================================================================
+// MÓDULOS DO SISTEMA (RBAC Granular por Funcionalidade)
+// Controle de acesso a funcionalidades específicas independente da role
+// ============================================================================
+
+export const systemModules = pgTable(
+  "system_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    codigo: varchar("codigo", { length: 100 }).notNull().unique(),
+    nome: varchar("nome", { length: 255 }).notNull(),
+    descricao: text("descricao"),
+    icone: varchar("icone", { length: 50 }),
+    categoria: varchar("categoria", { length: 100 }).notNull(),
+    urlExterna: text("url_externa"),
+    ordem: integer("ordem").default(0),
+    ativo: boolean("ativo").default(true),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxModulesCodigo: index("idx_modules_codigo").on(table.codigo),
+    idxModulesCategoria: index("idx_modules_categoria").on(table.categoria),
+  })
+);
+
+export const roleModules = pgTable(
+  "role_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    role: userRoleEnum("role").notNull(),
+    moduleId: uuid("module_id").references(() => systemModules.id, { onDelete: "cascade" }).notNull(),
+    acessoLeitura: boolean("acesso_leitura").default(true),
+    acessoEscrita: boolean("acesso_escrita").default(false),
+    acessoAdmin: boolean("acesso_admin").default(false),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxRoleModulesRole: index("idx_role_modules_role").on(table.role),
+    idxRoleModulesModule: index("idx_role_modules_module").on(table.moduleId),
+    uniqueRoleModule: index("unique_role_module").on(table.role, table.moduleId),
+  })
+);
+
+export const userModules = pgTable(
+  "user_modules",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    moduleId: uuid("module_id").references(() => systemModules.id, { onDelete: "cascade" }).notNull(),
+    permitido: boolean("permitido").notNull(),
+    acessoLeitura: boolean("acesso_leitura").default(true),
+    acessoEscrita: boolean("acesso_escrita").default(false),
+    acessoAdmin: boolean("acesso_admin").default(false),
+    criadoPor: varchar("criado_por").references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxUserModulesUser: index("idx_user_modules_user").on(table.userId),
+    idxUserModulesModule: index("idx_user_modules_module").on(table.moduleId),
+    uniqueUserModule: index("unique_user_module").on(table.userId, table.moduleId),
+  })
+);
+
+export type SystemModule = typeof systemModules.$inferSelect;
+export type InsertSystemModule = typeof systemModules.$inferInsert;
+export type RoleModule = typeof roleModules.$inferSelect;
+export type InsertRoleModule = typeof roleModules.$inferInsert;
+export type UserModule = typeof userModules.$inferSelect;
+export type InsertUserModule = typeof userModules.$inferInsert;
+
+// ============================================================================
 // NAMESPACES (Contextos de Negócio Verticalizados)
 // ============================================================================
 
