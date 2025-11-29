@@ -39,11 +39,14 @@ jobs:
             packages:
               - 'packages/**'
             services:
+              - 'apps/api-gateway/**'
               - 'apps/auth-service/**'
               - 'apps/chat-service/**'
+              - 'apps/clip-inference-service/**'
+              - 'apps/integrations-service/**'
+              - 'apps/observability-service/**'
               - 'apps/rag-service/**'
               - 'apps/training-service/**'
-              - 'apps/integrations-service/**'
             frontend:
               - 'apps/frontend-service/**'
               - 'client/**'
@@ -109,11 +112,14 @@ jobs:
     strategy:
       matrix:
         service:
+          - api-gateway
           - auth-service
           - chat-service
+          - clip-inference-service
+          - integrations-service
+          - observability-service
           - rag-service
           - training-service
-          - integrations-service
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
