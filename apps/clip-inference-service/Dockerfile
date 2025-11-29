@@ -19,13 +19,16 @@ ENV MODEL_NAME="ViT-L/14"
 ENV PORT=8080
 ENV HOME=/app
 
-# Instalar dependências do sistema
+# Instalar dependências do sistema (inclui git para pip instalar pacotes git+https)
+# Docker 2025 Best Practices: Separar instalação de deps do sistema em layer dedicada
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-dev \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    git \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
 # SEGURANÇA: Criar usuário non-root (Docker 2025 + OWASP Container Security)
 RUN groupadd --gid 1001 clipservice \

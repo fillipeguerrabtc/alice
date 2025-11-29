@@ -259,6 +259,49 @@ jobs:
           cache-to: type=gha,mode=max,scope=frontend
           platforms: linux/amd64
 
+      # ===========================================================================
+      # SERVIÇOS ADICIONAIS - Enterprise Stack Completo (9 microsserviços)
+      # ===========================================================================
+      
+      - name: Build e Push - Observability Service
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
+        with:
+          context: .
+          file: apps/observability-service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-observability:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-observability:latest
+          cache-from: type=gha,scope=observability
+          cache-to: type=gha,mode=max,scope=observability
+          platforms: linux/amd64
+
+      - name: Build e Push - CLIP Inference Service (GPU/Salad Cloud)
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
+        with:
+          context: .
+          file: apps/clip-inference-service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-clip-inference:latest
+          cache-from: type=gha,scope=clip-inference
+          cache-to: type=gha,mode=max,scope=clip-inference
+          platforms: linux/amd64
+
+      - name: Build e Push - API Gateway (Traefik Config)
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
+        with:
+          context: .
+          file: apps/api-gateway/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:latest
+          cache-from: type=gha,scope=api-gateway
+          cache-to: type=gha,mode=max,scope=api-gateway
+          platforms: linux/amd64
+
   # ===========================================================================
   # Job 4: Aprovação Manual (ambiente production)
   # ===========================================================================
