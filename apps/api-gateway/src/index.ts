@@ -25,6 +25,8 @@ import {
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import { z } from 'zod';
 
@@ -155,23 +157,11 @@ services.forEach(service => {
     }
   };
 
-  const breaker = new CircuitBreaker(healthCheck, {
-    timeout: 10000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  });
-
-  breaker.on('open', () => {
-    logger.warn({ service: service.name }, 'Circuit breaker ABERTO - serviço indisponível');
-  });
-
-  breaker.on('halfOpen', () => {
-    logger.info({ service: service.name }, 'Circuit breaker HALF-OPEN - testando serviço');
-  });
-
-  breaker.on('close', () => {
-    logger.info({ service: service.name }, 'Circuit breaker FECHADO - serviço restaurado');
+  // Usa CIRCUIT_BREAKER_PRESETS.healthCheck centralizado (Regra 2 - Não Duplicar)
+  const breaker = createCircuitBreaker(healthCheck, {
+    name: `health-${service.name}`,
+    ...CIRCUIT_BREAKER_PRESETS.healthCheck,
+    timeout: 10000, // Override para health checks de serviços
   });
 
   circuitBreakers.set(service.name, breaker);

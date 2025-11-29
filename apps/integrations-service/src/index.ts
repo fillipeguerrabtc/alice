@@ -28,6 +28,8 @@ import {
   isFeatureEnabled,
   createAlicePrometheus,
   instrumentCircuitBreaker,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
@@ -79,18 +81,12 @@ if (config.STRIPE_SECRET_KEY) {
 }
 
 // Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
-// volumeThreshold: mínimo de requisições antes de calcular threshold
-const circuitBreakerOptions = {
-  timeout: 10000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 5, // Evita falsos positivos com poucas requisições
-};
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
 // RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
 const EXTERNAL_API_TIMEOUT_MS = 8000;
 
-const erpNextBreaker = new CircuitBreaker(async (options: {
+const erpNextBreaker = createCircuitBreaker(async (options: {
   url: string;
   method: string;
   headers: Record<string, string>;
@@ -114,11 +110,10 @@ const erpNextBreaker = new CircuitBreaker(async (options: {
   } finally {
     clearTimeout(timeoutId);
   }
-}, circuitBreakerOptions);
-
-erpNextBreaker.on('open', () => logger.warn('Circuit breaker ERPNext: ABERTO'));
-erpNextBreaker.on('halfOpen', () => logger.info('Circuit breaker ERPNext: HALF-OPEN'));
-erpNextBreaker.on('close', () => logger.info('Circuit breaker ERPNext: FECHADO'));
+}, {
+  name: 'erpnext-main',
+  ...CIRCUIT_BREAKER_PRESETS.erpnextAPI,
+});
 
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos

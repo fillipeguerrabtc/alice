@@ -35,6 +35,8 @@ import {
   isFeatureEnabled,
   createAlicePrometheus,
   instrumentCircuitBreaker,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
@@ -497,14 +499,8 @@ const mediaUpload = multer({
 
 // ============================================================================
 // CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-const circuitBreakerOptions = {
-  timeout: 30000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 5,
-};
 
 interface EmbeddingResponse {
   data: Array<{ embedding: number[] }>;
@@ -538,16 +534,9 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
   return resultEmbedding;
 }
 
-const embeddingsBreaker = new CircuitBreaker(generateEmbeddingInternal, circuitBreakerOptions);
-
-embeddingsBreaker.on('open', () => {
-  logger.warn('Circuit breaker Salad Cloud Embeddings: ABERTO - API temporariamente indisponível');
-});
-embeddingsBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker Salad Cloud Embeddings: HALF-OPEN - Testando reconexão');
-});
-embeddingsBreaker.on('close', () => {
-  logger.info('Circuit breaker Salad Cloud Embeddings: FECHADO - API funcionando normalmente');
+const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
+  name: 'salad-embeddings',
+  ...CIRCUIT_BREAKER_PRESETS.saladEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
@@ -625,23 +614,9 @@ async function webSearchInternal(query: string, count: number = 5): Promise<WebS
   }));
 }
 
-const webSearchBreakerOptions = {
-  timeout: 10000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
-
-const webSearchBreaker = new CircuitBreaker(webSearchInternal, webSearchBreakerOptions);
-
-webSearchBreaker.on('open', () => {
-  logger.warn('Circuit breaker Brave Search: ABERTO - API temporariamente indisponível');
-});
-webSearchBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker Brave Search: HALF-OPEN - Testando reconexão');
-});
-webSearchBreaker.on('close', () => {
-  logger.info('Circuit breaker Brave Search: FECHADO - API funcionando normalmente');
+const webSearchBreaker = createCircuitBreaker(webSearchInternal, {
+  name: 'brave-web-search',
+  ...CIRCUIT_BREAKER_PRESETS.webSearch,
 });
 
 async function webSearch(query: string, count?: number): Promise<WebSearchResult[]> {

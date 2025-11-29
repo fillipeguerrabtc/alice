@@ -30,6 +30,8 @@ import {
   isFeatureEnabled,
   createAlicePrometheus,
   instrumentCircuitBreaker,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
@@ -115,12 +117,7 @@ app.set('trust proxy', 1);
 // CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
 // ============================================================================
 
-const circuitBreakerOptions = {
-  timeout: 30000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 5,
-};
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
 interface EmbeddingResponse {
   data: Array<{ embedding: number[] }>;
@@ -166,16 +163,9 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
   }
 }
 
-const embeddingsBreaker = new CircuitBreaker(generateEmbeddingInternal, circuitBreakerOptions);
-
-embeddingsBreaker.on('open', () => {
-  logger.warn('Circuit breaker Salad Cloud Embeddings: ABERTO - API temporariamente indisponível');
-});
-embeddingsBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker Salad Cloud Embeddings: HALF-OPEN - Testando reconexão');
-});
-embeddingsBreaker.on('close', () => {
-  logger.info('Circuit breaker Salad Cloud Embeddings: FECHADO - API funcionando normalmente');
+const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
+  name: 'training-embeddings',
+  ...CIRCUIT_BREAKER_PRESETS.saladEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus

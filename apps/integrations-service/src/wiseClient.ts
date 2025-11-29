@@ -5,8 +5,8 @@
 // SEGURANÇA: WISE_SANDBOX deve ser explicitamente configurado (sem fallback NODE_ENV)
 
 import pino from 'pino';
-import CircuitBreaker from 'opossum';
 import crypto from 'crypto';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // Logger usando pino diretamente (evita dependência circular)
 const logger = pino({
@@ -18,13 +18,7 @@ const logger = pino({
 const WISE_API_URL = process.env.WISE_API_URL || 'https://api.transferwise.com';
 const WISE_SANDBOX_URL = 'https://api.sandbox.transferwise.tech';
 
-// Configuração do Circuit Breaker (padrão enterprise)
-const CIRCUIT_BREAKER_OPTIONS = {
-  timeout: 15000,                    // Timeout de 15 segundos
-  errorThresholdPercentage: 50,      // Abre após 50% de falhas
-  resetTimeout: 30000,               // Tenta resetar após 30 segundos
-  volumeThreshold: 5,                // Mínimo de 5 requisições antes de avaliar
-};
+// Usa CIRCUIT_BREAKER_PRESETS.wiseApi centralizado (Regra 2 - Não Duplicar)
 
 // Interface para configuração do cliente
 interface WiseClientConfig {
@@ -131,27 +125,9 @@ async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
 }
 
 // Circuit Breaker para requisições Wise API
-const wiseCircuitBreaker = new CircuitBreaker(executeWiseRequest, CIRCUIT_BREAKER_OPTIONS);
-
-// Eventos do Circuit Breaker para logging
-wiseCircuitBreaker.on('open', () => {
-  logger.warn('Circuit Breaker Wise ABERTO - muitas falhas detectadas');
-});
-
-wiseCircuitBreaker.on('halfOpen', () => {
-  logger.info('Circuit Breaker Wise HALF-OPEN - testando recuperação');
-});
-
-wiseCircuitBreaker.on('close', () => {
-  logger.info('Circuit Breaker Wise FECHADO - serviço recuperado');
-});
-
-wiseCircuitBreaker.on('timeout', () => {
-  logger.warn('Circuit Breaker Wise TIMEOUT - requisição excedeu tempo limite');
-});
-
-wiseCircuitBreaker.on('reject', () => {
-  logger.warn('Circuit Breaker Wise REJEITOU requisição - circuito aberto');
+const wiseCircuitBreaker = createCircuitBreaker(executeWiseRequest, {
+  name: 'wise-api',
+  ...CIRCUIT_BREAKER_PRESETS.wiseAPI,
 });
 
 // Cliente HTTP para API Wise com Circuit Breaker

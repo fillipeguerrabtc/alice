@@ -22,7 +22,7 @@ import crypto from 'crypto';
 import http from 'http';
 import https from 'https';
 import pino from 'pino';
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -34,14 +34,8 @@ const logger = pino({
 
 // ============================================================================
 // CIRCUIT BREAKER S3 (Enterprise-Grade - Regra 16 replit.md)
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-const s3CircuitBreakerOptions = {
-  timeout: 30000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 5,
-};
 
 /**
  * Interface para requisições S3
@@ -122,11 +116,10 @@ async function s3FetchInternal(request: S3Request): Promise<S3Response> {
   });
 }
 
-const s3Breaker = new CircuitBreaker(s3FetchInternal, s3CircuitBreakerOptions);
-
-s3Breaker.on('open', () => logger.warn('Circuit breaker S3: ABERTO - Storage temporariamente indisponível'));
-s3Breaker.on('halfOpen', () => logger.info('Circuit breaker S3: HALF-OPEN - Testando reconexão'));
-s3Breaker.on('close', () => logger.info('Circuit breaker S3: FECHADO - Storage operacional'));
+const s3Breaker = createCircuitBreaker(s3FetchInternal, {
+  name: 's3-storage',
+  ...CIRCUIT_BREAKER_PRESETS.s3Storage,
+});
 
 export interface S3CircuitBreakerStatus {
   state: 'closed' | 'open' | 'halfOpen';

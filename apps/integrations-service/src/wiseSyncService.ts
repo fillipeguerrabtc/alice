@@ -9,8 +9,8 @@
 
 import { eq, and, lt, desc } from 'drizzle-orm';
 import { schema, type Database } from '@alice/database';
-import CircuitBreaker from 'opossum';
 import pino from 'pino';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 // Logger configurado para produção (JSON) ou desenvolvimento (pretty)
 // Segue padrão @alice/logger - JSON em produção para observabilidade enterprise
@@ -89,12 +89,7 @@ interface SyncResult {
 // CIRCUIT BREAKERS (Regra 16 - Best Practices 2025)
 // ============================================================================
 
-const erpnextBreakerOptions = {
-  timeout: 10000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
+// Usa CIRCUIT_BREAKER_PRESETS.erpnext centralizado (Regra 2 - Não Duplicar)
 
 const wiseBreakerOptions = {
   timeout: 15000,
@@ -181,14 +176,13 @@ async function createERPNextPaymentInternal(transfer: WiseTransfer): Promise<str
   }
 }
 
-const erpnextFetchBreaker = new CircuitBreaker(fetchERPNextPaymentInternal, erpnextBreakerOptions);
-const erpnextCreateBreaker = new CircuitBreaker(createERPNextPaymentInternal, erpnextBreakerOptions);
-
-erpnextFetchBreaker.on('open', () => {
-  logger.warn('Circuit breaker ERPNext (fetch): ABERTO');
+const erpnextFetchBreaker = createCircuitBreaker(fetchERPNextPaymentInternal, {
+  name: 'erpnext-fetch-payment',
+  ...CIRCUIT_BREAKER_PRESETS.erpnextAPI,
 });
-erpnextCreateBreaker.on('open', () => {
-  logger.warn('Circuit breaker ERPNext (create): ABERTO');
+const erpnextCreateBreaker = createCircuitBreaker(createERPNextPaymentInternal, {
+  name: 'erpnext-create-payment',
+  ...CIRCUIT_BREAKER_PRESETS.erpnextAPI,
 });
 
 // ============================================================================

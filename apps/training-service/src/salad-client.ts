@@ -11,8 +11,8 @@
  * @module training-service/salad-client
  */
 
-import CircuitBreaker from 'opossum';
 import pino from 'pino';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -100,16 +100,7 @@ export interface GPUClass {
   gpuCount: number;
 }
 
-/**
- * Configuração de Circuit Breaker para Salad Cloud API
- * Timeout maior para operações de fine-tuning
- */
-const saladBreakerOptions = {
-  timeout: 60000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
+// Usa CIRCUIT_BREAKER_PRESETS.saladDeployment centralizado (Regra 2 - Não Duplicar)
 
 /**
  * Headers padrão para API Salad Cloud
@@ -241,22 +232,25 @@ async function listGPUClassesInternal(): Promise<GPUClass[]> {
   return data.items;
 }
 
-const createBreaker = new CircuitBreaker(createContainerGroupInternal, saladBreakerOptions);
-const statusBreaker = new CircuitBreaker(getContainerGroupStatusInternal, saladBreakerOptions);
-const deleteBreaker = new CircuitBreaker(deleteContainerGroupInternal, saladBreakerOptions);
-const stopBreaker = new CircuitBreaker(stopContainerGroupInternal, saladBreakerOptions);
-const listGPUBreaker = new CircuitBreaker(listGPUClassesInternal, saladBreakerOptions);
-
-[createBreaker, statusBreaker, deleteBreaker, stopBreaker, listGPUBreaker].forEach(breaker => {
-  breaker.on('open', () => {
-    logger.warn({ breaker: breaker.name }, 'Circuit breaker Salad Cloud: ABERTO');
-  });
-  breaker.on('halfOpen', () => {
-    logger.info({ breaker: breaker.name }, 'Circuit breaker Salad Cloud: HALF-OPEN');
-  });
-  breaker.on('close', () => {
-    logger.info({ breaker: breaker.name }, 'Circuit breaker Salad Cloud: FECHADO');
-  });
+const createBreaker = createCircuitBreaker(createContainerGroupInternal, {
+  name: 'salad-create-container',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
+});
+const statusBreaker = createCircuitBreaker(getContainerGroupStatusInternal, {
+  name: 'salad-get-status',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
+});
+const deleteBreaker = createCircuitBreaker(deleteContainerGroupInternal, {
+  name: 'salad-delete-container',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
+});
+const stopBreaker = createCircuitBreaker(stopContainerGroupInternal, {
+  name: 'salad-stop-container',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
+});
+const listGPUBreaker = createCircuitBreaker(listGPUClassesInternal, {
+  name: 'salad-list-gpus',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
 });
 
 /**

@@ -12,7 +12,7 @@
 
 import pino from 'pino';
 import crypto from 'crypto';
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -32,18 +32,8 @@ export const CLIP_EMBEDDING_DIM = 768;
 
 // ============================================================================
 // CIRCUIT BREAKER - CLIP API (Regra 16 - Melhores Práticas 2025)
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-// Configuração do circuit breaker para CLIP embeddings
-// Timeout: 30s (imagens podem ser grandes)
-// Reset: 30s após abrir
-// Threshold: 50% de falhas
-const clipCircuitBreakerOptions = {
-  timeout: 30000,          // 30 segundos de timeout
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,     // 30 segundos para tentar reconexão
-  volumeThreshold: 5,      // Mínimo de 5 requests antes de calcular threshold
-};
 
 // Função interna para chamar API CLIP (será protegida pelo circuit breaker)
 interface ClipApiParams {
@@ -77,22 +67,9 @@ async function callClipApiInternal(params: ClipApiParams): Promise<{ embedding: 
 }
 
 // Circuit breaker para chamadas CLIP
-const clipBreaker = new CircuitBreaker(callClipApiInternal, clipCircuitBreakerOptions);
-
-clipBreaker.on('open', () => {
-  logger.warn('Circuit breaker CLIP: ABERTO - Salad Cloud CLIP temporariamente indisponível');
-});
-clipBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker CLIP: HALF-OPEN - Testando reconexão com Salad Cloud');
-});
-clipBreaker.on('close', () => {
-  logger.info('Circuit breaker CLIP: FECHADO - Salad Cloud CLIP funcionando normalmente');
-});
-clipBreaker.on('timeout', () => {
-  logger.warn('Circuit breaker CLIP: TIMEOUT - Request excedeu 30 segundos');
-});
-clipBreaker.on('fallback', () => {
-  logger.info('Circuit breaker CLIP: Usando fallback');
+const clipBreaker = createCircuitBreaker(callClipApiInternal, {
+  name: 'clip-api',
+  ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
 });
 
 // Função para chamar API CLIP através do circuit breaker
