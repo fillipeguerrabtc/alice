@@ -165,3 +165,92 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - RAG Service: s3Breaker, clipBreaker
 - Training Service: Salad Cloud breakers
 - Observability: Health checks agregados com latência
+
+## Bootstrap de Produção
+
+### Pré-requisitos
+
+1. **Servidor Hetzner CX43** configurado com Ubuntu 24.04
+   - IP: 46.224.46.93
+   - 8 vCPU, 16GB RAM, 160GB SSD
+   - Domínio: yesyoudeserve.duckdns.org
+
+2. **Secrets GitHub configurados** (ver matriz abaixo)
+
+3. **Chave SSH** para acesso do Replit ao servidor
+
+### Scripts de Setup
+
+Os scripts estão em `infra/scripts/`:
+
+| Script | Descrição | Onde Executar |
+|--------|-----------|---------------|
+| `setup-ssh-key.sh` | Configura chave SSH para deploy | Replit (local) |
+| `setup-hetzner.sh` | Instala Docker, Nginx, PostgreSQL | Servidor Hetzner (via SSH) |
+| `setup-ssl.sh` | Configura SSL Let's Encrypt | Servidor Hetzner (via SSH) |
+
+### Passo a Passo
+
+```bash
+# 1. No Replit: Configurar chave SSH
+bash infra/scripts/setup-ssh-key.sh
+
+# 2. Testar conexão SSH
+ssh root@46.224.46.93
+
+# 3. No servidor Hetzner: Setup inicial
+curl -sL https://raw.githubusercontent.com/fillipeguerrabtc/alice/main/infra/scripts/setup-hetzner.sh | bash
+
+# 4. No servidor Hetzner: Configurar SSL
+curl -sL https://raw.githubusercontent.com/fillipeguerrabtc/alice/main/infra/scripts/setup-ssl.sh | bash
+
+# 5. No GitHub: Disparar workflow "Deploy to Production"
+# Actions → Deploy to Production → Run workflow → Branch: main
+```
+
+### Disparar Deploy
+
+1. Acesse: `https://github.com/fillipeguerrabtc/alice/actions`
+2. Clique em **"Deploy to Production"** na sidebar
+3. Clique em **"Run workflow"** (botão verde)
+4. Selecione branch `main`
+5. Clique em **"Run workflow"** novamente
+6. Aguarde aprovação manual no stage de deploy
+
+## Matriz de Secrets GitHub
+
+**Status**: ✅ TODOS CONFIGURADOS (verificado em 2025-11-28)
+
+| Secret | Descrição | Categoria |
+|--------|-----------|-----------|
+| `GH_PAT` | GitHub Personal Access Token para GHCR | CI/CD |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH Ed25519 para deploy | Infraestrutura |
+| `HETZNER_VM_HOST` | IP do servidor (46.224.46.93) | Infraestrutura |
+| `HETZNER_VM_USER` | Usuário SSH (root) | Infraestrutura |
+| `GOOGLE_CLIENT_ID` | OAuth Google | Autenticação |
+| `GOOGLE_CLIENT_SECRET` | OAuth Google | Autenticação |
+| `OAUTH_GITHUB_CLIENT_ID` | OAuth GitHub | Autenticação |
+| `OAUTH_GITHUB_CLIENT_SECRET` | OAuth GitHub | Autenticação |
+| `PGPASSWORD` | Senha PostgreSQL produção | Database |
+| `SESSION_SECRET` | Secret para sessions Express | Segurança |
+| `SALAD_API_KEY` | API key Salad Cloud | IA/LLM |
+| `SALAD_ORGANIZATION_ID` | Org ID Salad Cloud | IA/LLM |
+| `RESEND_API_KEY` | API key Resend (emails) | Comunicação |
+| `STRIPE_PUBLISHABLE_KEY` | Stripe public key | Pagamentos |
+| `STRIPE_SECRET_KEY` | Stripe secret key | Pagamentos |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook secret | Pagamentos |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID | Comunicação |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token | Comunicação |
+| `TWILIO_WHATSAPP_NUMBER` | Número WhatsApp Twilio | Comunicação |
+| `WISE_API_KEY` | API key Wise | Pagamentos |
+| `WISE_PROFILE_ID` | Profile ID Wise | Pagamentos |
+
+### Verificar Secrets no GitHub
+
+```bash
+# Via GitHub CLI (se instalado)
+gh secret list -R fillipeguerrabtc/alice
+
+# Ou acessar manualmente:
+# https://github.com/fillipeguerrabtc/alice/settings/secrets/actions
+```

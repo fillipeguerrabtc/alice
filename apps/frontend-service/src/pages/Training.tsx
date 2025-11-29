@@ -639,7 +639,7 @@ export default function Training() {
                   />
                 ))}
               </motion.div>
-            )
+            )}
           </ScrollArea>
         </TabsContent>
 
@@ -683,7 +683,7 @@ export default function Training() {
                   <JobCard key={job.id} job={job} t={t} />
                 ))}
               </motion.div>
-            )
+            )}
           </ScrollArea>
         </TabsContent>
       </Tabs>
