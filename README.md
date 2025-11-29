@@ -248,6 +248,7 @@ alice/
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deploy para produção |
 | [docs/SECRETS.md](docs/SECRETS.md) | Guia de secrets e webhooks |
 | [docs/SISTEMA-APRENDIZADO.md](docs/SISTEMA-APRENDIZADO.md) | Sistema de auto-aprendizado |
+| [docs/FRAPPE-PATCHING.md](docs/FRAPPE-PATCHING.md) | Atualização de segurança ERPNext/Frappe |
 | [apps/observability-service/README.md](apps/observability-service/README.md) | Stack de observabilidade |
 
 ---
