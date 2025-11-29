@@ -396,14 +396,14 @@ export default function Agents() {
                     variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
-                    {t('agents.actions.cancel')}
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
                     data-testid="button-salvar-agente"
                   >
-                    {t('agents.actions.save')}
+                    {t('common.save')}
                   </Button>
                 </DialogFooter>
               </form>
@@ -452,7 +452,7 @@ export default function Agents() {
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => handleEdit(agent)}>
                             <Edit className="mr-2 h-4 w-4" />
-                            {t('agents.actions.edit')}
+                            {t('common.edit')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             onClick={() =>
@@ -470,7 +470,7 @@ export default function Agents() {
                             onClick={() => deleteAgentMutation.mutate(agent.id)}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
-                            {t('agents.actions.remove')}
+                            {t('common.remove')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

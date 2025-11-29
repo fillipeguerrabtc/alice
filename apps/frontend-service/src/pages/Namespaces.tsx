@@ -325,14 +325,14 @@ export default function Namespaces() {
                     variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
-                    {t('namespaces.actions.cancel')}
+                    {t('common.cancel')}
                   </Button>
                   <Button
                     type="submit"
                     disabled={createNamespaceMutation.isPending || updateNamespaceMutation.isPending}
                     data-testid="button-salvar-namespace"
                   >
-                    {t('namespaces.actions.save')}
+                    {t('common.save')}
                   </Button>
                 </DialogFooter>
               </form>
@@ -372,18 +372,18 @@ export default function Namespaces() {
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onClick={() => handleEdit(namespace)}>
                         <Edit className="mr-2 h-4 w-4" />
-                        {t('namespaces.actions.edit')}
+                        {t('common.edit')}
                       </DropdownMenuItem>
                       <DropdownMenuItem>
                         <Settings className="mr-2 h-4 w-4" />
-                        {t('namespaces.actions.settings')}
+                        {t('common.settings')}
                       </DropdownMenuItem>
                       <DropdownMenuItem
                         className="text-destructive"
                         onClick={() => deleteNamespaceMutation.mutate(namespace.id)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
-                        {t('namespaces.actions.remove')}
+                        {t('common.remove')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>

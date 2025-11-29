@@ -337,18 +337,18 @@ export default function Integrations() {
       const response = await fetch('/api/integrations/erpnext/test', {
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Teste falhou');
+      if (!response.ok) throw new Error(t('integrations.errors.testFailed'));
       return response.json();
     },
     onSuccess: (data) => {
       toast({ 
-        title: 'ERPNext Conectado',
+        title: t('integrations.success.connected', { name: 'ERPNext' }),
         description: `Versão: ${data.version || 'N/A'}`,
       });
     },
     onError: () => {
       toast({ 
-        title: 'Falha na conexão com ERPNext', 
+        title: t('integrations.errors.connectionFailed', { name: 'ERPNext' }), 
         variant: 'destructive',
       });
     },
@@ -399,7 +399,7 @@ export default function Integrations() {
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="text-sm">
               <Link className="h-3 w-3 mr-1" />
-              {configuredCount}/{totalCount} ativas
+              {t('integrations.activeCount', { count: configuredCount, total: totalCount })}
             </Badge>
           </div>
         </div>
@@ -409,7 +409,7 @@ export default function Integrations() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Ativas</p>
+                  <p className="text-xs text-muted-foreground">{t('integrations.stats.active')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-active">{configuredCount}</p>
                 </div>
                 <CheckCircle2 className="h-8 w-8 text-green-500/50" />
@@ -420,7 +420,7 @@ export default function Integrations() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Pagamentos</p>
+                  <p className="text-xs text-muted-foreground">{t('integrations.stats.payments')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-payments">
                     {services.stripe.configured ? 'EUR' : '-'}
                   </p>
@@ -433,7 +433,7 @@ export default function Integrations() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Moedas</p>
+                  <p className="text-xs text-muted-foreground">{t('integrations.stats.currencies')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-transfers">
                     {services.wise.configured ? '50+' : '-'}
                   </p>
@@ -446,7 +446,7 @@ export default function Integrations() {
             <CardContent className="p-3">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-xs text-muted-foreground">Comunicação</p>
+                  <p className="text-xs text-muted-foreground">{t('integrations.stats.communication')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-comms">
                     {(services.twilio.configured || services.resend.configured) ? 'OK' : '-'}
                   </p>
@@ -463,15 +463,15 @@ export default function Integrations() {
           <TabsList className="mb-4">
             <TabsTrigger value="payments" data-testid="tab-payments">
               <CreditCard className="h-4 w-4 mr-2" />
-              Pagamentos
+              {t('integrations.tabs.payments')}
             </TabsTrigger>
             <TabsTrigger value="erp" data-testid="tab-erp">
               <Building2 className="h-4 w-4 mr-2" />
-              ERP
+              {t('integrations.tabs.erp')}
             </TabsTrigger>
             <TabsTrigger value="communication" data-testid="tab-communication">
               <MessageSquare className="h-4 w-4 mr-2" />
-              Comunicação
+              {t('integrations.tabs.communication')}
             </TabsTrigger>
           </TabsList>
 
@@ -483,8 +483,8 @@ export default function Integrations() {
               className="grid gap-4 md:grid-cols-2"
             >
               <IntegrationCard
-                name="Stripe"
-                description="Pagamentos online em EUR via SEPA e cartões"
+                name={t('integrations.stripe.title')}
+                description={t('integrations.stripe.description')}
                 icon={CreditCard}
                 configured={services.stripe.configured}
                 onConfigure={() => setShowConfigDialog('stripe')}
@@ -493,8 +493,8 @@ export default function Integrations() {
               </IntegrationCard>
 
               <IntegrationCard
-                name="Wise"
-                description="Transferências internacionais em 50+ moedas"
+                name={t('integrations.wise.title')}
+                description={t('integrations.wise.description')}
                 icon={Send}
                 configured={services.wise.configured}
                 onConfigure={() => setShowConfigDialog('wise')}
@@ -512,8 +512,8 @@ export default function Integrations() {
               className="grid gap-4 md:grid-cols-2"
             >
               <IntegrationCard
-                name="ERPNext"
-                description="CRM, inventário, vendas e finanças"
+                name={t('integrations.erpnext.title')}
+                description={t('integrations.erpnext.description')}
                 icon={Building2}
                 configured={services.erpnext.configured}
                 onConfigure={() => setShowConfigDialog('erpnext')}
@@ -533,17 +533,17 @@ export default function Integrations() {
                         rel="noopener noreferrer"
                         className="hover:underline"
                       >
-                        Acessar ERPNext
+                        {t('integrations.erpnext.access')}
                       </a>
                     </div>
                     <div className="p-2 bg-muted/50 rounded text-xs">
-                      <div className="text-muted-foreground">Sincronização</div>
-                      <div className="font-medium">Clientes, Pedidos, Pagamentos</div>
+                      <div className="text-muted-foreground">{t('integrations.erpnext.sync')}</div>
+                      <div className="font-medium">{t('integrations.erpnext.syncItems')}</div>
                     </div>
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-                    Configure as credenciais do ERPNext para sincronização automática.
+                    {t('integrations.erpnext.configureHint')}
                   </div>
                 )}
               </IntegrationCard>
@@ -558,8 +558,8 @@ export default function Integrations() {
               className="grid gap-4 md:grid-cols-2"
             >
               <IntegrationCard
-                name="Twilio"
-                description="WhatsApp e SMS para notificações"
+                name={t('integrations.twilio.title')}
+                description={t('integrations.twilio.description')}
                 icon={MessageSquare}
                 configured={services.twilio.configured}
                 onConfigure={() => setShowConfigDialog('twilio')}
@@ -573,14 +573,14 @@ export default function Integrations() {
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-                    Configure o Twilio para enviar notificações via WhatsApp e SMS.
+                    {t('integrations.twilio.configureHint')}
                   </div>
                 )}
               </IntegrationCard>
 
               <IntegrationCard
-                name="Resend"
-                description="Emails transacionais de alta entrega"
+                name={t('integrations.resend.title')}
+                description={t('integrations.resend.description')}
                 icon={Mail}
                 configured={services.resend.configured}
                 onConfigure={() => setShowConfigDialog('resend')}
@@ -589,12 +589,12 @@ export default function Integrations() {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Mail className="h-3 w-3" />
-                      <span>Templates configurados</span>
+                      <span>{t('integrations.resend.templatesConfigured')}</span>
                     </div>
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-                    Configure o Resend para emails transacionais.
+                    {t('integrations.resend.configureHint')}
                   </div>
                 )}
               </IntegrationCard>

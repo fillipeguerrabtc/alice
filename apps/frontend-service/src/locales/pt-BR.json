@@ -33,7 +33,9 @@
     "download": "Baixar",
     "color": "Cor",
     "view": "Visualizar",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "remove": "Remover",
+    "settings": "Configurações"
   },
   "auth": {
     "title": "Alice IA Enterprise",
@@ -382,12 +384,8 @@
       "instructionsMin": "Instruções devem ter pelo menos 10 caracteres"
     },
     "actions": {
-      "edit": "Editar",
       "pause": "Pausar",
-      "activate": "Ativar",
-      "remove": "Remover",
-      "cancel": "Cancelar",
-      "save": "Salvar"
+      "activate": "Ativar"
     },
     "success": {
       "created": "Agente criado com sucesso",
@@ -426,11 +424,7 @@
       "slugFormat": "Slug deve conter apenas letras minúsculas, números e hífens"
     },
     "actions": {
-      "edit": "Editar",
-      "settings": "Configurações",
-      "remove": "Remover",
-      "cancel": "Cancelar",
-      "save": "Salvar"
+      "settings": "Configurações"
     },
     "stats": {
       "agents": "{{count}} agentes",
@@ -531,17 +525,53 @@
     "subtitle": "Configure serviços externos para expandir as capacidades da Alice",
     "available": "Disponíveis",
     "configured": "Configuradas",
+    "activeCount": "{{count}}/{{total}} ativas",
     "connect": "Conectar",
     "disconnect": "Desconectar",
     "configure": "Configurar",
+    "test": "Testar",
     "status": "Status",
     "connected": "Conectado",
     "disconnected": "Desconectado",
     "pending": "Pendente",
     "error": "Erro",
+    "stats": {
+      "active": "Ativas",
+      "payments": "Pagamentos",
+      "currencies": "Moedas",
+      "communication": "Comunicação"
+    },
+    "tabs": {
+      "payments": "Pagamentos",
+      "erp": "ERP",
+      "communication": "Comunicação"
+    },
+    "stripe": {
+      "title": "Stripe",
+      "description": "Pagamentos online em EUR via SEPA e cartões"
+    },
+    "wise": {
+      "title": "Wise",
+      "description": "Transferências internacionais em 50+ moedas"
+    },
     "erpnext": {
       "title": "ERPNext",
-      "description": "Integração completa com ERP/CRM para gestão empresarial"
+      "description": "CRM, inventário, vendas e finanças",
+      "access": "Acessar ERPNext",
+      "sync": "Sincronização",
+      "syncItems": "Clientes, Pedidos, Pagamentos",
+      "configureHint": "Configure as credenciais do ERPNext para sincronização automática."
+    },
+    "twilio": {
+      "title": "Twilio",
+      "description": "WhatsApp e SMS para notificações",
+      "configureHint": "Configure para habilitar notificações via WhatsApp e SMS."
+    },
+    "resend": {
+      "title": "Resend",
+      "description": "Emails transacionais de alta entrega",
+      "configureHint": "Configure para envio de emails transacionais.",
+      "templatesConfigured": "Templates configurados"
     },
     "whatsapp": {
       "title": "WhatsApp Business",
@@ -554,6 +584,14 @@
     "calendar": {
       "title": "Calendário",
       "description": "Sincronização com Google Calendar e Outlook"
+    },
+    "success": {
+      "connected": "{{name}} Conectado",
+      "connectionTest": "Conexão testada com sucesso"
+    },
+    "errors": {
+      "testFailed": "Teste falhou",
+      "connectionFailed": "Falha na conexão com {{name}}"
     }
   },
   "settings": {
@@ -786,7 +824,82 @@
   },
   "training": {
     "title": "Fine-tuning & Treinamento",
-    "subtitle": "Gerencie dados e jobs de fine-tuning para o Llama 4 Maverick"
+    "subtitle": "Gerencie dados e jobs de fine-tuning para o Llama 4 Maverick",
+    "newJob": "Novo Job",
+    "status": {
+      "pending": "Pendente",
+      "approved": "Aprovado",
+      "rejected": "Rejeitado",
+      "used": "Usado",
+      "queued": "Na fila",
+      "preparing": "Preparando",
+      "running": "Executando",
+      "completed": "Concluído",
+      "failed": "Falhou",
+      "cancelled": "Cancelado"
+    },
+    "stats": {
+      "pending": "Pendentes",
+      "approved": "Aprovados",
+      "activeJobs": "Jobs Ativos",
+      "completed": "Concluídos"
+    },
+    "tabs": {
+      "data": "Dados",
+      "jobs": "Jobs"
+    },
+    "filter": {
+      "placeholder": "Filtrar",
+      "all": "Todos",
+      "pending": "Pendentes",
+      "approved": "Aprovados",
+      "rejected": "Rejeitados",
+      "used": "Usados",
+      "results": "{{count}} resultado(s)"
+    },
+    "data": {
+      "duplicate": "Duplicado ({{percent}}%)",
+      "viewMore": "Ver mais ({{count}} mensagens)",
+      "approve": "Aprovar",
+      "reject": "Rejeitar"
+    },
+    "job": {
+      "baseModel": "Modelo base: {{model}} | {{count}} amostras",
+      "progress": "Progresso",
+      "epochs": "Epochs",
+      "batch": "Batch",
+      "lr": "LR",
+      "created": "Criado: {{date}}",
+      "finished": "Finalizado: {{date}}"
+    },
+    "empty": {
+      "noData": "Nenhum dado de treinamento",
+      "noDataDesc": "Os dados são coletados automaticamente das conversas aprovadas.",
+      "noJobs": "Nenhum job de fine-tuning",
+      "noJobsDesc": "Crie um novo job para iniciar o fine-tuning do modelo.",
+      "createFirstJob": "Criar Primeiro Job"
+    },
+    "createJob": {
+      "title": "Novo Job de Fine-tuning",
+      "description": "Configure um novo job de fine-tuning para o modelo Llama 4 Maverick.",
+      "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: 10.",
+      "nameLabel": "Nome do Job",
+      "namePlaceholder": "ex: Fine-tune vendas Q4 2025",
+      "epochs": "Epochs",
+      "batchSize": "Batch Size",
+      "learningRate": "Learning Rate",
+      "approvedData": "{{count}} dados de treinamento aprovados",
+      "cancel": "Cancelar",
+      "start": "Iniciar Fine-tuning"
+    },
+    "success": {
+      "jobCreated": "Job de fine-tuning criado com sucesso",
+      "statusUpdated": "Status atualizado"
+    },
+    "errors": {
+      "createJob": "Erro ao criar job",
+      "updateStatus": "Erro ao atualizar status"
+    }
   },
   "erpnext": {
     "title": "ERPNext",
