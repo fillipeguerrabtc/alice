@@ -332,8 +332,12 @@ app.post('/api/training/data', requirePermission('training:training_data:write')
 });
 
 app.get('/api/training/data', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const status = req.query.status as string;
-  const namespaceId = req.query.namespaceId as string;
+  // OWASP API3: Validação de query params
+  const queryResult = trainingDataQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { status, namespaceId } = queryResult.data;
 
   try {
     const conditions = [];
@@ -379,7 +383,12 @@ app.patch('/api/training/data/:id/status', requirePermission('training:training_
 });
 
 app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string;
+  // OWASP API3: Validação de query params
+  const queryResult = jobsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { tenantId } = queryResult.data;
 
   try {
     const jobs = await db.query.fineTuningJobs.findMany({
@@ -788,6 +797,32 @@ const batchApproveSchema = z.object({
   action: z.enum(['approve', 'reject']),
 });
 
+// ============================================================================
+// OWASP API3 - Schemas Zod para validação de query params
+// Previne type coercion issues e input tampering
+// ============================================================================
+
+// Schema para query params de training data
+const trainingDataQuerySchema = z.object({
+  status: z.enum(['pending', 'approved', 'rejected', 'processed']).optional(),
+  namespaceId: z.string().uuid().optional(),
+});
+
+// Schema para query params de jobs
+const jobsQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
+// Schema para query params de auto-learning status
+const autoLearningStatusQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
+// Schema para query params de stats
+const trainingStatsQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
 app.post('/api/training/webhook', async (req: Request, res: Response) => {
   const webhookSecret = req.headers['x-webhook-secret'] as string | undefined;
   const expectedSecret = process.env.TRAINING_WEBHOOK_SECRET;
@@ -900,7 +935,12 @@ app.post('/api/training/data/approve-batch', requirePermission('training:trainin
 // ============================================================================
 
 app.get('/api/training/auto-learning/status', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string | undefined;
+  // OWASP API3: Validação de query params
+  const queryResult = autoLearningStatusQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { tenantId } = queryResult.data;
 
   try {
     const modelVersions = await db.query.modelVersions.findMany({
@@ -964,7 +1004,12 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
 });
 
 app.get('/api/training/stats', requirePermission('training:training_data:read'), async (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string;
+  // OWASP API3: Validação de query params
+  const queryResult = trainingStatsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { tenantId } = queryResult.data;
 
   try {
     const pendingCount = await db.select({ count: sql<number>`count(*)` })

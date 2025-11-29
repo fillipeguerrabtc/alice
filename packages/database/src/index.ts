@@ -65,7 +65,7 @@ export async function isPoolHealthy(): Promise<boolean> {
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // ============================================================================
 
-export function setupGracefulShutdown(logger?: { info: (msg: string) => void; error: (obj: unknown, msg: string) => void }): void {
+export function setupGracefulShutdown(logger?: { info: (msg: string) => void; error: (obj: unknown, msg: string) => void; fatal?: (obj: unknown, msg: string) => void }): void {
   if (shutdownRegistered) {
     return;
   }
@@ -74,6 +74,7 @@ export function setupGracefulShutdown(logger?: { info: (msg: string) => void; er
   const log = logger || {
     info: (msg: string) => console.log(`[database] ${msg}`),
     error: (obj: unknown, msg: string) => console.error(`[database] ${msg}`, obj),
+    fatal: (obj: unknown, msg: string) => console.error(`[database] FATAL: ${msg}`, obj),
   };
   
   const shutdown = async (signal: string) => {
@@ -94,6 +95,56 @@ export function setupGracefulShutdown(logger?: { info: (msg: string) => void; er
   // Usamos process.once() em vez de process.on() para evitar listeners duplicados
   process.once('SIGTERM', () => shutdown('SIGTERM'));
   process.once('SIGINT', () => shutdown('SIGINT'));
+  
+  // ============================================================================
+  // ENTERPRISE CRASH HANDLERS (Node.js 20+ Best Practices 2025)
+  // Captura exceções não tratadas para graceful degradation
+  // Ref: https://nodejs.org/api/process.html#event-uncaughtexception
+  // ============================================================================
+  
+  process.on('uncaughtException', (error: Error, origin: string) => {
+    // Log fatal antes de qualquer outra coisa
+    const fatalLog = log.fatal || log.error;
+    fatalLog({ 
+      error: error.message, 
+      stack: error.stack, 
+      origin,
+      pid: process.pid,
+      uptime: process.uptime()
+    }, `Exceção não tratada (${origin}): ${error.message}`);
+    
+    // Em produção, encerrar gracefully após logar
+    // Node.js 20+ recomenda NÃO continuar após uncaughtException
+    if (process.env.NODE_ENV === 'production') {
+      shutdown('uncaughtException').finally(() => {
+        process.exit(1);
+      });
+    }
+  });
+  
+  process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
+    // Log de rejeição não tratada
+    const errorMessage = reason instanceof Error ? reason.message : String(reason);
+    const errorStack = reason instanceof Error ? reason.stack : undefined;
+    
+    log.error({ 
+      reason: errorMessage,
+      stack: errorStack,
+      promiseInfo: promise.toString(),
+      pid: process.pid,
+      uptime: process.uptime()
+    }, `Promise rejection não tratada: ${errorMessage}`);
+    
+    // Em produção, Node.js 20+ recomenda tratar como fatal
+    // Ref: --unhandled-rejections=throw (default em Node 20+)
+    if (process.env.NODE_ENV === 'production') {
+      const fatalLog = log.fatal || log.error;
+      fatalLog({ reason: errorMessage }, 'Encerrando devido a promise rejection não tratada');
+      shutdown('unhandledRejection').finally(() => {
+        process.exit(1);
+      });
+    }
+  });
 }
 
 // ============================================================================

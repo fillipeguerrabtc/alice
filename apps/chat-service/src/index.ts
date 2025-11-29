@@ -2899,8 +2899,26 @@ app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTena
   }
 });
 
+// OWASP API3: Schema para validação de query params
+// Valida estritamente ao invés de sanitizar - rejeita inputs inválidos
+const urgentConversationsQuerySchema = z.object({
+  minutes: z.string()
+    .regex(/^\d+$/, 'minutes deve ser um número inteiro positivo')
+    .optional()
+    .refine((val) => {
+      if (val === undefined) return true;
+      const num = parseInt(val, 10);
+      return !isNaN(num) && num >= 1 && num <= 1440;
+    }, { message: 'minutes deve estar entre 1 e 1440' }),
+});
+
 app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
-  const minutesThreshold = parseInt(req.query.minutes as string) || 10;
+  // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
+  const queryResult = urgentConversationsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const minutesThreshold = queryResult.data.minutes ? parseInt(queryResult.data.minutes, 10) : 10;
   
   try {
     const urgent = await getUrgentConversations(minutesThreshold);

@@ -162,6 +162,13 @@ As integrações (Stripe, Wise, ERPNext, Twilio, Resend) são **opcionais por de
 10. **Graceful Shutdown WebSocket**: ✅ clearInterval para heartbeatInterval e rateLimitCleanupInterval no shutdown
 11. **Circuit Breakers**: ✅ Implementados em wiseClient.ts e saladCloudBreaker (chat-service)
 12. **Webhook Replay Protection**: ✅ checkWebhookIdempotency() com tabela webhookEvents para Stripe e Wise
+13. **Uncaught Exception Handlers**: ✅ process.on('uncaughtException') e process.on('unhandledRejection') em setupGracefulShutdown com logging Pino estruturado (Node.js 20+ 2025)
+14. **Query Params Zod Validation (OWASP API3)**: ✅ Validação completa em todos endpoints com req.query:
+    - rag-service: documentsQuerySchema, mediaUploadsQuerySchema
+    - training-service: trainingDataQuerySchema, jobsQuerySchema, autoLearningStatusQuerySchema, trainingStatsQuerySchema
+    - chat-service: urgentConversationsQuerySchema (validação estrita com regex + refine, rejeita inputs inválidos)
+    - integrations-service: wiseIdParamSchema, wiseQuerySchema
+15. **Frontend Logger Estruturado**: ✅ ErrorBoundary usa frontendLogger.error ao invés de console.error (Regra 8)
 
 ### Arquivos de Feature Flags
 

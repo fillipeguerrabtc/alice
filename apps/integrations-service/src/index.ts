@@ -276,7 +276,12 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
 });
 
 app.get('/api/integrations', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
-  const tenantId = req.query.tenantId as string;
+  // OWASP API3: Validação de query params
+  const queryResult = integrationsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { tenantId } = queryResult.data;
 
   try {
     const db = getDatabase();
@@ -346,6 +351,35 @@ const twilioSendSchema = z.object({
   conversationId: z.string().uuid().optional(),
   mediaUrl: z.string().url().optional(),
 });
+
+// ============================================================================
+// OWASP API3 - Schemas Zod para validação de parâmetros de rota e query
+// Previne NaN e injection via parâmetros não validados
+// ============================================================================
+
+// Schema para ID numérico positivo (Wise recipient/transfer IDs)
+const numericIdParamSchema = z.object({
+  id: z.string().regex(/^\d+$/, 'ID deve ser numérico').transform(Number).refine(n => n > 0, 'ID deve ser positivo'),
+});
+
+// Schema para ID string (batch groups usam UUID)
+const stringIdParamSchema = z.object({
+  id: z.string().min(1).max(100),
+});
+
+// Schema para query params de paginação
+const paginationQuerySchema = z.object({
+  limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100').optional(),
+  offset: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 0, 'offset deve ser >= 0').optional(),
+});
+
+// Schema para query params com tenantId opcional
+const tenantQuerySchema = z.object({
+  tenantId: z.string().uuid().optional(),
+});
+
+// Schema para query params de integrations
+const integrationsQuerySchema = tenantQuerySchema;
 
 app.post('/api/integrations', requirePermission('integrations:integrations:write'), async (req: Request, res: Response) => {
   try {
@@ -1144,8 +1178,14 @@ app.get('/api/integrations/wise/recipients/:id', requirePermission('integrations
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = numericIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    const recipient = await wiseService.getRecipient(parseInt(req.params.id));
+    const recipient = await wiseService.getRecipient(paramResult.data.id);
     res.json({ recipient });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter destinatário Wise');
@@ -1159,8 +1199,14 @@ app.delete('/api/integrations/wise/recipients/:id', requirePermission('integrati
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = numericIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    await wiseService.deleteRecipient(parseInt(req.params.id));
+    await wiseService.deleteRecipient(paramResult.data.id);
     res.json({ success: true });
   } catch (error) {
     logger.error({ error }, 'Falha ao excluir destinatário Wise');
@@ -1174,8 +1220,13 @@ app.get('/api/integrations/wise/transfers', requirePermission('integrations:wise
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
-  const limit = parseInt(req.query.limit as string) || 20;
-  const offset = parseInt(req.query.offset as string) || 0;
+  // OWASP API3: Validação de query params de paginação
+  const queryResult = paginationQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const limit = queryResult.data.limit ?? 20;
+  const offset = queryResult.data.offset ?? 0;
 
   try {
     const transfers = await wiseService.listTransfers(limit, offset);
@@ -1216,8 +1267,14 @@ app.get('/api/integrations/wise/transfers/:id', requirePermission('integrations:
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = numericIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    const transfer = await wiseService.getTransfer(parseInt(req.params.id));
+    const transfer = await wiseService.getTransfer(paramResult.data.id);
     res.json({ transfer });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter transferência Wise');
@@ -1231,8 +1288,14 @@ app.post('/api/integrations/wise/transfers/:id/fund', requirePermission('integra
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = numericIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    const result = await wiseService.fundTransfer(parseInt(req.params.id));
+    const result = await wiseService.fundTransfer(paramResult.data.id);
     res.json({ result });
   } catch (error) {
     logger.error({ error }, 'Falha ao financiar transferência Wise');
@@ -1246,8 +1309,14 @@ app.post('/api/integrations/wise/transfers/:id/cancel', requirePermission('integ
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = numericIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    const transfer = await wiseService.cancelTransfer(parseInt(req.params.id));
+    const transfer = await wiseService.cancelTransfer(paramResult.data.id);
     res.json({ transfer });
   } catch (error) {
     logger.error({ error }, 'Falha ao cancelar transferência Wise');

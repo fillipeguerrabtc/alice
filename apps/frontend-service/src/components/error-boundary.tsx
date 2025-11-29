@@ -2,6 +2,7 @@ import { Component, ErrorInfo, ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { frontendLogger } from '@/lib/logger';
 
 interface Props {
   children: ReactNode;
@@ -26,7 +27,15 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary capturou erro:', error, errorInfo);
+    // REGRA 8: Logger estruturado ao invés de console.error
+    frontendLogger.error('ErrorBoundary capturou erro no componente React', {
+      errorName: error.name,
+      errorMessage: error.message,
+      errorStack: error.stack,
+      componentStack: errorInfo.componentStack,
+      url: window.location.href,
+      userAgent: navigator.userAgent,
+    });
     this.setState({ errorInfo });
   }
 

@@ -803,7 +803,13 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
 app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
   const tenantId = req.tenantId;
-  const namespaceId = req.query.namespaceId as string;
+  
+  // OWASP API3: Validação de query params
+  const queryResult = documentsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  const { namespaceId } = queryResult.data;
 
   try {
     // MULTI-TENANCY: Filtrar documentos pelo tenant_id (Regra 16 - Segurança Enterprise)
@@ -1733,6 +1739,24 @@ const mediaSearchSchema = z.object({
   limit: z.number().int().min(1).max(100).default(10),
 });
 
+// ============================================================================
+// OWASP API3 - Schemas Zod para validação de query params
+// Previne type coercion issues e input tampering
+// ============================================================================
+
+// Schema para query params de documentos
+const documentsQuerySchema = z.object({
+  namespaceId: z.string().uuid().optional(),
+});
+
+// Schema para query params de paginação com filtros de mídia
+const mediaUploadsQuerySchema = z.object({
+  limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100').optional(),
+  offset: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 0, 'offset deve ser >= 0').optional(),
+  mediaType: z.enum(['image', 'audio', 'video', 'document']).optional(),
+  conversationId: z.string().uuid().optional(),
+});
+
 app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId e req.user populados pelo middleware
   const tenantId = req.tenantId;
@@ -1978,15 +2002,20 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
     return res.status(401).json({ error: 'Autenticação necessária' });
   }
 
+  // OWASP API3: Validação de query params
+  const queryResult = mediaUploadsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+
   try {
-    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
-    const offset = parseInt(req.query.offset as string) || 0;
-    const mediaType = req.query.mediaType as string | undefined;
-    const conversationId = req.query.conversationId as string | undefined;
+    const limit = queryResult.data.limit ?? 50;
+    const offset = queryResult.data.offset ?? 0;
+    const { mediaType, conversationId } = queryResult.data;
 
     const whereConditions = [eq(schema.mediaUploads.tenantId, tenantId)];
     
-    if (mediaType && ['image', 'audio', 'video', 'document'].includes(mediaType)) {
+    if (mediaType) {
       whereConditions.push(eq(schema.mediaUploads.mediaType, mediaType as MediaType));
     }
     
