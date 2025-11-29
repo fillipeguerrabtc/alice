@@ -406,6 +406,27 @@ function verifyWebSocketOrigin(origin: string | undefined): boolean {
 // Mapa para armazenar auth result durante handshake (entre verifyClient e connection)
 const pendingAuthResults = new Map<string, WebSocketAuthResult>();
 
+// SEGURANÇA: TTL para entradas pendentes (evita memory leak/DoS)
+// Entradas são removidas após 5 segundos ou quando usadas
+const PENDING_AUTH_TTL = 5000;
+
+// Cleanup periódico de entradas expiradas (a cada 30 segundos)
+setInterval(() => {
+  const now = Date.now();
+  let cleaned = 0;
+  for (const [key] of pendingAuthResults) {
+    // Chave contém timestamp: "ip:timestamp"
+    const timestamp = parseInt(key.split(':').pop() || '0', 10);
+    if (now - timestamp > PENDING_AUTH_TTL) {
+      pendingAuthResults.delete(key);
+      cleaned++;
+    }
+  }
+  if (cleaned > 0) {
+    logger.debug({ cleaned, remaining: pendingAuthResults.size }, 'Limpeza de auth results pendentes');
+  }
+}, 30000);
+
 // SEGURANÇA: maxPayload e ping/pong heartbeat (ws v8.18.3)
 // Autenticação completa via sessão PostgreSQL (OWASP API2 2023)
 const wss = new WebSocketServer({ 
@@ -681,6 +702,17 @@ saladCloudBreaker.on('fallback', () => {
   logger.warn('Circuit breaker Salad Cloud LLM: Usando fallback');
 });
 
+// Mensagem de fallback quando LLM está indisponível (graceful degradation)
+const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.';
+
+/**
+ * Generator de fallback para modo streaming - mantém consistência de tipo
+ * Yield único chunk com mensagem de fallback
+ */
+async function* streamFallback(): AsyncGenerator<string> {
+  yield LLM_FALLBACK_MESSAGE;
+}
+
 async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<string | AsyncGenerator<string>> {
   try {
     const response = await saladCloudBreaker.fire({ messages, stream }) as globalThis.Response;
@@ -692,11 +724,21 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<str
     const data = await response.json() as LLMResponse;
     return data.choices[0]?.message?.content || '';
   } catch (error) {
-    if (error instanceof Error && error.message.includes('Breaker is open')) {
-      logger.warn('Circuit breaker aberto - LLM temporariamente indisponível');
-      throw new Error('Serviço de IA temporariamente indisponível. Tente novamente em alguns segundos.');
+    // RESILIÊNCIA: Graceful degradation quando LLM está indisponível (Best Practices 2025)
+    // Retorna mensagem amigável ao invés de erro técnico
+    // CRÍTICO: Manter consistência de tipo para streaming vs não-streaming
+    if (error instanceof Error) {
+      if (error.message.includes('Breaker is open')) {
+        logger.warn('Circuit breaker aberto - LLM temporariamente indisponível');
+        return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
+      }
+      if (error.message.includes('Timeout') || error.name === 'AbortError') {
+        logger.warn({ error: error.message }, 'Timeout na chamada LLM');
+        return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
+      }
     }
-    throw error;
+    logger.error({ error }, 'Erro inesperado na chamada LLM');
+    return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
   }
 }
 
