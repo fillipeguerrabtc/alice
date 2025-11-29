@@ -530,7 +530,8 @@ if (googleClientId && googleClientSecret) {
             timezone: 'Europe/Lisbon',
           }).returning();
           user = newUser;
-          logger.info({ userId: user.id, email }, 'Novo usuário criado via Google');
+          const createdUserId = user.id;
+          logger.info({ userId: createdUserId, email }, 'Novo usuário criado via Google');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
           publishProvisioningEvent('user.created', {
@@ -540,8 +541,8 @@ if (googleClientId && googleClientSecret) {
             lastName: user.lastName || undefined,
             role: user.role || 'viewer',
             tenantId: user.tenantId || undefined,
-          }).catch((error) => {
-            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          }).catch((error: unknown) => {
+            logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.googleId) {
           // Vincular conta Google existente
@@ -626,7 +627,8 @@ if (githubClientId && githubClientSecret) {
             timezone: 'Europe/Lisbon',
           }).returning();
           user = newUser;
-          logger.info({ userId: user.id, email }, 'Novo usuário criado via GitHub');
+          const createdUserId = user.id;
+          logger.info({ userId: createdUserId, email }, 'Novo usuário criado via GitHub');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
           publishProvisioningEvent('user.created', {
@@ -636,8 +638,8 @@ if (githubClientId && githubClientSecret) {
             lastName: user.lastName || undefined,
             role: user.role || 'viewer',
             tenantId: user.tenantId || undefined,
-          }).catch((error) => {
-            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          }).catch((error: unknown) => {
+            logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.githubId) {
           // Vincular conta GitHub existente
@@ -752,7 +754,8 @@ if (samlEntryPoint && samlIssuer && samlCert) {
             timezone: 'Europe/Lisbon',
           }).returning();
           user = newUser;
-          logger.info({ userId: user.id, email }, 'Novo usuário criado via SAML');
+          const createdUserId = user.id;
+          logger.info({ userId: createdUserId, email }, 'Novo usuário criado via SAML');
           
           // Identity Provisioning: Sincronizar usuário com Grafana/ERPNext
           publishProvisioningEvent('user.created', {
@@ -762,8 +765,8 @@ if (samlEntryPoint && samlIssuer && samlCert) {
             lastName: user.lastName || undefined,
             role: user.role || 'viewer',
             tenantId: user.tenantId || undefined,
-          }).catch((error) => {
-            logger.error({ error, userId: user.id }, 'Erro ao publicar evento de provisioning');
+          }).catch((error: unknown) => {
+            logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.samlNameId) {
           // Vincular conta SAML existente
@@ -1265,7 +1268,7 @@ app.get('/api/auth/modules/:id', requireAuth(), async (req: Request, res: Respon
 });
 
 // POST /api/auth/modules - Criar novo módulo (admin only)
-app.post('/api/auth/modules', requireAuth(), requireRole(['super_admin', 'admin']), asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/auth/modules', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
   const result = createModuleSchema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
@@ -1302,7 +1305,7 @@ app.post('/api/auth/modules', requireAuth(), requireRole(['super_admin', 'admin'
 }));
 
 // PATCH /api/auth/modules/:id - Atualizar módulo (admin only)
-app.patch('/api/auth/modules/:id', requireAuth(), requireRole(['super_admin', 'admin']), asyncHandler(async (req: Request, res: Response) => {
+app.patch('/api/auth/modules/:id', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
   const result = updateModuleSchema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
@@ -1326,7 +1329,7 @@ app.patch('/api/auth/modules/:id', requireAuth(), requireRole(['super_admin', 'a
 }));
 
 // DELETE /api/auth/modules/:id - Deletar módulo (super_admin only)
-app.delete('/api/auth/modules/:id', requireAuth(), requireRole(['super_admin']), asyncHandler(async (req: Request, res: Response) => {
+app.delete('/api/auth/modules/:id', requireAuth(), requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   const db = getDatabase();
   
   const [module] = await db.delete(schema.systemModules)
@@ -1367,7 +1370,7 @@ app.get('/api/auth/modules/user/:userId', requireAuth(), async (req: Request, re
 });
 
 // POST /api/auth/modules/assign - Atribuir módulo a usuário (admin only)
-app.post('/api/auth/modules/assign', requireAuth(), requireRole(['super_admin', 'admin']), asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/auth/modules/assign', requireAuth(), requireRole('admin'), asyncHandler(async (req: Request, res: Response) => {
   const result = assignModuleSchema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
@@ -1441,7 +1444,7 @@ app.get('/api/auth/modules/role/:role', requireAuth(), async (req: Request, res:
 });
 
 // POST /api/auth/modules/role/assign - Atribuir módulo a role (super_admin only)
-app.post('/api/auth/modules/role/assign', requireAuth(), requireRole(['super_admin']), asyncHandler(async (req: Request, res: Response) => {
+app.post('/api/auth/modules/role/assign', requireAuth(), requireRole('super_admin'), asyncHandler(async (req: Request, res: Response) => {
   const result = assignRoleModuleSchema.safeParse(req.body);
   if (!result.success) {
     res.status(400).json({ error: 'Dados inválidos', details: result.error.format() });
@@ -1534,13 +1537,12 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   
   // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
   // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
-  startIdentityProvisioning()
-    .then(() => {
-      logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
-    })
-    .catch((error) => {
-      logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
-    });
+  try {
+    startIdentityProvisioning();
+    logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
+  } catch (error: unknown) {
+    logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
+  }
 });
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
