@@ -86,10 +86,11 @@ jobs:
         run: pnpm run lint
         continue-on-error: false
 
-      # Build shared packages primeiro (packages/shared → database → outros)
-      # Necessário para TypeScript project references funcionarem no CI
+      # Build shared packages primeiro usando TypeScript project references
+      # tsc -b respeita a ordem de dependências definida em tsconfig.build.json
+      # Ordem: shared → shared-utils → config → logger → database
       - name: Build shared packages first
-        run: pnpm run build:packages
+        run: pnpm run build:tsc
 
       - name: TypeScript Check
         run: pnpm run typecheck
