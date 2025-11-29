@@ -22,9 +22,13 @@ import {
   requirePermission, 
   requireAuth,
   extractAuthContext,
+  initFeatureFlags,
+  featureFlagsMiddleware,
+  FEATURE_FLAGS,
+  isFeatureEnabled,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
+import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, desc, sql, and } from 'drizzle-orm';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -213,6 +217,11 @@ async function createInvoiceFromOrder(salesOrderName: string): Promise<string | 
     return null;
   }
 }
+
+// Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
+const featureFlagStorage = createDrizzleFeatureFlagStorage();
+initFeatureFlags(featureFlagStorage);
+logger.info('Sistema de feature flags inicializado');
 
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 

@@ -16,7 +16,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import CircuitBreaker from 'opossum';
-import { getDatabase, getPool, schema, toSql, setupGracefulShutdown } from '@alice/database';
+import { getDatabase, getPool, schema, toSql, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, sql, desc, and, isNotNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { 
@@ -29,6 +29,10 @@ import {
   createNotFoundHandler,
   asyncHandler,
   createCorrelationMiddleware,
+  initFeatureFlags,
+  featureFlagsMiddleware,
+  FEATURE_FLAGS,
+  isFeatureEnabled,
 } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
@@ -440,6 +444,11 @@ const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
 
+// Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
+const featureFlagStorage = createDrizzleFeatureFlagStorage();
+initFeatureFlags(featureFlagStorage);
+logger.info('Sistema de feature flags inicializado');
+
 const app = express();
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
@@ -791,16 +800,20 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
   });
 });
 
-app.get('/api/rag/documents', requirePermission('rag:documents:read'), async (req: Request, res: Response) => {
+app.get('/api/rag/documents', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  const tenantId = req.tenantId;
   const namespaceId = req.query.namespaceId as string;
 
   try {
-    const whereClause = namespaceId 
-      ? eq(schema.documents.namespaceId, namespaceId)
-      : undefined;
+    // MULTI-TENANCY: Filtrar documentos pelo tenant_id (Regra 16 - Segurança Enterprise)
+    const whereConditions = [eq(schema.documents.tenantId, tenantId)];
+    if (namespaceId) {
+      whereConditions.push(eq(schema.documents.namespaceId, namespaceId));
+    }
 
     const documents = await db.query.documents.findMany({
-      where: whereClause,
+      where: and(...whereConditions),
       orderBy: [desc(schema.documents.criadoEm)],
       limit: 100,
     });
@@ -821,14 +834,21 @@ const createDocumentSchema = z.object({
   urlOrigem: z.string().url().optional(),
 });
 
-app.post('/api/rag/documents', requirePermission('rag:documents:write'), async (req: Request, res: Response) => {
+app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:write'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  const tenantId = req.tenantId;
+  
   try {
     const body = createDocumentSchema.parse(req.body);
 
     const hashConteudo = hashContent(body.conteudo);
     
+    // MULTI-TENANCY: Verificar duplicação apenas dentro do mesmo tenant
     const existing = await db.query.documents.findFirst({
-      where: eq(schema.documents.hashConteudo, hashConteudo),
+      where: and(
+        eq(schema.documents.hashConteudo, hashConteudo),
+        eq(schema.documents.tenantId, tenantId)
+      ),
     });
 
     if (existing) {
@@ -840,7 +860,9 @@ app.post('/api/rag/documents', requirePermission('rag:documents:write'), async (
 
     const documentEmbedding = await generateEmbedding(body.conteudo.slice(0, 2000));
 
+    // MULTI-TENANCY: Associar documento ao tenant do usuário
     const [document] = await db.insert(schema.documents).values({
+      tenantId,
       namespaceId: body.namespaceId,
       titulo: body.titulo,
       conteudo: body.conteudo,
@@ -877,7 +899,10 @@ app.post('/api/rag/documents', requirePermission('rag:documents:write'), async (
   }
 });
 
-app.post('/api/rag/documents/upload', requirePermission('rag:documents:upload'), upload.single('file'), async (req: MulterRequest, res: Response) => {
+app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:documents:upload'), requireSameTenant(getTenantIdFromRequest), upload.single('file'), async (req: MulterRequest, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  const tenantId = req.tenantId;
+  
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
@@ -902,7 +927,9 @@ app.post('/api/rag/documents/upload', requirePermission('rag:documents:upload'),
 
     const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
 
+    // MULTI-TENANCY: Associar documento ao tenant do usuário
     const [document] = await db.insert(schema.documents).values({
+      tenantId,
       namespaceId,
       titulo,
       conteudo: content,
@@ -944,7 +971,10 @@ const searchSchema = z.object({
   threshold: z.coerce.number().min(0).max(1).default(0.7),
 });
 
-app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req: Request, res: Response) => {
+app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  const tenantId = req.tenantId;
+  
   try {
     const body = searchSchema.parse(req.body);
 
@@ -956,6 +986,7 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
     // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
     // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
     // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
+    // MULTI-TENANCY: Filtro obrigatório por tenant_id (Regra 16)
     // ============================================================================
     
     // Converter embedding para formato SQL pgvector (enterprise-grade)
@@ -963,8 +994,9 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
     
     // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
     const pool = getPool();
-    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2];
-    let paramIndex = 3;
+    // MULTI-TENANCY: tenant_id é parâmetro obrigatório na busca
+    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2, tenantId];
+    let paramIndex = 4;
     
     let namespaceFilter = '';
     if (body.namespaceId) {
@@ -1001,6 +1033,7 @@ app.post('/api/rag/search', requirePermission('rag:documents:read'), async (req:
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
+        AND d.tenant_id = $3
         ${namespaceFilter}
       ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
       LIMIT $2
@@ -1107,17 +1140,31 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
   }
 });
 
-app.delete('/api/rag/documents/:id', requirePermission('rag:documents:delete'), async (req: Request, res: Response) => {
+app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:documents:delete'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  const tenantId = req.tenantId;
   const { id } = req.params;
 
   try {
+    // MULTI-TENANCY: Verificar se documento pertence ao tenant antes de deletar
+    const document = await db.query.documents.findFirst({
+      where: and(
+        eq(schema.documents.id, id),
+        eq(schema.documents.tenantId, tenantId)
+      ),
+    });
+    
+    if (!document) {
+      return res.status(404).json({ error: 'Documento não encontrado ou acesso negado' });
+    }
+    
     await db.delete(schema.documentChunks)
       .where(eq(schema.documentChunks.documentId, id));
 
     await db.delete(schema.documents)
       .where(eq(schema.documents.id, id));
 
-    logger.info({ documentId: id }, 'Documento excluído');
+    logger.info({ documentId: id, tenantId }, 'Documento excluído');
     res.json({ success: true });
   } catch (error) {
     logger.error({ error }, 'Falha ao excluir documento');
@@ -2141,13 +2188,9 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', async (req: Request, 
 });
 
 // Busca semântica de imagens por similaridade de embedding
-app.post('/api/media/search', requireAuth(), async (req: Request, res: Response) => {
+app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth (Regra 8)
   const tenantId = req.tenantId;
-  
-  if (!tenantId) {
-    return res.status(401).json({ error: 'Tenant não identificado' });
-  }
 
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = mediaSearchSchema.safeParse(req.body);

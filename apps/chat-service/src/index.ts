@@ -17,7 +17,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
+import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   getContextHeaders,
@@ -32,6 +32,10 @@ import {
   extractAuthContext,
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
+  initFeatureFlags,
+  featureFlagsMiddleware,
+  FEATURE_FLAGS,
+  isFeatureEnabled,
 } from '@alice/shared-utils';
 import { eq, desc } from 'drizzle-orm';
 import { z } from 'zod';
@@ -109,6 +113,11 @@ const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
+
+// Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
+const featureFlagStorage = createDrizzleFeatureFlagStorage();
+initFeatureFlags(featureFlagStorage);
+logger.info('Sistema de feature flags inicializado');
 
 initOrchestrator(db);
 initImageGeneration(db);
@@ -1066,6 +1075,23 @@ app.get('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFro
   }
 });
 
+// ============================================================================
+// SCHEMAS ZOD PARA WEBSOCKET (OWASP API3 - Input Validation Enterprise)
+// ============================================================================
+const wsMessageSchema = z.object({
+  type: z.enum(['chat', 'typing', 'ping', 'subscribe', 'unsubscribe']),
+  conversationId: z.string().uuid().optional(),
+  content: z.string().max(10000).optional(),
+  namespaceId: z.string().uuid().optional(),
+});
+
+const wsAgentMessageSchema = z.object({
+  type: z.enum(['takeover_message', 'takeover_note', 'handback', 'ping', 'subscribe']),
+  conversationId: z.string().uuid().optional(),
+  content: z.string().max(10000).optional(),
+  tenantId: z.string().uuid().optional(),
+});
+
 const createConversationSchema = z.object({
   agentId: z.string().uuid().optional(),
   namespaceId: z.string().uuid().optional(),
@@ -1609,7 +1635,25 @@ wss.on('connection', (ws, req) => {
         return;
       }
 
-      const message = JSON.parse(data.toString()) as {
+      // OWASP API3 - Validação Zod obrigatória para mensagens WebSocket
+      const rawMessage = JSON.parse(data.toString());
+      const parseResult = wsMessageSchema.safeParse(rawMessage);
+      
+      if (!parseResult.success) {
+        logger.warn({ 
+          errors: parseResult.error.errors,
+          userId,
+          tenantId,
+        }, 'WebSocket: Mensagem inválida rejeitada por validação Zod');
+        ws.send(JSON.stringify({ 
+          type: 'error', 
+          error: 'Formato de mensagem inválido',
+          details: parseResult.error.errors.map(e => e.message),
+        }));
+        return;
+      }
+      
+      const message = parseResult.data as {
         type: string;
         conversationId: string;
         content: string;

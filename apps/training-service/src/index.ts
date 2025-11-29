@@ -15,7 +15,7 @@ import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema, setupGracefulShutdown } from '@alice/database';
+import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   getContextHeaders,
@@ -24,6 +24,10 @@ import {
   createErrorHandler,
   createNotFoundHandler,
   asyncHandler,
+  initFeatureFlags,
+  featureFlagsMiddleware,
+  FEATURE_FLAGS,
+  isFeatureEnabled,
 } from '@alice/shared-utils';
 import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
 import { z } from 'zod';
@@ -76,6 +80,11 @@ const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
+
+// Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
+const featureFlagStorage = createDrizzleFeatureFlagStorage();
+initFeatureFlags(featureFlagStorage);
+logger.info('Sistema de feature flags inicializado');
 
 const app = express();
 

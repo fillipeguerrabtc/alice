@@ -49,13 +49,25 @@ import {
   setupGracefulShutdown,
   getPoolMetrics,
   isPoolHealthy,
+  createDrizzleFeatureFlagStorage,
 } from '@alice/database';
+import { 
+  initFeatureFlags,
+  featureFlagsMiddleware,
+  FEATURE_FLAGS,
+  isFeatureEnabled,
+} from '@alice/shared-utils';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('auth-service');
 
 // Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
 setupGracefulShutdown(logger);
+
+// Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
+const featureFlagStorage = createDrizzleFeatureFlagStorage();
+initFeatureFlags(featureFlagStorage);
+logger.info('Sistema de feature flags inicializado');
 
 type DbUser = typeof schema.users.$inferSelect;
 
