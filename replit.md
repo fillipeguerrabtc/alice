@@ -85,6 +85,31 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **Multi-tenant Isolation**: PostgreSQL Row Level Security (RLS) with `tenant_id` isolation policies.
 - **OWASP API3**: Critical authentication routes use Zod schemas for input validation.
 
+## Versões Padronizadas (2025)
+
+**REGRA CRÍTICA**: Todas as dependências devem usar EXATAMENTE estas versões em TODOS os package.json.
+
+| Categoria | Pacote | Versão |
+|-----------|--------|--------|
+| **Core** | TypeScript | 5.7.2 |
+| **Core** | @types/node | 22.10.2 |
+| **Build** | tsx | 4.20.6 |
+| **Build** | esbuild | 0.25.12 |
+| **Build** | vite | 5.4.21 |
+| **Backend** | express | 4.21.2 |
+| **Backend** | helmet | 8.1.0 |
+| **Backend** | cors | 2.8.5 |
+| **Logging** | pino | 10.1.0 |
+| **Logging** | pino-pretty | 13.1.2 |
+| **Database** | drizzle-orm | 0.39.1 |
+| **Database** | drizzle-kit | 0.31.7 |
+| **Database** | pg | 8.12.0 |
+| **Validation** | zod | 3.24.2 |
+| **Resilience** | opossum | 9.0.0 |
+| **Frontend** | react | 18.3.1 |
+| **Frontend** | @tanstack/react-query | 5.60.5 |
+| **Frontend** | tailwindcss | 3.4.18 |
+
 ## External Dependencies
 
 - **LLM**: Llama 4 Maverick (400B params) on Salad Cloud.

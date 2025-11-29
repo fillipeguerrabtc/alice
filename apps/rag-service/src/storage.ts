@@ -19,6 +19,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import http from 'http';
+import https from 'https';
 import pino from 'pino';
 import CircuitBreaker from 'opossum';
 
@@ -42,38 +44,82 @@ const s3CircuitBreakerOptions = {
 };
 
 /**
- * Converte Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
+ * Interface para requisições S3
  * 
- * O BodyInit do fetch no Node.js 20 não aceita Buffer<ArrayBufferLike> diretamente
- * porque Buffer.buffer pode ser SharedArrayBuffer, que não é compatível com BodyInit.
- * Uint8Array é um tipo válido para BodyInit e funciona corretamente com fetch.
+ * Usa módulos http/https nativos do Node.js para evitar incompatibilidades
+ * de tipos com o fetch global (@types/node 20.16+ | TypeScript 5.5+).
  * 
- * @param buffer - Buffer Node.js a ser convertido
- * @returns Uint8Array compatível com fetch BodyInit
+ * O módulo http/https nativo aceita Buffer diretamente sem problemas de tipos.
  */
-function bufferToUint8Array(buffer: Buffer): Uint8Array {
-  return new Uint8Array(buffer);
-}
-
 interface S3Request {
   url: string;
   method: string;
   headers: Record<string, string>;
-  body?: Uint8Array;
+  body?: Buffer;
 }
 
-async function s3FetchInternal(request: S3Request): Promise<Response> {
-  const response = await fetch(request.url, {
-    method: request.method,
-    headers: request.headers,
-    body: request.body,
+/**
+ * Resposta simplificada da requisição S3
+ */
+interface S3Response {
+  ok: boolean;
+  status: number;
+  statusText: string;
+}
+
+/**
+ * Executa requisição HTTP para S3/MinIO usando módulo nativo do Node.js
+ * 
+ * Esta implementação usa http/https nativo em vez do fetch global para
+ * garantir compatibilidade total com Buffer em todas as versões do TypeScript.
+ * 
+ * @param request - Objeto com url, method, headers e body opcional
+ * @returns Promise com resposta simplificada
+ */
+async function s3FetchInternal(request: S3Request): Promise<S3Response> {
+  return new Promise((resolve, reject) => {
+    const urlObj = new URL(request.url);
+    const isHttps = urlObj.protocol === 'https:';
+    const httpModule = isHttps ? https : http;
+    
+    const options: http.RequestOptions = {
+      hostname: urlObj.hostname,
+      port: urlObj.port || (isHttps ? 443 : 80),
+      path: urlObj.pathname + urlObj.search,
+      method: request.method,
+      headers: request.headers,
+      timeout: 30000,
+    };
+    
+    const req = httpModule.request(options, (res) => {
+      // Consumir response body para liberar recursos
+      res.on('data', () => {});
+      res.on('end', () => {
+        const ok = res.statusCode !== undefined && res.statusCode >= 200 && res.statusCode < 300;
+        resolve({
+          ok: ok || res.statusCode === 404,
+          status: res.statusCode || 0,
+          statusText: res.statusMessage || '',
+        });
+      });
+    });
+    
+    req.on('error', (error) => {
+      reject(new Error(`S3 request failed: ${error.message}`));
+    });
+    
+    req.on('timeout', () => {
+      req.destroy();
+      reject(new Error('S3 request timeout'));
+    });
+    
+    // Escrever body se existir
+    if (request.body) {
+      req.write(request.body);
+    }
+    
+    req.end();
   });
-  
-  if (!response.ok && response.status !== 404) {
-    throw new Error(`S3 request failed: ${response.status} ${response.statusText}`);
-  }
-  
-  return response;
 }
 
 const s3Breaker = new CircuitBreaker(s3FetchInternal, s3CircuitBreakerOptions);
@@ -293,7 +339,6 @@ class S3StorageService implements StorageService {
     
     try {
       // Usar circuit breaker para resiliência (Regra 16)
-      // Converter Buffer para Uint8Array (compatibilidade TypeScript 5 + Node.js 20)
       await s3Breaker.fire({
         url,
         method: 'PUT',
@@ -302,7 +347,7 @@ class S3StorageService implements StorageService {
           'Content-Length': buffer.length.toString(),
           'Authorization': `Basic ${Buffer.from(`${S3_ACCESS_KEY}:${S3_SECRET_KEY}`).toString('base64')}`,
         },
-        body: bufferToUint8Array(buffer),
+        body: buffer,
       });
       
       logger.info({ tenantId, mediaType, objectKey, size: buffer.length }, 'Arquivo salvo no S3');
