@@ -140,14 +140,14 @@ jobs:
             Todas as imagens estão disponíveis no GitHub Container Registry:
             ```
             ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-auth-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-chat-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-clip-inference-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-rag-service:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-training-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
             ```
             
             ### 📋 Deploy
@@ -168,16 +168,25 @@ jobs:
     
     strategy:
       matrix:
-        service:
-          - api-gateway
-          - auth-service
-          - chat-service
-          - clip-inference-service
-          - frontend-service
-          - integrations-service
-          - observability-service
-          - rag-service
-          - training-service
+        include:
+          - service: api-gateway
+            image: api-gateway
+          - service: auth-service
+            image: auth
+          - service: chat-service
+            image: chat
+          - service: clip-inference-service
+            image: clip-inference
+          - service: frontend-service
+            image: frontend
+          - service: integrations-service
+            image: integrations
+          - service: observability-service
+            image: observability
+          - service: rag-service
+            image: rag
+          - service: training-service
+            image: training
     
     steps:
       - name: Checkout código
@@ -202,10 +211,10 @@ jobs:
           file: ./apps/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ needs.create-release.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ needs.create-release.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   # ===========================================================================
   # Job 3: Disparar Deploy (opcional)
