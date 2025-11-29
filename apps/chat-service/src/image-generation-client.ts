@@ -10,7 +10,7 @@
  * Documentação em PT-BR (Regra 10 replit.md)
  */
 
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import pino from 'pino';
 import { eq } from 'drizzle-orm';
 import * as schema from '@alice/shared/schema';
@@ -62,14 +62,8 @@ interface CLIPEmbeddingResponse {
 
 // ============================================================================
 // CIRCUIT BREAKER (Regra 16 - Best Practices 2025)
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-const circuitBreakerOptions = {
-  timeout: 30000,           // FLUX.1 Schnell: 1-3s, timeout 30s
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
 
 async function generateImageInternal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
   if (!SALAD_API_KEY || !SALAD_ORGANIZATION_ID) {
@@ -114,16 +108,9 @@ async function generateImageInternal(request: ImageGenerationRequest): Promise<I
   };
 }
 
-const imageGenBreaker = new CircuitBreaker(generateImageInternal, circuitBreakerOptions);
-
-imageGenBreaker.on('open', () => {
-  logger.warn('Circuit breaker FLUX.1: ABERTO - Serviço temporariamente indisponível');
-});
-imageGenBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker FLUX.1: HALF-OPEN - Testando reconexão');
-});
-imageGenBreaker.on('close', () => {
-  logger.info('Circuit breaker FLUX.1: FECHADO - Serviço funcionando normalmente');
+const imageGenBreaker = createCircuitBreaker(generateImageInternal, {
+  name: 'flux-image-gen',
+  ...CIRCUIT_BREAKER_PRESETS.fluxImageGen,
 });
 
 // ============================================================================
@@ -231,9 +218,10 @@ async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPE
   return { embedding: data.embedding };
 }
 
-const clipBreaker = new CircuitBreaker(generateCLIPEmbeddingInternal, {
-  ...circuitBreakerOptions,
-  timeout: 10000,
+const clipBreaker = createCircuitBreaker(generateCLIPEmbeddingInternal, {
+  name: 'clip-embeddings',
+  ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
+  timeout: 10000, // Override: CLIP é mais rápido que FLUX
 });
 
 /**

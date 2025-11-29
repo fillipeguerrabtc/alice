@@ -15,7 +15,7 @@
  * @module chat-service/flux-deployment
  */
 
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import pino from 'pino';
 
 const logger = pino({
@@ -70,14 +70,8 @@ export interface DeploymentResult {
 
 // ============================================================================
 // CIRCUIT BREAKER
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-const circuitBreakerOptions = {
-  timeout: 60000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
 
 function getHeaders(): Record<string, string> {
   return {
@@ -170,13 +164,9 @@ async function createContainerGroupInternal(config: FluxContainerConfig): Promis
   };
 }
 
-const createBreaker = new CircuitBreaker(createContainerGroupInternal, circuitBreakerOptions);
-
-createBreaker.on('open', () => {
-  logger.warn('Circuit breaker FLUX Deploy: ABERTO');
-});
-createBreaker.on('close', () => {
-  logger.info('Circuit breaker FLUX Deploy: FECHADO');
+const createBreaker = createCircuitBreaker(createContainerGroupInternal, {
+  name: 'flux-deployment',
+  ...CIRCUIT_BREAKER_PRESETS.saladDeployment,
 });
 
 // ============================================================================

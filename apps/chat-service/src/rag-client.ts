@@ -8,7 +8,7 @@
  * @module chat-service/rag-client
  */
 
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import pino from 'pino';
 
 const logger = pino({
@@ -38,16 +38,7 @@ export interface RAGContextResponse {
   sources: RAGSource[];
 }
 
-/**
- * Configuração de Circuit Breaker para RAG Service
- * Timeout menor que LLM pois é serviço interno
- */
-const ragBreakerOptions = {
-  timeout: 10000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 15000,
-  volumeThreshold: 3,
-};
+// Circuit Breaker usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 
 /**
  * Função interna para buscar contexto do RAG Service
@@ -79,22 +70,9 @@ async function fetchContextInternal(
   return response.json() as Promise<RAGContextResponse>;
 }
 
-const ragBreaker = new CircuitBreaker(fetchContextInternal, ragBreakerOptions);
-
-ragBreaker.on('open', () => {
-  logger.warn('Circuit breaker RAG Service: ABERTO - Serviço temporariamente indisponível');
-});
-
-ragBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker RAG Service: HALF-OPEN - Testando reconexão');
-});
-
-ragBreaker.on('close', () => {
-  logger.info('Circuit breaker RAG Service: FECHADO - Serviço funcionando normalmente');
-});
-
-ragBreaker.on('fallback', () => {
-  logger.warn('Circuit breaker RAG Service: Usando fallback (sem contexto)');
+const ragBreaker = createCircuitBreaker(fetchContextInternal, {
+  name: 'rag-service',
+  ...CIRCUIT_BREAKER_PRESETS.ragService,
 });
 
 /**

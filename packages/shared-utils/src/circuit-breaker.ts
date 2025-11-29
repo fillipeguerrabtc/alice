@@ -34,22 +34,70 @@ export interface CircuitBreakerConfig {
 }
 
 /**
- * Configurações pré-definidas por tipo de serviço
+ * Configurações pré-definidas por tipo de serviço.
+ * 
+ * REGRA 2 (Não Duplicar): Todos os serviços DEVEM usar estes presets
+ * em vez de definir suas próprias opções localmente.
+ * 
+ * @example
+ * ```typescript
+ * import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+ * 
+ * const breaker = createCircuitBreaker(myAsyncFunction, {
+ *   name: 'my-service',
+ *   ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+ * });
+ * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM Salad Cloud - timeout alto para inferência */
+  /** Serviço LLM Salad Cloud - timeout alto para inferência Llama 4 Maverick */
   saladLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Serviço de Embeddings - timeout moderado */
+  /** Serviço de Embeddings Salad Cloud - timeout moderado */
   saladEmbeddings: {
     timeout: 30000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
+  },
+  /** FLUX.1 Schnell - geração de imagens (1-3s típico, timeout 30s) */
+  fluxImageGen: {
+    timeout: 30000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
+  },
+  /** FLUX deployment management - operações de container (timeout alto) */
+  saladDeployment: {
+    timeout: 60000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
+  },
+  /** CLIP ViT-L/14 embeddings - embeddings multimodais Salad Cloud */
+  clipEmbeddings: {
+    timeout: 30000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** S3/Object Storage - operações de storage */
+  s3Storage: {
+    timeout: 30000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** Brave Search API - web search timeout baixo */
+  webSearch: {
+    timeout: 10000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
   },
   /** Serviço RAG interno - timeout baixo */
   ragService: {
@@ -79,19 +127,33 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Twilio API */
+  /** Twilio API - WhatsApp/SMS */
   twilioAPI: {
     timeout: 10000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Resend API */
+  /** Resend API - emails transacionais */
   resendAPI: {
     timeout: 10000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
+  },
+  /** Health check interno - timeout curto */
+  healthCheck: {
+    timeout: 5000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 10000,
+    volumeThreshold: 3,
+  },
+  /** Integrations Service - comunicação entre microsserviços */
+  integrationsService: {
+    timeout: 15000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
   },
 } as const;
 

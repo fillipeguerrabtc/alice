@@ -15,7 +15,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import CircuitBreaker from 'opossum';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
@@ -632,14 +632,8 @@ function extractImagePrompt(message: string, keyword: string): string {
 
 // ============================================================================
 // CIRCUIT BREAKER - Salad Cloud LLM API (Regra 16 - Best Practices 2025)
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
-
-const circuitBreakerOptions = {
-  timeout: 60000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 5,
-};
 
 // Timeout para chamadas LLM (60 segundos para streaming, 30 para não-streaming)
 const LLM_STREAM_TIMEOUT = 60000;
@@ -703,19 +697,9 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   }
 }
 
-const saladCloudBreaker = new CircuitBreaker(callLlamaAPIInternal, circuitBreakerOptions);
-
-saladCloudBreaker.on('open', () => {
-  logger.warn('Circuit breaker Salad Cloud LLM: ABERTO - API temporariamente indisponível');
-});
-saladCloudBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker Salad Cloud LLM: HALF-OPEN - Testando reconexão');
-});
-saladCloudBreaker.on('close', () => {
-  logger.info('Circuit breaker Salad Cloud LLM: FECHADO - API funcionando normalmente');
-});
-saladCloudBreaker.on('fallback', () => {
-  logger.warn('Circuit breaker Salad Cloud LLM: Usando fallback');
+const saladCloudBreaker = createCircuitBreaker(callLlamaAPIInternal, {
+  name: 'salad-llm',
+  ...CIRCUIT_BREAKER_PRESETS.saladLLM,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
@@ -815,12 +799,7 @@ interface IntegrationsWhatsAppResponse {
   error?: string;
 }
 
-const integrationsServiceBreakerOptions = {
-  timeout: 15000,
-  errorThresholdPercentage: 50,
-  resetTimeout: 30000,
-  volumeThreshold: 3,
-};
+// Usa CIRCUIT_BREAKER_PRESETS.integrationsService (Regra 2 - Não Duplicar)
 
 // Timeout para chamadas cross-service (15 segundos - Best Practices 2025)
 const CROSS_SERVICE_TIMEOUT = 15000;
@@ -892,19 +871,9 @@ async function sendWhatsAppMessageInternal(
   }
 }
 
-const integrationsServiceBreaker = new CircuitBreaker(
-  sendWhatsAppMessageInternal, 
-  integrationsServiceBreakerOptions
-);
-
-integrationsServiceBreaker.on('open', () => {
-  logger.warn('Circuit breaker Integrations Service: ABERTO - Serviço temporariamente indisponível');
-});
-integrationsServiceBreaker.on('halfOpen', () => {
-  logger.info('Circuit breaker Integrations Service: HALF-OPEN - Testando reconexão');
-});
-integrationsServiceBreaker.on('close', () => {
-  logger.info('Circuit breaker Integrations Service: FECHADO - Serviço funcionando normalmente');
+const integrationsServiceBreaker = createCircuitBreaker(sendWhatsAppMessageInternal, {
+  name: 'integrations-service',
+  ...CIRCUIT_BREAKER_PRESETS.integrationsService,
 });
 
 /**
