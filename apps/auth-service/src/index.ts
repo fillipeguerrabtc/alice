@@ -2,7 +2,7 @@
  * Alice Enterprise Platform - Auth Service
  * 
  * Serviço de autenticação enterprise com suporte a:
- * - OAuth 2.0 (Google, GitHub, Microsoft)
+ * - OAuth 2.0 (Google, GitHub)
  * - SAML 2.0 (Azure AD, Okta)
  * - Autenticação local (email/senha com bcrypt)
  * 
@@ -23,8 +23,6 @@ import crypto from 'crypto';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as GitHubStrategy } from 'passport-github2';
-// Microsoft OAuth desabilitado - aguardando credenciais
-// import { Strategy as MicrosoftStrategy } from 'passport-microsoft';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
@@ -208,10 +206,6 @@ const authConfigSchema = z.object({
   // OAuth GitHub
   GITHUB_CLIENT_ID: z.string().optional(),
   GITHUB_CLIENT_SECRET: z.string().optional(),
-  // OAuth Microsoft
-  MICROSOFT_CLIENT_ID: z.string().optional(),
-  MICROSOFT_CLIENT_SECRET: z.string().optional(),
-  MICROSOFT_TENANT_ID: z.string().optional(),
   // SAML 2.0 (Azure AD, Okta)
   SAML_ENTRY_POINT: z.string().optional(),
   SAML_ISSUER: z.string().optional(),
@@ -678,24 +672,6 @@ if (githubClientId && githubClientSecret) {
 }
 
 // ============================================================================
-// ESTRATÉGIA: OAuth Microsoft (DESABILITADO - aguardando credenciais)
-// ============================================================================
-// TODO: Quando as credenciais Microsoft estiverem disponíveis:
-// 1. Descomentar import do passport-microsoft no topo do arquivo
-// 2. Descomentar e implementar a estratégia abaixo
-// 3. Adicionar MICROSOFT_CLIENT_ID, MICROSOFT_CLIENT_SECRET, MICROSOFT_TENANT_ID aos secrets
-
-const microsoftClientId = process.env.MICROSOFT_CLIENT_ID;
-const microsoftClientSecret = process.env.MICROSOFT_CLIENT_SECRET;
-
-if (microsoftClientId && microsoftClientSecret) {
-  // Credenciais detectadas mas implementação ainda não ativada
-  logger.warn('Credenciais Microsoft detectadas mas OAuth Microsoft ainda não implementado - aguardando ativação');
-} else {
-  logger.info('OAuth Microsoft desabilitado - credenciais não configuradas');
-}
-
-// ============================================================================
 // ESTRATÉGIA: SAML 2.0 (Azure AD, Okta)
 // ============================================================================
 
@@ -813,7 +789,6 @@ app.get('/api/auth/health', (_req: Request, res: Response) => {
     local: true,
     google: !!googleClientId,
     github: !!githubClientId,
-    microsoft: !!microsoftClientId,
     saml: !!(samlEntryPoint && samlIssuer && samlCert),
   };
 
@@ -1048,11 +1023,6 @@ if (githubClientId) {
 }
 
 // ============================================================================
-// ROTAS: OAuth Microsoft (DESABILITADO - aguardando credenciais)
-// ============================================================================
-// Rotas serão habilitadas quando as credenciais Microsoft estiverem disponíveis
-
-// ============================================================================
 // ROTAS: SAML 2.0 (Azure AD, Okta)
 // ============================================================================
 
@@ -1147,8 +1117,6 @@ app.get('/api/auth/providers', (_req: Request, res: Response) => {
       { id: 'local', name: 'Email/Senha', enabled: true },
       { id: 'google', name: 'Google', enabled: !!googleClientId },
       { id: 'github', name: 'GitHub', enabled: !!githubClientId },
-      // Microsoft OAuth desabilitado - aguardando credenciais
-      // { id: 'microsoft', name: 'Microsoft', enabled: false },
       { id: 'saml', name: 'SSO Empresarial (SAML)', enabled: !!(samlEntryPoint && samlIssuer && samlCert) },
     ].filter(p => p.enabled)
   });
@@ -2023,7 +1991,6 @@ const server = app.listen(PORT, '0.0.0.0', () => {
       local: true,
       google: !!googleClientId,
       github: !!githubClientId,
-      microsoft: !!microsoftClientId,
       saml: !!(samlEntryPoint && samlIssuer && samlCert),
     }
   }, 'Provedores de autenticação disponíveis');

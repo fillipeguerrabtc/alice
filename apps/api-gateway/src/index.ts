@@ -60,10 +60,26 @@ const gatewayConfigSchema = z.object({
 type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
 
 let config: GatewayConfig;
+const nodeEnv = process.env.NODE_ENV || 'development';
+
 try {
-  config = gatewayConfigSchema.parse(process.env);
+  const result = gatewayConfigSchema.safeParse(process.env);
+  if (result.success) {
+    config = result.data;
+  } else {
+    if (nodeEnv === 'production') {
+      logger.error({ errors: result.error.format() }, 'Configuração inválida em produção. Abortando (Regra 6 - fail-fast).');
+      process.exit(1);
+    }
+    logger.warn({ errors: result.error.format() }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
+    config = gatewayConfigSchema.parse({});
+  }
 } catch (error) {
-  logger.warn({ error }, 'Configuração parcial, usando defaults');
+  if (nodeEnv === 'production') {
+    logger.error({ error }, 'Falha crítica ao carregar configuração em produção. Abortando.');
+    process.exit(1);
+  }
+  logger.warn({ error }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
   config = gatewayConfigSchema.parse({});
 }
 
