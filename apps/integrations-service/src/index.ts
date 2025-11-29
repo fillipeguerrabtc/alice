@@ -381,6 +381,46 @@ const tenantQuerySchema = z.object({
 // Schema para query params de integrations
 const integrationsQuerySchema = tenantQuerySchema;
 
+// OWASP API3: Schemas para validação de query params Wise
+// Previne injection e garante tipos corretos
+
+// Schema para taxas de câmbio (source/target currencies)
+const wiseRatesQuerySchema = z.object({
+  source: z.string()
+    .min(3, 'source deve ter 3 caracteres')
+    .max(3, 'source deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'source deve ser código de moeda válido (ex: USD, EUR, BRL)'),
+  target: z.string()
+    .min(3, 'target deve ter 3 caracteres')
+    .max(3, 'target deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'target deve ser código de moeda válido (ex: USD, EUR, BRL)'),
+});
+
+// Schema para filtro de destinatários por moeda (opcional)
+const wiseRecipientsQuerySchema = z.object({
+  currency: z.string()
+    .min(3, 'currency deve ter 3 caracteres')
+    .max(3, 'currency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'currency deve ser código de moeda válido')
+    .optional(),
+});
+
+// Schema para requisitos de destinatário
+const wiseRecipientRequirementsQuerySchema = z.object({
+  sourceCurrency: z.string()
+    .min(3, 'sourceCurrency deve ter 3 caracteres')
+    .max(3, 'sourceCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'sourceCurrency deve ser código de moeda válido'),
+  targetCurrency: z.string()
+    .min(3, 'targetCurrency deve ter 3 caracteres')
+    .max(3, 'targetCurrency deve ter 3 caracteres')
+    .regex(/^[A-Z]{3}$/, 'targetCurrency deve ser código de moeda válido'),
+  sourceAmount: z.string()
+    .regex(/^\d+(\.\d{1,2})?$/, 'sourceAmount deve ser número válido')
+    .transform(Number)
+    .refine(n => n > 0, 'sourceAmount deve ser positivo'),
+});
+
 app.post('/api/integrations', requirePermission('integrations:integrations:write'), async (req: Request, res: Response) => {
   try {
     const body = createIntegrationSchema.parse(req.body);
@@ -1097,13 +1137,17 @@ app.get('/api/integrations/wise/rates', requirePermission('integrations:wise:rea
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
-  const { source, target } = req.query;
-  if (!source || !target) {
-    return res.status(400).json({ error: 'Parâmetros source e target são obrigatórios' });
+  // OWASP API3: Validação Zod obrigatória de query params
+  const queryResult = wiseRatesQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/integrations/wise/rates');
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
   }
 
+  const { source, target } = queryResult.data;
+
   try {
-    const rate = await wiseService.getExchangeRates(source as string, target as string);
+    const rate = await wiseService.getExchangeRates(source, target);
     res.json({ rate });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter taxa de câmbio Wise');
@@ -1139,10 +1183,17 @@ app.get('/api/integrations/wise/recipients', requirePermission('integrations:wis
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
-  const { currency } = req.query;
+  // OWASP API3: Validação Zod de query params (currency é opcional)
+  const queryResult = wiseRecipientsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/integrations/wise/recipients');
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+
+  const { currency } = queryResult.data;
 
   try {
-    const recipients = await wiseService.listRecipients(currency as string | undefined);
+    const recipients = await wiseService.listRecipients(currency);
     res.json({ recipients });
   } catch (error) {
     logger.error({ error }, 'Falha ao listar destinatários Wise');
@@ -1544,17 +1595,20 @@ app.get('/api/integrations/wise/recipient-requirements', requirePermission('inte
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
-  const { sourceCurrency, targetCurrency, sourceAmount } = req.query;
-
-  if (!sourceCurrency || !targetCurrency || !sourceAmount) {
-    return res.status(400).json({ error: 'Parâmetros sourceCurrency, targetCurrency e sourceAmount são obrigatórios' });
+  // OWASP API3: Validação Zod obrigatória de query params
+  const queryResult = wiseRecipientRequirementsQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/integrations/wise/recipient-requirements');
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
   }
+
+  const { sourceCurrency, targetCurrency, sourceAmount } = queryResult.data;
 
   try {
     const requirements = await wiseService.getRecipientRequirements(
-      sourceCurrency as string,
-      targetCurrency as string,
-      parseFloat(sourceAmount as string)
+      sourceCurrency,
+      targetCurrency,
+      sourceAmount
     );
     res.json({ requirements });
   } catch (error) {

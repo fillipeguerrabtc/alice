@@ -2920,6 +2920,27 @@ const urgentConversationsQuerySchema = z.object({
     }, { message: 'minutes deve estar entre 1 e 1440' }),
 });
 
+// OWASP API3: Schema para listagem de imagens geradas
+const generatedImagesQuerySchema = z.object({
+  status: z.enum(['pending', 'generating', 'completed', 'failed', 'all'])
+    .optional()
+    .default('all'),
+  approved: z.enum(['true', 'false', 'pending', 'all'])
+    .optional(),
+  limit: z.string()
+    .regex(/^\d+$/, 'limit deve ser numérico')
+    .transform(Number)
+    .refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100')
+    .optional()
+    .default('20' as unknown as number),
+  offset: z.string()
+    .regex(/^\d+$/, 'offset deve ser numérico')
+    .transform(Number)
+    .refine(n => n >= 0, 'offset deve ser >= 0')
+    .optional()
+    .default('0' as unknown as number),
+});
+
 app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
   const queryResult = urgentConversationsQuerySchema.safeParse(req.query);
@@ -3390,11 +3411,19 @@ app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFrom
 app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { status, approved, limit, offset } = req.query;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });
   }
+  
+  // OWASP API3: Validação Zod obrigatória de query params
+  const queryResult = generatedImagesQuerySchema.safeParse(req.query);
+  if (!queryResult.success) {
+    logger.warn({ errors: queryResult.error.flatten() }, 'Input inválido em /api/chat/images');
+    return res.status(400).json({ error: 'Parâmetros inválidos', details: queryResult.error.format() });
+  }
+  
+  const { status, approved, limit: pageLimit, offset: pageOffset } = queryResult.data;
   
   try {
     let images = await db.query.generatedImages.findMany({
@@ -3419,8 +3448,6 @@ app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromReques
     
     const total = images.length;
     
-    const pageOffset = parseInt(offset as string) || 0;
-    const pageLimit = parseInt(limit as string) || 20;
     images = images.slice(pageOffset, pageOffset + pageLimit);
     
     res.json({
