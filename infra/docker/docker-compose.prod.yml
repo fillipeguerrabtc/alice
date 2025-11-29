@@ -583,6 +583,51 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
+  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (GPU/Salad Cloud)
+  # NOTA: Este serviço requer GPU NVIDIA e deve ser deployado no Salad Cloud
+  # Para deploy local/Hetzner, usar profiles: ["gpu"] e deployar separadamente
+  # Documentação: docs/DEPLOYMENT.md - Seção "Salad Cloud Integration"
+  # ===========================================================================
+  alice-clip-inference:
+    image: ${IMAGE_PREFIX}-clip-inference:${IMAGE_TAG:-latest}
+    container_name: alice-clip-inference
+    restart: unless-stopped
+    profiles:
+      - gpu
+    environment:
+      PORT: 8080
+      MODEL_NAME: "ViT-L/14"
+      TORCH_HOME: /app/.cache
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alice-clip.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/clip`)"
+      - "traefik.http.routers.alice-clip.entrypoints=websecure"
+      - "traefik.http.routers.alice-clip.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.alice-clip.middlewares=security-headers@docker,rate-limit@docker"
+      - "traefik.http.services.alice-clip.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '2.0'
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial
   # ===========================================================================
   
