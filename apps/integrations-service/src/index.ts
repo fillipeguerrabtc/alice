@@ -1,3 +1,7 @@
+// IMPORTANTE: Configurar limite de listeners ANTES de qualquer import
+// para evitar MaxListenersExceededWarning de módulos com graceful shutdown
+process.setMaxListeners(30);
+
 import express, { Request, Response, NextFunction } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
@@ -26,8 +30,6 @@ import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
 import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService.js';
-
-process.setMaxListeners(20);
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -2109,18 +2111,15 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-process.on('SIGTERM', () => {
-  logger.info('Encerrando integrations service (SIGTERM)...');
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+// Isso resolve o MaxListenersExceededWarning
+const gracefulShutdown = (signal: string) => {
+  logger.info({ signal }, `Encerrando integrations service (${signal})...`);
   server.close(() => {
     logger.info('HTTP server fechado');
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  logger.info('Encerrando integrations service (SIGINT)...');
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-});
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));

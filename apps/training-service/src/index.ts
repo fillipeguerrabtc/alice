@@ -762,8 +762,9 @@ const webhookSchema = z.object({
   event: z.enum(['training_data', 'feedback', 'document']),
   payload: z.object({
     messages: z.array(z.object({
-      role: z.string(),
+      role: z.enum(['system', 'user', 'assistant']),
       content: z.string(),
+      timestamp: z.string().datetime().optional(),
     })).optional(),
     rating: z.number().min(1).max(5).optional(),
     conversationId: z.string().optional(),
@@ -1030,18 +1031,14 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-process.on('SIGTERM', () => {
-  logger.info('Encerrando training service (SIGTERM)...');
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+const gracefulShutdown = (signal: string) => {
+  logger.info({ signal }, `Encerrando training service (${signal})...`);
   server.close(() => {
     logger.info('HTTP server fechado');
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  logger.info('Encerrando training service (SIGINT)...');
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-});
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));

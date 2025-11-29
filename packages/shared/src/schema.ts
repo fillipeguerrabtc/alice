@@ -1259,7 +1259,7 @@ export const mediaUploads = pgTable(
     // Análise de conteúdo (guardrails)
     nsfwScore: real("nsfw_score"),
     piiDetected: boolean("pii_detected").default(false),
-    piiDetails: jsonb("pii_details").$type<PiiDetails>().default({}),
+    piiDetails: jsonb("pii_details").$type<PiiDetails>().default({ detected: false }),
     contentFlags: jsonb("content_flags").$type<ContentFlags>().default([]),
     
     // Metadata extraída (EXIF, etc.)
@@ -1284,6 +1284,30 @@ export const mediaUploads = pgTable(
     idxMediaUploadsStatus: index("idx_media_uploads_status").on(table.processingStatus),
     idxMediaUploadsCreated: index("idx_media_uploads_created").on(table.criadoEm),
     idxMediaUploadsApproved: index("idx_media_uploads_approved").on(table.approvedForTraining),
+  })
+);
+
+// ============================================================================
+// FEATURE FLAGS (Runtime Configuration - Enterprise)
+// ============================================================================
+
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 100 }).notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    description: text("description"),
+    metadata: jsonb("metadata").default({}),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxFeatureFlagsKey: index("idx_feature_flags_key").on(table.key),
+    idxFeatureFlagsTenantKey: index("idx_feature_flags_tenant_key").on(table.tenantId, table.key),
   })
 );
 
@@ -1597,4 +1621,14 @@ export const insertConversationEscalationSchema: z.ZodType<unknown> = createInse
 export const insertGeneratedImageSchema: z.ZodType<unknown> = createInsertSchema(generatedImages).omit({
   id: true,
   criadoEm: true,
+});
+
+// Feature Flags Types (Runtime Configuration - Enterprise)
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type InsertFeatureFlag = typeof featureFlags.$inferInsert;
+
+export const insertFeatureFlagSchema = createInsertSchema(featureFlags).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
 });

@@ -343,7 +343,8 @@ const gracefulShutdown = async () => {
   }, 10000);
 };
 
-process.on('SIGTERM', gracefulShutdown);
-process.on('SIGINT', gracefulShutdown);
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+process.once('SIGTERM', gracefulShutdown);
+process.once('SIGINT', gracefulShutdown);
 
 export { app, server };

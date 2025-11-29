@@ -1000,6 +1000,30 @@ export const mediaUploads = pgTable(
 );
 
 // ============================================================================
+// FEATURE FLAGS (Runtime Configuration - Enterprise)
+// ============================================================================
+
+export const featureFlags = pgTable(
+  "feature_flags",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }),
+    key: varchar("key", { length: 100 }).notNull(),
+    enabled: boolean("enabled").notNull().default(false),
+    description: text("description"),
+    metadata: jsonb("metadata").default({}),
+    createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxFeatureFlagsKey: index("idx_feature_flags_key").on(table.key),
+    idxFeatureFlagsTenantKey: index("idx_feature_flags_tenant_key").on(table.tenantId, table.key),
+  })
+);
+
+// ============================================================================
 // RELATIONS
 // ============================================================================
 
@@ -1295,4 +1319,14 @@ export const insertConversationEscalationSchema: z.ZodType<unknown> = createInse
 export const insertGeneratedImageSchema: z.ZodType<unknown> = createInsertSchema(generatedImages).omit({
   id: true,
   criadoEm: true,
+});
+
+// Feature Flags Types (Runtime Configuration - Enterprise)
+export type FeatureFlag = typeof featureFlags.$inferSelect;
+export type InsertFeatureFlag = typeof featureFlags.$inferInsert;
+
+export const insertFeatureFlagSchema = createInsertSchema(featureFlags).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
 });

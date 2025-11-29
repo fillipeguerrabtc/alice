@@ -2399,18 +2399,14 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-process.on('SIGTERM', () => {
-  logger.info('Encerrando RAG service (SIGTERM)...');
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+const gracefulShutdown = (signal: string) => {
+  logger.info({ signal }, `Encerrando RAG service (${signal})...`);
   server.close(() => {
     logger.info('HTTP server fechado');
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  logger.info('Encerrando RAG service (SIGINT)...');
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-});
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));

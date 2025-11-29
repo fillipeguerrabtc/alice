@@ -1201,13 +1201,15 @@ server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  logger.info('Encerrando auth service...');
-  process.exit(0);
-});
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+const gracefulShutdown = (signal: string) => {
+  logger.info({ signal }, `Encerrando auth service (${signal})...`);
+  server.close(() => {
+    logger.info('HTTP server fechado');
+    process.exit(0);
+  });
+};
 
-process.on('SIGINT', async () => {
-  logger.info('Encerrando auth service (SIGINT)...');
-  process.exit(0);
-});
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));

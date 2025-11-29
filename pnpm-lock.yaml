@@ -389,6 +389,9 @@ importers:
       '@alice/logger':
         specifier: workspace:*
         version: link:../../packages/logger
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -396,11 +399,8 @@ importers:
         specifier: ^4.21.2
         version: 4.21.2
       express-rate-limit:
-        specifier: ^7.5.0
-        version: 7.5.1(express@4.21.2)
-      helmet:
-        specifier: ^8.0.0
-        version: 8.1.0
+        specifier: ^8.2.1
+        version: 8.2.1(express@4.21.2)
       http-proxy-middleware:
         specifier: ^3.0.3
         version: 3.0.5
@@ -829,6 +829,9 @@ importers:
 
   apps/observability-service:
     dependencies:
+      '@alice/shared-utils':
+        specifier: workspace:*
+        version: link:../../packages/shared-utils
       cors:
         specifier: ^2.8.5
         version: 2.8.5
@@ -3650,12 +3653,6 @@ packages:
   expect-type@1.2.2:
     resolution: {integrity: sha512-JhFGDVJ7tmDJItKhYgJCGLOWjuK9vPxiXoUFLwLDc99NlmklilbiQJwoctZtt13+xMw91MCk/REan6MWHqDjyA==}
     engines: {node: '>=12.0.0'}
-
-  express-rate-limit@7.5.1:
-    resolution: {integrity: sha512-7iN8iPMDzOMHPUYllBEsQdWVB6fPDMPqwjBaFrgr4Jgr/+okjvzAy+UHlYYL/Vs0OsOrMkwS6PJDkFlJwoxUnw==}
-    engines: {node: '>= 16'}
-    peerDependencies:
-      express: '>= 4.11'
 
   express-rate-limit@8.2.1:
     resolution: {integrity: sha512-PCZEIEIxqwhzw4KF0n7QF4QqruVTcF73O5kFKUnGOyjbCCgizBBiFaYpd/fnBLUMPw/BWw9OsiN7GgrNYr7j6g==}
@@ -7716,10 +7713,6 @@ snapshots:
   events@3.3.0: {}
 
   expect-type@1.2.2: {}
-
-  express-rate-limit@7.5.1(express@4.21.2):
-    dependencies:
-      express: 4.21.2
 
   express-rate-limit@8.2.1(express@4.21.2):
     dependencies:

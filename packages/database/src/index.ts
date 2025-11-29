@@ -91,8 +91,9 @@ export function setupGracefulShutdown(logger?: { info: (msg: string) => void; er
     }
   };
   
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
+  // Usamos process.once() em vez de process.on() para evitar listeners duplicados
+  process.once('SIGTERM', () => shutdown('SIGTERM'));
+  process.once('SIGINT', () => shutdown('SIGINT'));
 }
 
 // ============================================================================
@@ -229,6 +230,12 @@ export async function closeDatabase(): Promise<void> {
 
 export { schema };
 export type Database = NodePgDatabase<typeof schema>;
+
+// Feature Flags Storage Adapter
+export { 
+  createDrizzleFeatureFlagStorage, 
+  createDrizzleFeatureFlagStorageWithRLS 
+} from './feature-flags-adapter.js';
 
 // ============================================================================
 // PGVECTOR UTILITIES (Enterprise-Grade)

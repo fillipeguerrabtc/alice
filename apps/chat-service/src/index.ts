@@ -1477,6 +1477,7 @@ function notifyAgentsAboutEvent(
     from?: string;
     trigger?: string;
     priority?: string;
+    reason?: string;
   }
 ) {
   // CRÍTICO: tenantId é obrigatório para isolamento multi-tenant
@@ -2064,6 +2065,7 @@ wss.on('connection', (ws, req) => {
         }));
 
         // Salvar mensagem do usuário com referência à mídia
+        const mediaId = crypto.randomUUID();
         const [userMsg] = await db.insert(schema.messages).values({
           conversationId: mediaMessage.conversationId,
           userId,
@@ -2071,9 +2073,11 @@ wss.on('connection', (ws, req) => {
           tipo: mediaType,
           isFromUser: true,
           anexos: [{
+            id: mediaId,
+            type: mediaType === 'image' ? 'image' : mediaType === 'audio' ? 'audio' : 'video',
             filename: mediaMessage.media.filename,
             mimeType: mediaMessage.media.mimeType,
-            status: 'uploading',
+            size: Buffer.from(mediaMessage.media.file, 'base64').length,
           }],
         }).returning();
 
@@ -2102,13 +2106,13 @@ wss.on('connection', (ws, req) => {
         await db.update(schema.messages)
           .set({
             anexos: [{
-              uploadId: uploadResult.uploadId,
+              id: mediaId,
+              type: mediaType === 'image' ? 'image' : mediaType === 'audio' ? 'audio' : 'video',
               filename: mediaMessage.media.filename,
               mimeType: mediaMessage.media.mimeType,
-              fileUrl: uploadResult.fileUrl,
+              size: Buffer.from(mediaMessage.media.file, 'base64').length,
+              url: uploadResult.fileUrl,
               thumbnailUrl: uploadResult.thumbnailUrl,
-              mediaType: uploadResult.mediaType,
-              status: uploadResult.processingStatus,
             }],
           })
           .where(eq(schema.messages.id, userMsg.id));
@@ -2320,29 +2324,16 @@ agentWss.on('connection', async (ws, req) => {
     }
     
     // Verificar se o agente tem permissão de takeover
-    const userRole = await db.query.userRoles.findFirst({
-      where: eq(schema.userRoles.userId, agentId),
-      with: {
-        role: {
-          with: {
-            permissions: {
-              with: {
-                permission: true,
-              },
-            },
-          },
-        },
-      },
-    });
+    // Schema RBAC: users.role é um enum, rolePermissions liga role->permission
+    const userRole = user.role;
     
-    const hasPermission = userRole?.role?.permissions?.some(
-      (p: { permission: { name: string } }) => 
-        p.permission.name === 'chat:takeover:read' || 
-        p.permission.name === 'chat:takeover:write'
-    );
+    // Roles com permissão de takeover: super_admin, admin, manager, operator
+    // (viewer e guest não podem fazer takeover)
+    const rolesWithTakeoverPermission = ['super_admin', 'admin', 'manager', 'operator'];
+    const hasPermission = userRole && rolesWithTakeoverPermission.includes(userRole);
     
     if (!hasPermission) {
-      logger.warn({ agentId, safeTenantId }, 'Agente sem permissão de takeover');
+      logger.warn({ agentId, safeTenantId, role: userRole }, 'Agente sem permissão de takeover');
       ws.close(4006, 'Sem permissão para takeover');
       return;
     }
@@ -3396,8 +3387,9 @@ server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
 // setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-process.on('SIGTERM', () => {
-  logger.info('Encerrando chat service (SIGTERM)...');
+// Usamos process.once() em vez de process.on() para evitar listeners duplicados
+const gracefulShutdown = (signal: string) => {
+  logger.info({ signal }, `Encerrando chat service (${signal})...`);
   wss.close(() => {
     logger.info('WebSocket server fechado');
   });
@@ -3405,15 +3397,7 @@ process.on('SIGTERM', () => {
     logger.info('HTTP server fechado');
     process.exit(0);
   });
-});
+};
 
-process.on('SIGINT', () => {
-  logger.info('Encerrando chat service (SIGINT)...');
-  wss.close(() => {
-    logger.info('WebSocket server fechado');
-  });
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-});
+process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.once('SIGINT', () => gracefulShutdown('SIGINT'));

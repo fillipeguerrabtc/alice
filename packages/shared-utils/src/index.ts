@@ -19,6 +19,8 @@ export * from './metrics.js';
 export * from './health.js';
 export * from './async-context.js';
 export * from './express-hardening.js';
+export * from './feature-flags.js';
+export * from './feature-flags-storage.js';
 
 export * as rbac from './rbac/index.js';
 export { 
