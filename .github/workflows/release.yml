@@ -1,77 +1,231 @@
+# =============================================================================
+# GitHub Actions Workflow - Release & Tag
+# =============================================================================
+# Descrição: Versionamento semântico da Alice Enterprise Platform
+# Best Practices 2025: Conventional Commits, SHA pinning, least privilege
+# Fluxo: Criar Release → Build Images → Deploy Manual
+# =============================================================================
+
 name: Release & Tag
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to release (e.g., v1.0.0)'
+        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
         required: true
         type: string
       prerelease:
-        description: 'Is this a pre-release?'
+        description: 'É uma pré-release (alpha/beta)?'
+        type: boolean
+        default: false
+      trigger_deploy:
+        description: 'Disparar deploy após release?'
         type: boolean
         default: false
 
+# =============================================================================
+# SEGURANÇA: Permissões mínimas (Best Practices 2025)
+# =============================================================================
+permissions:
+  contents: write
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+
 jobs:
+  # ===========================================================================
+  # Job 1: Validação e Criação da Release
+  # ===========================================================================
   create-release:
-    name: Create Release
+    name: Criar Release
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+    outputs:
+      version: ${{ inputs.version }}
+      changelog: ${{ steps.changelog.outputs.changes }}
+    
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
-      - name: Validate version format
+      - name: Validar formato da versão
         run: |
-          if [[ ! "${{ inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "Invalid version format. Must be like v1.0.0 or v1.0.0-beta.1"
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "❌ Formato de versão inválido: $VERSION"
+            echo "   Formato esperado: v1.0.0 ou v1.0.0-beta.1"
             exit 1
           fi
+          echo "✅ Versão válida: $VERSION"
 
-      - name: Generate changelog
+      - name: Verificar se tag já existe
+        run: |
+          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+            echo "❌ Tag ${{ inputs.version }} já existe!"
+            exit 1
+          fi
+          echo "✅ Tag ${{ inputs.version }} disponível"
+
+      - name: Gerar changelog (Conventional Commits)
         id: changelog
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
           if [ -z "$PREVIOUS_TAG" ]; then
-            CHANGES=$(git log --pretty=format:"- %s (%h)" --no-merges)
+            echo "📝 Primeira release - incluindo todos os commits"
+            COMMITS=$(git log --pretty=format:"%s (%h)" --no-merges | head -50)
           else
-            CHANGES=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s (%h)" --no-merges)
+            echo "📝 Gerando changelog desde $PREVIOUS_TAG"
+            COMMITS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"%s (%h)" --no-merges)
           fi
           
+          # Categorizar por Conventional Commits
+          FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^/- /' || echo "")
+          FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^/- /' || echo "")
+          BREAKING=$(echo "$COMMITS" | grep -E "^(feat|fix)(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
+          OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?[!]?:" | sed 's/^/- /' || echo "")
+          
+          # Construir changelog formatado
+          CHANGELOG=""
+          
+          if [ -n "$BREAKING" ]; then
+            CHANGELOG="$CHANGELOG\n#### ⚠️ Breaking Changes\n$BREAKING\n"
+          fi
+          
+          if [ -n "$FEATURES" ]; then
+            CHANGELOG="$CHANGELOG\n#### ✨ Features\n$FEATURES\n"
+          fi
+          
+          if [ -n "$FIXES" ]; then
+            CHANGELOG="$CHANGELOG\n#### 🐛 Bug Fixes\n$FIXES\n"
+          fi
+          
+          if [ -n "$OTHERS" ]; then
+            CHANGELOG="$CHANGELOG\n#### 📦 Other Changes\n$OTHERS\n"
+          fi
+          
+          # Salvar output
           echo "changes<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGES" >> $GITHUB_OUTPUT
+          echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Create Git Tag
+      - name: Criar Git Tag
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
+          echo "✅ Tag ${{ inputs.version }} criada e enviada"
 
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+      # SHA: softprops/action-gh-release@v2.2.1 (2024-11)
+      - name: Criar GitHub Release
+        uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
           tag_name: ${{ inputs.version }}
           name: Alice Enterprise Platform ${{ inputs.version }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## Alice Enterprise Platform ${{ inputs.version }}
+            ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
             
-            ### What's Changed
+            ### Changelog
             ${{ steps.changelog.outputs.changes }}
             
-            ### Docker Images
-            All images are available on Oracle Container Registry:
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-auth-service:${{ inputs.version }}`
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-chat-service:${{ inputs.version }}`
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-rag-service:${{ inputs.version }}`
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-training-service:${{ inputs.version }}`
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-integrations-service:${{ inputs.version }}`
-            - `${{ secrets.OCI_CLI_REGION }}.ocir.io/${{ secrets.OCI_TENANCY_NAMESPACE }}/alice-frontend:${{ inputs.version }}`
+            ### 🐳 Docker Images
+            Todas as imagens estão disponíveis no GitHub Container Registry:
+            ```
+            ${{ env.IMAGE_PREFIX }}-auth-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-chat-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-rag-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-training-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations-service:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
+            ```
             
-            ### Deployment
-            This release is automatically deployed to production after approval.
+            ### 📋 Deploy
+            Para fazer deploy desta versão, execute o workflow "Deploy to Production" com `version: ${{ inputs.version }}`
+
+  # ===========================================================================
+  # Job 2: Build e Push Docker Images (opcional)
+  # ===========================================================================
+  build-images:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: create-release
+    if: ${{ !inputs.prerelease }}
+    
+    permissions:
+      contents: read
+      packages: write
+    
+    strategy:
+      matrix:
+        service:
+          - auth-service
+          - chat-service
+          - rag-service
+          - training-service
+          - integrations-service
+          - clip-inference
+          - frontend
+    
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ needs.create-release.outputs.version }}
+
+      - name: Login no GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build e Push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./apps/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ needs.create-release.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ===========================================================================
+  # Job 3: Disparar Deploy (opcional)
+  # ===========================================================================
+  trigger-deploy:
+    name: Disparar Deploy
+    runs-on: ubuntu-latest
+    needs: [create-release, build-images]
+    if: ${{ inputs.trigger_deploy && !inputs.prerelease }}
+    
+    steps:
+      - name: Disparar workflow de deploy
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-production.yml',
+              ref: 'main',
+              inputs: {
+                version: '${{ needs.create-release.outputs.version }}',
+                services: 'all',
+                skip_approval: 'false',
+                skip_tests: 'false'
+              }
+            });
+            console.log('✅ Deploy disparado para versão ${{ needs.create-release.outputs.version }}');

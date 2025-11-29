@@ -16,27 +16,28 @@
 name: Deploy to Production (Hetzner Cloud)
 
 on:
+  # =============================================================================
+  # REGRA 4: Deploy APENAS manual (Aprovação Obrigatória)
+  # Best Practices 2025: Usar Release & Tag para versionamento, depois deploy
+  # =============================================================================
   workflow_dispatch:
     inputs:
+      version:
+        description: 'Versão para deploy (ex: v1.0.0, latest)'
+        required: false
+        default: 'latest'
       services:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
         required: false
         default: 'all'
       skip_approval:
-        description: 'Pular aprovação manual (hotfix)'
+        description: 'Pular aprovação manual (hotfix crítico)'
         type: boolean
         default: false
       skip_tests:
-        description: 'Pular testes (emergência)'
+        description: 'Pular testes (emergência crítica)'
         type: boolean
         default: false
-  push:
-    branches: [main]
-    paths:
-      - 'apps/**'
-      - 'packages/**'
-      - 'infra/**'
-      - '.github/workflows/**'
 
 # =============================================================================
 # SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
@@ -67,9 +68,9 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      # SHA: pnpm/action-setup@v4.0.0 (2024-09-03)
+      # Best Practices 2025: pnpm/action-setup@v4 (Node.js 20, November 2025)
       - name: Setup pnpm
-        uses: pnpm/action-setup@fe02b34f77f8bc703c70f50e5a4e13b8c9ebe7ec
+        uses: pnpm/action-setup@v4
 
       # SHA: actions/setup-node@v4.1.0 (2024-10-24)
       - name: Setup Node.js
