@@ -52,9 +52,9 @@ RUN pnpm --filter @alice/auth-service run build
 FROM builder AS pruner
 WORKDIR /app
 
-# Usar pnpm deploy para extrair dependências de produção
+# Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
 # O bundle.js já contém @alice/*, então precisamos apenas das deps externas
-RUN pnpm --filter @alice/auth-service deploy --prod /prod/auth-service
+RUN pnpm --filter @alice/auth-service deploy --prod --legacy /prod/auth-service
 
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)

@@ -52,9 +52,9 @@ RUN pnpm --filter @alice/integrations-service run build
 FROM builder AS pruner
 WORKDIR /app
 
-# Usar pnpm deploy para extrair dependências de produção
+# Usar pnpm deploy para extrair dependências de produção (--legacy para pnpm v10)
 # O bundle.js já contém @alice/*, então precisamos apenas das deps externas
-RUN pnpm --filter @alice/integrations-service deploy --prod /prod/integrations-service
+RUN pnpm --filter @alice/integrations-service deploy --prod --legacy /prod/integrations-service
 
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)

@@ -5,6 +5,10 @@
   "type": "module",
   "license": "MIT",
   "packageManager": "pnpm@10.12.4",
+  "pnpm": {
+    "inject-workspace-packages": true,
+    "force-legacy-deploy": true
+  },
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index-dev.ts",
     "build": "cd client && vite build --outDir ../dist/public --emptyOutDir && cd .. && esbuild server/index-prod.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/index.js",
