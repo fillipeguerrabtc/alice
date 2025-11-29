@@ -147,9 +147,9 @@
       "title": "Latência Global (P50/P95/P99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
-        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
-        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
       ]
     },
     {
@@ -170,7 +170,7 @@
       "title": "Latência P95 por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (job, le))", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket{job=~\"alice-.*\"}[5m])) by (job, le))", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -198,7 +198,7 @@
       "title": "RPS por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(rate(http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -219,7 +219,7 @@
       "title": "RPS por Endpoint (Top 10)",
       "type": "timeseries",
       "targets": [
-        { "expr": "topk(10, sum(rate(http_requests_total{job=~\"alice-.*\"}[5m])) by (handler))", "legendFormat": "{{ handler }}", "refId": "A" }
+        { "expr": "topk(10, sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (handler))", "legendFormat": "{{ handler }}", "refId": "A" }
       ]
     },
     {
@@ -247,7 +247,7 @@
       "title": "Error Rate por Serviço (%)",
       "type": "timeseries",
       "targets": [
-        { "expr": "100 * sum(rate(http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m])) by (job) / sum(rate(http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "100 * sum(rate(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m])) by (job) / sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -268,10 +268,10 @@
       "title": "Status Codes Distribution",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(increase(http_requests_total{job=~\"alice-.*\",status=~\"2..\"}[5m]))", "legendFormat": "2xx Success", "refId": "A" },
-        { "expr": "sum(increase(http_requests_total{job=~\"alice-.*\",status=~\"3..\"}[5m]))", "legendFormat": "3xx Redirect", "refId": "B" },
-        { "expr": "sum(increase(http_requests_total{job=~\"alice-.*\",status=~\"4..\"}[5m]))", "legendFormat": "4xx Client Error", "refId": "C" },
-        { "expr": "sum(increase(http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]))", "legendFormat": "5xx Server Error", "refId": "D" }
+        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"2..\"}[5m]))", "legendFormat": "2xx Success", "refId": "A" },
+        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"3..\"}[5m]))", "legendFormat": "3xx Redirect", "refId": "B" },
+        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"4..\"}[5m]))", "legendFormat": "4xx Client Error", "refId": "C" },
+        { "expr": "sum(increase(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]))", "legendFormat": "5xx Server Error", "refId": "D" }
       ]
     },
     {

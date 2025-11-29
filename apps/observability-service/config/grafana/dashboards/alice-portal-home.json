@@ -226,7 +226,7 @@
       "title": "Request Rate por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "rate(http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -245,7 +245,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Circuit Breaker - Salad Cloud",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"salad-cloud\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-cloud\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -263,7 +263,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Circuit Breaker - ERPNext",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"erpnext\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"erpnext\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -281,7 +281,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Circuit Breaker - Wise",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"wise\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"wise\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -321,7 +321,7 @@
       "title": "Taxa de Erro por Serviço",
       "type": "timeseries",
       "targets": [
-        { "expr": "100 * rate(http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]) / rate(http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "100 * rate(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m]) / rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {

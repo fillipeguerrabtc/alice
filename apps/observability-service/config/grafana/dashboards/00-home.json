@@ -186,9 +186,9 @@
       "title": "Latency (P50/P95/P99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
-        { "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
-        { "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
+        { "expr": "histogram_quantile(0.50, sum(rate(alice_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, sum(rate(alice_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, sum(rate(alice_http_request_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "C" }
       ]
     },
     {
@@ -209,7 +209,7 @@
       "title": "Traffic (RPS)",
       "type": "timeseries",
       "targets": [
-        { "expr": "sum(rate(http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -230,7 +230,7 @@
       "title": "Error Rate (%)",
       "type": "timeseries",
       "targets": [
-        { "expr": "100 * sum(rate(http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m])) by (job) / sum(rate(http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
+        { "expr": "100 * sum(rate(alice_http_requests_total{job=~\"alice-.*\",status=~\"5..\"}[5m])) by (job) / sum(rate(alice_http_requests_total{job=~\"alice-.*\"}[5m])) by (job)", "legendFormat": "{{ job }}", "refId": "A" }
       ]
     },
     {
@@ -276,7 +276,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Salad Cloud LLM",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"salad-llm\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-llm\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -292,7 +292,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Salad Embeddings",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"salad-embeddings\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-embeddings\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -308,7 +308,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Stripe",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"stripe\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"stripe\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -324,7 +324,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Wise",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"wise\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"wise\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -340,7 +340,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "ERPNext",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"erpnext\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"erpnext\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -356,7 +356,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Brave Search",
       "type": "stat",
-      "targets": [{ "expr": "circuit_breaker_state{name=\"brave-search\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"brave-search\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "collapsed": false,
