@@ -24,6 +24,8 @@ services:
     restart: unless-stopped
     ports:
       - "9090:9090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./config/prometheus/rules:/etc/prometheus/rules:ro
@@ -229,13 +231,14 @@ services:
 
   # ============================================================================
   # NODE EXPORTER - Métricas de infraestrutura (CPU, memória, disco, rede)
+  # Host networking para Hetzner Cloud - coleta métricas reais do host
   # ============================================================================
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: alice-node-exporter
     restart: unless-stopped
-    ports:
-      - "9100:9100"
+    network_mode: host
+    pid: host
     volumes:
       - /proc:/host/proc:ro
       - /sys:/host/sys:ro
@@ -245,8 +248,10 @@ services:
       - '--path.sysfs=/host/sys'
       - '--path.rootfs=/rootfs'
       - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
-    networks:
-      - observability
+      - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
+      - '--collector.netclass.ignored-devices=^(veth.*|docker.*|br-.*)$$'
+      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
+      - '--web.listen-address=:9100'
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
       interval: 30s

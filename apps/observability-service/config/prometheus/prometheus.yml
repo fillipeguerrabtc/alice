@@ -116,10 +116,15 @@ scrape_configs:
   # ============================================================================
   # NODE EXPORTER - Métricas de infraestrutura (CPU, memória, disco, rede)
   # Exporta: node_cpu_seconds_total, node_memory_*, node_filesystem_*, node_network_*
+  # Nota: node_exporter usa host networking para métricas reais do host Hetzner
+  # extra_hosts no Prometheus resolve host.docker.internal -> IP do host
   # ============================================================================
   - job_name: 'node-exporter'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['host.docker.internal:9100']
+        labels:
+          instance: 'hetzner-primary'
+          environment: 'production'
     metrics_path: /metrics
     scrape_interval: 15s
 

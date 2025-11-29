@@ -470,7 +470,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "circuit_breaker_state{name=\"salad_llm\"}",
+          "expr": "alice_circuit_breaker_state{name=\"salad_llm\"}",
           "refId": "A"
         }
       ]
