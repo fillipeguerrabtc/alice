@@ -34,6 +34,7 @@ import {
   FEATURE_FLAGS,
   isFeatureEnabled,
   createAlicePrometheus,
+  initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
@@ -462,6 +463,10 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   serviceName: 'rag-service',
   collectDefaultMetrics: true,
 });
+
+// Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
+initRbacPrometheusMetrics(metrics.rbac);
+logger.info('Métricas RBAC Prometheus inicializadas no rag-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);

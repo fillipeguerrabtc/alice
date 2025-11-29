@@ -41,6 +41,7 @@ import {
   requireAuth,
   requireRole,
   createAlicePrometheus,
+  initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
   Counter as PromCounter,
   Gauge as PromGauge,
@@ -269,6 +270,10 @@ const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus(
   serviceName: 'auth-service',
   collectDefaultMetrics: true,
 });
+
+// Inicializar métricas RBAC (Regra 16 - Observability Enterprise)
+initRbacPrometheusMetrics(metrics.rbac);
+logger.info('Métricas RBAC Prometheus inicializadas no auth-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
