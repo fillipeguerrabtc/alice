@@ -23,7 +23,7 @@ COPY apps/observability-service/src ./src
 
 # Instalar dependências
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install
 
 # Compilar TypeScript
 RUN pnpm run build

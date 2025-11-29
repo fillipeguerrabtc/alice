@@ -28,7 +28,7 @@ COPY apps/frontend-service/package.json ./apps/frontend-service/
 
 # Instalar todas as dependências (aproveitando cache)
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e serviço
@@ -41,7 +41,7 @@ COPY . .
 
 # Instalar dependências (com cache)
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install
 
 # Compilar TODOS os pacotes na ordem correta de dependências
 # Usa pnpm workspace recursivo para garantir ordem de build

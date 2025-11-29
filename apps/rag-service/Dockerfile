@@ -31,9 +31,9 @@ COPY apps/rag-service/package.json ./apps/rag-service/
 # Copiar script de build
 COPY scripts/build-service.mjs ./scripts/
 
-# Instalar TODAS as dependências (determinístico via frozen-lockfile)
+# Instalar TODAS as dependências
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
-    pnpm install --frozen-lockfile
+    pnpm install
 
 # Copiar código fonte dos pacotes e serviço
 COPY packages/ ./packages/
