@@ -197,13 +197,215 @@
     {
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "id": 11,
+      "title": "RBAC - Access Control",
+      "type": "row"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Taxa de cache hit do sistema RBAC. Valores acima de 90% indicam boa eficiência.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 70 },
+              { "color": "green", "value": 90 }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 15 },
+      "id": 12,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "avg(alice_rbac_cache_hit_rate) * 100",
+          "legendFormat": "Hit Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "RBAC Cache Hit Rate",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Taxa de cache hits RBAC por segundo",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "ops"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 15 },
+      "id": 13,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(alice_rbac_cache_hits_total[5m]))",
+          "legendFormat": "Hits/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Hits/s",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Taxa de cache misses RBAC por segundo. Valores altos indicam necessidade de otimização.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.5 },
+              { "color": "red", "value": 2 }
+            ]
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 15 },
+      "id": 14,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(alice_rbac_cache_misses_total[5m]))",
+          "legendFormat": "Misses/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Misses/s",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Taxa de invalidações de cache RBAC por segundo. Picos indicam mudanças em roles/permissões.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 0.1 },
+              { "color": "red", "value": 0.5 }
+            ]
+          },
+          "unit": "ops"
+        }
+      },
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 15 },
+      "id": 15,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": { "calcs": ["lastNotNull"] }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(alice_rbac_cache_invalidations_total[5m]))",
+          "legendFormat": "Invalidations/s",
+          "refId": "A"
+        }
+      ],
+      "title": "Cache Invalidations/s",
+      "type": "stat"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Tendência de cache hits vs misses ao longo do tempo por serviço",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" }
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 16,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(alice_rbac_cache_hits_total[5m])) by (service)",
+          "legendFormat": "{{service}} - Hits",
+          "refId": "A"
+        },
+        {
+          "expr": "sum(rate(alice_rbac_cache_misses_total[5m])) by (service)",
+          "legendFormat": "{{service}} - Misses",
+          "refId": "B"
+        }
+      ],
+      "title": "RBAC Cache Hits vs Misses by Service",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "Prometheus",
+      "description": "Latência P95 das verificações de permissão RBAC",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "unit": "s"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 17,
+      "options": {
+        "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "bottom" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(alice_rbac_check_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "{{service}} - P95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(alice_rbac_check_duration_seconds_bucket[5m])) by (le, service))",
+          "legendFormat": "{{service}} - P50",
+          "refId": "B"
+        }
+      ],
+      "title": "RBAC Check Duration (P50/P95)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 28 },
       "id": 9,
       "title": "Logs",
       "type": "row"
     },
     {
       "datasource": "Loki",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 15 },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 29 },
       "id": 10,
       "options": {
         "dedupStrategy": "none",
@@ -228,12 +430,12 @@
   "refresh": "30s",
   "schemaVersion": 30,
   "style": "dark",
-  "tags": ["alice", "enterprise", "microservices"],
+  "tags": ["alice", "enterprise", "microservices", "rbac"],
   "templating": { "list": [] },
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": {},
   "timezone": "",
   "title": "Alice Enterprise Platform",
   "uid": "alice-platform",
-  "version": 1
+  "version": 2
 }
