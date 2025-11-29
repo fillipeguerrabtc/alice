@@ -151,11 +151,17 @@ As integrações (Stripe, Wise, ERPNext, Twilio, Resend) são **opcionais por de
 ### Gaps Resolvidos (Novembro 2025)
 
 1. **Testes Unitários**: ✅ Expandido para 97+ testes (segurança, RBAC, feature flags, health)
-2. **Feature Flags**: ✅ Sistema enterprise com PostgreSQL schema, storage interface, migration, cache TTL 60s, multi-tenant
+2. **Feature Flags**: ✅ Sistema enterprise com PostgreSQL schema, storage interface, migration, cache TTL 60s, multi-tenant. initFeatureFlags() e middleware registrados em todos os serviços.
 3. **Stripe Idempotency**: ✅ crypto.randomUUID + fail-fast em produção
 4. **WebSocket Auth**: ✅ SESSION_SECRET obrigatório + cache PostgreSQL
 5. **AbortController**: ✅ Todas chamadas externas com timeouts configurados
 6. **HMAC S2S Auth**: ✅ Guard isInternalAuthEnabled + headers assinados
+7. **WebSocket Zod Validation**: ✅ wsMessageSchema e wsAgentMessageSchema validam todas mensagens WebSocket (OWASP API3)
+8. **RBAC Granular GET Routes**: ✅ /api/chat/stats e /api/chat/usage protegidos com requireAuth, requireSameTenant, requirePermission('chat:stats:read')
+9. **Multi-tenancy RAG**: ✅ requireSameTenant em todos endpoints rag-service: documents (GET/POST), upload, search, delete
+10. **Graceful Shutdown WebSocket**: ✅ clearInterval para heartbeatInterval e rateLimitCleanupInterval no shutdown
+11. **Circuit Breakers**: ✅ Implementados em wiseClient.ts e saladCloudBreaker (chat-service)
+12. **Webhook Replay Protection**: ✅ checkWebhookIdempotency() com tabela webhookEvents para Stripe e Wise
 
 ### Arquivos de Feature Flags
 
