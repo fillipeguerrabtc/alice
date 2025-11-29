@@ -11,14 +11,13 @@
  * @version 1.0.0
  */
 
-import type { Configuration, ClientMetadata, Account, FindAccount } from 'oidc-provider';
+import type { Configuration, ClientMetadata, KoaContextWithOIDC } from 'oidc-provider';
 import { createAdapter } from './adapter.js';
 import { getJWKS } from './jwks.js';
 import { getDatabase } from '@alice/database';
 import { users, oauthClients, userModules, systemModules } from '@alice/shared/schema';
 import { eq, and } from 'drizzle-orm';
 import { createLogger } from '@alice/logger';
-import { config } from '@alice/config';
 
 const logger = createLogger('oidc-config');
 
@@ -27,9 +26,9 @@ const ISSUER_URL = process.env.OIDC_ISSUER || 'https://auth.alice.yesyoudeserve.
 
 /**
  * Buscar conta de usuário para OIDC
- * Implementa interface FindAccount do oidc-provider
+ * Retorna Account compatível com oidc-provider
  */
-const findAccount: FindAccount = async (ctx, id, token) => {
+async function findAccountById(id: string) {
   const db = getDatabase();
 
   try {
@@ -61,24 +60,21 @@ const findAccount: FindAccount = async (ctx, id, token) => {
 
     return {
       accountId: id,
-      async claims(use, scope, claims, rejected) {
+      async claims(use: string, scope: string) {
         // Claims básicos (sempre retornados)
-        const baseClaims: Record<string, unknown> = {
+        const baseClaims: { sub: string; [key: string]: unknown } = {
           sub: id,
         };
-
-        // Scope: openid (obrigatório)
-        // Já incluído no sub
 
         // Scope: profile
         if (scope.includes('profile') || use === 'id_token') {
           baseClaims.name = [user.firstName, user.lastName].filter(Boolean).join(' ') || undefined;
           baseClaims.given_name = user.firstName || undefined;
           baseClaims.family_name = user.lastName || undefined;
-          baseClaims.picture = user.avatar || undefined;
+          baseClaims.picture = user.profileImageUrl || undefined;
           baseClaims.locale = user.idioma || 'pt-BR';
           baseClaims.zoneinfo = user.timezone || 'Europe/Lisbon';
-          baseClaims.updated_at = user.atualizadoEm ? Math.floor(user.atualizadoEm.getTime() / 1000) : undefined;
+          baseClaims.updated_at = user.updatedAt ? Math.floor(user.updatedAt.getTime() / 1000) : undefined;
         }
 
         // Scope: email
@@ -103,7 +99,7 @@ const findAccount: FindAccount = async (ctx, id, token) => {
     logger.error({ error, userId: id }, 'Erro ao buscar conta para OIDC');
     return undefined;
   }
-};
+}
 
 /**
  * Buscar clientes OAuth registrados no banco
@@ -196,14 +192,12 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
       long: {
         signed: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 14 * 24 * 60 * 60 * 1000, // 14 dias
+        sameSite: 'lax' as const,
       },
       short: {
         signed: true,
         secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        maxAge: 10 * 60 * 1000, // 10 minutos
+        sameSite: 'lax' as const,
       },
     },
 
@@ -223,7 +217,7 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
     // =========================================================================
     // ACCOUNT: Busca de contas
     // =========================================================================
-    findAccount,
+    findAccount: async (_ctx, id) => findAccountById(id),
 
     // =========================================================================
     // CLAIMS: Scopes e claims suportados
@@ -265,8 +259,7 @@ export async function createOIDCConfiguration(): Promise<Configuration> {
     // PKCE: Configuração (Tarefa 41)
     // =========================================================================
     pkce: {
-      required: () => true, // Obrigatório para TODOS os clientes
-      methods: ['S256'], // Apenas SHA256, nunca plain
+      required: () => true, // Obrigatório para TODOS os clientes - Best practice 2025
     },
 
     // =========================================================================

@@ -113,12 +113,15 @@ async function loadJWKsFromDatabase(): Promise<JWK[]> {
 
     logger.debug({ count: keys.length }, 'Chaves JWKS carregadas do PostgreSQL');
 
-    return keys.map((k) => ({
-      ...k.privateKey,
-      kid: k.kid,
-      alg: k.alg,
-      use: k.use,
-    } as JWK));
+    return keys.map((k) => {
+      const privateKeyData = k.privateKey as Record<string, unknown> || {};
+      return {
+        ...privateKeyData,
+        kid: k.kid,
+        alg: k.alg,
+        use: k.use,
+      } as JWK;
+    });
   } catch (error) {
     logger.error({ error }, 'Erro ao carregar chaves JWKS do PostgreSQL');
     return [];

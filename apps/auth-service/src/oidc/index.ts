@@ -14,7 +14,7 @@
  */
 
 import Provider from 'oidc-provider';
-import type { Express, Request, Response, NextFunction } from 'express';
+import type { Express, Request, Response } from 'express';
 import { createOIDCConfiguration, getIssuerUrl, ISSUER_URL } from './configuration.js';
 import { getPublicJWKS } from './jwks.js';
 import { createLogger } from '@alice/logger';
@@ -190,7 +190,7 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
   
   const callback = provider.callback();
   
-  app.use('/oauth', (req: Request, res: Response, next: NextFunction) => {
+  app.use('/oauth', (req: Request, res: Response) => {
     // Log de requisições OIDC
     logger.debug({ 
       method: req.method, 
@@ -198,8 +198,8 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
       clientId: req.query.client_id || req.body?.client_id,
     }, 'Requisição OIDC');
     
-    // Chamar callback do provider
-    return callback(req, res, next);
+    // Chamar callback do provider (Koa-style - req/res only)
+    return callback(req, res);
   });
 
   // =========================================================================

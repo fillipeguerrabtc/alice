@@ -52,6 +52,7 @@ import {
   isPoolHealthy,
   createDrizzleFeatureFlagStorage,
 } from '@alice/database';
+import { mountOIDCRoutes } from './oidc/index.js';
 import { 
   initFeatureFlags,
   featureFlagsMiddleware,
@@ -1098,6 +1099,20 @@ app.get('/api/audit/recent', requireAuth(), requirePermission('audit:logs:read')
     res.json([]);
   }
 });
+
+// ============================================================================
+// OIDC PROVIDER: Alice como IdP único para Grafana e ERPNext
+// ============================================================================
+
+// Montar rotas OIDC (/.well-known/openid-configuration, /oauth/*, /auth/interaction/*)
+// Inicialização assíncrona - chamada no startup do servidor
+mountOIDCRoutes(app)
+  .then(() => {
+    logger.info('Rotas OIDC Provider montadas com sucesso');
+  })
+  .catch((error) => {
+    logger.error({ error }, 'Falha ao montar rotas OIDC Provider');
+  });
 
 // ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
