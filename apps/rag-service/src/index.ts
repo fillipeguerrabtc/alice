@@ -936,9 +936,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
 
     const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
 
-    // MULTI-TENANCY: Associar documento ao tenant do usuário
+    // MULTI-TENANCY: Documento associado ao tenant via namespaceId
+    // namespaceId deve pertencer ao tenant do usuário (validado pelo middleware)
     const [document] = await db.insert(schema.documents).values({
-      tenantId,
       namespaceId,
       titulo,
       conteudo: content,
@@ -1149,21 +1149,31 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
   }
 });
 
+// OWASP API3 - Schema para validação de parâmetros de rota (UUID)
+const uuidParamSchema = z.object({
+  id: z.string().uuid('ID deve ser um UUID válido'),
+});
+
 app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:documents:delete'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
   const tenantId = req.tenantId;
-  const { id } = req.params;
 
   try {
-    // MULTI-TENANCY: Verificar se documento pertence ao tenant antes de deletar
+    // MULTI-TENANCY: Verificar se documento pertence ao tenant via namespace
     const document = await db.query.documents.findFirst({
-      where: and(
-        eq(schema.documents.id, id),
-        eq(schema.documents.tenantId, tenantId)
-      ),
+      with: { namespace: true },
+      where: eq(schema.documents.id, id),
     });
     
-    if (!document) {
+    // Verificar se documento existe e pertence ao tenant
+    if (!document || document.namespace?.tenantId !== tenantId) {
       return res.status(404).json({ error: 'Documento não encontrado ou acesso negado' });
     }
     
@@ -1182,7 +1192,12 @@ app.delete('/api/rag/documents/:id', requireAuth(), requirePermission('rag:docum
 });
 
 app.get('/api/rag/namespaces/:id/stats', requirePermission('rag:namespaces:read'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
 
   try {
     const documents = await db.query.documents.findMany({
@@ -1958,9 +1973,15 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
 
 // GET status de um upload específico
 app.get('/api/media/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { id } = req.params;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });
@@ -2053,9 +2074,15 @@ app.get('/api/media/uploads', requireAuth(), requireSameTenant(getTenantIdFromRe
 
 // Detalhes de um upload específico
 app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { id } = req.params;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });
@@ -2082,9 +2109,15 @@ app.get('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFr
 
 // Deletar upload
 app.delete('/api/media/uploads/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
-  const { id } = req.params;
   
   if (!tenantId) {
     return res.status(401).json({ error: 'Autenticação necessária' });
@@ -2229,6 +2262,10 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
 app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth (Regra 8)
   const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
 
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = mediaSearchSchema.safeParse(req.body);
@@ -2253,7 +2290,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         .from(schema.mediaUploads)
         .where(and(
           eq(schema.mediaUploads.id, imageId),
-          eq(schema.mediaUploads.tenantId, tenantId),
+          eq(schema.mediaUploads.tenantId, tenantId as string),
           eq(schema.mediaUploads.mediaType, 'image'),
           eq(schema.mediaUploads.processingStatus, 'completed')
         ))

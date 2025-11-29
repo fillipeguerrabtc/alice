@@ -110,32 +110,44 @@ interface EmbeddingResponse {
   data: Array<{ embedding: number[] }>;
 }
 
+// RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
+const EXTERNAL_API_TIMEOUT_MS = 25000;
+
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/text-embedding/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_KEY,
-    },
-    body: JSON.stringify({
-      input: text.slice(0, 2000),
-      model: 'text-embedding-3-small',
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json() as EmbeddingResponse;
-  const resultEmbedding = data.data[0]?.embedding;
+  // RESILIÊNCIA: AbortController com timeout para evitar chamadas penduradas
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   
-  if (!resultEmbedding || resultEmbedding.length === 0) {
-    throw new Error('API de embeddings retornou resultado vazio');
+  try {
+    const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/text-embedding/embeddings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Salad-Api-Key': SALAD_KEY,
+      },
+      body: JSON.stringify({
+        input: text.slice(0, 2000),
+        model: 'text-embedding-3-small',
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as EmbeddingResponse;
+    const resultEmbedding = data.data[0]?.embedding;
+    
+    if (!resultEmbedding || resultEmbedding.length === 0) {
+      throw new Error('API de embeddings retornou resultado vazio');
+    }
+    
+    return resultEmbedding;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  
-  return resultEmbedding;
 }
 
 const embeddingsBreaker = new CircuitBreaker(generateEmbeddingInternal, circuitBreakerOptions);
@@ -357,13 +369,30 @@ app.get('/api/training/data', requirePermission('training:training_data:read'), 
   }
 });
 
-app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const { status } = req.body;
+// OWASP API3 - Schema para validação de parâmetros de rota (UUID)
+const uuidParamSchema = z.object({
+  id: z.string().uuid('ID deve ser um UUID válido'),
+});
 
-  if (!['approved', 'rejected'].includes(status)) {
-    return res.status(400).json({ error: 'Status inválido' });
+// OWASP API3 - Schema para validação de status
+const statusUpdateSchema = z.object({
+  status: z.enum(['approved', 'rejected']),
+});
+
+app.patch('/api/training/data/:id/status', requirePermission('training:training_data:manage'), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
   }
+  const { id } = paramsResult.data;
+  
+  // OWASP API3: Validação de body
+  const bodyResult = statusUpdateSchema.safeParse(req.body);
+  if (!bodyResult.success) {
+    return res.status(400).json({ error: 'Status inválido', details: bodyResult.error.format() });
+  }
+  const { status } = bodyResult.data;
 
   try {
     const [updated] = await db.update(schema.trainingData)
@@ -615,7 +644,12 @@ function stopStatusPolling(jobId: string): void {
 }
 
 app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
 
   try {
     const job = await db.query.fineTuningJobs.findFirst({
@@ -634,7 +668,12 @@ app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:r
 });
 
 app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:cancel'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
 
   try {
     const job = await db.query.fineTuningJobs.findFirst({

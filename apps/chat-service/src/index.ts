@@ -1166,7 +1166,12 @@ app.post('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFr
 });
 
 app.get('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
 
   try {
     const messages = await db.query.messages.findMany({
@@ -1217,7 +1222,13 @@ const imageApproveSchema = z.object({
 });
 
 app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const userId = req.user?.userId;
 
@@ -2503,7 +2514,12 @@ agentWss.on('connection', async (ws, req) => {
 // ============================================================================
 
 app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
   
   try {
     const state = await getOrCreateConversationState(id);
@@ -2515,7 +2531,13 @@ app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getT
 });
 
 app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
   
@@ -2548,7 +2570,13 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(
 });
 
 app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:handoff:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
   
@@ -2705,7 +2733,13 @@ app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantI
 });
 
 app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de conversa inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const agentId = req.user?.userId;
   
@@ -2929,16 +2963,27 @@ const generatedImagesQuerySchema = z.object({
     .optional(),
   limit: z.string()
     .regex(/^\d+$/, 'limit deve ser numérico')
-    .transform(Number)
-    .refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100')
     .optional()
-    .default('20' as unknown as number),
+    .default('20')
+    .transform(Number)
+    .refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100'),
   offset: z.string()
     .regex(/^\d+$/, 'offset deve ser numérico')
-    .transform(Number)
-    .refine(n => n >= 0, 'offset deve ser >= 0')
     .optional()
-    .default('0' as unknown as number),
+    .default('0')
+    .transform(Number)
+    .refine(n => n >= 0, 'offset deve ser >= 0'),
+});
+
+// OWASP API3: Schema para validação de parâmetros de rota (req.params)
+// Previne injection e garante formato UUID válido
+const uuidParamSchema = z.object({
+  id: z.string().uuid('ID deve ser um UUID válido'),
+});
+
+// Schema para parâmetros de rota com nome de serviço
+const serviceNameParamSchema = z.object({
+  name: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Nome deve conter apenas letras minúsculas, números e hífens'),
 });
 
 app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
@@ -3332,7 +3377,13 @@ app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantId
 });
 
 app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de imagem inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
   
@@ -3365,7 +3416,13 @@ app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantId
 });
 
 app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de imagem inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
   
@@ -3463,7 +3520,14 @@ app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromReques
 });
 
 app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
-  const { id } = req.params;
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    logger.warn({ errors: paramsResult.error.flatten() }, 'ID inválido em /api/chat/images/:id');
+    return res.status(400).json({ error: 'ID inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
   

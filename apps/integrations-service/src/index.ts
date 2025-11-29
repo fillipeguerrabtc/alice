@@ -71,21 +71,33 @@ const circuitBreakerOptions = {
   volumeThreshold: 5, // Evita falsos positivos com poucas requisições
 };
 
+// RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
+const EXTERNAL_API_TIMEOUT_MS = 8000;
+
 const erpNextBreaker = new CircuitBreaker(async (options: {
   url: string;
   method: string;
   headers: Record<string, string>;
   body?: string;
 }) => {
-  const response = await fetch(options.url, {
-    method: options.method,
-    headers: options.headers,
-    body: options.body,
-  });
-  if (!response.ok) {
-    throw new Error(`ERPNext request failed: ${response.status}`);
+  // RESILIÊNCIA: AbortController com timeout para evitar chamadas penduradas
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  
+  try {
+    const response = await fetch(options.url, {
+      method: options.method,
+      headers: options.headers,
+      body: options.body,
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`ERPNext request failed: ${response.status}`);
+    }
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
   }
-  return response.json();
 }, circuitBreakerOptions);
 
 erpNextBreaker.on('open', () => logger.warn('Circuit breaker ERPNext: ABERTO'));
@@ -1001,11 +1013,16 @@ app.get('/api/integrations/erpnext/test', requirePermission('integrations:erpnex
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
 
+  // RESILIÊNCIA: AbortController com timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
   try {
     const response = await fetch(`${config.ERPNEXT_URL}/api/method/frappe.auth.get_logged_user`, {
       headers: {
         'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
       },
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -1017,6 +1034,8 @@ app.get('/api/integrations/erpnext/test', requirePermission('integrations:erpnex
   } catch (error) {
     logger.error({ error }, 'ERPNext test failed');
     res.status(500).json({ error: 'ERPNext connection failed' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 
@@ -1025,6 +1044,10 @@ app.get('/api/integrations/erpnext/customers', requirePermission('integrations:e
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
 
+  // RESILIÊNCIA: AbortController com timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `${config.ERPNEXT_URL}/api/resource/Customer?fields=["name","customer_name","customer_type","territory"]&limit_page_length=100`,
@@ -1032,6 +1055,7 @@ app.get('/api/integrations/erpnext/customers', requirePermission('integrations:e
         headers: {
           'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
         },
+        signal: controller.signal,
       }
     );
 
@@ -1044,6 +1068,8 @@ app.get('/api/integrations/erpnext/customers', requirePermission('integrations:e
   } catch (error) {
     logger.error({ error }, 'Failed to fetch ERPNext customers');
     res.status(500).json({ error: 'Failed to fetch customers' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 
@@ -1052,6 +1078,10 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
     return res.status(503).json({ error: 'ERPNext not configured' });
   }
 
+  // RESILIÊNCIA: AbortController com timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
   try {
     const response = await fetch(
       `${config.ERPNEXT_URL}/api/resource/Item?fields=["name","item_name","item_group","stock_uom","standard_rate"]&limit_page_length=100`,
@@ -1059,6 +1089,7 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
         headers: {
           'Authorization': `token ${config.ERPNEXT_API_KEY}:${config.ERPNEXT_API_SECRET}`,
         },
+        signal: controller.signal,
       }
     );
 
@@ -1071,6 +1102,8 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
   } catch (error) {
     logger.error({ error }, 'Failed to fetch ERPNext items');
     res.status(500).json({ error: 'Failed to fetch items' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 
@@ -1081,6 +1114,10 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
   if (!resendApiKey) {
     return res.status(503).json({ error: 'Resend not configured' });
   }
+
+  // RESILIÊNCIA: AbortController com timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
 
   try {
     const response = await fetch('https://api.resend.com/emails', {
@@ -1095,6 +1132,7 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
         subject,
         html,
       }),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -1108,6 +1146,8 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
   } catch (error) {
     logger.error({ error }, 'Failed to send email');
     res.status(500).json({ error: 'Failed to send email' });
+  } finally {
+    clearTimeout(timeoutId);
   }
 });
 
@@ -1712,6 +1752,10 @@ async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string):
     return { success: false, error: 'Twilio não configurado' };
   }
 
+  // RESILIÊNCIA: AbortController com timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+
   try {
     const formData = new URLSearchParams();
     formData.append('From', `whatsapp:${TWILIO_WHATSAPP_NUMBER}`);
@@ -1730,6 +1774,7 @@ async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string):
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body: formData.toString(),
+        signal: controller.signal,
       }
     );
 
@@ -1745,6 +1790,8 @@ async function sendWhatsAppMessage(to: string, body: string, mediaUrl?: string):
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error, to }, 'Falha ao enviar mensagem WhatsApp');
     return { success: false, error: errorMessage };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -1774,6 +1821,10 @@ async function processMessageWithLLM(
   message: string,
   tenantId?: string
 ): Promise<ChatMessageResult> {
+  // RESILIÊNCIA: AbortController com timeout para chamada ao chat-service
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s para LLM processing
+
   try {
     const response = await fetch(`${CHAT_SERVICE_URL}/api/chat/message`, {
       method: 'POST',
@@ -1787,6 +1838,7 @@ async function processMessageWithLLM(
         role: 'user',
         channel: 'whatsapp',
       }),
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -1844,6 +1896,8 @@ async function processMessageWithLLM(
       humanMode: false,
       error: error instanceof Error ? error.message : 'Erro desconhecido',
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -1975,6 +2029,9 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
       }, 'Conversa em modo humano - mensagem salva sem resposta automática');
 
       // Notificar agente humano via chat-service WebSocket
+      // RESILIÊNCIA: AbortController com timeout curto para notificação
+      const notifyController = new AbortController();
+      const notifyTimeoutId = setTimeout(() => notifyController.abort(), 5000);
       try {
         await fetch(`${CHAT_SERVICE_URL}/api/chat/notify-agent`, {
           method: 'POST',
@@ -1985,9 +2042,12 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
             message: Body,
             from: phoneNumber,
           }),
+          signal: notifyController.signal,
         });
       } catch (notifyError) {
         logger.warn({ error: notifyError }, 'Falha ao notificar agente humano');
+      } finally {
+        clearTimeout(notifyTimeoutId);
       }
       return;
     }
