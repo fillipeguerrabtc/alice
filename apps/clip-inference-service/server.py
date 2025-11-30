@@ -285,8 +285,16 @@ async def generate_embedding(
                 detail=f"Imagem muito grande. Máximo: {MAX_IMAGE_SIZE_BYTES // (1024*1024)}MB"
             )
     
-    # SEGURANÇA: Timeout para prevenir DoS (OWASP API4)
-    async def process_embedding():
+    # Determinar tipo de input para métricas
+    input_type = "text" if request.text else "image"
+    
+    # ============================================================================
+    # INFERÊNCIA COM CIRCUIT BREAKER (Regra 16 - Best Practices 2025)
+    # Protege contra falhas em cascata do modelo Torch/CLIP
+    # ============================================================================
+    
+    def process_embedding_sync() -> tuple[list[float], str]:
+        """Função síncrona de inferência CLIP protegida por circuit breaker."""
         with torch.no_grad():
             if request.text:
                 # Embedding de texto
@@ -297,7 +305,7 @@ async def generate_embedding(
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)
                 
                 embedding = text_features[0].cpu().numpy().tolist()
-                input_type = "text"
+                result_type = "text"
                 
                 logger.info(f"Text embedding gerado: {len(request.text)} chars")
                 
@@ -312,35 +320,54 @@ async def generate_embedding(
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
                 
                 embedding = image_features[0].cpu().numpy().tolist()
-                input_type = "image"
+                result_type = "image"
                 
                 logger.info(f"Image embedding gerado: {image.size}")
         
-        return embedding, input_type
+        return embedding, result_type
     
     try:
-        # Aplicar timeout configurável (default 30s)
-        embedding, input_type = await asyncio.wait_for(
-            asyncio.get_event_loop().run_in_executor(None, lambda: asyncio.run(process_embedding())),
+        # Aplicar circuit breaker + timeout (Enterprise-Grade)
+        embedding, result_type = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: clip_breaker.call(process_embedding_sync)
+            ),
             timeout=REQUEST_TIMEOUT_SECONDS
         )
         
         processing_time_ms = int((time.time() - start_time) * 1000)
         
+        # Métricas de sucesso
+        REQUESTS_TOTAL.labels(input_type=result_type, status='success').inc()
+        REQUEST_LATENCY.labels(input_type=result_type).observe(processing_time_ms / 1000)
+        
         return ClipResponse(
             embedding=embedding,
             model=MODEL_NAME,
-            input_type=input_type,
+            input_type=result_type,
             processing_time_ms=processing_time_ms,
         )
         
+    except pybreaker.CircuitBreakerError:
+        # Circuit breaker aberto - serviço temporariamente indisponível
+        REQUESTS_TOTAL.labels(input_type=input_type, status='circuit_open').inc()
+        logger.error("Circuit breaker CLIP aberto - serviço temporariamente indisponível")
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de inferência temporariamente indisponível. Tente novamente em 30 segundos."
+        )
+        
     except asyncio.TimeoutError:
+        REQUESTS_TOTAL.labels(input_type=input_type, status='timeout').inc()
         logger.warning(f"Timeout ao processar embedding após {REQUEST_TIMEOUT_SECONDS}s")
         raise HTTPException(
             status_code=HTTP_504_GATEWAY_TIMEOUT,
             detail=f"Timeout: processamento excedeu {REQUEST_TIMEOUT_SECONDS} segundos"
         )
+        
     except Exception as e:
+        REQUESTS_TOTAL.labels(input_type=input_type, status='error').inc()
         logger.error(f"Erro ao gerar embedding: {str(e)}")
         raise HTTPException(
             status_code=500,
@@ -357,6 +384,25 @@ async def health_check() -> HealthResponse:
         device=device,
         embedding_dim=EMBEDDING_DIM,
     )
+
+
+@app.get("/metrics")
+async def metrics():
+    """Endpoint de métricas Prometheus (Regra 16 - Observability Enterprise)"""
+    return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/api/circuit-breaker/status")
+async def circuit_breaker_status():
+    """Status do circuit breaker CLIP (Regra 16 - Best Practices 2025)"""
+    state = clip_breaker.current_state
+    return {
+        "name": "clip-inference",
+        "state": state,
+        "fail_counter": clip_breaker.fail_counter,
+        "fail_max": clip_breaker.fail_max,
+        "reset_timeout": clip_breaker.reset_timeout,
+    }
 
 
 @app.get("/")
