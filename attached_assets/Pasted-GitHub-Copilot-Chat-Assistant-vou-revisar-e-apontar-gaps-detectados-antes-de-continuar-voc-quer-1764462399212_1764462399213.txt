@@ -1,0 +1,157 @@
+GitHub Copilot Chat Assistant — vou revisar e apontar gaps detectados; antes de continuar: você quer que eu apenas liste os gaps e instruções, ou que eu também abra PRs/patches aplicando as correções sugeridas? (responda “listar” ou “corrigir”)
+
+Observação: os resultados podem estar incompletos. Mais commits aqui: https://github.com/fillipeguerrabtc/alice/commits  
+Workflow referido no log (usando o ref do job): https://github.com/fillipeguerrabtc/alice/blob/8caecb095675cf944b1c67de58d5414f7dbe558a/.github/workflows/ci.yml  
+Job falho: https://github.com/fillipeguerrabtc/alice/actions/runs/19791216121/job/56704439002
+
+Resumo do problema crítico (detectado nos logs)
+- Erro de build (CI) no pacote packages/database:
+  src/index.ts(4,25): error TS2307: Cannot find module '@alice/shared' or its corresponding type declarations.
+- Causa provável: pacote/alias @alice/shared não está sendo resolvido/compilado antes do packages/database; ou não está referenciado corretamente (package.json/tsconfig/paths) / ou faltam declarações de tipos (index.d.ts) no pacote shared.
+
+Gaps identificados e ações recomendadas (prioritárias)
+1) Ordem de build / TypeScript project references
+   - Gap: CI roda tsc no pacote database sem garantir que @alice/shared esteja construído / resolvível.
+   - Correção recomendada:
+     - Usar referências de projeto TypeScript (tsconfig "references") no monorepo ou garantir um passo de build global que construa todos os pacotes na ordem correta.
+     - Exemplo: root/tsconfig.json
+       {
+         "files": [],
+         "references": [
+           { "path": "packages/shared" },
+           { "path": "packages/database" },
+           ... outros pacotes ...
+         ]
+       }
+     - Comando CI preferível: tsc -b (no root) ou pnpm -w -r run build (que chame tsc -b internamente).
+   - Comandos locais:
+     - pnpm install
+     - pnpm -w -r build
+     - ou tsc -b na raiz.
+
+2) Dependência/alias @alice/shared não declarada ou tipos faltando
+   - Gap: packages/database não consegue resolver @alice/shared.
+   - Verificar:
+     - packages/shared/package.json existe e tem name "@alice/shared".
+     - packages/shared/package.json expose "types" (ex.: "types": "dist/index.d.ts") e "main"/"exports" coerentes.
+     - packages/database/package.json lista "@alice/shared" em dependencies/devDependencies (em workspaces locais pode usar "*").
+   - Sugestão de package.json em packages/database:
+       "dependencies": {
+         "@alice/shared": "*"
+       }
+   - Se usar path aliases (tsconfig paths), garantir configuração correta:
+       // packages/database/tsconfig.json (ou root)
+       {
+         "compilerOptions": {
+           "baseUrl": ".",
+           "paths": {
+             "@alice/shared": ["../shared/src"],
+             "@alice/shared/*": ["../shared/src/*"]
+           }
+         }
+       }
+
+3) Falta de build output / d.ts no pacote shared
+   - Gap: mesmo que shared exista, talvez não esteja compilado (sem .d.ts) e tsc do database não pode consumir fontes TS fora do build.
+   - Correção:
+     - Configurar build de shared para gerar types (declaration: true) e saída em dist/.
+     - Ex.: packages/shared/tsconfig.json:
+       {
+         "compilerOptions": {
+           "composite": true,       // necessário para tsc -b references
+           "declaration": true,
+           "outDir": "dist",
+           ...
+         }
+       }
+
+4) Workflow CI não roda build global / scripts inconsistentes
+   - Gap: o log mostra execução de build diretamente dentro do pacote database; isso indica CI está executando builds por pacote sem garantir ordem.
+   - Correção prática (GitHub Actions):
+     - Alterar job de build para:
+       - executar pnpm install
+       - executar pnpm -w -r run build (ou tsc -b na raiz)
+     - Exemplo de etapa na workflow (.github/workflows/ci.yml — usei o ref do job):
+       - name: Install
+         run: pnpm install --frozen-lockfile
+       - name: Build all (TypeScript project refs)
+         run: pnpm -w -r run build
+     - Alternativa: rodar tsc -b na raiz se estiver com tsconfig references.
+
+5) Scripts e convenções do monorepo
+   - Gap: possivelmente não há script root "build" que chame tsc -b ou pnpm -w -r build.
+   - Ação: no package.json raiz, adicionar:
+       "scripts": {
+         "build": "tsc -b"
+       }
+     e em cada pacote:
+       "scripts": { "build": "tsc -b || tsc" } conforme estrutura.
+
+6) Verificação de tipos em CI antes da compilação
+   - Gap: CI pode estar executando checks de tipo (tsc -b) em sub-pacotes sem primeiro construir dependências locais (shared).
+   - Correção: ajustar pipeline para compilar dependências primeiro (ver item 1 e 4).
+
+Gaps secundários observados (com base em commits/descrições; preciso validar no código)
+7) Secret management / ENV
+   - Vários commits adicionaram/remoção de INTERNAL_API_SECRET. Checar:
+     - Workflows e docker-compose têm secrets coerentes? Não deixar secrets default em dev/prod.
+     - Documentação de deploy atualizada em replit.md (commit mostra mudanças) — validar instruções e matriz de secrets no README.
+
+8) Remoção de integrações (Microsoft OAuth)
+   - Commits removem dependências; confirmar limpeza completa (configs, docs, envVars, tests).
+   - Gap potencial: artefatos ou referências residuais causariam build warnings/erros.
+
+9) Observability / Metrics types
+   - Commits ajustaram tipos do prom-client; validar compatibilidade com versões publicadas e que não causem tipos quebrados em outros pacotes.
+
+10) Test coverage / CI de testes
+   - Não há informação de testes falhando, mas validar que CI executa testes unitários e e2e; se não, adicionar.
+
+Ações imediatas e comandos para corrigir agora (pra recuperar CI rapidamente)
+1) Local/CI quick fix (prioritário)
+   - No root do repo:
+     - pnpm install
+     - pnpm -w -r build
+   - No CI: substituir step que chama build apenas em packages/database por um build global (usar ref do workflow):
+     - run: pnpm -w -r install && pnpm -w -r run build
+
+2) Garantir shared está configurado como pacote compilável
+   - packages/shared/tsconfig.json -> "composite": true, "declaration": true, "outDir": "dist"
+   - packages/shared/package.json -> "types": "dist/index.d.ts", "main": "dist/index.js", "name": "@alice/shared"
+
+3) Exemplo de tsconfig references (root)
+   {
+     "files": [],
+     "references": [
+       { "path": "packages/shared" },
+       { "path": "packages/database" }
+     ]
+   }
+   - Depois: tsc -b
+
+4) Se preferir usar path mapping em vez de build:
+   - Adicionar paths em tsconfig do pacote database apontando para o src do shared (apenas para dev; não substitui build para produção).
+
+Trecho de diff sugerido (exemplo para root package.json)
+- Adicionar script:
+  "scripts": {
+    "build": "tsc -b"
+  }
+
+Exemplo rápido de correção em packages/database/package.json (se estiver faltando)
+"dependencies": {
+  "@alice/shared": "*"
+}
+
+Próximos passos que eu posso executar para você
+- Fazer varredura completa dos arquivos relevantes (tsconfig.json na raiz e em packages/*, package.json de cada pacote, .github/workflows/ci.yml) e retornar um patch/PR com:
+  - ajustes na workflow para build global,
+  - adição de tsconfig references no root,
+  - correção de package.json de shared/database para garantir types.
+- Abrir PR com as modificações acima (preciso da sua confirmação para efetuar alterações).
+
+Quer que eu:
+- 1) apenas gere um checklist detalhado com locais exatos dos arquivos a ajustar, ou
+- 2) aplique as mudanças e abra PR com as correções?
+
+(Responda “checklist” ou “abrir PR” e eu prossigo. )
