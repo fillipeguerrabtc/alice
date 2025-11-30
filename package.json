@@ -7,7 +7,11 @@
   "packageManager": "pnpm@10.12.4",
   "pnpm": {
     "inject-workspace-packages": true,
-    "force-legacy-deploy": true
+    "force-legacy-deploy": true,
+    "overrides": {
+      "drizzle-orm": "0.39.1",
+      "drizzle-kit": "0.30.1"
+    }
   },
   "scripts": {
     "dev": "NODE_ENV=development tsx server/index-dev.ts",

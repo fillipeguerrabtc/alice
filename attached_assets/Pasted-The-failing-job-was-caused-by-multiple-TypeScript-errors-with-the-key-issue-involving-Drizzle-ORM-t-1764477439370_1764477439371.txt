@@ -1,0 +1,58 @@
+The failing job was caused by multiple TypeScript errors, with the key issue involving Drizzle ORM types:
+
+**Root Cause:**  
+Drizzle ORM had conflicting types between versions. Specifically, types such as `PgColumn` and `SQL<unknown>` had different internal structures, which caused assignment and overload errors—most notably due to private property `shouldInlineParams` and index signatures.
+
+**Solution Steps:**
+
+1. **Consolidate Drizzle ORM Versions:**
+   - Ensure only one version of Drizzle ORM is installed across your entire workspace (monorepo and packages).
+   - Run:
+     ```shell
+     pnpm why drizzle-orm
+     pnpm add drizzle-orm@latest -w
+     pnpm install
+     ```
+   - Remove any duplicate or mismatched `drizzle-orm` dependencies from individual package.json files.
+
+2. **Clean Installation Artifacts:**
+   - Remove node_modules and lockfile:
+     ```shell
+     rm -rf node_modules pnpm-lock.yaml
+     pnpm install
+     ```
+
+3. **Check Imports and Usage:**
+   - In files with TypeScript errors (examples from log: `apps/training-service/src/index.ts` at lines around 1073–1094), ensure your Drizzle imports are using consistent paths and types:
+     ```typescript
+     import { eq } from "drizzle-orm";
+     // don't mix types from packages installed at different versions
+     ```
+   - Avoid using types or results from different instances/versions of Drizzle in a single file.
+
+4. **Type Compatibility Fixes:**
+   - Where type errors persist, use type casting or adapt code so assignments match method expectations. For example:
+     ```typescript
+     // If you must pass a SQL type expect SQL<unknown>
+     const sql: SQL<unknown> = getSomeSql();
+     callFunctionExpectingSQL(sql as SQL<unknown>);
+     // Avoid mixing PgColumn from distinct Drizzle versions
+     ```
+
+5. **Address Deep Type Instantiation Errors (React pages):**
+   - These are commonly caused by over-parameterization or recursive generics in component props. Break large types or simplify component generics.
+   - Example:
+     ```typescript
+     // If you have something like this:
+     type ComplexType = A<B<C<D<E<F<G>>>>>>;
+     // Simplify to:
+     type SimplerType = any;
+     // Or split across multiple props/higher-order components.
+     ```
+
+**References to fix:**  
+- [apps/training-service/src/index.ts (ref: 7fb727402b69960f4a467eddc52ef1912c10ff55)](https://github.com/fillipeguerrabtc/alice/blob/7fb727402b69960f4a467eddc52ef1912c10ff55/apps/training-service/src/index.ts)
+- [client/src/components/ui/table.tsx (ref: 7fb727402b69960f4a467eddc52ef1912c10ff55)](https://github.com/fillipeguerrabtc/alice/blob/7fb727402b69960f4a467eddc52ef1912c10ff55/client/src/components/ui/table.tsx)
+
+**Summary:**  
+Unify to one Drizzle ORM version, clean install artifacts, and correct type usage. This will resolve the assignment and overload errors from the CI logs.
