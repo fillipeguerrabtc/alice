@@ -25,8 +25,8 @@ env:
   NODE_VERSION: '20'
   PNPM_VERSION: '10.12.4'
   # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
-  # durante TypeScript compilation de monorepos grandes
-  NODE_OPTIONS: '--max-old-space-size=4096'
+  # durante TypeScript compilation de monorepos grandes (8GB)
+  NODE_OPTIONS: '--max-old-space-size=8192'
 
 jobs:
   # ===========================================================================
@@ -96,7 +96,7 @@ jobs:
       - name: Build shared packages (ordem de dependências)
         run: |
           set -e
-          export NODE_OPTIONS="--max-old-space-size=4096"
+          export NODE_OPTIONS="--max-old-space-size=8192"
           
           echo "Limpando builds anteriores..."
           rm -rf packages/shared/dist packages/shared-utils/dist packages/config/dist packages/logger/dist packages/database/dist
@@ -109,7 +109,7 @@ jobs:
           for pkg in "${PACKAGES[@]}"; do
             echo "--- Building @alice/$pkg ---"
             pushd "packages/$pkg" > /dev/null
-            NODE_OPTIONS="--max-old-space-size=4096" npx tsc -b --force
+            NODE_OPTIONS="--max-old-space-size=8192" npx tsc -b --force
             if [ $? -ne 0 ]; then
               echo "ERRO: Build de @alice/$pkg falhou!"
               exit 1
@@ -142,7 +142,7 @@ jobs:
       # TypeScript Check - DEVE falhar se houver erros
       # NOTA: NODE_OPTIONS aumenta memória para evitar heap out of memory
       - name: TypeScript Check
-        run: NODE_OPTIONS="--max-old-space-size=4096" pnpm run typecheck
+        run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run typecheck
 
       # ESLint - DEVE falhar se houver erros
       - name: ESLint

@@ -91,10 +91,10 @@ jobs:
       # Ordem: shared → shared-utils → config → logger → database
       # NOTA: NODE_OPTIONS aumenta memória para evitar heap out of memory
       - name: Build shared packages first
-        run: NODE_OPTIONS="--max-old-space-size=4096" pnpm run build:tsc
+        run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run build:tsc
 
       - name: TypeScript Check
-        run: NODE_OPTIONS="--max-old-space-size=4096" pnpm run typecheck
+        run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run typecheck
         continue-on-error: false
 
       - name: Executar testes unitários
