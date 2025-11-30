@@ -1,10 +1,14 @@
-import { forwardRef, HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes } from 'react';
+import { forwardRef, HTMLAttributes, TdHTMLAttributes, ThHTMLAttributes, ComponentPropsWithoutRef } from 'react';
 
 import { cn } from '@/lib/utils';
 
-const Table = forwardRef<HTMLTableElement, HTMLAttributes<HTMLTableElement>>(
-  ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+interface TableProps extends ComponentPropsWithoutRef<'table'> {
+  containerClassName?: string;
+}
+
+const Table = forwardRef<HTMLTableElement, TableProps>(
+  ({ className, containerClassName, ...props }, ref) => (
+    <div className={cn("relative w-full overflow-auto", containerClassName)}>
       <table
         ref={ref}
         className={cn('w-full caption-bottom text-sm', className)}

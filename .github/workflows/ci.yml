@@ -89,6 +89,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Limpar artefatos de build antigos para evitar conflitos de tipos
+      # CRÍTICO: Arquivos .d.ts compilados contra versões antigas do drizzle-orm
+      # podem causar erros de tipos incompatíveis (shouldInlineParams)
+      - name: Clean stale build artifacts
+        run: |
+          set -e
+          echo "Limpando artefatos de build antigos..."
+          rm -rf packages/*/dist apps/*/dist
+          rm -f packages/*/*.tsbuildinfo apps/*/*.tsbuildinfo
+          echo "Artefatos limpos com sucesso!"
+
       # Build packages na ordem correta de dependências
       # CRÍTICO: Sem isso, os microsserviços não conseguem importar @alice/*
       # NOTA: Usamos --force para garantir que .js sejam gerados mesmo se .tsbuildinfo existir

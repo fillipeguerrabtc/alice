@@ -1,0 +1,58 @@
+The job failed due to TypeScript type incompatibilities between Drizzle ORM definitions in your codebase. The main issues come from attempts to use Drizzle PgColumn types where base Column types are expected, and types coming from multiple instances of the Drizzle ORM package.
+
+#### Solution Steps
+
+1. **Drizzle ORM Types Issue:**
+   - The errors (e.g., `apps/training-service/src/index.ts`, lines 1073–1094) indicate you’re mixing types from different Drizzle ORM installations (see the incompatible `shouldInlineParams` property), which usually happens if multiple Drizzle packages are resolved, possibly due to pnpm hoisting quirks or transitive dependencies.
+   - **Fix:** Ensure all drizzle-orm package imports resolve to the same version and instance.
+     - Run: `pnpm why drizzle-orm`
+     - Check `node_modules/.pnpm` for duplicate installations
+     - Deduplicate: 
+       ```sh
+       pnpm dedupe
+       pnpm install
+       ```
+     - Optionally, use the `resolutions` field in your `package.json` to force a single version.
+
+2. **Column Type Usage:**
+   - Change usages of specific `PgColumn` types to the base `Column` types where TypeScript expects them.
+   - Update function signatures and casts to explicitly use `Column` if an overload expects it.
+
+   Example fix (in `apps/training-service/src/index.ts` around line 1073):
+   ```typescript
+   // If existing:
+   // someFunction(pgTable.training_data.tenant_id, value);
+
+   // Change to:
+   someFunction(pgTable.training_data['tenant_id'] as Column<any, object, object>, value);
+   ```
+
+   - Avoid mixing imports from different paths; always import from the same, root package.
+
+3. **UI Table Type Error (`client/src/components/ui/table.tsx`):**
+   - The `onBeforeInput` prop type is mismatched. Ensure you use the correct event handler type.
+   - Fix example:
+     ```tsx
+     // If you have:
+     onBeforeInput={handler} // where handler: (e: InputEvent<HTMLElement>) => void
+
+     // Change the handler type to:
+     const handler = (e: FormEvent<HTMLTableCaptionElement>) => { ... }
+     ```
+   - Or remove `onBeforeInput` from components that do not support it, if not strictly needed.
+
+4. **Type Instantiation Too Deep (`client/src/pages/*.tsx`):**
+   - These usually indicate generic types being over-nested. Refactor complex types, reduce generic depth, or split types into simpler ones.
+   - Example: If you have recursive type definitions, use utility types to simplify.
+
+#### General Advice
+
+- Ensure all packages and TypeScript are updated and compatible.
+- Check your lockfile (`pnpm-lock.yaml`).
+- Run a clean install: `pnpm install --force`
+
+---
+
+Apply these changes, focusing first on deduplicating Drizzle ORM and unifying types across your backend Drizzle usages. For exact code fixes, review the functions using column comparisons in the lines reported and cast to expected base types when necessary.
+
+If you provide the relevant lines from the index.ts file, more precise code changes can be suggested.

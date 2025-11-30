@@ -75,6 +75,13 @@ const defaultColors = [
   "#84CC16",
 ];
 
+const namespaceSchema = z.object({
+  nome: z.string().min(2),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  descricao: z.string().optional(),
+  cor: z.string().default("#3B82F6"),
+});
+
 function NamespaceCardSkeleton() {
   return (
     <Card>
@@ -99,13 +106,6 @@ export default function Namespaces() {
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
-
-  const namespaceSchema = z.object({
-    nome: z.string().min(2, t('namespaces.validation.nameMin')),
-    slug: z.string().min(2, t('namespaces.validation.slugMin')).regex(/^[a-z0-9-]+$/, t('namespaces.validation.slugFormat')),
-    descricao: z.string().optional(),
-    cor: z.string().default("#3B82F6"),
-  });
 
   const form = useForm<NamespaceFormData>({
     resolver: zodResolver(namespaceSchema),

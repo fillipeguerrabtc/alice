@@ -91,6 +91,15 @@ type AgentFormData = {
   status: "active" | "training" | "paused" | "deprecated";
 };
 
+const agentFormSchema = z.object({
+  nome: z.string().min(2),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  descricao: z.string().optional().nullable(),
+  instrucoes: z.string().optional().nullable(),
+  personalidade: z.string().optional().nullable(),
+  status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
+});
+
 function AgentCardSkeleton() {
   return (
     <Card>
@@ -112,15 +121,6 @@ export default function Agents() {
   const { user } = useAuth();
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
-
-  const agentFormSchema = z.object({
-    nome: z.string().min(2, t('agents.validation.nameMin')),
-    slug: z.string().min(2, t('agents.validation.slugMin')).regex(/^[a-z0-9-]+$/, t('agents.validation.slugFormat')),
-    descricao: z.string().optional().nullable(),
-    instrucoes: z.string().min(10, t('agents.validation.instructionsMin')).optional().nullable(),
-    personalidade: z.string().optional().nullable(),
-    status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
-  });
 
   const statusOptions = statusOptionsConfig.map(opt => ({
     ...opt,
