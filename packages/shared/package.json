@@ -24,9 +24,11 @@
     "lint": "eslint src/"
   },
   "dependencies": {
-    "drizzle-orm": "^0.39.1",
     "drizzle-zod": "^0.7.0",
     "zod": "^3.24.2"
+  },
+  "peerDependencies": {
+    "drizzle-orm": "^0.39.1"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

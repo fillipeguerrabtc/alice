@@ -45,7 +45,7 @@ import {
   Gauge as PromGauge,
   type AliceMetrics,
 } from '@alice/shared-utils';
-import { eq, or } from 'drizzle-orm';
+import { eq, or } from '@alice/database';
 import { z } from 'zod';
 import { 
   getDatabase, 

@@ -56,10 +56,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@alice/database": "workspace:*",
     "@neondatabase/serverless": "^0.10.4",
     "@types/redis": "^4.0.11",
     "compression": "^1.8.1",
-    "drizzle-orm": "^0.39.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.1.0",
     "opossum": "^9.0.0",

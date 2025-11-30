@@ -34,7 +34,7 @@ import {
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
-import { eq, desc, sql, and } from 'drizzle-orm';
+import { eq, desc, sql, and } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';

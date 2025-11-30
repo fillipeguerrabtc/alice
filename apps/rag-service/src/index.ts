@@ -17,7 +17,7 @@ import crypto from 'crypto';
 import path from 'path';
 import CircuitBreaker from 'opossum';
 import { getDatabase, getPool, schema, toSql, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
-import { eq, sql, desc, and, isNotNull } from 'drizzle-orm';
+import { eq, sql, desc, and, isNotNull } from '@alice/database';
 import { z } from 'zod';
 import { 
   requirePermission, 

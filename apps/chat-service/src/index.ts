@@ -42,7 +42,7 @@ import {
   instrumentCircuitBreaker,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray } from '@alice/database';
 import { z } from 'zod';
 import { 
   buscarContextoRAG, 

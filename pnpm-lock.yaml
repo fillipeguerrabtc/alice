@@ -401,7 +401,7 @@ importers:
         version: link:../../packages/logger
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.16.3)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -453,10 +453,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       '@node-saml/passport-saml':
         specifier: 5.1.0
         version: 5.1.0
@@ -469,9 +469,6 @@ importers:
       cors:
         specifier: 2.8.5
         version: 2.8.5
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express:
         specifier: 4.21.2
         version: 4.21.2
@@ -565,16 +562,13 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express:
         specifier: 4.21.2
         version: 4.21.2
@@ -777,16 +771,13 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express:
         specifier: 4.21.2
         version: 4.21.2
@@ -835,7 +826,7 @@ importers:
     dependencies:
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.16.3)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -878,16 +869,13 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express:
         specifier: 4.21.2
         version: 4.21.2
@@ -948,16 +936,13 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)
+        version: file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)
       cors:
         specifier: 2.8.5
         version: 2.8.5
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express:
         specifier: 4.21.2
         version: 4.21.2
@@ -1016,7 +1001,7 @@ importers:
     dependencies:
       '@alice/shared':
         specifier: workspace:*
-        version: file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1))
       drizzle-orm:
         specifier: 0.39.1
         version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)
@@ -1074,6 +1059,9 @@ importers:
 
   packages/shared-utils:
     dependencies:
+      '@alice/database':
+        specifier: workspace:*
+        version: file:packages/database(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(react@18.3.1)
       '@neondatabase/serverless':
         specifier: ^0.10.4
         version: 0.10.4
@@ -1083,9 +1071,6 @@ importers:
       compression:
         specifier: ^1.8.1
         version: 1.8.1
-      drizzle-orm:
-        specifier: 0.39.1
-        version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)
       express:
         specifier: ^4.21.2
         version: 4.21.2
@@ -1142,6 +1127,8 @@ packages:
 
   '@alice/shared@file:packages/shared':
     resolution: {directory: packages/shared, type: directory}
+    peerDependencies:
+      drizzle-orm: 0.39.1
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -5566,7 +5553,7 @@ snapshots:
 
   '@alice/database@file:packages/database(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(react@18.3.1)':
     dependencies:
-      '@alice/shared': file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+      '@alice/shared': file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))
       drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       pg: 8.12.0
     transitivePeerDependencies:
@@ -5600,12 +5587,48 @@ snapshots:
       - sql.js
       - sqlite3
 
-  '@alice/shared-utils@file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.12.0)(react@18.3.1)':
+  '@alice/database@file:packages/database(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(react@18.3.1)':
     dependencies:
+      '@alice/shared': file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1))
+      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
+      pg: 8.12.0
+    transitivePeerDependencies:
+      - '@aws-sdk/client-rds-data'
+      - '@cloudflare/workers-types'
+      - '@electric-sql/pglite'
+      - '@libsql/client'
+      - '@libsql/client-wasm'
+      - '@neondatabase/serverless'
+      - '@op-engineering/op-sqlite'
+      - '@opentelemetry/api'
+      - '@planetscale/database'
+      - '@prisma/client'
+      - '@tidbcloud/serverless'
+      - '@types/better-sqlite3'
+      - '@types/pg'
+      - '@types/react'
+      - '@types/sql.js'
+      - '@vercel/postgres'
+      - '@xata.io/client'
+      - better-sqlite3
+      - bun-types
+      - expo-sqlite
+      - knex
+      - kysely
+      - mysql2
+      - pg-native
+      - postgres
+      - prisma
+      - react
+      - sql.js
+      - sqlite3
+
+  '@alice/shared-utils@file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)':
+    dependencies:
+      '@alice/database': file:packages/database(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(react@18.3.1)
       '@neondatabase/serverless': 0.10.4
       '@types/redis': 4.0.11
       compression: 1.8.1
-      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       express: 4.21.2
       express-rate-limit: 8.2.1(express@4.21.2)
       helmet: 8.1.0
@@ -5639,7 +5662,7 @@ snapshots:
       - knex
       - kysely
       - mysql2
-      - pg
+      - pg-native
       - postgres
       - prisma
       - react
@@ -5647,12 +5670,12 @@ snapshots:
       - sqlite3
       - supports-color
 
-  '@alice/shared-utils@file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(pg@8.16.3)(react@18.3.1)':
+  '@alice/shared-utils@file:packages/shared-utils(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(express@4.21.2)(react@18.3.1)':
     dependencies:
+      '@alice/database': file:packages/database(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(react@18.3.1)
       '@neondatabase/serverless': 0.10.4
       '@types/redis': 4.0.11
       compression: 1.8.1
-      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)
       express: 4.21.2
       express-rate-limit: 8.2.1(express@4.21.2)
       helmet: 8.1.0
@@ -5686,7 +5709,7 @@ snapshots:
       - knex
       - kysely
       - mysql2
-      - pg
+      - pg-native
       - postgres
       - prisma
       - react
@@ -5694,77 +5717,17 @@ snapshots:
       - sqlite3
       - supports-color
 
-  '@alice/shared@file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)':
+  '@alice/shared@file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))':
     dependencies:
       drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1)
       drizzle-zod: 0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.11.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1))(zod@3.24.2)
       zod: 3.24.2
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - react
-      - sql.js
-      - sqlite3
 
-  '@alice/shared@file:packages/shared(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)':
+  '@alice/shared@file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1))':
     dependencies:
       drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1)
       drizzle-zod: 0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.16.3)(react@18.3.1))(zod@3.24.2)
       zod: 3.24.2
-    transitivePeerDependencies:
-      - '@aws-sdk/client-rds-data'
-      - '@cloudflare/workers-types'
-      - '@electric-sql/pglite'
-      - '@libsql/client'
-      - '@libsql/client-wasm'
-      - '@neondatabase/serverless'
-      - '@op-engineering/op-sqlite'
-      - '@opentelemetry/api'
-      - '@planetscale/database'
-      - '@prisma/client'
-      - '@tidbcloud/serverless'
-      - '@types/better-sqlite3'
-      - '@types/pg'
-      - '@types/react'
-      - '@types/sql.js'
-      - '@vercel/postgres'
-      - '@xata.io/client'
-      - better-sqlite3
-      - bun-types
-      - expo-sqlite
-      - knex
-      - kysely
-      - mysql2
-      - pg
-      - postgres
-      - prisma
-      - react
-      - sql.js
-      - sqlite3
 
   '@alloc/quick-lru@5.2.0': {}
 
@@ -8476,6 +8439,15 @@ snapshots:
       '@neondatabase/serverless': 0.10.4
       '@opentelemetry/api': 1.9.0
       '@types/pg': 8.11.6
+      '@types/react': 18.3.27
+      pg: 8.12.0
+      react: 18.3.1
+
+  drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.15.6)(@types/react@18.3.27)(pg@8.12.0)(react@18.3.1):
+    optionalDependencies:
+      '@neondatabase/serverless': 0.10.4
+      '@opentelemetry/api': 1.9.0
+      '@types/pg': 8.15.6
       '@types/react': 18.3.27
       pg: 8.12.0
       react: 18.3.1

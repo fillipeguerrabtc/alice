@@ -2,7 +2,7 @@
 // Enterprise-Grade: Idempotency keys OBRIGATÓRIAS para prevenir cobranças duplicadas (Stripe Best Practices 2025)
 import { getUncachableStripeClient } from './stripeClient.js';
 import { getDatabase, schema } from '@alice/database';
-import { eq, sql } from 'drizzle-orm';
+import { eq, sql } from '@alice/database';
 import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
 

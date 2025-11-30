@@ -14,7 +14,7 @@
  */
 
 import { getDatabase, schema } from '@alice/database';
-import { eq, and, lt, or, isNull, sql } from 'drizzle-orm';
+import { eq, and, lt, or, isNull, sql } from '@alice/database';
 
 const { identityProvisioningEvents, externalUserMappings } = schema;
 import { createLogger } from '@alice/logger';

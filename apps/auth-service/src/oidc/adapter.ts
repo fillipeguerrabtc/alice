@@ -12,7 +12,7 @@
 import type { Adapter, AdapterPayload } from 'oidc-provider';
 import { getDatabase } from '@alice/database';
 import { oidcPayloads } from '@alice/shared/schema';
-import { eq, and, lt } from 'drizzle-orm';
+import { eq, and, lt } from '@alice/database';
 import { createLogger } from '@alice/logger';
 
 const logger = createLogger('oidc-adapter');

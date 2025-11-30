@@ -13,7 +13,7 @@
 import { generateKeyPair, exportJWK, type JWK } from 'jose';
 import { getDatabase } from '@alice/database';
 import { oidcJwks } from '@alice/shared/schema';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc } from '@alice/database';
 import { createLogger } from '@alice/logger';
 import crypto from 'crypto';
 

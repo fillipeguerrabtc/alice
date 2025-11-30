@@ -189,12 +189,12 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
     });
     
     // Listener para erros de conexão (enterprise-grade)
-    poolInstance.on('error', (err) => {
+    poolInstance.on('error', (err: Error) => {
       console.error('[database] Erro inesperado no pool:', err.message);
     });
     
     // Registrar tipos pgvector em novas conexões (enterprise-grade)
-    poolInstance.on('connect', async (client) => {
+    poolInstance.on('connect', async (client: pg.PoolClient) => {
       if (!pgvectorRegistered) {
         await pgvector.registerTypes(client);
         pgvectorRegistered = true;
@@ -281,6 +281,40 @@ export async function closeDatabase(): Promise<void> {
 
 export { schema };
 export type Database = NodePgDatabase<typeof schema>;
+
+// ============================================================================
+// RE-EXPORTS DO DRIZZLE-ORM (Singleton Pattern - Regra 16 replit.md)
+// Todos os microsserviços DEVEM usar estas funções via @alice/database
+// para garantir uma única instância do drizzle-orm no monorepo
+// ============================================================================
+export { 
+  eq, 
+  and, 
+  or, 
+  not, 
+  desc, 
+  asc, 
+  sql, 
+  isNull, 
+  isNotNull,
+  inArray,
+  notInArray,
+  between,
+  like,
+  ilike,
+  gt,
+  gte,
+  lt,
+  lte,
+  ne,
+  count,
+  sum,
+  avg,
+  min,
+  max,
+} from 'drizzle-orm';
+
+export type { SQL, InferSelectModel, InferInsertModel } from 'drizzle-orm';
 
 // Feature Flags Storage Adapter
 export { 

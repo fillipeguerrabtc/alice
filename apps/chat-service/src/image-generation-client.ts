@@ -12,7 +12,7 @@
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import pino from 'pino';
-import { eq } from 'drizzle-orm';
+import { eq } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 

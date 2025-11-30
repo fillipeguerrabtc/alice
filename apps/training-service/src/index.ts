@@ -34,7 +34,7 @@ import {
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
-import { eq, and, desc, sql, isNull, not } from 'drizzle-orm';
+import { eq, and, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
 import { 
   requirePermission, 

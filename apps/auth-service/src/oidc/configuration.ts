@@ -16,7 +16,7 @@ import { createAdapter } from './adapter.js';
 import { getJWKS } from './jwks.js';
 import { getDatabase } from '@alice/database';
 import { users, oauthClients, userModules, systemModules } from '@alice/shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq, and } from '@alice/database';
 import { createLogger } from '@alice/logger';
 
 const logger = createLogger('oidc-config');

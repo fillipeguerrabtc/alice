@@ -11,7 +11,7 @@
  * Documentação em PT-BR (Regra 10 replit.md)
  */
 
-import { eq, and, isNull, lt, desc } from 'drizzle-orm';
+import { eq, and, isNull, lt, desc } from '@alice/database';
 import pino from 'pino';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
