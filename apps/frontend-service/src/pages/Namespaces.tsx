@@ -3,6 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
+import type { Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
@@ -103,7 +104,7 @@ export default function Namespaces() {
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
 
   const form = useForm<NamespaceFormData>({
-    resolver: zodResolver(namespaceSchema),
+    resolver: zodResolver(namespaceSchema) as unknown as Resolver<NamespaceFormData>,
     defaultValues: {
       nome: "",
       slug: "",

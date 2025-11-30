@@ -1,0 +1,64 @@
+GitHub Copilot Chat Assistant:
+
+Failing cause
+- TypeScript tsc fails with TS2589 "Type instantiation is excessively deep and possibly infinite" in these files (from the job logs):
+  - apps/frontend-service/src/pages/Agents.tsx (line 124)
+  - apps/frontend-service/src/pages/ModulesAdmin.tsx (line 277)
+  - apps/frontend-service/src/pages/Namespaces.tsx (line 106)
+- This usually happens when complex generic types from react-hook-form + zodResolver are expanded by the compiler and cause excessive recursive type instantiation.
+
+Quick, safe fix
+- Narrow the resolver type by casting the zodResolver to react-hook-form's Resolver<T>. This prevents TypeScript from recursively expanding the resolver’s inferred generic types.
+- Apply the same pattern to the other files that have the same error.
+
+Code change example for the failing Agents.tsx
+- File: apps/frontend-service/src/pages/Agents.tsx (ref: 5b464daafd08ba3f6a666a24ff24fcd171e930e8)
+- Replace the useForm call to cast resolver to Resolver<AgentFormData>.
+
+Patch (small diff):
+1) Add the import:
+```ts
+import type { Resolver } from "react-hook-form";
+```
+
+2) Change the form initialization to cast the resolver:
+```ts
+const form = useForm<AgentFormData>({
+  resolver: zodResolver(agentFormSchema) as unknown as Resolver<AgentFormData>,
+  defaultValues: {
+    nome: "",
+    slug: "",
+    descricao: "",
+    instrucoes: "",
+    personalidade: "",
+    status: "active",
+  },
+});
+```
+
+Why this works
+- The cast stops the compiler from trying to infer every nested generic inside the resolver, avoiding the "excessively deep" expansion while keeping type safety for your form data.
+
+Apply to other files
+- Apply the same pattern in:
+  - apps/frontend-service/src/pages/ModulesAdmin.tsx (error at line ~277)
+  - apps/frontend-service/src/pages/Namespaces.tsx (error at line ~106)
+  - client/src/pages/Agents.tsx, client/src/pages/ModulesAdmin.tsx, client/src/pages/Namespaces.tsx (logs show the client copies fail too)
+- In each file: import Resolver from react-hook-form and cast zodResolver(...) as unknown as Resolver<YourFormType> in useForm(...) (or extract resolver into a const with the cast and pass that const).
+
+Alternative / additional mitigations
+- If you prefer not to cast:
+  - Remove the explicit generic on useForm and rely on an explicit type on defaultValues and the resolver cast as shown above.
+  - Or set "skipLibCheck": true in tsconfig.json to avoid deep type checks across libraries (temporary/workaround, not ideal long-term).
+  - Consider upgrading TypeScript and react-hook-form to versions with better type inference (if you can) — but casting is the minimal, targeted fix.
+
+Verification
+- After edits run locally / CI:
+  - npm run typecheck (or the repository's typecheck script)
+  - OR: npx tsc --noEmit
+- Re-run the CI job to confirm the errors are gone.
+
+Useful links to the exact files (commit ref used in the job):
+- Agents.tsx: https://github.com/fillipeguerrabtc/alice/blob/5b464daafd08ba3f6a666a24ff24fcd171e930e8/apps/frontend-service/src/pages/Agents.tsx
+
+If you want, I can generate the exact patches for all affected files (apps & client) with the same resolver-cast change. Which files would you like me to update first?

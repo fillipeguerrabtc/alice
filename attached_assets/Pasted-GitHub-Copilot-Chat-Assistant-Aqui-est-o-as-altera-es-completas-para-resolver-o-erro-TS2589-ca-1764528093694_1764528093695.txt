@@ -1,0 +1,1816 @@
+GitHub Copilot Chat Assistant:
+
+Aqui estão as alterações completas para resolver o erro TS2589 (cast no zodResolver). Aplique exatamente estes arquivos (substituindo os originais) no ref 5b464daafd08ba3f6a666a24ff24fcd171e930e8.
+
+1) apps/frontend-service/src/pages/Agents.tsx (conteúdo completo atualizado)
+Ref: 5b464daafd08ba3f6a666a24ff24fcd171e930e8
+
+```tsx
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useForm } from "react-hook-form";
+import type { Resolver } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Bot,
+  Plus,
+  MoreHorizontal,
+  Trash2,
+  Edit,
+  Power,
+  MessageSquare,
+  Briefcase,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+
+interface Agent {
+  id: string;
+  namespaceId: string | null;
+  nome: string;
+  slug: string;
+  descricao: string | null;
+  avatar: string | null;
+  personalidade: string | null;
+  instrucoes: string | null;
+  capacidades: string[] | null;
+  modeloBase: string | null;
+  temperaturaModelo: number | null;
+  maxTokens: number | null;
+  status: 'active' | 'training' | 'paused' | 'deprecated' | null;
+  metricas: unknown;
+  versao: number | null;
+  criadoEm: Date | null;
+  atualizadoEm: Date | null;
+}
+
+const statusOptionsConfig = [
+  { value: "active", icon: Power, color: "text-green-500", labelKey: "agents.status.active" },
+  { value: "training", icon: Bot, color: "text-blue-500", labelKey: "agents.status.training" },
+  { value: "paused", icon: MessageSquare, color: "text-orange-500", labelKey: "agents.status.paused" },
+  { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", labelKey: "agents.status.deprecated" },
+];
+
+const agentFormSchema = z.object({
+  nome: z.string().min(2),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  descricao: z.string().optional().nullable(),
+  instrucoes: z.string().optional().nullable(),
+  personalidade: z.string().optional().nullable(),
+  status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
+});
+
+type AgentFormData = z.infer<typeof agentFormSchema>;
+
+function AgentCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <Skeleton className="h-12 w-12 rounded-lg" />
+          <Skeleton className="h-5 w-16" />
+        </div>
+        <Skeleton className="h-5 w-32 mb-2" />
+        <Skeleton className="h-4 w-full" />
+        <Skeleton className="h-4 w-3/4 mt-1" />
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function Agents() {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+
+  const statusOptions = statusOptionsConfig.map(opt => ({
+    ...opt,
+    label: t(opt.labelKey)
+  }));
+
+  const form = useForm<AgentFormData>({
+    resolver: zodResolver(agentFormSchema) as unknown as Resolver<AgentFormData>,
+    defaultValues: {
+      nome: "",
+      slug: "",
+      descricao: "",
+      instrucoes: "",
+      personalidade: "",
+      status: "active",
+    },
+  });
+
+  const { data: agents, isLoading } = useQuery<Agent[]>({
+    queryKey: ["/api/agents"],
+    enabled: !!user,
+  });
+
+  const createAgentMutation = useMutation({
+    mutationFn: async (data: AgentFormData) => {
+      const res = await apiRequest("POST", "/api/agents", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      toast({ title: t('agents.success.created') });
+      setIsDialogOpen(false);
+      form.reset();
+    },
+    onError: () => {
+      toast({ title: t('agents.errors.create'), variant: "destructive" });
+    },
+  });
+
+  const updateAgentMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<AgentFormData> }) => {
+      const res = await apiRequest("PATCH", `/api/agents/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      toast({ title: t('agents.success.updated') });
+      setIsDialogOpen(false);
+      setEditingAgent(null);
+      form.reset();
+    },
+    onError: () => {
+      toast({ title: t('agents.errors.update'), variant: "destructive" });
+    },
+  });
+
+  const deleteAgentMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/agents/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      toast({ title: t('agents.success.removed') });
+    },
+    onError: () => {
+      toast({ title: t('agents.errors.remove'), variant: "destructive" });
+    },
+  });
+
+  const toggleAgentMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: 'active' | 'paused' }) => {
+      const res = await apiRequest("PATCH", `/api/agents/${id}`, { status });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+    },
+  });
+
+  const handleSubmit = (data: AgentFormData) => {
+    if (editingAgent) {
+      updateAgentMutation.mutate({ id: editingAgent.id, data });
+    } else {
+      createAgentMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (agent: Agent) => {
+    setEditingAgent(agent);
+    form.reset({
+      nome: agent.nome,
+      slug: agent.slug,
+      descricao: agent.descricao || "",
+      instrucoes: agent.instrucoes || "",
+      personalidade: agent.personalidade || "",
+      status: agent.status || "active",
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleNewAgent = () => {
+    setEditingAgent(null);
+    form.reset();
+    setIsDialogOpen(true);
+  };
+
+  const getStatusInfo = (status: string) => {
+    return statusOptions.find((s) => s.value === status) || statusOptions[0];
+  };
+
+  const activeAgents = agents?.filter((a) => a.status === 'active').length || 0;
+  const totalAgents = agents?.length || 0;
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
+            {t('agents.title')}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {t('agents.subtitle', { active: activeAgents, total: totalAgents })}
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={handleNewAgent} data-testid="button-criar-agente">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('agents.create')}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingAgent ? t('agents.form.dialogTitleEdit') : t('agents.form.dialogTitle')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('agents.form.dialogDesc')}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="nome"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.form.name')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('agents.placeholders.name')}
+                          {...field}
+                          data-testid="input-agente-nome"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="slug"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.form.slug')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('agents.placeholders.slug')}
+                          {...field}
+                          data-testid="input-agente-slug"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('agents.form.slugDesc')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.status.label')}</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <FormControl>
+                          <SelectTrigger data-testid="select-agente-status">
+                            <SelectValue placeholder={t('agents.status.selectPlaceholder')} />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {statusOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="descricao"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.form.description')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('agents.placeholders.description')}
+                          className="resize-none"
+                          rows={2}
+                          {...field}
+                          value={field.value || ''}
+                          data-testid="input-agente-descricao"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="instrucoes"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.form.instructions')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('agents.placeholders.instructions')}
+                          className="resize-none"
+                          rows={4}
+                          {...field}
+                          value={field.value || ''}
+                          data-testid="input-agente-instrucoes"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('agents.form.instructionsDesc')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="personalidade"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('agents.form.personality')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('agents.placeholders.personality')}
+                          className="resize-none"
+                          rows={2}
+                          {...field}
+                          value={field.value || ''}
+                          data-testid="input-agente-personalidade"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('agents.form.personalityDesc')}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
+                    data-testid="button-salvar-agente"
+                  >
+                    {t('common.save')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <AgentCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : agents && agents.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {agents.map((agent) => {
+            const statusInfo = getStatusInfo(agent.status || 'active');
+            const StatusIcon = statusInfo.icon;
+
+            return (
+              <Card
+                key={agent.id}
+                className={`hover-elevate transition-all duration-200 ${
+                  agent.status !== 'active' ? "opacity-60" : ""
+                }`}
+                data-testid={`card-agente-${agent.id}`}
+              >
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div
+                      className={`flex h-12 w-12 items-center justify-center rounded-lg bg-muted ${statusInfo.color}`}
+                    >
+                      <StatusIcon className="h-6 w-6" />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={agent.status === 'active' ? "default" : "secondary"}>
+                        {statusInfo.label}
+                      </Badge>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" data-testid={`button-menu-agente-${agent.id}`}>
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => handleEdit(agent)}>
+                            <Edit className="mr-2 h-4 w-4" />
+                            {t('common.edit')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() =>
+                              toggleAgentMutation.mutate({
+                                id: agent.id,
+                                status: agent.status === 'active' ? 'paused' : 'active',
+                              })
+                            }
+                          >
+                            <Power className="mr-2 h-4 w-4" />
+                            {agent.status === 'active' ? t('agents.actions.pause') : t('agents.actions.activate')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => deleteAgentMutation.mutate(agent.id)}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            {t('common.remove')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </div>
+                  </div>
+                  <h3 className="font-semibold text-foreground mb-1">{agent.nome}</h3>
+                  <p className="text-sm text-muted-foreground line-clamp-2">
+                    {agent.descricao || (agent.instrucoes ? agent.instrucoes.substring(0, 100) : t('agents.noDescription'))}
+                  </p>
+                  <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      <span>{t('agents.conversations', { count: 0 })}</span>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {statusInfo.label}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
+              <Bot className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="font-semibold text-foreground mb-2">{t('agents.noAgents')}</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+              {t('agents.noAgentsDesc')}
+            </p>
+            <Button onClick={handleNewAgent} data-testid="button-criar-primeiro-agente">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('agents.create')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+2) apps/frontend-service/src/pages/ModulesAdmin.tsx (conteúdo completo atualizado)
+Ref: 5b464daafd08ba3f6a666a24ff24fcd171e930e8
+
+```tsx
+/**
+ * Página de Gestão de Módulos do Sistema - Alice Enterprise Platform
+ * 
+ * Painel de administração para gerenciar módulos do sistema (RBAC granular).
+ * Permite criar, editar, deletar módulos e atribuir a roles/usuários.
+ * 
+ * Regra 6: Dados reais via API PostgreSQL (sem mocks)
+ * Regra 10: Documentação PT-BR
+ * Regra 13: Internacionalização i18next
+ */
+
+import { useState } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
+import { motion } from 'framer-motion';
+import { useForm } from 'react-hook-form';
+import type { Resolver } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Skeleton } from '@/components/ui/skeleton';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import {
+  Boxes,
+  Plus,
+  Pencil,
+  Trash2,
+  ExternalLink,
+  Shield,
+  Users,
+  CheckCircle2,
+  XCircle,
+  Loader2,
+  LayoutDashboard,
+  MessageSquare,
+  FileText,
+  CreditCard,
+  Settings,
+  BarChart3,
+  Bot,
+  Image,
+  Zap,
+} from 'lucide-react';
+interface SystemModule {
+  id: string;
+  codigo: string;
+  nome: string;
+  descricao: string | null;
+  icone: string | null;
+  categoria: string;
+  urlExterna: string | null;
+  ordem: number | null;
+  ativo: boolean | null;
+  criadoEm: Date | null;
+}
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.05 },
+  },
+};
+
+const itemVariants = {
+  hidden: { y: 20, opacity: 0 },
+  visible: {
+    y: 0,
+    opacity: 1,
+    transition: { type: 'spring', stiffness: 100, damping: 12 },
+  },
+};
+
+const moduleFormSchema = z.object({
+  codigo: z.string().min(2, 'Código deve ter pelo menos 2 caracteres').max(100),
+  nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+  descricao: z.string().optional(),
+  icone: z.string().max(50).optional(),
+  categoria: z.string().min(2, 'Categoria é obrigatória').max(100),
+  urlExterna: z.string().url('URL inválida').optional().or(z.literal('')),
+  ordem: z.coerce.number().int().optional(),
+  ativo: z.boolean().optional(),
+});
+
+type ModuleFormData = z.infer<typeof moduleFormSchema>;
+
+const ICON_OPTIONS = [
+  { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { value: 'MessageSquare', label: 'Chat', icon: MessageSquare },
+  { value: 'FileText', label: 'Documentos', icon: FileText },
+  { value: 'CreditCard', label: 'Pagamentos', icon: CreditCard },
+  { value: 'Settings', label: 'Configurações', icon: Settings },
+  { value: 'BarChart3', label: 'Relatórios', icon: BarChart3 },
+  { value: 'Bot', label: 'Agentes', icon: Bot },
+  { value: 'Image', label: 'Imagens', icon: Image },
+  { value: 'Zap', label: 'Integrações', icon: Zap },
+  { value: 'Shield', label: 'Segurança', icon: Shield },
+  { value: 'Users', label: 'Usuários', icon: Users },
+  { value: 'Boxes', label: 'Módulos', icon: Boxes },
+];
+
+const CATEGORY_OPTIONS = [
+  'core',
+  'ai',
+  'integrations',
+  'observability',
+  'admin',
+  'finance',
+];
+
+const ROLE_OPTIONS = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'admin', label: 'Administrador' },
+  { value: 'manager', label: 'Gerente' },
+  { value: 'operator', label: 'Operador' },
+  { value: 'viewer', label: 'Visualizador' },
+  { value: 'guest', label: 'Convidado' },
+];
+
+function getIconComponent(iconName: string | null | undefined) {
+  const iconDef = ICON_OPTIONS.find(opt => opt.value === iconName);
+  return iconDef?.icon || Boxes;
+}
+
+function ModuleCard({ 
+  module, 
+  onEdit, 
+  onDelete 
+}: { 
+  module: SystemModule; 
+  onEdit: (module: SystemModule) => void;
+  onDelete: (id: string) => void;
+}) {
+  const IconComponent = getIconComponent(module.icone);
+  
+  return (
+    <motion.div variants={itemVariants}>
+      <Card className="hover-elevate transition-all duration-200">
+        <CardHeader className="flex flex-row items-start justify-between gap-2 space-y-0 pb-2">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-md bg-primary/10">
+              <IconComponent className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <CardTitle className="text-base" data-testid={`text-module-name-${module.id}`}>
+                {module.nome}
+              </CardTitle>
+              <CardDescription className="text-xs">
+                <code className="bg-muted px-1 rounded">{module.codigo}</code>
+              </CardDescription>
+            </div>
+          </div>
+          <Badge 
+            variant={module.ativo ? 'default' : 'secondary'}
+            data-testid={`badge-module-status-${module.id}`}
+          >
+            {module.ativo ? 'Ativo' : 'Inativo'}
+          </Badge>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+            {module.descricao || 'Sem descrição'}
+          </p>
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="outline" className="text-xs">
+              {module.categoria}
+            </Badge>
+            <div className="flex items-center gap-1">
+              {module.urlExterna && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  asChild
+                  data-testid={`button-module-link-${module.id}`}
+                >
+                  <a href={module.urlExterna} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="h-4 w-4" />
+                  </a>
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => onEdit(module)}
+                data-testid={`button-edit-module-${module.id}`}
+              >
+                <Pencil className="h-4 w-4" />
+              </Button>
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    data-testid={`button-delete-module-${module.id}`}
+                  >
+                    <Trash2 className="h-4 w-4 text-destructive" />
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Confirmar exclusão</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Tem certeza que deseja excluir o módulo "{module.nome}"? 
+                      Esta ação não pode ser desfeita e removerá todas as atribuições.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => onDelete(module.id)}
+                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                    >
+                      Excluir
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+function ModuleFormDialog({
+  open,
+  onOpenChange,
+  module,
+  onSubmit,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  module?: SystemModule | null;
+  onSubmit: (data: ModuleFormData) => void;
+  isLoading: boolean;
+}) {
+  const form = useForm<ModuleFormData>({
+    resolver: zodResolver(moduleFormSchema) as unknown as Resolver<ModuleFormData>,
+    defaultValues: {
+      codigo: module?.codigo || '',
+      nome: module?.nome || '',
+      descricao: module?.descricao || '',
+      icone: module?.icone || 'Boxes',
+      categoria: module?.categoria || 'core',
+      urlExterna: module?.urlExterna || '',
+      ordem: module?.ordem ?? 0,
+      ativo: module?.ativo ?? true,
+    },
+  });
+
+  const handleSubmit = (data: ModuleFormData) => {
+    onSubmit({
+      ...data,
+      urlExterna: data.urlExterna || undefined,
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[500px]">
+        <DialogHeader>
+          <DialogTitle>
+            {module ? 'Editar Módulo' : 'Novo Módulo'}
+          </DialogTitle>
+          <DialogDescription>
+            {module 
+              ? 'Atualize as informações do módulo do sistema.'
+              : 'Crie um novo módulo para controlar acesso a funcionalidades.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="codigo"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Código</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="chat-module" 
+                        {...field} 
+                        disabled={!!module}
+                        data-testid="input-module-codigo"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="nome"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Nome</FormLabel>
+                    <FormControl>
+                      <Input 
+                        placeholder="Chat IA" 
+                        {...field}
+                        data-testid="input-module-nome"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="descricao"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Descrição</FormLabel>
+                  <FormControl>
+                    <Textarea 
+                      placeholder="Descreva o propósito deste módulo..."
+                      className="resize-none"
+                      {...field}
+                      data-testid="input-module-descricao"
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="icone"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ícone</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-module-icone">
+                          <SelectValue placeholder="Selecione um ícone" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {ICON_OPTIONS.map(({ value, label, icon: Icon }) => (
+                          <SelectItem key={value} value={value}>
+                            <div className="flex items-center gap-2">
+                              <Icon className="h-4 w-4" />
+                              <span>{label}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="categoria"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Categoria</FormLabel>
+                    <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <FormControl>
+                        <SelectTrigger data-testid="select-module-categoria">
+                          <SelectValue placeholder="Selecione uma categoria" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {CATEGORY_OPTIONS.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
+                            {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="urlExterna"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>URL Externa (opcional)</FormLabel>
+                  <FormControl>
+                    <Input 
+                      placeholder="https://grafana.example.com"
+                      {...field}
+                      data-testid="input-module-url"
+                    />
+                  </FormControl>
+                  <FormDescription>
+                    Para módulos que redirecionam para sistemas externos
+                  </FormDescription>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField
+                control={form.control}
+                name="ordem"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Ordem</FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number"
+                        {...field}
+                        data-testid="input-module-ordem"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="ativo"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
+                    <div className="space-y-0.5">
+                      <FormLabel>Ativo</FormLabel>
+                      <FormDescription className="text-xs">
+                        Módulo disponível para uso
+                      </FormDescription>
+                    </div>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        data-testid="switch-module-ativo"
+                      />
+                    </FormControl>
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                disabled={isLoading}
+                data-testid="button-save-module"
+              >
+                {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {module ? 'Salvar' : 'Criar'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RoleModulesTab() {
+  const [selectedRole, setSelectedRole] = useState<string>('admin');
+  const { toast } = useToast();
+
+  const { data: modulesData, isLoading: modulesLoading } = useQuery<{ modules: SystemModule[] }>({
+    queryKey: ['/api/auth/modules'],
+  });
+
+  const { data: roleModulesData } = useQuery<{ roleModules: Array<{ moduleId: string }> }>({
+    queryKey: ['/api/auth/roles', selectedRole, 'modules'],
+    enabled: !!selectedRole,
+  });
+
+  const { t } = useTranslation();
+  
+  const assignMutation = useMutation({
+    mutationFn: async ({ moduleId, role }: { moduleId: string; role: string }) => {
+      return apiRequest('POST', `/api/auth/roles/${role}/modules`, { moduleId, acessoLeitura: true });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/roles', selectedRole, 'modules'] });
+      toast({ title: t('modules.success.assigned') });
+    },
+    onError: () => {
+      toast({ title: t('modules.errors.assign'), variant: 'destructive' });
+    },
+  });
+
+  const unassignMutation = useMutation({
+    mutationFn: async ({ moduleId, role }: { moduleId: string; role: string }) => {
+      return apiRequest('DELETE', `/api/auth/roles/${role}/modules/${moduleId}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/roles', selectedRole, 'modules'] });
+      toast({ title: t('modules.success.unassigned') });
+    },
+    onError: () => {
+      toast({ title: t('modules.errors.unassign'), variant: 'destructive' });
+    },
+  });
+
+  const assignedModuleIds = new Set(
+    roleModulesData?.roleModules?.map(rm => rm.moduleId) || []
+  );
+
+  if (modulesLoading) {
+    return (
+      <div className="space-y-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <Label>Role:</Label>
+        <Select value={selectedRole} onValueChange={setSelectedRole}>
+          <SelectTrigger className="w-[200px]" data-testid="select-role">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {ROLE_OPTIONS.map(({ value, label }) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <ScrollArea className="h-[400px]">
+        <div className="space-y-2">
+          {modulesData?.modules?.map((module) => (
+            <div
+              key={module.id}
+              className="flex items-center justify-between p-3 rounded-md border bg-card"
+            >
+              <div className="flex items-center gap-3">
+                {assignedModuleIds.has(module.id) ? (
+                  <CheckCircle2 className="h-5 w-5 text-green-500" />
+                ) : (
+                  <XCircle className="h-5 w-5 text-muted-foreground" />
+                )}
+                <div>
+                  <p className="font-medium">{module.nome}</p>
+                  <p className="text-xs text-muted-foreground">{module.codigo}</p>
+                </div>
+              </div>
+              <Button
+                variant={assignedModuleIds.has(module.id) ? 'secondary' : 'outline'}
+                size="sm"
+                onClick={() => {
+                  if (assignedModuleIds.has(module.id)) {
+                    unassignMutation.mutate({ moduleId: module.id, role: selectedRole });
+                  } else {
+                    assignMutation.mutate({ moduleId: module.id, role: selectedRole });
+                  }
+                }}
+                disabled={assignMutation.isPending || unassignMutation.isPending}
+                data-testid={`button-assign-module-${module.id}`}
+              >
+                {assignedModuleIds.has(module.id) ? t('common.remove') : t('modules.assign')}
+              </Button>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+}
+
+export default function ModulesAdmin() {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const [selectedModule, setSelectedModule] = useState<SystemModule | null>(null);
+
+  const { data, isLoading, error } = useQuery<{ modules: SystemModule[] }>({
+    queryKey: ['/api/auth/modules'],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (moduleData: ModuleFormData) => {
+      return apiRequest('POST', '/api/auth/modules', moduleData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
+      setIsFormOpen(false);
+      setSelectedModule(null);
+      toast({ title: t('modules.success.created') });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: t('modules.errors.create'), 
+        description: error.message,
+        variant: 'destructive' 
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, moduleData }: { id: string; moduleData: ModuleFormData }) => {
+      return apiRequest('PATCH', `/api/auth/modules/${id}`, moduleData);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
+      setIsFormOpen(false);
+      setSelectedModule(null);
+      toast({ title: t('modules.success.updated') });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: t('modules.errors.update'),
+        description: error.message,
+        variant: 'destructive' 
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return apiRequest('DELETE', `/api/auth/modules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/auth/modules'] });
+      toast({ title: t('modules.success.deleted') });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: t('modules.errors.delete'),
+        description: error.message,
+        variant: 'destructive' 
+      });
+    },
+  });
+
+  const handleEdit = (module: SystemModule) => {
+    setSelectedModule(module);
+    setIsFormOpen(true);
+  };
+
+  const handleSubmit = (formData: ModuleFormData) => {
+    if (selectedModule) {
+      updateMutation.mutate({ id: selectedModule.id, moduleData: formData });
+    } else {
+      createMutation.mutate(formData);
+    }
+  };
+
+  const modules = data?.modules || [];
+  const groupedModules = modules.reduce((acc, module) => {
+    const category = module.categoria || 'other';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(module);
+    return acc;
+  }, {} as Record<string, SystemModule[]>);
+
+  return (
+    <div className="container mx-auto p-6 max-w-7xl">
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="space-y-6"
+      >
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight" data-testid="text-page-title">
+              {t('modules.title')}
+            </h1>
+            <p className="text-muted-foreground">
+              {t('modules.description')}
+            </p>
+          </div>
+          <Button
+            onClick={() => {
+              setSelectedModule(null);
+              setIsFormOpen(true);
+            }}
+            data-testid="button-new-module"
+          >
+            <Plus className="mr-2 h-4 w-4" />
+            Novo Módulo
+          </Button>
+        </div>
+
+        <Tabs defaultValue="modules" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="modules" data-testid="tab-modules">
+              <Boxes className="mr-2 h-4 w-4" />
+              Módulos
+            </TabsTrigger>
+            <TabsTrigger value="roles" data-testid="tab-roles">
+              <Shield className="mr-2 h-4 w-4" />
+              Permissões por Role
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="modules" className="space-y-6">
+            {isLoading ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Card key={i}>
+                    <CardHeader className="space-y-2">
+                      <Skeleton className="h-5 w-32" />
+                      <Skeleton className="h-4 w-24" />
+                    </CardHeader>
+                    <CardContent>
+                      <Skeleton className="h-12 w-full" />
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : error ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <XCircle className="h-12 w-12 text-destructive mb-4" />
+                  <p className="text-lg font-medium">Erro ao carregar módulos</p>
+                  <p className="text-muted-foreground">Tente novamente mais tarde</p>
+                </CardContent>
+              </Card>
+            ) : modules.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Boxes className="h-12 w-12 text-muted-foreground mb-4" />
+                  <p className="text-lg font-medium">Nenhum módulo cadastrado</p>
+                  <p className="text-muted-foreground mb-4">
+                    Crie o primeiro módulo para começar
+                  </p>
+                  <Button
+                    onClick={() => {
+                      setSelectedModule(null);
+                      setIsFormOpen(true);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Criar Módulo
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              Object.entries(groupedModules).map(([category, categoryModules]) => (
+                <div key={category}>
+                  <h2 className="text-lg font-semibold mb-3 capitalize">
+                    {category}
+                  </h2>
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {categoryModules.map((module) => (
+                      <ModuleCard
+                        key={module.id}
+                        module={module}
+                        onEdit={handleEdit}
+                        onDelete={(id) => deleteMutation.mutate(id)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </TabsContent>
+
+          <TabsContent value="roles">
+            <Card>
+              <CardHeader>
+                <CardTitle>Permissões por Role</CardTitle>
+                <CardDescription>
+                  Atribua módulos a roles para controlar o acesso dos usuários
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <RoleModulesTab />
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </motion.div>
+
+      <ModuleFormDialog
+        open={isFormOpen}
+        onOpenChange={setIsFormOpen}
+        module={selectedModule}
+        onSubmit={handleSubmit}
+        isLoading={createMutation.isPending || updateMutation.isPending}
+      />
+    </div>
+  );
+}
+```
+
+3) apps/frontend-service/src/pages/Namespaces.tsx (conteúdo completo atualizado)
+Ref: 5b464daafd08ba3f6a666a24ff24fcd171e930e8
+
+```tsx
+import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { queryClient, apiRequest } from "@/lib/queryClient";
+import { useForm } from "react-hook-form";
+import type { Resolver } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Form,
+  FormControl,
+  FormDescription,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Folder,
+  Plus,
+  MoreHorizontal,
+  Settings,
+  Trash2,
+  Edit,
+  Users,
+  Bot,
+  FileText,
+} from "lucide-react";
+import { toast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+
+interface Namespace {
+  id: string;
+  nome: string;
+  slug: string;
+  descricao?: string | null;
+  cor?: string | null;
+}
+
+const defaultColors = [
+  "#3B82F6",
+  "#10B981",
+  "#8B5CF6",
+  "#F59E0B",
+  "#EF4444",
+  "#EC4899",
+  "#06B6D4",
+  "#84CC16",
+];
+
+const namespaceSchema = z.object({
+  nome: z.string().min(2),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  descricao: z.string().optional(),
+  cor: z.string().default("#3B82F6"),
+});
+
+type NamespaceFormData = z.infer<typeof namespaceSchema>;
+
+function NamespaceCardSkeleton() {
+  return (
+    <Card>
+      <CardContent className="p-6">
+        <div className="flex items-start justify-between mb-4">
+          <Skeleton className="h-12 w-12 rounded-lg" />
+          <Skeleton className="h-8 w-8" />
+        </div>
+        <Skeleton className="h-5 w-32 mb-2" />
+        <Skeleton className="h-4 w-full" />
+        <div className="mt-4 flex gap-2">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-16" />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export default function Namespaces() {
+  const { t } = useTranslation();
+  const { user } = useAuth();
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
+
+  const form = useForm<NamespaceFormData>({
+    resolver: zodResolver(namespaceSchema) as unknown as Resolver<NamespaceFormData>,
+    defaultValues: {
+      nome: "",
+      slug: "",
+      descricao: "",
+      cor: "#3B82F6",
+    },
+  });
+
+  const { data: namespaces, isLoading } = useQuery<Namespace[]>({
+    queryKey: ["/api/namespaces"],
+    enabled: !!user,
+  });
+
+  const createNamespaceMutation = useMutation({
+    mutationFn: async (data: NamespaceFormData) => {
+      const res = await apiRequest("POST", "/api/namespaces", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
+      toast({ title: t('namespaces.success.created') });
+      setIsDialogOpen(false);
+      form.reset();
+    },
+    onError: () => {
+      toast({ title: t('namespaces.errors.create'), variant: "destructive" });
+    },
+  });
+
+  const updateNamespaceMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: Partial<NamespaceFormData> }) => {
+      const res = await apiRequest("PATCH", `/api/namespaces/${id}`, data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
+      toast({ title: t('namespaces.success.updated') });
+      setIsDialogOpen(false);
+      setEditingNamespace(null);
+      form.reset();
+    },
+    onError: () => {
+      toast({ title: t('namespaces.errors.update'), variant: "destructive" });
+    },
+  });
+
+  const deleteNamespaceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/namespaces/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/namespaces"] });
+      toast({ title: t('namespaces.success.removed') });
+    },
+    onError: () => {
+      toast({ title: t('namespaces.errors.remove'), variant: "destructive" });
+    },
+  });
+
+  const handleSubmit = (data: NamespaceFormData) => {
+    if (editingNamespace) {
+      updateNamespaceMutation.mutate({ id: editingNamespace.id, data });
+    } else {
+      createNamespaceMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (namespace: Namespace) => {
+    setEditingNamespace(namespace);
+    form.reset({
+      nome: namespace.nome,
+      slug: namespace.slug,
+      descricao: namespace.descricao || "",
+      cor: namespace.cor || "#3B82F6",
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleNewNamespace = () => {
+    setEditingNamespace(null);
+    form.reset();
+    setIsDialogOpen(true);
+  };
+
+  const generateSlug = (name: string) => {
+    return name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "");
+  };
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
+            {t('namespaces.title')}
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {t('namespaces.subtitle', { count: namespaces?.length || 0 })}
+          </p>
+        </div>
+        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+          <DialogTrigger asChild>
+            <Button onClick={handleNewNamespace} data-testid="button-criar-namespace">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('namespaces.create')}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>
+                {editingNamespace ? t('namespaces.edit') : t('namespaces.create')}
+              </DialogTitle>
+              <DialogDescription>
+                {t('namespaces.dialogDesc')}
+              </DialogDescription>
+            </DialogHeader>
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="nome"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.name')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('namespaces.placeholders.name')}
+                          {...field}
+                          onChange={(e) => {
+                            field.onChange(e);
+                            if (!editingNamespace) {
+                              form.setValue("slug", generateSlug(e.target.value));
+                            }
+                          }}
+                          data-testid="input-namespace-nome"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="slug"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.slug')}</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder={t('namespaces.placeholders.slug')}
+                          {...field}
+                          data-testid="input-namespace-slug"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        {t('namespaces.slugUrl', { slug: field.value || "slug" })}
+                      </FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="descricao"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.description')}</FormLabel>
+                      <FormControl>
+                        <Textarea
+                          placeholder={t('namespaces.placeholders.description')}
+                          className="resize-none"
+                          rows={2}
+                          {...field}
+                          data-testid="input-namespace-descricao"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="cor"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('namespaces.color')}</FormLabel>
+                      <FormControl>
+                        <div className="flex flex-wrap gap-2">
+                          {defaultColors.map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => field.onChange(color)}
+                              className={`h-8 w-8 rounded-full transition-transform ${
+                                field.value === color
+                                  ? "ring-2 ring-primary ring-offset-2 scale-110"
+                                  : "hover:scale-105"
+                              }`}
+                              style={{ backgroundColor: color }}
+                              data-testid={`color-${color}`}
+                            />
+                          ))}
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setIsDialogOpen(false)}
+                  >
+                    {t('common.cancel')}
+                  </Button>
+                  <Button
+                    type="submit"
+                    disabled={createNamespaceMutation.isPending || updateNamespaceMutation.isPending}
+                    data-testid="button-salvar-namespace"
+                  >
+                    {t('common.save')}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </Form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {isLoading ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <NamespaceCardSkeleton key={i} />
+          ))}
+        </div>
+      ) : namespaces && namespaces.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {namespaces.map((namespace) => (
+            <Card
+              key={namespace.id}
+              className="hover-elevate transition-all duration-200"
+              data-testid={`card-namespace-${namespace.id}`}
+            >
+              <CardContent className="p-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div
+                    className="flex h-12 w-12 items-center justify-center rounded-lg font-bold text-lg text-white"
+                    style={{ backgroundColor: namespace.cor || "#3B82F6" }}
+                  >
+                    {namespace.nome.charAt(0).toUpperCase()}
+                  </div>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" data-testid={`button-menu-namespace-${namespace.id}`}>
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onClick={() => handleEdit(namespace)}>
+                        <Edit className="mr-2 h-4 w-4" />
+                        {t('common.edit')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem>
+                        <Settings className="mr-2 h-4 w-4" />
+                        {t('common.settings')}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-destructive"
+                        onClick={() => deleteNamespaceMutation.mutate(namespace.id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        {t('common.remove')}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+                <h3 className="font-semibold text-foreground mb-1">{namespace.nome}</h3>
+                <p className="text-sm text-muted-foreground line-clamp-2 mb-4">
+                  {namespace.descricao || `/${namespace.slug}`}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline" className="gap-1 text-xs">
+                    <Bot className="h-3 w-3" />
+                    {t('namespaces.stats.agents', { count: 0 })}
+                  </Badge>
+                  <Badge variant="outline" className="gap-1 text-xs">
+                    <FileText className="h-3 w-3" />
+                    {t('namespaces.stats.docs', { count: 0 })}
+                  </Badge>
+                  <Badge variant="outline" className="gap-1 text-xs">
+                    <Users className="h-3 w-3" />
+                    {t('namespaces.stats.users', { count: 0 })}
+                  </Badge>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : (
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
+              <Folder className="h-8 w-8 text-primary" />
+            </div>
+            <h3 className="font-semibold text-foreground mb-2">{t('namespaces.noNamespaces')}</h3>
+            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+              {t('namespaces.noNamespacesDesc')}
+            </p>
+            <Button onClick={handleNewNamespace} data-testid="button-criar-primeiro-namespace">
+              <Plus className="mr-2 h-4 w-4" />
+              {t('namespaces.create')}
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+```
+
+Observações e próximos passos
+- A mesma mudança deve ser aplicada aos arquivos duplicados em client/: 
+  - client/src/pages/Agents.tsx
+  - client/src/pages/ModulesAdmin.tsx
+  - client/src/pages/Namespaces.tsx
+  (inserir import type { Resolver } e fazer cast zodResolver(... ) as unknown as Resolver<YourFormType>).
+
+Testes locais / CI
+- Rodar localmente:
+  - npx tsc --noEmit
+  - ou npm run typecheck (se houver)
+- Commitar os arquivos e reexecutar a workflow: o erro TS2589 deve desaparecer.
+
+Se quiser, eu:
+- Posso gerar um patch/PR com estas alterações (diga “criar PR”) — preciso da confirmação para abrir o PR.
+- Posso também montar os três patches para os arquivos em client/ se você me autorizar a buscá-los e atualizá-los aqui. Quer que eu atualize também os arquivos em client/?

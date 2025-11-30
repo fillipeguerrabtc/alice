@@ -14,6 +14,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
+import type { Resolver } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -274,7 +275,7 @@ function ModuleFormDialog({
   isLoading: boolean;
 }) {
   const form = useForm<ModuleFormData>({
-    resolver: zodResolver(moduleFormSchema),
+    resolver: zodResolver(moduleFormSchema) as unknown as Resolver<ModuleFormData>,
     defaultValues: {
       codigo: module?.codigo || '',
       nome: module?.nome || '',

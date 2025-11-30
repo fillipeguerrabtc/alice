@@ -1,0 +1,137 @@
+GitHub Copilot Chat Assistant:
+
+Solução direta
+- Causa: o TypeScript está estourando com TS2589 ("Type instantiation is excessively deep") ao inferir tipos complexos do zodResolver + react-hook-form.
+- Correção recomendada (rápida e segura): evitar que o compilador expanda os genéricos do resolver fazendo um cast para o tipo Resolver<T> do react-hook-form. Isso preserva a tipagem do formulário e elimina a recursão de tipos que causa o erro.
+- Aplicar a mesma mudança em todas as páginas que usam useForm + zodResolver (apps/frontend-service e client copies mencionadas nos logs).
+
+Alterações a aplicar (patches / snippets)
+- Em cada arquivo, adicione a importação do tipo Resolver e altere a chamada useForm(...) para fazer o cast do resolver:
+  import type { Resolver } from "react-hook-form";
+  ...
+  const form = useForm<YourFormType>({
+    resolver: zodResolver(yourSchema) as unknown as Resolver<YourFormType>,
+    defaultValues: { ... },
+  });
+
+Arquivos afetados e trechos prontos para aplicar
+
+1) apps/frontend-service/src/pages/Agents.tsx
+- Link (ref do job): https://github.com/fillipeguerrabtc/alice/blob/5b464daafd08ba3f6a666a24ff24fcd171e930e8/apps/frontend-service/src/pages/Agents.tsx
+
+Patch (insira a importação e altere o useForm):
+```diff
+@@
+- import { useForm } from "react-hook-form";
++ import { useForm } from "react-hook-form";
++ import type { Resolver } from "react-hook-form";
+@@
+-   const form = useForm<AgentFormData>({
+-     resolver: zodResolver(agentFormSchema),
+-     defaultValues: {
++   const form = useForm<AgentFormData>({
++     resolver: zodResolver(agentFormSchema) as unknown as Resolver<AgentFormData>,
++     defaultValues: {
+       nome: "",
+       slug: "",
+       descricao: "",
+       instrucoes: "",
+       personalidade: "",
+       status: "active",
+     },
+   });
+```
+
+2) apps/frontend-service/src/pages/ModulesAdmin.tsx
+- Link (ref do job): https://github.com/fillipeguerrabtc/alice/blob/5b464daafd08ba3f6a666a24ff24fcd171e930e8/apps/frontend-service/src/pages/ModulesAdmin.tsx
+
+Patch (insira a importação e altere o useForm dentro de ModuleFormDialog):
+```diff
+@@
+- import { useForm } from 'react-hook-form';
++ import { useForm } from 'react-hook-form';
++ import type { Resolver } from 'react-hook-form';
+@@
+-   const form = useForm<ModuleFormData>({
+-     resolver: zodResolver(moduleFormSchema),
+-     defaultValues: {
++   const form = useForm<ModuleFormData>({
++     resolver: zodResolver(moduleFormSchema) as unknown as Resolver<ModuleFormData>,
++     defaultValues: {
+       codigo: module?.codigo || '',
+       nome: module?.nome || '',
+       descricao: module?.descricao || '',
+       icone: module?.icone || 'Boxes',
+       categoria: module?.categoria || 'core',
+       urlExterna: module?.urlExterna || '',
+       ordem: module?.ordem ?? 0,
+       ativo: module?.ativo ?? true,
+     },
+   });
+```
+
+3) apps/frontend-service/src/pages/Namespaces.tsx
+- Link (ref do job): https://github.com/fillipeguerrabtc/alice/blob/5b464daafd08ba3f6a666a24ff24fcd171e930e8/apps/frontend-service/src/pages/Namespaces.tsx
+
+Patch:
+```diff
+@@
+- import { useForm } from "react-hook-form";
++ import { useForm } from "react-hook-form";
++ import type { Resolver } from "react-hook-form";
+@@
+-   const form = useForm<NamespaceFormData>({
+-     resolver: zodResolver(namespaceSchema),
+-     defaultValues: {
++   const form = useForm<NamespaceFormData>({
++     resolver: zodResolver(namespaceSchema) as unknown as Resolver<NamespaceFormData>,
++     defaultValues: {
+       nome: "",
+       slug: "",
+       descricao: "",
+       cor: "#3B82F6",
+     },
+   });
+```
+
+4) client copies (logs mostram erros também em client/)
+- Arquivos a atualizar da mesma forma:
+  - client/src/pages/Agents.tsx
+  - client/src/pages/ModulesAdmin.tsx
+  - client/src/pages/Namespaces.tsx
+
+Patch sugerido (aplicar mesmíssima mudança em cada arquivo):
+```diff
+- import { useForm } from "react-hook-form";
++ import { useForm } from "react-hook-form";
++ import type { Resolver } from "react-hook-form";
+@@
+- const form = useForm<MyFormType>({
+-   resolver: zodResolver(mySchema),
+-   defaultValues: { ... },
+- });
++ const form = useForm<MyFormType>({
++   resolver: zodResolver(mySchema) as unknown as Resolver<MyFormType>,
++   defaultValues: { ... },
++ });
+```
+
+Por que isso resolve
+- O cast interrompe a inferência recursiva dos tipos do resolver, que é o que causa a profundidade excessiva dos tipos no tsc. O resultado: tsc para de gerar TS2589 e a tipagem de campos (generic T em useForm<T>) continua válida.
+
+Verificação local / CI
+- Rode localmente:
+  - npx tsc --noEmit
+  - ou npm run typecheck (se houver script)
+- Faça commit/PR com as mudanças e re-execute a workflow CI (Actions) que falhou:
+  - A job que falhou: https://github.com/fillipeguerrabtc/alice/actions/runs/19801410431/job/56729232758 (referência do job — ref 5b464daafd08ba3f6a666a24ff24fcd171e930e8)
+
+Alternativas / complementos
+- Se preferir uma solução global temporária, adicione "skipLibCheck": true ao tsconfig.json para pular checagem profunda de tipos em libs (mas é workaround; preferível é o cast nos arquivos).
+- Atualizar TypeScript / react-hook-form / @hookform/resolvers para versões que melhorem inferência de tipos também pode ajudar a longo prazo.
+
+Posso:
+- Gerar os patches completos e abrir um PR automaticamente (se quiser, diga “abra PR com as mudanças”).
+- Aplicar apenas aos arquivos apps/, ou aplicar também aos arquivos client/ (confirmar qual deseja).
+
+Quer que eu gere os commits/PRs com essas alterações agora?
