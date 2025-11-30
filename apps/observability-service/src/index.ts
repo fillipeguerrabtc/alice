@@ -14,6 +14,7 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import pino from 'pino';
+import CircuitBreaker from 'opossum';
 import {
   createSecurityMiddleware,
   createRateLimiter,
@@ -84,6 +85,7 @@ interface ServiceStatus {
   latencyMs: number;
   lastCheck: string;
   error?: string;
+  circuitBreakerState?: 'closed' | 'open' | 'half-open';
 }
 
 interface StackHealth {
@@ -95,8 +97,28 @@ interface StackHealth {
 
 const startTime = Date.now();
 
-// Verificar saúde de um serviço via HTTP
-async function checkServiceHealth(
+// ============================================================================
+// CIRCUIT BREAKER PARA HEALTH CHECKS EXTERNOS (Regra 16 - Best Practices 2025)
+// Protege contra falhas em cascata quando serviços externos estão indisponíveis
+// ============================================================================
+
+// Configuração do circuit breaker (Opossum 2025 Best Practices)
+const circuitBreakerOptions: CircuitBreaker.Options = {
+  timeout: 5000,           // 5s timeout por requisição
+  errorThresholdPercentage: 50,  // Abre após 50% de falhas
+  resetTimeout: 30000,     // 30s no estado "open" antes de tentar half-open
+  volumeThreshold: 5,      // Mínimo 5 requisições antes de calcular porcentagem
+  rollingCountTimeout: 10000,  // Janela de 10s para contagem de falhas
+};
+
+// Cache de circuit breakers por serviço
+const circuitBreakers = new Map<string, CircuitBreaker<[string, string, string], ServiceStatus>>();
+
+/**
+ * Função interna de verificação de saúde (sem circuit breaker)
+ * Usada como ação do circuit breaker
+ */
+async function checkServiceHealthInternal(
   name: string, 
   baseUrl: string, 
   healthPath: string
@@ -104,10 +126,10 @@ async function checkServiceHealth(
   const url = `${baseUrl}${healthPath}`;
   const startMs = Date.now();
   
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    
     const response = await fetch(url, { 
       signal: controller.signal,
       headers: { 'Accept': 'application/json' }
@@ -126,22 +148,119 @@ async function checkServiceHealth(
         lastCheck: new Date().toISOString(),
       };
     } else {
-      logger.warn({ service: name, statusCode: response.status }, 'Serviço com erro');
-      return {
-        name,
-        url: baseUrl,
-        status: 'unhealthy',
-        latencyMs,
-        lastCheck: new Date().toISOString(),
-        error: `HTTP ${response.status}`,
-      };
+      // Resposta não-OK é considerada falha para o circuit breaker
+      throw new Error(`HTTP ${response.status}`);
     }
   } catch (error) {
+    clearTimeout(timeoutId);
     const latencyMs = Date.now() - startMs;
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     
     logger.error({ service: name, error: errorMessage }, 'Falha ao verificar serviço');
     
+    // Re-throw para que o circuit breaker registre a falha
+    throw Object.assign(new Error(errorMessage), { 
+      serviceStatus: {
+        name,
+        url: baseUrl,
+        status: 'unhealthy' as const,
+        latencyMs,
+        lastCheck: new Date().toISOString(),
+        error: errorMessage,
+      }
+    });
+  }
+}
+
+/**
+ * Obter ou criar circuit breaker para um serviço
+ */
+function getOrCreateBreaker(name: string): CircuitBreaker<[string, string, string], ServiceStatus> {
+  const existing = circuitBreakers.get(name);
+  if (existing) return existing;
+  
+  const breaker = new CircuitBreaker(checkServiceHealthInternal, {
+    ...circuitBreakerOptions,
+    name: `health-check-${name}`,
+  });
+  
+  // Event listeners para observabilidade (Regra 16)
+  breaker.on('open', () => {
+    logger.warn({ service: name }, 'Circuit breaker ABERTO - serviço temporariamente ignorado');
+  });
+  
+  breaker.on('halfOpen', () => {
+    logger.info({ service: name }, 'Circuit breaker HALF-OPEN - testando serviço');
+  });
+  
+  breaker.on('close', () => {
+    logger.info({ service: name }, 'Circuit breaker FECHADO - serviço recuperado');
+  });
+  
+  breaker.on('fallback', () => {
+    logger.debug({ service: name }, 'Circuit breaker fallback acionado');
+  });
+  
+  circuitBreakers.set(name, breaker);
+  return breaker;
+}
+
+/**
+ * Obter estado do circuit breaker para um serviço
+ */
+function getBreakerState(name: string): 'closed' | 'open' | 'half-open' {
+  const breaker = circuitBreakers.get(name);
+  if (!breaker) return 'closed';
+  
+  if (breaker.opened) return 'open';
+  if (breaker.halfOpen) return 'half-open';
+  return 'closed';
+}
+
+// Verificar saúde de um serviço via HTTP com circuit breaker
+async function checkServiceHealth(
+  name: string, 
+  baseUrl: string, 
+  healthPath: string
+): Promise<ServiceStatus> {
+  const breaker = getOrCreateBreaker(name);
+  const startMs = Date.now();
+  
+  try {
+    // Executar health check através do circuit breaker
+    const result = await breaker.fire(name, baseUrl, healthPath);
+    return {
+      ...result,
+      circuitBreakerState: getBreakerState(name),
+    };
+  } catch (error: unknown) {
+    const latencyMs = Date.now() - startMs;
+    
+    // Verificar se é um erro com serviceStatus (nossa falha de health check)
+    if (error && typeof error === 'object' && 'serviceStatus' in error) {
+      const typedError = error as { serviceStatus: ServiceStatus };
+      return {
+        ...typedError.serviceStatus,
+        circuitBreakerState: getBreakerState(name),
+      };
+    }
+    
+    // Circuit breaker aberto - retornar status "unknown"
+    if (error instanceof Error && error.message.includes('Breaker is open')) {
+      logger.debug({ service: name }, 'Health check ignorado - circuit breaker aberto');
+      return {
+        name,
+        url: baseUrl,
+        status: 'unknown',
+        latencyMs,
+        lastCheck: new Date().toISOString(),
+        error: 'Circuit breaker aberto - serviço temporariamente ignorado',
+        circuitBreakerState: 'open',
+      };
+    }
+    
+    // Outro erro
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     return {
       name,
       url: baseUrl,
@@ -149,6 +268,7 @@ async function checkServiceHealth(
       latencyMs,
       lastCheck: new Date().toISOString(),
       error: errorMessage,
+      circuitBreakerState: getBreakerState(name),
     };
   }
 }
@@ -282,7 +402,7 @@ app.get('/metrics', async (_req: Request, res: Response) => {
     metrics += '# TYPE observability_service_up gauge\n';
     
     for (const service of health.services) {
-      const value = service.status === 'healthy' ? 1 : 0;
+      const value = service.status === 'healthy' ? 1 : service.status === 'unknown' ? 0.5 : 0;
       metrics += `observability_service_up{service="${service.name.toLowerCase()}"} ${value}\n`;
     }
     
@@ -301,6 +421,31 @@ app.get('/metrics', async (_req: Request, res: Response) => {
     metrics += '\n# HELP observability_uptime_seconds Uptime of health checker in seconds\n';
     metrics += '# TYPE observability_uptime_seconds counter\n';
     metrics += `observability_uptime_seconds ${health.uptimeSeconds}\n`;
+    
+    // Circuit breaker metrics (Regra 16 - Enterprise Observability)
+    metrics += '\n# HELP observability_circuit_breaker_state Circuit breaker state (0=closed, 0.5=half-open, 1=open)\n';
+    metrics += '# TYPE observability_circuit_breaker_state gauge\n';
+    
+    for (const service of health.services) {
+      const stateValue = service.circuitBreakerState === 'open' ? 1 : 
+                         service.circuitBreakerState === 'half-open' ? 0.5 : 0;
+      metrics += `observability_circuit_breaker_state{service="${service.name.toLowerCase()}"} ${stateValue}\n`;
+    }
+    
+    // Circuit breaker stats
+    metrics += '\n# HELP observability_circuit_breaker_fires_total Total circuit breaker fire attempts\n';
+    metrics += '# TYPE observability_circuit_breaker_fires_total counter\n';
+    
+    for (const [name, breaker] of circuitBreakers.entries()) {
+      metrics += `observability_circuit_breaker_fires_total{service="${name.toLowerCase()}"} ${breaker.stats.fires}\n`;
+    }
+    
+    metrics += '\n# HELP observability_circuit_breaker_failures_total Total circuit breaker failures\n';
+    metrics += '# TYPE observability_circuit_breaker_failures_total counter\n';
+    
+    for (const [name, breaker] of circuitBreakers.entries()) {
+      metrics += `observability_circuit_breaker_failures_total{service="${name.toLowerCase()}"} ${breaker.stats.failures}\n`;
+    }
     
     res.set('Content-Type', 'text/plain');
     res.send(metrics);
@@ -361,6 +506,33 @@ app.post('/api/observability/logs', (req: Request, res: Response) => {
     logger.error({ error }, 'Erro ao processar log do frontend');
     res.status(500).json({ error: 'Erro interno' });
   }
+});
+
+// Status dos circuit breakers (Regra 16 - Observability)
+app.get('/api/observability/circuit-breakers', (_req: Request, res: Response) => {
+  const statuses = Array.from(circuitBreakers.entries()).map(([name, breaker]) => ({
+    name,
+    state: breaker.opened ? 'open' : breaker.halfOpen ? 'half-open' : 'closed',
+    stats: {
+      fires: breaker.stats.fires,
+      failures: breaker.stats.failures,
+      successes: breaker.stats.successes,
+      timeouts: breaker.stats.timeouts,
+      fallbacks: breaker.stats.fallbacks,
+      rejects: breaker.stats.rejects,
+    },
+    // Usar opções globais pois são compartilhadas entre todos os breakers
+    config: {
+      timeout: circuitBreakerOptions.timeout,
+      errorThresholdPercentage: circuitBreakerOptions.errorThresholdPercentage,
+      resetTimeout: circuitBreakerOptions.resetTimeout,
+    },
+  }));
+  
+  res.json({
+    circuitBreakers: statuses,
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // URLs de acesso rápido
