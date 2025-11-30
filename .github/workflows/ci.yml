@@ -92,21 +92,24 @@ jobs:
       # Build packages na ordem correta de dependências
       # CRÍTICO: Sem isso, os microsserviços não conseguem importar @alice/*
       # NOTA: Usamos --force para garantir que .js sejam gerados mesmo se .tsbuildinfo existir
+      # NOTA: NODE_OPTIONS aumenta memória para evitar heap out of memory em monorepos grandes
       - name: Build shared packages (ordem de dependências)
         run: |
           set -e
+          export NODE_OPTIONS="--max-old-space-size=4096"
+          
           echo "Limpando builds anteriores..."
           rm -rf packages/shared/dist packages/shared-utils/dist packages/config/dist packages/logger/dist packages/database/dist
           rm -f packages/*/tsconfig.tsbuildinfo packages/*/*.tsbuildinfo
           
-          echo "Building packages na ordem correta (com --force)..."
+          echo "Building packages na ordem correta (com --force, 4GB heap)..."
           
           # Build cada package individualmente com verificação de erro
           PACKAGES=("shared" "shared-utils" "config" "logger" "database")
           for pkg in "${PACKAGES[@]}"; do
             echo "--- Building @alice/$pkg ---"
             pushd "packages/$pkg" > /dev/null
-            npx tsc -b --force
+            NODE_OPTIONS="--max-old-space-size=4096" npx tsc -b --force
             if [ $? -ne 0 ]; then
               echo "ERRO: Build de @alice/$pkg falhou!"
               exit 1
@@ -137,8 +140,9 @@ jobs:
           retention-days: 1
 
       # TypeScript Check - DEVE falhar se houver erros
+      # NOTA: NODE_OPTIONS aumenta memória para evitar heap out of memory
       - name: TypeScript Check
-        run: pnpm run typecheck
+        run: NODE_OPTIONS="--max-old-space-size=4096" pnpm run typecheck
 
       # ESLint - DEVE falhar se houver erros
       - name: ESLint
