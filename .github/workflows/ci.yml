@@ -24,6 +24,9 @@ concurrency:
 env:
   NODE_VERSION: '20'
   PNPM_VERSION: '10.12.4'
+  # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
+  # durante TypeScript compilation de monorepos grandes
+  NODE_OPTIONS: '--max-old-space-size=4096'
 
 jobs:
   # ===========================================================================
