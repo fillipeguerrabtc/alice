@@ -1,0 +1,52 @@
+Your CI job is failing due to the following main TypeScript errors:
+
+1. **pg types mismatch in `apps/auth-service/src/index.ts`**:
+   ```
+   error TS2322: Type ...Pool is not assignable to type ...Pool
+   The types returned by 'connect()' are incompatible between these types.
+   ```
+   This is due to incompatible versions of `@types/pg` being installed (`8.15.6` vs `8.11.6`). The type definitions for `Pool` and its methods are different, which causes conflicts.
+
+   **Solution**:
+   - Ensure only one version of `@types/pg` is installed across your monorepo. Update your `package.json` and lockfiles to use a single consistent version (preferably the latest).
+   ```bash
+   # In the root directory
+   pnpm i -r @types/pg@latest
+   # Optionally, manually clean all old pg/pg-types packages from node_modules and reinstall.
+   pnpm install
+   ```
+   - Also, run `pnpm dedupe` to ensure the dependency tree uses the updated version everywhere.
+
+2. **"Type instantiation is excessively deep and possibly infinite" (TS2589)**  
+   This error appears in several places:
+   - `apps/frontend-service/src/pages/Agents.tsx(131,15)`
+   - `apps/frontend-service/src/pages/ModulesAdmin.tsx(286,15)`
+   - `apps/frontend-service/src/pages/Namespaces.tsx(111,15)`
+   - Same error repeats for `client/src/pages/Agents.tsx`, `ModulesAdmin.tsx`, `Namespaces.tsx`
+   
+   **Solution**:
+   - This usually happens with overly complex generic types or recursive types in TypeScript, often with deeply nested type definitions or certain libraries.
+   - Review the generic types at the reported lines. Try simplifying the types, splitting up nested generics, or using type assertions (`as`) to break the recursion.
+   - If possible, update your TypeScript version to the latest stable, as newer versions are better at handling deep type recursion.
+   - You may also add a `tsconfig.json` option:
+     ```json
+     {
+       "compilerOptions": {
+         "maxNodeModuleJsDepth": 2
+       }
+     }
+     ```
+   - Or refactor the type at the error site, e.g.:
+     ```ts
+     // Instead of deep nested types, extract them:
+     type AgentType = ...; // Define separately
+     const agent = ... as AgentType;
+     ```
+
+### Next steps
+- Fix the conflicting pg types first, as it breaks type inference app-wide.
+- Refactor your deeply nested generics where the errors occur.
+- Update dependencies and TypeScript to the latest versions.
+- Re-run the workflow after applying these changes.
+
+If you want specific help with one of the type errors, I can show the code at the affected line in your repo. Let me know which file you'd like to go deeper on!

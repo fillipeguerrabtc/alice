@@ -119,7 +119,7 @@ interface ModuleFormData {
   ativo?: boolean;
 }
 
-const moduleFormSchema: z.ZodType<ModuleFormData> = z.object({
+const moduleFormSchema = z.object({
   codigo: z.string().min(2, 'Código deve ter pelo menos 2 caracteres').max(100),
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
   descricao: z.string().optional(),
@@ -128,7 +128,7 @@ const moduleFormSchema: z.ZodType<ModuleFormData> = z.object({
   urlExterna: z.string().url('URL inválida').optional().or(z.literal('')),
   ordem: z.coerce.number().int().optional(),
   ativo: z.boolean().optional(),
-}) as z.ZodType<ModuleFormData>;
+});
 
 const ICON_OPTIONS = [
   { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },

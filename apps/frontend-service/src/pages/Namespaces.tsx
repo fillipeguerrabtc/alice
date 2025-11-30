@@ -75,12 +75,12 @@ const defaultColors = [
   "#84CC16",
 ];
 
-const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({
+const namespaceSchema = z.object({
   nome: z.string().min(2),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
   descricao: z.string().optional(),
   cor: z.string().default("#3B82F6"),
-}) as z.ZodType<NamespaceFormData>;
+});
 
 function NamespaceCardSkeleton() {
   return (
