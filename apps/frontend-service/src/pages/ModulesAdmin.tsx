@@ -108,17 +108,6 @@ const itemVariants = {
   },
 };
 
-interface ModuleFormData {
-  codigo: string;
-  nome: string;
-  descricao?: string;
-  icone?: string;
-  categoria: string;
-  urlExterna?: string;
-  ordem?: number;
-  ativo?: boolean;
-}
-
 const moduleFormSchema = z.object({
   codigo: z.string().min(2, 'Código deve ter pelo menos 2 caracteres').max(100),
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
@@ -129,6 +118,8 @@ const moduleFormSchema = z.object({
   ordem: z.coerce.number().int().optional(),
   ativo: z.boolean().optional(),
 });
+
+type ModuleFormData = z.infer<typeof moduleFormSchema>;
 
 const ICON_OPTIONS = [
   { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },

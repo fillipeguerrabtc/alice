@@ -57,13 +57,6 @@ interface Namespace {
   cor?: string | null;
 }
 
-interface NamespaceFormData {
-  nome: string;
-  slug: string;
-  descricao?: string;
-  cor: string;
-}
-
 const defaultColors = [
   "#3B82F6",
   "#10B981",
@@ -81,6 +74,8 @@ const namespaceSchema = z.object({
   descricao: z.string().optional(),
   cor: z.string().default("#3B82F6"),
 });
+
+type NamespaceFormData = z.infer<typeof namespaceSchema>;
 
 function NamespaceCardSkeleton() {
   return (
