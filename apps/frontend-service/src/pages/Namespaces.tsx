@@ -57,12 +57,12 @@ interface Namespace {
   cor?: string | null;
 }
 
-type NamespaceFormData = {
+interface NamespaceFormData {
   nome: string;
   slug: string;
   descricao?: string;
   cor: string;
-};
+}
 
 const defaultColors = [
   "#3B82F6",
@@ -75,12 +75,12 @@ const defaultColors = [
   "#84CC16",
 ];
 
-const namespaceSchema = z.object({
+const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({
   nome: z.string().min(2),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
   descricao: z.string().optional(),
   cor: z.string().default("#3B82F6"),
-});
+}) as z.ZodType<NamespaceFormData>;
 
 function NamespaceCardSkeleton() {
   return (

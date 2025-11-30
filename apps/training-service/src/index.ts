@@ -463,11 +463,11 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
   try {
     const body = createJobSchema.parse(req.body);
 
+    const approvedConditions = [eq(schema.trainingData.status, 'approved')];
+    if (body.tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, body.tenantId));
+    
     const approvedData = await db.query.trainingData.findMany({
-      where: and(
-        eq(schema.trainingData.status, 'approved'),
-        body.tenantId ? eq(schema.trainingData.tenantId, body.tenantId) : undefined,
-      ),
+      where: and(...approvedConditions),
     });
 
     if (approvedData.length < 10) {
@@ -1011,21 +1011,25 @@ app.get('/api/training/auto-learning/status', requirePermission('training:traini
       limit: 5,
     });
 
+    const pendingDataConditions = [
+      eq(schema.trainingData.status, 'approved'),
+      isNull(schema.trainingData.usedInJobId),
+    ];
+    if (tenantId) pendingDataConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    
     const pendingData = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
-      .where(and(
-        eq(schema.trainingData.status, 'approved'),
-        isNull(schema.trainingData.usedInJobId),
-        tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...pendingDataConditions));
 
+    const pendingImagesConditions = [
+      eq(schema.generatedImages.approvedForTraining, true),
+      eq(schema.generatedImages.usedInFineTuning, false),
+    ];
+    if (tenantId) pendingImagesConditions.push(eq(schema.generatedImages.tenantId, tenantId));
+    
     const pendingImages = await db.select({ count: sql<number>`count(*)` })
       .from(schema.generatedImages)
-      .where(and(
-        eq(schema.generatedImages.approvedForTraining, true),
-        eq(schema.generatedImages.usedInFineTuning, false),
-        tenantId ? eq(schema.generatedImages.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...pendingImagesConditions));
 
     res.json({
       activeModel: {
@@ -1066,33 +1070,33 @@ app.get('/api/training/stats', requirePermission('training:training_data:read'),
   const { tenantId } = queryResult.data;
 
   try {
+    const pendingConditions = [eq(schema.trainingData.status, 'pending')];
+    if (tenantId) pendingConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    
     const pendingCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
-      .where(and(
-        eq(schema.trainingData.status, 'pending'),
-        tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...pendingConditions));
 
+    const approvedConditions = [eq(schema.trainingData.status, 'approved')];
+    if (tenantId) approvedConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    
     const approvedCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
-      .where(and(
-        eq(schema.trainingData.status, 'approved'),
-        tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...approvedConditions));
 
+    const duplicateConditions = [eq(schema.trainingData.isDuplicate, true)];
+    if (tenantId) duplicateConditions.push(eq(schema.trainingData.tenantId, tenantId));
+    
     const duplicatesCount = await db.select({ count: sql<number>`count(*)` })
       .from(schema.trainingData)
-      .where(and(
-        eq(schema.trainingData.isDuplicate, true),
-        tenantId ? eq(schema.trainingData.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...duplicateConditions));
 
+    const jobConditions = [eq(schema.fineTuningJobs.status, 'completed')];
+    if (tenantId) jobConditions.push(eq(schema.fineTuningJobs.tenantId, tenantId));
+    
     const completedJobs = await db.select({ count: sql<number>`count(*)` })
       .from(schema.fineTuningJobs)
-      .where(and(
-        eq(schema.fineTuningJobs.status, 'completed'),
-        tenantId ? eq(schema.fineTuningJobs.tenantId, tenantId) : undefined,
-      ));
+      .where(and(...jobConditions));
 
     res.json({
       trainingData: {

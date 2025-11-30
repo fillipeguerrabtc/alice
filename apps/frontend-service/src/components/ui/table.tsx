@@ -100,7 +100,7 @@ TableCell.displayName = 'TableCell';
 
 const TableCaption = forwardRef<
   HTMLTableCaptionElement,
-  HTMLAttributes<HTMLTableCaptionElement>
+  ComponentPropsWithoutRef<'caption'>
 >(({ className, ...props }, ref) => (
   <caption
     ref={ref}

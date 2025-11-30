@@ -1,0 +1,102 @@
+**Root Cause:**  
+The TypeScript errors in your job logs are due to incompatible types between Drizzle ORM types and how they're used in your code around lines 1073–1094 in `apps/training-service/src/index.ts`. There are also errors with event type usage in your React code in `client/src/components/ui/table.tsx` (line 105).
+
+**Solution Steps:**
+
+---
+
+### 1. Drizzle ORM Type Issues (`apps/training-service/src/index.ts`)
+
+**Error Summary:**
+- Type `PgColumn` not assignable to `Column` in Drizzle ORM joins/comparisons.
+- Property `shouldInlineParams` mismatch.
+- Likely cause: Mixing types/interfaces or incompatible Drizzle versions between modules.
+
+**How to Fix:**
+- Ensure you are using only one version of Drizzle ORM everywhere (clean node_modules and lockfiles, and reinstall).
+- When performing queries/joins, prefer using the correct generic types from your ORM. Avoid mixing `PgColumn` objects with `Column` generics directly.
+
+**Example Solution:**
+
+Suppose you have code like:
+```ts
+where(eq(training_data.tenant_id, fine_tuning_jobs.tenant_id))
+```
+If the above triggers a type error, ensure both columns are declared using the same version/import, and types are correctly referenced.
+
+**Check Imports:**  
+Instead of:
+```ts
+import { eq } from 'drizzle-orm'
+```
+Make sure you import columns and operators from the same submodule (e.g., all from 'drizzle-orm/pg-core' if using Postgres).
+
+**General Fix:**
+```ts
+// Matching import for PgColumn
+import { eq } from 'drizzle-orm/pg-core'
+
+// Or unify types:
+const whereClause = eq(
+  training_data.tenant_id as Column<any, object, object>,
+  fine_tuning_jobs.tenant_id as Column<any, object, object>
+);
+```
+Or if you define tables; ensure both tables are using the same class/instance:
+
+```ts
+// Ensure training_data and fine_tuning_jobs are built with the same drizzle table factory.
+```
+**And:**  
+- If your node_modules has multiple Drizzle versions (due to pnpm), resolve version mismatches in your lockfile.
+- Run: `pnpm install drizzle-orm@<version>` (use your chosen version, e.g., latest).
+
+---
+
+### 2. React Event Type Mismatch (`client/src/components/ui/table.tsx`)
+
+**Error:**
+- Type `{ defaultChecked?...}` not assignable to table caption.
+- `onBeforeInput` type `InputEvent<HTMLElement>` is not assignable to `FormEvent<HTMLTableCaptionElement>`.
+
+**How to Fix:**  
+Make sure your event handlers and props are registered on the right elements and with correct types.
+
+**Example Solution:**
+```tsx
+// If you have
+<TableCaption onBeforeInput={handler} ... />
+
+// Make sure handler matches FormEvent<HTMLTableCaptionElement>
+const handler = (event: React.FormEvent<HTMLTableCaptionElement>) => { /* ... */ };
+
+// Or, if <TableCaption> shouldn't have onBeforeInput (not a valid prop), remove it.
+```
+Double-check the props: `defaultChecked`, `defaultValue`, etc., are only provided to form elements (like <input>), not <table> or <caption>.
+
+---
+
+### 3. Exceedingly Deep Type Instantiation (`client/src/pages/Agents.tsx`, etc.)
+
+**Error:**  
+- Types are too complex—usually happens with overused generics or circular references.
+
+**How to Fix:**  
+- Refactor components to use simpler or split types.
+- If you have deep nested generic types, try to cut their depth or spread over more components.
+- Upgrade TypeScript to the latest version—sometimes, new TypeScript versions improve type resolution.
+
+---
+
+**Summary & Next Steps:**  
+1. Unify your Drizzle ORM versions and sanitize project dependencies.
+2. Refactor Drizzle ORM usage so you're not mixing `PgColumn` and generic `Column`s.
+3. Check React props and handler types; remove inappropriate props.
+4. Simplify any recursively complex generic types in your app.
+
+**Recommended Actions:**  
+- Clean your dependencies: `pnpm prune && pnpm install`
+- Fix or refactor the exact lines where type mismatches happen (see above).
+- If you need further direction, paste the code around the specific errors (index.ts lines 1073–1094 and table.tsx line 105).
+
+Let me know if you'd like code samples for any specific failing section!

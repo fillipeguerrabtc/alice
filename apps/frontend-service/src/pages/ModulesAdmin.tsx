@@ -128,7 +128,7 @@ const moduleFormSchema: z.ZodType<ModuleFormData> = z.object({
   urlExterna: z.string().url('URL inválida').optional().or(z.literal('')),
   ordem: z.coerce.number().int().optional(),
   ativo: z.boolean().optional(),
-});
+}) as z.ZodType<ModuleFormData>;
 
 const ICON_OPTIONS = [
   { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },

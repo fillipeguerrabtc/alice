@@ -82,23 +82,23 @@ const statusOptionsConfig = [
   { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", labelKey: "agents.status.deprecated" },
 ];
 
-type AgentFormData = {
+interface AgentFormData {
   nome: string;
   slug: string;
   descricao?: string | null;
   instrucoes?: string | null;
   personalidade?: string | null;
   status: "active" | "training" | "paused" | "deprecated";
-};
+}
 
-const agentFormSchema = z.object({
+const agentFormSchema: z.ZodType<AgentFormData> = z.object({
   nome: z.string().min(2),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
   descricao: z.string().optional().nullable(),
   instrucoes: z.string().optional().nullable(),
   personalidade: z.string().optional().nullable(),
   status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
-});
+}) as z.ZodType<AgentFormData>;
 
 function AgentCardSkeleton() {
   return (
