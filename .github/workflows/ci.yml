@@ -3,6 +3,10 @@
 # =============================================================================
 # Descrição: Pipeline de integração contínua para Alice Enterprise Platform
 # Usa pnpm (pnpm-lock.yaml) para gerenciamento de dependências
+# 
+# REGRA 6 (replit.md): PROIBIDO continue-on-error em steps críticos
+# REGRA 8: Qualidade obrigatória - TypeScript strict, zero any
+# REGRA 9: Validação contínua - pipeline DEVE falhar em qualquer erro
 # =============================================================================
 
 name: CI - Build & Test
@@ -22,6 +26,9 @@ env:
   PNPM_VERSION: '10.12.4'
 
 jobs:
+  # ===========================================================================
+  # Job 1: Detectar mudanças para otimizar builds
+  # ===========================================================================
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
@@ -55,6 +62,9 @@ jobs:
               - 'infra/**'
               - '.github/workflows/**'
 
+  # ===========================================================================
+  # Job 2: Build & TypeCheck (CRÍTICO - NÃO pode falhar silenciosamente)
+  # ===========================================================================
   build-and-check:
     name: Build & Typecheck
     runs-on: ubuntu-latest
@@ -76,35 +86,65 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build shared packages first
+      # Build packages na ordem correta de dependências
+      # CRÍTICO: Sem isso, os microsserviços não conseguem importar @alice/*
+      # NOTA: Usamos --force para garantir que .js sejam gerados mesmo se .tsbuildinfo existir
+      - name: Build shared packages (ordem de dependências)
         run: |
-          # Limpar .tsbuildinfo para garantir emissão de arquivos .js
-          # (Segue instrução do Copilot: garantir @alice/shared buildado ANTES de @alice/database)
-          rm -f packages/shared/tsconfig.tsbuildinfo
-          rm -f packages/shared-utils/tsconfig.tsbuildinfo
-          rm -f packages/config/tsconfig.tsbuildinfo
-          rm -f packages/logger/tsconfig.tsbuildinfo
-          rm -f packages/database/tsconfig.tsbuildinfo
+          set -e
+          echo "Limpando builds anteriores..."
+          rm -rf packages/shared/dist packages/shared-utils/dist packages/config/dist packages/logger/dist packages/database/dist
+          rm -f packages/*/tsconfig.tsbuildinfo packages/*/*.tsbuildinfo
           
-          # Build na ordem correta de dependências
-          pnpm --filter @alice/shared run build
-          pnpm --filter @alice/shared-utils run build
-          pnpm --filter @alice/config run build
-          pnpm --filter @alice/logger run build
-          pnpm --filter @alice/database run build
+          echo "Building packages na ordem correta (com --force)..."
           
-          # Verificar se dist/ foi gerado
-          ls -la packages/shared/dist/ || echo "ERRO: shared/dist não existe"
-          ls -la packages/database/dist/ || echo "ERRO: database/dist não existe"
+          # Build cada package individualmente com verificação de erro
+          PACKAGES=("shared" "shared-utils" "config" "logger" "database")
+          for pkg in "${PACKAGES[@]}"; do
+            echo "--- Building @alice/$pkg ---"
+            pushd "packages/$pkg" > /dev/null
+            npx tsc -b --force
+            if [ $? -ne 0 ]; then
+              echo "ERRO: Build de @alice/$pkg falhou!"
+              exit 1
+            fi
+            popd > /dev/null
+            
+            # Verificar se .js foi gerado
+            if [ ! -f "packages/$pkg/dist/index.js" ]; then
+              echo "ERRO: packages/$pkg/dist/index.js não foi gerado!"
+              exit 1
+            fi
+            echo "packages/$pkg/dist/index.js gerado com sucesso"
+          done
+          
+          echo "Todos os packages buildados com sucesso!"
 
+      # Upload artefatos dos packages para jobs subsequentes
+      - name: Upload packages dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: packages-dist
+          path: |
+            packages/shared/dist
+            packages/shared-utils/dist
+            packages/config/dist
+            packages/logger/dist
+            packages/database/dist
+          retention-days: 1
+
+      # TypeScript Check - DEVE falhar se houver erros
       - name: TypeScript Check
-        run: pnpm run typecheck 2>/dev/null || echo "TypeCheck concluído"
-        continue-on-error: true
+        run: pnpm run typecheck
 
+      # ESLint - DEVE falhar se houver erros
       - name: ESLint
-        run: pnpm run lint 2>/dev/null || echo "Lint concluído"
-        continue-on-error: true
+        run: pnpm run lint
 
+  # ===========================================================================
+  # Job 3: Build de microsserviços Node.js (MATRIX)
+  # NOTA: clip-inference-service é Python e tem job separado
+  # ===========================================================================
   build-services:
     name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
@@ -115,12 +155,12 @@ jobs:
           - api-gateway
           - auth-service
           - chat-service
-          - clip-inference-service
           - integrations-service
           - observability-service
           - rag-service
           - training-service
-      fail-fast: false
+      # CRÍTICO: fail-fast: true para parar imediatamente em erro
+      fail-fast: true
     steps:
       - uses: actions/checkout@v4
 
@@ -138,28 +178,82 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Check service exists
-        id: check
-        run: |
-          if [ -d "apps/${{ matrix.service }}" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
+      # Download packages compilados do job anterior
+      # NOTA: O artefato preserva a estrutura de diretórios, então baixamos no diretório raiz
+      - name: Download packages dist
+        uses: actions/download-artifact@v4
+        with:
+          name: packages-dist
+          path: .
 
-      - name: Build Docker image (dry-run)
-        if: steps.check.outputs.exists == 'true'
+      - name: Verify packages downloaded
         run: |
-          if [ -f "apps/${{ matrix.service }}/Dockerfile" ]; then
-            docker build \
-              -t alice-${{ matrix.service }}:${{ github.sha }} \
-              -f apps/${{ matrix.service }}/Dockerfile \
-              . || echo "Docker build concluído"
-          else
-            echo "Dockerfile não encontrado para ${{ matrix.service }}"
-          fi
-        continue-on-error: true
+          set -e
+          echo "Verificando packages baixados..."
+          
+          # Listar estrutura para debug
+          echo "Estrutura após download:"
+          find packages -name "*.js" -type f 2>/dev/null | head -10 || echo "Nenhum .js encontrado em packages/"
+          
+          # Verificar arquivos necessários
+          PACKAGES=("shared" "shared-utils" "config" "logger" "database")
+          for pkg in "${PACKAGES[@]}"; do
+            if [ ! -f "packages/$pkg/dist/index.js" ]; then
+              echo "ERRO: packages/$pkg/dist/index.js não baixado!"
+              echo "Conteúdo de packages/$pkg:"
+              ls -la "packages/$pkg/" 2>/dev/null || echo "Diretório não existe"
+              exit 1
+            fi
+            echo "packages/$pkg/dist/index.js OK"
+          done
 
+      # Build do serviço com esbuild - DEVE falhar se imports falharem
+      - name: Build service bundle
+        run: |
+          set -e
+          echo "Building ${{ matrix.service }}..."
+          pnpm --filter @alice/${{ matrix.service }} run build
+          
+          # Verificar se bundle foi gerado (exceto api-gateway e observability que usam tsc)
+          if [ "${{ matrix.service }}" != "api-gateway" ] && [ "${{ matrix.service }}" != "observability-service" ]; then
+            echo "Verificando bundle gerado..."
+            test -f apps/${{ matrix.service }}/dist/bundle.js || (echo "ERRO: bundle.js não gerado" && exit 1)
+          fi
+          echo "Build de ${{ matrix.service }} concluído com sucesso!"
+
+  # ===========================================================================
+  # Job 3b: Build de microsserviço Python (CLIP Inference)
+  # ===========================================================================
+  build-clip-inference:
+    name: Build clip-inference-service (Python)
+    runs-on: ubuntu-latest
+    needs: build-and-check
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
+
+      - name: Install dependencies
+        run: |
+          set -e
+          cd apps/clip-inference-service
+          pip install -r requirements.txt
+
+      - name: Validate Python syntax
+        run: |
+          set -e
+          cd apps/clip-inference-service
+          python -m py_compile server.py
+          echo "clip-inference-service: Sintaxe Python válida!"
+
+  # ===========================================================================
+  # Job 4: Build Frontend
+  # ===========================================================================
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
@@ -181,11 +275,11 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Build frontend - DEVE falhar se houver erros
       - name: Build frontend
-        run: pnpm run build 2>/dev/null || echo "Build frontend concluído"
+        run: pnpm run build
         env:
           VITE_API_URL: ""
-        continue-on-error: true
 
       - name: Upload frontend artifacts
         uses: actions/upload-artifact@v4
@@ -195,8 +289,11 @@ jobs:
             dist
             apps/frontend-service/dist
           retention-days: 1
-          if-no-files-found: ignore
+          if-no-files-found: warn
 
+  # ===========================================================================
+  # Job 5: Security Scanning
+  # ===========================================================================
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
@@ -210,7 +307,7 @@ jobs:
           scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
 
@@ -219,8 +316,10 @@ jobs:
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
-        continue-on-error: true
 
+  # ===========================================================================
+  # Job 6: Enterprise Compliance Checks
+  # ===========================================================================
   compliance-checks:
     name: Enterprise Compliance
     runs-on: ubuntu-latest
@@ -230,6 +329,7 @@ jobs:
 
       - name: Check for hardcoded secrets
         run: |
+          set -e
           echo "Verificando secrets hardcoded..."
           
           PATTERNS=(
@@ -249,24 +349,33 @@ jobs:
           done
           
           if [ $FOUND -eq 1 ]; then
-            echo "Favor revisar os matches acima"
+            echo "ERRO: Secrets hardcoded detectados - favor remover!"
+            exit 1
           else
             echo "Nenhum secret hardcoded detectado"
           fi
 
       - name: Verify RLS migrations exist
         run: |
+          set -e
           echo "Verificando migrações RLS..."
           
           if [ -f "drizzle/migrations/0001_rls_security_enterprise.sql" ]; then
             echo "Migração RLS encontrada"
-            grep -l "CREATE POLICY\|ENABLE ROW LEVEL SECURITY" drizzle/migrations/*.sql || echo "ALERTA: Policies RLS não encontradas"
+            if grep -q "CREATE POLICY\|ENABLE ROW LEVEL SECURITY" drizzle/migrations/0001_rls_security_enterprise.sql; then
+              echo "Policies RLS configuradas corretamente"
+            else
+              echo "ERRO: Policies RLS não encontradas na migração"
+              exit 1
+            fi
           else
-            echo "ALERTA: Migração RLS não encontrada em drizzle/migrations/"
+            echo "ERRO: Migração RLS não encontrada em drizzle/migrations/"
+            exit 1
           fi
 
       - name: Verify Express hardening in all services
         run: |
+          set -e
           echo "Verificando express-hardening em microsserviços..."
           
           SERVICES=(
@@ -292,11 +401,13 @@ jobs:
           done
           
           if [ $MISSING -eq 1 ]; then
+            echo "ERRO: Serviços sem express-hardening detectados"
             exit 1
           fi
 
       - name: Verify server timeouts
         run: |
+          set -e
           echo "Verificando server timeouts (Node.js 20 LTS)..."
           
           SERVICES=(
@@ -320,28 +431,57 @@ jobs:
             fi
           done
 
-  ci-success:
-    name: CI Success
+  # ===========================================================================
+  # Job 8: CI Final Status - VERIFICA TODOS OS JOBS
+  # ===========================================================================
+  ci-status:
+    name: CI Status
     runs-on: ubuntu-latest
-    needs: [build-and-check, build-services, build-frontend, security-scan, compliance-checks]
+    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
     if: always()
     steps:
-      - name: Check CI Status
+      - name: Check all jobs status
         run: |
           echo "=============================================="
           echo "Resumo do CI - Alice Enterprise Platform"
           echo "=============================================="
-          echo "Build & Check: ${{ needs.build-and-check.result }}"
-          echo "Build Services: ${{ needs.build-services.result }}"
-          echo "Build Frontend: ${{ needs.build-frontend.result }}"
-          echo "Security Scan: ${{ needs.security-scan.result }}"
-          echo "Compliance: ${{ needs.compliance-checks.result }}"
+          echo "Build & Check:      ${{ needs.build-and-check.result }}"
+          echo "Build Services:     ${{ needs.build-services.result }}"
+          echo "Build CLIP (Python):${{ needs.build-clip-inference.result }}"
+          echo "Build Frontend:     ${{ needs.build-frontend.result }}"
+          echo "Security Scan:      ${{ needs.security-scan.result }}"
+          echo "Compliance:         ${{ needs.compliance-checks.result }}"
           echo "=============================================="
           
-          if [[ "${{ needs.build-and-check.result }}" != "failure" && "${{ needs.compliance-checks.result }}" != "failure" ]]; then
-            echo "CI passou com sucesso!"
-            exit 0
-          else
-            echo "CI falhou!"
+          # CRÍTICO: Verificar TODOS os jobs obrigatórios
+          if [[ "${{ needs.build-and-check.result }}" == "failure" ]]; then
+            echo "ERRO: Build & Check falhou!"
             exit 1
           fi
+          
+          if [[ "${{ needs.build-services.result }}" == "failure" ]]; then
+            echo "ERRO: Build Services (Node.js) falhou!"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.build-clip-inference.result }}" == "failure" ]]; then
+            echo "ERRO: Build CLIP Inference (Python) falhou!"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.build-frontend.result }}" == "failure" ]]; then
+            echo "ERRO: Build Frontend falhou!"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
+            echo "ERRO: Security Scan falhou!"
+            exit 1
+          fi
+          
+          if [[ "${{ needs.compliance-checks.result }}" == "failure" ]]; then
+            echo "ERRO: Compliance Checks falhou!"
+            exit 1
+          fi
+          
+          echo "CI passou com sucesso!"
