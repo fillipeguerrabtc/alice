@@ -27,3 +27,6 @@ python-json-logger==3.2.1
 
 # Métricas (Prometheus)
 prometheus-client==0.21.1
+
+# Circuit Breaker (Regra 16 replit.md - Best Practices 2025)
+pybreaker==1.0.2

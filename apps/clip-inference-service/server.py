@@ -28,12 +28,15 @@ from PIL import Image
 from fastapi import FastAPI, HTTPException, Header, Depends, Security, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
-from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT
+from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT, HTTP_503_SERVICE_UNAVAILABLE
 from pydantic import BaseModel, Field
 import uvicorn
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+import pybreaker
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from starlette.responses import Response
 
 # Configuração de logging estruturado (Regra 8 - Pino equivalent)
 IS_PRODUCTION = os.getenv("NODE_ENV", "development") == "production"
@@ -85,6 +88,65 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
             detail="Token de API inválido ou ausente. Use header X-API-Key."
         )
     return api_key
+
+# ============================================================================
+# PROMETHEUS METRICS (Regra 16 - Enterprise Observability)
+# ============================================================================
+REQUESTS_TOTAL = Counter(
+    'clip_requests_total',
+    'Total de requisições de embedding CLIP',
+    ['input_type', 'status']
+)
+REQUEST_LATENCY = Histogram(
+    'clip_request_latency_seconds',
+    'Latência de requisições CLIP em segundos',
+    ['input_type'],
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
+CIRCUIT_BREAKER_STATE = Gauge(
+    'clip_circuit_breaker_state',
+    'Estado do circuit breaker (0=closed, 1=open, 0.5=half-open)'
+)
+CIRCUIT_BREAKER_FAILURES = Counter(
+    'clip_circuit_breaker_failures_total',
+    'Total de falhas registradas pelo circuit breaker'
+)
+
+# ============================================================================
+# CIRCUIT BREAKER PARA INFERÊNCIA CLIP (Regra 16 - Best Practices 2025)
+# Protege contra falhas em cascata do modelo Torch/CLIP
+# ============================================================================
+
+class ClipBreakerListener(pybreaker.CircuitBreakerListener):
+    """Listener para métricas e logging do circuit breaker."""
+    
+    def state_change(self, cb: pybreaker.CircuitBreaker, old_state: pybreaker.CircuitBreakerState, new_state: pybreaker.CircuitBreakerState) -> None:
+        state_value = 0.0  # closed
+        if new_state.name == 'open':
+            state_value = 1.0
+        elif new_state.name == 'half-open':
+            state_value = 0.5
+        CIRCUIT_BREAKER_STATE.set(state_value)
+        logger.warning(f"Circuit breaker CLIP: {old_state.name} -> {new_state.name}")
+    
+    def failure(self, cb: pybreaker.CircuitBreaker, exc: Exception) -> None:
+        CIRCUIT_BREAKER_FAILURES.inc()
+        logger.error(f"Circuit breaker registrou falha: {exc}")
+
+# Configuração do circuit breaker (Enterprise-Grade)
+# - fail_max: 5 falhas consecutivas abrem o circuito
+# - reset_timeout: 30s no estado "open" antes de tentar half-open
+# - exclude: HTTPException não conta como falha (são erros de validação/negócio)
+clip_breaker = pybreaker.CircuitBreaker(
+    fail_max=5,
+    reset_timeout=30,
+    exclude=[HTTPException],
+    listeners=[ClipBreakerListener()],
+    name='clip-inference'
+)
+
+# Inicializar estado do circuit breaker
+CIRCUIT_BREAKER_STATE.set(0)
 
 # Dispositivo (GPU se disponível)
 device = "cuda" if torch.cuda.is_available() else "cpu"
