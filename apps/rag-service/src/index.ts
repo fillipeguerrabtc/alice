@@ -817,7 +817,7 @@ app.get('/live', (_req: Request, res: Response) => {
 // Readiness probe - verifica se PostgreSQL e embeddings estão acessíveis
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    const dbHealthy = isPoolHealthy();
+    const dbHealthy = await isPoolHealthy();
     const embeddingsReady = !embeddingsBreaker.opened;
     
     const allReady = dbHealthy && embeddingsReady;

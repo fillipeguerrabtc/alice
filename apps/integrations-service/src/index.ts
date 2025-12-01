@@ -320,7 +320,7 @@ app.get('/live', (_req: Request, res: Response) => {
 // Readiness probe - verifica se PostgreSQL e integrações críticas estão acessíveis
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    const dbHealthy = isPoolHealthy();
+    const dbHealthy = await isPoolHealthy();
     const erpnextReady = !erpNextBreaker.opened;
     
     // Para readiness, verificamos apenas PostgreSQL (obrigatório) e ERPNext (se configurado)

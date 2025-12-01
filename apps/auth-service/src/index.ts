@@ -828,7 +828,7 @@ app.get('/live', (_req: Request, res: Response) => {
 // Readiness probe - verifica se PostgreSQL está acessível
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    const dbHealthy = isPoolHealthy();
+    const dbHealthy = await isPoolHealthy();
     
     if (dbHealthy) {
       res.status(200).json({

@@ -9,9 +9,6 @@
  * Arquitetura: Microserviços (Regra 15 replit.md)
  */
 
-// IMPORTANTE: Configurar limite de listeners no início para evitar MaxListenersExceededWarning
-process.setMaxListeners(30);
-
 import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import { createServer as createViteServer, ViteDevServer } from 'vite';
@@ -29,7 +26,7 @@ function startIntegrationsService(): Promise<void> {
   return new Promise((resolve, reject) => {
     console.log('  Iniciando integrations-service na porta 3005...');
     
-    integrationsProcess = spawn('npx', ['tsx', 'apps/integrations-service/src/bootstrap.ts'], {
+    integrationsProcess = spawn('npx', ['tsx', 'apps/integrations-service/src/index.ts'], {
       cwd: path.resolve(__dirname, '..'),
       env: { ...process.env, PORT: '3005' },
       stdio: ['ignore', 'pipe', 'pipe'],

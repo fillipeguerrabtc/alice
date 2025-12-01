@@ -1005,7 +1005,7 @@ app.get('/live', (_req: Request, res: Response) => {
 // Readiness probe - verifica se PostgreSQL e LLM estão acessíveis
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
-    const dbHealthy = isPoolHealthy();
+    const dbHealthy = await isPoolHealthy();
     const llmReady = !saladCloudBreaker.opened;
     
     // Chat precisa de PostgreSQL obrigatoriamente, LLM pode estar em degraded mode
