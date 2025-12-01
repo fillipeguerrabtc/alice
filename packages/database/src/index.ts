@@ -2,12 +2,6 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import pgvector from 'pgvector/pg';
 import * as schema from '@alice/shared';
-import { 
-  getShutdownManager, 
-  registerShutdownCallback, 
-  ShutdownPriority,
-  isShutdownInProgress as isManagerShutdownInProgress,
-} from '@alice/shared-utils';
 
 const { Pool } = pg;
 
@@ -69,88 +63,59 @@ export async function isPoolHealthy(): Promise<boolean> {
 
 // ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// Refatorado para usar ShutdownManager centralizado (elimina duplicação de listeners)
 // ============================================================================
 
-export function setupGracefulShutdown(logger?: { info: (msg: string) => void; error: (obj: unknown, msg: string) => void; fatal?: (obj: unknown, msg: string) => void }): void {
+/**
+ * Logger para shutdown do database
+ */
+interface DatabaseLogger {
+  info: (msg: string) => void;
+  error: (obj: unknown, msg: string) => void;
+}
+
+let shutdownLogger: DatabaseLogger = {
+  info: (msg: string) => console.log(`[database] ${msg}`),
+  error: (obj: unknown, msg: string) => console.error(`[database] ${msg}`, obj),
+};
+
+/**
+ * Função de shutdown do pool de conexões
+ * Usada pelo ShutdownManager para encerrar conexões de forma ordenada
+ */
+export async function closeDatabasePool(): Promise<void> {
+  if (isShuttingDown) {
+    return;
+  }
+  isShuttingDown = true;
+  shutdownLogger.info('Encerrando pool de conexões...');
+  
+  try {
+    await closeDatabase();
+    shutdownLogger.info('Pool de conexões encerrado com sucesso');
+  } catch (error) {
+    shutdownLogger.error({ error }, 'Erro ao encerrar pool de conexões');
+    throw error;
+  }
+}
+
+/**
+ * Configurar logger para shutdown do database
+ * NOTA: Esta função NÃO registra process handlers (usar ShutdownManager)
+ * 
+ * @deprecated Use registerShutdownCallback() do @alice/shared-utils em vez disso
+ */
+export function setupGracefulShutdown(logger?: DatabaseLogger): void {
   if (shutdownRegistered) {
     return;
   }
   shutdownRegistered = true;
   
-  const log = logger || {
-    info: (msg: string) => console.log(`[database] ${msg}`),
-    error: (obj: unknown, msg: string) => console.error(`[database] ${msg}`, obj),
-    fatal: (obj: unknown, msg: string) => console.error(`[database] FATAL: ${msg}`, obj),
-  };
+  if (logger) {
+    shutdownLogger = logger;
+  }
   
-  const shutdown = async (signal: string) => {
-    if (isShuttingDown) {
-      return;
-    }
-    isShuttingDown = true;
-    log.info(`Recebido ${signal}, encerrando pool de conexões...`);
-    
-    try {
-      await closeDatabase();
-      log.info('Pool de conexões encerrado com sucesso');
-    } catch (error) {
-      log.error({ error }, 'Erro ao encerrar pool de conexões');
-    }
-  };
-  
-  // Usamos process.once() em vez de process.on() para evitar listeners duplicados
-  process.once('SIGTERM', () => shutdown('SIGTERM'));
-  process.once('SIGINT', () => shutdown('SIGINT'));
-  
-  // ============================================================================
-  // ENTERPRISE CRASH HANDLERS (Node.js 20+ Best Practices 2025)
-  // Captura exceções não tratadas para graceful degradation
-  // Ref: https://nodejs.org/api/process.html#event-uncaughtexception
-  // ============================================================================
-  
-  process.on('uncaughtException', (error: Error, origin: string) => {
-    // Log fatal antes de qualquer outra coisa
-    const fatalLog = log.fatal || log.error;
-    fatalLog({ 
-      error: error.message, 
-      stack: error.stack, 
-      origin,
-      pid: process.pid,
-      uptime: process.uptime()
-    }, `Exceção não tratada (${origin}): ${error.message}`);
-    
-    // Em produção, encerrar gracefully após logar
-    // Node.js 20+ recomenda NÃO continuar após uncaughtException
-    if (process.env.NODE_ENV === 'production') {
-      shutdown('uncaughtException').finally(() => {
-        process.exit(1);
-      });
-    }
-  });
-  
-  process.on('unhandledRejection', (reason: unknown, promise: Promise<unknown>) => {
-    // Log de rejeição não tratada
-    const errorMessage = reason instanceof Error ? reason.message : String(reason);
-    const errorStack = reason instanceof Error ? reason.stack : undefined;
-    
-    log.error({ 
-      reason: errorMessage,
-      stack: errorStack,
-      promiseInfo: promise.toString(),
-      pid: process.pid,
-      uptime: process.uptime()
-    }, `Promise rejection não tratada: ${errorMessage}`);
-    
-    // Em produção, Node.js 20+ recomenda tratar como fatal
-    // Ref: --unhandled-rejections=throw (default em Node 20+)
-    if (process.env.NODE_ENV === 'production') {
-      const fatalLog = log.fatal || log.error;
-      fatalLog({ reason: errorMessage }, 'Encerrando devido a promise rejection não tratada');
-      shutdown('unhandledRejection').finally(() => {
-        process.exit(1);
-      });
-    }
-  });
+  shutdownLogger.info('Database pool configurado para graceful shutdown (use ShutdownManager para registrar callbacks)');
 }
 
 // ============================================================================
