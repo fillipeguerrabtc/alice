@@ -1,0 +1,193 @@
+Perfeito — vou agir como um especialista sênior e entregar uma revisão técnica profunda + correções concretas aplicáveis agora para resolver o TS2589 e reduzir risco de regressão. Vou apontar a causa raiz, explicar por que a correção é segura, e fornecer patches/trechos para aplicar imediatamente. Também descrevo ação posterior recomendada (refatoração, testes, melhoria de tipagem).
+
+Resumo executivo (rápido)
+- Causa primária do CI break: TS2589 "Type instantiation is excessively deep and possibly infinite" causado pela inferência recursiva do TypeScript ao combinar zodResolver (do @hookform/resolvers) com a tipagem genérica do react-hook-form em arquivos grandes (Agents.tsx, ModulesAdmin.tsx, Namespaces.tsx — e cópias em client/).
+- Correção prática, segura e mínima: forçar a tipagem do resolver para react-hook-form's Resolver<T> com um cast (zodResolver(...) as unknown as Resolver<T>). Isso impede que o TypeScript expanda recursivamente os tipos internos do zod/resolvers e resolve imediatamente o erro de compilação sem perda significativa de segurança de tipos no nível do formulário.
+- Mitigação adicional: manter apiRequest (que retorna Response) como está para endpoints de streaming; adicionar helper apiJson<T>() para chamadas JSON onde queremos parsing direto e tipado. Isso evita mudanças que quebrem streaming de chat.
+
+O que vou entregar aqui
+1) Correções sugeridas (trechos/patches) para os arquivos que geraram erro no CI (apps/frontend-service).  
+2) Exemplo de correção que deve ser replicada para os arquivos equivalentes em client/src/pages.  
+3) Pequena melhoria em queryClient: adicionar helper apiJson<T> (não altera apiRequest usado para streaming).  
+4) Checklist e próximos passos para eliminar a causa raiz e endurecer tipagem, testes e CI.
+
+Importante: os resultados de busca que usei vinham do ref 44afbc6e1b5467ba7e371db4e070aea0a281f4c6. Pode haver outros arquivos similares — aplique a mesma estratégia nos duplicados.
+
+1) Correção aplicada nos formulários: Agents.tsx
+```tsx name=apps/frontend-service/src/pages/Agents.tsx url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/pages/Agents.tsx
+import { useForm } from "react-hook-form";
+import type { Resolver } from "react-hook-form"; // <-- ADICIONADO
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+/* ...defs de tipos z/AgentFormData/agentFormSchema acima... */
+
+// USE ESTA INICIALIZAÇÃO DO FORM (cast do resolver)
+const form = useForm<AgentFormData>({
+  resolver: zodResolver(agentFormSchema) as unknown as Resolver<AgentFormData>,
+  defaultValues: {
+    nome: "",
+    slug: "",
+    status: "active",
+    descricao: "",
+    instrucoes: "",
+    personalidade: "",
+  },
+});
+```
+
+Por que: casting para Resolver<AgentFormData> impede o TypeScript de tentar inferir tipos internos profundos do zodResolver, que é a origem da expansão infinita.
+
+2) Correção aplicada em Namespaces.tsx
+```tsx name=apps/frontend-service/src/pages/Namespaces.tsx url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/pages/Namespaces.tsx
+import { useForm } from "react-hook-form";
+import type { Resolver } from "react-hook-form"; // <-- ADICIONADO
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
+
+/* ...defs de NamespaceFormData e namespaceSchema acima... */
+
+const form = useForm<NamespaceFormData>({
+  resolver: zodResolver(namespaceSchema) as unknown as Resolver<NamespaceFormData>,
+  defaultValues: {
+    nome: "",
+    slug: "",
+    cor: "#3B82F6",
+    descricao: "",
+  },
+});
+```
+
+3) Correção aplicada no ModulesAdmin.tsx (formulário de módulo)
+```tsx name=apps/frontend-service/src/pages/ModulesAdmin.tsx url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/pages/ModulesAdmin.tsx
+import { useForm } from 'react-hook-form';
+import type { Resolver } from 'react-hook-form'; // <-- ADICIONADO
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+/* ...moduleFormSchema e ModuleFormData acima... */
+
+function ModuleFormDialog({
+  open,
+  onOpenChange,
+  module,
+  onSubmit,
+  isLoading,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  module?: SystemModule | null;
+  onSubmit: (data: ModuleFormData) => void;
+  isLoading: boolean;
+}) {
+  const form = useForm<ModuleFormData>({
+    resolver: zodResolver(moduleFormSchema) as unknown as Resolver<ModuleFormData>,
+    defaultValues: {
+      codigo: module?.codigo || '',
+      nome: module?.nome || '',
+      categoria: module?.categoria || 'core',
+      descricao: module?.descricao || '',
+      icone: module?.icone || 'Boxes',
+      urlExterna: module?.urlExterna || '',
+      ordem: module?.ordem ?? 0,
+      ativo: module?.ativo ?? true,
+    },
+  });
+
+  /* ...resto do componente... */
+}
+```
+
+4) Aplicar mesmas mudanças nas cópias dentro de client/
+- Arquivos que os logs mostram: client/src/pages/Agents.tsx, client/src/pages/ModulesAdmin.tsx, client/src/pages/Namespaces.tsx
+- Mesma modificação: adicionar import type { Resolver } from 'react-hook-form' e usar resolver: zodResolver(...) as unknown as Resolver<MyFormType>.
+
+Exemplo mínimo que aplicar nas 3 cópias:
+```diff
+- import { useForm } from "react-hook-form";
++ import { useForm } from "react-hook-form";
++ import type { Resolver } from "react-hook-form";
+
+- const form = useForm<MyFormType>({ resolver: zodResolver(mySchema), defaultValues: {...} });
++ const form = useForm<MyFormType>({
++   resolver: zodResolver(mySchema) as unknown as Resolver<MyFormType>,
++   defaultValues: {...}
++ });
+```
+
+5) Pequena melhoria em queryClient: adicionar apiJson<T> helper
+Motivação: não quero mudar apiRequest (ele retorna Response) porque endpoints de streaming (chat SSE/fetch stream) consomem res.body. Ao mesmo tempo, muitas chamadas fazem res = await apiRequest(...); return res.json(); — podemos oferecer um helper tipado para respostas JSON e incentivar seu uso. Isso melhora segurança de tipo e evita uso incorreto do any.
+
+Proposta de adição (mantendo apiRequest como está):
+```ts name=apps/frontend-service/src/lib/queryClient.ts url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/lib/queryClient.ts
+// --- adicionar abaixo das funções existentes ---
+
+/**
+ * Helper para requests que retornam JSON e queremos já obter T tipado.
+ * Usa internamente apiRequest (que retorna Response), preservando streaming/low-level quando necessário.
+ */
+export async function apiJson<T = unknown>(method: string, url: string, data?: unknown): Promise<T> {
+  const res = await apiRequest(method, url, data);
+  // Caso preciso tratar status 204/empty, adaptamos aqui:
+  if (res.status === 204) return undefined as unknown as T;
+  const text = await res.text();
+  if (!text) return undefined as unknown as T;
+  try {
+    return JSON.parse(text) as T;
+  } catch (err) {
+    // fallback para res.json() se possível
+    return (await (res.clone().json())) as T;
+  }
+}
+```
+
+Quando usar apiJson:
+- Para endpoints normais CRUD (lista de agents, criar namespace, etc) prefira:
+  const agents = await apiJson<Agent[]>('GET', '/api/agents');
+- Para endpoints de streaming (chat/stream) mantenha apiRequest(...) e leia res.body.
+
+6) Raciocínio técnico e por que a solução é segura
+- O erro TS2589 não é um bug do projeto, é o TypeScript atingindo limite de expansão de tipos em tipos muito complexos (combinação de mappings de zod -> zodResolver -> resolver generics do react-hook-form). Casting do resolver para Resolver<T> é prática usada amplamente como mitigação imediata: preserva a interface do formulário (validação/segurança) e evita a expansão infinita.
+- Casts são localizados (apenas no ponto do useForm), portanto impacto mínimo. Futuramente, após upgrades de TS + @hookform/resolvers + react-hook-form (quando esses pacotes tiverem tipos melhores), você pode remover os casts.
+
+7) Passos recomendados (prioridade e comandos)
+Aplique as mudanças nas files indicadas e execute localmente:
+- Aplicar os casts nas 6 arquivos (apps/... e client/...)
+- (Opcional) adicionar apiJson helper
+- Rodar:
+  - pnpm install
+  - pnpm -w typecheck (ou npm run typecheck / tsc --noEmit)
+  - pnpm -w build:tsc (se relevante)
+- Re-run CI
+
+8) Checklist sênior extra (avaliação profunda — o que eu faria a seguir)
+- Fazer sweep global por zodResolver em todo monorepo e aplicar cast onde houver uso de useForm com schema zod:
+  repo-search: content:"zodResolver(" — aplicar padrão.
+- Extrair hooks (useAgents/useNamespaces/useModules) com apis tipadas (useQuery<MyType, Error>(...)) — reduz inferência ad-hoc.
+- Adicionar typing genérica/central para apiJson e padronizar uso (evita res.json() espalhado).
+- Adicionar testes unitários para componentes de formulário (React Testing Library + MSW) para garantir comportamentos e evitar regressões.
+- Atualizar CI: adicione uma job de "typecheck" separada com tsc --noEmit menos paralela e output trace para debugar se novo TS2589 reaparecer.
+- Revisar versões de TypeScript / react-hook-form / @hookform/resolvers conforme notas de release (algumas versões melhoram tipos).
+- Fazer codeowners e PRs incrementalmente (aplicar somente formulários que falharem no CI em primeiro PR, depois sweep global).
+
+9) Trecho de commit/PR message sugerido
+Título: fix(types): avoid TS2589 in forms by narrowing zodResolver typing
+Corpo:
+- Cast zodResolver(...) to Resolver<T> in Agents, Namespaces, ModulesAdmin and client copies to avoid excessively deep type instantiation (TS2589).
+- Add apiJson<T> helper to queryClient for typed JSON responses while preserving apiRequest Response return for streaming endpoints.
+- No runtime behavior changes.
+
+10) Posso aplicar as mudanças para você
+- Posso gerar um PR com os patches acima para apps/frontend-service e client, um PR por área (recomendado: PR pequeno, limitado a casting em arquivos que causaram erro), ou posso aplicar somente as correções críticas (Agents/Namespaces/ModulesAdmin) e deixar as cópias do client para um PR subsequente.
+- Diga se quer que eu abra PR(s) automatizados e eu os criarei (ou eu posso gerar os diffs aqui para aplicar manualmente).
+
+Links úteis
+- Pesquisa do repositório (usei esses resultados): https://github.com/fillipeguerrabtc/alice/search?q=zodResolver&type=code  
+(Nota: resultados limitados — veja mais no GitHub se quiser varredura completa)
+
+Resumo final (curto)
+- Fix imediato e seguro: adicionar import type { Resolver } e fazer resolver: zodResolver(schema) as unknown as Resolver<FormType> em todos os pontos onde useForm + zodResolver causam inferência profunda.  
+- Mitigação adicional: adicionar apiJson<T> helper e padronizar chamadas JSON.  
+- Próximo passo: aplicar nos arquivos apontados pelo CI, rodar typecheck e abrir PRs pequenos. Posso abrir os PRs para você se desejar.
+
+Quer que eu gere os PRs com esses patches (um PR mínimo com as 3 correções em apps/ e outro PR para as cópias do client/), ou prefere que eu produza os diffs completos aqui para você aplicar?

@@ -1,0 +1,184 @@
+Fiz uma análise aprofundada com base nos arquivos que recuperei do repositório (commit/ref 44afbc6e1b5467ba7e371db4e070aea0a281f4c6) e nos logs do job de CI. Abaixo está a revisão completa, focada nos problemas que causaram a falha do job (TypeScript: TS2589) e uma revisão exaustiva das funcionalidades, integrações e práticas do repositório com recomendações e correções concretas.
+
+Aviso importante sobre cobertura das buscas: os resultados que usei podem ser incompletos. Para ver mais arquivos no GitHub, abra a pesquisa de código do repositório:  
+https://github.com/fillipeguerrabtc/alice/search?q=pages+src&type=code
+
+Resumo do problema principal encontrado (falha do CI)
+- Erro no CI: tsc --noEmit falhando com TS2589: "Type instantiation is excessively deep and possibly infinite" em várias páginas (Agents.tsx, ModulesAdmin.tsx, Namespaces.tsx) tanto em apps/frontend-service quanto em client.
+- Causa provável: inferência de tipos muito profunda/recursiva — comumente causada por:
+  - Tipos gerados a partir de schemas (zod.infer combinado com muitas composições).
+  - Uso de generics sem anotações explícitas (useQuery, useMutation, helpers apiRequest sem tipos explícitos).
+  - Props de componentes com tipos complexos que propagam a inferência.
+- Observação: em algumas versões dos arquivos já há comentários/ajustes tentando "definir interface explicitamente primeiro para evitar TS2589" — boa direção, mas ainda há pontos sem anotações explícitas que continuam a forçar a inferência do compilador.
+
+Ações que apliquei na análise
+- Revisei os arquivos de páginas chave recuperados: apps/frontend-service/src/pages/{Agents.tsx, ModulesAdmin.tsx, Namespaces.tsx, Login.tsx, ImageGalleryPage.tsx, componentes de Chat, Dashboard etc.} — referência: código no ref 44afbc6e...
+- Analisei padrões repetidos (uso de zod + react-hook-form, react-query, apiRequest/queryClient, componentes UI compartilhados).
+- Consultei o log do job para entender o fluxo do build (tsc -b por pacote e verificação global tsc --noEmit).
+
+Revisão técnica detalhada e recomendações (com correções propostas)
+
+1) Corrigir TS2589 — prática recomendada geral
+- Estratégia: reduzir inferência automática em pontos críticos adicionando tipos explícitos (interfaces/aliases) antes de usar zod.infer/useForm/useQuery/useMutation. Isto evita que o compilador expanda tipos recursivos.
+- Exemplos concretos de correção:
+  - Definir a interface do formulário antes do schema zod e tipar explicitamente o z.object com ZodType<Interface>.
+  - Tipar useForm com o tipo explícito: useForm<AgentFormData>({ resolver: zodResolver(agentFormSchema) })
+  - Tipar useQuery e useMutation: useQuery<Agent[], Error>(...) e mutações: useMutation<Agent, Error, Partial<AgentFormData>>(…).
+
+Exemplo aplicado (snippet sugerido para Agents.tsx — inicialização do form e queries):
+```typescript name=apps/frontend-service/src/pages/Agents.tsx url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/pages/Agents.tsx
+// Trecho sugerido: tipagem explícita para schema + useForm + useQuery
+interface AgentFormData {
+  nome: string;
+  slug: string;
+  status: "active" | "training" | "paused" | "deprecated";
+  descricao?: string | null;
+  instrucoes?: string | null;
+  personalidade?: string | null;
+}
+
+const agentFormSchema: z.ZodType<AgentFormData> = z.object({
+  nome: z.string().min(2),
+  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  status: z.enum(["active", "training", "paused", "deprecated"]),
+  descricao: z.string().nullable().optional(),
+  instrucoes: z.string().nullable().optional(),
+  personalidade: z.string().nullable().optional(),
+});
+
+// Tipar useForm explicitamente para quebrar inferência profunda
+const form = useForm<AgentFormData>({
+  resolver: zodResolver(agentFormSchema),
+  defaultValues: {
+    nome: "",
+    slug: "",
+    status: "active",
+  },
+});
+
+// Tipar useQuery e api calls
+const { data: agents } = useQuery<Agent[], Error>(["agents"], () => apiRequest<Agent[]>("/api/agents"));
+```
+
+2) Tipar apiRequest / queryClient para reduzir inferência do TS
+- Se a função apiRequest retorna Promise<any> com inferência dinâmica, o compilador tentará propagar tipos complexos. Forneça assinatura genérica simples:
+```typescript name=apps/frontend-service/src/lib/queryClient.ts url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/lib/queryClient.ts
+export async function apiRequest<T = unknown>(input: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(input, init);
+  if (!res.ok) throw new Error(await res.text());
+  return (await res.json()) as T;
+}
+```
+- Em todos os pontos onde apiRequest é usado, invoque como apiRequest<MyType>(url) e tipar useQuery/useMutation explicitamente.
+
+3) Zod + react-hook-form: preferir ZodType explícito e não usar z.infer em schemas grandes
+- Já há progressos no código (definindo ZodType<T>), mantenha essa abordagem em todos os schemas (Forms, DTOs, respostas de API).
+- Evite zod.infer em objetos muito complexos e, quando necessário, extraia interfaces simplificadas para uso em componentes.
+
+4) Ajustes no tsconfig (mitigação temporária)
+- Adicionar skipLibCheck para ignorar checagem de libs externas (pode reduzir carga e erros transitivos):
+```json name=tsconfig.json url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/tsconfig.json
+{
+  "compilerOptions": {
+    // ...
+    "skipLibCheck": true,
+    // opcional: desativar downlevel iteration/emit se não necessário
+  }
+}
+```
+- Observação: isso é um mitigador; a correção real é tipar/cortar a inferência.
+
+5) Componentes React e performance / boas práticas
+- Separar componentes monolíticos grandes (ModulesAdmin, Agents, Namespaces) em sub-componentes menores para:
+  - reduzir o escopo de tipos que o TS precisa inferir.
+  - melhorar legibilidade e testes.
+- Extrair hooks para lógica de dados (useAgents, useNamespaces, useModules) com typing clara:
+  - useAgents: retorna {agents, isLoading, createAgent, updateAgent, deleteAgent} com assinaturas tipadas.
+
+6) Testes e tipagem em data flows (React Query)
+- Garantir que a shape das respostas da API esteja tipada (Response interfaces) e que os endpoints do backend documentem os contratos (usando OpenAPI/JSON Schema se possível).
+- Criar mocks e testes unitários para hooks e formulários (React Testing Library + MSW) para capturar regressões de tipos e runtime.
+
+7) CI / Build: problemas observados nos logs
+- O build é feito por pacote: scripts fazem pushd packages/$pkg && NODE_OPTIONS="--max-old-space-size=8192" npx tsc -b --force
+  - Verificar se cada package tem um tsconfig.build com "composite" e se a top-level project refs estão configuradas corretamente.
+  - Assegurar que o output (packages/$pkg/dist/index.js) seja realmente gerado pelo build. Se for um mono-repo, valide as entradas/saídas de cada package.
+- Recomendação: correr tsc localmente com --showTraceResolution e com limites de inferência para localizar o arquivo e a linha que causa recursão se os erros persistirem.
+
+8) Segurança e secrets
+- Em componentes que redirecionam a /api/auth/{provider} (Login): garantir proteção contra open redirect e CSRF, e validar provider no backend.
+- Verificar se variáveis sensíveis não estão comitados (env, .env.local). Adicionar scanning (dependabot/secret scanning) no CI.
+
+9) Integrações externas (observações)
+- IntegrationCard menciona Stripe, Wise, ERPNext:
+  - Verificar handlers server-side para segurança (verificação de webhooks com signature, validação de payload).
+  - Garantir que chaves/urls sejam retiradas de variáveis ambiente e scopes mínimos para serviços.
+- Image generation pipeline (ImageGallery, InlineImage):
+  - Confirmar que imagens privadas não são expostas por URLs públicas sem autorização.
+  - Rate-limit endpoints de geração/imagem para evitar abuso.
+
+10) Acessibilidade & i18n
+- O projeto usa i18next: verificar que todas strings visíveis tenham chaves i18n e que os componentes de formulário incluam labels e aria-attributes.
+- Validar contraste e navegação por teclado em componentes interativos (botões de download, fullscreen, dialogs).
+
+11) Logging / Observability
+- Adicionar logs estruturados e tracking de erros (Sentry) para operações críticas (fallbacks de geração de imagem, falhas de autenticação, falhas em jobs do servidor).
+- Expor métricas essenciais: latência de generation, taxas de erro, filas.
+
+Correções de exemplo aplicáveis imediatamente
+- Tipar apiRequest e todas chamadas de API (exemplo mostrado acima).
+- Atualizar Agents.tsx / Namespaces.tsx / ModulesAdmin.tsx para usar interfaces explícitas + ZodType<T> + useForm<T>.
+- Revisar o padrão de composição de tipos nos componentes compartilhados (UI primitives) para evitar union/overloads que geram tipos muito amplos.
+
+Patch/trechos sugeridos (aplicáveis imediatamente)
+
+1) apiRequest (tipagem genérica)
+```typescript name=apps/frontend-service/src/lib/queryClient.ts url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/lib/queryClient.ts
+export async function apiRequest<T = unknown>(path: string, opts?: RequestInit): Promise<T> {
+  const res = await fetch(path, {
+    headers: { 'Content-Type': 'application/json' },
+    ...opts,
+  });
+  const text = await res.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`API returned non-JSON response (${res.status}): ${text}`);
+  }
+  if (!res.ok) {
+    throw new Error(data?.message || `Request failed: ${res.status}`);
+  }
+  return data as T;
+}
+```
+
+2) Exemplo: uso do useForm com zod e tipagem explícita (Agents.tsx)
+```typescript name=apps/frontend-service/src/pages/Agents.tsx url=https://github.com/fillipeguerrabtc/alice/blob/44afbc6e1b5467ba7e371db4e070aea0a281f4c6/apps/frontend-service/src/pages/Agents.tsx
+// já mostrado acima: definir AgentFormData, agentFormSchema: z.ZodType<AgentFormData>, e usar useForm<AgentFormData>({...})
+```
+
+Checklist de revisão completa (itens para passar por todo o repo)
+- [ ] Tipar todas as funções de API (client/server) com interfaces claras.
+- [ ] Substituir z.infer em schemas muito grandes por interfaces definidas, e usar z.ZodType<Interface>.
+- [ ] Tipar todas as chamadas react-query (useQuery/useMutation) com generics explícitos.
+- [ ] Extrair lógica pesada para hooks com typing adequada (ex.: useAgents, useModules).
+- [ ] Rodar tsc incremental localmente para descobrir o arquivo exato que dispara a inferência infinita. Use --diagnostics e --extendedDiagnostics se necessário.
+- [ ] Validar pipeline de build por pacote (tsc -b): garantir outputs esperados (dist/index.js) e entradas (package.json "types"/"main"/"module").
+- [ ] Adicionar testes unitários/integração para fluxos críticos (auth, modules admin, image generation).
+- [ ] Auditar integrações externas (Stripe, Wise, ERPNext) para segurança.
+- [ ] Revisar acessibilidade e cobertura i18n.
+- [ ] Adicionar monitoramento/alertas para falhas em runtime.
+
+Notas finais — justificativa e impacto
+- O erro TS2589 é sintoma de definição de tipos muito complexa que atinge limites do TypeScript — corrigi-lo exige reduzir a inferência automática em pontos-chaves. As correções propostas (tipagem explícita, ZodType<T>, generics em apiRequest/useQuery) são de baixo risco e permitem que o compilador processe rapidamente os tipos.
+- Aplicar as mudanças pequenas e iterativas (um arquivo por vez) facilitará encontrar o ponto exato que fazia o tsc travar. Também melhora a qualidade do código e previne regressões.
+
+Se quiser, posso:
+- Gerar patches PR com as alterações sugeridas (tipagem de apiRequest, atualização de exemplos em Agents/Namespaces/ModulesAdmin, ajuste no tsconfig).
+- Ou criar uma lista detalhada de todos os arquivos que ainda usam inferência profunda (necessito rodar buscas adicionais para coletar todos).
+
+Observação final sobre resultados de busca
+- Os resultados de código que usei vieram do estado do repositório no ref 44afbc6e1b5467ba7e371db4e070aea0a281f4c6 e podem não cobrir todo o repo. Veja mais no GitHub: https://github.com/fillipeguerrabtc/alice
+
+Se desejar que eu aplique as correções automaticamente (abrir PRs com patches), diga qual abordagem prefere (aplicar apenas as tipagens críticas que resolvem TS2589 primeiro, ou um PR maior com reestruturação de hooks e typings).
