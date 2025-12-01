@@ -76,6 +76,7 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **Code Quality**: Pino for logging, TypeScript strict mode, health checks.
 - **Build System**: `esbuild` and 3-stage Dockerfiles. Vite build isolated in `client/` to prevent pnpm workspace conflicts.
 - **Resilience & Performance**: Connection pool lifecycle management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, sanitization of secrets, CSRF token comparison, AbortController for external calls.
+- **ShutdownManager Centralizado**: Gerenciador enterprise-grade de graceful shutdown em `@alice/shared-utils`. Elimina duplicação de listeners SIGTERM/SIGINT, coordena ordem de shutdown por prioridade (HTTP_SERVER=100 → WEBSOCKET=90 → BACKGROUND_JOBS=80 → DATABASE=50). Uso: `registerShutdownCallback(name, fn, { priority: ShutdownPriority.HTTP_SERVER })`.
 - **Security Hardening**: PostgreSQL RLS, sslmode=prefer, tenant_id indices, pgAudit, Docker Non-Root, Traefik v3.3, Redis ACL, GitHub Actions hardening, CSP Hardening, Compression Middleware, Server Timeouts, ERPNext Fail-Fast, central packages, JSONB TypeSafe with Zod schemas, React Suspense, Express Hardening Module, Zod Input Validation.
 - **Stripe Idempotency**: `generateIdempotencyKey()` with `crypto.randomUUID()`, fail-fast in production if not provided.
 - **WebSocket Auth**: PostgreSQL session validation (`connect-pg-simple`) with mandatory `SESSION_SECRET` and cached validated sessions.

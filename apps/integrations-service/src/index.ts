@@ -31,7 +31,7 @@ import {
   ShutdownPriority,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, desc, sql, and } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
