@@ -1,7 +1,8 @@
 /**
  * Cache de Permissões RBAC - Alice Enterprise Platform
  * 
- * Cache em memória para permissões por tenant.
+ * Cache distribuído (Redis) para permissões por tenant.
+ * C5 Code Review: Usa CacheAdapter (Redis em produção, in-memory em dev)
  * Documentação em PT-BR (Regra 10 replit.md).
  * 
  * @module @alice/shared-utils/rbac/cache
@@ -26,45 +27,79 @@
  */
 
 import { createLogger } from '../logger.js';
+import { 
+  CacheAdapter, 
+  createCacheAdapter, 
+  initializeRedisCache, 
+  closeRedisCacheClient,
+  isRedisAvailable,
+} from '../redis-cache-adapter.js';
 
 const logger = createLogger('rbac-cache');
 
 /**
- * Entrada no cache de permissões
+ * Entrada no cache de permissões (serializada para Redis)
  */
-interface CacheEntry {
-  permissions: Set<string>;
+interface CachedPermissions {
+  permissions: string[];
   timestamp: number;
 }
 
 /**
  * Configuração do cache
  */
-export interface CacheConfig {
+export interface PermissionCacheConfig {
   /** TTL em milissegundos (padrão: 5 minutos) */
   ttlMs?: number;
-  /** Tamanho máximo do cache (padrão: 1000 entradas) */
-  maxSize?: number;
-  /** Intervalo de limpeza em ms (padrão: 1 minuto) */
-  cleanupIntervalMs?: number;
+  /** Prefixo do namespace no cache (padrão: 'rbac-permissions') */
+  prefix?: string;
 }
 
 /**
  * Cache de permissões por usuário/tenant
+ * C5 Code Review: Usa CacheAdapter (Redis em produção, in-memory em dev)
+ * Regra 6: fail-fast em produção se Redis indisponível
  */
 export class PermissionCache {
-  private cache: Map<string, CacheEntry>;
+  private cacheAdapter: CacheAdapter<CachedPermissions> | null = null;
   private ttlMs: number;
-  private maxSize: number;
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private prefix: string;
+  private initialized = false;
 
-  constructor(config?: CacheConfig) {
-    this.cache = new Map();
+  constructor(config?: PermissionCacheConfig) {
     this.ttlMs = config?.ttlMs || 5 * 60 * 1000;
-    this.maxSize = config?.maxSize || 1000;
+    this.prefix = config?.prefix || 'rbac-permissions';
+  }
 
-    const cleanupInterval = config?.cleanupIntervalMs || 60 * 1000;
-    this.cleanupInterval = setInterval(() => this.cleanup(), cleanupInterval);
+  /**
+   * Inicializa o cache adapter (deve ser chamado no startup do serviço)
+   * Em produção: Redis obrigatório (fail-fast)
+   * Em desenvolvimento: fallback para in-memory
+   */
+  async initialize(): Promise<void> {
+    if (this.initialized) {
+      return;
+    }
+
+    try {
+      await initializeRedisCache();
+      this.cacheAdapter = createCacheAdapter<CachedPermissions>(this.prefix, this.ttlMs);
+      this.initialized = true;
+      logger.info({ 
+        distributed: this.cacheAdapter.isDistributed(), 
+        ttlMs: this.ttlMs,
+      }, 'Cache de permissões RBAC inicializado');
+    } catch (error) {
+      logger.fatal({ error: (error as Error).message }, 'Falha ao inicializar cache RBAC');
+      throw error;
+    }
+  }
+
+  /**
+   * Verifica se o cache está inicializado
+   */
+  isInitialized(): boolean {
+    return this.initialized && this.cacheAdapter !== null;
   }
 
   /**
@@ -81,20 +116,26 @@ export class PermissionCache {
    * @param tenantId - ID do tenant (opcional)
    * @returns Set de permissões ou undefined se não encontrado/expirado
    */
-  get(userId: string, tenantId?: string): Set<string> | undefined {
+  async get(userId: string, tenantId?: string): Promise<Set<string> | undefined> {
+    if (!this.cacheAdapter) {
+      logger.warn('Cache de permissões não inicializado');
+      return undefined;
+    }
+
     const key = this.getCacheKey(userId, tenantId);
-    const entry = this.cache.get(key);
+    const entry = await this.cacheAdapter.get(key);
 
     if (!entry) {
       return undefined;
     }
 
+    // Verificar TTL
     if (Date.now() - entry.timestamp > this.ttlMs) {
-      this.cache.delete(key);
+      await this.cacheAdapter.delete(key);
       return undefined;
     }
 
-    return entry.permissions;
+    return new Set(entry.permissions);
   }
 
   /**
@@ -104,16 +145,17 @@ export class PermissionCache {
    * @param tenantId - ID do tenant (opcional)
    * @param permissions - Set de permissões
    */
-  set(userId: string, tenantId: string | undefined, permissions: Set<string>): void {
-    if (this.cache.size >= this.maxSize) {
-      this.evictOldest();
+  async set(userId: string, tenantId: string | undefined, permissions: Set<string>): Promise<void> {
+    if (!this.cacheAdapter) {
+      logger.warn('Cache de permissões não inicializado');
+      return;
     }
 
     const key = this.getCacheKey(userId, tenantId);
-    this.cache.set(key, {
-      permissions,
+    await this.cacheAdapter.set(key, {
+      permissions: Array.from(permissions),
       timestamp: Date.now(),
-    });
+    }, this.ttlMs);
   }
 
   /**
@@ -122,9 +164,13 @@ export class PermissionCache {
    * @param userId - ID do usuário
    * @param tenantId - ID do tenant (opcional)
    */
-  invalidate(userId: string, tenantId?: string): void {
+  async invalidate(userId: string, tenantId?: string): Promise<void> {
+    if (!this.cacheAdapter) {
+      return;
+    }
+
     const key = this.getCacheKey(userId, tenantId);
-    this.cache.delete(key);
+    await this.cacheAdapter.delete(key);
     logger.debug({ userId, tenantId }, 'Cache de permissões invalidado');
   }
 
@@ -133,88 +179,52 @@ export class PermissionCache {
    * 
    * @param tenantId - ID do tenant
    */
-  invalidateTenant(tenantId: string): void {
-    const prefix = `${tenantId}:`;
-    let count = 0;
-
-    for (const key of this.cache.keys()) {
-      if (key.startsWith(prefix)) {
-        this.cache.delete(key);
-        count++;
-      }
+  async invalidateTenant(tenantId: string): Promise<void> {
+    if (!this.cacheAdapter) {
+      return;
     }
 
+    const count = await this.cacheAdapter.deleteByPrefix(tenantId);
     logger.info({ tenantId, entriesRemoved: count }, 'Cache de tenant invalidado');
   }
 
   /**
    * Limpa todo o cache
    */
-  clear(): void {
-    const size = this.cache.size;
-    this.cache.clear();
-    logger.info({ entriesRemoved: size }, 'Cache de permissões limpo');
-  }
-
-  /**
-   * Remove entradas expiradas
-   */
-  private cleanup(): void {
-    const now = Date.now();
-    let removed = 0;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (now - entry.timestamp > this.ttlMs) {
-        this.cache.delete(key);
-        removed++;
-      }
+  async clear(): Promise<void> {
+    if (!this.cacheAdapter) {
+      return;
     }
 
-    if (removed > 0) {
-      logger.debug({ entriesRemoved: removed }, 'Limpeza de cache executada');
-    }
-  }
-
-  /**
-   * Remove as entradas mais antigas quando o cache está cheio
-   */
-  private evictOldest(): void {
-    let oldest: { key: string; timestamp: number } | null = null;
-
-    for (const [key, entry] of this.cache.entries()) {
-      if (!oldest || entry.timestamp < oldest.timestamp) {
-        oldest = { key, timestamp: entry.timestamp };
-      }
-    }
-
-    if (oldest) {
-      this.cache.delete(oldest.key);
-    }
+    await this.cacheAdapter.clear();
+    logger.info('Cache de permissões limpo');
   }
 
   /**
    * Obtém estatísticas do cache
    */
-  getStats(): { size: number; maxSize: number; ttlMs: number } {
+  getStats(): { initialized: boolean; distributed: boolean; ttlMs: number } {
     return {
-      size: this.cache.size,
-      maxSize: this.maxSize,
+      initialized: this.initialized,
+      distributed: this.cacheAdapter?.isDistributed() ?? false,
       ttlMs: this.ttlMs,
     };
   }
 
   /**
-   * Para o timer de limpeza (para testes)
+   * Encerra o cache (para graceful shutdown)
+   * NOTA: NÃO fecha o cliente Redis aqui - isso é feito por closeRedisCacheClient()
+   * em um callback separado para evitar double-close
    */
-  destroy(): void {
-    if (this.cleanupInterval) {
-      clearInterval(this.cleanupInterval);
-      this.cleanupInterval = null;
-    }
+  async destroy(): Promise<void> {
+    this.cacheAdapter = null;
+    this.initialized = false;
+    logger.info('Cache de permissões encerrado');
   }
 }
 
 /**
  * Instância singleton do cache de permissões
+ * IMPORTANTE: Chamar permissionCache.initialize() no startup do serviço
  */
 export const permissionCache = new PermissionCache();

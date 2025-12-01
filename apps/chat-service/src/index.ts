@@ -15,7 +15,14 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { 
+  createCircuitBreaker, 
+  CIRCUIT_BREAKER_PRESETS, 
+  initializeRedisCache,
+  createCacheAdapter,
+  closeRedisCacheClient,
+  type CacheAdapter,
+} from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
@@ -42,6 +49,7 @@ import {
   instrumentCircuitBreaker,
   registerShutdownCallback,
   ShutdownPriority,
+  permissionCache,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from '@alice/database';
@@ -183,14 +191,50 @@ const SESSION_SECRET = (() => {
 })();
 
 // Cache de sessões validadas para evitar queries repetitivas (TTL 5 minutos)
+// C4 Code Review: Usa RedisCacheAdapter em produção (Regra 6 - PROIBIDO in-memory em produção)
 interface CachedSession {
   userId: string;
   tenantId: string | null;
   role: string;
   expiresAt: number;
 }
-const sessionCache = new Map<string, CachedSession>();
 const SESSION_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
+// Cache adapter (Redis em produção, in-memory em dev)
+// Inicializado em initializeSessionCache() após initializeRedisCache()
+let sessionCacheAdapter: CacheAdapter<CachedSession> | null = null;
+
+/**
+ * Inicializa o cache de sessões com Redis (produção) ou in-memory (dev)
+ * Regra 6: fail-fast em produção se Redis indisponível
+ */
+async function initializeSessionCache(): Promise<void> {
+  try {
+    await initializeRedisCache();
+    sessionCacheAdapter = createCacheAdapter<CachedSession>('session', SESSION_CACHE_TTL);
+    logger.info({ distributed: sessionCacheAdapter.isDistributed() }, 'Cache de sessões inicializado');
+  } catch (error) {
+    logger.fatal({ error: (error as Error).message }, 'Falha ao inicializar cache de sessões');
+    throw error;
+  }
+}
+
+/**
+ * Inicializa todos os caches (sessões e permissões RBAC)
+ * C4/C5 Code Review: Caches Redis em produção (Regra 6)
+ */
+async function initializeAllCaches(): Promise<void> {
+  // Inicializar cache de sessões
+  await initializeSessionCache();
+  
+  // Inicializar cache de permissões RBAC
+  // Usa o mesmo cliente Redis já inicializado
+  await permissionCache.initialize();
+  logger.info({ 
+    sessionDistributed: sessionCacheAdapter?.isDistributed() ?? false,
+    rbacDistributed: permissionCache.getStats().distributed,
+  }, 'Todos os caches inicializados');
+}
 
 /**
  * Parseia cookies do header Cookie (RFC 6265)
@@ -262,13 +306,16 @@ function decodeSessionId(signedCookie: string): string | null {
 
 /**
  * Valida sessão no PostgreSQL e retorna dados do usuário
- * Usa cache para evitar queries repetitivas (OWASP API4 - Rate Limiting)
+ * Usa cache distribuído (Redis) para evitar queries repetitivas (OWASP API4 - Rate Limiting)
+ * C4 Code Review: Cache Redis em produção, in-memory em dev (Regra 6)
  */
 async function validateSessionFromDatabase(sessionId: string): Promise<CachedSession | null> {
-  // Verificar cache primeiro
-  const cached = sessionCache.get(sessionId);
-  if (cached && cached.expiresAt > Date.now()) {
-    return cached;
+  // Verificar cache primeiro (async para Redis)
+  if (sessionCacheAdapter) {
+    const cached = await sessionCacheAdapter.get(sessionId);
+    if (cached && cached.expiresAt > Date.now()) {
+      return cached;
+    }
   }
   
   try {
@@ -314,17 +361,9 @@ async function validateSessionFromDatabase(sessionId: string): Promise<CachedSes
       expiresAt: Date.now() + SESSION_CACHE_TTL,
     };
     
-    // Armazenar em cache
-    sessionCache.set(sessionId, cachedSession);
-    
-    // Limpar entradas expiradas do cache (housekeeping)
-    if (sessionCache.size > 1000) {
-      const now = Date.now();
-      for (const [key, value] of sessionCache.entries()) {
-        if (value.expiresAt < now) {
-          sessionCache.delete(key);
-        }
-      }
+    // Armazenar em cache (Redis em produção, in-memory em dev)
+    if (sessionCacheAdapter) {
+      await sessionCacheAdapter.set(sessionId, cachedSession, SESSION_CACHE_TTL);
     }
     
     return cachedSession;
@@ -2521,7 +2560,8 @@ agentWss.on('connection', async (ws, req) => {
       return;
     }
     
-    const permissionCheck = checkPermission(
+    // C5 Code Review: checkPermission agora é async (Redis cache distribuído)
+    const permissionCheck = await checkPermission(
       { userId: agentId, tenantId: safeTenantId, role: userRole },
       'chat:takeover:write'
     );
@@ -3678,13 +3718,25 @@ app.use(createErrorHandler({
   includeStackInDev: true,
 }));
 
-server.listen(PORT, () => {
-  logger.info({ 
-    port: PORT, 
-    llmConfigured: !!SALAD_API_KEY,
-    circuitBreaker: 'enabled',
-  }, 'Chat service iniciado com Circuit Breaker');
-});
+// C4/C5 Code Review: Inicializar todos os caches (Redis em produção, in-memory em dev)
+// Regra 6: fail-fast em produção se Redis indisponível
+(async () => {
+  try {
+    await initializeAllCaches();
+    server.listen(PORT, () => {
+      logger.info({ 
+        port: PORT, 
+        llmConfigured: !!SALAD_API_KEY,
+        circuitBreaker: 'enabled',
+        sessionCacheDistributed: sessionCacheAdapter?.isDistributed() ?? false,
+        rbacCacheDistributed: permissionCache.getStats().distributed,
+      }, 'Chat service iniciado com Circuit Breaker e caches distribuídos');
+    });
+  } catch (error) {
+    logger.fatal({ error: (error as Error).message }, 'Falha ao iniciar chat-service');
+    process.exit(1);
+  }
+})();
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
 server.timeout = 120000; // 120s para LLM streaming (respostas longas)
@@ -3739,6 +3791,27 @@ registerShutdownCallback(
     });
   },
   { priority: ShutdownPriority.HTTP_SERVER }
+);
+
+// C4/C5 Code Review: Encerrar caches Redis antes do database
+registerShutdownCallback(
+  'chat-permission-cache',
+  async () => {
+    logger.info('Encerrando cache de permissões RBAC...');
+    await permissionCache.destroy();
+    logger.info('Cache de permissões encerrado');
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS - 5 } // Antes do Redis client
+);
+
+registerShutdownCallback(
+  'chat-redis-cache',
+  async () => {
+    logger.info('Encerrando cliente Redis cache...');
+    await closeRedisCacheClient();
+    logger.info('Cliente Redis cache encerrado');
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS - 10 } // Antes do database, após permission cache
 );
 
 registerShutdownCallback(

@@ -437,30 +437,39 @@ export function resetRbacCacheStats(): void {
  * no PERMISSION_MAP a cada requisição. O cache é invalidado quando
  * roles ou permissões do usuário mudam.
  * 
+ * C5 Code Review: Agora async para suportar Redis cache distribuído
+ * 
  * @param userId - ID do usuário
  * @param tenantId - ID do tenant (opcional)
  * @param role - Role do usuário
  * @returns Set de permissões do usuário
  */
-function getCachedPermissions(
+async function getCachedPermissions(
   userId: string,
   tenantId: string | undefined,
   role: Role
-): Set<string> {
-  const cached = permissionCache.get(userId, tenantId);
-  
-  if (cached) {
-    cacheStats.hits++;
-    updateRbacMetrics('hit', tenantId);
-    logger.debug({ userId, tenantId, cacheHit: true }, 'Cache hit para permissões RBAC');
-    return cached;
+): Promise<Set<string>> {
+  // Verificar se cache está inicializado
+  if (permissionCache.isInitialized()) {
+    const cached = await permissionCache.get(userId, tenantId);
+    
+    if (cached) {
+      cacheStats.hits++;
+      updateRbacMetrics('hit', tenantId);
+      logger.debug({ userId, tenantId, cacheHit: true }, 'Cache hit para permissões RBAC');
+      return cached;
+    }
   }
   
   cacheStats.misses++;
   updateRbacMetrics('miss', tenantId);
   
   const permissions = new Set(getRolePermissions(role));
-  permissionCache.set(userId, tenantId, permissions);
+  
+  // Salvar no cache se inicializado
+  if (permissionCache.isInitialized()) {
+    await permissionCache.set(userId, tenantId, permissions);
+  }
   
   logger.debug({ 
     userId, 
@@ -479,6 +488,8 @@ function getCachedPermissions(
  * Usa permissionCache para evitar lookups repetidos no PERMISSION_MAP.
  * Cache é multi-tenant e respeita TTL configurado.
  * 
+ * C5 Code Review: Agora async para suportar Redis cache distribuído
+ * 
  * @param auth - Contexto de autenticação
  * @param permission - Código da permissão
  * @returns Resultado da verificação
@@ -487,7 +498,7 @@ function getCachedPermissions(
  * ```typescript
  * import { checkPermission } from '@alice/shared-utils/rbac';
  * 
- * const result = checkPermission(
+ * const result = await checkPermission(
  *   { userId: 'user-123', tenantId: 'tenant-456', role: 'operator' },
  *   'chat:takeover:write'
  * );
@@ -497,11 +508,11 @@ function getCachedPermissions(
  * }
  * ```
  */
-export function checkPermission(
+export async function checkPermission(
   auth: AuthContext,
   permission: string
-): PermissionCheckResult {
-  const permissions = getCachedPermissions(auth.userId, auth.tenantId, auth.role);
+): Promise<PermissionCheckResult> {
+  const permissions = await getCachedPermissions(auth.userId, auth.tenantId, auth.role);
   const allowed = permissions.has(permission);
 
   return {
@@ -541,11 +552,15 @@ export function checkPermissionDirect(
  * - Permissões customizadas são adicionadas/removidas
  * - Usuário é removido do tenant
  * 
+ * C5 Code Review: Agora async para suportar Redis cache distribuído
+ * 
  * @param userId - ID do usuário
  * @param tenantId - ID do tenant (opcional)
  */
-export function invalidateUserPermissions(userId: string, tenantId?: string): void {
-  permissionCache.invalidate(userId, tenantId);
+export async function invalidateUserPermissions(userId: string, tenantId?: string): Promise<void> {
+  if (permissionCache.isInitialized()) {
+    await permissionCache.invalidate(userId, tenantId);
+  }
   cacheStats.invalidations++;
   updateRbacMetrics('invalidation', tenantId, 'user_change');
   logger.info({ userId, tenantId }, 'Cache de permissões do usuário invalidado');
@@ -558,10 +573,14 @@ export function invalidateUserPermissions(userId: string, tenantId?: string): vo
  * - Configuração de roles do tenant muda
  * - Políticas de permissão são atualizadas
  * 
+ * C5 Code Review: Agora async para suportar Redis cache distribuído
+ * 
  * @param tenantId - ID do tenant
  */
-export function invalidateTenantPermissions(tenantId: string): void {
-  permissionCache.invalidateTenant(tenantId);
+export async function invalidateTenantPermissions(tenantId: string): Promise<void> {
+  if (permissionCache.isInitialized()) {
+    await permissionCache.invalidateTenant(tenantId);
+  }
   cacheStats.invalidations++;
   updateRbacMetrics('invalidation', tenantId, 'tenant_change');
   logger.info({ tenantId }, 'Cache de permissões do tenant invalidado');
@@ -573,9 +592,13 @@ export function invalidateTenantPermissions(tenantId: string): void {
  * Deve ser chamado quando:
  * - PERMISSION_MAP é atualizado
  * - Sistema reinicia
+ * 
+ * C5 Code Review: Agora async para suportar Redis cache distribuído
  */
-export function clearPermissionCache(): void {
-  permissionCache.clear();
+export async function clearPermissionCache(): Promise<void> {
+  if (permissionCache.isInitialized()) {
+    await permissionCache.clear();
+  }
   cacheStats.invalidations++;
   updateRbacMetrics('invalidation', undefined, 'full_clear');
   logger.info('Cache de permissões limpo completamente');
