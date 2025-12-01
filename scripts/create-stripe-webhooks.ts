@@ -1,100 +1,139 @@
-// Script para criar webhooks Stripe via API
-// Documentação oficial: https://docs.stripe.com/api/webhook_endpoints/create
-// Regra #11: Seguir documentação oficial Stripe 2025
+/**
+ * Script para criar webhooks Stripe via API
+ * Documentação oficial: https://docs.stripe.com/api/webhook_endpoints/create
+ * Regra #11: Seguir documentação oficial Stripe 2025
+ * Regra #6: PROIBIDO URLs hardcoded
+ */
 
 import Stripe from 'stripe';
+import pino from 'pino';
+
+// Logger Pino (Regra 8 - Qualidade Obrigatória)
+const logger = pino({
+  level: 'info',
+  transport: { target: 'pino-pretty', options: { colorize: true } },
+});
+
+// SEGURANÇA: Função para obter variável de ambiente obrigatória (Regra 6)
+function getRequiredEnvVar(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    logger.error({ variable: name }, 'Variável de ambiente obrigatória não definida');
+    throw new Error(`Variável de ambiente obrigatória não definida: ${name}`);
+  }
+  return value;
+}
+
+// SEGURANÇA: Salvar secrets em arquivo seguro (Regra 6)
+async function saveWebhookSecretsToFile(secrets: { id: string; url: string; secret: string; type: string }[]): Promise<string> {
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const os = await import('os');
+  
+  const secretsDir = path.join(os.tmpdir(), 'alice-secrets');
+  await fs.mkdir(secretsDir, { recursive: true });
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const secretsFile = path.join(secretsDir, `stripe-webhook-secrets-${timestamp}.txt`);
+  
+  const content = secrets.map(s => 
+    `# ${s.type}\nWEBHOOK_ID=${s.id}\nWEBHOOK_URL=${s.url}\nWEBHOOK_SECRET=${s.secret}\n`
+  ).join('\n');
+  
+  await fs.writeFile(secretsFile, content, { mode: 0o600 });
+  
+  return secretsFile;
+}
 
 async function createWebhooks() {
-  const secretKey = process.env.STRIPE_SECRET_KEY;
+  const secretKey = getRequiredEnvVar('STRIPE_SECRET_KEY');
   
-  if (!secretKey) {
-    console.error('ERRO: STRIPE_SECRET_KEY não configurada');
-    process.exit(1);
-  }
+  // REGRA 6: URL base OBRIGATÓRIA via variável de ambiente (proibido hardcoded)
+  const baseUrl = getRequiredEnvVar('STRIPE_WEBHOOK_BASE_URL');
 
   const stripe = new Stripe(secretKey, {
     apiVersion: '2025-04-30.basil' as Stripe.LatestApiVersion,
   });
 
-  // URL base do ambiente atual (Replit DEV)
-  const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-    ? `https://${process.env.REPLIT_DEV_DOMAIN}`
-    : 'https://4cf47ad7-6fef-478f-a697-c2116cce81b9-00-2p4pght3fawuu.spock.replit.dev';
+  logger.info('='.repeat(60));
+  logger.info('CRIANDO WEBHOOKS STRIPE VIA API');
+  logger.info('='.repeat(60));
+  logger.info({ baseUrl }, 'URL Base configurada');
 
-  console.log('='.repeat(60));
-  console.log('CRIANDO WEBHOOKS STRIPE VIA API');
-  console.log('='.repeat(60));
-  console.log(`URL Base: ${baseUrl}`);
-  console.log('');
+  const createdSecrets: { id: string; url: string; secret: string; type: string }[] = [];
 
   try {
     // Primeiro, listar e deletar webhooks existentes para evitar duplicatas
-    console.log('Verificando webhooks existentes...');
+    logger.info('Verificando webhooks existentes...');
     const existingWebhooks = await stripe.webhookEndpoints.list({ limit: 100 });
     
     for (const webhook of existingWebhooks.data) {
-      if (webhook.url.includes(baseUrl) || webhook.url.includes('replit.dev')) {
-        console.log(`Deletando webhook existente: ${webhook.id} (${webhook.url})`);
+      if (webhook.url.includes(baseUrl)) {
+        logger.info({ webhookId: webhook.id, url: webhook.url }, 'Deletando webhook existente');
         await stripe.webhookEndpoints.del(webhook.id);
       }
     }
-    console.log('');
 
     // Webhook 1: Account (Sua conta) - Todos os eventos da plataforma
-    console.log('Criando Webhook 1: Account (Sua conta)...');
+    logger.info('Criando Webhook 1: Account (Sua conta)...');
     const accountWebhook = await stripe.webhookEndpoints.create({
       url: `${baseUrl}/api/stripe/webhook`,
-      enabled_events: ['*'], // Todos os eventos
-      description: 'Alice DEV - Account Webhook (Plataforma)',
+      enabled_events: ['*'],
+      description: 'Alice - Account Webhook (Plataforma)',
       api_version: '2025-04-30.basil',
     });
 
-    console.log('✅ Webhook Account criado com sucesso!');
-    console.log(`   ID: ${accountWebhook.id}`);
-    console.log(`   URL: ${accountWebhook.url}`);
-    console.log(`   SECRET: ${accountWebhook.secret}`);
-    console.log('');
+    createdSecrets.push({
+      id: accountWebhook.id,
+      url: accountWebhook.url,
+      secret: accountWebhook.secret || '',
+      type: 'STRIPE_WEBHOOK_SECRET (Account)',
+    });
+
+    // SEGURANÇA: Logar apenas ID e URL (não o secret)
+    logger.info({ webhookId: accountWebhook.id, url: accountWebhook.url }, 'Webhook Account criado com sucesso');
 
     // Webhook 2: Connect (Contas conectadas) - Todos os eventos das contas conectadas
-    console.log('Criando Webhook 2: Connect (Contas conectadas)...');
+    logger.info('Criando Webhook 2: Connect (Contas conectadas)...');
     const connectWebhook = await stripe.webhookEndpoints.create({
       url: `${baseUrl}/api/stripe/connect/webhook`,
-      enabled_events: ['*'], // Todos os eventos
-      connect: true, // IMPORTANTE: Receber eventos de contas conectadas
-      description: 'Alice DEV - Connect Webhook (Contas Conectadas)',
+      enabled_events: ['*'],
+      connect: true,
+      description: 'Alice - Connect Webhook (Contas Conectadas)',
       api_version: '2025-04-30.basil',
     });
 
-    console.log('✅ Webhook Connect criado com sucesso!');
-    console.log(`   ID: ${connectWebhook.id}`);
-    console.log(`   URL: ${connectWebhook.url}`);
-    console.log(`   SECRET: ${connectWebhook.secret}`);
-    console.log('');
+    createdSecrets.push({
+      id: connectWebhook.id,
+      url: connectWebhook.url,
+      secret: connectWebhook.secret || '',
+      type: 'STRIPE_CONNECT_WEBHOOK_SECRET (Connect)',
+    });
 
-    // Resumo final
-    console.log('='.repeat(60));
-    console.log('WEBHOOKS CRIADOS COM SUCESSO!');
-    console.log('='.repeat(60));
-    console.log('');
-    console.log('⚠️  IMPORTANTE: Adicione os seguintes secrets no Replit:');
-    console.log('');
-    console.log(`STRIPE_WEBHOOK_SECRET=${accountWebhook.secret}`);
-    console.log('');
-    console.log(`STRIPE_CONNECT_WEBHOOK_SECRET=${connectWebhook.secret}`);
-    console.log('');
-    console.log('='.repeat(60));
+    // SEGURANÇA: Logar apenas ID e URL (não o secret)
+    logger.info({ webhookId: connectWebhook.id, url: connectWebhook.url }, 'Webhook Connect criado com sucesso');
 
-    // Verificar webhooks criados
-    console.log('');
-    console.log('Webhooks atualmente configurados:');
+    // SEGURANÇA: Salvar secrets em arquivo seguro (chmod 600)
+    if (createdSecrets.length > 0) {
+      const secretsFile = await saveWebhookSecretsToFile(createdSecrets);
+      logger.info('='.repeat(60));
+      logger.info('WEBHOOKS CRIADOS COM SUCESSO!');
+      logger.info('='.repeat(60));
+      logger.info({ secretsFile, count: createdSecrets.length },
+        'Secrets dos webhooks salvos em arquivo seguro (chmod 600). Copie e delete o arquivo após uso.');
+      logger.info('Configure as variáveis de ambiente STRIPE_WEBHOOK_SECRET e STRIPE_CONNECT_WEBHOOK_SECRET.');
+    }
+
+    // Verificar webhooks criados (sem expor secrets)
+    logger.info('Webhooks atualmente configurados:');
     const allWebhooks = await stripe.webhookEndpoints.list({ limit: 100 });
     for (const wh of allWebhooks.data) {
       const webhookData = wh as Record<string, unknown>;
-      console.log(`- ${wh.id}: ${wh.url} (connect=${webhookData.connect || false})`);
+      logger.info({ id: wh.id, url: wh.url, connect: webhookData.connect || false }, 'Webhook ativo');
     }
 
   } catch (error) {
-    console.error('ERRO ao criar webhooks:', error);
+    logger.error({ error }, 'ERRO ao criar webhooks');
     process.exit(1);
   }
 }

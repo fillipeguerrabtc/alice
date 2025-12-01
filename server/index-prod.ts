@@ -15,14 +15,26 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import compression from 'compression';
 import helmet from 'helmet';
+import { 
+  createLogger, 
+  registerShutdownCallback, 
+  ShutdownPriority, 
+  initializeShutdownManager 
+} from '@alice/shared-utils';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
+// Logger singleton (Regra 8 replit.md - Pino obrigatório)
+const logger = createLogger('server-prod');
+
 async function startProdServer() {
-  console.log('========================================');
-  console.log('  Alice Enterprise Platform - PRODUCTION');
-  console.log('========================================');
+  logger.info('========================================');
+  logger.info('Alice Enterprise Platform - PRODUCTION');
+  logger.info('========================================');
+  
+  // Inicializar ShutdownManager (replit.md - ShutdownManager Centralizado)
+  initializeShutdownManager();
 
   const app = express();
 
@@ -54,8 +66,7 @@ async function startProdServer() {
   const publicDir = path.resolve(__dirname, 'public');
 
   if (!fs.existsSync(publicDir)) {
-    console.error('ERRO: Diretório public não encontrado:', publicDir);
-    console.error('Execute "pnpm run build" primeiro.');
+    logger.fatal({ publicDir }, 'ERRO: Diretório public não encontrado. Execute "pnpm run build" primeiro.');
     process.exit(1);
   }
 
@@ -75,7 +86,7 @@ async function startProdServer() {
   });
 
   app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
-    console.error('Erro não tratado:', err);
+    logger.error({ error: err.message, stack: err.stack }, 'Erro não tratado');
     res.status(500).json({ 
       error: 'Erro interno do servidor',
       message: process.env.NODE_ENV === 'development' ? err.message : undefined,
@@ -84,29 +95,28 @@ async function startProdServer() {
 
   const server = createServer(app);
 
+  // Registrar callback de shutdown para HTTP server (replit.md - ShutdownManager Centralizado)
+  registerShutdownCallback(
+    'http-server-prod',
+    async () => {
+      logger.info('Encerrando servidor HTTP...');
+      return new Promise<void>((resolve) => {
+        server.close(() => {
+          logger.info('Servidor HTTP encerrado');
+          resolve();
+        });
+      });
+    },
+    { priority: ShutdownPriority.HTTP_SERVER, timeoutMs: 10000 }
+  );
+
   server.listen(PORT, '0.0.0.0', () => {
-    console.log(`  Servidor rodando em http://0.0.0.0:${PORT}`);
-    console.log('========================================');
-  });
-
-  process.on('SIGTERM', () => {
-    console.log('Recebido SIGTERM, encerrando graciosamente...');
-    server.close(() => {
-      console.log('Servidor encerrado.');
-      process.exit(0);
-    });
-  });
-
-  process.on('SIGINT', () => {
-    console.log('Recebido SIGINT, encerrando graciosamente...');
-    server.close(() => {
-      console.log('Servidor encerrado.');
-      process.exit(0);
-    });
+    logger.info({ port: PORT }, 'Servidor rodando');
+    logger.info('========================================');
   });
 }
 
 startProdServer().catch((err) => {
-  console.error('Falha ao iniciar servidor de produção:', err);
+  logger.fatal({ error: err }, 'Falha ao iniciar servidor de produção');
   process.exit(1);
 });

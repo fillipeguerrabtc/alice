@@ -2,8 +2,12 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import pgvector from 'pgvector/pg';
 import * as schema from '@alice/shared';
+import { createLogger } from '@alice/shared-utils';
 
 const { Pool } = pg;
+
+// Logger singleton do módulo (Regra 8 replit.md - Pino obrigatório)
+const logger = createLogger('database');
 
 let dbInstance: NodePgDatabase<typeof schema> | null = null;
 let poolInstance: pg.Pool | null = null;
@@ -66,18 +70,6 @@ export async function isPoolHealthy(): Promise<boolean> {
 // Refatorado para usar ShutdownManager centralizado (elimina duplicação de listeners)
 // ============================================================================
 
-/**
- * Logger para shutdown do database
- */
-interface DatabaseLogger {
-  info: (msg: string) => void;
-  error: (obj: unknown, msg: string) => void;
-}
-
-let shutdownLogger: DatabaseLogger = {
-  info: (msg: string) => console.log(`[database] ${msg}`),
-  error: (obj: unknown, msg: string) => console.error(`[database] ${msg}`, obj),
-};
 
 /**
  * Função de shutdown do pool de conexões
@@ -88,13 +80,13 @@ export async function closeDatabasePool(): Promise<void> {
     return;
   }
   isShuttingDown = true;
-  shutdownLogger.info('Encerrando pool de conexões...');
+  logger.info('Encerrando pool de conexões...');
   
   try {
     await closeDatabase();
-    shutdownLogger.info('Pool de conexões encerrado com sucesso');
+    logger.info('Pool de conexões encerrado com sucesso');
   } catch (error) {
-    shutdownLogger.error({ error }, 'Erro ao encerrar pool de conexões');
+    logger.error({ error }, 'Erro ao encerrar pool de conexões');
     throw error;
   }
 }
@@ -105,17 +97,13 @@ export async function closeDatabasePool(): Promise<void> {
  * 
  * @deprecated Use registerShutdownCallback() do @alice/shared-utils em vez disso
  */
-export function setupGracefulShutdown(logger?: DatabaseLogger): void {
+export function setupGracefulShutdown(): void {
   if (shutdownRegistered) {
     return;
   }
   shutdownRegistered = true;
   
-  if (logger) {
-    shutdownLogger = logger;
-  }
-  
-  shutdownLogger.info('Database pool configurado para graceful shutdown (use ShutdownManager para registrar callbacks)');
+  logger.info('Database pool configurado para graceful shutdown (use ShutdownManager para registrar callbacks)');
 }
 
 // ============================================================================
@@ -161,7 +149,7 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
     
     // Listener para erros de conexão (enterprise-grade)
     poolInstance.on('error', (err: Error) => {
-      console.error('[database] Erro inesperado no pool:', err.message);
+      logger.error({ error: err.message }, 'Erro inesperado no pool');
     });
     
     // Registrar tipos pgvector em novas conexões (enterprise-grade)

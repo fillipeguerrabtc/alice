@@ -98,7 +98,7 @@ const SYSTEM_MODULES = [
     descricao: "Observabilidade - Dashboards de métricas e logs",
     icone: "Activity",
     categoria: "observability",
-    urlExterna: "${GRAFANA_URL}",
+    urlExterna: process.env.GRAFANA_URL || null,
     ordem: 10,
     ativo: true,
   },
@@ -108,7 +108,7 @@ const SYSTEM_MODULES = [
     descricao: "CRM/ERP - Gestão de clientes, vendas e finanças",
     icone: "Building2",
     categoria: "business",
-    urlExterna: "${ERPNEXT_URL}",
+    urlExterna: process.env.ERPNEXT_URL || null,
     ordem: 11,
     ativo: true,
   },
@@ -188,35 +188,51 @@ const ROLE_MODULE_ACCESS: Record<string, { read: string[]; write: string[]; admi
   },
 };
 
+// Validar variáveis de ambiente obrigatórias para OAuth clients
+function getRequiredEnvVar(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    logger.error({ variable: name }, 'Variável de ambiente obrigatória não definida');
+    throw new Error(`Variável de ambiente obrigatória não definida: ${name}`);
+  }
+  return value;
+}
+
 // Clientes OAuth para SSO (campos alinhados com schema)
-const OAUTH_CLIENTS = [
-  {
-    clientId: "grafana-sso",
-    nome: "Grafana OSS",
-    descricao: "Dashboard de observabilidade - SSO via Alice IdP",
-    redirectUris: ["${GRAFANA_URL}/login/generic_oauth"],
-    grantTypes: ["authorization_code", "refresh_token"],
-    scopes: ["openid", "profile", "email", "groups", "roles"],
-    tokenEndpointAuthMethod: "client_secret_basic",
-    accessTokenTtl: 3600,
-    refreshTokenTtl: 86400,
-    autoConsent: true,
-    ativo: true,
-  },
-  {
-    clientId: "erpnext-sso",
-    nome: "ERPNext CRM/ERP",
-    descricao: "Sistema de gestão empresarial - SSO via Alice IdP",
-    redirectUris: ["${ERPNEXT_URL}/api/method/frappe.integrations.oauth2.login_via_oauth2"],
-    grantTypes: ["authorization_code", "refresh_token"],
-    scopes: ["openid", "profile", "email", "groups", "roles"],
-    tokenEndpointAuthMethod: "client_secret_post",
-    accessTokenTtl: 3600,
-    refreshTokenTtl: 86400,
-    autoConsent: true,
-    ativo: true,
-  },
-];
+// SEGURANÇA: URLs devem vir de variáveis de ambiente (Regra 6 - proibido hardcoded)
+function getOAuthClients() {
+  const grafanaUrl = getRequiredEnvVar('GRAFANA_URL');
+  const erpnextUrl = getRequiredEnvVar('ERPNEXT_URL');
+  
+  return [
+    {
+      clientId: "grafana-sso",
+      nome: "Grafana OSS",
+      descricao: "Dashboard de observabilidade - SSO via Alice IdP",
+      redirectUris: [`${grafanaUrl}/login/generic_oauth`],
+      grantTypes: ["authorization_code", "refresh_token"],
+      scopes: ["openid", "profile", "email", "groups", "roles"],
+      tokenEndpointAuthMethod: "client_secret_basic",
+      accessTokenTtl: 3600,
+      refreshTokenTtl: 86400,
+      autoConsent: true,
+      ativo: true,
+    },
+    {
+      clientId: "erpnext-sso",
+      nome: "ERPNext CRM/ERP",
+      descricao: "Sistema de gestão empresarial - SSO via Alice IdP",
+      redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
+      grantTypes: ["authorization_code", "refresh_token"],
+      scopes: ["openid", "profile", "email", "groups", "roles"],
+      tokenEndpointAuthMethod: "client_secret_post",
+      accessTokenTtl: 3600,
+      refreshTokenTtl: 86400,
+      autoConsent: true,
+      ativo: true,
+    },
+  ];
+}
 
 // Função para gerar client_secret seguro
 function generateClientSecret(): string {
@@ -315,10 +331,32 @@ async function seedRoleModules() {
   logger.info("Seed de permissões role→módulo concluído");
 }
 
+// SEGURANÇA: Salvar secrets em arquivo seguro em vez de imprimir em stdout (Regra 6)
+async function saveSecretsToFile(secrets: { clientId: string; clientSecret: string }[]): Promise<string> {
+  const fs = await import('fs/promises');
+  const path = await import('path');
+  const os = await import('os');
+  
+  const secretsDir = path.join(os.tmpdir(), 'alice-secrets');
+  await fs.mkdir(secretsDir, { recursive: true });
+  
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const secretsFile = path.join(secretsDir, `oauth-secrets-${timestamp}.txt`);
+  
+  const content = secrets.map(s => `CLIENT_ID=${s.clientId}\nCLIENT_SECRET=${s.clientSecret}\n`).join('\n');
+  
+  await fs.writeFile(secretsFile, content, { mode: 0o600 });
+  
+  return secretsFile;
+}
+
 async function seedOAuthClients() {
   logger.info("Iniciando seed de clientes OAuth...");
+  
+  const clients = getOAuthClients();
+  const createdSecrets: { clientId: string; clientSecret: string }[] = [];
 
-  for (const client of OAUTH_CLIENTS) {
+  for (const client of clients) {
     const existing = await db
       .select()
       .from(oauthClients)
@@ -343,19 +381,23 @@ async function seedOAuthClients() {
         ativo: client.ativo,
       });
 
-      logger.info(
-        { clientId: client.clientId, clientSecret: clientSecret.substring(0, 8) + "..." },
-        "Cliente OAuth criado (GUARDE O SECRET!)"
-      );
+      createdSecrets.push({ clientId: client.clientId, clientSecret });
       
-      // Mostrar secret completo apenas uma vez
-      console.log(`\n========================================`);
-      console.log(`CLIENT: ${client.clientId}`);
-      console.log(`SECRET: ${clientSecret}`);
-      console.log(`========================================\n`);
+      // SEGURANÇA: Logar apenas prefixo do secret (Regra 6)
+      logger.info(
+        { clientId: client.clientId, secretPrefix: clientSecret.substring(0, 8) + "..." },
+        "Cliente OAuth criado"
+      );
     } else {
       logger.info({ clientId: client.clientId }, "Cliente OAuth já existe, pulando");
     }
+  }
+
+  // SEGURANÇA: Salvar secrets em arquivo seguro em vez de stdout
+  if (createdSecrets.length > 0) {
+    const secretsFile = await saveSecretsToFile(createdSecrets);
+    logger.info({ secretsFile, count: createdSecrets.length }, 
+      "Secrets OAuth salvos em arquivo seguro (chmod 600). Copie e delete o arquivo após uso.");
   }
 
   logger.info("Seed de clientes OAuth concluído");
@@ -383,10 +425,8 @@ async function seedJwks() {
       ativo: true,
     });
 
-    logger.info({ kid }, "Chave JWKS RS256 criada");
-    console.log(`\n========================================`);
-    console.log(`JWKS KID: ${kid}`);
-    console.log(`========================================\n`);
+    // SEGURANÇA: Logar apenas o KID (público), não a chave privada
+    logger.info({ kid }, "Chave JWKS RS256 criada. KID disponível para configuração.");
   } else {
     logger.info({ kid: existing[0].kid }, "JWKS já existe, pulando");
   }

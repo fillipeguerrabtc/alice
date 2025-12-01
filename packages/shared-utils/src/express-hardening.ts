@@ -66,10 +66,10 @@ async function getRedisClient(): Promise<RedisClientType | null> {
             if (retries > 3) {
               // REGRA 6: Em produção, fail-fast se Redis não disponível
               if (isProduction) {
-                console.error('[express-hardening] CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
+                logger.fatal('CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
                 throw new Error('Redis obrigatório em produção para rate limiting distribuído');
               }
-              console.warn('[express-hardening] Redis: máximo de tentativas atingido (desenvolvimento)');
+              logger.warn('Redis: máximo de tentativas atingido (desenvolvimento)');
               return new Error('Max retries reached');
             }
             return Math.min(retries * 100, 2000);
@@ -78,15 +78,15 @@ async function getRedisClient(): Promise<RedisClientType | null> {
       });
       
       client.on('error', (err) => {
-        console.error('[express-hardening] Erro Redis:', err.message);
+        logger.error({ error: err.message }, 'Erro Redis');
         // REGRA 6: Em produção, erro de Redis é crítico
         if (isProduction) {
-          console.error('[express-hardening] CRÍTICO: Erro Redis em produção - serviço pode estar comprometido');
+          logger.fatal({ error: err.message }, 'CRÍTICO: Erro Redis em produção - serviço pode estar comprometido');
         }
       });
       
       client.on('connect', () => {
-        console.info('[express-hardening] Redis conectado para rate limiting distribuído');
+        logger.info('Redis conectado para rate limiting distribuído');
       });
       
       await client.connect();
@@ -95,10 +95,10 @@ async function getRedisClient(): Promise<RedisClientType | null> {
     } catch (error) {
       // REGRA 6: Em produção, NUNCA usar MemoryStore - fail-fast
       if (isProduction) {
-        console.error('[express-hardening] CRÍTICO: Falha ao conectar Redis em produção:', (error as Error).message);
+        logger.fatal({ error: (error as Error).message }, 'CRÍTICO: Falha ao conectar Redis em produção');
         throw new Error(`Redis obrigatório em produção: ${(error as Error).message}`);
       }
-      console.warn('[express-hardening] Falha ao conectar Redis (desenvolvimento), usando MemoryStore:', (error as Error).message);
+      logger.warn({ error: (error as Error).message }, 'Falha ao conectar Redis (desenvolvimento), usando MemoryStore');
       redisConnectionPromise = null;
       return null;
     }
@@ -124,7 +124,7 @@ async function createRedisStoreIfAvailable(prefix: string): Promise<Store | null
       prefix: `rl:${prefix}:`,
     });
   } catch (error) {
-    console.warn('[express-hardening] Falha ao criar RedisStore:', (error as Error).message);
+    logger.warn({ error: (error as Error).message }, 'Falha ao criar RedisStore');
     return null;
   }
 }
@@ -245,8 +245,7 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
     const tenantId = req.tenantId || 'unknown';
     const ip = req.ip || 'unknown';
     
-    console.warn(JSON.stringify({
-      level: 'warn',
+    logger.warn({
       service: serviceName,
       event: 'rate_limit_exceeded',
       tenantId,
@@ -255,8 +254,7 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
       method: req.method,
       windowMs: optionsUsed.windowMs,
       max: optionsUsed.limit,
-      timestamp: new Date().toISOString(),
-    }));
+    }, 'Rate limit excedido');
     
     res.status(429).json(message);
   };
@@ -279,16 +277,16 @@ export function createRateLimiter(options?: MultiTenantRateLimitOptions): Reques
     
     createRedisStoreIfAvailable(serviceName).then(store => {
       if (store) {
-        console.info(`[${serviceName}] Rate limiting atualizado para Redis Store (OWASP API4/8 compliant)`);
+        logger.info({ service: serviceName }, 'Rate limiting atualizado para Redis Store (OWASP API4/8 compliant)');
         redisLimiter = rateLimit({
           ...baseLimiterOptions,
           store,
         });
       } else {
-        console.warn(`[${serviceName}] Rate limiting mantido em MemoryStore (Redis indisponível)`);
+        logger.warn({ service: serviceName }, 'Rate limiting mantido em MemoryStore (Redis indisponível)');
       }
     }).catch(err => {
-      console.error(`[${serviceName}] Erro ao inicializar Redis Store:`, err);
+      logger.error({ service: serviceName, error: err }, 'Erro ao inicializar Redis Store');
     });
     
     return (req: Request, res: Response, next: NextFunction) => {
@@ -376,8 +374,6 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
 
     if (logger) {
       logger.error(logEntry, 'Erro não tratado');
-    } else {
-      console.error(JSON.stringify(logEntry));
     }
 
     const response: {
