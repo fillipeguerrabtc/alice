@@ -58,6 +58,8 @@ export interface ShutdownManagerConfig {
   defaultTimeoutMs?: number;
   forceExitTimeoutMs?: number;
   logger?: Logger;
+  /** Se true, não registra handlers de processo (para testes) */
+  skipProcessHandlers?: boolean;
 }
 
 /**
@@ -70,6 +72,7 @@ class ShutdownManagerImpl {
   private callbacks: RegisteredCallback[] = [];
   private isShuttingDown = false;
   private handlersRegistered = false;
+  private skipProcessHandlers = false;
   private logger: Logger;
   private defaultTimeoutMs: number;
   private forceExitTimeoutMs: number;
@@ -77,6 +80,7 @@ class ShutdownManagerImpl {
   constructor(config: ShutdownManagerConfig = {}) {
     this.defaultTimeoutMs = config.defaultTimeoutMs ?? 10000;
     this.forceExitTimeoutMs = config.forceExitTimeoutMs ?? 30000;
+    this.skipProcessHandlers = config.skipProcessHandlers ?? false;
     // Usa createLogger do singleton - não cria novo transport/listener
     this.logger = config.logger ?? createLogger('shutdown-manager');
   }
@@ -144,15 +148,23 @@ class ShutdownManagerImpl {
    * Garantir que handlers de processo estão registrados (apenas uma vez)
    */
   private ensureHandlersRegistered(): void {
-    if (this.handlersRegistered) {
+    if (this.handlersRegistered || this.skipProcessHandlers) {
       return;
     }
     this.handlersRegistered = true;
 
     this.logger.info('Registrando handlers de shutdown centralizados');
 
-    process.once('SIGTERM', () => this.shutdown('SIGTERM'));
-    process.once('SIGINT', () => this.shutdown('SIGINT'));
+    process.once('SIGTERM', () => {
+      this.shutdown('SIGTERM').catch((error) => {
+        this.logger.error({ error }, 'Erro durante shutdown por SIGTERM');
+      });
+    });
+    process.once('SIGINT', () => {
+      this.shutdown('SIGINT').catch((error) => {
+        this.logger.error({ error }, 'Erro durante shutdown por SIGINT');
+      });
+    });
 
     process.on('uncaughtException', (error: Error, origin: string) => {
       this.logger.fatal({ 
@@ -164,9 +176,13 @@ class ShutdownManagerImpl {
       }, `Exceção não tratada (${origin}): ${error.message}`);
       
       if (process.env.NODE_ENV === 'production') {
-        this.shutdown('uncaughtException').finally(() => {
-          process.exit(1);
-        });
+        this.shutdown('uncaughtException', { skipProcessExit: true })
+          .catch((shutdownError) => {
+            this.logger.error({ error: shutdownError }, 'Erro durante shutdown por uncaughtException');
+          })
+          .finally(() => {
+            process.exit(1);
+          });
       }
     });
 
@@ -183,9 +199,13 @@ class ShutdownManagerImpl {
       
       if (process.env.NODE_ENV === 'production') {
         this.logger.fatal({ reason: errorMessage }, 'Encerrando devido a promise rejection não tratada');
-        this.shutdown('unhandledRejection').finally(() => {
-          process.exit(1);
-        });
+        this.shutdown('unhandledRejection', { skipProcessExit: true })
+          .catch((shutdownError) => {
+            this.logger.error({ error: shutdownError }, 'Erro durante shutdown por unhandledRejection');
+          })
+          .finally(() => {
+            process.exit(1);
+          });
       }
     });
 
@@ -194,11 +214,23 @@ class ShutdownManagerImpl {
 
   /**
    * Executar shutdown graceful
+   * 
+   * @param signal - Sinal que disparou o shutdown (SIGTERM, SIGINT, etc)
+   * @param options - Opções de execução
+   * @param options.skipProcessExit - Se true, não chama process.exit (para testes)
+   * @returns Resultado do shutdown com callbacks executados e erros
    */
-  async shutdown(signal: string): Promise<void> {
+  async shutdown(signal: string, options?: { skipProcessExit?: boolean }): Promise<{
+    executedCallbacks: string[];
+    errors: Array<{ name: string; error: string }>;
+  }> {
+    const executedCallbacks: string[] = [];
+    const errors: Array<{ name: string; error: string }> = [];
+    const skipProcessExit = options?.skipProcessExit ?? false;
+    
     if (this.isShuttingDown) {
       this.logger.warn({ signal }, 'Shutdown já em progresso, ignorando sinal duplicado');
-      return;
+      return { executedCallbacks, errors };
     }
 
     this.isShuttingDown = true;
@@ -206,7 +238,9 @@ class ShutdownManagerImpl {
 
     const forceExitTimer = setTimeout(() => {
       this.logger.error('Timeout de shutdown forçado - encerrando processo');
-      process.exit(1);
+      if (!skipProcessExit) {
+        process.exit(1);
+      }
     }, this.forceExitTimeoutMs);
 
     const sortedCallbacks = [...this.callbacks].sort((a, b) => b.priority - a.priority);
@@ -223,18 +257,22 @@ class ShutdownManagerImpl {
         ]);
 
         this.logger.debug({ name: callback.name }, 'Callback de shutdown concluído');
+        executedCallbacks.push(callback.name);
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         this.logger.error({ name: callback.name, error: errorMessage }, 'Erro no callback de shutdown');
+        errors.push({ name: callback.name, error: errorMessage });
       }
     }
 
     clearTimeout(forceExitTimer);
     this.logger.info({ signal }, 'Graceful shutdown concluído');
 
-    if (signal === 'SIGTERM' || signal === 'SIGINT') {
+    if (!skipProcessExit && (signal === 'SIGTERM' || signal === 'SIGINT')) {
       process.exit(0);
     }
+    
+    return { executedCallbacks, errors };
   }
 
   /**
@@ -256,6 +294,34 @@ export function getShutdownManager(config?: ShutdownManagerConfig): ShutdownMana
     shutdownManagerInstance = new ShutdownManagerImpl(config);
   }
   return shutdownManagerInstance;
+}
+
+// ============================================================================
+// TESTING UTILITIES (Enterprise-Grade - Dependency Injection)
+// Permite testes isolados sem afetar o singleton de produção
+// ============================================================================
+
+/**
+ * Resetar singleton do ShutdownManager para testes
+ * APENAS para uso em testes - não usar em código de produção
+ * 
+ * @internal
+ */
+export function _resetShutdownManagerForTesting(): void {
+  if (shutdownManagerInstance) {
+    shutdownManagerInstance.reset();
+  }
+  shutdownManagerInstance = null;
+}
+
+/**
+ * Criar instância isolada do ShutdownManager para testes
+ * APENAS para uso em testes - não registra handlers de processo
+ * 
+ * @internal
+ */
+export function _createTestableShutdownManager(config?: ShutdownManagerConfig): ShutdownManagerImpl {
+  return new ShutdownManagerImpl(config);
 }
 
 /**

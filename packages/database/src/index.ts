@@ -16,6 +16,45 @@ let shutdownRegistered = false;
 let isShuttingDown = false;
 
 // ============================================================================
+// TESTING UTILITIES (Enterprise-Grade - Dependency Injection)
+// Permite injeção de pool mockado para testes sem afetar API pública
+// ============================================================================
+
+/**
+ * Injetar pool para testes unitários
+ * APENAS para uso em testes - não usar em código de produção
+ * 
+ * @internal
+ */
+export function _setPoolForTesting(mockPool: pg.Pool | null): void {
+  poolInstance = mockPool;
+}
+
+/**
+ * Definir estado de shutdown para testes
+ * APENAS para uso em testes - não usar em código de produção
+ * 
+ * @internal
+ */
+export function _setShuttingDownForTesting(value: boolean): void {
+  isShuttingDown = value;
+}
+
+/**
+ * Resetar estado interno para testes
+ * APENAS para uso em testes - não usar em código de produção
+ * 
+ * @internal
+ */
+export function _resetForTesting(): void {
+  poolInstance = null;
+  dbInstance = null;
+  isShuttingDown = false;
+  pgvectorRegistered = false;
+  shutdownRegistered = false;
+}
+
+// ============================================================================
 // POOL METRICS (Enterprise-Grade - Regra 16 replit.md)
 // ============================================================================
 
@@ -50,19 +89,61 @@ export function getPoolMetrics(): PoolMetrics {
   };
 }
 
-export async function isPoolHealthy(): Promise<boolean> {
+/**
+ * Verificar saúde do pool PostgreSQL com timeout
+ * 
+ * Usa pool.query() diretamente (auto-gerencia conexões sem vazamento).
+ * Enterprise-grade: fail-fast em produção se DB estiver lento.
+ * 
+ * IMPORTANTE: Usa pool.query() em vez de pool.connect() para evitar
+ * vazamento de conexões quando timeout ocorre antes do connect completar.
+ * pool.query() auto-libera a conexão ao pool após completar.
+ * 
+ * Rejeições tardias são capturadas para evitar unhandled rejection crashes.
+ * 
+ * @param timeoutMs - Timeout em ms para a operação completa (default: 2000ms)
+ * @returns Promise<boolean> - true se pool saudável, false caso contrário
+ * 
+ * Documentação em PT-BR (Regra 10 replit.md)
+ */
+export async function isPoolHealthy(timeoutMs = 2000): Promise<boolean> {
   if (!poolInstance || isShuttingDown) {
+    logger.warn('isPoolHealthy: pool não inicializado ou em shutdown');
     return false;
   }
   
-  try {
-    const client = await poolInstance.connect();
-    await client.query('SELECT 1');
-    client.release();
-    return true;
-  } catch {
-    return false;
-  }
+  // Usar AbortController pattern para gerenciar timeout
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  
+  // Promise da query com catch para evitar unhandled rejections
+  const queryPromise = poolInstance.query('SELECT 1')
+    .then(() => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      logger.debug('Pool de conexões saudável');
+      return true;
+    })
+    .catch((error: Error) => {
+      // Capturar rejeição para evitar crash por unhandled rejection
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.warn({ error: errorMessage }, 'Query de health check falhou');
+      return false;
+    });
+  
+  // Promise de timeout
+  const timeoutPromise = new Promise<false>((resolve) => {
+    timeoutId = setTimeout(() => {
+      logger.warn({ timeoutMs }, 'Timeout na verificação de saúde do pool');
+      resolve(false);
+    }, timeoutMs);
+  });
+  
+  // Race: primeiro a resolver vence (ambos retornam boolean, sem unhandled rejections)
+  return Promise.race([queryPromise, timeoutPromise]);
 }
 
 // ============================================================================
