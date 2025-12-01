@@ -291,7 +291,7 @@ function ModuleFormDialog({
   isLoading: boolean;
 }) {
   const form = useForm<ModuleFormData>({
-    resolver: zodResolver(moduleFormSchema),
+    resolver: zodResolver(moduleFormSchema) as unknown as Resolver<ModuleFormData>,
     defaultValues: {
       codigo: module?.codigo || '',
       nome: module?.nome || '',

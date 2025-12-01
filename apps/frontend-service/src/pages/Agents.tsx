@@ -136,7 +136,7 @@ export default function Agents() {
   }));
 
   const form = useForm<AgentFormData>({
-    resolver: zodResolver(agentFormSchema),
+    resolver: zodResolver(agentFormSchema) as unknown as Resolver<AgentFormData>,
     defaultValues: {
       nome: "",
       slug: "",

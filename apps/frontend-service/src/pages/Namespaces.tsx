@@ -116,7 +116,7 @@ export default function Namespaces() {
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
 
   const form = useForm<NamespaceFormData>({
-    resolver: zodResolver(namespaceSchema),
+    resolver: zodResolver(namespaceSchema) as unknown as Resolver<NamespaceFormData>,
     defaultValues: {
       nome: "",
       slug: "",
