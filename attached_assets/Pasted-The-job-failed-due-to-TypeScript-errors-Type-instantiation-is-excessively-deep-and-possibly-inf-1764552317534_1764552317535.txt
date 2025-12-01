@@ -1,0 +1,63 @@
+The job failed due to TypeScript errors:  
+`Type instantiation is excessively deep and possibly infinite (TS2589)`  
+This occurred in:
+- apps/frontend-service/src/pages/Agents.tsx (line 125)
+- apps/frontend-service/src/pages/ModulesAdmin.tsx (line 278)
+- apps/frontend-service/src/pages/Namespaces.tsx (line 107)
+- client/src/pages/Agents.tsx (line 125)
+- client/src/pages/ModulesAdmin.tsx (line 278)
+- client/src/pages/Namespaces.tsx (line 107)
+
+## Solution
+
+1. **Root Cause:**  
+The error means that a generic or type definition (often involving deeply nested generics or mapped types) is so complex that TypeScript cannot resolve it, leading to infinite type expansion.
+
+2. **How to fix:**  
+- Identify the type at the reported line. For each file, inspect the specific line for the type usage that's causing the error.
+- Simplify types: Avoid extremely nested or recursive type constructs.
+- If using libraries with problematic types (like zod, react-query, or redux toolkit), consider refactoring or splitting generic types.
+- As a temporary workaround, you can increase TypeScript's instantiation limits with a setting in `tsconfig.json`:
+```json
+{
+  "compilerOptions": {
+    "maxNodeModuleJsDepth": 5,
+    "types": [],
+    "skipLibCheck": true
+  }
+}
+```
+But this doesn’t resolve the core problem and may mask type errors.
+
+3. **Code suggestion**  
+Suppose the problematic type is like below:
+```ts
+type RecursiveType<T> = { child: RecursiveType<T> };
+```
+Refactor to limit recursion, e.g.:
+```ts
+type RecursiveType<T, Depth extends number = 3> =
+  Depth extends 0 ? {} : { child: RecursiveType<T, Decrement<Depth>> };
+type Decrement<N extends number> = /* your logic to decrement */;
+```
+Or, redesign your types so deep nesting isn't needed.
+
+4. **Immediate steps:**
+- Go to each error location.
+- Simplify any recursive/nested generics.
+- Check for complex third-party types (zod schemas, react-query, etc.), and break them into smaller components.
+- If you need help refactoring a specific line, paste that code here.
+
+---
+
+### Relevant Error Locations (for reference):
+- [apps/frontend-service/src/pages/Agents.tsx#L125](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/apps/frontend-service/src/pages/Agents.tsx#L125)
+- [apps/frontend-service/src/pages/ModulesAdmin.tsx#L278](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/apps/frontend-service/src/pages/ModulesAdmin.tsx#L278)
+- [apps/frontend-service/src/pages/Namespaces.tsx#L107](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/apps/frontend-service/src/pages/Namespaces.tsx#L107)
+- [client/src/pages/Agents.tsx#L125](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/client/src/pages/Agents.tsx#L125)
+- [client/src/pages/ModulesAdmin.tsx#L278](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/client/src/pages/ModulesAdmin.tsx#L278)
+- [client/src/pages/Namespaces.tsx#L107](https://github.com/fillipeguerrabtc/alice/blob/6d1f80e65d95b2b2c37dee9780528791a1374b55/client/src/pages/Namespaces.tsx#L107)
+
+---
+
+If you want targeted refactoring advice, share those lines of code. Otherwise, start by simplifying types at those locations.
