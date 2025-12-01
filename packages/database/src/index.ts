@@ -2,6 +2,12 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import pgvector from 'pgvector/pg';
 import * as schema from '@alice/shared';
+import { 
+  getShutdownManager, 
+  registerShutdownCallback, 
+  ShutdownPriority,
+  isShutdownInProgress as isManagerShutdownInProgress,
+} from '@alice/shared-utils';
 
 const { Pool } = pg;
 
