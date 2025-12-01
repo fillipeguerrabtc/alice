@@ -21,6 +21,12 @@ import rateLimit, { Options as RateLimitOptions, Store, ipKeyGenerator } from 'e
 import { RedisStore } from 'rate-limit-redis';
 import { createClient, RedisClientType } from 'redis';
 import compression from 'compression';
+import { createLogger } from './logger.js';
+
+/**
+ * Logger singleton do módulo (usa child logger do base singleton)
+ */
+const logger = createLogger('express-hardening');
 
 /**
  * Cliente Redis singleton para rate limiting distribuído
@@ -496,48 +502,6 @@ export function configureServerTimeouts(
 }
 
 /**
- * Configura graceful shutdown para servidor HTTP (Node.js 20 LTS 2025)
- */
-export function setupGracefulHttpShutdown(
-  server: { close: (callback?: (err?: Error) => void) => void },
-  options?: {
-    logger?: { info: (msg: string) => void; warn: (msg: string) => void };
-    shutdownTimeout?: number;
-    onShutdown?: () => Promise<void>;
-  }
-): void {
-  const {
-    logger = { info: console.info, warn: console.warn },
-    shutdownTimeout = 10000,
-    onShutdown,
-  } = options || {};
-
-  const shutdown = async (signal: string) => {
-    logger.info(`Recebido ${signal}, iniciando graceful shutdown...`);
-    
-    server.close(() => {
-      logger.info('Conexões HTTP encerradas');
-    });
-
-    if (onShutdown) {
-      try {
-        await onShutdown();
-      } catch (error) {
-        logger.warn(`Erro durante shutdown: ${(error as Error).message}`);
-      }
-    }
-
-    setTimeout(() => {
-      logger.warn('Forçando encerramento após timeout');
-      process.exit(1);
-    }, shutdownTimeout);
-  };
-
-  process.on('SIGTERM', () => shutdown('SIGTERM'));
-  process.on('SIGINT', () => shutdown('SIGINT'));
-}
-
-/**
  * Encerra cliente Redis de rate limiting
  * Chamar durante graceful shutdown
  */
@@ -545,9 +509,9 @@ export async function closeRedisRateLimitClient(): Promise<void> {
   if (redisClient?.isOpen) {
     try {
       await redisClient.quit();
-      console.info('[express-hardening] Cliente Redis de rate limiting encerrado');
+      logger.info('Cliente Redis de rate limiting encerrado');
     } catch (error) {
-      console.warn('[express-hardening] Erro ao encerrar Redis:', (error as Error).message);
+      logger.warn({ error }, 'Erro ao encerrar Redis');
     }
   }
   redisClient = null;

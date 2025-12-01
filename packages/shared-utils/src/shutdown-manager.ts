@@ -16,7 +16,8 @@
  * @module @alice/shared-utils/shutdown-manager
  */
 
-import pino from 'pino';
+import { Logger } from 'pino';
+import { createLogger } from './logger.js';
 
 /**
  * Prioridade de shutdown - maior número = executado primeiro
@@ -56,7 +57,7 @@ interface RegisteredCallback {
 export interface ShutdownManagerConfig {
   defaultTimeoutMs?: number;
   forceExitTimeoutMs?: number;
-  logger?: pino.Logger;
+  logger?: Logger;
 }
 
 /**
@@ -69,17 +70,15 @@ class ShutdownManagerImpl {
   private callbacks: RegisteredCallback[] = [];
   private isShuttingDown = false;
   private handlersRegistered = false;
-  private logger: pino.Logger;
+  private logger: Logger;
   private defaultTimeoutMs: number;
   private forceExitTimeoutMs: number;
 
   constructor(config: ShutdownManagerConfig = {}) {
     this.defaultTimeoutMs = config.defaultTimeoutMs ?? 10000;
     this.forceExitTimeoutMs = config.forceExitTimeoutMs ?? 30000;
-    this.logger = config.logger ?? pino({
-      name: 'shutdown-manager',
-      level: process.env.LOG_LEVEL || 'info',
-    });
+    // Usa createLogger do singleton - não cria novo transport/listener
+    this.logger = config.logger ?? createLogger('shutdown-manager');
   }
 
   /**
