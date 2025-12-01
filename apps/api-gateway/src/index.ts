@@ -235,6 +235,71 @@ app.get('/health', (_req: Request, res: Response) => {
   res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
 });
 
+// ============================================================================
+// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+// /live: Processo está vivo? Se não, Kubernetes reinicia o container
+// /ready: Pronto para tráfego? Verifica se pelo menos um serviço backend responde
+// ============================================================================
+
+// Liveness probe - verificação simples que o processo responde
+app.get('/live', (_req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'alive', 
+    service: 'api-gateway',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness probe - verifica se pelo menos um serviço backend está acessível
+app.get('/ready', async (_req: Request, res: Response) => {
+  let atLeastOneServiceUp = false;
+  const serviceStatuses: Record<string, string> = {};
+
+  // Verificar se pelo menos um serviço backend responde
+  const checks = await Promise.allSettled(
+    services.map(async (service) => {
+      const breaker = circuitBreakers.get(service.name);
+      if (!breaker) {
+        return { name: service.name, ready: false };
+      }
+
+      try {
+        await breaker.fire();
+        return { name: service.name, ready: true };
+      } catch {
+        return { name: service.name, ready: false };
+      }
+    })
+  );
+
+  checks.forEach((result) => {
+    if (result.status === 'fulfilled') {
+      const { name, ready } = result.value;
+      serviceStatuses[name] = ready ? 'ready' : 'not_ready';
+      if (ready) {
+        atLeastOneServiceUp = true;
+      }
+    }
+  });
+
+  if (atLeastOneServiceUp) {
+    res.status(200).json({
+      status: 'ready',
+      service: 'api-gateway',
+      timestamp: new Date().toISOString(),
+      backends: serviceStatuses,
+    });
+  } else {
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'api-gateway',
+      reason: 'Nenhum serviço backend disponível',
+      timestamp: new Date().toISOString(),
+      backends: serviceStatuses,
+    });
+  }
+});
+
 // Métricas básicas (para Prometheus/Grafana)
 app.get('/metrics', (_req: Request, res: Response) => {
   const metrics: string[] = [];

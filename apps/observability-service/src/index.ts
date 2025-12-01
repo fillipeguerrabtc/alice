@@ -350,6 +350,58 @@ app.get('/health', (_req: Request, res: Response) => {
   });
 });
 
+// ============================================================================
+// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+// /live: Processo está vivo? Se não, Kubernetes reinicia o container
+// /ready: Pronto para tráfego? Verifica se pelo menos um serviço de observability responde
+// ============================================================================
+
+// Liveness probe - verificação simples que o processo responde
+app.get('/live', (_req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'alive', 
+    service: 'observability-service',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness probe - verifica se pelo menos um serviço de observability está acessível
+app.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    const health = await checkAllServices();
+    const atLeastOneHealthy = health.services.some(s => s.status === 'healthy');
+    
+    if (atLeastOneHealthy) {
+      res.status(200).json({
+        status: 'ready',
+        service: 'observability-service',
+        timestamp: new Date().toISOString(),
+        dependencies: Object.fromEntries(
+          health.services.map(s => [s.name.toLowerCase(), s.status === 'healthy' ? 'ready' : 'not_ready'])
+        ),
+      });
+    } else {
+      res.status(503).json({
+        status: 'not_ready',
+        service: 'observability-service',
+        reason: 'Nenhum serviço de observability disponível',
+        timestamp: new Date().toISOString(),
+        dependencies: Object.fromEntries(
+          health.services.map(s => [s.name.toLowerCase(), s.status === 'healthy' ? 'ready' : 'not_ready'])
+        ),
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao verificar readiness');
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'observability-service',
+      reason: 'Erro ao verificar dependências',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 // Health check completo do stack
 app.get('/api/observability/health', async (_req: Request, res: Response) => {
   try {

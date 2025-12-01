@@ -80,8 +80,8 @@ COPY --from=builder --chown=alice:nodejs /app/apps/training-service/dist/bundle.
 USER alice
 EXPOSE 3004
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3004/api/training/health', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+# Health check - usa /ready para verificar dependências (Regra 16 - Kubernetes Best Practices 2025)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD node -e "require('http').get('http://localhost:3004/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
 
 CMD ["node", "dist/bundle.js"]

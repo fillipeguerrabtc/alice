@@ -307,6 +307,63 @@ app.get('/api/integrations/health', (_req: Request, res: Response) => {
   });
 });
 
+// ============================================================================
+// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+// /live: Processo está vivo? Se não, Kubernetes reinicia o container
+// /ready: Pronto para tráfego? Verifica conexão com PostgreSQL e circuit breakers
+// ============================================================================
+
+// Liveness probe - verificação simples que o processo responde
+app.get('/live', (_req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'alive', 
+    service: 'integrations-service',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness probe - verifica se PostgreSQL e integrações críticas estão acessíveis
+app.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    const dbHealthy = isPoolHealthy();
+    const erpnextReady = !erpNextBreaker.opened;
+    
+    // Para readiness, verificamos apenas PostgreSQL (obrigatório) e ERPNext (se configurado)
+    const allReady = dbHealthy && (erpnextReady || !config.ERPNEXT_URL);
+    
+    if (allReady) {
+      res.status(200).json({
+        status: 'ready',
+        service: 'integrations-service',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: 'ready',
+          erpnext: config.ERPNEXT_URL ? (erpnextReady ? 'ready' : 'circuit_open') : 'not_configured',
+        },
+      });
+    } else {
+      res.status(503).json({
+        status: 'not_ready',
+        service: 'integrations-service',
+        reason: !dbHealthy ? 'PostgreSQL não está acessível' : 'ERPNext circuit breaker aberto',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: dbHealthy ? 'ready' : 'not_ready',
+          erpnext: config.ERPNEXT_URL ? (erpnextReady ? 'ready' : 'circuit_open') : 'not_configured',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao verificar readiness');
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'integrations-service',
+      reason: 'Erro ao verificar dependências',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 app.get('/api/integrations', requirePermission('integrations:integrations:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação de query params
   const queryResult = integrationsQuerySchema.safeParse(req.query);

@@ -20,6 +20,7 @@ import base64
 import logging
 import time
 import asyncio
+from datetime import datetime
 from typing import Optional, Union, List
 
 import torch
@@ -384,6 +385,57 @@ async def health_check() -> HealthResponse:
         device=device,
         embedding_dim=EMBEDDING_DIM,
     )
+
+
+# ============================================================================
+# KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+# /live: Processo está vivo? Se não, Kubernetes reinicia o container
+# /ready: Pronto para tráfego? Verifica se modelo CLIP está carregado
+# ============================================================================
+
+@app.get("/live")
+async def liveness_probe():
+    """Liveness probe - verificação simples que o processo responde"""
+    return {
+        "status": "alive",
+        "service": "clip-inference-service",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+
+
+@app.get("/ready")
+async def readiness_probe():
+    """Readiness probe - verifica se modelo CLIP está carregado e circuit breaker fechado"""
+    model_loaded = model is not None
+    circuit_ready = clip_breaker.current_state != "open"
+    
+    all_ready = model_loaded and circuit_ready
+    
+    if all_ready:
+        return {
+            "status": "ready",
+            "service": "clip-inference-service",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "dependencies": {
+                "clip_model": "ready",
+                "circuit_breaker": "closed" if circuit_ready else "open",
+            },
+        }
+    else:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "not_ready",
+                "service": "clip-inference-service",
+                "reason": "Modelo CLIP não carregado" if not model_loaded else "Circuit breaker aberto",
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+                "dependencies": {
+                    "clip_model": "ready" if model_loaded else "not_ready",
+                    "circuit_breaker": "closed" if circuit_ready else "open",
+                },
+            }
+        )
 
 
 @app.get("/metrics")

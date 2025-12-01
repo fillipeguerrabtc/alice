@@ -274,6 +274,62 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
   });
 });
 
+// ============================================================================
+// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+// /live: Processo está vivo? Se não, Kubernetes reinicia o container
+// /ready: Pronto para tráfego? Verifica conexão com PostgreSQL e circuit breakers
+// ============================================================================
+
+// Liveness probe - verificação simples que o processo responde
+app.get('/live', (_req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'alive', 
+    service: 'training-service',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness probe - verifica se PostgreSQL e embeddings estão acessíveis
+app.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    const dbHealthy = isPoolHealthy();
+    const embeddingsReady = !embeddingsBreaker.opened;
+    
+    const allReady = dbHealthy && embeddingsReady;
+    
+    if (allReady) {
+      res.status(200).json({
+        status: 'ready',
+        service: 'training-service',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: 'ready',
+          embeddings: 'ready',
+        },
+      });
+    } else {
+      res.status(503).json({
+        status: 'not_ready',
+        service: 'training-service',
+        reason: !dbHealthy ? 'PostgreSQL não está acessível' : 'Embeddings circuit breaker aberto',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: dbHealthy ? 'ready' : 'not_ready',
+          embeddings: embeddingsReady ? 'ready' : 'circuit_open',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao verificar readiness');
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'training-service',
+      reason: 'Erro ao verificar dependências',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
 const messageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string().min(1, 'Conteúdo da mensagem é obrigatório'),

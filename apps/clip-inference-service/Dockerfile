@@ -57,9 +57,9 @@ COPY --chown=clipservice:clipservice apps/clip-inference-service/server.py .
 # SEGURANÇA: Mudar para usuário non-root
 USER clipservice
 
-# Health check
+# Health check - usa /ready para verificar dependências (Regra 16 - Kubernetes Best Practices 2025)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:${PORT}/health || exit 1
+    CMD curl -f http://localhost:${PORT}/ready || exit 1
 
 # Expor porta
 EXPOSE ${PORT}

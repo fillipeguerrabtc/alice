@@ -812,6 +812,57 @@ app.get('/api/auth/health', (_req: Request, res: Response) => {
 });
 
 // ============================================================================
+// KUBERNETES PROBES: /ready e /live (Regra 16 - Best Practices 2025)
+// /live: Processo está vivo? Se não, Kubernetes reinicia o container
+// /ready: Pronto para tráfego? Verifica conexão com PostgreSQL
+// ============================================================================
+
+// Liveness probe - verificação simples que o processo responde
+app.get('/live', (_req: Request, res: Response) => {
+  res.status(200).json({ 
+    status: 'alive', 
+    service: 'auth-service',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness probe - verifica se PostgreSQL está acessível
+app.get('/ready', async (_req: Request, res: Response) => {
+  try {
+    const dbHealthy = isPoolHealthy();
+    
+    if (dbHealthy) {
+      res.status(200).json({
+        status: 'ready',
+        service: 'auth-service',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: 'ready',
+        },
+      });
+    } else {
+      res.status(503).json({
+        status: 'not_ready',
+        service: 'auth-service',
+        reason: 'PostgreSQL não está acessível',
+        timestamp: new Date().toISOString(),
+        dependencies: {
+          postgresql: 'not_ready',
+        },
+      });
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro ao verificar readiness');
+    res.status(503).json({
+      status: 'not_ready',
+      service: 'auth-service',
+      reason: 'Erro ao verificar dependências',
+      timestamp: new Date().toISOString(),
+    });
+  }
+});
+
+// ============================================================================
 // ROTAS: Usuário Atual
 // ============================================================================
 
