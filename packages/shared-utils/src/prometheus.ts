@@ -17,7 +17,8 @@
  */
 
 import { Registry, Counter, Histogram, Gauge, collectDefaultMetrics } from 'prom-client';
-import type { Request, Response, NextFunction, Router } from 'express';
+import { Router } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import { createLogger } from './logger.js';
 
 // Reexportar tipos do prom-client para uso nos serviços
@@ -628,9 +629,7 @@ export function createAlicePrometheus(config: PrometheusConfig): {
    * Cria router Express para endpoint /metrics
    */
   function createMetricsRouter(): Router {
-    // Importar Router dinamicamente para evitar dependência circular
-    const express = require('express');
-    const router = express.Router();
+    const router = Router();
     
     router.get('/metrics', async (_req: Request, res: Response) => {
       try {
