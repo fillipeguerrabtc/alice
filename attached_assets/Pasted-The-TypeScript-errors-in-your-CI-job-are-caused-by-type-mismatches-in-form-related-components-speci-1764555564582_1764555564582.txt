@@ -1,0 +1,107 @@
+The TypeScript errors in your CI job are caused by type mismatches in form-related components, specifically involving the usage of generic types for resolvers and `TFieldValues`. Here’s how you can resolve these errors:
+
+---
+
+**1. Fix TypeScript Type Instantiation/Infinite Errors**
+
+Files affected (sample lines from logs):
+- `client/src/lib/form-resolver.ts` (line 34)
+- `apps/frontend-service/src/lib/form-resolver.ts` (line 34)
+
+> Error: Type instantiation is excessively deep and possibly infinite.
+
+This often happens when using overly generic or recursive type definitions. Instead, use explicit types:
+
+```typescript
+// Instead of generic TFieldValues, use a concrete interface.
+type AgentFormValues = {
+  status: "training" | "active" | "paused" | "deprecated";
+  nome: string;
+  slug: string;
+  descricao?: string | null;
+  personalidade?: string | null;
+  instrucoes?: string | null;
+};
+```
+
+Use the explicit type in your resolver definitions:
+
+```typescript
+import { Resolver } from 'react-hook-form';
+
+const resolver: Resolver<AgentFormValues> = ... // your validation logic
+```
+
+---
+
+**2. Remove Undefined from Required Properties**
+
+Errors like:
+> Type '"training" | "active" | "paused" | "deprecated" | undefined' is not assignable to type '"training" | "active" | "paused" | "deprecated"'.  
+> Type 'string | undefined' is not assignable to type 'string'.
+
+**Solution:**
+- Do not include `undefined` in union types for required fields.
+- If a field is required, declare it as non-optional.
+
+Example for the Namespaces form:
+
+```typescript
+type NamespaceFormValues = {
+  nome: string;
+  slug: string;
+  cor: string;                // Make this non-optional if required
+  descricao?: string;
+};
+```
+
+---
+
+**3. Matching Form Data Types Everywhere**
+
+You have errors where form handlers and handlers like `SubmitHandler<TFieldValues>` are called with incompatible types.
+
+Fix this by:
+- Always using your explicit form interface for handlers and form controls.
+Example:
+
+```typescript
+const onSubmit: SubmitHandler<AgentFormValues> = (data) => {
+  // handle data as AgentFormValues type
+};
+
+// useForm<AgentFormValues>({ ... })
+```
+and for Namespace:
+
+```typescript
+const onSubmitNamespace: SubmitHandler<NamespaceFormValues> = (data) => {
+  // handle data as NamespaceFormValues type
+};
+// useForm<NamespaceFormValues>({ ... })
+```
+
+**In JSX or TSX:**
+
+```tsx
+// Instead of generics like TFieldValues, declare with your form values
+const { control } = useForm<AgentFormValues>(...);
+```
+
+---
+
+**Summary of Actions:**
+- Define and use explicit interfaces for each form's data shape.
+- Do not use wide `TFieldValues`/`FieldValues` or allow undefined for required fields.
+- Ensure `Resolver<T>` and all related generics agree on the same type.
+
+---
+
+**Code Changes (Example Links):**
+- Update types in [`form-resolver.ts`](https://github.com/fillipeguerrabtc/alice/blob/5e3a66cbbfab76bca04ae6c5400807ab8dd39f80/client/src/lib/form-resolver.ts)
+- Update form usage and handlers in [`Agents.tsx`](https://github.com/fillipeguerrabtc/alice/blob/5e3a66cbbfab76bca04ae6c5400807ab8dd39f80/client/src/pages/Agents.tsx)
+- Update form usage and handlers in [`Namespaces.tsx`](https://github.com/fillipeguerrabtc/alice/blob/5e3a66cbbfab76bca04ae6c5400807ab8dd39f80/client/src/pages/Namespaces.tsx)
+
+Make these adjustments for all affected forms and resolvers to ensure type compatibility and prevent infinite type instantiation.
+
+If you need code for a specific location or further implementation details, let me know which file to focus on.

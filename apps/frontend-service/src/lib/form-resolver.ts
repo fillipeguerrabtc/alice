@@ -1,35 +1,20 @@
 /**
- * Helper para resolver a incompatibilidade de tipos entre zodResolver e react-hook-form
+ * Helper para zodResolver compatível com react-hook-form 7.53.1
  * 
- * O erro TS2589 "Type instantiation is excessively deep and possibly infinite" ocorre
- * quando a combinação react-hook-form 7.55+ com @hookform/resolvers 3.10+ e TypeScript 5.6+
- * tenta expandir os tipos condicionais do Resolver contra schemas complexos.
- * 
- * Este helper erasa os tipos problemáticos antes de passar o resolver para useForm.
+ * Esta versão usa tipagem simplificada que funciona com a versão estável
+ * do react-hook-form (pré-reescrita DeepPartial).
  * 
  * @see https://github.com/microsoft/TypeScript/issues/34933
  */
 
-import type { Resolver, FieldValues } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import type { ZodSchema } from 'zod';
+import type { ZodType } from 'zod';
 
 /**
- * Wrapper tipado para zodResolver que evita o erro TS2589
- * 
- * @param schema - Zod schema para validação
- * @returns Resolver compatível com useForm
- * 
- * @example
- * ```ts
- * const form = useForm<MyFormData>({
- *   resolver: createZodResolver(mySchema),
- *   defaultValues: { ... }
- * });
- * ```
+ * Wrapper para zodResolver com tipagem simplificada
+ * Evita o erro TS2589 usando any no retorno
  */
-export function createZodResolver<TFieldValues extends FieldValues>(
-  schema: ZodSchema<TFieldValues>
-): Resolver<TFieldValues> {
-  return zodResolver(schema) as unknown as Resolver<TFieldValues>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function createZodResolver<T>(schema: ZodType<T>): any {
+  return zodResolver(schema);
 }
