@@ -1,0 +1,145 @@
+GitHub Copilot Chat Assistant
+
+Resumo executivo — causa raiz
+- Erro TS2589 (“Type instantiation is excessively deep and possibly infinite”) vem da inferência/instanciação de tipos ao redor do wrapper asResolver + zodResolver/react-hook-form. O TypeScript está expandindo tipos complexos retornados por zodResolver e pelo wrapper, gerando recursão/excesso de profundidade.
+- Solução correta e definitiva: evitar que a inferência do TypeScript re-expanda o tipo complexo. Isso é feito tipando o wrapper asResolver com a assinatura genérica adequada (Resolver<T>) de forma que o chamador forneça explicitamente TFormValues e o compilador não tente re-inferir a partir do valor complexo. NÃO usar casts “any” permanentes nos componentes (isso só mascara o problema).
+
+Alterações exatas a aplicar (difíceis/definitivas)
+1) Criar / atualizar o arquivo de helper: src/lib/form-helpers.ts
+- Objetivo: exportar um wrapper asResolver com assinatura genérica correta que retorna um Resolver<TFormValues>. Isso evita inferência profunda do lado do chamador.
+
+Conteúdo exato para src/lib/form-helpers.ts
+(Adicione/substitua este arquivo no repo)
+
+/src/lib/form-helpers.ts
+```ts
+// Caminho no repo: src/lib/form-helpers.ts
+// Tipagem robusta para evitar inferência recursiva ao usar asResolver<...>(zodResolver(...))
+
+import type { Resolver, FieldValues, ResolverResult } from "react-hook-form";
+
+/**
+ * asResolver: wrapper tipado que preserva a tipagem TFormValues sem forçar o compilador
+ * a re-inferir tipos complexos retornados por libs (ex: zodResolver).
+ *
+ * Uso:
+ *   resolver: asResolver<MyFormData>(zodResolver(myZodSchema))
+ *
+ * Explicação:
+ * - Recebe um Resolver já existente e o re-expõe tipado como Resolver<TFormValues>.
+ * - Ao fornecer explicitamente TFormValues no chamador, TypeScript NÃO tenta expandir a
+ *   estrutura interna do resolver (que é a fonte do estouro de instância de tipo).
+ */
+export function asResolver<TFormValues extends FieldValues = FieldValues>(
+  resolver: Resolver<TFormValues>
+): Resolver<TFormValues> {
+  return resolver as Resolver<TFormValues>;
+}
+```
+
+2) Remover todos os casts “as unknown as any” e quaisquer uso de `any` temporário que você tenha aplicado nos formulários.
+- Racional: com asResolver tipado corretamente, você não precisa desses casts.
+- Files a revisar/aplicar mudança:
+  - apps/frontend-service/src/pages/Agents.tsx
+  - apps/frontend-service/src/pages/ModulesAdmin.tsx
+  - apps/frontend-service/src/pages/Namespaces.tsx
+  - client/src/pages/Agents.tsx
+  - client/src/pages/ModulesAdmin.tsx
+  - client/src/pages/Namespaces.tsx
+
+Exemplo concreto (Agents.tsx)
+- Antes (se você tiver aplicado cast):
+  resolver: asResolver(zodResolver(agentFormSchema)) as unknown as any,
+
+- Depois (correto — sem cast, com o generic explícito):
+  resolver: asResolver<AgentFormData>(zodResolver(agentFormSchema)),
+
+Nota: no snapshot de apps/frontend-service/src/pages/Agents.tsx já obtido, o arquivo já declara:
+  const agentFormSchema: z.ZodType<AgentFormData> = z.object({...});
+e chama:
+  resolver: asResolver<AgentFormData>(zodResolver(agentFormSchema)),
+portanto, após a mudança em src/lib/form-helpers.ts NÃO há mais necessidade de nenhum cast — mantenha exatamente essa forma.
+
+3) Garantir que os Schemas Zod tenham tipo explícito (você já está fazendo isso, continue)
+- Exemplos (já presentes nos arquivos):
+  const agentFormSchema: z.ZodType<AgentFormData> = z.object({...});
+  const moduleFormSchema: z.ZodType<ModuleFormData> = z.object({...});
+  const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({...});
+- Esses Zod schemas tipados ajudam o asResolver a funcionar corretamente.
+
+4) Procurar e corrigir proativamente cópias duplicadas (client vs apps)
+- Execute este comando (no seu ambiente) para localizar todos os usos problemáticos:
+  - rg "asResolver\(" -n || grep -R "asResolver(" -n
+- Para cada arquivo encontrado: remova qualquer cast to any e assegure a chamada com generic:
+  resolver: asResolver<MyFormData>(zodResolver(mySchema)),
+
+5) Atualizações de dependências (recomendado)
+- Pode ajudar reduzir a complexidade de tipos:
+  - Atualize react-hook-form / @hookform/resolvers / typescript para versões recentes compatíveis.
+- Comandos recomendados (execute no seu repo):
+  npm install -D typescript@^5.5 @hookform/resolvers@^3.0.0
+  ou (yarn):
+  yarn add -D typescript@^5.5 @hookform/resolvers@^3.0.0
+- Depois do upgrade, reinstale node_modules e rode tsc localmente.
+
+6) Alterações no tsconfig (opcionais, mas úteis em CI)
+- Não usar como substituto da correção tipada, mas aliviam problemas transitórios:
+  - No tsconfig.json, confirme:
+    "skipLibCheck": true,
+    "preserveSymlinks": false
+- Não diminua a rigidez do checador de tipos para "resolver" o problema — preferir a correção do wrapper.
+
+Comandos de verificação (locais / CI)
+- Instale deps e rode checagem:
+  npm ci
+  npm run build // ou: tsc --noEmit
+- Para checar apenas os arquivos alterados:
+  npx tsc --noEmit --pretty
+
+Patch / passos para aplicar (resumo exato de ações)
+1. Adicionar/editar src/lib/form-helpers.ts conforme o bloco de código acima.
+2. Reverter/remover todas as linhas onde você usou `as unknown as any` nos forms.
+   - Substituir por: resolver: asResolver<MyFormData>(zodResolver(mySchema))
+3. Commit:
+   git add src/lib/form-helpers.ts
+   git add <arquivos modificados nas pages>
+   git commit -m "fix(types): robust asResolver wrapper to avoid TS2589 and remove casts"
+4. Push e re-run CI.
+
+Exemplos de substituição em lote (aplique com cuidado)
+- Localize onde houve cast e substitua (exemplo com ripgrep + sed):
+  rg "asResolver\(|as unknown as any" -n
+  # Depois editar manualmente os arquivos afetados:
+  # substituir:
+  resolver: asResolver(zodResolver(fooSchema)) as unknown as any,
+  # por:
+  resolver: asResolver<FooFormData>(zodResolver(fooSchema)),
+
+Por que esta solução é a correta em nível “enterprise”
+- Remove workaround (any/casts) que mascaram erros de tipagem e reduzem segurança.
+- Centraliza a correção em um helper menor (src/lib/form-helpers.ts) — mudança minimalista, de baixo risco e fácil de auditar.
+- Escalável: qualquer formulário passa a usar a mesma solução e evita regressões semelhantes em outros módulos.
+- Compatível com práticas de teste/CI: tipagem correta + schemas typed + sem casts.
+
+Links para referência (arquivos que já são compatíveis após mudança)
+- apps/frontend-service/src/pages/Agents.tsx (ref apontando ao commit usado nos logs):
+  https://github.com/fillipeguerrabtc/alice/blob/80d6f2ffbb04452f2da0f9da39fcfcec0837bb2d/apps/frontend-service/src/pages/Agents.tsx
+- apps/frontend-service/src/pages/ModulesAdmin.tsx:
+  https://github.com/fillipeguerrabtc/alice/blob/80d6f2ffbb04452f2da0f9da39fcfcec0837bb2d/apps/frontend-service/src/pages/ModulesAdmin.tsx
+- apps/frontend-service/src/pages/Namespaces.tsx:
+  https://github.com/fillipeguerrabtc/alice/blob/80d6f2ffbb04452f2da0f9da39fcfcec0837bb2d/apps/frontend-service/src/pages/Namespaces.tsx
+
+Checklist final antes de rodar CI
+- [ ] src/lib/form-helpers.ts com a implementação tipada (sem qualquer any).
+- [ ] Nenhum arquivo de formulário com casts as unknown as any relacionados ao resolver.
+- [ ] Todos os Zod schemas mantêm anotação z.ZodType<YourFormType> (já presente).
+- [ ] Atualizar dependências recomendadas (opcional, mas sugerido).
+- [ ] Rodar npx tsc --noEmit localmente e confirmar ausência de TS2589.
+- [ ] Commit + push + rodar CI.
+
+Se quiser, eu gero os diffs exatos prontos para aplicação (unified patch) para:
+- src/lib/form-helpers.ts (arquivo novo/alterado) e
+- todas as ocorrências encontradas de asResolver/ casts nos 6 arquivos (apps + client),
+e te envio os patches prontos para aplicar/commitar. Indique se prefere:
+A) Patches prontos (diffs) — eu crio todos os arquivos/edits exatos; ou
+B) Apenas revisão e validação das mudanças que você aplicar localmente.

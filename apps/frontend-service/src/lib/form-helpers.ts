@@ -11,28 +11,22 @@
 import type { Resolver, FieldValues } from 'react-hook-form';
 
 /**
- * Helper para criar resolver Zod sem causar TS2589.
+ * asResolver: wrapper tipado que preserva a tipagem TFormValues sem forçar o compilador
+ * a re-inferir tipos complexos retornados por libs (ex: zodResolver).
+ *
+ * Uso:
+ *   resolver: asResolver<MyFormData>(zodResolver(myZodSchema))
+ *
+ * Explicação:
+ * - Recebe um Resolver já existente e o re-expõe tipado como Resolver<TFormValues>.
+ * - Ao fornecer explicitamente TFormValues no chamador, TypeScript NÃO tenta expandir a
+ *   estrutura interna do resolver (que é a fonte do estouro de instância de tipo).
  * 
- * O TypeScript tenta expandir os tipos genéricos do zodResolver recursivamente,
- * causando "Type instantiation is excessively deep and possibly infinite".
- * Esta função força o tipo Resolver<T> sem deixar o TS expandir os genéricos internos.
- * 
- * @param resolver - O zodResolver já criado
- * @returns O mesmo resolver com tipo Resolver<T> forçado
- * 
- * @example
- * ```tsx
- * import { zodResolver } from '@hookform/resolvers/zod';
- * import { asResolver } from '@/lib/form-helpers';
- * 
- * const form = useForm<MyFormData>({
- *   resolver: asResolver(zodResolver(mySchema)),
- *   defaultValues: { ... }
- * });
- * ```
+ * IMPORTANTE: O parâmetro DEVE ser Resolver<TFormValues>, NÃO unknown.
+ * Usar unknown força o TypeScript a re-inferir o tipo, causando TS2589.
  */
-export function asResolver<T extends FieldValues>(
-  resolver: unknown
-): Resolver<T> {
-  return resolver as Resolver<T>;
+export function asResolver<TFormValues extends FieldValues = FieldValues>(
+  resolver: Resolver<TFormValues>
+): Resolver<TFormValues> {
+  return resolver;
 }

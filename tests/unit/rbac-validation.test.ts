@@ -39,6 +39,7 @@ import {
   requireRole,
   requireSameTenant,
   checkPermission,
+  checkPermissionDirect,
 } from '../../packages/shared-utils/src/rbac/middleware';
 import {
   PermissionCache,
@@ -446,7 +447,7 @@ describe('RBAC - Middleware de Autorização', () => {
       expect(result).toEqual(authContext);
     });
 
-    it('deve extrair contexto de headers', () => {
+    it('deve rejeitar headers não assinados por segurança (OWASP 2025)', () => {
       const req = createMockRequest({
         headers: {
           'x-user-id': 'user-789',
@@ -456,11 +457,7 @@ describe('RBAC - Middleware de Autorização', () => {
       });
       
       const result = extractAuthContext(req);
-      expect(result).toEqual({
-        userId: 'user-789',
-        tenantId: 'tenant-101',
-        role: 'manager',
-      });
+      expect(result).toBeUndefined();
     });
 
     it('deve retornar undefined quando não há contexto', () => {
@@ -469,10 +466,10 @@ describe('RBAC - Middleware de Autorização', () => {
       expect(result).toBeUndefined();
     });
 
-    it('deve retornar undefined quando headers estão incompletos', () => {
+    it('deve retornar undefined quando headers internos estão incompletos', () => {
       const req = createMockRequest({
         headers: {
-          'x-user-id': 'user-123',
+          'x-internal-user-id': 'user-123',
         },
       });
       const result = extractAuthContext(req);
@@ -664,7 +661,7 @@ describe('RBAC - Middleware de Autorização', () => {
         role: 'admin',
       };
 
-      const result = checkPermission(auth, 'auth:users:read');
+      const result = checkPermissionDirect(auth, 'auth:users:read');
 
       expect(result.allowed).toBe(true);
       expect(result.permission).toBe('auth:users:read');
@@ -678,7 +675,7 @@ describe('RBAC - Middleware de Autorização', () => {
         role: 'guest',
       };
 
-      const result = checkPermission(auth, 'auth:users:read');
+      const result = checkPermissionDirect(auth, 'auth:users:read');
 
       expect(result.allowed).toBe(false);
       expect(result.reason).toBeDefined();
@@ -690,99 +687,85 @@ describe('RBAC - Middleware de Autorização', () => {
 describe('RBAC - Cache de Permissões', () => {
   let cache: PermissionCache;
 
-  beforeEach(() => {
-    cache = new PermissionCache({ ttlMs: 1000, maxSize: 10, cleanupIntervalMs: 60000 });
+  beforeEach(async () => {
+    cache = new PermissionCache({ ttlMs: 1000 });
+    await cache.initialize();
   });
 
-  afterEach(() => {
-    cache.destroy();
+  afterEach(async () => {
+    await cache.destroy();
   });
 
   describe('Operações básicas', () => {
-    it('deve armazenar e recuperar permissões', () => {
+    it('deve armazenar e recuperar permissões', async () => {
       const permissions = new Set(['perm1', 'perm2']);
-      cache.set('user-1', 'tenant-1', permissions);
+      await cache.set('user-1', 'tenant-1', permissions);
 
-      const result = cache.get('user-1', 'tenant-1');
+      const result = await cache.get('user-1', 'tenant-1');
       expect(result).toEqual(permissions);
     });
 
-    it('deve retornar undefined para usuário não encontrado', () => {
-      const result = cache.get('nonexistent', 'tenant-1');
+    it('deve retornar undefined para usuário não encontrado', async () => {
+      const result = await cache.get('nonexistent', 'tenant-1');
       expect(result).toBeUndefined();
     });
 
-    it('deve invalidar cache de usuário específico', () => {
+    it('deve invalidar cache de usuário específico', async () => {
       const permissions = new Set(['perm1']);
-      cache.set('user-1', 'tenant-1', permissions);
+      await cache.set('user-1', 'tenant-1', permissions);
       
-      cache.invalidate('user-1', 'tenant-1');
+      await cache.invalidate('user-1', 'tenant-1');
       
-      const result = cache.get('user-1', 'tenant-1');
+      const result = await cache.get('user-1', 'tenant-1');
       expect(result).toBeUndefined();
     });
 
-    it('deve invalidar cache de tenant inteiro', () => {
-      cache.set('user-1', 'tenant-1', new Set(['perm1']));
-      cache.set('user-2', 'tenant-1', new Set(['perm2']));
-      cache.set('user-3', 'tenant-2', new Set(['perm3']));
+    it('deve invalidar cache de tenant inteiro', async () => {
+      await cache.set('user-1', 'tenant-1', new Set(['perm1']));
+      await cache.set('user-2', 'tenant-1', new Set(['perm2']));
+      await cache.set('user-3', 'tenant-2', new Set(['perm3']));
 
-      cache.invalidateTenant('tenant-1');
+      await cache.invalidateTenant('tenant-1');
 
-      expect(cache.get('user-1', 'tenant-1')).toBeUndefined();
-      expect(cache.get('user-2', 'tenant-1')).toBeUndefined();
-      expect(cache.get('user-3', 'tenant-2')).toBeDefined();
+      expect(await cache.get('user-1', 'tenant-1')).toBeUndefined();
+      expect(await cache.get('user-2', 'tenant-1')).toBeUndefined();
+      expect(await cache.get('user-3', 'tenant-2')).toBeDefined();
     });
 
-    it('deve limpar todo o cache', () => {
-      cache.set('user-1', 'tenant-1', new Set(['perm1']));
-      cache.set('user-2', 'tenant-2', new Set(['perm2']));
+    it('deve limpar todo o cache', async () => {
+      await cache.set('user-1', 'tenant-1', new Set(['perm1']));
+      await cache.set('user-2', 'tenant-2', new Set(['perm2']));
 
-      cache.clear();
+      await cache.clear();
 
-      expect(cache.get('user-1', 'tenant-1')).toBeUndefined();
-      expect(cache.get('user-2', 'tenant-2')).toBeUndefined();
+      expect(await cache.get('user-1', 'tenant-1')).toBeUndefined();
+      expect(await cache.get('user-2', 'tenant-2')).toBeUndefined();
     });
   });
 
   describe('TTL e expiração', () => {
     it('deve expirar entradas após TTL', async () => {
       const shortCache = new PermissionCache({ ttlMs: 50 });
-      shortCache.set('user-1', 'tenant-1', new Set(['perm1']));
+      await shortCache.initialize();
+      await shortCache.set('user-1', 'tenant-1', new Set(['perm1']));
 
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      const result = shortCache.get('user-1', 'tenant-1');
+      const result = await shortCache.get('user-1', 'tenant-1');
       expect(result).toBeUndefined();
 
-      shortCache.destroy();
-    });
-  });
-
-  describe('Limite de tamanho', () => {
-    it('deve evictar entradas quando atinge maxSize', () => {
-      const smallCache = new PermissionCache({ maxSize: 2, cleanupIntervalMs: 60000 });
-
-      smallCache.set('user-1', undefined, new Set(['perm1']));
-      smallCache.set('user-2', undefined, new Set(['perm2']));
-      smallCache.set('user-3', undefined, new Set(['perm3']));
-
-      const stats = smallCache.getStats();
-      expect(stats.size).toBeLessThanOrEqual(2);
-
-      smallCache.destroy();
+      await shortCache.destroy();
     });
   });
 
   describe('Estatísticas', () => {
-    it('deve retornar estatísticas corretas', () => {
-      cache.set('user-1', 'tenant-1', new Set(['perm1']));
-      cache.set('user-2', 'tenant-1', new Set(['perm2']));
+    it('deve retornar estatísticas corretas', async () => {
+      await cache.set('user-1', 'tenant-1', new Set(['perm1']));
+      await cache.set('user-2', 'tenant-1', new Set(['perm2']));
 
       const stats = cache.getStats();
 
-      expect(stats.size).toBe(2);
-      expect(stats.maxSize).toBe(10);
+      expect(stats.initialized).toBe(true);
       expect(stats.ttlMs).toBe(1000);
     });
   });
@@ -797,7 +780,7 @@ describe('RBAC - Cenários de Acesso Enterprise', () => {
         role: 'admin',
       };
 
-      expect(checkPermission(auth, 'auth:users:read').allowed).toBe(true);
+      expect(checkPermissionDirect(auth, 'auth:users:read').allowed).toBe(true);
     });
 
     it('super_admin pode atuar em qualquer tenant', () => {
@@ -807,8 +790,8 @@ describe('RBAC - Cenários de Acesso Enterprise', () => {
         role: 'super_admin',
       };
 
-      expect(checkPermission(auth, 'auth:tenants:manage').allowed).toBe(true);
-      expect(checkPermission(auth, 'admin:tenants:delete').allowed).toBe(true);
+      expect(checkPermissionDirect(auth, 'auth:tenants:manage').allowed).toBe(true);
+      expect(checkPermissionDirect(auth, 'admin:tenants:delete').allowed).toBe(true);
     });
   });
 

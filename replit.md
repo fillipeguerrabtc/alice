@@ -87,6 +87,9 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **WebSocket Auth**: PostgreSQL session validation (`connect-pg-simple`) with mandatory `SESSION_SECRET` and cached validated sessions.
 - **Feature Flags**: Enterprise system with PostgreSQL persistence, TTL 60s cache, multi-tenant support, and Express middleware.
 - **Identity Provisioning**: Automatic propagation Alice → Grafana/ERPNext via Outbox Pattern for `user.created`, `user.updated`, `user.role_changed`, `user.disabled`, `user.deleted` events.
+- **pnpm Monorepo Deduplication**: pnpm overrides forçam versões únicas de dependências críticas: `drizzle-orm: 0.39.1`, `pg: 8.12.0`, `@types/pg: 8.12.0`, `@types/react: 18.3.11`. Isso elimina incompatibilidade de tipos PgTable causada por múltiplas cópias com hashes de peer-dependencies diferentes.
+- **RBAC Dual API**: `checkPermission()` (async, usa Redis cache) e `checkPermissionDirect()` (sync, sem cache) para diferentes casos de uso. Testes síncronos devem usar `checkPermissionDirect()`.
+- **extractAuthContext Security (OWASP 2025)**: Headers não assinados (`x-user-id`, `x-user-role`) são REJEITADOS. Apenas duas fontes aceitas: (1) `req.user` (sessão autenticada), (2) Headers internos com assinatura HMAC válida (`x-internal-signature`, `x-internal-timestamp`).
 
 ### System Design Choices
 
