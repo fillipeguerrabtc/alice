@@ -20,7 +20,7 @@
 **Condições para deploy:**
 1. ✅ Código-fonte aprovado
 2. ⚠️ ERPNext v15.74.2+ obrigatório (CVE-2025-55732, CVE-2025-55731)
-3. ⚠️ Todos os secrets de docs/SECRETS.md configurados em GitHub Secrets
+3. ✅ Todos os secrets configurados em GitHub Secrets (verificado 29/11/2025)
 
 ---
 
@@ -345,20 +345,28 @@ manual-approval:
 
 ### Pendências para Produção
 
-| Pendência | Prioridade | Responsável |
-|-----------|------------|-------------|
-| Atualizar ERPNext v15.74.2+ | ALTA | Ops |
-| Configurar todos secrets GitHub | ALTA | DevOps |
-| Documentação OpenAPI | BAIXA | Dev |
-| Testes coverage 80% | MÉDIA | QA |
+| Pendência | Prioridade | Status |
+|-----------|------------|--------|
+| Atualizar ERPNext v15.74.2+ | ALTA | ⚠️ Pendente |
+| Configurar todos secrets GitHub | ALTA | ✅ Completo (29/11/2025) |
+| Documentação OpenAPI | BAIXA | Backlog |
+| Testes coverage 80% | MÉDIA | Backlog |
+
+**Secrets Verificados no GitHub (22 secrets):**
+- GH_PAT, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+- HETZNER_SSH_PRIVATE_KEY, HETZNER_VM_HOST, HETZNER_VM_USER
+- INTERNAL_API_SECRET, OAUTH_GITHUB_CLIENT_ID, OAUTH_GITHUB_CLIENT_SECRET
+- PGPASSWORD, RESEND_API_KEY, SALAD_API_KEY, SALAD_ORGANIZATION_ID
+- SESSION_SECRET, STRIPE_PUBLISHABLE_KEY, STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET
+- TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER
+- WISE_API_KEY, WISE_PROFILE_ID
 
 ### Veredicto
 
 A plataforma Alice Enterprise está **CONDICIONALMENTE APROVADA** para deploy.
 
-**Condições obrigatórias antes do deploy:**
+**Única condição obrigatória restante:**
 1. ERPNext atualizado para v15.74.2+ (CVE-2025-55732, CVE-2025-55731)
-2. Todos os secrets de `docs/SECRETS.md` configurados em GitHub Secrets
 
 ---
 
