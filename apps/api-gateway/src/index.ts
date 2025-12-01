@@ -27,6 +27,8 @@ import {
   createNotFoundHandler,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
+  registerShutdownCallback,
+  ShutdownPriority,
 } from '@alice/shared-utils';
 import { z } from 'zod';
 
@@ -397,27 +399,41 @@ server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
-// Graceful shutdown
-const gracefulShutdown = async () => {
-  logger.info('Encerrando API Gateway...');
-  
-  server.close(() => {
-    logger.info('Conexões HTTP encerradas');
-  });
+// ============================================================================
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+// Ordem: Circuit Breakers → HTTP server
+// ============================================================================
 
-  circuitBreakers.forEach((breaker, name) => {
-    breaker.shutdown();
-    logger.info({ service: name }, 'Circuit breaker encerrado');
-  });
+registerShutdownCallback(
+  'api-gateway-circuit-breakers',
+  async () => {
+    logger.info('Encerrando circuit breakers...');
+    circuitBreakers.forEach((breaker, name) => {
+      breaker.shutdown();
+      logger.info({ service: name }, 'Circuit breaker encerrado');
+    });
+  },
+  { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
+);
 
-  setTimeout(() => {
-    logger.warn('Forçando encerramento após timeout');
-    process.exit(1);
-  }, 10000);
-};
-
-// Usamos process.once() em vez de process.on() para evitar listeners duplicados
-process.once('SIGTERM', gracefulShutdown);
-process.once('SIGINT', gracefulShutdown);
+registerShutdownCallback(
+  'api-gateway-http-server',
+  async () => {
+    logger.info('Encerrando HTTP server...');
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ error: err }, 'Erro ao fechar HTTP server');
+          reject(err);
+        } else {
+          logger.info('HTTP server encerrado com sucesso');
+          resolve();
+        }
+      });
+    });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);
 
 export { app, server };

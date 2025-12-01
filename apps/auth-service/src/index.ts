@@ -41,6 +41,8 @@ import {
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
+  registerShutdownCallback,
+  ShutdownPriority,
   Counter as PromCounter,
   Gauge as PromGauge,
   type AliceMetrics,
@@ -51,7 +53,7 @@ import {
   getDatabase, 
   getPool, 
   schema, 
-  setupGracefulShutdown,
+  closeDatabasePool,
   getPoolMetrics,
   isPoolHealthy,
   createDrizzleFeatureFlagStorage,
@@ -71,9 +73,6 @@ import {
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('auth-service');
-
-// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
-setupGracefulShutdown(logger);
 
 // Inicializar sistema de feature flags com storage PostgreSQL (Regra 16 - Enterprise)
 const featureFlagStorage = createDrizzleFeatureFlagStorage();
@@ -2061,24 +2060,47 @@ server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
+// ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
-// Usamos process.once() em vez de process.on() para evitar listeners duplicados
-const gracefulShutdown = async (signal: string) => {
-  logger.info({ signal }, `Encerrando auth service (${signal})...`);
-  
-  // Parar Identity Provisioning primeiro
-  try {
+// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+// Ordem: Identity Provisioning → HTTP server → Database pool
+// ============================================================================
+
+registerShutdownCallback(
+  'auth-identity-provisioning',
+  async () => {
+    logger.info('Parando Identity Provisioning...');
     await stopIdentityProvisioning();
     logger.info('Identity Provisioning parado');
-  } catch (error) {
-    logger.error({ error }, 'Erro ao parar Identity Provisioning');
-  }
-  
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-};
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS }
+);
 
-process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+registerShutdownCallback(
+  'auth-http-server',
+  async () => {
+    logger.info('Encerrando HTTP server...');
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ error: err }, 'Erro ao fechar HTTP server');
+          reject(err);
+        } else {
+          logger.info('HTTP server encerrado com sucesso');
+          resolve();
+        }
+      });
+    });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);
+
+registerShutdownCallback(
+  'auth-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);

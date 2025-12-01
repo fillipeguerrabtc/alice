@@ -1,7 +1,3 @@
-// IMPORTANTE: Configurar limite de listeners ANTES de qualquer import
-// para evitar MaxListenersExceededWarning de módulos com graceful shutdown
-process.setMaxListeners(30);
-
 import express, { Request, Response, NextFunction } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
@@ -31,9 +27,11 @@ import {
   instrumentCircuitBreaker,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
+  registerShutdownCallback,
+  ShutdownPriority,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
-import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, desc, sql, and } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
@@ -42,9 +40,6 @@ import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
-
-// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
-setupGracefulShutdown(logger);
 
 const app = express();
 
@@ -2378,17 +2373,37 @@ server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
+// ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
-// setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-// Usamos process.once() em vez de process.on() para evitar listeners duplicados
-// Isso resolve o MaxListenersExceededWarning
-const gracefulShutdown = (signal: string) => {
-  logger.info({ signal }, `Encerrando integrations service (${signal})...`);
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-};
+// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+// Ordem: HTTP server → Database pool (coordenado pelo ShutdownManager)
+// ============================================================================
 
-process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+registerShutdownCallback(
+  'integrations-http-server',
+  async () => {
+    logger.info('Encerrando HTTP server...');
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ error: err }, 'Erro ao fechar HTTP server');
+          reject(err);
+        } else {
+          logger.info('HTTP server encerrado com sucesso');
+          resolve();
+        }
+      });
+    });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);
+
+registerShutdownCallback(
+  'integrations-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);

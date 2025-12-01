@@ -17,7 +17,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema, setupGracefulShutdown, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   getContextHeaders,
@@ -40,6 +40,8 @@ import {
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
+  registerShutdownCallback,
+  ShutdownPriority,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from '@alice/database';
@@ -77,9 +79,6 @@ import {
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
-
-// Configurar graceful shutdown do pool centralizado (Regra 16 - Best Practices 2025)
-setupGracefulShutdown(logger);
 
 const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -3692,27 +3691,62 @@ server.timeout = 120000; // 120s para LLM streaming (respostas longas)
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
+// ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
-// setupGracefulShutdown já registra handlers SIGTERM/SIGINT para pool de conexões
-// Usamos process.once() em vez de process.on() para evitar listeners duplicados
-const gracefulShutdown = (signal: string) => {
-  logger.info({ signal }, `Encerrando chat service (${signal})...`);
-  
-  // Limpar intervals para evitar timers pendentes (Regra 16)
-  clearInterval(heartbeatInterval);
-  clearInterval(rateLimitCleanupInterval);
-  logger.info('Background intervals limpos');
-  
-  // Fechar conexões WebSocket
-  wss.close(() => {
-    logger.info('WebSocket server fechado');
-  });
-  
-  server.close(() => {
-    logger.info('HTTP server fechado');
-    process.exit(0);
-  });
-};
+// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+// Ordem: Intervals → WebSocket → HTTP server → Database pool
+// ============================================================================
 
-process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+registerShutdownCallback(
+  'chat-background-intervals',
+  async () => {
+    logger.info('Limpando background intervals...');
+    clearInterval(heartbeatInterval);
+    clearInterval(rateLimitCleanupInterval);
+    logger.info('Background intervals limpos');
+  },
+  { priority: ShutdownPriority.BACKGROUND_JOBS }
+);
+
+registerShutdownCallback(
+  'chat-websocket-server',
+  async () => {
+    logger.info('Encerrando WebSocket server...');
+    await new Promise<void>((resolve) => {
+      wss.close(() => {
+        logger.info('WebSocket server fechado');
+        resolve();
+      });
+    });
+  },
+  { priority: ShutdownPriority.WEBSOCKET }
+);
+
+registerShutdownCallback(
+  'chat-http-server',
+  async () => {
+    logger.info('Encerrando HTTP server...');
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ error: err }, 'Erro ao fechar HTTP server');
+          reject(err);
+        } else {
+          logger.info('HTTP server encerrado com sucesso');
+          resolve();
+        }
+      });
+    });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);
+
+registerShutdownCallback(
+  'chat-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);
