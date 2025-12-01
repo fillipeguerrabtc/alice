@@ -10,7 +10,7 @@ O ERPNext v15 está configurado para usar **Alice Enterprise Platform** como Ide
 ┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
 │                 │ ◄────────────────────► │                 │
 │    ERPNext      │   Authorization Code   │   Alice IdP     │
-│     v15.33      │                        │  (auth-service) │
+│    v15.74.2     │                        │  (auth-service) │
 │                 │                        │                 │
 └─────────────────┘                        └─────────────────┘
          │                                          │
@@ -28,15 +28,18 @@ O ERPNext v15 está configurado para usar **Alice Enterprise Platform** como Ide
 
 O stack ERPNext inclui:
 
-| Container             | Imagem                      | Função                    |
-|-----------------------|-----------------------------|---------------------------|
-| erpnext-db            | mariadb:10.11               | Banco de dados            |
-| erpnext-redis         | redis:7-alpine              | Cache e filas             |
-| erpnext-backend       | frappe/erpnext:v15.33       | Backend Python            |
-| erpnext-frontend      | frappe/frappe-nginx:v15.33  | Servidor web              |
-| erpnext-socketio      | frappe/frappe-socketio:v15.33| Real-time                |
-| erpnext-scheduler     | frappe/erpnext:v15.33       | Jobs agendados            |
-| erpnext-worker-*      | frappe/erpnext:v15.33       | Workers de background     |
+| Container             | Imagem                       | Função                    |
+|-----------------------|------------------------------|---------------------------|
+| erpnext-db            | mariadb:10.11                | Banco de dados            |
+| erpnext-redis         | redis:7-alpine               | Cache e filas             |
+| erpnext-backend       | frappe/erpnext:v15.74.2      | Backend Python            |
+| erpnext-frontend      | frappe/frappe-nginx:v15.74.2 | Servidor web              |
+| erpnext-socketio      | frappe/frappe-socketio:v15.74.2| Real-time               |
+| erpnext-scheduler     | frappe/erpnext:v15.74.2      | Jobs agendados            |
+| erpnext-worker-*      | frappe/erpnext:v15.74.2      | Workers de background     |
+
+**SEGURANÇA:** v15.74.2 corrige CVE-2025-55732 e CVE-2025-55731 (SQL Injection críticos).
+Ver `docs/FRAPPE-PATCHING.md` para detalhes.
 
 ## Configuração
 

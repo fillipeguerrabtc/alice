@@ -13,14 +13,17 @@
 | Aderência às 16 Regras | APROVADO COM OBSERVAÇÕES | 13 regras verificáveis aprovadas, 3 N/A (workflow) |
 | Segurança Enterprise | APROVADO | OWASP API Top 10 coberto, 1 parcial (API9) |
 | Qualidade de Código | APROVADO | TypeScript strict, Zod validation, Pino logging |
-| Infraestrutura | APROVADO COM PENDÊNCIA | ERPNext CVE pendente (documentado) |
+| Infraestrutura | APROVADO | ERPNext CVE corrigido (v15.74.2) |
 
-**Veredicto Final:** A plataforma Alice Enterprise está **CONDICIONALMENTE PRONTA PARA PRODUÇÃO**.
+**Veredicto Final:** A plataforma Alice Enterprise está **PRONTA PARA PRODUÇÃO**.
 
-**Condições para deploy:**
+**Condições para deploy (todas atendidas):**
 1. ✅ Código-fonte aprovado
-2. ⚠️ ERPNext v15.74.2+ obrigatório (CVE-2025-55732, CVE-2025-55731)
+2. ✅ ERPNext v15.74.2 configurado (CVE-2025-55732, CVE-2025-55731 CORRIGIDOS)
 3. ✅ Todos os secrets configurados em GitHub Secrets (verificado 29/11/2025)
+
+**Pendência não-bloqueante (backlog):**
+- API9 OWASP (Improper Inventory Management): Documentação OpenAPI parcial. Risco aceito para MVP.
 
 ---
 
@@ -293,9 +296,9 @@ manual-approval:
 **Recomendação:** Meta de 80% de cobertura.
 
 ### 3. ERPNext CVE Update
-**Prioridade:** ALTA (Já documentado)
-**Descrição:** ERPNext requer v15.74.2+ devido a CVE-2025-55732 e CVE-2025-55731.
-**Status:** Documentado em scratchpad, aguardando atualização.
+**Prioridade:** ALTA
+**Descrição:** ERPNext atualizado para v15.74.2 - CVE-2025-55732 e CVE-2025-55731 corrigidos.
+**Status:** ✅ CORRIGIDO em 01/12/2025. Ver `infra/erpnext/docker-compose.erpnext.yml`.
 
 ### 4. Observability Dashboard
 **Prioridade:** Baixa
@@ -333,7 +336,7 @@ manual-approval:
 | Regras verificáveis | 13 de 16 (3 são workflow, N/A) |
 | Regras aprovadas | 13 de 13 |
 | Regras com observações | 2 (Regra 6: fallbacks dev, Regra 11: API9 parcial) |
-| Pendências bloqueantes | 1 (ERPNext CVE) |
+| Pendências bloqueantes | 0 (ERPNext CVE corrigido) |
 
 ### Pontos Fortes Verificados
 
@@ -347,7 +350,7 @@ manual-approval:
 
 | Pendência | Prioridade | Status |
 |-----------|------------|--------|
-| Atualizar ERPNext v15.74.2+ | ALTA | ⚠️ Pendente |
+| Atualizar ERPNext v15.74.2+ | ALTA | ✅ Completo (01/12/2025) |
 | Configurar todos secrets GitHub | ALTA | ✅ Completo (29/11/2025) |
 | Documentação OpenAPI | BAIXA | Backlog |
 | Testes coverage 80% | MÉDIA | Backlog |
@@ -363,10 +366,15 @@ manual-approval:
 
 ### Veredicto
 
-A plataforma Alice Enterprise está **CONDICIONALMENTE APROVADA** para deploy.
+A plataforma Alice Enterprise está **APROVADA** para deploy.
 
-**Única condição obrigatória restante:**
-1. ERPNext atualizado para v15.74.2+ (CVE-2025-55732, CVE-2025-55731)
+**Condições obrigatórias atendidas:**
+1. ✅ ERPNext atualizado para v15.74.2 (CVE-2025-55732, CVE-2025-55731 corrigidos em 01/12/2025)
+2. ✅ Todos os 22 secrets configurados no GitHub
+3. ✅ CI/CD com Trivy scanner e pnpm audit
+
+**Risco residual aceito (não-bloqueante):**
+- API9 OWASP: Documentação OpenAPI parcial (endpoint inventory incompleto). Impacto baixo para MVP.
 
 ---
 

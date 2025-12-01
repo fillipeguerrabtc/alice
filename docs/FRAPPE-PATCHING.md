@@ -56,7 +56,7 @@
 | **v15** | **v15.74.2** | Nov 2025 | Inclui TODOS os patches SQL injection |
 | v14 | v14.96.15 | Nov 2025 | Para instalações legadas |
 
-**AÇÃO OBRIGATÓRIA:** Atualizar imediatamente para Frappe v15.74.2+
+**STATUS ALICE:** ✅ v15.74.2 configurado em `infra/erpnext/docker-compose.erpnext.yml` (01/12/2025)
 
 ---
 

@@ -68,8 +68,9 @@ services:
           memory: 256M
 
   # ERPNext Backend
+  # SEGURANÇA: v15.74.2 corrige CVE-2025-55732, CVE-2025-55731 (SQL Injection críticos)
   erpnext-backend:
-    image: frappe/erpnext:v15.33
+    image: frappe/erpnext:v15.74.2
     container_name: alice-erpnext-backend
     restart: unless-stopped
     networks:
@@ -110,8 +111,9 @@ services:
           memory: 2G
 
   # ERPNext Frontend (Nginx)
+  # SEGURANÇA: v15.74.2 para compatibilidade com backend atualizado
   erpnext-frontend:
-    image: frappe/frappe-nginx:v15.33
+    image: frappe/frappe-nginx:v15.74.2
     container_name: alice-erpnext-frontend
     restart: unless-stopped
     networks:
@@ -140,8 +142,9 @@ services:
           memory: 256M
 
   # ERPNext Socket.IO
+  # SEGURANÇA: v15.74.2 para compatibilidade com backend atualizado
   erpnext-socketio:
-    image: frappe/frappe-socketio:v15.33
+    image: frappe/frappe-socketio:v15.74.2
     container_name: alice-erpnext-socketio
     restart: unless-stopped
     networks:
@@ -157,8 +160,9 @@ services:
           memory: 256M
 
   # ERPNext Scheduler (Background Jobs)
+  # SEGURANÇA: v15.74.2 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-scheduler:
-    image: frappe/erpnext:v15.33
+    image: frappe/erpnext:v15.74.2
     container_name: alice-erpnext-scheduler
     restart: unless-stopped
     networks:
@@ -176,8 +180,9 @@ services:
           memory: 512M
 
   # ERPNext Worker (Default Queue)
+  # SEGURANÇA: v15.74.2 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-default:
-    image: frappe/erpnext:v15.33
+    image: frappe/erpnext:v15.74.2
     container_name: alice-erpnext-worker-default
     restart: unless-stopped
     networks:
@@ -195,8 +200,9 @@ services:
           memory: 512M
 
   # ERPNext Worker (Short Queue)
+  # SEGURANÇA: v15.74.2 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-short:
-    image: frappe/erpnext:v15.33
+    image: frappe/erpnext:v15.74.2
     container_name: alice-erpnext-worker-short
     restart: unless-stopped
     networks:
@@ -214,8 +220,9 @@ services:
           memory: 512M
 
   # ERPNext Worker (Long Queue)
+  # SEGURANÇA: v15.74.2 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-long:
-    image: frappe/erpnext:v15.33
+    image: frappe/erpnext:v15.74.2
     container_name: alice-erpnext-worker-long
     restart: unless-stopped
     networks:
