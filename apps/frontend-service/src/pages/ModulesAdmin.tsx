@@ -14,7 +14,7 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import { useForm } from 'react-hook-form';
-import { createZodResolver } from '@/lib/form-resolver';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -108,18 +108,34 @@ const itemVariants = {
   },
 };
 
-const moduleFormSchema = z.object({
+/**
+ * Interface explícita para dados do formulário de módulos
+ * Definida primeiro para evitar TS2589 (melhores práticas 2025)
+ */
+interface ModuleFormData {
+  codigo: string;
+  nome: string;
+  categoria: string;
+  descricao?: string;
+  icone?: string;
+  urlExterna?: string;
+  ordem?: number;
+  ativo?: boolean;
+}
+
+/**
+ * Schema Zod com tipo explícito para evitar inferência recursiva
+ */
+const moduleFormSchema: z.ZodType<ModuleFormData> = z.object({
   codigo: z.string().min(2, 'Código deve ter pelo menos 2 caracteres').max(100),
   nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+  categoria: z.string().min(2, 'Categoria é obrigatória').max(100),
   descricao: z.string().optional(),
   icone: z.string().max(50).optional(),
-  categoria: z.string().min(2, 'Categoria é obrigatória').max(100),
   urlExterna: z.string().url('URL inválida').optional().or(z.literal('')),
   ordem: z.coerce.number().int().optional(),
   ativo: z.boolean().optional(),
 });
-
-type ModuleFormData = z.infer<typeof moduleFormSchema>;
 
 const ICON_OPTIONS = [
   { value: 'LayoutDashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -274,13 +290,13 @@ function ModuleFormDialog({
   isLoading: boolean;
 }) {
   const form = useForm<ModuleFormData>({
-    resolver: createZodResolver(moduleFormSchema),
+    resolver: zodResolver(moduleFormSchema),
     defaultValues: {
       codigo: module?.codigo || '',
       nome: module?.nome || '',
+      categoria: module?.categoria || 'core',
       descricao: module?.descricao || '',
       icone: module?.icone || 'Boxes',
-      categoria: module?.categoria || 'core',
       urlExterna: module?.urlExterna || '',
       ordem: module?.ordem ?? 0,
       ativo: module?.ativo ?? true,

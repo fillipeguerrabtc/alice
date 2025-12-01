@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
-import { createZodResolver } from "@/lib/form-resolver";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -82,16 +82,30 @@ const statusOptionsConfig = [
   { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", labelKey: "agents.status.deprecated" },
 ];
 
-const agentFormSchema = z.object({
+/**
+ * Interface explícita para dados do formulário de agentes
+ * Definida primeiro para evitar TS2589 (melhores práticas 2025)
+ */
+interface AgentFormData {
+  nome: string;
+  slug: string;
+  status: "active" | "training" | "paused" | "deprecated";
+  descricao?: string | null;
+  instrucoes?: string | null;
+  personalidade?: string | null;
+}
+
+/**
+ * Schema Zod com tipo explícito para evitar inferência recursiva
+ */
+const agentFormSchema: z.ZodType<AgentFormData> = z.object({
   nome: z.string().min(2),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  status: z.enum(["active", "training", "paused", "deprecated"]),
   descricao: z.string().optional().nullable(),
   instrucoes: z.string().optional().nullable(),
   personalidade: z.string().optional().nullable(),
-  status: z.enum(["active", "training", "paused", "deprecated"]).default("active"),
 });
-
-type AgentFormData = z.infer<typeof agentFormSchema>;
 
 function AgentCardSkeleton() {
   return (
@@ -121,14 +135,14 @@ export default function Agents() {
   }));
 
   const form = useForm<AgentFormData>({
-    resolver: createZodResolver(agentFormSchema),
+    resolver: zodResolver(agentFormSchema),
     defaultValues: {
       nome: "",
       slug: "",
+      status: "active",
       descricao: "",
       instrucoes: "",
       personalidade: "",
-      status: "active",
     },
   });
 

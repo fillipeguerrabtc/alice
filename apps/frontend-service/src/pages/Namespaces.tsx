@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useForm } from "react-hook-form";
-import { createZodResolver } from "@/lib/form-resolver";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,14 +68,26 @@ const defaultColors = [
   "#84CC16",
 ];
 
-const namespaceSchema = z.object({
+/**
+ * Interface explícita para dados do formulário de namespaces
+ * Definida primeiro para evitar TS2589 (melhores práticas 2025)
+ */
+interface NamespaceFormData {
+  nome: string;
+  slug: string;
+  cor: string;
+  descricao?: string;
+}
+
+/**
+ * Schema Zod com tipo explícito para evitar inferência recursiva
+ */
+const namespaceSchema: z.ZodType<NamespaceFormData> = z.object({
   nome: z.string().min(2),
   slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
+  cor: z.string(),
   descricao: z.string().optional(),
-  cor: z.string().default("#3B82F6"),
 });
-
-type NamespaceFormData = z.infer<typeof namespaceSchema>;
 
 function NamespaceCardSkeleton() {
   return (
@@ -103,12 +115,12 @@ export default function Namespaces() {
   const [editingNamespace, setEditingNamespace] = useState<Namespace | null>(null);
 
   const form = useForm<NamespaceFormData>({
-    resolver: createZodResolver(namespaceSchema),
+    resolver: zodResolver(namespaceSchema),
     defaultValues: {
       nome: "",
       slug: "",
-      descricao: "",
       cor: "#3B82F6",
+      descricao: "",
     },
   });
 
