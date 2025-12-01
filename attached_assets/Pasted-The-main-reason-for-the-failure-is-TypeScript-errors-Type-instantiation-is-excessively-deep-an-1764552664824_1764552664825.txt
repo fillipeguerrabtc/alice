@@ -1,0 +1,47 @@
+The main reason for the failure is TypeScript errors:  
+**Type instantiation is excessively deep and possibly infinite.**
+
+These errors occur at:
+- `apps/frontend-service/src/pages/Agents.tsx` (line 125)
+- `apps/frontend-service/src/pages/ModulesAdmin.tsx` (line 278)
+- `apps/frontend-service/src/pages/Namespaces.tsx` (line 107)
+- `client/src/pages/Agents.tsx` (line 125)
+- `client/src/pages/ModulesAdmin.tsx` (line 278)
+- `client/src/pages/Namespaces.tsx` (line 107)
+
+### How to Fix
+
+This TypeScript error almost always means you are using a generic type (like deeply nested object types or recursive generics) that produces too complex a type for TypeScript’s inference mechanism.
+
+Steps to resolve:
+
+1. **Find the offending type usage on the indicated lines** (e.g. `Agents.tsx:125`).
+2. **Simplify the type** or break it down into smaller parts. Frequently, using intermediate type aliases or avoiding heavy generic chaining prevents this error.
+3. **Explicitly annotate types** where possible, rather than allowing inference.
+4. **Use the `tsconfig.json` option** to increase type-checking limits if simplification isn't possible, but large increases are only a workaround.
+
+#### Example Solution
+Suppose your problematic line is:
+```ts
+const x: SomeComplexType<AnotherType<{ ... }>>
+```
+You can refactor to:
+```ts
+type Intermediate = AnotherType<{ ... }>
+const x: SomeComplexType<Intermediate>
+```
+Or break recursive types where possible.
+
+### Immediate Fix Recommendation
+
+- Open lines 125 (Agents), 278 (ModulesAdmin), 107 (Namespaces) in both `apps/frontend-service` and `client/src/pages`.
+- Simplify or refactor the recursive/generic types being used there.
+
+If you want specific code suggestions, please share the type definitions and actual lines/types being used.
+
+For TypeScript reference:  
+[Type instantiation is excessively deep and possibly infinite – TS2589 documentation](https://github.com/microsoft/TypeScript/issues/34933)
+
+---
+
+**Once you fix the type definitions on those lines, rerun your build. This should resolve the CI failure.**
