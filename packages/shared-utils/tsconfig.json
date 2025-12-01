@@ -3,8 +3,17 @@
   "compilerOptions": {
     "outDir": "./dist",
     "rootDir": "./src",
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alice/logger": ["../logger/src/index.ts"],
+      "@alice/database": ["../database/src/index.ts"]
+    }
   },
   "include": ["src/**/*"],
+  "references": [
+    { "path": "../logger" },
+    { "path": "../database" }
+  ],
   "exclude": ["node_modules", "dist"]
 }

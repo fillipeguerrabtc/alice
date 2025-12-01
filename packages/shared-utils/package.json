@@ -57,6 +57,7 @@
   },
   "dependencies": {
     "@alice/database": "workspace:*",
+    "@alice/logger": "workspace:*",
     "@neondatabase/serverless": "^0.10.4",
     "@types/redis": "^4.0.11",
     "compression": "^1.8.1",

@@ -2,7 +2,7 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import pgvector from 'pgvector/pg';
 import * as schema from '@alice/shared';
-import { createLogger } from '@alice/shared-utils';
+import { createLogger } from '@alice/logger';
 
 const { Pool } = pg;
 

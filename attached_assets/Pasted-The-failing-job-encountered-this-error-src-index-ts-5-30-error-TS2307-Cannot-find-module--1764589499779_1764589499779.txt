@@ -1,0 +1,80 @@
+The failing job encountered this error:
+```
+src/index.ts(5,30): error TS2307: Cannot find module '@alice/shared-utils' or its corresponding type declarations.
+```
+This happened during the build of the `@alice/database` package. The TypeScript compiler could not resolve the `@alice/shared-utils` module.
+
+## Solution
+
+1. **Ensure the module exists:**
+   - Verify that the `@alice/shared-utils` package exists in your monorepo, typically in the `packages/shared-utils` directory.
+   - If it’s missing, create it or restore it if deleted.
+
+2. **Check package references:**
+   - Make sure `@alice/database` has `@alice/shared-utils` listed as a dependency in its `package.json`.
+   - Example for `packages/database/package.json`:
+     ```json
+     {
+       "dependencies": {
+         "@alice/shared-utils": "*"
+       }
+     }
+     ```
+
+3. **Build dependencies before dependents:**
+   - If using TypeScript project references (`tsconfig.json` with `"references"`), ensure `@alice/shared-utils` is built before `@alice/database`.
+   - Ensure your build script or CI workflow builds all referenced packages first.
+
+4. **Check import path:**
+   - In `src/index.ts` in `@alice/database`, verify the import path:
+     ```typescript
+     import { something } from '@alice/shared-utils';
+     ```
+   - If you’re using path aliases, ensure `tsconfig.json` is correctly configured in root and local package.
+
+5. **Install all dependencies:**
+   - Run `npm install` or `pnpm install` from the repo root, to ensure all packages are installed and linked.
+
+## Example Fix for a missing package:
+
+If `packages/shared-utils` is missing, create it:
+```
+packages/
+  shared-utils/
+    src/
+      index.ts
+    package.json
+    tsconfig.json
+```
+And implement the core utility functions in `src/index.ts`.
+
+## Example Fix for missing dependency:
+
+Edit `packages/database/package.json`:
+```json
+{
+  "dependencies": {
+    "@alice/shared-utils": "*"
+  }
+}
+```
+Then run:
+```bash
+npm install
+```
+
+## Check Build Order
+
+If using TypeScript references, in `packages/database/tsconfig.json`:
+```json
+{
+  "references": [
+    { "path": "../shared-utils" }
+  ]
+}
+```
+And ensure your CI or build script compiles dependencies in the correct order.
+
+---
+
+Once you address the missing module or misconfiguration, your build should succeed. If you need code or config file changes, let me know which files you'd like help editing.

@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@alice/shared": "workspace:*",
+    "@alice/logger": "workspace:*",
     "pg": "^8.12.0",
     "drizzle-orm": "^0.39.1"
   },
