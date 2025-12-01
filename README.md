@@ -183,7 +183,7 @@ alice/
 ├── packages/                       # Código compartilhado
 │   ├── shared/                     # Schema Drizzle ORM
 │   ├── database/                   # PostgreSQL + pgvector
-│   ├── logger/                     # Pino configurado
+│   ├── shared-utils/               # Logger singleton, ShutdownManager, Express hardening
 │   └── config/                     # Validação Zod
 │
 ├── infra/                          # Infraestrutura
@@ -256,9 +256,14 @@ alice/
 ## Padrões de Código
 
 ```typescript
-// Logging - Pino OBRIGATÓRIO (console.* proibido)
-import { logger } from '@alice/logger';
+// Logging - Logger Singleton com child loggers (console.* proibido)
+import { createLogger } from '@alice/shared-utils';
+const logger = createLogger('meu-servico');
 logger.info({ userId }, 'Usuário autenticado');
+
+// Graceful Shutdown
+import { registerShutdownCallback, ShutdownPriority } from '@alice/shared-utils';
+registerShutdownCallback('database', closeDatabasePool, { priority: ShutdownPriority.DATABASE });
 
 // TypeScript strict - zero any
 interface User { id: string; email: string; role: UserRole; }
@@ -276,6 +281,6 @@ Proprietário - Todos os direitos reservados.
 
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
-*Versão 2.0.0 - Novembro 2025*
+*Versão 2.1.0 - Dezembro 2025*
 
 </div>

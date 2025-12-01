@@ -1,4 +1,4 @@
-[# Alice - Diretrizes de Design Enterprise
+# Alice - Diretrizes de Design Enterprise
 
 ## Filosofia de Design
 
@@ -279,4 +279,8 @@ Antes de entregar qualquer página:
 ---
 
 **Este documento deve ser consultado antes de criar qualquer componente visual.**
-](https://github.com/fillipeguerrabtc/aliceenterprise/blob/main/design_guidelines.md)
+
+---
+
+*Documentação em Português Brasileiro (Regra 10 replit.md)*
+*Atualizado: Dezembro 2025*
