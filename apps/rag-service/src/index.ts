@@ -16,7 +16,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 import CircuitBreaker from 'opossum';
-import { getDatabase, getPool, schema, toSql, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, sql, desc, and, isNotNull } from '@alice/database';
 import { z } from 'zod';
 import { 

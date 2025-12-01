@@ -24,7 +24,7 @@ import {
   type CacheAdapter,
 } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   getContextHeaders,

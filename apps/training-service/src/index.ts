@@ -15,7 +15,7 @@ import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import CircuitBreaker from 'opossum';
 import { createLogger, runWithLogContext } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   getContextHeaders,

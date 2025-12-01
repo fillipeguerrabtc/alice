@@ -1,0 +1,201 @@
+Confirmei a leitura completa de replit.md e segui estritamente as 16 regras descritas nele durante toda a análise. Usei os arquivos do repositório (listagem parcial obtida) e os logs do job falhado para fazer uma revisão sênior, imparcial, completa e focada em prontidão enterprise para deploy em Hetzner da plataforma Alice + integração ERPNext + Grafana.
+
+Observação operacional
+- A listagem automática de arquivos que consultei pode estar incompleta; veja o repositório completo aqui: https://github.com/fillipeguerrabtc/alice/tree/main.  
+- Mantive 100% de aderência ao replit.md: nada de workarounds temporários, nada hardcoded em produção, TypeScript strict, documentação PT‑BR requerida, mudanças cirúrgicas e testáveis.
+
+Resumo executivo — estado atual
+- Compilação/CI: Falha no job de typecheck (tsc --noEmit). Erros principais:
+  - TS2304: Cannot find name 'isPoolHealthy' em apps/chat-service, apps/rag-service, apps/training-service.
+  - TS2305: Module '"@alice/shared-utils"' has no exported member 'initializeShutdownManager' em server/index-prod.ts.
+  - TS2589: Type instantiation is excessively deep and possibly infinite em múltiplas páginas React (frontend/client).
+- Infra/Deploy: falta evidência de IaC completa e runbooks para Hetzner (pasta infra existe, mas sem conteúdo listado).
+- Segurança/Operações: architecture e replit.md definem padrões fortes (RLS, OIDC, S3, Prometheus/Grafana), porém código apresenta gaps (shutdown central, health checks, DB health util).
+- Integração ERPNext/Grafana: design documentado no replit.md (OIDC com PKCE, Outbox pattern), mas não há prova de testes end‑to‑end ou scripts de provisionamento/seed visíveis nos artefatos consultados.
+- Observability: replit.md exige Prometheus + Grafana + traces; não encontrei dashboards e provisioning scripts publicados no repo (necessário confirmar).
+
+Achados detalhados e recomendações (ordenadas por criticidade)
+
+1) Erro: isPoolHealthy ausente (TS2304)
+- Sintoma: três serviços referenciam isPoolHealthy sem definição/export.
+- Impacto: impede build/typecheck — serviços que dependem da verificação de pool não compilam.
+- Recomendação (cirúrgica, enterprise):
+  - Implementar utilitário dbHealth.isPoolHealthy que: faz connect com timeout, executa SELECT 1, libera client, retorna boolean. Logs com Pino.
+  - Exportar do pacote @alice/shared-utils.
+- Código sugerido (crítico — adicione a este package): 
+
+```typescript name=packages/shared-utils/src/dbHealth.ts
+import type { Pool } from 'pg';
+import pino from 'pino';
+
+const logger = pino().child({ module: 'shared-utils/dbHealth' });
+
+export async function isPoolHealthy(pool: Pool, timeoutMs = 2000): Promise<boolean> {
+  if (!pool) {
+    logger.error('isPoolHealthy called with no pool');
+    return false;
+  }
+  try {
+    const client = await Promise.race([
+      pool.connect(),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('db connect timeout')), timeoutMs)),
+    ]) as Awaited<ReturnType<Pool['connect']>>;
+    try {
+      await Promise.race([
+        client.query('SELECT 1'),
+        new Promise<never>((_, rej) => setTimeout(() => rej(new Error('db query timeout')), timeoutMs)),
+      ]);
+      logger.debug('DB pool healthy');
+      return true;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    logger.warn({ err }, 'DB pool not healthy');
+    return false;
+  }
+}
+```
+
+2) Erro: initializeShutdownManager não exportado (TS2305)
+- Sintoma: server/index-prod.ts importa initializeShutdownManager de @alice/shared-utils, mas não existe export.
+- Impacto: sem gerenciador central de shutdown, graceful shutdown e ordem de parada ficam inconsistentes — viola requisito enterprise (replit.md).
+- Recomendação: Implementar ShutdownManager central, com registro de handlers por prioridade, timeout configurável, logs Pino e binding dos sinais SIGINT/SIGTERM. Exportar initializeShutdownManager e registerShutdownHandler no shared-utils.
+- Código sugerido:
+
+```typescript name=packages/shared-utils/src/shutdownManager.ts
+export type ShutdownHandler = () => Promise<void> | void;
+
+class ShutdownManager {
+  private handlers = new Map<number, ShutdownHandler[]>();
+  private shutting = false;
+  private timeoutMs = Number(process.env.SHUTDOWN_TIMEOUT_MS) || 30_000;
+
+  register(priority: number, handler: ShutdownHandler) {
+    const arr = this.handlers.get(priority) ?? [];
+    arr.push(handler);
+    this.handlers.set(priority, arr);
+  }
+
+  async initializeShutdownManager() {
+    const run = async (signal: string) => {
+      if (this.shutting) return;
+      this.shutting = true;
+      // Pino logs should be used at runtime; using console here if logger not initialized yet.
+      // Prefer injecting logger in production bootstrap.
+      console.info(`[ShutdownManager] received ${signal}, starting shutdown`);
+      const priorities = Array.from(this.handlers.keys()).sort((a, b) => a - b);
+      const start = Date.now();
+      for (const p of priorities) {
+        const handlers = this.handlers.get(p) ?? [];
+        for (const h of handlers) {
+          try {
+            await Promise.race([h(), new Promise((_, rej) => setTimeout(() => rej(new Error('handler timeout')), this.timeoutMs))]);
+          } catch (err) {
+            console.error('[ShutdownManager] handler error', err);
+          }
+        }
+      }
+      const elapsed = Date.now() - start;
+      console.info(`[ShutdownManager] shutdown complete in ${elapsed}ms`);
+      process.exit(0);
+    };
+
+    process.once('SIGINT', () => run('SIGINT'));
+    process.once('SIGTERM', () => run('SIGTERM'));
+  }
+}
+
+export const shutdownManager = new ShutdownManager();
+export const initializeShutdownManager = shutdownManager.initializeShutdownManager.bind(shutdownManager);
+export const registerShutdownHandler = shutdownManager.register.bind(shutdownManager);
+```
+
+- Export no index do pacote shared-utils (veja bloco abaixo).
+
+3) TS2589: Type instantiation excessively deep (frontend/client)
+- Sintoma: páginas Agents.tsx, ModulesAdmin.tsx, Namespaces.tsx aparecem no log com erro TS2589.
+- Causa provável: tipos genéricos recursivos (ex.: Zod.infer aninhado, axios response types encadeados) ou autoinferência complexa de hooks.
+- Impacto: impede compilação do frontend; pode durar muito para o compilador resolver.
+- Recomendações práticas:
+  - Criar aliases de tipos TS explícitos (ex.: AgentSummary, ModuleSummary) e usar generics explícitos em hooks (useQuery<TData, TError>).
+  - Evitar usar Zod.infer<> diretamente em props/JSX — materializar tipos em interfaces nomeadas.
+  - Se usar utilitários complexos (Mapped types, Conditional types), simplifique ou quebre em tipos menores.
+  - Como mitigação segura: dividir componentes grandes em menores para reduzir inferência por componente.
+- Exemplo de correção (padrão):
+
+```typescript name=apps/frontend-service/src/types/agent.ts
+export interface AgentSummary {
+  id: string;
+  name: string;
+  status: 'active' | 'inactive' | 'error';
+  tenantId?: string;
+}
+```
+
+e no componente:
+
+```tsx
+const { data } = useQuery<AgentSummary[], Error>(['agents'], fetchAgents);
+```
+
+4) Monorepo & CI
+- Observação: pnpm workspace está configurado (pnpm-workspace.yaml). package.jsons dos apps usam "workspace:*" — bom.
+- Problema atual: pipeline global roda tsc --noEmit no root e falha. Recomendação:
+  - Corrigir erros TS (acima).
+  - Adicionar job de CI que roda tsc por package (pnpm -w -r --filter) para isolar falhas.
+  - Habilitar cache incremental e build cache (turborepo já presente; configure caching de node_modules e pnpm store em Actions).
+  - Manter "skipLibCheck": true se e somente se erros vêm de tipos de dependências; prefer manter false mas é aceitável temporariamente para acelerar correções.
+
+5) Infra e Deploy Hetzner (pronto para produção?)
+Checklist (aprovado / pendente):
+
+- Docker images multi-stage e non-root: parcial — há Dockerfile na raiz; revisar Dockerfiles para cada app; assegurar USER não-root. -> pendente (auditar).
+- IaC (Terraform/Hetzner) e automação: infra/ existe mas sem conteúdo visível -> pendente (criar/validar).
+- Secrets management: replit.md exige Vault/secure secrets; repo contém .npmrc e scripts; confirmar que nenhum secret está commited. -> pendente se não integrado a Vault.
+- Database: Drizzle config presente; migrations/ pasta existe mas vazia na listagem -> pendente (garantir migrations idempotentes, backups, pgvector e RLS ativados).
+- Health checks / readiness endpoints: replit.md exige readiness/liveness; garantir endpoints /health e que o orchestrator valide. -> possivelmente incompleto.
+- OIDC SSO (Grafana & ERPNext): design no replit.md está correto (PKCE, RS256). Implementação e testes E2E com ERPNext e Grafana precisam ser validados em staging. -> pendente.
+- Observability: Prometheus/Grafana/Jaeger: requisito presente no docs; provisionamento e dashboards não verificados -> pendente.
+- Backups & DR: não verificado -> pendente.
+
+Conclusão de prontidão: NÃO pronto para deploy em produção na Hetzner até que:
+- Os erros de compilação sejam corrigidos (TS2304/TS2305/TS2589).
+- Infra como IaC, backups e secrets management estejam implementados e testados.
+- OIDC e provisionamento ERPNext/Grafana sejam testados em staging e SSO validado.
+- Health checks e graceful shutdown estejam implementados e testados.
+
+Pequenas correções cirúrgicas recomendadas (resumo técnico)
+- Implementar e exportar shutdownManager e isPoolHealthy no pacote shared-utils (exemplos acima).
+- Atualizar imports nos serviços afetados (apps/chat-service, apps/rag-service, apps/training-service, server/index-prod.ts).
+- Criar tipos explícitos para UI e anotar generics de hooks no frontend para resolver TS2589.
+- Validar/ajustar tsconfig.json (preservando strict; considerar skipLibCheck true somente como mitigação temporária).
+- Adicionar testes unitários básicos para dbHealth e ShutdownManager (vitest config existe).
+- Rever Dockerfiles por app para garantir non-root, recursos limit e health endpoints expostos.
+- Criar runbooks / docs PT‑BR para deploy em Hetzner, incluindo steps de rollback, backup e procedimento de OIDC key rotation.
+
+Sugestão de export no index do package shared-utils (para inclusão junto aos arquivos):
+
+```typescript name=packages/shared-utils/src/index.ts
+export * from './shutdownManager';
+export * from './dbHealth';
+// ... outros exports existentes
+```
+
+Checklist mínimo obrigatório (must have) antes de liberar produção em Hetzner
+- [ ] CI verde: tsc --noEmit passando em todo monorepo.
+- [ ] ShutdownManager e DB health util implementados e testados.
+- [ ] Migrations validadas e backups automáticos configurados.
+- [ ] Secrets em Vault / GitHub Secrets; nenhuma credencial em repo.
+- [ ] Docker images hardened (non-root) e manifestadas para Hetzner registry.
+- [ ] Health/readiness endpoints e probes configurados.
+- [ ] OIDC SSO configurado e testado com Grafana e ERPNext em staging (PKCE + RS256).
+- [ ] Prometheus + Grafana dashboards importados e testados; alerting configurado.
+- [ ] Runbooks PT‑BR para incident response e rollback.
+
+Notas finais (sênior, imparcial)
+- Arquitetura descrita em replit.md é adequada para um produto enterprise; o foco imediato é corrigir os gaps de implementação (shutdown, db health, tipos TS), estabilizar CI e providenciar infraestrutura IaC e runbooks para Hetzner.
+- Não realizar hacks temporários: todas as correções sugeridas são permanentes, testáveis e compatíveis com as melhores práticas 2025 (TypeScript strict, OIDC PKCE, RS256, RLS no Postgres, observabilidade completa).
+- A documentação deve ser aprimorada em PT‑BR conforme regra 10 do replit.md: adicionar seções de deploy, runbooks e política de secrets.
+
+Se desejar, posso fornecer diffs/patches para os arquivos sugeridos (shutdownManager.ts, dbHealth.ts, index.ts) para aplicar como PRs e também um checklist de testes automáticos para CI.

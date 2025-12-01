@@ -1,0 +1,52 @@
+Here's how to address the main failures from your job:
+
+### 1. Error: `Cannot find name 'isPoolHealthy'`
+Affected files:
+- apps/chat-service/src/index.ts(1047,29)
+- apps/rag-service/src/index.ts(820,29)
+- apps/training-service/src/index.ts(294,29)
+
+**Solution:**  
+Check if `isPoolHealthy` is properly imported or defined.
+- If it should be imported:  
+  Add at the top of each file (adjust path as needed):
+  ```typescript
+  import { isPoolHealthy } from 'path/to/util-or-module';
+  ```
+- If it should be defined locally, ensure its definition exists before line where used.
+- If unused, consider removing its usage.
+
+---
+
+### 2. Error: `Type instantiation is excessively deep and possibly infinite`
+Affected files (repeated lines):
+- apps/frontend-service/src/pages/Agents.tsx(139,15)
+- apps/frontend-service/src/pages/ModulesAdmin.tsx(294,15)
+- apps/frontend-service/src/pages/Namespaces.tsx(119,15)
+- client/src/pages/Agents.tsx(139,15)
+- client/src/pages/ModulesAdmin.tsx(294,15)
+- client/src/pages/Namespaces.tsx(119,15)
+
+**Solution:**  
+This is usually due to recursive types or generic usage that gets stuck in infinite expansion.
+- Check types used in those lines (props, state, or function generics).  
+- Refactor complex/recursive types into simpler components or introduce base cases.
+- Specify explicit types where possible to guide TypeScript.
+
+---
+
+### 3. Error: `Module '"@alice/shared-utils"' has no exported member 'initializeShutdownManager'`
+File: server/index-prod.ts(22,3)
+
+**Solution:**  
+- Confirm `initializeShutdownManager` exists in `@alice/shared-utils`.  
+- If not, define it or import the correct member.  
+- If recently renamed/removed, update the reference in `server/index-prod.ts`:
+  ```typescript
+  import { initializeShutdownManager } from '@alice/shared-utils';
+  ```
+  If it should be imported with a different name, update accordingly.
+
+---
+
+Let me know which specific error you want to address or if you need code context for one of the failing lines!

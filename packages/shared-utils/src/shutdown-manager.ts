@@ -276,4 +276,17 @@ export function isShutdownInProgress(): boolean {
   return shutdownManagerInstance?.isShutdownInProgress() ?? false;
 }
 
+/**
+ * Inicializar ShutdownManager
+ * 
+ * Atalho para getShutdownManager() que inicializa o singleton e registra os handlers.
+ * Deve ser chamado no início do serviço para garantir que handlers estão registrados.
+ * 
+ * @param config - Configuração opcional do ShutdownManager
+ * @returns A instância do ShutdownManager
+ */
+export function initializeShutdownManager(config?: ShutdownManagerConfig): ShutdownManagerImpl {
+  return getShutdownManager(config);
+}
+
 export { ShutdownManagerImpl };
