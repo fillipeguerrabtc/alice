@@ -115,6 +115,7 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 | **FASE 2** | Healthchecks em 4 ERPNext workers (scheduler, short, default, long) | Completo |
 | **FASE 3** | `security_opt: no-new-privileges:true` em TODOS 26 containers | Completo |
 | **FASE 4** | Imagens pinadas com SHA256 digests 2024/2025 | Completo |
+| **FASE 5** | `read_only: true` + tmpfs em TODOS 26 containers (Docker 2025 Best Practices) | Completo |
 
 ### Image Versions (SHA256 Pinned)
 
@@ -133,6 +134,8 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 ### Compliance Verification
 
 - **26 containers** = **26 security_opt entries** (100% coverage)
+- **26 containers** = **26 read_only: true entries** (100% coverage)
 - **CSP Headers**: OWASP 2025 compliant (unsafe-inline/eval required for React/ERPNext)
 - **Healthchecks**: Todos os workers com verificação de processo via pgrep
 - **Supply Chain Security**: Todas imagens externas com digest SHA256
+- **Immutable Infrastructure**: Todos containers com filesystem read-only + tmpfs para escrita temporária

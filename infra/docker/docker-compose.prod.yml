@@ -78,6 +78,9 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
     environment:
       - CONTAINERS=1
       - SERVICES=1
@@ -113,6 +116,9 @@ services:
     container_name: alice-traefik-init
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=8M
     volumes:
       - traefik_acme:/acme
     command: ["sh", "-c", "chown -R 1001:1001 /acme && chmod 700 /acme"]
@@ -131,6 +137,9 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
     user: "1001:1001"
     cap_add:
       - NET_BIND_SERVICE
@@ -230,6 +239,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /var/run/postgresql:mode=1777,size=8M
     shm_size: '1g'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alice}
@@ -705,6 +718,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /run/mysqld:mode=1777,size=8M
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -755,6 +772,9 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
     command:
       - redis-server
       - --maxmemory
@@ -810,6 +830,9 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
     command:
       - redis-server
       - --maxmemory
@@ -867,6 +890,10 @@ services:
     restart: "no"
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     entrypoint:
       - bash
       - -c
@@ -910,6 +937,10 @@ services:
     restart: "no"
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     entrypoint:
       - bash
       - -c
@@ -971,6 +1002,11 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /home/frappe/.cache:mode=1777,size=32M
+      - /var/run:mode=1777,size=8M
     command: bench serve --port 8000
     environment:
       - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1013,6 +1049,11 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /var/cache/nginx:mode=1777,size=32M
+      - /var/run:mode=1777,size=8M
     command: nginx-entrypoint.sh
     environment:
       - BACKEND=erpnext-backend:8000
@@ -1055,6 +1096,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites:ro
@@ -1085,6 +1130,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     command: bench schedule
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1118,6 +1167,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     command: bench worker --queue short
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1151,6 +1204,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /home/frappe/.cache:mode=1777,size=16M
     command: bench worker --queue default
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1184,6 +1241,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /home/frappe/.cache:mode=1777,size=32M
     command: bench worker --queue long
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1222,6 +1283,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /var/run:mode=1777,size=8M
     environment:
       PGBACKREST_STANZA: alice
       PGBACKREST_PG1_HOST: postgres
@@ -1272,6 +1337,10 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+      - /var/lib/vector:mode=1777,size=64M
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
