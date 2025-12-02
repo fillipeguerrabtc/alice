@@ -110,3 +110,29 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
 - **Object Storage**: Hetzner Object Storage (S3-compatible).
+
+## Recent Changes - Security Audit December 2025
+
+### Verificação Completa de Segurança (02/12/2025)
+
+| Componente | Status | Versão | CVEs Corrigidos |
+|------------|--------|--------|-----------------|
+| Node.js (pnpm audit) | **0 vulnerabilities** | - | GHSA-67mh-4wv8-2f99, GHSA-76c9-3jph-rj3q |
+| PyTorch | Corrigido | 2.6.0 | CVE-2025-32434 (CRITICAL RCE) |
+| urllib3 | Corrigido | ≥2.5.0 | CVE-2025-50181, CVE-2025-50182 |
+| CUDA Docker | Atualizado | 12.8.0-cudnn9 | CVEs toolkit NVIDIA |
+| esbuild (pnpm override) | Forçado | ≥0.25.0 | GHSA-67mh-4wv8-2f99 |
+| on-headers (pnpm override) | Forçado | ≥1.1.0 | GHSA-76c9-3jph-rj3q |
+
+### Arquivos Modificados para Push Manual Replit → GitHub
+
+1. `package.json` - pnpm overrides: esbuild>=0.25.0, on-headers>=1.1.0
+2. `pnpm-lock.yaml` - Atualizado automaticamente
+3. `apps/clip-inference-service/requirements.txt` - PyTorch 2.6.0, urllib3>=2.5.0
+4. `apps/clip-inference-service/Dockerfile` - CUDA 12.8.0-cudnn9
+
+### Próximos Passos
+
+1. Push manual dos 4 arquivos do Replit para GitHub
+2. Configurar secrets no GitHub Actions (ver `docs/SECRETS.md`)
+3. Primeiro deploy na Hetzner Cloud via GitHub Actions
