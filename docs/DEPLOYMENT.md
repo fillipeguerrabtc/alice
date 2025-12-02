@@ -1,8 +1,10 @@
 # Alice Enterprise Platform - Guia de Deploy
 
-## Visão Geral da Arquitetura - 26 Serviços em Produção
+**Autor:** Fillipe Guerra
 
-A plataforma Alice é composta por **26 serviços/containers** organizados em 4 categorias:
+## Visão Geral da Arquitetura - 27 Containers em Produção
+
+A plataforma Alice é composta por **27 containers** organizados em 4 categorias:
 
 ### Categoria 1: Infraestrutura Core (4 serviços)
 
@@ -13,42 +15,43 @@ A plataforma Alice é composta por **26 serviços/containers** organizados em 4 
 | 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.3 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
 
-### Categoria 2: Microsserviços Alice (8 serviços)
+### Categoria 2: Microsserviços Alice (9 serviços)
 
 | # | Serviço | Container | Diretório | Descrição | Tecnologia |
 |---|---------|-----------|-----------|-----------|------------|
-| 5 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
-| 6 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
-| 7 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
-| 8 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings, busca semântica pgvector, processamento de documentos. | Node.js, pgvector, Salad Cloud |
-| 9 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
-| 10 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
-| 11 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
-| 12 | **CLIP Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Embeddings multimodais para imagens usando CLIP ViT-L/14. Processamento de imagens para RAG. | Python, PyTorch 2.9.1, CLIP |
+| 5 | **API Gateway** | `alice-api-gateway` | `apps/api-gateway` | Roteamento interno, circuit breakers, health aggregation, rate limiting. | Node.js, Express, Opossum |
+| 6 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
+| 7 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
+| 8 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
+| 9 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings, busca semântica pgvector, processamento de documentos. | Node.js, pgvector, Salad Cloud |
+| 10 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
+| 11 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
+| 12 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
+| 13 | **CLIP Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Embeddings multimodais para imagens usando CLIP ViT-L/14. Processamento de imagens para RAG. | Python, PyTorch 2.9.1, CLIP |
 
 ### Categoria 3: ERPNext Stack (12 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 13 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.6 |
-| 14 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
-| 15 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
-| 16 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
-| 17 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
-| 18 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
-| 19 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
-| 20 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
-| 21 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
-| 22 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
-| 23 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
-| 24 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
+| 14 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.6 |
+| 15 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
+| 16 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
+| 17 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
+| 18 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
+| 19 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
+| 20 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
+| 21 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
+| 22 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
+| 23 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
+| 24 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
+| 25 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
 
 ### Categoria 4: Infraestrutura Backup e Logs (2 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 25 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest 2.54.2-alpine |
-| 26 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
+| 26 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest 2.54.2-alpine |
+| 27 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
 
 ### Diagrama de Arquitetura
 
@@ -80,7 +83,7 @@ A plataforma Alice é composta por **26 serviços/containers** organizados em 4 
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 26 SERVIÇOS             │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 27 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -91,7 +94,7 @@ A plataforma Alice é composta por **26 serviços/containers** organizados em 4 
 │  │  └──────────────────────────────────────────────────────────────┘  │ │
 │  │                              │                                      │ │
 │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
-│  │  │ MICROSSERVIÇOS ALICE (8)                                      │  │ │
+│  │  │ MICROSSERVIÇOS ALICE (9)                                      │  │ │
 │  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
 │  │  │  │Frontend │ │  Auth   │ │  Chat   │ │   RAG   │             │  │ │
 │  │  │  │  :5000  │ │ :3001   │ │  :3002  │ │  :3003  │             │  │ │
@@ -575,6 +578,7 @@ curl http://localhost:3010/health
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documento atualizado em: Dezembro 2025*
-*Versão: 5.0 - Arquitetura PROD-only Hetzner Cloud com 26 Serviços*
-*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão: 5.1 - Arquitetura PROD-only Hetzner Cloud com 27 Containers*
+*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*

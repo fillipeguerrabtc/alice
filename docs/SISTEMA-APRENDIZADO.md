@@ -1,5 +1,7 @@
 # Sistema de Aprendizado da Alice
 
+**Autor:** Fillipe Guerra
+
 ## Visão Geral
 
 A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressivo que permite que o modelo evolua constantemente com base nas interações e dados fornecidos.
@@ -255,6 +257,7 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 1.1 - Dezembro 2025*
-*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão 1.2 - Dezembro 2025*
+*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*

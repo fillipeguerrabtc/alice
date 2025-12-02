@@ -1,5 +1,7 @@
 # Branding - Yes You Deserve / Alice
 
+**Autor:** Fillipe Guerra
+
 ## Arquivos Oficiais
 
 | Arquivo | Uso | Dimensões |
@@ -36,4 +38,6 @@ Nunca modifique os arquivos em outras pastas diretamente.
 Sempre atualize aqui primeiro e depois copie para os destinos.
 
 ---
-Atualizado: Novembro 2025
+
+*Autor: Fillipe Guerra*
+*Atualizado: Dezembro 2025*

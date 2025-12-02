@@ -1,5 +1,7 @@
 # Alice - Diretrizes de Design Enterprise
 
+**Autor:** Fillipe Guerra
+
 ## Filosofia de Design
 
 **Plataforma enterprise de IA** com estética sofisticada combinando a precisão do Linear, a clareza do Stripe e a acessibilidade do Notion. Interface moderna, rica em dados, com foco em Português Brasileiro.
@@ -282,5 +284,6 @@ Antes de entregar qualquer página:
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
 *Atualizado: Dezembro 2025*

@@ -1,5 +1,6 @@
 # Code Review Imparcial - Alice Enterprise Platform
 
+**Autor:** Fillipe Guerra
 **Data:** 02 de Dezembro de 2025
 **Versão Analisada:** Commit atual (HEAD)
 **Revisor:** Análise automatizada
@@ -203,10 +204,11 @@ manual-approval:
 ### Regra 15: MICROSSERVIÇOS
 **Status:** ✅ APROVADO
 
-**Estrutura Verificada:**
+**Estrutura Verificada (9 Microsserviços Alice):**
 
 | Serviço | Porta | Dockerfile | Health Check |
 |---------|-------|------------|--------------|
+| api-gateway | 3000 | `apps/api-gateway/Dockerfile` | `/health` |
 | auth-service | 3001 | `apps/auth-service/Dockerfile` | `/api/auth/health` |
 | chat-service | 3002 | `apps/chat-service/Dockerfile` | `/api/chat/health` |
 | rag-service | 3003 | `apps/rag-service/Dockerfile` | `/api/rag/health` |
@@ -379,4 +381,6 @@ A plataforma Alice Enterprise está **APROVADA** para deploy.
 
 ---
 
+*Autor: Fillipe Guerra*
 *Relatório gerado em 02/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
+*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*

@@ -1,5 +1,7 @@
 # Grafana SSO com Alice IdP
 
+**Autor:** Fillipe Guerra
+
 ## Visão Geral
 
 O Grafana OSS 11.3 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
@@ -122,3 +124,9 @@ docker logs alice-grafana -f --tail 100
 - [Grafana OAuth Documentation](https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/configure-authentication/generic-oauth/)
 - [OIDC Specification](https://openid.net/specs/openid-connect-core-1_0.html)
 - [Alice OIDC Provider](../../apps/auth-service/src/oidc/)
+
+---
+
+*Autor: Fillipe Guerra*
+*Documentação em Português Brasileiro*
+*Atualizado: Dezembro 2025*

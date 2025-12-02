@@ -1,5 +1,7 @@
 # Frappe Framework Patching - Guia de Atualização de Segurança
 
+**Autor:** Fillipe Guerra
+
 ## Sumário
 
 1. [CVEs Críticos Ativos](#cves-críticos-ativos)
@@ -268,6 +270,7 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documento em Português Brasileiro*
-*Atualizado: Novembro 2025*
-*Versão: 1.0*
+*Atualizado: Dezembro 2025*
+*Versão: 1.1*

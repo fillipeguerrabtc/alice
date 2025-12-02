@@ -1,11 +1,13 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
+**Autor:** Fillipe Guerra
+
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
 **Arquitetura:** Replit é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Serviços:** 26 containers em produção (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
+**Total de Containers:** 27 em produção (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -316,6 +318,7 @@ openssl rand -hex 64
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documento atualizado em: Dezembro 2025*
-*Versão: 5.0 - Consolidado com 26 Serviços Enterprise*
-*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão: 5.1 - Consolidado com 27 Containers Enterprise*
+*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*

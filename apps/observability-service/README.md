@@ -1,8 +1,10 @@
 # Observability Service - Alice Enterprise Platform
 
+**Autor:** Fillipe Guerra
+
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço #11 dos 26 serviços da plataforma Alice Enterprise (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs).
+**Contexto:** Este é o serviço #12 dos 27 containers da plataforma Alice Enterprise (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs).
 
 ## Componentes
 
@@ -210,6 +212,7 @@ apps/observability-service/
 
 ---
 
+*Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 2.1.0 - Dezembro 2025*
-*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão 2.2.0 - Dezembro 2025*
+*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*
