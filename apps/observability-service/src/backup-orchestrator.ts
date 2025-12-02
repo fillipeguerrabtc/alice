@@ -20,7 +20,7 @@
 import { Router, Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, readFile, mkdir, readdir } from 'fs/promises';
+import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import pino from 'pino';
@@ -104,8 +104,8 @@ interface BackupManifest {
   notes?: string;
 }
 
-/** Status do job de backup em andamento */
-interface BackupJobStatus {
+/** Status do job de backup em andamento (exportado para uso em testes/monitoramento) */
+export interface BackupJobStatus {
   jobId: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   progress: number;
@@ -241,8 +241,9 @@ async function updateBackupJob(
 
 /**
  * Obter job por ID
+ * Exportado para uso em API REST e monitoramento
  */
-async function getBackupJobById(jobId: string): Promise<BackupJob | null> {
+export async function getBackupJobById(jobId: string): Promise<BackupJob | null> {
   try {
     const db = getDatabase();
     const [job] = await db
@@ -260,8 +261,9 @@ async function getBackupJobById(jobId: string): Promise<BackupJob | null> {
 
 /**
  * Listar jobs de backup do PostgreSQL
+ * Exportado para uso em API REST e dashboard
  */
-async function listBackupJobs(limit = 50): Promise<BackupJob[]> {
+export async function listBackupJobs(limit = 50): Promise<BackupJob[]> {
   try {
     const db = getDatabase();
     return await db
@@ -660,7 +662,7 @@ async function runUnifiedBackup(
   };
   
   // Criar job no PostgreSQL (Regra 6 - Enterprise Persistence)
-  const job = await createBackupJob({
+  await createBackupJob({
     jobId: backupId,
     backupType: type === 'incremental' ? 'incremental' : 'full',
     createdBy: options?.createdBy,

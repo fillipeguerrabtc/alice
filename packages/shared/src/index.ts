@@ -11,3 +11,13 @@
  */
 
 export * from './schema.js';
+
+// Re-exportar tipos/tabelas de backup que só existem no schema modular
+export {
+  BackupComponentDetail,
+  BackupManifestData,
+  backupJobs,
+  insertBackupJobSchema,
+  type InsertBackupJob,
+  type BackupJob,
+} from './schema/integrations.js';

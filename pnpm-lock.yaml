@@ -830,6 +830,12 @@ importers:
 
   apps/observability-service:
     dependencies:
+      '@alice/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@alice/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@alice/shared-utils':
         specifier: workspace:*
         version: link:../../packages/shared-utils
