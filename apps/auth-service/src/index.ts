@@ -430,6 +430,96 @@ function recordAuthAttempt(provider: 'google' | 'github' | 'saml' | 'local', suc
 }
 
 // ============================================================================
+// CIRCUIT BREAKERS: Proteção contra falhas em cascata (Regra 16 - Best Practices 2025)
+// 
+// Implementação enterprise-grade de circuit breakers para:
+// - Operações de banco de dados (PostgreSQL)
+// - Provedores OAuth externos (Google, GitHub)
+// - Provedores SAML/IdP (Azure AD, Okta)
+// 
+// Documentação: opossum (Netflix Hystrix pattern para Node.js)
+// ============================================================================
+
+// Circuit Breaker para operações de banco de dados (busca de usuário)
+const dbUserLookupBreaker = createCircuitBreaker(
+  async (email: string): Promise<DbUser | undefined> => {
+    const db = getDatabase();
+    return db.query.users.findFirst({
+      where: eq(schema.users.email, email.toLowerCase()),
+    });
+  },
+  {
+    name: 'auth-db-user-lookup',
+    ...CIRCUIT_BREAKER_PRESETS.databasePool,
+  }
+);
+
+// Instrumentar circuit breaker com métricas Prometheus
+instrumentCircuitBreaker(dbUserLookupBreaker, metrics.registry, 'auth_db_user_lookup');
+
+// Circuit Breaker para operações de banco de dados (busca por OAuth ID)
+// NOTA: Usa preset databasePool porque é operação de DB, não chamada externa OAuth
+const dbOAuthLookupBreaker = createCircuitBreaker(
+  async (params: { googleId?: string; githubId?: string; email: string }): Promise<DbUser | undefined> => {
+    const db = getDatabase();
+    const conditions = [];
+    if (params.googleId) {
+      conditions.push(eq(schema.users.googleId, params.googleId));
+    }
+    if (params.githubId) {
+      conditions.push(eq(schema.users.githubId, params.githubId));
+    }
+    // Sempre adiciona email como fallback, garantindo que conditions nunca está vazio
+    conditions.push(eq(schema.users.email, params.email.toLowerCase()));
+    
+    return db.query.users.findFirst({
+      where: or(...conditions),
+    });
+  },
+  {
+    name: 'auth-db-oauth-lookup',
+    ...CIRCUIT_BREAKER_PRESETS.databasePool,
+  }
+);
+
+instrumentCircuitBreaker(dbOAuthLookupBreaker, metrics.registry, 'auth_db_oauth_lookup');
+
+// Circuit Breaker para operações de banco de dados (busca por SAML nameID)
+// NOTA: Usa preset databasePool porque é operação de DB, não chamada externa SAML/IdP
+const dbSamlLookupBreaker = createCircuitBreaker(
+  async (params: { samlNameId: string; email: string }): Promise<DbUser | undefined> => {
+    const db = getDatabase();
+    return db.query.users.findFirst({
+      where: or(
+        eq(schema.users.samlNameId, params.samlNameId),
+        eq(schema.users.email, params.email.toLowerCase())
+      ),
+    });
+  },
+  {
+    name: 'auth-db-saml-lookup',
+    ...CIRCUIT_BREAKER_PRESETS.databasePool,
+  }
+);
+
+instrumentCircuitBreaker(dbSamlLookupBreaker, metrics.registry, 'auth_db_saml_lookup');
+
+// Circuit Breaker para operações de criação/atualização de usuário
+const dbUserUpsertBreaker = createCircuitBreaker(
+  async (operation: () => Promise<DbUser[]>): Promise<DbUser[]> => {
+    return operation();
+  },
+  {
+    name: 'auth-db-user-upsert',
+    ...CIRCUIT_BREAKER_PRESETS.databasePool,
+  }
+);
+
+instrumentCircuitBreaker(dbUserUpsertBreaker, metrics.registry, 'auth_db_user_upsert');
+
+logger.info('Circuit breakers de autenticação inicializados (OAuth, SAML, Database)');
+
+// ============================================================================
 // ESTRATÉGIA: Autenticação Local (Email/Senha)
 // ============================================================================
 
@@ -440,10 +530,8 @@ passport.use(new LocalStrategy(
   },
   async (email, password, done) => {
     try {
-      const db = getDatabase();
-      const user = await db.query.users.findFirst({
-        where: eq(schema.users.email, email.toLowerCase()),
-      });
+      // Usar circuit breaker para busca de usuário (Regra 16 - Resiliência)
+      const user = await dbUserLookupBreaker.fire(email);
 
       if (!user) {
         recordAuthAttempt('local', false);
@@ -464,16 +552,25 @@ passport.use(new LocalStrategy(
         return done(null, false, { message: 'Credenciais inválidas' });
       }
 
-      // Atualizar último acesso
-      await db.update(schema.users)
-        .set({ ultimoAcesso: new Date() })
-        .where(eq(schema.users.id, user.id));
+      // Atualizar último acesso com circuit breaker
+      const db = getDatabase();
+      await dbUserUpsertBreaker.fire(async () => {
+        await db.update(schema.users)
+          .set({ ultimoAcesso: new Date() })
+          .where(eq(schema.users.id, user.id));
+        return [user];
+      });
 
       recordAuthAttempt('local', true);
       logger.info({ userId: user.id, email }, 'Login local bem-sucedido');
       return done(null, toAuthContext(user));
     } catch (error) {
       recordAuthAttempt('local', false);
+      // Tratamento específico para circuit breaker aberto
+      if ((error as Error).message?.includes('Breaker is open')) {
+        logger.error({ email }, 'Circuit breaker aberto - serviço de banco de dados indisponível');
+        return done(new Error('Serviço temporariamente indisponível. Tente novamente em alguns segundos.'));
+      }
       logger.error({ error, email }, 'Erro na autenticação local');
       return done(error);
     }
@@ -507,28 +604,25 @@ if (googleClientId && googleClientSecret) {
           return done(new Error('Email não disponível no perfil Google'));
         }
 
-        // Buscar usuário por googleId ou email
-        let user = await db.query.users.findFirst({
-          where: or(
-            eq(schema.users.googleId, googleId),
-            eq(schema.users.email, email)
-          ),
-        });
+        // Usar circuit breaker para busca de usuário OAuth (Regra 16 - Resiliência)
+        let user = await dbOAuthLookupBreaker.fire({ googleId, email });
 
         if (!user) {
-          // Criar novo usuário
-          const [newUser] = await db.insert(schema.users).values({
-            email,
-            firstName: profile.name?.givenName || profile.displayName?.split(' ')[0],
-            lastName: profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' '),
-            profileImageUrl: profile.photos?.[0]?.value,
-            googleId,
-            authProvider: 'google',
-            emailVerified: true,
-            role: 'viewer',
-            idioma: 'pt-BR',
-            timezone: 'Europe/Lisbon',
-          }).returning();
+          // Criar novo usuário com circuit breaker
+          const [newUser] = await dbUserUpsertBreaker.fire(async () => {
+            return db.insert(schema.users).values({
+              email,
+              firstName: profile.name?.givenName || profile.displayName?.split(' ')[0],
+              lastName: profile.name?.familyName || profile.displayName?.split(' ').slice(1).join(' '),
+              profileImageUrl: profile.photos?.[0]?.value,
+              googleId,
+              authProvider: 'google',
+              emailVerified: true,
+              role: 'viewer',
+              idioma: 'pt-BR',
+              timezone: 'Europe/Lisbon',
+            }).returning();
+          });
           user = newUser;
           const createdUserId = user.id;
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via Google');
@@ -545,33 +639,44 @@ if (googleClientId && googleClientSecret) {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.googleId) {
-          // Vincular conta Google existente
-          await db.update(schema.users)
-            .set({ 
-              googleId,
-              profileImageUrl: user.profileImageUrl || profile.photos?.[0]?.value,
-              emailVerified: true,
-              ultimoAcesso: new Date(),
-            })
-            .where(eq(schema.users.id, user.id));
+          // Vincular conta Google existente com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ 
+                googleId,
+                profileImageUrl: user!.profileImageUrl || profile.photos?.[0]?.value,
+                emailVerified: true,
+                ultimoAcesso: new Date(),
+              })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
           logger.info({ userId: user.id, email }, 'Conta Google vinculada a usuário existente');
         } else {
-          // Atualizar último acesso
-          await db.update(schema.users)
-            .set({ ultimoAcesso: new Date() })
-            .where(eq(schema.users.id, user.id));
+          // Atualizar último acesso com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ ultimoAcesso: new Date() })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
         }
 
         recordAuthAttempt('google', true);
         return done(null, toAuthContext(user));
       } catch (error) {
         recordAuthAttempt('google', false);
+        // Tratamento específico para circuit breaker aberto
+        if ((error as Error).message?.includes('Breaker is open')) {
+          logger.error({ provider: 'google' }, 'Circuit breaker aberto - serviço de autenticação indisponível');
+          return done(new Error('Serviço temporariamente indisponível. Tente novamente em alguns segundos.'));
+        }
         logger.error({ error }, 'Erro na autenticação Google');
         return done(error as Error);
       }
     }
   ));
-  logger.info('OAuth Google configurado');
+  logger.info('OAuth Google configurado com circuit breaker');
 } else {
   logger.warn('OAuth Google não configurado - GOOGLE_CLIENT_ID ou GOOGLE_CLIENT_SECRET ausentes');
 }
@@ -603,29 +708,26 @@ if (githubClientId && githubClientSecret) {
           return done(new Error('Email não disponível no perfil GitHub'));
         }
 
-        // Buscar usuário por githubId ou email
-        let user = await db.query.users.findFirst({
-          where: or(
-            eq(schema.users.githubId, githubId),
-            eq(schema.users.email, email)
-          ),
-        });
+        // Usar circuit breaker para busca de usuário OAuth (Regra 16 - Resiliência)
+        let user = await dbOAuthLookupBreaker.fire({ githubId, email });
 
         if (!user) {
-          // Criar novo usuário
+          // Criar novo usuário com circuit breaker
           const displayName = profile.displayName || profile.username || '';
-          const [newUser] = await db.insert(schema.users).values({
-            email,
-            firstName: displayName.split(' ')[0],
-            lastName: displayName.split(' ').slice(1).join(' ') || null,
-            profileImageUrl: profile.photos?.[0]?.value,
-            githubId,
-            authProvider: 'github',
-            emailVerified: true,
-            role: 'viewer',
-            idioma: 'pt-BR',
-            timezone: 'Europe/Lisbon',
-          }).returning();
+          const [newUser] = await dbUserUpsertBreaker.fire(async () => {
+            return db.insert(schema.users).values({
+              email,
+              firstName: displayName.split(' ')[0],
+              lastName: displayName.split(' ').slice(1).join(' ') || null,
+              profileImageUrl: profile.photos?.[0]?.value,
+              githubId,
+              authProvider: 'github',
+              emailVerified: true,
+              role: 'viewer',
+              idioma: 'pt-BR',
+              timezone: 'Europe/Lisbon',
+            }).returning();
+          });
           user = newUser;
           const createdUserId = user.id;
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via GitHub');
@@ -642,32 +744,44 @@ if (githubClientId && githubClientSecret) {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.githubId) {
-          // Vincular conta GitHub existente
-          await db.update(schema.users)
-            .set({ 
-              githubId,
-              profileImageUrl: user.profileImageUrl || profile.photos?.[0]?.value,
-              emailVerified: true,
-              ultimoAcesso: new Date(),
-            })
-            .where(eq(schema.users.id, user.id));
+          // Vincular conta GitHub existente com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ 
+                githubId,
+                profileImageUrl: user!.profileImageUrl || profile.photos?.[0]?.value,
+                emailVerified: true,
+                ultimoAcesso: new Date(),
+              })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
           logger.info({ userId: user.id, email }, 'Conta GitHub vinculada a usuário existente');
         } else {
-          await db.update(schema.users)
-            .set({ ultimoAcesso: new Date() })
-            .where(eq(schema.users.id, user.id));
+          // Atualizar último acesso com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ ultimoAcesso: new Date() })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
         }
 
         recordAuthAttempt('github', true);
         return done(null, toAuthContext(user));
       } catch (error) {
         recordAuthAttempt('github', false);
+        // Tratamento específico para circuit breaker aberto
+        if ((error as Error).message?.includes('Breaker is open')) {
+          logger.error({ provider: 'github' }, 'Circuit breaker aberto - serviço de autenticação indisponível');
+          return done(new Error('Serviço temporariamente indisponível. Tente novamente em alguns segundos.'));
+        }
         logger.error({ error }, 'Erro na autenticação GitHub');
         return done(error as Error);
       }
     }
   ));
-  logger.info('OAuth GitHub configurado');
+  logger.info('OAuth GitHub configurado com circuit breaker');
 } else {
   logger.warn('OAuth GitHub não configurado - GITHUB_CLIENT_ID ou GITHUB_CLIENT_SECRET ausentes');
 }
@@ -710,31 +824,28 @@ if (samlEntryPoint && samlIssuer && samlCert) {
           return done(new Error('Email não disponível no perfil SAML'));
         }
 
-        // Buscar usuário por samlNameId ou email
-        let user = await db.query.users.findFirst({
-          where: or(
-            eq(schema.users.samlNameId, samlNameId),
-            eq(schema.users.email, email)
-          ),
-        });
+        // Usar circuit breaker para busca de usuário SAML (Regra 16 - Resiliência)
+        let user = await dbSamlLookupBreaker.fire({ samlNameId, email });
 
         if (!user) {
-          // Criar novo usuário
+          // Criar novo usuário com circuit breaker
           const displayName = typeof profile.displayName === 'string' ? profile.displayName : '';
           const firstName = (profile.firstName as string) || displayName.split(' ')[0] || '';
           const lastName = (profile.lastName as string) || displayName.split(' ').slice(1).join(' ') || '';
           
-          const [newUser] = await db.insert(schema.users).values({
-            email,
-            firstName: firstName || null,
-            lastName: lastName || null,
-            samlNameId,
-            authProvider: 'saml',
-            emailVerified: true,
-            role: 'viewer',
-            idioma: 'pt-BR',
-            timezone: 'Europe/Lisbon',
-          }).returning();
+          const [newUser] = await dbUserUpsertBreaker.fire(async () => {
+            return db.insert(schema.users).values({
+              email,
+              firstName: firstName || null,
+              lastName: lastName || null,
+              samlNameId,
+              authProvider: 'saml',
+              emailVerified: true,
+              role: 'viewer',
+              idioma: 'pt-BR',
+              timezone: 'Europe/Lisbon',
+            }).returning();
+          });
           user = newUser;
           const createdUserId = user.id;
           logger.info({ userId: createdUserId, email }, 'Novo usuário criado via SAML');
@@ -751,32 +862,44 @@ if (samlEntryPoint && samlIssuer && samlCert) {
             logger.error({ error, userId: createdUserId }, 'Erro ao publicar evento de provisioning');
           });
         } else if (!user.samlNameId) {
-          // Vincular conta SAML existente
-          await db.update(schema.users)
-            .set({ 
-              samlNameId,
-              emailVerified: true,
-              ultimoAcesso: new Date(),
-            })
-            .where(eq(schema.users.id, user.id));
+          // Vincular conta SAML existente com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ 
+                samlNameId,
+                emailVerified: true,
+                ultimoAcesso: new Date(),
+              })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
           logger.info({ userId: user.id, email }, 'Conta SAML vinculada a usuário existente');
         } else {
-          await db.update(schema.users)
-            .set({ ultimoAcesso: new Date() })
-            .where(eq(schema.users.id, user.id));
+          // Atualizar último acesso com circuit breaker
+          await dbUserUpsertBreaker.fire(async () => {
+            await db.update(schema.users)
+              .set({ ultimoAcesso: new Date() })
+              .where(eq(schema.users.id, user!.id));
+            return [user!];
+          });
         }
 
         recordAuthAttempt('saml', true);
         return done(null, toAuthContext(user) as unknown as Record<string, unknown>);
       } catch (error) {
         recordAuthAttempt('saml', false);
+        // Tratamento específico para circuit breaker aberto
+        if ((error as Error).message?.includes('Breaker is open')) {
+          logger.error({ provider: 'saml' }, 'Circuit breaker aberto - serviço de autenticação indisponível');
+          return done(new Error('Serviço temporariamente indisponível. Tente novamente em alguns segundos.'));
+        }
         logger.error({ error }, 'Erro na autenticação SAML');
         return done(error as Error);
       }
     },
     () => { /* logout callback - não usado */ }
   ));
-  logger.info('SAML 2.0 configurado');
+  logger.info('SAML 2.0 configurado com circuit breaker');
 } else {
   logger.warn('SAML 2.0 não configurado - SAML_ENTRY_POINT, SAML_ISSUER ou SAML_CERT ausentes');
 }

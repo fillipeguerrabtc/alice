@@ -263,6 +263,13 @@ services:
       - "traefik.http.routers.alice-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-frontend.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-frontend.loadbalancer.server.port=8080"
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+      - /var/cache/nginx:mode=1777,size=32M
+      - /var/run:mode=1777,size=8M
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
       interval: 30s
@@ -281,11 +288,17 @@ services:
   # ===========================================================================
   # ALICE AUTH SERVICE - Autenticação OAuth/SAML/Local
   # Docs: Node.js single-thread 0.5-1.0 CPU, 512MB RAM standard
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-auth:
     image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:-latest}
     container_name: alice-auth
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3001
@@ -332,11 +345,17 @@ services:
   # ===========================================================================
   # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
   # Docs 2025: Node.js 20 + WebSocket streaming - 1.0 CPU, 1GB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-chat:
     image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:-latest}
     container_name: alice-chat
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3002
@@ -382,11 +401,17 @@ services:
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Embeddings
   # Docs 2025: Node.js 20 + pgvector queries - 1.0 CPU, 1GB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
     container_name: alice-rag
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3003
@@ -423,11 +448,17 @@ services:
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
   # Docs 2025: Node.js 20 standard - 0.75 CPU, 768MB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-training:
     image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:-latest}
     container_name: alice-training
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3004
@@ -466,11 +497,17 @@ services:
   # ===========================================================================
   # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
   # Docs 2025: Node.js 20 light - 0.5 CPU, 512MB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-integrations:
     image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
     container_name: alice-integrations
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3005
@@ -542,6 +579,11 @@ services:
     image: ${IMAGE_PREFIX}-observability:${IMAGE_TAG:-latest}
     container_name: alice-observability
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
     environment:
       NODE_ENV: production
       PORT: 3007
@@ -1139,6 +1181,7 @@ services:
   # ===========================================================================
   # OBSERVABILIDADE - Logging centralizado
   # Docs 2025: Vector log collector - 0.25 CPU, 256MB
+  # Healthcheck: API interna do Vector (Regra 16 - Best Practices 2025)
   # ===========================================================================
   vector:
     image: timberio/vector:0.34.0-alpine
@@ -1149,10 +1192,18 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
       NODE_ENV: production
+      VECTOR_API_ENABLED: "true"
+      VECTOR_API_ADDRESS: "0.0.0.0:8686"
     networks:
       - alice-network
     depends_on:
       - traefik
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8686/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
