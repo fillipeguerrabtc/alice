@@ -118,11 +118,13 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 | Componente | Status | Versão | CVEs Corrigidos |
 |------------|--------|--------|-----------------|
 | Node.js (pnpm audit) | **0 vulnerabilities** | - | GHSA-67mh-4wv8-2f99, GHSA-76c9-3jph-rj3q |
-| PyTorch | Corrigido | 2.6.0 | CVE-2025-32434 (CRITICAL RCE) |
+| PyTorch | **Atualizado** | 2.9.1 | CVE-2025-32434, CVE-2025-3730, CVE-2025-2953 |
+| torchvision | Atualizado | 0.24.1 | Compatível com PyTorch 2.9.1 |
 | urllib3 | Corrigido | ≥2.5.0 | CVE-2025-50181, CVE-2025-50182 |
 | CUDA Docker | Atualizado | 12.8.0-cudnn9 | CVEs toolkit NVIDIA |
 | esbuild (pnpm override) | Forçado | ≥0.25.0 | GHSA-67mh-4wv8-2f99 |
 | on-headers (pnpm override) | Forçado | ≥1.1.0 | GHSA-76c9-3jph-rj3q |
+| SSH Private Key | **Removido** | N/A | Chave movida para GitHub Secrets (Regra 6) |
 
 ### Arquivos Modificados para Push Manual Replit → GitHub
 
@@ -130,23 +132,29 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 |---|---------|-----------|-------|
 | 1 | `package.json` | pnpm overrides: esbuild>=0.25.0, on-headers>=1.1.0 | Regra 6 |
 | 2 | `pnpm-lock.yaml` | Atualizado automaticamente com overrides | Regra 6 |
-| 3 | `apps/clip-inference-service/requirements.txt` | PyTorch 2.6.0, urllib3>=2.5.0 | Regra 6 |
+| 3 | `apps/clip-inference-service/requirements.txt` | PyTorch 2.9.1, torchvision 0.24.1, urllib3>=2.5.0 | Regra 6 |
 | 4 | `apps/clip-inference-service/Dockerfile` | CUDA 12.8.0-cudnn9 | Regra 6 |
-| 5 | `.github/workflows/ci.yml` | Instala deps Python/Node antes do Trivy scan | Regra 9 |
-| 6 | `replit.md` | Documentação atualizada | Regra 10 |
+| 5 | `.github/workflows/ci.yml` | Instala deps Python/Node antes do Trivy scan + salva artifact | Regra 9 |
+| 6 | `infra/scripts/setup-ssh-key.sh` | **REMOVIDO** - Chave SSH agora via Secrets | Regra 6 |
+| 7 | `replit.md` | Documentação atualizada | Regra 10 |
 
 ### Correção CI/CD (02/12/2025)
 
-O Trivy Security Scan falhava porque as dependências não estavam instaladas antes do scan.
-Correção enterprise-grade: Adicionados steps para instalar Node.js e Python dependencies
-ANTES de rodar o Trivy, permitindo scan completo de vulnerabilidades.
+**Problema 1**: Trivy falhava porque dependências não estavam instaladas antes do scan.
+**Solução**: Steps para instalar Node.js e Python dependencies ANTES do Trivy.
+
+**Problema 2**: Chave SSH privada hardcoded em `infra/scripts/setup-ssh-key.sh` (HIGH severity).
+**Solução**: Arquivo REMOVIDO. Chave SSH agora armazenada em Secrets (Replit + GitHub Actions).
+
+**Problema 3**: PyTorch 2.6.0 tinha CVE-2025-3730 (MEDIUM) e CVE-2025-2953 (LOW).
+**Solução**: Atualizado para PyTorch 2.9.1 (latest stable - Nov 2025).
 
 **IMPORTANTE**: NÃO usamos `exit-code: 0` (workaround proibido pela Regra 6).
 O pipeline DEVE falhar se vulnerabilidades CRITICAL/HIGH forem encontradas.
 
 ### Próximos Passos
 
-1. Push manual dos 6 arquivos do Replit para GitHub
+1. Push manual dos 7 arquivos do Replit para GitHub
 2. Aguardar CI/CD passar com sucesso
 3. Configurar secrets no GitHub Actions (ver `docs/SECRETS.md`)
 4. Primeiro deploy na Hetzner Cloud via GitHub Actions

@@ -13,11 +13,13 @@
 # Referência: https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v
 urllib3>=2.5.0
 
-# PyTorch 2.6.0 corrige CVE-2025-32434 (CVSS 9.3 CRITICAL RCE)
-# A vulnerabilidade permitia execução remota de código via torch.load()
-# Referência: https://github.com/advisories/GHSA-53q9-r3pm-6pq6
-torch==2.6.0
-torchvision==0.21.0
+# PyTorch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss) - Fixed in 2.8.0
+# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d) - Fixed in 2.7.1
+# Referência: https://github.com/pytorch/pytorch/releases/tag/v2.9.1
+torch==2.9.1
+torchvision==0.24.1
 
 # =============================================================================
 # Framework Web - Versões estáveis dezembro 2025
