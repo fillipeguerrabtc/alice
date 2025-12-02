@@ -3,6 +3,7 @@ import { z } from "zod";
 const SALAD_API_KEY = process.env.SALAD_API_KEY || "";
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID || "";
 const SALAD_LLM_ENDPOINT = process.env.SALAD_LLM_ENDPOINT || "https://api.salad.com/api/public";
+const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
