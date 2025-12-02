@@ -652,6 +652,10 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=128M
+      - /app/.cache:mode=1777,size=512M
     profiles:
       - gpu
     environment:
