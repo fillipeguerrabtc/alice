@@ -68,13 +68,16 @@ services:
   # ===========================================================================
   # DOCKER SOCKET PROXY - Proxy seguro para Docker API
   # Docs 2025: Minimal proxy - 0.1 CPU, 64MB
+  # SEGURANÇA: Container hardening + Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
   # Expõe API Docker via TCP para o Traefik consumir
   dockerproxy:
-    image: tecnativa/docker-socket-proxy:latest
+    image: tecnativa/docker-socket-proxy@sha256:2f92c6e85a1199b3403c99d7439695898a162c69689b11130450ffadb352f0a0
     container_name: alice-dockerproxy
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
       - CONTAINERS=1
       - SERVICES=1
@@ -103,10 +106,13 @@ services:
   # ===========================================================================
   # TRAEFIK INIT - Inicializa diretório ACME com permissões corretas
   # SEGURANÇA: Necessário para Traefik rodar como non-root
+  # Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik-init:
-    image: busybox:1.36
+    image: busybox:1.36@sha256:2376a0c12759aa1214ba83e771ff252c7b1663216b192fbe5e0fb364e952f85c
     container_name: alice-traefik-init
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - traefik_acme:/acme
     command: ["sh", "-c", "chown -R 1001:1001 /acme && chmod 700 /acme"]
@@ -117,12 +123,14 @@ services:
   # ===========================================================================
   # TRAEFIK - API Gateway com SSL Automático
   # Docs 2025: Traefik v3 small/medium traffic - 0.5 CPU, 512MB
-  # SEGURANÇA: CAP_NET_BIND_SERVICE para portas < 1024 (Docker 2025)
+  # SEGURANÇA: CAP_NET_BIND_SERVICE + Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik:
-    image: traefik:v3.3
+    image: traefik:v3.3@sha256:b8bded463620b7ab2e5d35ed16e7488a38bdf1c0f373a81587aa8e215ba19891
     container_name: alice-traefik
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     user: "1001:1001"
     cap_add:
       - NET_BIND_SERVICE
@@ -184,6 +192,8 @@ services:
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=DENY"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=geolocation=(), microphone=(), camera=()"
+      # Content-Security-Policy (CSP) - OWASP 2025 Best Practices
+      - "traefik.http.middlewares.security-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
       # Middleware: Rate Limiting (100 req/s média, burst 200)
       - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
       - "traefik.http.middlewares.rate-limit.ratelimit.burst=200"
@@ -212,11 +222,14 @@ services:
   # POSTGRESQL - Banco de dados Alice com pgvector
   # Docs: PostgreSQL 16 recomenda 25% RAM para shared_buffers, shm_size > 64MB
   # Configuração: 3GB RAM (750MB shared_buffers), 1.5 CPU limit
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:pg16@sha256:d836ebbf9a0c199666bee6e6bdedee0ede3bdfc4f885d2dcedd0033a4443bdd4
     container_name: alice-postgres
     restart: always
+    security_opt:
+      - no-new-privileges:true
     shm_size: '1g'
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-alice}
@@ -631,11 +644,14 @@ services:
   # NOTA: Este serviço requer GPU NVIDIA e deve ser deployado no Salad Cloud
   # Para deploy local/Hetzner, usar profiles: ["gpu"] e deployar separadamente
   # Documentação: docs/DEPLOYMENT.md - Seção "Salad Cloud Integration"
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-clip-inference:
     image: ${IMAGE_PREFIX}-clip-inference:${IMAGE_TAG:-latest}
     container_name: alice-clip-inference
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     profiles:
       - gpu
     environment:
@@ -678,10 +694,13 @@ services:
   # MariaDB - Banco de dados ERPNext
   # Docs 2025: MariaDB 10.11 production - 1.5 CPU, 2GB
   # innodb_buffer_pool_size = 70% do container memory (1.4GB para 2GB container)
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-mariadb:
-    image: mariadb:10.11
+    image: mariadb:10.11@sha256:dc249cd0b7e41739fc4c5dbfcfda160afc7d6d1e40ce14ffbe2b62c285dd06ef
     container_name: erpnext-mariadb
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command:
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
@@ -725,11 +744,13 @@ services:
 
   # Redis Cache - Cache ERPNext
   # Docs 2025: Redis 7.4 cache - maxmemory = 80-90% do container (200MB para 256MB)
-  # SEGURANÇA: ACL habilitado com autenticação (GAP-ERPNEXT-001)
+  # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e600a259cb3ef2c6ceace477022d6159c3e72763c694d54c0263365101de3266
     container_name: erpnext-redis-cache
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command:
       - redis-server
       - --maxmemory
@@ -778,11 +799,13 @@ services:
 
   # Redis Queue - Filas ERPNext
   # Docs 2025: Redis 7.4 queue - maxmemory = 80-90% do container (200MB para 256MB)
-  # SEGURANÇA: ACL habilitado com autenticação (GAP-ERPNEXT-001)
+  # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:e600a259cb3ef2c6ceace477022d6159c3e72763c694d54c0263365101de3266
     container_name: erpnext-redis-queue
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command:
       - redis-server
       - --maxmemory
@@ -832,11 +855,14 @@ services:
   # ===========================================================================
   # ERPNext Configurator - Configura common_site_config.json na primeira execução
   # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   erpnext-configurator:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-configurator
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
     entrypoint:
       - bash
       - -c
@@ -872,11 +898,14 @@ services:
   # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
   # Credenciais padrão: admin/admin (alterar após primeira instalação)
   # IDEMPOTENTE: Se site já existe, sai com sucesso (exit 0)
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   erpnext-create-site:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-create-site
     restart: "no"
+    security_opt:
+      - no-new-privileges:true
     entrypoint:
       - bash
       - -c
@@ -931,10 +960,13 @@ services:
 
   # ERPNext Backend - Frappe/Python
   # Docs 2025: Frappe/Gunicorn production - 1.5 CPU, 2GB
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-backend:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-backend
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: bench serve --port 8000
     environment:
       - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -970,10 +1002,13 @@ services:
 
   # ERPNext Frontend - Nginx
   # Docs 2025: Nginx static - 0.25 CPU, 256MB
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-frontend:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-frontend
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: nginx-entrypoint.sh
     environment:
       - BACKEND=erpnext-backend:8000
@@ -1009,10 +1044,13 @@ services:
 
   # ERPNext WebSocket - Socket.io
   # Docs 2025: Node.js Socket.io - 0.3 CPU, 256MB
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-websocket:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-websocket
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites:ro
@@ -1036,10 +1074,13 @@ services:
 
   # ERPNext Scheduler - Tarefas agendadas
   # Docs 2025: Python scheduler - 0.3 CPU, 512MB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-scheduler:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-scheduler
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: bench schedule
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1049,6 +1090,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -1060,10 +1107,13 @@ services:
 
   # ERPNext Worker - Short Jobs
   # Docs 2025: Python worker short - 0.4 CPU, 512MB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-short:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-worker-short
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: bench worker --queue short
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1073,6 +1123,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -1084,10 +1140,13 @@ services:
 
   # ERPNext Worker - Default Jobs
   # Docs 2025: Python worker default - 0.4 CPU, 512MB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-default:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-worker-default
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: bench worker --queue default
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1097,6 +1156,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -1108,10 +1173,13 @@ services:
 
   # ERPNext Worker - Long Jobs
   # Docs 2025: Python worker heavy - 0.75 CPU, 1GB
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-long:
-    image: frappe/erpnext:v15.74.2
+    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
     container_name: erpnext-worker-long
     restart: always
+    security_opt:
+      - no-new-privileges:true
     command: bench worker --queue long
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
@@ -1121,6 +1189,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -1135,11 +1209,15 @@ services:
   # Docs 2025: pgBackRest best practices - 0.5 CPU, 512MB
   # Recursos: WAL archiving, incremental backups, criptografia AES-256
   # O Backup Orchestrator (observability-service) coordena os backups unificados
+  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
+  # NOTA: Usando woblerr/pgbackrest (imagem oficial da comunidade - pgbackrest/pgbackrest não existe no Docker Hub)
   # =============================================================================
   pgbackrest:
-    image: pgbackrest/pgbackrest:2.53.1
+    image: woblerr/pgbackrest:2.54.0
     container_name: alice-pgbackrest
     restart: always
+    security_opt:
+      - no-new-privileges:true
     environment:
       PGBACKREST_STANZA: alice
       PGBACKREST_PG1_HOST: postgres
@@ -1182,11 +1260,14 @@ services:
   # OBSERVABILIDADE - Logging centralizado
   # Docs 2025: Vector log collector - 0.25 CPU, 256MB
   # Healthcheck: API interna do Vector (Regra 16 - Best Practices 2025)
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   vector:
-    image: timberio/vector:0.34.0-alpine
+    image: timberio/vector:0.43.1-alpine@sha256:ffa011051abe1fd0ef9597cf7db29e6ae5415722f37969c2a184802c7447b9aa
     container_name: alice-vector
     restart: always
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
