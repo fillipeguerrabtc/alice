@@ -47,7 +47,7 @@ A plataforma Alice é composta por **26 serviços/containers** organizados em 4 
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 25 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest 2.54 |
+| 25 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest 2.54.2-alpine |
 | 26 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
 
 ### Diagrama de Arquitetura

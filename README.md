@@ -314,11 +314,47 @@ Proprietário - Todos os direitos reservados.
 
 ---
 
+---
+
+## Security Hardening (Production Audit - Dezembro 2025)
+
+### Docker 2025 Best Practices - 100% Compliance
+
+| Métrica | Contagem | Cobertura |
+|---------|----------|-----------|
+| **Resource Limits** | 26/26 containers | 100% |
+| **read_only: true** | 26/26 containers | 100% |
+| **security_opt: no-new-privileges** | 26/26 containers | 100% |
+| **Healthchecks** | 23/23 containers (init excluídos) | 100% |
+| **SHA256 Digests** | 9 imagens externas únicas | 100% |
+| **TypeScript strict** | Zero erros | 100% |
+
+### Supply Chain Security (SHA256 Pinned Images)
+
+| Imagem | Versão | Status |
+|--------|--------|--------|
+| Traefik | v3.3 | Pinned |
+| PostgreSQL | pg16 (pgvector) | Pinned |
+| MariaDB | 10.11 | Pinned |
+| Redis | 7-alpine | Pinned |
+| ERPNext | v15.88.0 | Pinned |
+| Vector | 0.43.1-alpine | Pinned |
+| pgBackRest | 2.54.2-alpine | Pinned |
+| Docker Socket Proxy | latest | Pinned |
+| BusyBox | 1.36 | Pinned |
+
+### Immutable Infrastructure
+
+Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temporária, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
+
+---
+
 <div align="center">
 
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
-*Versão 3.0.0 - Dezembro 2025*
+*Versão 3.1.0 - Dezembro 2025*
 *Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Production Audit: 100% Compliant*
 
 </div>

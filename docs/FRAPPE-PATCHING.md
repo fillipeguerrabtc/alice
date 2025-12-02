@@ -53,10 +53,10 @@
 
 | Branch | Versão Mínima | Data Release | Observações |
 |--------|---------------|--------------|-------------|
-| **v15** | **v15.74.2** | Nov 2025 | Inclui TODOS os patches SQL injection |
+| **v15** | **v15.88.0** | Dez 2025 | Inclui TODOS os patches SQL injection |
 | v14 | v14.96.15 | Nov 2025 | Para instalações legadas |
 
-**STATUS ALICE:** ✅ v15.74.2 configurado em `infra/erpnext/docker-compose.erpnext.yml` (01/12/2025)
+**STATUS ALICE:** ✅ v15.88.0 configurado em `infra/docker/docker-compose.prod.yml` (02/12/2025)
 
 ---
 
@@ -119,10 +119,10 @@ docker compose -f docker-compose.prod.yml stop \
 # Alterar de:
 #   image: frappe/erpnext:v15
 # Para:
-#   image: frappe/erpnext:v15.74.2
+#   image: frappe/erpnext:v15.88.0
 
 # Ou usar variável de ambiente:
-export ERPNEXT_VERSION=v15.74.2
+export ERPNEXT_VERSION=v15.88.0
 
 # Pull nova imagem
 docker compose -f docker-compose.prod.yml pull \
@@ -181,7 +181,7 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
   bench version
 
 # Deve mostrar:
-# frappe v15.74.2 ou superior
+# frappe v15.88.0 ou superior
 # erpnext v15.x.x
 
 # Health check do site

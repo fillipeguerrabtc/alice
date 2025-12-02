@@ -10,7 +10,7 @@ O ERPNext v15 está configurado para usar **Alice Enterprise Platform** como Ide
 ┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
 │                 │ ◄────────────────────► │                 │
 │    ERPNext      │   Authorization Code   │   Alice IdP     │
-│    v15.74.2     │                        │  (auth-service) │
+│    v15.88.0     │                        │  (auth-service) │
 │                 │                        │                 │
 └─────────────────┘                        └─────────────────┘
          │                                          │
@@ -32,13 +32,13 @@ O stack ERPNext inclui:
 |-----------------------|------------------------------|---------------------------|
 | erpnext-db            | mariadb:10.11                | Banco de dados            |
 | erpnext-redis         | redis:7-alpine               | Cache e filas             |
-| erpnext-backend       | frappe/erpnext:v15.74.2      | Backend Python            |
-| erpnext-frontend      | frappe/frappe-nginx:v15.74.2 | Servidor web              |
-| erpnext-socketio      | frappe/frappe-socketio:v15.74.2| Real-time               |
-| erpnext-scheduler     | frappe/erpnext:v15.74.2      | Jobs agendados            |
-| erpnext-worker-*      | frappe/erpnext:v15.74.2      | Workers de background     |
+| erpnext-backend       | frappe/erpnext:v15.88.0      | Backend Python            |
+| erpnext-frontend      | frappe/frappe-nginx:v15.88.0 | Servidor web              |
+| erpnext-socketio      | frappe/frappe-socketio:v15.88.0| Real-time               |
+| erpnext-scheduler     | frappe/erpnext:v15.88.0      | Jobs agendados            |
+| erpnext-worker-*      | frappe/erpnext:v15.88.0      | Workers de background     |
 
-**SEGURANÇA:** v15.74.2 corrige CVE-2025-55732 e CVE-2025-55731 (SQL Injection críticos).
+**SEGURANÇA:** v15.88.0 corrige CVE-2025-55732 e CVE-2025-55731 (SQL Injection críticos).
 Ver `docs/FRAPPE-PATCHING.md` para detalhes.
 
 ## Configuração
