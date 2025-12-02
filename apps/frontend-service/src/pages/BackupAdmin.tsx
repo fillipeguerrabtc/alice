@@ -374,7 +374,35 @@ export default function BackupAdmin() {
     setShowScheduleDialog(true);
   };
 
+  const validateScheduleForm = (): string | null => {
+    if (scheduleForm.fullBackup?.enabled && !scheduleForm.fullBackup?.cronExpression?.trim()) {
+      return 'Expressão cron do backup full é obrigatória';
+    }
+    if (scheduleForm.incrementalBackup?.enabled && !scheduleForm.incrementalBackup?.cronExpression?.trim()) {
+      return 'Expressão cron do backup incremental é obrigatória';
+    }
+    if (scheduleForm.retention?.fullBackupDays && scheduleForm.retention.fullBackupDays < 1) {
+      return 'Retenção de backup full deve ser pelo menos 1 dia';
+    }
+    if (scheduleForm.retention?.incrementalBackupDays && scheduleForm.retention.incrementalBackupDays < 1) {
+      return 'Retenção de backup incremental deve ser pelo menos 1 dia';
+    }
+    if (scheduleForm.retention?.archiveDays && scheduleForm.retention.archiveDays < 7) {
+      return 'Retenção de arquivo deve ser pelo menos 7 dias';
+    }
+    return null;
+  };
+
   const handleSaveSchedule = () => {
+    const validationError = validateScheduleForm();
+    if (validationError) {
+      toast({
+        title: 'Erro de validação',
+        description: validationError,
+        variant: 'destructive',
+      });
+      return;
+    }
     updateScheduleMutation.mutate(scheduleForm);
   };
 
