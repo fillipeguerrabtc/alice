@@ -103,7 +103,7 @@ jobs:
 
       - name: Verificar vulnerabilidades npm
         run: pnpm audit --audit-level=high
-        continue-on-error: true
+        continue-on-error: false
 
   # ===========================================================================
   # Job 2: Security Scanning (GAP-GHACTIONS - Audit Logging)
@@ -123,21 +123,23 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      # Trivy Scanner para vulnerabilidades em containers
+      # Trivy Scanner para vulnerabilidades no código
       # SHA: aquasecurity/trivy-action@0.28.0 (2024-10-15)
+      # REGRA 6: Pipeline DEVE falhar em vulnerabilidades CRITICAL/HIGH
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
         with:
           scan-type: 'fs'
           scan-ref: '.'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
-        continue-on-error: true
 
-      # Upload results to GitHub Security tab
+      # Upload results to GitHub Security tab (opcional, não bloqueia pipeline)
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
       - name: Upload Trivy scan results
+        if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-results.sarif'
@@ -335,15 +337,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # REGRA 6: Pipeline DEVE falhar em vulnerabilidades CRITICAL/HIGH
       - name: Scan Auth Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
         with:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-auth.sarif'
-        continue-on-error: true
 
       - name: Scan Chat Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
@@ -351,9 +354,9 @@ jobs:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-chat.sarif'
-        continue-on-error: true
 
       - name: Scan Frontend Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
@@ -361,11 +364,13 @@ jobs:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-frontend.sarif'
-        continue-on-error: true
 
+      # Upload para GitHub Security tab (opcional, não bloqueia pipeline)
       - name: Upload Trivy Auth scan results
+        if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-auth.sarif'
@@ -373,6 +378,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy Chat scan results
+        if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-chat.sarif'
@@ -380,6 +386,7 @@ jobs:
         continue-on-error: true
 
       - name: Upload Trivy Frontend scan results
+        if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-frontend.sarif'
