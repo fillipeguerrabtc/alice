@@ -4,6 +4,9 @@
 # Documentação em PT-BR (Regra 10 replit.md)
 # Versões travadas (Regra 11 - melhores práticas 2025)
 
+# SEGURANÇA: urllib3 atualizado para corrigir CVEs (Trivy scan)
+urllib3>=2.2.3
+
 # Framework web
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
