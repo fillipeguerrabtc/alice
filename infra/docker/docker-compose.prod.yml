@@ -1089,47 +1089,52 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # BACKUP AUTOMÁTICO - Cron job diário às 3h (UTC)
-  # Docs 2025: Ofelia scheduler - 0.1 CPU, 64MB
+  # PGBACKREST - Backup Enterprise PostgreSQL com PITR
+  # Docs 2025: pgBackRest best practices - 0.5 CPU, 512MB
+  # Recursos: WAL archiving, incremental backups, criptografia AES-256
+  # O Backup Orchestrator (observability-service) coordena os backups unificados
   # =============================================================================
-  backup-scheduler:
-    image: mcuadros/ofelia:latest
-    container_name: alice-backup-scheduler
+  pgbackrest:
+    image: pgbackrest/pgbackrest:2.53.1
+    container_name: alice-pgbackrest
     restart: always
-    command: daemon --docker
+    environment:
+      PGBACKREST_STANZA: alice
+      PGBACKREST_PG1_HOST: postgres
+      PGBACKREST_PG1_PORT: "5432"
+      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_RETENTION_FULL: "4"
+      PGBACKREST_REPO1_RETENTION_DIFF: "14"
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
+      PGUSER: ${POSTGRES_USER:-alice}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - /opt/alice/backups/pgbackrest:/var/lib/pgbackrest
+      - /opt/alice/backups/manifests:/opt/alice/backups/manifests
+      - postgres_data:/var/lib/postgresql/data:ro
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-      - /opt/alice/backups:/opt/alice/backups
-    labels:
-      # Backup PostgreSQL diário às 3h UTC (0 3 * * * = todo dia às 3:00)
-      ofelia.job-exec.backup-postgres.schedule: "0 3 * * *"
-      ofelia.job-exec.backup-postgres.container: "alice-postgres"
-      ofelia.job-exec.backup-postgres.command: "/bin/bash -c 'pg_dump -U alice alice_db | gzip > /var/lib/postgresql/data/backup_$(date +%Y%m%d_%H%M%S).sql.gz && find /var/lib/postgresql/data -name \"backup_*.sql.gz\" -mtime +7 -delete'"
-      ofelia.job-exec.backup-postgres.no-overlap: "true"
-      
-      # Backup MariaDB diário às 3h30 UTC
-      ofelia.job-exec.backup-mariadb.schedule: "30 3 * * *"
-      ofelia.job-exec.backup-mariadb.container: "erpnext-mariadb"
-      ofelia.job-exec.backup-mariadb.command: "/bin/bash -c 'mysqldump -u root --all-databases | gzip > /var/lib/mysql/backup_$(date +%Y%m%d_%H%M%S).sql.gz && find /var/lib/mysql -name \"backup_*.sql.gz\" -mtime +7 -delete'"
-      ofelia.job-exec.backup-mariadb.no-overlap: "true"
-      
-      # Limpeza de logs semanalmente (Domingo às 4h UTC)
-      ofelia.job-exec.cleanup-logs.schedule: "0 4 * * 0"
-      ofelia.job-exec.cleanup-logs.container: "alice-vector"
-      ofelia.job-exec.cleanup-logs.command: "find /var/log -name '*.log' -mtime +30 -delete"
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "pgbackrest", "info", "--stanza=alice"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 60s
     deploy:
       resources:
         limits:
-          memory: 64M
-          cpus: '0.1'
+          memory: 512M
+          cpus: '0.5'
         reservations:
-          memory: 32M
-          cpus: '0.05'
+          memory: 256M
+          cpus: '0.25'
 
   # ===========================================================================
   # OBSERVABILIDADE - Logging centralizado

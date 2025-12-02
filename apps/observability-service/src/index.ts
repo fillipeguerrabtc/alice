@@ -21,6 +21,7 @@ import {
   createErrorHandler,
   createNotFoundHandler,
 } from '@alice/shared-utils';
+import { backupRouter } from './backup-orchestrator.js';
 
 // Logger estruturado - JSON em produção (Regra 8 replit.md)
 const isProduction = process.env.NODE_ENV === 'production';
@@ -612,6 +613,14 @@ app.get('/api/observability/urls', (_req: Request, res: Response) => {
     },
   });
 });
+
+// ============================================================================
+// BACKUP ORCHESTRATOR (Sistema unificado de backup - Regra 6 Enterprise-grade)
+// ============================================================================
+
+app.use('/api/backup', requireInternalAuth, backupRouter);
+
+logger.info('Backup Orchestrator registrado em /api/backup');
 
 // ============================================================================
 // ERROR HANDLERS (módulo @alice/shared-utils)
