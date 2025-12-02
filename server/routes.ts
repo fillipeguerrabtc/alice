@@ -1,7 +1,30 @@
-import type { Express } from "express";
+import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { z } from "zod";
+import { llmClient, chatMessageSchema } from "./services/llm-client";
+
+const createConversationSchema = z.object({
+  titulo: z.string().optional(),
+  agentId: z.string().uuid().optional(),
+  namespaceId: z.string().uuid().optional(),
+});
+
+const createMessageSchema = z.object({
+  conversationId: z.string().uuid(),
+  conteudo: z.string(),
+  tipo: z.enum(["text", "image", "audio", "video", "document"]).optional(),
+  anexos: z.array(z.any()).optional(),
+});
+
+const createDocumentSchema = z.object({
+  titulo: z.string(),
+  conteudo: z.string().optional(),
+  tipo: z.string().optional(),
+  fonte: z.string().optional(),
+  namespaceId: z.string().uuid().optional(),
+});
 
 export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
@@ -19,6 +42,295 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
+  });
+
+  app.get("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const conversations = await storage.getConversations(userId);
+      res.json(conversations);
+    } catch (error) {
+      console.error("Erro ao buscar conversas:", error);
+      res.status(500).json({ message: "Falha ao buscar conversas" });
+    }
+  });
+
+  app.get("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+      if (conversation.userId !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+      res.json(conversation);
+    } catch (error) {
+      console.error("Erro ao buscar conversa:", error);
+      res.status(500).json({ message: "Falha ao buscar conversa" });
+    }
+  });
+
+  app.post("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const data = createConversationSchema.parse(req.body);
+      const conversation = await storage.createConversation({
+        ...data,
+        userId: req.user.claims.sub,
+      });
+      res.status(201).json(conversation);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Erro ao criar conversa:", error);
+      res.status(500).json({ message: "Falha ao criar conversa" });
+    }
+  });
+
+  app.delete("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+      if (conversation.userId !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+      await storage.deleteConversation(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao deletar conversa:", error);
+      res.status(500).json({ message: "Falha ao deletar conversa" });
+    }
+  });
+
+  app.get("/api/conversations/:id/messages", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const conversation = await storage.getConversation(req.params.id);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+      if (conversation.userId !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+      const limit = parseInt(req.query.limit as string) || 100;
+      const messages = await storage.getMessages(req.params.id, limit);
+      res.json(messages);
+    } catch (error) {
+      console.error("Erro ao buscar mensagens:", error);
+      res.status(500).json({ message: "Falha ao buscar mensagens" });
+    }
+  });
+
+  app.post("/api/messages", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const data = createMessageSchema.parse(req.body);
+      const conversation = await storage.getConversation(data.conversationId);
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+      if (conversation.userId !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+      const message = await storage.createMessage({
+        ...data,
+        userId: req.user.claims.sub,
+        isFromUser: true,
+      });
+      res.status(201).json(message);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Erro ao criar mensagem:", error);
+      res.status(500).json({ message: "Falha ao criar mensagem" });
+    }
+  });
+
+  app.get("/api/documents", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const namespaceId = req.query.namespaceId as string | undefined;
+      const documents = await storage.getDocuments(namespaceId);
+      res.json(documents);
+    } catch (error) {
+      console.error("Erro ao buscar documentos:", error);
+      res.status(500).json({ message: "Falha ao buscar documentos" });
+    }
+  });
+
+  app.post("/api/documents", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const data = createDocumentSchema.parse(req.body);
+      const document = await storage.createDocument(data);
+      res.status(201).json(document);
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Erro ao criar documento:", error);
+      res.status(500).json({ message: "Falha ao criar documento" });
+    }
+  });
+
+  app.delete("/api/documents/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      await storage.deleteDocument(req.params.id);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Erro ao deletar documento:", error);
+      res.status(500).json({ message: "Falha ao deletar documento" });
+    }
+  });
+
+  app.get("/api/namespaces", isAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const namespaces = await storage.getNamespaces();
+      res.json(namespaces);
+    } catch (error) {
+      console.error("Erro ao buscar namespaces:", error);
+      res.status(500).json({ message: "Falha ao buscar namespaces" });
+    }
+  });
+
+  app.get("/api/agents", isAuthenticated, async (_req: Request, res: Response) => {
+    try {
+      const agents = await storage.getAgents();
+      res.json(agents);
+    } catch (error) {
+      console.error("Erro ao buscar agentes:", error);
+      res.status(500).json({ message: "Falha ao buscar agentes" });
+    }
+  });
+
+  app.get("/api/metrics", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user.claims.sub;
+      const conversations = await storage.getConversations(userId);
+      const totalConversas = conversations.length;
+      const totalMensagens = conversations.reduce((sum, c) => sum + (c.totalMensagens || 0), 0);
+      res.json({
+        totalConversas,
+        totalMensagens,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("Erro ao buscar métricas:", error);
+      res.status(500).json({ message: "Falha ao buscar métricas" });
+    }
+  });
+
+  app.get("/api/llm/status", isAuthenticated, async (_req: Request, res: Response) => {
+    res.json({
+      available: llmClient.isAvailable(),
+      model: "llama4-maverick",
+      provider: "Salad Cloud",
+    });
+  });
+
+  const chatRequestSchema = z.object({
+    conversationId: z.string().uuid(),
+    message: z.string().min(1),
+    stream: z.boolean().optional().default(true),
+  });
+
+  app.post("/api/chat", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const data = chatRequestSchema.parse(req.body);
+      const conversation = await storage.getConversation(data.conversationId);
+      
+      if (!conversation) {
+        return res.status(404).json({ message: "Conversa não encontrada" });
+      }
+      if (conversation.userId !== req.user.claims.sub) {
+        return res.status(403).json({ message: "Acesso negado" });
+      }
+
+      if (!llmClient.isAvailable()) {
+        return res.status(503).json({ 
+          message: "LLM não disponível. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID." 
+        });
+      }
+
+      const userMessage = await storage.createMessage({
+        conversationId: data.conversationId,
+        conteudo: data.message,
+        userId: req.user.claims.sub,
+        isFromUser: true,
+        tipo: "text",
+      });
+
+      const previousMessages = await storage.getMessages(data.conversationId, 20);
+      const chatHistory = previousMessages.map((m) => ({
+        role: m.isFromUser ? ("user" as const) : ("assistant" as const),
+        content: m.conteudo || "",
+      }));
+
+      if (data.stream) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+
+        let fullResponse = "";
+        const startTime = Date.now();
+
+        try {
+          for await (const chunk of llmClient.chatCompletionStream({
+            messages: [
+              { role: "system", content: "Você é Alice, uma assistente de IA inteligente e prestativa." },
+              ...chatHistory,
+            ],
+          })) {
+            fullResponse += chunk;
+            res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+          }
+
+          const assistantMessage = await storage.createMessage({
+            conversationId: data.conversationId,
+            conteudo: fullResponse,
+            isFromUser: false,
+            tipo: "text",
+            latenciaMs: Date.now() - startTime,
+          });
+
+          res.write(`data: ${JSON.stringify({ done: true, messageId: assistantMessage.id })}\n\n`);
+          res.end();
+        } catch (error) {
+          console.error("Erro no streaming:", error);
+          res.write(`data: ${JSON.stringify({ error: "Erro ao gerar resposta" })}\n\n`);
+          res.end();
+        }
+      } else {
+        const startTime = Date.now();
+        const response = await llmClient.chatCompletion({
+          messages: [
+            { role: "system", content: "Você é Alice, uma assistente de IA inteligente e prestativa." },
+            ...chatHistory,
+          ],
+        });
+
+        const assistantMessage = await storage.createMessage({
+          conversationId: data.conversationId,
+          conteudo: response.message.content,
+          isFromUser: false,
+          tipo: "text",
+          tokensUsados: response.usage.totalTokens,
+          latenciaMs: Date.now() - startTime,
+        });
+
+        res.json({
+          userMessage,
+          assistantMessage,
+          usage: response.usage,
+        });
+      }
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
+      }
+      console.error("Erro no chat:", error);
+      res.status(500).json({ message: "Falha ao processar mensagem" });
+    }
   });
 
   const httpServer = createServer(app);
