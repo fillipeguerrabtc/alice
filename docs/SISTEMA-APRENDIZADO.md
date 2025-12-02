@@ -256,4 +256,5 @@ Acessíveis em `/dashboard/analytics`:
 ---
 
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 1.0 - Novembro 2025*
+*Versão 1.1 - Dezembro 2025*
+*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

@@ -5,10 +5,23 @@
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
 **Arquitetura:** Replit é APENAS editor de código. Produção 100% na Hetzner Cloud.
+**Total de Serviços:** 26 containers em produção (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
 **IP:** 46.224.46.93
+
+### Serviços que Utilizam Secrets
+
+| Categoria | Serviços | Secrets Relacionados |
+|-----------|----------|----------------------|
+| **Infraestrutura** | postgres, traefik | POSTGRES_PASSWORD, ACME_EMAIL |
+| **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
+| **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
+| **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
+| **Alice Observability** | alice-observability | GRAFANA_*, LANGFUSE_* |
+| **ERPNext** | erpnext-* | ERPNEXT_* |
+| **Deploy** | GitHub Actions | HETZNER_*, GH_PAT |
 
 ---
 
@@ -303,5 +316,6 @@ openssl rand -hex 64
 
 ---
 
-*Documento atualizado em: Novembro 2025*
-*Versão: 4.0 - Consolidado com Observability Stack*
+*Documento atualizado em: Dezembro 2025*
+*Versão: 5.0 - Consolidado com 26 Serviços Enterprise*
+*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

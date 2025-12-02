@@ -1,6 +1,56 @@
 # Alice Enterprise Platform - Guia de Deploy
 
-## Visão Geral da Arquitetura
+## Visão Geral da Arquitetura - 26 Serviços em Produção
+
+A plataforma Alice é composta por **26 serviços/containers** organizados em 4 categorias:
+
+### Categoria 1: Infraestrutura Core (4 serviços)
+
+| # | Serviço | Container | Descrição | Tecnologia |
+|---|---------|-----------|-----------|------------|
+| 1 | **Docker Socket Proxy** | `dockerproxy` | Proxy seguro para API Docker. Expõe apenas endpoints necessários para Traefik, sem acesso de escrita. | Tecnativa Docker Socket Proxy |
+| 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.36 |
+| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.3 |
+| 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
+
+### Categoria 2: Microsserviços Alice (8 serviços)
+
+| # | Serviço | Container | Diretório | Descrição | Tecnologia |
+|---|---------|-----------|-----------|-----------|------------|
+| 5 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
+| 6 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
+| 7 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
+| 8 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings, busca semântica pgvector, processamento de documentos. | Node.js, pgvector, Salad Cloud |
+| 9 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
+| 10 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
+| 11 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
+| 12 | **CLIP Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Embeddings multimodais para imagens usando CLIP ViT-L/14. Processamento de imagens para RAG. | Python, PyTorch 2.9.1, CLIP |
+
+### Categoria 3: ERPNext Stack (12 serviços)
+
+| # | Serviço | Container | Descrição | Tecnologia |
+|---|---------|-----------|-----------|------------|
+| 13 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.6 |
+| 14 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
+| 15 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
+| 16 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
+| 17 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
+| 18 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
+| 19 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
+| 20 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
+| 21 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
+| 22 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
+| 23 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
+| 24 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
+
+### Categoria 4: Infraestrutura Backup e Logs (2 serviços)
+
+| # | Serviço | Container | Descrição | Tecnologia |
+|---|---------|-----------|-----------|------------|
+| 25 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest 2.54 |
+| 26 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
+
+### Diagrama de Arquitetura
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
@@ -30,72 +80,46 @@
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│                    PRODUÇÃO (Hetzner Cloud - CX43)                       │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 26 SERVIÇOS             │
 │                                                                          │
-│  ┌───────────────────────────────────────────────────────────────────┐  │
-│  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                   │  │
-│  │                                                                    │  │
-│  │  ┌─────────────────────────────────────────────────────────────┐  │  │
-│  │  │                     TRAEFIK v3.1                             │  │  │
-│  │  │           (API Gateway + SSL Automático)                     │  │  │
-│  │  │                   :80 / :443                                 │  │  │
-│  │  └──────────────────────┬──────────────────────────────────────┘  │  │
-│  │                         │                                          │  │
-│  │     ┌───────────────────┼───────────────────┐                     │  │
-│  │     ▼                   ▼                   ▼                     │  │
-│  │  ┌──────────────────────────────────────────────────────────┐    │  │
-│  │  │              MICROSERVIÇOS ALICE                          │    │  │
-│  │  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐  │    │  │
-│  │  │  │Frontend│ │  Auth  │ │  Chat  │ │  RAG   │ │Training│  │    │  │
-│  │  │  │ :5000  │ │ :3001  │ │ :3002  │ │ :3003  │ │ :3004  │  │    │  │
-│  │  │  └────────┘ └────────┘ └────────┘ └────────┘ └────────┘  │    │  │
-│  │  │                      ┌────────┐                           │    │  │
-│  │  │                      │Integra.│                           │    │  │
-│  │  │                      │ :3005  │                           │    │  │
-│  │  │                      └────────┘                           │    │  │
-│  │  └──────────────────────────────────────────────────────────┘    │  │
-│  │                         │                                          │  │
-│  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
-│  │  │                 OBSERVABILITY STACK                          │  │  │
-│  │  │  ┌──────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌─────────┐ │  │  │
-│  │  │  │Prometheus│ │Grafana │ │ Jaeger │ │Langfuse│ │  OTel   │ │  │  │
-│  │  │  │  :9090   │ │ :3000  │ │:16686  │ │ :3006  │ │Collector│ │  │  │
-│  │  │  └──────────┘ └────────┘ └────────┘ └────────┘ └─────────┘ │  │  │
-│  │  │  Health Checker API: :3010                                   │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                         │                                          │  │
-│  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
-│  │  │                      ERPNEXT STACK                           │  │  │
-│  │  │  ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐               │  │  │
-│  │  │  │Frontend│ │Backend │ │MariaDB │ │ Redis  │               │  │  │
-│  │  │  │ :8080  │ │ :8000  │ │ :3306  │ │ :6379  │               │  │  │
-│  │  │  └────────┘ └────────┘ └────────┘ └────────┘               │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                         │                                          │  │
-│  │  ┌──────────────────────┴──────────────────────────────────────┐  │  │
-│  │  │                      DATABASES                               │  │  │
-│  │  │  ┌─────────────────────────────────────────┐                │  │  │
-│  │  │  │  PostgreSQL 16 + pgvector (Alice)       │                │  │  │
-│  │  │  │           :5432                          │                │  │  │
-│  │  │  └─────────────────────────────────────────┘                │  │  │
-│  │  │  ┌─────────────────────────────────────────┐                │  │  │
-│  │  │  │  PostgreSQL 16 (Langfuse)               │                │  │  │
-│  │  │  │           :5433                          │                │  │  │
-│  │  │  └─────────────────────────────────────────┘                │  │  │
-│  │  └─────────────────────────────────────────────────────────────┘  │  │
-│  │                         │                                          │  │
-│  │                   SaladCloud GPUs                                  │  │
-│  │       (Llama 4 Maverick 400B + FLUX.1 Schnell)                    │  │
-│  └────────────────────────────────────────────────────────────────────┘  │
+│  ┌────────────────────────────────────────────────────────────────────┐ │
+│  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
+│  │                                                                     │ │
+│  │  ┌──────────────────────────────────────────────────────────────┐  │ │
+│  │  │ INFRAESTRUTURA CORE (4)                                       │  │ │
+│  │  │  dockerproxy → traefik-init → traefik (Gateway) → postgres   │  │ │
+│  │  └──────────────────────────────────────────────────────────────┘  │ │
+│  │                              │                                      │ │
+│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+│  │  │ MICROSSERVIÇOS ALICE (8)                                      │  │ │
+│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
+│  │  │  │Frontend │ │  Auth   │ │  Chat   │ │   RAG   │             │  │ │
+│  │  │  │  :5000  │ │ :3001   │ │  :3002  │ │  :3003  │             │  │ │
+│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
+│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
+│  │  │  │Training │ │Integra. │ │Observab.│ │  CLIP   │             │  │ │
+│  │  │  │  :3004  │ │  :3005  │ │  :3010  │ │  :8000  │             │  │ │
+│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
+│  │  └──────────────────────────────────────────────────────────────┘  │ │
+│  │                              │                                      │ │
+│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+│  │  │ ERPNEXT STACK (12)                                            │  │ │
+│  │  │  mariadb │ redis-cache │ redis-queue │ configurator           │  │ │
+│  │  │  create-site │ backend │ frontend │ websocket                 │  │ │
+│  │  │  scheduler │ worker-short │ worker-default │ worker-long      │  │ │
+│  │  └──────────────────────────────────────────────────────────────┘  │ │
+│  │                              │                                      │ │
+│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+│  │  │ BACKUP/LOGS (2)                                               │  │ │
+│  │  │  pgbackrest (PostgreSQL PITR) │ vector (Log Aggregator)       │  │ │
+│  │  └──────────────────────────────────────────────────────────────┘  │ │
+│  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │ Recursos Hetzner CX43:                                             │ │
-│  │  • vCPUs: 8 (AMD EPYC)                                             │ │
-│  │  • RAM: 16GB                                                        │ │
-│  │  • SSD: 160GB NVMe                                                  │ │
-│  │  • Tráfego: 20TB/mês                                                │ │
-│  │  • IPv4 + IPv6                                                      │ │
-│  │  • Custo: €9.49/mês                                                 │ │
+│  │  • vCPUs: 8 (AMD EPYC)      • RAM: 16GB                           │ │
+│  │  • SSD: 160GB NVMe          • Tráfego: 20TB/mês                   │ │
+│  │  • IPv4 + IPv6              • Custo: €9.49/mês                    │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -551,5 +575,6 @@ curl http://localhost:3010/health
 
 ---
 
-*Documento atualizado em: Novembro 2025*
-*Versão: 4.0 - Arquitetura PROD-only Hetzner Cloud com Observability Stack*
+*Documento atualizado em: Dezembro 2025*
+*Versão: 5.0 - Arquitetura PROD-only Hetzner Cloud com 26 Serviços*
+*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

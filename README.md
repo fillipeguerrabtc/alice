@@ -88,18 +88,55 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Microserviços
+### Arquitetura de Microsserviços - 26 Serviços em Produção
 
-| Serviço | Porta | Responsabilidade |
-|---------|-------|------------------|
-| **frontend-service** | 5000 | React SPA, i18n, theming |
-| **api-gateway** | 80/443 | Traefik v3.1, SSL automático, rate-limit |
-| **auth-service** | 3001 | OAuth 2.0, SAML 2.0, autenticação local, RBAC |
-| **chat-service** | 3002 | LLM proxy via Salad Cloud, streaming, WebSocket |
-| **rag-service** | 3003 | Embeddings, pgvector, busca semântica híbrida |
-| **training-service** | 3004 | Auto-evolução, SemHash, fine-tuning LoRA |
-| **integrations-service** | 3005 | Stripe, ERPNext, Twilio, Resend, WhatsApp, Wise |
-| **observability-service** | 9090/3000/16686/3006 | Prometheus, Grafana, Jaeger, Langfuse |
+A plataforma Alice é composta por **26 serviços/containers** organizados em 4 categorias:
+
+#### Categoria 1: Infraestrutura Core (4 serviços)
+
+| # | Serviço | Container | Descrição |
+|---|---------|-----------|-----------|
+| 1 | Docker Socket Proxy | `dockerproxy` | Proxy seguro para API Docker |
+| 2 | Traefik Init | `traefik-init` | Inicializador de certificados SSL |
+| 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
+| 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
+
+#### Categoria 2: Microsserviços Alice (8 serviços)
+
+| # | Serviço | Container | Porta | Descrição |
+|---|---------|-----------|-------|-----------|
+| 5 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
+| 6 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
+| 7 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
+| 8 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
+| 9 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
+| 10 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
+| 11 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
+| 12 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (Python) |
+
+#### Categoria 3: ERPNext Stack (12 serviços)
+
+| # | Serviço | Container | Descrição |
+|---|---------|-----------|-----------|
+| 13 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
+| 14 | Redis Cache | `erpnext-redis-cache` | Cache de sessões |
+| 15 | Redis Queue | `erpnext-redis-queue` | Fila de jobs |
+| 16 | Configurator | `erpnext-configurator` | Configurador Frappe Bench |
+| 17 | Create Site | `erpnext-create-site` | Criador do site ERPNext |
+| 18 | Backend | `erpnext-backend` | Backend Python Frappe |
+| 19 | Frontend | `erpnext-frontend` | Frontend NGINX |
+| 20 | WebSocket | `erpnext-websocket` | Socket.io real-time |
+| 21 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
+| 22 | Worker Short | `erpnext-worker-short` | Jobs rápidos |
+| 23 | Worker Default | `erpnext-worker-default` | Jobs normais |
+| 24 | Worker Long | `erpnext-worker-long` | Jobs longos |
+
+#### Categoria 4: Infraestrutura Backup/Logs (2 serviços)
+
+| # | Serviço | Container | Descrição |
+|---|---------|-----------|-----------|
+| 25 | pgBackRest | `pgbackrest` | Backup enterprise PostgreSQL (PITR) |
+| 26 | Vector | `vector` | Agregador de logs (Datadog Vector) |
 
 ---
 
@@ -281,6 +318,7 @@ Proprietário - Todos os direitos reservados.
 
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
-*Versão 2.1.0 - Dezembro 2025*
+*Versão 3.0.0 - Dezembro 2025*
+*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 
 </div>

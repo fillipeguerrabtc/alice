@@ -2,6 +2,8 @@
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
+**Contexto:** Este é o serviço #11 dos 26 serviços da plataforma Alice Enterprise (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs).
+
 ## Componentes
 
 | Componente | Porta | Tecnologia | Licença | Função |
@@ -209,4 +211,5 @@ apps/observability-service/
 ---
 
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 2.0.0 - Novembro 2025*
+*Versão 2.1.0 - Dezembro 2025*
+*Total de Serviços: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
