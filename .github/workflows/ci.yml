@@ -313,6 +313,8 @@ jobs:
 
   # ===========================================================================
   # Job 5: Security Scanning
+  # CRÍTICO: exit-code: '1' para bloquear CI em vulnerabilidades CRITICAL/HIGH
+  # Regra 6 (replit.md): PROIBIDO workarounds - vulnerabilidades devem ser corrigidas
   # ===========================================================================
   security-scan:
     name: Security Scan
@@ -330,6 +332,10 @@ jobs:
           exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          # Ignorar diretórios que não vão para produção
+          skip-dirs: 'node_modules/.cache,tests,docs,.git,attached_assets'
+          # Ignorar arquivos de lock e configuração
+          skip-files: 'pnpm-lock.yaml,package-lock.json'
 
       - name: Upload Trivy scan results
         uses: github/codeql-action/upload-sarif@v4
