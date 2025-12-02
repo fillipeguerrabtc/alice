@@ -284,6 +284,106 @@ export type OidcPayload = typeof oidcPayloads.$inferSelect;
 export type InsertOidcPayload = typeof oidcPayloads.$inferInsert;
 
 // ============================================================================
+// OIDC JWKS (Chaves RS256 para assinatura de tokens - Persistência PostgreSQL)
+// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// ============================================================================
+
+export const oidcJwks = pgTable(
+  "oidc_jwks",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    kid: varchar("kid", { length: 255 }).notNull().unique(),
+    alg: varchar("alg", { length: 10 }).notNull().default("RS256"),
+    use: varchar("use", { length: 10 }).notNull().default("sig"),
+    privateKey: jsonb("private_key").notNull(),
+    publicKey: jsonb("public_key").notNull(),
+    ativo: boolean("ativo").default(true),
+    rotacionadoEm: timestamp("rotacionado_em"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOidcJwksKid: index("idx_oidc_jwks_kid").on(table.kid),
+    idxOidcJwksAtivo: index("idx_oidc_jwks_ativo").on(table.ativo),
+  })
+);
+
+export type OidcJwk = typeof oidcJwks.$inferSelect;
+export type InsertOidcJwk = typeof oidcJwks.$inferInsert;
+
+// ============================================================================
+// IDENTITY PROVISIONING EVENTS (Outbox Pattern - Sincronização Alice → Grafana/ERPNext)
+// Seguindo Regra 6 replit.md: Persistência PostgreSQL para garantia de entrega
+// ============================================================================
+
+export const identityProvisioningStatusEnum = pgEnum("identity_provisioning_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "retrying",
+]);
+
+export const identityProvisioningEvents = pgTable(
+  "identity_provisioning_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    eventType: varchar("event_type", { length: 50 }).notNull(),
+    payload: jsonb("payload").notNull(),
+    targetSystem: varchar("target_system", { length: 50 }).notNull().default("all"),
+    correlationId: varchar("correlation_id", { length: 255 }),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    status: identityProvisioningStatusEnum("status").default("pending"),
+    retryCount: integer("retry_count").default(0),
+    maxRetries: integer("max_retries").default(5),
+    errorMessage: text("error_message"),
+    proximaTentativa: timestamp("proxima_tentativa"),
+    processadoEm: timestamp("processado_em"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxProvisioningStatus: index("idx_provisioning_status").on(table.status),
+    idxProvisioningEventType: index("idx_provisioning_event_type").on(table.eventType),
+    idxProvisioningTarget: index("idx_provisioning_target").on(table.targetSystem),
+    idxProvisioningTenant: index("idx_provisioning_tenant").on(table.tenantId),
+    idxProvisioningCreated: index("idx_provisioning_created").on(table.criadoEm),
+  })
+);
+
+export type IdentityProvisioningEvent = typeof identityProvisioningEvents.$inferSelect;
+export type InsertIdentityProvisioningEvent = typeof identityProvisioningEvents.$inferInsert;
+
+// ============================================================================
+// EXTERNAL USER MAPPINGS (Mapeamento Alice ↔ Grafana/ERPNext)
+// Rastreamento de usuários sincronizados com sistemas externos
+// ============================================================================
+
+export const externalUserMappings = pgTable(
+  "external_user_mappings",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    externalSystem: varchar("external_system", { length: 50 }).notNull(),
+    externalUserId: varchar("external_user_id", { length: 255 }).notNull(),
+    externalUsername: varchar("external_username", { length: 255 }),
+    externalRole: varchar("external_role", { length: 100 }),
+    status: varchar("status", { length: 20 }).default("active"),
+    lastSyncAt: timestamp("last_sync_at"),
+    metadata: jsonb("metadata").default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxExternalMappingsUser: index("idx_external_mappings_user").on(table.userId),
+    idxExternalMappingsSystem: index("idx_external_mappings_system").on(table.externalSystem),
+    idxExternalMappingsExternal: index("idx_external_mappings_external").on(table.externalUserId),
+    uniqueUserSystem: index("unique_user_system").on(table.userId, table.externalSystem),
+  })
+);
+
+export type ExternalUserMapping = typeof externalUserMappings.$inferSelect;
+export type InsertExternalUserMapping = typeof externalUserMappings.$inferInsert;
+
+// ============================================================================
 // MÓDULOS DO SISTEMA (RBAC Granular por Funcionalidade)
 // Controle de acesso a funcionalidades específicas independente da role
 // ============================================================================
