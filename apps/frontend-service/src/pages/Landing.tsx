@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { LanguageSwitch } from "@/components/language-switch";
-import { Link } from "wouter";
 import {
   Bot,
   Shield,
@@ -103,12 +102,12 @@ export default function Landing() {
           <div className="flex items-center gap-3">
             <LanguageSwitch />
             <ThemeToggle />
-            <Link href="/login">
+            <a href="/api/login">
               <Button data-testid="button-login">
                 {t('auth.login')}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </Link>
+            </a>
           </div>
         </div>
       </header>
@@ -141,12 +140,12 @@ export default function Landing() {
                 {t('landing.description')}
               </p>
 
-              <Link href="/login">
+              <a href="/api/login">
                 <Button size="lg" data-testid="button-hero-entrar">
                   {t('landing.cta')}
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
-              </Link>
+              </a>
 
               <div className="mt-12 flex flex-wrap items-center justify-center gap-8 text-sm text-muted-foreground">
                 <div className="flex items-center gap-2">
@@ -293,12 +292,12 @@ export default function Landing() {
               {t('landing.readyToStartDescription')}
             </p>
 
-            <Link href="/login">
+            <a href="/api/login">
               <Button size="lg" data-testid="button-cta-entrar">
                 {t('landing.viewDemo')}
                 <ArrowRight className="ml-2 h-4 w-4" />
               </Button>
-            </Link>
+            </a>
           </div>
         </section>
       </main>
