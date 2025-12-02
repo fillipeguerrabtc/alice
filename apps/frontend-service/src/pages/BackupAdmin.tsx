@@ -71,7 +71,14 @@ import {
   Loader2,
   Archive,
   RotateCcw,
+  Calendar,
+  Settings,
+  Bell,
+  Save,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
@@ -134,6 +141,36 @@ interface BackupHistory {
   totalCount: number;
   lastSuccessful?: BackupManifest;
   lastFailed?: BackupManifest;
+}
+
+interface BackupSchedule {
+  enabled: boolean;
+  fullBackup: {
+    enabled: boolean;
+    cronExpression: string;
+    description: string;
+  };
+  incrementalBackup: {
+    enabled: boolean;
+    cronExpression: string;
+    description: string;
+  };
+  retention: {
+    fullBackupDays: number;
+    incrementalBackupDays: number;
+    archiveDays: number;
+  };
+  offsite: {
+    enabled: boolean;
+    syncAfterBackup: boolean;
+  };
+  notifications: {
+    onSuccess: boolean;
+    onFailure: boolean;
+    webhookUrl?: string;
+  };
+  lastModified: string;
+  modifiedBy?: string;
 }
 
 const container = {
@@ -208,6 +245,8 @@ export default function BackupAdmin() {
   const [selectedBackupId, setSelectedBackupId] = useState<string | null>(null);
   const [showManifestDialog, setShowManifestDialog] = useState(false);
   const [selectedManifest, setSelectedManifest] = useState<BackupManifest | null>(null);
+  const [showScheduleDialog, setShowScheduleDialog] = useState(false);
+  const [scheduleForm, setScheduleForm] = useState<Partial<BackupSchedule>>({});
 
   const { data: jobStatus, isLoading: isLoadingStatus } = useQuery<BackupJobStatus>({
     queryKey: ['/api/backup/status'],
@@ -220,6 +259,10 @@ export default function BackupAdmin() {
   const { data: history, isLoading: isLoadingHistory } = useQuery<BackupHistory>({
     queryKey: ['/api/backup/history'],
     refetchInterval: 30000,
+  });
+
+  const { data: schedule, isLoading: isLoadingSchedule } = useQuery<BackupSchedule>({
+    queryKey: ['/api/backup/schedule'],
   });
 
   const runBackupMutation = useMutation({
@@ -284,6 +327,27 @@ export default function BackupAdmin() {
     },
   });
 
+  const updateScheduleMutation = useMutation({
+    mutationFn: async (scheduleData: Partial<BackupSchedule>) => {
+      return apiRequest('PUT', '/api/backup/schedule', scheduleData);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Schedule atualizado',
+        description: 'Configuração de backups automáticos salva com sucesso.',
+      });
+      setShowScheduleDialog(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/backup/schedule'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao atualizar schedule',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleStartBackup = () => {
     runBackupMutation.mutate(backupType);
   };
@@ -301,6 +365,17 @@ export default function BackupAdmin() {
   const handleViewManifest = (manifest: BackupManifest) => {
     setSelectedManifest(manifest);
     setShowManifestDialog(true);
+  };
+
+  const handleOpenSchedule = () => {
+    if (schedule) {
+      setScheduleForm(schedule);
+    }
+    setShowScheduleDialog(true);
+  };
+
+  const handleSaveSchedule = () => {
+    updateScheduleMutation.mutate(scheduleForm);
   };
 
   const isBackupRunning = jobStatus?.status === 'running';
@@ -580,6 +655,95 @@ export default function BackupAdmin() {
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
+                <Calendar className="h-5 w-5" />
+                Schedule de Backups Automáticos
+              </CardTitle>
+              <CardDescription>
+                Configure horários e retenção de backups automáticos
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {isLoadingSchedule ? (
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-3/4" />
+                  <Skeleton className="h-4 w-1/2" />
+                </div>
+              ) : schedule ? (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`h-3 w-3 rounded-full ${schedule.enabled ? 'bg-green-500' : 'bg-muted'}`} />
+                      <span className="font-medium">
+                        {schedule.enabled ? 'Backups automáticos ativos' : 'Backups automáticos desativados'}
+                      </span>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleOpenSchedule}
+                      data-testid="button-configure-schedule"
+                    >
+                      <Settings className="h-4 w-4 mr-2" />
+                      Configurar
+                    </Button>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <Archive className="h-4 w-4 text-blue-500" />
+                        <span className="font-medium text-sm">Backup Full</span>
+                        <Badge variant={schedule.fullBackup.enabled ? 'default' : 'secondary'} className="text-xs">
+                          {schedule.fullBackup.enabled ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{schedule.fullBackup.description}</p>
+                      <p className="text-xs font-mono mt-1">{schedule.fullBackup.cronExpression}</p>
+                    </div>
+                    
+                    <div className="p-3 rounded-lg bg-muted/30">
+                      <div className="flex items-center gap-2 mb-2">
+                        <RefreshCw className="h-4 w-4 text-green-500" />
+                        <span className="font-medium text-sm">Backup Incremental</span>
+                        <Badge variant={schedule.incrementalBackup.enabled ? 'default' : 'secondary'} className="text-xs">
+                          {schedule.incrementalBackup.enabled ? 'Ativo' : 'Inativo'}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{schedule.incrementalBackup.description}</p>
+                      <p className="text-xs font-mono mt-1">{schedule.incrementalBackup.cronExpression}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <span>Retenção: Full {schedule.retention.fullBackupDays}d</span>
+                    <span>|</span>
+                    <span>Incremental {schedule.retention.incrementalBackupDays}d</span>
+                    <span>|</span>
+                    <span>Arquivo {schedule.retention.archiveDays}d</span>
+                    {schedule.offsite.enabled && (
+                      <>
+                        <span>|</span>
+                        <span className="flex items-center gap-1">
+                          <Upload className="h-3 w-3" />
+                          Offsite ativo
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-muted-foreground text-sm">
+                  Carregando configuração de schedule...
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        <motion.div variants={item}>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <Database className="h-5 w-5" />
                 Componentes Monitorados
               </CardTitle>
@@ -695,6 +859,249 @@ export default function BackupAdmin() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowManifestDialog(false)}>
                 Fechar
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Settings className="h-5 w-5" />
+                Configurar Schedule de Backups
+              </DialogTitle>
+              <DialogDescription>
+                Configure horários, retenção e notificações para backups automáticos
+              </DialogDescription>
+            </DialogHeader>
+            
+            <ScrollArea className="max-h-[60vh]">
+              <div className="space-y-6 pr-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label htmlFor="schedule-enabled" className="font-medium">Backups Automáticos</Label>
+                    <p className="text-xs text-muted-foreground">Ativar/desativar todos os backups automáticos</p>
+                  </div>
+                  <Switch
+                    id="schedule-enabled"
+                    checked={scheduleForm.enabled ?? true}
+                    onCheckedChange={(checked) => setScheduleForm(prev => ({ ...prev, enabled: checked }))}
+                    data-testid="switch-schedule-enabled"
+                  />
+                </div>
+
+                <div className="space-y-4 p-4 rounded-lg border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Archive className="h-4 w-4 text-blue-500" />
+                      <Label className="font-medium">Backup Full</Label>
+                    </div>
+                    <Switch
+                      checked={scheduleForm.fullBackup?.enabled ?? true}
+                      onCheckedChange={(checked) => setScheduleForm(prev => ({
+                        ...prev,
+                        fullBackup: { ...prev.fullBackup!, enabled: checked }
+                      }))}
+                      data-testid="switch-full-backup-enabled"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="full-cron" className="text-sm">Expressão Cron</Label>
+                      <Input
+                        id="full-cron"
+                        value={scheduleForm.fullBackup?.cronExpression ?? '0 3 * * 0'}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          fullBackup: { ...prev.fullBackup!, cronExpression: e.target.value }
+                        }))}
+                        placeholder="0 3 * * 0"
+                        className="font-mono text-sm"
+                        data-testid="input-full-cron"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="full-desc" className="text-sm">Descrição</Label>
+                      <Input
+                        id="full-desc"
+                        value={scheduleForm.fullBackup?.description ?? ''}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          fullBackup: { ...prev.fullBackup!, description: e.target.value }
+                        }))}
+                        placeholder="Backup full aos domingos às 03:00"
+                        data-testid="input-full-description"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 rounded-lg border">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <RefreshCw className="h-4 w-4 text-green-500" />
+                      <Label className="font-medium">Backup Incremental</Label>
+                    </div>
+                    <Switch
+                      checked={scheduleForm.incrementalBackup?.enabled ?? true}
+                      onCheckedChange={(checked) => setScheduleForm(prev => ({
+                        ...prev,
+                        incrementalBackup: { ...prev.incrementalBackup!, enabled: checked }
+                      }))}
+                      data-testid="switch-incremental-backup-enabled"
+                    />
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="incr-cron" className="text-sm">Expressão Cron</Label>
+                      <Input
+                        id="incr-cron"
+                        value={scheduleForm.incrementalBackup?.cronExpression ?? '0 3 * * 1-6'}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          incrementalBackup: { ...prev.incrementalBackup!, cronExpression: e.target.value }
+                        }))}
+                        placeholder="0 3 * * 1-6"
+                        className="font-mono text-sm"
+                        data-testid="input-incremental-cron"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="incr-desc" className="text-sm">Descrição</Label>
+                      <Input
+                        id="incr-desc"
+                        value={scheduleForm.incrementalBackup?.description ?? ''}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          incrementalBackup: { ...prev.incrementalBackup!, description: e.target.value }
+                        }))}
+                        placeholder="Backup incremental de seg a sáb"
+                        data-testid="input-incremental-description"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    <Label className="font-medium">Retenção de Backups</Label>
+                  </div>
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ret-full" className="text-sm">Full (dias)</Label>
+                      <Input
+                        id="ret-full"
+                        type="number"
+                        min={1}
+                        max={365}
+                        value={scheduleForm.retention?.fullBackupDays ?? 30}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          retention: { ...prev.retention!, fullBackupDays: parseInt(e.target.value) || 30 }
+                        }))}
+                        data-testid="input-retention-full"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ret-incr" className="text-sm">Incremental (dias)</Label>
+                      <Input
+                        id="ret-incr"
+                        type="number"
+                        min={1}
+                        max={30}
+                        value={scheduleForm.retention?.incrementalBackupDays ?? 7}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          retention: { ...prev.retention!, incrementalBackupDays: parseInt(e.target.value) || 7 }
+                        }))}
+                        data-testid="input-retention-incremental"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ret-archive" className="text-sm">Arquivo (dias)</Label>
+                      <Input
+                        id="ret-archive"
+                        type="number"
+                        min={7}
+                        max={3650}
+                        value={scheduleForm.retention?.archiveDays ?? 90}
+                        onChange={(e) => setScheduleForm(prev => ({
+                          ...prev,
+                          retention: { ...prev.retention!, archiveDays: parseInt(e.target.value) || 90 }
+                        }))}
+                        data-testid="input-retention-archive"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 p-4 rounded-lg border">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4" />
+                    <Label className="font-medium">Notificações</Label>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notify-success" className="text-sm">Notificar em sucesso</Label>
+                      <Switch
+                        id="notify-success"
+                        checked={scheduleForm.notifications?.onSuccess ?? false}
+                        onCheckedChange={(checked) => setScheduleForm(prev => ({
+                          ...prev,
+                          notifications: { ...prev.notifications!, onSuccess: checked }
+                        }))}
+                        data-testid="switch-notify-success"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label htmlFor="notify-failure" className="text-sm">Notificar em falha</Label>
+                      <Switch
+                        id="notify-failure"
+                        checked={scheduleForm.notifications?.onFailure ?? true}
+                        onCheckedChange={(checked) => setScheduleForm(prev => ({
+                          ...prev,
+                          notifications: { ...prev.notifications!, onFailure: checked }
+                        }))}
+                        data-testid="switch-notify-failure"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-4 rounded-lg border">
+                  <div>
+                    <Label className="font-medium">Sincronização Offsite</Label>
+                    <p className="text-xs text-muted-foreground">Enviar backups para Hetzner Object Storage (S3)</p>
+                  </div>
+                  <Switch
+                    checked={scheduleForm.offsite?.enabled ?? true}
+                    onCheckedChange={(checked) => setScheduleForm(prev => ({
+                      ...prev,
+                      offsite: { ...prev.offsite!, enabled: checked, syncAfterBackup: checked }
+                    }))}
+                    data-testid="switch-offsite-enabled"
+                  />
+                </div>
+              </div>
+            </ScrollArea>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowScheduleDialog(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={handleSaveSchedule}
+                disabled={updateScheduleMutation.isPending}
+                data-testid="button-save-schedule"
+              >
+                {updateScheduleMutation.isPending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4 mr-2" />
+                )}
+                Salvar Configuração
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -961,4 +961,330 @@ router.post('/verify/:id', async (req: Request, res: Response) => {
   }
 });
 
+// =============================================================================
+// SCHEDULE DE BACKUPS AUTOMÁTICOS - Enterprise-Grade
+// =============================================================================
+// Best practices 2025: Configuração dinâmica via API, persistência em disco
+// Regra 6: Sem workarounds - persistência real em arquivo JSON
+// =============================================================================
+
+/** Configuração de schedule de backup */
+interface BackupSchedule {
+  enabled: boolean;
+  fullBackup: {
+    enabled: boolean;
+    cronExpression: string;
+    description: string;
+  };
+  incrementalBackup: {
+    enabled: boolean;
+    cronExpression: string;
+    description: string;
+  };
+  retention: {
+    fullBackupDays: number;
+    incrementalBackupDays: number;
+    archiveDays: number;
+  };
+  offsite: {
+    enabled: boolean;
+    syncAfterBackup: boolean;
+  };
+  notifications: {
+    onSuccess: boolean;
+    onFailure: boolean;
+    webhookUrl?: string;
+  };
+  lastModified: string;
+  modifiedBy?: string;
+}
+
+const SCHEDULE_FILE = path.join(BACKUP_DIR, 'schedule.json');
+
+/** Configuração padrão de schedule (Enterprise best practices) */
+const DEFAULT_SCHEDULE: BackupSchedule = {
+  enabled: true,
+  fullBackup: {
+    enabled: true,
+    cronExpression: '0 3 * * 0',
+    description: 'Backup full aos domingos às 03:00 UTC',
+  },
+  incrementalBackup: {
+    enabled: true,
+    cronExpression: '0 3 * * 1-6',
+    description: 'Backup incremental de segunda a sábado às 03:00 UTC',
+  },
+  retention: {
+    fullBackupDays: 30,
+    incrementalBackupDays: 7,
+    archiveDays: 90,
+  },
+  offsite: {
+    enabled: true,
+    syncAfterBackup: true,
+  },
+  notifications: {
+    onSuccess: false,
+    onFailure: true,
+  },
+  lastModified: new Date().toISOString(),
+};
+
+/** Carregar schedule do disco */
+async function loadSchedule(): Promise<BackupSchedule> {
+  try {
+    if (!existsSync(SCHEDULE_FILE)) {
+      await saveSchedule(DEFAULT_SCHEDULE);
+      return DEFAULT_SCHEDULE;
+    }
+    
+    const content = await readFile(SCHEDULE_FILE, 'utf-8');
+    return JSON.parse(content) as BackupSchedule;
+  } catch (error) {
+    logger.warn({ error }, 'Erro ao carregar schedule, usando padrão');
+    return DEFAULT_SCHEDULE;
+  }
+}
+
+/** Salvar schedule em disco */
+async function saveSchedule(schedule: BackupSchedule): Promise<void> {
+  await mkdir(BACKUP_DIR, { recursive: true });
+  await writeFile(SCHEDULE_FILE, JSON.stringify(schedule, null, 2), 'utf-8');
+  logger.info('Schedule de backup salvo');
+}
+
+/** Validar expressão cron */
+function validateCronExpression(expr: string): boolean {
+  const cronRegex = /^(\*|([0-5]?\d)) (\*|([01]?\d|2[0-3])) (\*|([1-9]|[12]\d|3[01])) (\*|([1-9]|1[0-2])) (\*|[0-6](-[0-6])?(,[0-6](-[0-6])?)*)$/;
+  return cronRegex.test(expr);
+}
+
+/** Schema Zod para validação de schedule */
+const scheduleUpdateSchema = z.object({
+  enabled: z.boolean().optional(),
+  fullBackup: z.object({
+    enabled: z.boolean(),
+    cronExpression: z.string().refine(validateCronExpression, {
+      message: 'Expressão cron inválida (formato: min hora dia mês diaSemana)',
+    }),
+    description: z.string().optional(),
+  }).optional(),
+  incrementalBackup: z.object({
+    enabled: z.boolean(),
+    cronExpression: z.string().refine(validateCronExpression, {
+      message: 'Expressão cron inválida',
+    }),
+    description: z.string().optional(),
+  }).optional(),
+  retention: z.object({
+    fullBackupDays: z.number().min(1).max(365),
+    incrementalBackupDays: z.number().min(1).max(30),
+    archiveDays: z.number().min(7).max(3650),
+  }).optional(),
+  offsite: z.object({
+    enabled: z.boolean(),
+    syncAfterBackup: z.boolean(),
+  }).optional(),
+  notifications: z.object({
+    onSuccess: z.boolean(),
+    onFailure: z.boolean(),
+    webhookUrl: z.string().url().optional().nullable(),
+  }).optional(),
+});
+
+/**
+ * GET /api/backup/schedule
+ * Obter configuração atual de schedule de backups
+ */
+router.get('/schedule', async (_req: Request, res: Response) => {
+  try {
+    const schedule = await loadSchedule();
+    res.json(schedule);
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao carregar schedule');
+    res.status(500).json({ error: 'Erro ao carregar schedule', details: err.message });
+  }
+});
+
+/**
+ * PUT /api/backup/schedule
+ * Atualizar configuração de schedule de backups
+ */
+router.put('/schedule', async (req: Request, res: Response) => {
+  try {
+    const parsed = scheduleUpdateSchema.safeParse(req.body);
+    
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Dados inválidos',
+        details: parsed.error.errors,
+      });
+      return;
+    }
+    
+    const currentSchedule = await loadSchedule();
+    
+    const updatedSchedule: BackupSchedule = {
+      ...currentSchedule,
+      ...parsed.data,
+      fullBackup: parsed.data.fullBackup 
+        ? { ...currentSchedule.fullBackup, ...parsed.data.fullBackup }
+        : currentSchedule.fullBackup,
+      incrementalBackup: parsed.data.incrementalBackup
+        ? { ...currentSchedule.incrementalBackup, ...parsed.data.incrementalBackup }
+        : currentSchedule.incrementalBackup,
+      retention: parsed.data.retention
+        ? { ...currentSchedule.retention, ...parsed.data.retention }
+        : currentSchedule.retention,
+      offsite: parsed.data.offsite
+        ? { ...currentSchedule.offsite, ...parsed.data.offsite }
+        : currentSchedule.offsite,
+      notifications: parsed.data.notifications
+        ? { ...currentSchedule.notifications, ...parsed.data.notifications }
+        : currentSchedule.notifications,
+      lastModified: new Date().toISOString(),
+      modifiedBy: req.headers['x-user-id'] as string || 'admin',
+    };
+    
+    await saveSchedule(updatedSchedule);
+    
+    logger.info({ schedule: updatedSchedule }, 'Schedule de backup atualizado');
+    
+    res.json({
+      success: true,
+      message: 'Schedule atualizado com sucesso',
+      schedule: updatedSchedule,
+    });
+    
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao atualizar schedule');
+    res.status(500).json({ error: 'Erro ao atualizar schedule', details: err.message });
+  }
+});
+
+/**
+ * POST /api/backup/schedule/test
+ * Testar configuração de schedule (dry-run)
+ */
+router.post('/schedule/test', async (_req: Request, res: Response) => {
+  try {
+    const schedule = await loadSchedule();
+    
+    const nextFullBackup = getNextCronRun(schedule.fullBackup.cronExpression);
+    const nextIncrementalBackup = getNextCronRun(schedule.incrementalBackup.cronExpression);
+    
+    res.json({
+      success: true,
+      message: 'Configuração de schedule válida',
+      nextRuns: {
+        fullBackup: schedule.fullBackup.enabled ? nextFullBackup : null,
+        incrementalBackup: schedule.incrementalBackup.enabled ? nextIncrementalBackup : null,
+      },
+      schedule,
+    });
+    
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao testar schedule');
+    res.status(500).json({ error: 'Erro ao testar schedule', details: err.message });
+  }
+});
+
+/** Calcular próxima execução de cron (simplificado) */
+function getNextCronRun(cronExpression: string): string {
+  const parts = cronExpression.split(' ');
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  
+  const now = new Date();
+  const next = new Date(now);
+  
+  next.setMinutes(parseInt(minute) || 0);
+  next.setHours(parseInt(hour) || 3);
+  next.setSeconds(0);
+  next.setMilliseconds(0);
+  
+  if (next <= now) {
+    if (dayOfWeek === '*') {
+      next.setDate(next.getDate() + 1);
+    } else if (dayOfWeek === '0') {
+      const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
+      next.setDate(next.getDate() + daysUntilSunday);
+    } else {
+      next.setDate(next.getDate() + 1);
+    }
+  }
+  
+  return next.toISOString();
+}
+
+// =============================================================================
+// PRE-DEPLOY SNAPSHOT - Para rollback automático
+// =============================================================================
+
+/**
+ * POST /api/backup/pre-deploy
+ * Criar snapshot pré-deploy para rollback automático
+ * Chamado pelo CI/CD antes de cada deploy
+ */
+router.post('/pre-deploy', async (req: Request, res: Response) => {
+  try {
+    const { deployId, version, actor } = req.body as {
+      deployId?: string;
+      version?: string;
+      actor?: string;
+    };
+    
+    logger.info({ deployId, version, actor }, 'Iniciando snapshot pré-deploy');
+    
+    const backupId = `pre-deploy-${deployId || Date.now()}`;
+    
+    const manifest: BackupManifest = {
+      id: backupId,
+      type: 'full',
+      status: 'running',
+      startedAt: new Date().toISOString(),
+      components: {},
+      offsite: { enabled: true },
+      encryption: { enabled: true, algorithm: 'AES-256-CBC' },
+      createdBy: actor || 'ci-cd',
+      notes: `Snapshot pré-deploy para versão ${version || 'unknown'}`,
+    };
+    
+    await saveManifest(manifest);
+    
+    try {
+      await execAsync(
+        `docker exec alice-pgbackrest pgbackrest --stanza=alice --type=full backup`,
+        { timeout: 1800000 }
+      );
+      
+      manifest.components.postgresql = {
+        status: 'completed',
+        backupSet: backupId,
+      };
+    } catch (error) {
+      manifest.components.postgresql = { status: 'failed' };
+      logger.error({ error }, 'Falha no snapshot PostgreSQL pré-deploy');
+    }
+    
+    manifest.status = manifest.components.postgresql?.status === 'completed' ? 'completed' : 'failed';
+    manifest.completedAt = new Date().toISOString();
+    
+    await saveManifest(manifest);
+    
+    res.json({
+      success: manifest.status === 'completed',
+      backupId,
+      manifest,
+    });
+    
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao criar snapshot pré-deploy');
+    res.status(500).json({ error: 'Erro ao criar snapshot pré-deploy', details: err.message });
+  }
+});
+
 export { router as backupRouter };

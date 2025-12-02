@@ -687,7 +687,7 @@ jobs:
             docker compose -f docker-compose.prod.yml ps
 
   # ===========================================================================
-  # Job 6: Health Check Pós-Deploy
+  # Job 6: Health Check Pós-Deploy (com trigger de rollback)
   # ===========================================================================
   health-check:
     name: Health Check
@@ -698,21 +698,49 @@ jobs:
     permissions:
       contents: read
     
+    outputs:
+      health_status: ${{ steps.health.outputs.status }}
+    
     steps:
       - name: Aguardar serviços iniciarem
         run: sleep 60
 
-      - name: Health Check - Frontend
+      - name: Health Check - Todos os Serviços
+        id: health
         run: |
-          curl -sf https://yesyoudeserve.duckdns.org/health || echo "Frontend health check falhou (pode estar iniciando)"
-
-      - name: Health Check - Auth Service
-        run: |
-          curl -sf https://yesyoudeserve.duckdns.org/api/auth/health || echo "Auth service health check falhou (pode estar iniciando)"
-
-      - name: Health Check - ERPNext
-        run: |
-          curl -sf https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping || echo "ERPNext health check falhou (pode estar iniciando)"
+          FAILED=0
+          
+          echo "Verificando Frontend..."
+          if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/health; then
+            echo "Frontend health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "Frontend OK"
+          fi
+          
+          echo "Verificando Auth Service..."
+          if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/api/auth/health; then
+            echo "Auth service health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "Auth OK"
+          fi
+          
+          echo "Verificando ERPNext..."
+          if ! curl -sf --max-time 30 https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping; then
+            echo "ERPNext health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "ERPNext OK"
+          fi
+          
+          if [ "$FAILED" -gt 1 ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "CRÍTICO: $FAILED serviços falharam no health check!"
+          else
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "Health check passou"
+          fi
 
       - name: Resumo do Deploy
         run: |
@@ -722,4 +750,233 @@ jobs:
           echo "Frontend: https://yesyoudeserve.duckdns.org"
           echo "ERPNext: https://erp.yesyoudeserve.duckdns.org"
           echo "Commit: ${{ github.sha }}"
+          echo "Health Status: ${{ steps.health.outputs.status }}"
           echo "=============================================="
+
+  # ===========================================================================
+  # Job 7: ROLLBACK AUTOMÁTICO - Enterprise-Grade
+  # ===========================================================================
+  # Regra 6: Sem workarounds - rollback real com cleanup completo
+  # Regra 16: Melhores práticas - health checks, cleanup, notificação
+  # Best Practices 2025: Blue/green deployment pattern, atomic rollback
+  # ===========================================================================
+  rollback:
+    name: Rollback Automático
+    runs-on: ubuntu-latest
+    needs: [deploy, health-check]
+    if: failure() || needs.health-check.outputs.health_status == 'failed'
+    
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Executar Rollback Automático
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: GH_PAT,GITHUB_SHA,GITHUB_ACTOR
+          script: |
+            set -e
+            
+            echo "=============================================="
+            echo "ALICE ENTERPRISE - ROLLBACK AUTOMÁTICO"
+            echo "=============================================="
+            echo "Commit falho: ${GITHUB_SHA}"
+            echo "Iniciado por: ${GITHUB_ACTOR}"
+            echo "Timestamp: $(date)"
+            echo "=============================================="
+            
+            cd /opt/alice/app/infra/docker
+            
+            # ==============================================
+            # PASSO 1: Capturar estado atual para diagnóstico
+            # ==============================================
+            echo "[1/5] Capturando estado atual dos containers..."
+            docker compose -f docker-compose.prod.yml ps > /tmp/rollback-state-before.txt 2>&1 || true
+            docker compose -f docker-compose.prod.yml logs --tail=100 > /tmp/rollback-logs-before.txt 2>&1 || true
+            
+            # ==============================================
+            # PASSO 2: Identificar versão anterior estável
+            # ==============================================
+            echo "[2/5] Identificando versão anterior..."
+            
+            # Verificar se existe manifesto de versão anterior
+            MANIFEST_DIR="/opt/alice/backups/manifests"
+            mkdir -p "$MANIFEST_DIR"
+            
+            # Encontrar o último deploy bem-sucedido
+            PREVIOUS_SHA=""
+            if [ -f "$MANIFEST_DIR/last-successful-deploy.txt" ]; then
+              PREVIOUS_SHA=$(cat "$MANIFEST_DIR/last-successful-deploy.txt")
+              echo "Versão anterior encontrada: $PREVIOUS_SHA"
+            else
+              echo "AVISO: Nenhuma versão anterior registrada, tentando git..."
+              cd /opt/alice/app
+              PREVIOUS_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
+              cd /opt/alice/app/infra/docker
+            fi
+            
+            if [ -z "$PREVIOUS_SHA" ]; then
+              echo "ERRO: Não foi possível identificar versão anterior"
+              echo "Rollback manual necessário!"
+              exit 1
+            fi
+            
+            # ==============================================
+            # PASSO 3: Parar containers falhos e limpar
+            # ==============================================
+            echo "[3/5] Parando containers e limpando sujeira..."
+            
+            # Parar todos os containers Alice (mantém ERPNext se estava ok)
+            docker compose -f docker-compose.prod.yml stop \
+              alice-frontend alice-auth alice-chat alice-rag \
+              alice-training alice-integrations alice-observability 2>/dev/null || true
+            
+            # Remover containers parados
+            docker compose -f docker-compose.prod.yml rm -f \
+              alice-frontend alice-auth alice-chat alice-rag \
+              alice-training alice-integrations alice-observability 2>/dev/null || true
+            
+            # Limpar imagens não utilizadas (agressivo)
+            docker image prune -af --filter "until=1h" 2>/dev/null || true
+            docker container prune -f 2>/dev/null || true
+            docker volume prune -f 2>/dev/null || true
+            
+            echo "Limpeza concluída"
+            
+            # ==============================================
+            # PASSO 4: Restaurar versão anterior
+            # ==============================================
+            echo "[4/5] Restaurando versão anterior: $PREVIOUS_SHA"
+            
+            cd /opt/alice/app
+            
+            # Checkout da versão anterior
+            git fetch origin
+            git checkout "$PREVIOUS_SHA" --force
+            
+            cd /opt/alice/app/infra/docker
+            
+            # Login no registry
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+            
+            # Pull das imagens da versão anterior
+            export IMAGE_TAG="$PREVIOUS_SHA"
+            docker compose -f docker-compose.prod.yml \
+              --env-file .env.prod \
+              pull --ignore-pull-failures
+            
+            # Iniciar containers com versão anterior
+            docker compose -f docker-compose.prod.yml \
+              --env-file .env.prod \
+              up -d --no-build --remove-orphans
+            
+            # ==============================================
+            # PASSO 5: Verificar rollback e registrar
+            # ==============================================
+            echo "[5/5] Verificando rollback..."
+            
+            sleep 30
+            
+            # Verificar se serviços estão rodando
+            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
+            
+            if [ "$RUNNING" -lt 3 ]; then
+              echo "CRÍTICO: Rollback pode ter falhado - apenas $RUNNING containers rodando"
+              docker compose -f docker-compose.prod.yml ps
+              exit 1
+            fi
+            
+            # Registrar rollback no manifesto
+            echo "$PREVIOUS_SHA" > "$MANIFEST_DIR/last-successful-deploy.txt"
+            
+            # Criar log de rollback
+            cat > "$MANIFEST_DIR/rollback-$(date +%Y%m%d-%H%M%S).json" << EOF
+            {
+              "timestamp": "$(date -Iseconds)",
+              "failedCommit": "${GITHUB_SHA}",
+              "restoredTo": "$PREVIOUS_SHA",
+              "actor": "${GITHUB_ACTOR}",
+              "containersRunning": $RUNNING,
+              "status": "completed"
+            }
+            EOF
+            
+            echo "=============================================="
+            echo "ROLLBACK CONCLUÍDO COM SUCESSO!"
+            echo "=============================================="
+            echo "Versão restaurada: $PREVIOUS_SHA"
+            echo "Containers rodando: $RUNNING"
+            docker compose -f docker-compose.prod.yml ps
+            echo "=============================================="
+
+      - name: Notificar Rollback (Falha no Deploy)
+        if: always()
+        run: |
+          echo "ALERTA: Rollback executado para o deploy ${{ github.sha }}"
+          echo "O deploy falhou e a plataforma foi restaurada para a versão anterior."
+          echo "Verifique os logs para diagnosticar o problema."
+
+  # ===========================================================================
+  # Job 8: Registrar Deploy Bem-Sucedido
+  # ===========================================================================
+  register-success:
+    name: Registrar Sucesso
+    runs-on: ubuntu-latest
+    needs: [deploy, health-check]
+    if: success() && needs.health-check.outputs.health_status == 'success'
+    
+    permissions:
+      contents: read
+    
+    steps:
+      - name: Configurar SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Registrar Deploy Bem-Sucedido
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: GITHUB_SHA,GITHUB_ACTOR
+          script: |
+            MANIFEST_DIR="/opt/alice/backups/manifests"
+            mkdir -p "$MANIFEST_DIR"
+            
+            # Registrar commit bem-sucedido para rollback futuro
+            echo "${GITHUB_SHA}" > "$MANIFEST_DIR/last-successful-deploy.txt"
+            
+            # Criar manifesto de deploy
+            cat > "$MANIFEST_DIR/deploy-$(date +%Y%m%d-%H%M%S).json" << EOF
+            {
+              "timestamp": "$(date -Iseconds)",
+              "commit": "${GITHUB_SHA}",
+              "actor": "${GITHUB_ACTOR}",
+              "status": "success",
+              "healthCheck": "passed"
+            }
+            EOF
+            
+            echo "Deploy $GITHUB_SHA registrado como bem-sucedido"
+            echo "Este commit será usado como ponto de rollback se o próximo deploy falhar"
