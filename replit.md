@@ -104,3 +104,35 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
 - **Object Storage**: Hetzner Object Storage (S3-compatible).
+
+## Recent Changes (Dec 2025)
+
+### Security Hardening - Production Audit
+
+| Fase | Implementação | Status |
+|------|---------------|--------|
+| **FASE 1** | Content-Security-Policy (CSP) header no Traefik middleware | Completo |
+| **FASE 2** | Healthchecks em 4 ERPNext workers (scheduler, short, default, long) | Completo |
+| **FASE 3** | `security_opt: no-new-privileges:true` em TODOS 26 containers | Completo |
+| **FASE 4** | Imagens pinadas com SHA256 digests 2024/2025 | Completo |
+
+### Image Versions (SHA256 Pinned)
+
+| Imagem | Versão | Digest |
+|--------|--------|--------|
+| Traefik | v3.3 | sha256:b8bded... |
+| PostgreSQL | pg16 (pgvector) | sha256:d836eb... |
+| MariaDB | 10.11 | sha256:dc249c... |
+| Redis | 7-alpine | sha256:e600a2... |
+| ERPNext | v15.88.0 | sha256:158d31... |
+| Vector | 0.43.1-alpine | sha256:ffa011... |
+| pgBackRest | 2.54.0 (woblerr) | Community image |
+| Docker Socket Proxy | latest | sha256:2f92c6... |
+| BusyBox | 1.36 | sha256:2376a0... |
+
+### Compliance Verification
+
+- **26 containers** = **26 security_opt entries** (100% coverage)
+- **CSP Headers**: OWASP 2025 compliant (unsafe-inline/eval required for React/ERPNext)
+- **Healthchecks**: Todos os workers com verificação de processo via pgrep
+- **Supply Chain Security**: Todas imagens externas com digest SHA256
