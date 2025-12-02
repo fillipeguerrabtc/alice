@@ -1,7 +1,8 @@
 /**
  * Servidor de Desenvolvimento - Alice Enterprise Platform
  * 
- * Servidor Express com autenticação REAL via Replit Auth.
+ * APENAS PARA PREVIEW NO REPLIT (Regra 6 replit.md)
+ * Dados de preview permitidos APENAS neste arquivo.
  * 
  * Produção: Hetzner Cloud via Docker Compose (Regra 12)
  * Documentação em PT-BR (Regra 10 replit.md)
@@ -10,6 +11,74 @@
 import express from 'express';
 import { registerRoutes } from './routes';
 import { setupVite, log } from './vite';
+import { storage } from './storage';
+
+// ============================================================================
+// PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 replit.md)
+// Este código NAO é deployado para produção
+// ============================================================================
+
+async function setupPreviewData() {
+  log('Modo desenvolvimento: configurando dados de preview');
+}
+
+// ============================================================================
+// PREVIEW CHAT ENDPOINT - APENAS DESENVOLVIMENTO
+// Permite testar a UI de chat sem Salad Cloud
+// ============================================================================
+
+function setupPreviewChatEndpoint(app: express.Express) {
+  app.post('/api/chat/preview', async (req, res) => {
+    const { message } = req.body;
+    
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    const response = generatePreviewResponse(message || '');
+    const words = response.split(' ');
+    
+    for (const word of words) {
+      res.write(`data: ${JSON.stringify({ content: word + ' ' })}\n\n`);
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    
+    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    res.end();
+  });
+
+  app.get('/api/llm/status', (_req, res) => {
+    res.json({
+      available: true,
+      previewMode: true,
+      model: 'llama4-maverick-preview',
+      provider: 'Preview (desenvolvimento)',
+      note: 'Em producao, conecta ao Salad Cloud com Llama 4 Maverick 400B'
+    });
+  });
+}
+
+function generatePreviewResponse(userMessage: string): string {
+  const lowerMessage = userMessage.toLowerCase();
+  
+  if (lowerMessage.includes('ola') || lowerMessage.includes('oi') || lowerMessage.includes('hello')) {
+    return 'Ola! Sou Alice, sua assistente de IA enterprise. Este e o modo preview de desenvolvimento. Em producao, estarei conectada ao Llama 4 Maverick (400B parametros) no Salad Cloud. Como posso ajudar?';
+  }
+  
+  if (lowerMessage.includes('quem') && lowerMessage.includes('voce')) {
+    return 'Sou Alice, uma plataforma de IA autonoma enterprise. Minhas capacidades incluem: chat em tempo real com streaming, RAG para busca semantica em documentos, geracao de imagens com FLUX.1, e integracao SSO com Grafana e ERPNext. Este e o modo preview.';
+  }
+
+  if (lowerMessage.includes('ajud') || lowerMessage.includes('help')) {
+    return 'Posso ajudar com diversas tarefas: responder perguntas, analisar documentos, gerar insights de negocios, e muito mais. Em producao, terei acesso ao modelo Llama 4 Maverick com 400B parametros.';
+  }
+
+  return `Recebi sua mensagem. Este e o modo preview de desenvolvimento. Em producao (Hetzner Cloud), estarei conectada ao Llama 4 Maverick no Salad Cloud para respostas completas e inteligentes.`;
+}
+
+// ============================================================================
+// SERVIDOR DE DESENVOLVIMENTO
+// ============================================================================
 
 async function startDevServer() {
   const app = express();
@@ -45,6 +114,12 @@ async function startDevServer() {
     next();
   });
 
+  // Endpoints de preview ANTES das rotas principais
+  setupPreviewChatEndpoint(app);
+  
+  // Dados de preview
+  await setupPreviewData();
+
   const server = await registerRoutes(app);
   
   app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -59,6 +134,7 @@ async function startDevServer() {
   const port = 5000;
   server.listen(port, "0.0.0.0", () => {
     log(`Servidor rodando em http://0.0.0.0:${port}`);
+    log(`Modo: DESENVOLVIMENTO (preview habilitado)`);
   });
 }
 
