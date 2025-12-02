@@ -128,9 +128,13 @@ const BACKUP_DIR = process.env.BACKUP_DIR || '/opt/alice/backups';
 const MANIFESTS_DIR = path.join(BACKUP_DIR, 'manifests');
 
 // Containers Docker (nomes em produção)
-const POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER || 'alice-postgres';
+// NOTA: POSTGRES_CONTAINER usado indiretamente via alice-pgbackrest que se conecta ao PostgreSQL
+const _POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER || 'alice-postgres';
 const MARIADB_CONTAINER = process.env.MARIADB_CONTAINER || 'erpnext-mariadb';
 const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'erpnext-redis-cache';
+
+// Re-exportar para uso futuro em funções de health check
+export { _POSTGRES_CONTAINER as POSTGRES_CONTAINER };
 
 // Hetzner Object Storage (S3-compatible)
 const S3_ENDPOINT = process.env.HETZNER_S3_ENDPOINT || 'fsn1.your-objectstorage.com';
@@ -241,10 +245,12 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
     const pgbackrestType = type === 'diff' ? 'diff' : type === 'incr' ? 'incr' : 'full';
     
     // Executar backup via pgBackRest (container dedicado)
-    const { stdout: backupOutput } = await execAsync(
+    // NOTA: backupOutput capturado para logging futuro se necessário
+    const { stdout: _backupOutput } = await execAsync(
       `docker exec alice-pgbackrest pgbackrest --stanza=alice --type=${pgbackrestType} backup`,
       { timeout: 1800000 } // 30 min timeout para backup full
     );
+    logger.debug({ backupOutputLength: _backupOutput.length }, 'pgBackRest backup output recebido');
     
     // Obter informações do backup
     const { stdout: infoOutput } = await execAsync(
@@ -1088,7 +1094,8 @@ const scheduleUpdateSchema = z.object({
   notifications: z.object({
     onSuccess: z.boolean(),
     onFailure: z.boolean(),
-    webhookUrl: z.string().url().optional().nullable(),
+    // NOTA: .transform() converte null para undefined para compatibilidade com interface BackupSchedule
+    webhookUrl: z.string().url().optional().nullable().transform(val => val ?? undefined),
   }).optional(),
 });
 
@@ -1195,7 +1202,8 @@ router.post('/schedule/test', async (_req: Request, res: Response) => {
 /** Calcular próxima execução de cron (simplificado) */
 function getNextCronRun(cronExpression: string): string {
   const parts = cronExpression.split(' ');
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+  // NOTA: dayOfMonth e month são reservados para implementação futura de cron parsing completo
+  const [minute, hour, _dayOfMonth, _month, dayOfWeek] = parts;
   
   const now = new Date();
   const next = new Date(now);
@@ -1204,6 +1212,11 @@ function getNextCronRun(cronExpression: string): string {
   next.setHours(parseInt(hour) || 3);
   next.setSeconds(0);
   next.setMilliseconds(0);
+  
+  // TODO: Implementar parsing completo de dayOfMonth e month para cron expressions
+  // Por enquanto, apenas dayOfWeek é considerado para agendamento
+  void _dayOfMonth;
+  void _month;
   
   if (next <= now) {
     if (dayOfWeek === '*') {
