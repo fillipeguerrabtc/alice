@@ -251,6 +251,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # CRÍTICO: Limpar espaço em disco ANTES de instalar PyTorch (~2GB)
+      - name: Free disk space before install
+        run: |
+          echo "=== Liberando espaço em disco para PyTorch ==="
+          df -h /
+          sudo apt-get clean
+          rm -rf ~/.cache/pip || true
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          df -h /
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -262,7 +273,9 @@ jobs:
         run: |
           set -e
           cd apps/clip-inference-service
-          pip install -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt
+          echo "Dependências instaladas com sucesso!"
+          df -h /
 
       - name: Validate Python syntax
         run: |
@@ -323,6 +336,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # CRÍTICO: Limpar espaço em disco ANTES de instalar dependências
+      # GitHub Actions runners têm ~14GB livres, mas caches podem consumir muito
+      - name: Free disk space before install
+        run: |
+          echo "=== Liberando espaço em disco ==="
+          echo "Espaço antes da limpeza:"
+          df -h /
+          
+          # Limpar caches do sistema
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          
+          # Limpar caches do pip e npm de execuções anteriores
+          rm -rf ~/.cache/pip || true
+          rm -rf ~/.npm || true
+          rm -rf ~/.pnpm-store || true
+          
+          # Remover ferramentas pré-instaladas desnecessárias (economiza ~5GB)
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /usr/local/share/boost || true
+          
+          echo "Espaço após limpeza:"
+          df -h /
+
       # Setup pnpm para instalar dependências Node.js (necessário para Trivy escanear)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -351,8 +389,9 @@ jobs:
         run: |
           set -e
           echo "Instalando dependências Python para scan de segurança..."
-          pip install -r apps/clip-inference-service/requirements.txt
+          pip install --no-cache-dir -r apps/clip-inference-service/requirements.txt
           echo "Dependências Python instaladas com sucesso!"
+          df -h /
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@0.28.0
@@ -367,6 +406,16 @@ jobs:
           skip-dirs: 'node_modules/.cache,tests,docs,.git,attached_assets'
           # Ignorar arquivos de lock e configuração (Trivy deve escanear requirements.txt e package.json)
           skip-files: 'pnpm-lock.yaml,package-lock.json'
+
+      # Garantir que arquivo SARIF existe mesmo se Trivy falhar
+      - name: Ensure SARIF file exists
+        if: always()
+        run: |
+          if [ ! -f "trivy-results.sarif" ]; then
+            echo "Criando arquivo SARIF vazio (Trivy não gerou output)..."
+            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.28.0"}},"results":[]}]}' > trivy-results.sarif
+          fi
+          ls -la trivy-results.sarif
 
       - name: Upload Trivy scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4

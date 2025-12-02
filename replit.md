@@ -146,3 +146,17 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - **CI/CD Compliance**: Removidos skip_tests/skip_approval (Regra 4/6)
 - **TypeScript**: Zero erros (strict mode, noImplicitAny)
 - **Immutable Infrastructure**: Todos containers com filesystem read-only + tmpfs
+
+### CI/CD Disk Space Fix (Dezembro 2025)
+
+| Problema | Solução | Status |
+|----------|---------|--------|
+| `[Errno 28] No space left on device` durante pip install | Adicionado "Free disk space before install" step | Completo |
+| `trivy-results.sarif` não existia quando Trivy falhava | Adicionado "Ensure SARIF file exists" fallback | Completo |
+| PyTorch (~2GB) consumia muito espaço | `pip install --no-cache-dir` + limpeza prévia | Completo |
+
+**Steps adicionados ao CI/CD:**
+- `sudo apt-get clean` - limpa cache APT
+- `rm -rf ~/.cache/pip ~/.npm ~/.pnpm-store` - limpa caches de package managers
+- `sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost` - remove ferramentas pré-instaladas (~5GB)
+- `pip install --no-cache-dir` - evita cache durante instalação
