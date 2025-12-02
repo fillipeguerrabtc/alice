@@ -2,37 +2,66 @@
 # Alice Enterprise Platform
 #
 # Documentação em PT-BR (Regra 10 replit.md)
-# Versões travadas (Regra 11 - melhores práticas 2025)
+# Versões travadas e atualizadas para dezembro 2025 (Regra 11 - melhores práticas)
+# Última atualização: 02/12/2025
 
-# SEGURANÇA: urllib3 atualizado para corrigir CVEs (Trivy scan)
-urllib3>=2.2.3
+# =============================================================================
+# SEGURANÇA - Dependências com correções de CVE
+# =============================================================================
 
-# Framework web
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
+# urllib3 2.5.0+ corrige CVE-2025-50181 e CVE-2025-50182 (Open Redirect/SSRF)
+# Referência: https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v
+urllib3>=2.5.0
 
-# SEGURANÇA: Rate limiting (OWASP API4)
-slowapi==0.1.9
-
-# CLIP e PyTorch (versões seguras 2025)
-# ATUALIZADO: PyTorch 2.6.0 corrige CVE-2025-32434 (CVSS 9.3 CRITICAL RCE)
+# PyTorch 2.6.0 corrige CVE-2025-32434 (CVSS 9.3 CRITICAL RCE)
 # A vulnerabilidade permitia execução remota de código via torch.load()
 # Referência: https://github.com/advisories/GHSA-53q9-r3pm-6pq6
 torch==2.6.0
 torchvision==0.21.0
+
+# =============================================================================
+# Framework Web - Versões estáveis dezembro 2025
+# =============================================================================
+
+# FastAPI 0.123.0 (released Nov 30, 2025)
+fastapi==0.123.0
+
+# Uvicorn 0.38.0 (released Oct 18, 2025) - ASGI server
+uvicorn[standard]==0.38.0
+
+# =============================================================================
+# Validação e Segurança
+# =============================================================================
+
+# Pydantic 2.12.5 (released Nov 26, 2025) - Validação de dados
+pydantic==2.12.5
+
+# Rate limiting (OWASP API4 - Unrestricted Resource Consumption)
+slowapi==0.1.9
+
+# =============================================================================
+# CLIP - OpenAI CLIP Model
+# =============================================================================
+
+# CLIP ViT-L/14 - Commit específico para reprodutibilidade
 git+https://github.com/openai/CLIP.git@a1d071733d7111c9c014f024669f959182114e33
 
-# Processamento de imagem
+# =============================================================================
+# Processamento de Imagem
+# =============================================================================
+
+# Pillow 11.1.0 - Seguro (CVE-2025-48379 afeta apenas 11.2.0+)
 Pillow==11.1.0
 
-# Validação
-pydantic==2.10.4
+# =============================================================================
+# Observabilidade e Resiliência
+# =============================================================================
 
-# Logging estruturado
-python-json-logger==3.2.1
+# Prometheus metrics 0.23.1 (released Sep 18, 2025)
+prometheus-client==0.23.1
 
-# Métricas (Prometheus)
-prometheus-client==0.21.1
+# Logging estruturado JSON - 4.0.0 (released Oct 6, 2025)
+python-json-logger==4.0.0
 
 # Circuit Breaker (Regra 16 replit.md - Best Practices 2025)
 pybreaker==1.0.2
