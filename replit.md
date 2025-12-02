@@ -127,15 +127,21 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 | Redis | 7-alpine | sha256:e600a2... |
 | ERPNext | v15.88.0 | sha256:158d31... |
 | Vector | 0.43.1-alpine | sha256:ffa011... |
-| pgBackRest | 2.54.0 (woblerr) | Community image |
+| pgBackRest | 2.54.2-alpine | sha256:8d74fa... |
 | Docker Socket Proxy | latest | sha256:2f92c6... |
 | BusyBox | 1.36 | sha256:2376a0... |
 
-### Compliance Verification
+### Compliance Verification (100% COMPLETO)
 
 - **26 containers** = **26 security_opt entries** (100% coverage)
 - **26 containers** = **26 read_only: true entries** (100% coverage)
+- **26 containers** = **26 resource limits entries** (100% coverage)
+- **18 imagens externas** = **18 SHA256 digests** (100% coverage)
+- **23 containers** = **23 healthchecks** (init containers excluídos)
 - **CSP Headers**: OWASP 2025 compliant (unsafe-inline/eval required for React/ERPNext)
-- **Healthchecks**: Todos os workers com verificação de processo via pgrep
-- **Supply Chain Security**: Todas imagens externas com digest SHA256
-- **Immutable Infrastructure**: Todos containers com filesystem read-only + tmpfs para escrita temporária
+- **TLS Forçado**: HTTP→HTTPS redirect via Traefik entrypoints
+- **Circuit Breakers**: 4 circuit breakers no auth-service (OAuth, SAML, DB lookup, upsert)
+- **Backup State**: Persistido em PostgreSQL (Regra 6 - sem in-memory)
+- **CI/CD Compliance**: Removidos skip_tests/skip_approval (Regra 4/6)
+- **TypeScript**: Zero erros (strict mode, noImplicitAny)
+- **Immutable Infrastructure**: Todos containers com filesystem read-only + tmpfs

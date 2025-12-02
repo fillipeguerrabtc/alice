@@ -22,7 +22,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
-import path from 'path';
+import path from 'node:path';
 import pino from 'pino';
 import { z } from 'zod';
 import { getDatabase, schema, eq, desc } from '@alice/database';

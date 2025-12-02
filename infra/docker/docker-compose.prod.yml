@@ -119,6 +119,14 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=8M
+    deploy:
+      resources:
+        limits:
+          memory: 32M
+          cpus: '0.1'
+        reservations:
+          memory: 8M
+          cpus: '0.05'
     volumes:
       - traefik_acme:/acme
     command: ["sh", "-c", "chown -R 1001:1001 /acme && chmod 700 /acme"]
@@ -894,6 +902,14 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=32M
       - /home/frappe/.cache:mode=1777,size=16M
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
     entrypoint:
       - bash
       - -c
@@ -941,6 +957,14 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=32M
       - /home/frappe/.cache:mode=1777,size=16M
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
     entrypoint:
       - bash
       - -c
@@ -1276,9 +1300,10 @@ services:
   # O Backup Orchestrator (observability-service) coordena os backups unificados
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # NOTA: Usando woblerr/pgbackrest (imagem oficial da comunidade - pgbackrest/pgbackrest não existe no Docker Hub)
+  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # =============================================================================
   pgbackrest:
-    image: woblerr/pgbackrest:2.54.0
+    image: woblerr/pgbackrest:2.54.2-alpine@sha256:8d74fa5cc4135b52927330b0a4c86821e598cbc57c48a1c1f5e6e58c0b5eae2c
     container_name: alice-pgbackrest
     restart: always
     security_opt:
