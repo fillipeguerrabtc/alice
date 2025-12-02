@@ -126,13 +126,27 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 
 ### Arquivos Modificados para Push Manual Replit → GitHub
 
-1. `package.json` - pnpm overrides: esbuild>=0.25.0, on-headers>=1.1.0
-2. `pnpm-lock.yaml` - Atualizado automaticamente
-3. `apps/clip-inference-service/requirements.txt` - PyTorch 2.6.0, urllib3>=2.5.0
-4. `apps/clip-inference-service/Dockerfile` - CUDA 12.8.0-cudnn9
+| # | Arquivo | Alteração | Regra |
+|---|---------|-----------|-------|
+| 1 | `package.json` | pnpm overrides: esbuild>=0.25.0, on-headers>=1.1.0 | Regra 6 |
+| 2 | `pnpm-lock.yaml` | Atualizado automaticamente com overrides | Regra 6 |
+| 3 | `apps/clip-inference-service/requirements.txt` | PyTorch 2.6.0, urllib3>=2.5.0 | Regra 6 |
+| 4 | `apps/clip-inference-service/Dockerfile` | CUDA 12.8.0-cudnn9 | Regra 6 |
+| 5 | `.github/workflows/ci.yml` | Instala deps Python/Node antes do Trivy scan | Regra 9 |
+| 6 | `replit.md` | Documentação atualizada | Regra 10 |
+
+### Correção CI/CD (02/12/2025)
+
+O Trivy Security Scan falhava porque as dependências não estavam instaladas antes do scan.
+Correção enterprise-grade: Adicionados steps para instalar Node.js e Python dependencies
+ANTES de rodar o Trivy, permitindo scan completo de vulnerabilidades.
+
+**IMPORTANTE**: NÃO usamos `exit-code: 0` (workaround proibido pela Regra 6).
+O pipeline DEVE falhar se vulnerabilidades CRITICAL/HIGH forem encontradas.
 
 ### Próximos Passos
 
-1. Push manual dos 4 arquivos do Replit para GitHub
-2. Configurar secrets no GitHub Actions (ver `docs/SECRETS.md`)
-3. Primeiro deploy na Hetzner Cloud via GitHub Actions
+1. Push manual dos 6 arquivos do Replit para GitHub
+2. Aguardar CI/CD passar com sucesso
+3. Configurar secrets no GitHub Actions (ver `docs/SECRETS.md`)
+4. Primeiro deploy na Hetzner Cloud via GitHub Actions
