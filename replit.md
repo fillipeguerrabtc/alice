@@ -1,13 +1,9 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-
-Alice is an autonomous AI enterprise platform, powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. Its core purpose is to deliver a fully autonomous AI solution that addresses critical business needs: absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate dependencies on external APIs, mitigate privacy concerns with third-party servers, and provide an alternative to unpredictable token-based pricing models.
-
-Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend for embeddings and vector search, image generation, aggressive self-learning, and a robust observability stack. The business vision is to provide an enterprise-grade AI solution that offers unparalleled control and performance, enabling businesses to leverage AI without compromising on data security or cost predictability.
+Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. It provides a fully autonomous AI solution focused on absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate external API dependencies, mitigate privacy concerns, and offer an alternative to unpredictable token-based pricing. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend, image generation, aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control and performance, ensuring data security and cost predictability.
 
 ## User Preferences
-
 ### 16 Regras Fundamentais
 
 | # | Regra | Descrição |
@@ -49,59 +45,48 @@ Key capabilities include real-time chat with streaming, deduplication, multi-ten
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Replit e NÃO é deployado para produção.
 
 ## System Architecture
-
-Alice employs a microservices architecture, with services containerized and communicating via an API Gateway (Traefik). The system is designed for enterprise-grade solutions, prioritizing data privacy, scalability, and resilience.
+Alice uses a microservices architecture with containerized services communicating via Traefik API Gateway. It prioritizes data privacy, scalability, and resilience.
 
 ### Microservices
-
-The platform includes several microservices: `frontend`, `api-gateway`, `auth`, `chat`, `rag`, `training`, `integrations`, and `observability`.
+The platform includes `frontend`, `api-gateway`, `auth`, `chat`, `rag`, `training`, `integrations`, and `observability` microservices.
 
 ### UI/UX Decisions
-
-- **Frontend Stack**: React 18, TypeScript 5, Vite 5, shadcn/ui, Tailwind CSS.
-- **Internationalization**: Primary support for PT-BR, secondary for EN using `react-i18next`.
-- **IA Dashboard**: Features conversation metrics, image displays, SLA, and circuit breaker status.
-- **Takeover/Handover Panel**: Integrated into the Alice dashboard for human agent intervention in Web and WhatsApp interactions.
+The frontend uses React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CSS, with primary internationalization in PT-BR. Features include an AI Dashboard for metrics and a Takeover/Handover Panel for human agent intervention.
 
 ### Technical Implementations
-
-- **Authentication**: OAuth 2.0, SAML 2.0, bcrypt local auth, 6-level RBAC, HMAC-SHA256 for service-to-service.
-- **OIDC Provider**: node-oidc-provider v9.5.2 (OpenID Certified) with Alice as the sole IdP for Grafana and ERPNext. PKCE (S256) and RS256 JWT signing are mandatory, with a PostgreSQL adapter. Custom claims include role, tenant_id, modules, and auth_provider.
+- **Authentication**: OAuth 2.0, SAML 2.0, bcrypt local auth, 6-level RBAC, HMAC-SHA256 for S2S. Uses node-oidc-provider v9.5.2 with PostgreSQL adapter and custom claims.
 - **Real-time Chat**: WebSockets for streaming LLM tokens with rate limiting.
 - **RAG Backend**: Salad Cloud for embeddings, pgvector for vector search.
 - **Image Generation**: Self-hosted FLUX.1 Schnell on Salad Cloud.
 - **Multimodal Embeddings**: Self-hosted CLIP ViT-L/14 on Salad Cloud.
-- **Takeover/Handover**: Custom panel with automatic triggers based on confidence scores, fallbacks, and sentiment analysis.
-- **CI/CD**: Automated GitHub Actions for Docker image building, deployment to Hetzner, and health checks.
-- **Code Quality**: Pino for logging, TypeScript strict mode, health checks.
-- **Logger Singleton**: Enterprise-grade logging com Pino usando padrão singleton. Um único base logger é criado com transport pino-pretty, e todos os serviços usam child loggers via `createLogger('service-name')`. Isso elimina vazamento de listeners `process.on('exit')` que ocorria com múltiplas instâncias pino. Uso: `import { createLogger } from '@alice/shared-utils'`. Child loggers herdam o transport do singleton base (zero overhead). Formato controlado por `LOG_FORMAT=json|pretty` (default: production=JSON, development=pretty).
-- **Build System**: `esbuild` and 3-stage Dockerfiles. Vite build isolated in `client/` to prevent pnpm workspace conflicts.
-- **Resilience & Performance**: Connection pool lifecycle management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, sanitization of secrets, CSRF token comparison, AbortController for external calls.
-- **ShutdownManager Centralizado**: Gerenciador enterprise-grade de graceful shutdown em `@alice/shared-utils`. Elimina duplicação de listeners SIGTERM/SIGINT, coordena ordem de shutdown por prioridade (HTTP_SERVER=100 → WEBSOCKET=90 → BACKGROUND_JOBS=80 → DATABASE=50). Uso: `registerShutdownCallback(name, fn, { priority: ShutdownPriority.HTTP_SERVER })`. **IMPORTANTE**: Callbacks são async/await - sempre usar `await closeDatabasePool()` e `await isPoolHealthy()` (funções assíncronas do `@alice/database`).
-- **Security Hardening**: PostgreSQL RLS, sslmode=prefer, tenant_id indices, pgAudit, Docker Non-Root, Traefik v3.3, Redis ACL, GitHub Actions hardening, CSP Hardening, Compression Middleware, Server Timeouts, ERPNext Fail-Fast, central packages, JSONB TypeSafe with Zod schemas, React Suspense, Express Hardening Module, Zod Input Validation, Trivy Image Scan CI/CD, ERPNext v15.74.2 (CVE-2025-55732/CVE-2025-55731 corrigidos).
-- **Redis Cache Adapter**: Padrão adapter para cache distribuído (`RedisCacheAdapter` e `MemoryCacheAdapter`). Em produção, fail-fast se Redis indisponível (Regra 6). Em desenvolvimento, fallback para in-memory. Factory `createCacheAdapter()` retorna adapter apropriado. Uso: `import { createCacheAdapter, CacheAdapter } from '@alice/shared-utils'`. Namespace prefix configurable para isolamento multi-tenant.
-- **RBAC Permission Cache**: Cache de permissões assíncrono usando CacheAdapter (Redis em produção). Métodos async: `checkPermission()`, `invalidateUser()`, `invalidateTenant()`, `clear()`. Padrão initialize/destroy: `await permissionCache.initialize()` no startup, `await permissionCache.destroy()` no shutdown (priority 75, antes do Redis client). Singleton `permissionCache` exportado de `@alice/shared-utils`. Stats via `getStats()`.
-- **Cache Initialization Pattern**: Função `initializeAllCaches()` centraliza startup de caches: `initializeRedisCache()` → `initializeSessionCache()` → `permissionCache.initialize()`. Ordem de shutdown: `permissionCache.destroy()` (75) → `closeRedisCacheClient()` (70) → `closeDatabasePool()` (50).
-- **Secrets Seguros**: Scripts de seed (seed-oidc.ts, create-stripe-webhooks.ts) salvam secrets em arquivos chmod 600 em `/tmp/alice-secrets/` em vez de stdout. URLs obrigatórias via env vars (GRAFANA_URL, ERPNEXT_URL, STRIPE_WEBHOOK_BASE_URL).
-- **Stripe Idempotency**: `generateIdempotencyKey()` with `crypto.randomUUID()`, fail-fast in production if not provided.
-- **WebSocket Auth**: PostgreSQL session validation (`connect-pg-simple`) with mandatory `SESSION_SECRET` and cached validated sessions.
-- **Feature Flags**: Enterprise system with PostgreSQL persistence, TTL 60s cache, multi-tenant support, and Express middleware.
-- **Identity Provisioning**: Automatic propagation Alice → Grafana/ERPNext via Outbox Pattern for `user.created`, `user.updated`, `user.role_changed`, `user.disabled`, `user.deleted` events.
-- **pnpm Monorepo Deduplication**: pnpm overrides forçam versões únicas de dependências críticas: `drizzle-orm: 0.39.1`, `pg: 8.12.0`, `@types/pg: 8.12.0`, `@types/react: 18.3.11`. Isso elimina incompatibilidade de tipos PgTable causada por múltiplas cópias com hashes de peer-dependencies diferentes.
-- **RBAC Dual API**: `checkPermission()` (async, usa Redis cache) e `checkPermissionDirect()` (sync, sem cache) para diferentes casos de uso. Testes síncronos devem usar `checkPermissionDirect()`.
-- **extractAuthContext Security (OWASP 2025)**: Headers não assinados (`x-user-id`, `x-user-role`) são REJEITADOS. Apenas duas fontes aceitas: (1) `req.user` (sessão autenticada), (2) Headers internos com assinatura HMAC válida (`x-internal-signature`, `x-internal-timestamp`).
+- **Takeover/Handover**: Custom panel with automatic triggers based on confidence, fallbacks, and sentiment analysis.
+- **CI/CD**: Automated GitHub Actions for Docker image building, Hetzner deployment, and health checks.
+- **Code Quality**: Pino for logging (singleton), TypeScript strict mode, health checks.
+- **Build System**: `esbuild` and 3-stage Dockerfiles.
+- **Resilience & Performance**: Connection pool management, Opossum Circuit Breaker, WebSocket rate limiting, Docker resource limits, secrets sanitization, CSRF tokens, AbortController.
+- **Shutdown Manager**: Centralized graceful shutdown in `@alice/shared-utils` with prioritized callback execution.
+- **Security Hardening**: PostgreSQL RLS, `sslmode=prefer`, `tenant_id` indices, pgAudit, Docker Non-Root, Traefik v3.3, Redis ACL, GitHub Actions hardening, CSP, Compression Middleware, Server Timeouts, ERPNext Fail-Fast, JSONB TypeSafe with Zod, React Suspense, Express Hardening, Zod Input Validation, Trivy Image Scan CI/CD, ERPNext v15.74.2 (CVEs corrected).
+- **Redis Cache Adapter**: Distributed cache adapter (`RedisCacheAdapter` for production, `MemoryCacheAdapter` for dev) with fail-fast for Redis.
+- **RBAC Permission Cache**: Asynchronous permission caching using `CacheAdapter` (Redis in production) with initialize/destroy methods.
+- **Cache Initialization Pattern**: Centralized function `initializeAllCaches()` for startup and `close*` functions for shutdown.
+- **Secrets Management**: Seed scripts save secrets to chmod 600 files in `/tmp/alice-secrets/`. Mandatory URLs via env vars.
+- **Stripe Idempotency**: `generateIdempotencyKey()` using `crypto.randomUUID()`, fail-fast in production.
+- **WebSocket Auth**: PostgreSQL session validation (`connect-pg-simple`) with mandatory `SESSION_SECRET`.
+- **Feature Flags**: Enterprise system with PostgreSQL persistence, TTL cache, multi-tenant support, and Express middleware.
+- **Identity Provisioning**: Automatic propagation Alice → Grafana/ERPNext via Outbox Pattern for user events.
+- **pnpm Monorepo Deduplication**: `pnpm overrides` force unique versions of critical dependencies (`drizzle-orm`, `pg`, `@types/pg`, `@types/react`) to prevent type incompatibilities.
+- **RBAC Dual API**: `checkPermission()` (async, Redis cache) and `checkPermissionDirect()` (sync, no cache) for different use cases.
+- **extractAuthContext Security**: Rejects unsigned headers; only `req.user` (authenticated session) or internal HMAC-signed headers are accepted.
 
 ### System Design Choices
-
 - **Multi-tenant Isolation**: PostgreSQL Row Level Security (RLS) with `tenant_id` isolation policies.
 - **OWASP API3**: Critical authentication routes use Zod schemas for input validation.
 
 ## External Dependencies
-
 - **LLM**: Llama 4 Maverick (400B params) on Salad Cloud.
 - **Embeddings**: text-embedding-3-small on Salad Cloud.
-- **Image Generation**: FLUX.1 Schnell (Apache 2.0) on Salad Cloud.
-- **CLIP Inference**: CLIP ViT-L/14 (MIT) on Salad Cloud.
+- **Image Generation**: FLUX.1 Schnell on Salad Cloud.
+- **CLIP Inference**: CLIP ViT-L/14 on Salad Cloud.
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (transactional emails).
@@ -110,6 +95,36 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
 - **Object Storage**: Hetzner Object Storage (S3-compatible).
+
+## GitHub Actions Secrets (Lista Completa - 02/12/2025)
+
+**IMPORTANTE**: Estes são os nomes EXATOS dos secrets configurados no repositório GitHub.
+Qualquer referência em workflows DEVE usar estes nomes.
+
+| # | Secret | Categoria | Uso |
+|---|--------|-----------|-----|
+| 1 | `GH_PAT` | Infraestrutura | Personal Access Token para GHCR |
+| 2 | `GOOGLE_CLIENT_ID` | OAuth | Login com Google |
+| 3 | `GOOGLE_CLIENT_SECRET` | OAuth | Login com Google |
+| 4 | `HETZNER_SSH_PRIVATE_KEY` | Infraestrutura | Chave SSH para deploy |
+| 5 | `HETZNER_VM_HOST` | Infraestrutura | IP do servidor Hetzner |
+| 6 | `HETZNER_VM_USER` | Infraestrutura | Usuário SSH (root) |
+| 7 | `INTERNAL_API_SECRET` | Segurança | HMAC para comunicação S2S |
+| 8 | `OAUTH_GITHUB_CLIENT_ID` | OAuth | Login com GitHub |
+| 9 | `OAUTH_GITHUB_CLIENT_SECRET` | OAuth | Login com GitHub |
+| 10 | `PGPASSWORD` | Database | Senha PostgreSQL |
+| 11 | `RESEND_API_KEY` | Email | Emails transacionais |
+| 12 | `SALAD_API_KEY` | LLM | Llama 4 Maverick API |
+| 13 | `SALAD_ORGANIZATION_ID` | LLM | Organização Salad Cloud |
+| 14 | `SESSION_SECRET` | Segurança | Sessões Express |
+| 15 | `STRIPE_PUBLISHABLE_KEY` | Pagamentos | Stripe frontend |
+| 16 | `STRIPE_SECRET_KEY` | Pagamentos | Stripe backend |
+| 17 | `STRIPE_WEBHOOK_SECRET` | Pagamentos | Validação webhooks |
+| 18 | `TWILIO_ACCOUNT_SID` | WhatsApp | Conta Twilio |
+| 19 | `TWILIO_AUTH_TOKEN` | WhatsApp | Token Twilio |
+| 20 | `TWILIO_WHATSAPP_NUMBER` | WhatsApp | Número WhatsApp |
+| 21 | `WISE_API_KEY` | Pagamentos | Wise API |
+| 22 | `WISE_PROFILE_ID` | Pagamentos | Perfil Wise |
 
 ## Recent Changes - Security Audit December 2025
 
@@ -124,37 +139,18 @@ The platform includes several microservices: `frontend`, `api-gateway`, `auth`, 
 | CUDA Docker | Atualizado | 12.8.0-cudnn9 | CVEs toolkit NVIDIA |
 | esbuild (pnpm override) | Forçado | ≥0.25.0 | GHSA-67mh-4wv8-2f99 |
 | on-headers (pnpm override) | Forçado | ≥1.1.0 | GHSA-76c9-3jph-rj3q |
-| SSH Private Key | **Removido** | N/A | Chave movida para GitHub Secrets (Regra 6) |
+| SSH Private Key | **Removido** | N/A | Arquivo `infra/scripts/setup-ssh-key.sh` deletado |
 
-### Arquivos Modificados para Push Manual Replit → GitHub
-
-| # | Arquivo | Alteração | Regra |
-|---|---------|-----------|-------|
-| 1 | `package.json` | pnpm overrides: esbuild>=0.25.0, on-headers>=1.1.0 | Regra 6 |
-| 2 | `pnpm-lock.yaml` | Atualizado automaticamente com overrides | Regra 6 |
-| 3 | `apps/clip-inference-service/requirements.txt` | PyTorch 2.9.1, torchvision 0.24.1, urllib3>=2.5.0 | Regra 6 |
-| 4 | `apps/clip-inference-service/Dockerfile` | CUDA 12.8.0-cudnn9 | Regra 6 |
-| 5 | `.github/workflows/ci.yml` | Instala deps Python/Node antes do Trivy scan + salva artifact | Regra 9 |
-| 6 | `infra/scripts/setup-ssh-key.sh` | **REMOVIDO** - Chave SSH agora via Secrets | Regra 6 |
-| 7 | `replit.md` | Documentação atualizada | Regra 10 |
-
-### Correção CI/CD (02/12/2025)
+### Correções CI/CD (02/12/2025)
 
 **Problema 1**: Trivy falhava porque dependências não estavam instaladas antes do scan.
 **Solução**: Steps para instalar Node.js e Python dependencies ANTES do Trivy.
 
 **Problema 2**: Chave SSH privada hardcoded em `infra/scripts/setup-ssh-key.sh` (HIGH severity).
-**Solução**: Arquivo REMOVIDO. Chave SSH agora armazenada em Secrets (Replit + GitHub Actions).
+**Solução**: Arquivo REMOVIDO. Chave SSH armazenada APENAS em Secrets (GitHub + Replit).
 
 **Problema 3**: PyTorch 2.6.0 tinha CVE-2025-3730 (MEDIUM) e CVE-2025-2953 (LOW).
 **Solução**: Atualizado para PyTorch 2.9.1 (latest stable - Nov 2025).
 
-**IMPORTANTE**: NÃO usamos `exit-code: 0` (workaround proibido pela Regra 6).
+**IMPORTANTE**: NÃO usamos `exit-code: 0` no Trivy (workaround proibido pela Regra 6).
 O pipeline DEVE falhar se vulnerabilidades CRITICAL/HIGH forem encontradas.
-
-### Próximos Passos
-
-1. Push manual dos 7 arquivos do Replit para GitHub
-2. Aguardar CI/CD passar com sucesso
-3. Configurar secrets no GitHub Actions (ver `docs/SECRETS.md`)
-4. Primeiro deploy na Hetzner Cloud via GitHub Actions
