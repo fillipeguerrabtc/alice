@@ -173,3 +173,28 @@ export const mediaProcessingStatusEnum = pgEnum("media_processing_status", [
   "completed",
   "failed",
 ]);
+
+// ============================================================================
+// BACKUP ENUMS (Regra 6 - Enterprise-Grade Persistence)
+// ============================================================================
+
+export const backupJobStatusEnum = pgEnum("backup_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+]);
+
+export const backupTypeEnum = pgEnum("backup_type", [
+  "full",
+  "incremental",
+  "differential",
+]);
+
+export const backupComponentStatusEnum = pgEnum("backup_component_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "skipped",
+]);

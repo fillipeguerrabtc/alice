@@ -19,6 +19,11 @@ on:
   # =============================================================================
   # REGRA 4: Deploy APENAS manual (Aprovação Obrigatória)
   # Best Practices 2025: Usar Release & Tag para versionamento, depois deploy
+  # 
+  # COMPLIANCE: Removidos skip_approval e skip_tests (REGRA 4 e 6 do replit.md)
+  # - Testes são OBRIGATÓRIOS antes de qualquer deploy
+  # - Aprovação manual é OBRIGATÓRIA sem exceções
+  # - Para hotfixes críticos, usar branch hotfix/ com PR review
   # =============================================================================
   workflow_dispatch:
     inputs:
@@ -30,14 +35,6 @@ on:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
         required: false
         default: 'all'
-      skip_approval:
-        description: 'Pular aprovação manual (hotfix crítico)'
-        type: boolean
-        default: false
-      skip_tests:
-        description: 'Pular testes (emergência crítica)'
-        type: boolean
-        default: false
 
 # =============================================================================
 # SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
@@ -54,11 +51,11 @@ env:
 jobs:
   # ===========================================================================
   # Job 1: Análise de Código e Qualidade
+  # COMPLIANCE: Testes são SEMPRE obrigatórios (REGRA 4 e 6 do replit.md)
   # ===========================================================================
   code-quality:
     name: Análise de Qualidade
     runs-on: ubuntu-latest
-    if: github.event.inputs.skip_tests != 'true'
     
     permissions:
       contents: read
@@ -395,12 +392,12 @@ jobs:
 
   # ===========================================================================
   # Job 5: Aprovação Manual (ambiente production)
+  # COMPLIANCE: Aprovação é SEMPRE obrigatória (REGRA 4 do replit.md)
   # ===========================================================================
   manual-approval:
     name: Aguardando Aprovação
     runs-on: ubuntu-latest
     needs: [build-docker, image-security-scan]
-    if: github.event.inputs.skip_approval != 'true'
     environment: production
     
     permissions:
@@ -426,7 +423,8 @@ jobs:
     name: Deploy Hetzner Cloud
     runs-on: ubuntu-latest
     needs: [build-docker, image-security-scan, manual-approval]
-    if: always() && needs.build-docker.result == 'success' && (needs.manual-approval.result == 'success' || needs.manual-approval.result == 'skipped')
+    # COMPLIANCE: Deploy só ocorre após aprovação (REGRA 4 do replit.md)
+    if: needs.build-docker.result == 'success' && needs.manual-approval.result == 'success'
     
     permissions:
       contents: read

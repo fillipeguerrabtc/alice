@@ -46,6 +46,8 @@ import {
   Counter as PromCounter,
   Gauge as PromGauge,
   type AliceMetrics,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import { eq, or } from '@alice/database';
 import { z } from 'zod';

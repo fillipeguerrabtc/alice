@@ -155,6 +155,27 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
+  /** OAuth Provider (Google, GitHub) - autenticação externa (Regra 16) */
+  oauthProvider: {
+    timeout: 15000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** SAML IdP (Azure AD, Okta) - autenticação enterprise (Regra 16) */
+  samlProvider: {
+    timeout: 20000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** Database Pool - operações de banco de dados (Regra 16) */
+  databasePool: {
+    timeout: 10000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 15000,
+    volumeThreshold: 5,
+  },
 } as const;
 
 export type CircuitBreakerPreset = keyof typeof CIRCUIT_BREAKER_PRESETS;

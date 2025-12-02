@@ -8,21 +8,25 @@
  * Arquitetura: Orchestrator que dispara jobs em sequência com checkpoints
  * e validações - best practice enterprise 2025.
  * 
- * Regra 6: Enterprise-grade (sem workarounds)
+ * Regra 6: Enterprise-grade (sem workarounds) - Estado persistido em PostgreSQL
  * Regra 8: TypeScript strict, zero any, Pino
  * Regra 10: Documentação PT-BR
  * Regra 11: Seguir docs oficiais pgBackRest/Mariabackup
  * Regra 16: Circuit breakers, health checks
+ * 
+ * ATUALIZADO: Migrado de in-memory para PostgreSQL (REGRA 6 COMPLIANCE)
  */
 
 import { Router, Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';
+import { writeFile, readFile, mkdir, readdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
 import pino from 'pino';
 import { z } from 'zod';
+import { getDatabase, schema, eq, desc } from '@alice/database';
+import type { BackupComponentDetail, BackupManifestData, BackupJob } from '@alice/shared';
 
 const execAsync = promisify(exec);
 
@@ -145,8 +149,131 @@ const S3_SECRET_KEY = process.env.HETZNER_S3_SECRET_KEY;
 // Criptografia
 const BACKUP_CIPHER_PASS = process.env.BACKUP_CIPHER_PASS;
 
-// Estado atual do job (em memória para simplicidade - em produção usar Redis)
-let currentJob: BackupJobStatus | null = null;
+// =============================================================================
+// PERSISTÊNCIA POSTGRESQL (Regra 6 - Enterprise-Grade)
+// Estado de backup persistido no banco - NÃO in-memory
+// =============================================================================
+
+/**
+ * Obter job de backup atual (running ou queued mais recente)
+ * Regra 6: Persistência real em PostgreSQL
+ */
+async function getCurrentJob(): Promise<BackupJob | null> {
+  try {
+    const db = getDatabase();
+    const jobs = await db
+      .select()
+      .from(schema.backupJobs)
+      .where(eq(schema.backupJobs.status, 'running'))
+      .orderBy(desc(schema.backupJobs.startedAt))
+      .limit(1);
+    
+    return jobs[0] || null;
+  } catch (error) {
+    logger.error({ error }, 'Erro ao obter job atual do PostgreSQL');
+    return null;
+  }
+}
+
+/**
+ * Criar novo job de backup no PostgreSQL
+ */
+async function createBackupJob(jobData: {
+  jobId: string;
+  backupType: 'full' | 'incremental' | 'differential';
+  createdBy?: string;
+}): Promise<BackupJob> {
+  const db = getDatabase();
+  const [job] = await db
+    .insert(schema.backupJobs)
+    .values({
+      jobId: jobData.jobId,
+      backupType: jobData.backupType,
+      status: 'queued',
+      progress: 0,
+      components: [],
+      startedAt: new Date(),
+      createdBy: jobData.createdBy,
+    })
+    .returning();
+  
+  logger.info({ jobId: job.jobId }, 'Job de backup criado no PostgreSQL');
+  return job;
+}
+
+/**
+ * Atualizar status do job no PostgreSQL
+ */
+async function updateBackupJob(
+  jobId: string, 
+  updates: Partial<{
+    status: 'queued' | 'running' | 'completed' | 'failed';
+    progress: number;
+    currentComponent: string | null;
+    components: BackupComponentDetail[];
+    manifest: BackupManifestData;
+    totalSize: string;
+    completedAt: Date;
+    durationSeconds: number;
+    error: string;
+  }>
+): Promise<BackupJob | null> {
+  try {
+    const db = getDatabase();
+    const [updated] = await db
+      .update(schema.backupJobs)
+      .set({
+        ...updates,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.backupJobs.jobId, jobId))
+      .returning();
+    
+    if (updated) {
+      logger.debug({ jobId, updates: Object.keys(updates) }, 'Job atualizado no PostgreSQL');
+    }
+    return updated || null;
+  } catch (error) {
+    logger.error({ jobId, error }, 'Erro ao atualizar job no PostgreSQL');
+    return null;
+  }
+}
+
+/**
+ * Obter job por ID
+ */
+async function getBackupJobById(jobId: string): Promise<BackupJob | null> {
+  try {
+    const db = getDatabase();
+    const [job] = await db
+      .select()
+      .from(schema.backupJobs)
+      .where(eq(schema.backupJobs.jobId, jobId))
+      .limit(1);
+    
+    return job || null;
+  } catch (error) {
+    logger.error({ jobId, error }, 'Erro ao obter job por ID');
+    return null;
+  }
+}
+
+/**
+ * Listar jobs de backup do PostgreSQL
+ */
+async function listBackupJobs(limit = 50): Promise<BackupJob[]> {
+  try {
+    const db = getDatabase();
+    return await db
+      .select()
+      .from(schema.backupJobs)
+      .orderBy(desc(schema.backupJobs.startedAt))
+      .limit(limit);
+  } catch (error) {
+    logger.error({ error }, 'Erro ao listar jobs');
+    return [];
+  }
+}
 
 // =============================================================================
 // FUNÇÕES AUXILIARES
@@ -501,6 +628,8 @@ async function backupUploads(): Promise<ComponentBackupStatus> {
 /**
  * Executar backup unificado de toda a plataforma
  * Coordena todos os componentes em sequência com manifesto único
+ * 
+ * ATUALIZADO: Usa PostgreSQL para persistência (Regra 6)
  */
 async function runUnifiedBackup(
   type: 'full' | 'incremental' = 'full',
@@ -530,27 +659,28 @@ async function runUnifiedBackup(
     notes: options?.notes,
   };
   
-  // Atualizar job status
-  currentJob = {
+  // Criar job no PostgreSQL (Regra 6 - Enterprise Persistence)
+  const job = await createBackupJob({
     jobId: backupId,
-    status: 'running',
-    progress: 0,
-    components: [],
-    manifest,
-    startedAt: manifest.startedAt,
-  };
+    backupType: type === 'incremental' ? 'incremental' : 'full',
+    createdBy: options?.createdBy,
+  });
+  
+  // Atualizar para running
+  await updateBackupJob(backupId, { status: 'running' });
   
   const skipComponents = options?.skipComponents || [];
   let hasFailures = false;
+  const componentResults: BackupComponentDetail[] = [];
   
   try {
     // 1. PostgreSQL (principal - mais crítico)
     if (!skipComponents.includes('postgresql')) {
-      currentJob.currentComponent = 'postgresql';
-      currentJob.progress = 10;
+      await updateBackupJob(backupId, { currentComponent: 'postgresql', progress: 10 });
       
       const pgResult = await backupPostgreSQL(type === 'incremental' ? 'incr' : 'full');
-      currentJob.components.push(pgResult);
+      componentResults.push(pgResult as BackupComponentDetail);
+      await updateBackupJob(backupId, { components: componentResults });
       
       manifest.components.postgresql = {
         status: pgResult.status === 'completed' ? 'completed' : 'failed',
@@ -563,15 +693,15 @@ async function runUnifiedBackup(
       if (pgResult.status === 'failed') hasFailures = true;
     }
     
-    currentJob.progress = 30;
+    await updateBackupJob(backupId, { progress: 30 });
     
     // 2. MariaDB (ERPNext)
     if (!skipComponents.includes('mariadb')) {
-      currentJob.currentComponent = 'mariadb';
-      currentJob.progress = 40;
+      await updateBackupJob(backupId, { currentComponent: 'mariadb', progress: 40 });
       
       const mariaResult = await backupMariaDB(type === 'incremental' ? 'incremental' : 'full');
-      currentJob.components.push(mariaResult);
+      componentResults.push(mariaResult as BackupComponentDetail);
+      await updateBackupJob(backupId, { components: componentResults });
       
       manifest.components.mariadb = {
         status: mariaResult.status === 'completed' ? 'completed' : 'failed',
@@ -582,15 +712,15 @@ async function runUnifiedBackup(
       if (mariaResult.status === 'failed') hasFailures = true;
     }
     
-    currentJob.progress = 60;
+    await updateBackupJob(backupId, { progress: 60 });
     
     // 3. Redis
     if (!skipComponents.includes('redis')) {
-      currentJob.currentComponent = 'redis';
-      currentJob.progress = 70;
+      await updateBackupJob(backupId, { currentComponent: 'redis', progress: 70 });
       
       const redisResult = await backupRedis();
-      currentJob.components.push(redisResult);
+      componentResults.push(redisResult as BackupComponentDetail);
+      await updateBackupJob(backupId, { components: componentResults });
       
       manifest.components.redis = {
         status: redisResult.status === 'completed' ? 'completed' : 'failed',
@@ -601,15 +731,15 @@ async function runUnifiedBackup(
       if (redisResult.status === 'failed') hasFailures = true;
     }
     
-    currentJob.progress = 85;
+    await updateBackupJob(backupId, { progress: 85 });
     
     // 4. Uploads (S3)
     if (!skipComponents.includes('uploads')) {
-      currentJob.currentComponent = 'uploads';
-      currentJob.progress = 90;
+      await updateBackupJob(backupId, { currentComponent: 'uploads', progress: 90 });
       
       const uploadsResult = await backupUploads();
-      currentJob.components.push(uploadsResult);
+      componentResults.push(uploadsResult as BackupComponentDetail);
+      await updateBackupJob(backupId, { components: componentResults });
       
       manifest.components.uploads = {
         status: uploadsResult.status === 'completed' ? 'completed' : 
@@ -628,7 +758,7 @@ async function runUnifiedBackup(
     manifest.status = hasFailures ? 'partial' : 'completed';
     
     // Calcular tamanho total
-    const totalBytes = currentJob.components
+    const totalBytes = componentResults
       .filter(c => c.size)
       .reduce((sum, c) => {
         const match = c.size?.match(/^([\d.]+)\s*(\w+)$/);
@@ -642,10 +772,23 @@ async function runUnifiedBackup(
     // Salvar manifesto
     await saveManifest(manifest);
     
-    // Atualizar job status
-    currentJob.status = hasFailures ? 'failed' : 'completed';
-    currentJob.progress = 100;
-    currentJob.manifest = manifest;
+    // Atualizar job no PostgreSQL com status final (Regra 6)
+    const manifestData: BackupManifestData = {
+      components: manifest.components,
+      offsite: manifest.offsite,
+      encryption: manifest.encryption,
+      notes: manifest.notes,
+    };
+    
+    await updateBackupJob(backupId, { 
+      status: hasFailures ? 'failed' : 'completed',
+      progress: 100,
+      manifest: manifestData,
+      totalSize: manifest.totalSize,
+      completedAt: new Date(),
+      durationSeconds: manifest.durationSeconds,
+      currentComponent: null,
+    });
     
     logger.info({ 
       backupId, 
@@ -662,8 +805,13 @@ async function runUnifiedBackup(
     
     await saveManifest(manifest);
     
-    currentJob.status = 'failed';
-    currentJob.manifest = manifest;
+    // Atualizar job no PostgreSQL com falha (Regra 6)
+    await updateBackupJob(backupId, { 
+      status: 'failed',
+      error: err.message,
+      completedAt: new Date(),
+      durationSeconds: manifest.durationSeconds,
+    });
     
     logger.error({ backupId, error: err.message }, 'Erro crítico no backup unificado');
     throw error;
@@ -805,15 +953,18 @@ const RestoreRequestSchema = z.object({
 /**
  * POST /api/backup/run
  * Executar backup unificado de toda a plataforma
+ * 
+ * ATUALIZADO: Verifica job em andamento via PostgreSQL (Regra 6)
  */
 router.post('/run', async (req: Request, res: Response) => {
   try {
-    // Verificar se já existe backup em andamento
-    if (currentJob && currentJob.status === 'running') {
+    // Verificar se já existe backup em andamento (via PostgreSQL - Regra 6)
+    const runningJob = await getCurrentJob();
+    if (runningJob && runningJob.status === 'running') {
       res.status(409).json({
         error: 'Backup já em andamento',
-        jobId: currentJob.jobId,
-        progress: currentJob.progress,
+        jobId: runningJob.jobId,
+        progress: runningJob.progress,
       });
       return;
     }
@@ -876,14 +1027,33 @@ router.post('/restore', async (req: Request, res: Response) => {
 /**
  * GET /api/backup/status
  * Obter status do backup em andamento
+ * 
+ * ATUALIZADO: Usa PostgreSQL para persistência (Regra 6)
  */
-router.get('/status', (_req: Request, res: Response) => {
-  if (!currentJob) {
-    res.json({ status: 'idle', message: 'Nenhum backup em andamento' });
-    return;
+router.get('/status', async (_req: Request, res: Response) => {
+  try {
+    const currentJob = await getCurrentJob();
+    
+    if (!currentJob) {
+      res.json({ status: 'idle', message: 'Nenhum backup em andamento' });
+      return;
+    }
+    
+    res.json({
+      jobId: currentJob.jobId,
+      status: currentJob.status,
+      progress: currentJob.progress,
+      currentComponent: currentJob.currentComponent,
+      components: currentJob.components,
+      manifest: currentJob.manifest,
+      startedAt: currentJob.startedAt?.toISOString(),
+      estimatedCompletion: currentJob.estimatedCompletion?.toISOString(),
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao obter status do backup');
+    res.status(500).json({ error: 'Erro ao obter status', details: err.message });
   }
-  
-  res.json(currentJob);
 });
 
 /**
