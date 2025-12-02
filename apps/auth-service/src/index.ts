@@ -455,7 +455,7 @@ const dbUserLookupBreaker = createCircuitBreaker(
 );
 
 // Instrumentar circuit breaker com métricas Prometheus
-instrumentCircuitBreaker(dbUserLookupBreaker, metrics.registry, 'auth_db_user_lookup');
+instrumentCircuitBreaker(metrics, 'auth_db_user_lookup', dbUserLookupBreaker);
 
 // Circuit Breaker para operações de banco de dados (busca por OAuth ID)
 // NOTA: Usa preset databasePool porque é operação de DB, não chamada externa OAuth
@@ -482,7 +482,7 @@ const dbOAuthLookupBreaker = createCircuitBreaker(
   }
 );
 
-instrumentCircuitBreaker(dbOAuthLookupBreaker, metrics.registry, 'auth_db_oauth_lookup');
+instrumentCircuitBreaker(metrics, 'auth_db_oauth_lookup', dbOAuthLookupBreaker);
 
 // Circuit Breaker para operações de banco de dados (busca por SAML nameID)
 // NOTA: Usa preset databasePool porque é operação de DB, não chamada externa SAML/IdP
@@ -502,7 +502,7 @@ const dbSamlLookupBreaker = createCircuitBreaker(
   }
 );
 
-instrumentCircuitBreaker(dbSamlLookupBreaker, metrics.registry, 'auth_db_saml_lookup');
+instrumentCircuitBreaker(metrics, 'auth_db_saml_lookup', dbSamlLookupBreaker);
 
 // Circuit Breaker para operações de criação/atualização de usuário
 const dbUserUpsertBreaker = createCircuitBreaker(
@@ -515,7 +515,7 @@ const dbUserUpsertBreaker = createCircuitBreaker(
   }
 );
 
-instrumentCircuitBreaker(dbUserUpsertBreaker, metrics.registry, 'auth_db_user_upsert');
+instrumentCircuitBreaker(metrics, 'auth_db_user_upsert', dbUserUpsertBreaker);
 
 logger.info('Circuit breakers de autenticação inicializados (OAuth, SAML, Database)');
 
