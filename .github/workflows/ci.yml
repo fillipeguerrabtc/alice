@@ -197,12 +197,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Download packages compilados do job anterior
-      # NOTA: O artefato preserva a estrutura de diretórios, então baixamos no diretório raiz
+      # NOTA: upload-artifact@v4 remove o prefixo comum (packages/) então baixamos em packages/
+      # Estrutura no artefato: shared/dist/, shared-utils/dist/, etc.
+      # Após download em packages/: packages/shared/dist/, packages/shared-utils/dist/, etc.
       - name: Download packages dist
         uses: actions/download-artifact@v4
         with:
           name: packages-dist
-          path: .
+          path: packages
 
       - name: Verify packages downloaded
         run: |
