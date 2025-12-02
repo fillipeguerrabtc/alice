@@ -3,7 +3,6 @@ import { z } from "zod";
 const SALAD_API_KEY = process.env.SALAD_API_KEY || "";
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID || "";
 const SALAD_LLM_ENDPOINT = process.env.SALAD_LLM_ENDPOINT || "https://api.salad.com/api/public";
-const IS_DEVELOPMENT = process.env.NODE_ENV === "development";
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -37,13 +36,13 @@ export class LLMClient {
   constructor() {
     this.isConfigured = !!(SALAD_API_KEY && SALAD_ORGANIZATION_ID);
     if (!this.isConfigured) {
-      console.warn("LLM Client: SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados");
+      console.warn("LLM Client: SALAD_API_KEY ou SALAD_ORGANIZATION_ID nao configurados - LLM indisponivel");
     }
   }
 
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
     if (!this.isConfigured) {
-      throw new Error("LLM não configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
+      throw new Error("LLM nao configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
     }
 
     const {
@@ -104,7 +103,7 @@ export class LLMClient {
 
   async *chatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
     if (!this.isConfigured) {
-      throw new Error("LLM não configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
+      throw new Error("LLM nao configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
     }
 
     const {
@@ -137,7 +136,7 @@ export class LLMClient {
 
     const reader = response.body?.getReader();
     if (!reader) {
-      throw new Error("Response body não disponível");
+      throw new Error("Response body nao disponivel");
     }
 
     const decoder = new TextDecoder();
