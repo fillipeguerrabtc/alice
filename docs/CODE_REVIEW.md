@@ -14,13 +14,13 @@
 | Aderência às 16 Regras | APROVADO COM OBSERVAÇÕES | 13 regras verificáveis aprovadas, 3 N/A (workflow) |
 | Segurança Enterprise | APROVADO | OWASP API Top 10 coberto, 1 parcial (API9) |
 | Qualidade de Código | APROVADO | TypeScript strict, Zod validation, Pino logging |
-| Infraestrutura | APROVADO | ERPNext CVE corrigido (v15.74.2) |
+| Infraestrutura | APROVADO | ERPNext CVE corrigido (v15.88.0) |
 
 **Veredicto Final:** A plataforma Alice Enterprise está **PRONTA PARA PRODUÇÃO**.
 
 **Condições para deploy (todas atendidas):**
 1. ✅ Código-fonte aprovado
-2. ✅ ERPNext v15.74.2 configurado (CVE-2025-55732, CVE-2025-55731 CORRIGIDOS)
+2. ✅ ERPNext v15.88.0 configurado (CVE-2025-55732, CVE-2025-55731 CORRIGIDOS)
 3. ✅ Todos os secrets configurados em GitHub Secrets (verificado 29/11/2025)
 
 **Pendência não-bloqueante (backlog):**
@@ -351,7 +351,7 @@ manual-approval:
 
 | Pendência | Prioridade | Status |
 |-----------|------------|--------|
-| Atualizar ERPNext v15.74.2+ | ALTA | ✅ Completo (01/12/2025) |
+| Atualizar ERPNext v15.88.0 | ALTA | ✅ Completo (02/12/2025) |
 | Configurar todos secrets GitHub | ALTA | ✅ Completo (29/11/2025) |
 | Documentação OpenAPI | BAIXA | Backlog |
 | Testes coverage 80% | MÉDIA | Backlog |
@@ -379,4 +379,4 @@ A plataforma Alice Enterprise está **APROVADA** para deploy.
 
 ---
 
-*Relatório gerado em 01/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
+*Relatório gerado em 02/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
