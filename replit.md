@@ -276,6 +276,26 @@ the detected host platform (linux/amd64/v3)
 **Solução Enterprise:**
 Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers para garantir arquitetura correta no Hetzner (x86_64).
 
+### Deploy Cleanup Fix (03/12/2025)
+
+| Problema | Solução | Impacto |
+|----------|---------|---------|
+| Containers em restart loop não eram removidos | Limpeza agressiva pré-deploy | Zero sujeira |
+| Rollback em 1º deploy deixava sujeira | Limpeza completa mesmo sem rollback | Servidor limpo |
+
+**Limpeza Pré-Deploy (4 passos):**
+1. Parar TODOS containers alice-* e erpnext-*
+2. Remover TODOS containers (não apenas órfãos)
+3. Limpar recursos órfãos (prune)
+4. Verificar e forçar remoção se necessário
+
+**Limpeza em Rollback Impossível (5 passos):**
+1. Parar containers Alice
+2. Parar containers ERPNext
+3. Remover todos containers
+4. Remover volumes órfãos
+5. Remover imagens não utilizadas
+
 ### Docker Build Cache Otimizado (03/12/2025)
 
 | Estratégia | Descrição | Benefício |
@@ -307,6 +327,6 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.5 - 03 de Dezembro de 2025*
+*Versão 3.6 - 03 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

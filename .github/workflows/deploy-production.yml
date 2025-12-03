@@ -787,13 +787,53 @@ jobs:
             echo "Redes Docker configuradas"
             
             # ==============================================
-            # PRÉ-DEPLOY: LIMPEZA SEGURA
+            # PRÉ-DEPLOY: LIMPEZA COMPLETA (Enterprise)
             # ==============================================
-            echo "PRÉ-DEPLOY: LIMPEZA SEGURA"
+            # Regra 6: Sem sujeira - limpeza agressiva antes de cada deploy
+            # Best Practices 2025: Clean slate deployment
+            echo "PRÉ-DEPLOY: LIMPEZA COMPLETA"
+            
+            # PASSO 1: Parar TODOS os containers Alice e ERPNext (incluindo restart loops)
+            echo "  [1/4] Parando containers existentes..."
+            docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
+            docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
+            
+            # PASSO 2: Remover TODOS os containers Alice e ERPNext
+            echo "  [2/4] Removendo containers..."
+            docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+            docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
+            
+            # PASSO 3: Limpar recursos órfãos
+            echo "  [3/4] Limpando recursos órfãos..."
             docker container prune -f 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
             docker builder prune -f 2>/dev/null || true
             docker volume prune -f 2>/dev/null || true
+            
+            # PASSO 4: Verificar limpeza (filtros separados - Docker usa AND entre múltiplos --filter)
+            echo "  [4/4] Verificando limpeza..."
+            REMAINING_ALICE=$(docker ps -aq --filter "name=alice-" | wc -l)
+            REMAINING_ERPNEXT=$(docker ps -aq --filter "name=erpnext-" | wc -l)
+            REMAINING=$((REMAINING_ALICE + REMAINING_ERPNEXT))
+            if [ "$REMAINING" -gt 0 ]; then
+              echo "AVISO: $REMAINING containers ainda existem (Alice: $REMAINING_ALICE, ERPNext: $REMAINING_ERPNEXT), forçando remoção..."
+              docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+              docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
+              
+              # Verificar se segunda tentativa funcionou
+              REMAINING_AFTER=$(docker ps -aq --filter "name=alice-" | wc -l)
+              REMAINING_AFTER=$((REMAINING_AFTER + $(docker ps -aq --filter "name=erpnext-" | wc -l)))
+              if [ "$REMAINING_AFTER" -gt 0 ]; then
+                echo "ERRO CRÍTICO: $REMAINING_AFTER containers não puderam ser removidos!"
+                echo "Containers Alice restantes:"
+                docker ps -a --filter "name=alice-"
+                echo "Containers ERPNext restantes:"
+                docker ps -a --filter "name=erpnext-"
+                echo "Deploy abortado para evitar conflitos."
+                exit 1
+              fi
+            fi
+            echo "PRÉ-DEPLOY: Limpeza completa ✓"
             
             # Clone ou update do repositório
             REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
@@ -1045,20 +1085,47 @@ jobs:
             
             if [ -z "$PREVIOUS_SHA" ]; then
               echo "=============================================="
-              echo "⚠️ ROLLBACK NÃO POSSÍVEL"
+              echo "⚠️ ROLLBACK NÃO POSSÍVEL - EXECUTANDO LIMPEZA"
               echo "=============================================="
-              echo "Motivo: Nenhuma versão anterior encontrada"
-              echo "Possíveis causas:"
-              echo "  - Primeiro deploy (não há versão para restaurar)"
-              echo "  - Diretório /opt/alice/app foi limpo"
-              echo "  - Manifesto de deploy não existe"
+              echo "Motivo: Nenhuma versão anterior encontrada (primeiro deploy)"
               echo ""
-              echo "AÇÃO NECESSÁRIA: Verificar estado do servidor manualmente"
-              echo "  ssh \${HETZNER_VM_USER}@\${HETZNER_VM_HOST}"
-              echo "  cd /opt/alice/app/infra/docker && docker compose -f docker-compose.prod.yml ps"
+              echo "Executando limpeza completa para deixar servidor limpo..."
+              echo ""
+              
+              # LIMPEZA COMPLETA - Mesmo sem rollback, não deixar sujeira
+              # Regra 6: Sem soluções temporárias - servidor deve ficar limpo
+              echo "[CLEANUP 1/5] Parando containers Alice..."
+              docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
+              
+              echo "[CLEANUP 2/5] Parando containers ERPNext..."
+              docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
+              
+              echo "[CLEANUP 3/5] Removendo containers..."
+              docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+              docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
+              
+              echo "[CLEANUP 4/5] Removendo volumes órfãos..."
+              docker volume prune -f 2>/dev/null || true
+              
+              echo "[CLEANUP 5/5] Removendo imagens não utilizadas (apenas dangling)..."
+              # Nota: Usando -f (não -af) para não remover imagens de outras aplicações
+              docker image prune -f 2>/dev/null || true
+              docker system prune -f 2>/dev/null || true
+              
+              echo ""
               echo "=============================================="
-              # Exit 1 para indicar que rollback falhou (deploy também falhou)
-              # Isso garante visibilidade do problema no GitHub Actions
+              echo "✅ LIMPEZA COMPLETA - Servidor limpo"
+              echo "=============================================="
+              echo "Status: Sem containers, volumes ou imagens órfãs"
+              echo "Próximo passo: Corrigir o erro e fazer novo deploy"
+              echo ""
+              echo "Verificação final:"
+              docker ps -a
+              docker volume ls
+              echo "=============================================="
+              
+              # Exit 1 para indicar que rollback não foi possível
+              # Mas servidor está limpo para próxima tentativa
               exit 1
             fi
             
