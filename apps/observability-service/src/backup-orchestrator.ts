@@ -1425,7 +1425,8 @@ function getNextCronRun(cronExpression: string): string {
           start = rangeStart;
           end = rangeEnd;
         } else if (rangeStr !== '*') {
-          start = parseInt(rangeStr) || min;
+          const parsed = parseInt(rangeStr, 10);
+          start = Number.isNaN(parsed) ? min : parsed;
         }
         
         for (let i = start; i <= end; i += step) {
