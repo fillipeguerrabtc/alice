@@ -145,18 +145,24 @@ Estes são necessários para o deploy funcionar:
 
 ### FASE 7: ERPNext (CRM/ERP)
 
+**🔴 OBRIGATÓRIOS para Deploy** (deploy FALHA sem eles):
+
 | Secret | Descrição | Como Obter |
 |--------|-----------|------------|
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `openssl rand -base64 24` |
-| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext | `openssl rand -base64 24` |
-| `ERPNEXT_API_KEY` | API Key ERPNext | Após setup: ERPNext → User → API Access |
-| `ERPNEXT_API_SECRET` | API Secret ERPNext | Gerado junto com API Key |
-| `REDIS_CACHE_PASSWORD` | Senha Redis Cache ERPNext | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
-| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue ERPNext | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
+| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext no DB | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
+| `ERPNEXT_ADMIN_PASSWORD` | Senha admin do site ERPNext | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
+| `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ACL) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ACL) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 
-**Nota:** API Keys do ERPNext são geradas após o primeiro deploy.
+**🟢 OPCIONAIS** (podem ser configurados após ERPNext rodando):
 
-**Redis ERPNext:** Os secrets `REDIS_CACHE_PASSWORD` e `REDIS_QUEUE_PASSWORD` são usados para autenticação ACL nos containers Redis do ERPNext (`erpnext-redis-cache` e `erpnext-redis-queue`).
+| Secret | Descrição | Como Obter |
+|--------|-----------|------------|
+| `ERPNEXT_API_KEY` | API Key para integrations-service | ERPNext → User → API Access → Generate Keys |
+| `ERPNEXT_API_SECRET` | API Secret para integrations-service | Gerado junto com API Key |
+
+**Nota:** Os secrets obrigatórios usam `:?` no docker-compose (required). Os opcionais usam `:-` (fallback vazio).
 
 ### FASE 8: Observabilidade (Métricas LLM)
 
@@ -232,14 +238,15 @@ Estes são necessários para o deploy funcionar:
 
 ### ERPNext
 
-| Secret | Status |
-|--------|--------|
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ⬜ |
-| `ERPNEXT_DB_PASSWORD` | ⬜ |
-| `ERPNEXT_API_KEY` | ⬜ (após deploy) |
-| `ERPNEXT_API_SECRET` | ⬜ (após deploy) |
-| `REDIS_CACHE_PASSWORD` | ⬜ |
-| `REDIS_QUEUE_PASSWORD` | ⬜ |
+| Secret | Status | Obrigatório |
+|--------|--------|-------------|
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ⬜ | 🔴 Sim |
+| `ERPNEXT_DB_PASSWORD` | ⬜ | 🔴 Sim |
+| `ERPNEXT_ADMIN_PASSWORD` | ⬜ | 🔴 Sim |
+| `REDIS_CACHE_PASSWORD` | ⬜ | 🔴 Sim |
+| `REDIS_QUEUE_PASSWORD` | ⬜ | 🔴 Sim |
+| `ERPNEXT_API_KEY` | ⬜ (após deploy) | 🟢 Não |
+| `ERPNEXT_API_SECRET` | ⬜ (após deploy) | 🟢 Não |
 
 ### Observabilidade
 
@@ -326,5 +333,5 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 03 de Dezembro de 2025*
-*Versão: 5.4 - Adicionado Redis ACL Secrets para ERPNext*
+*Versão: 5.5 - Documentação completa de Secrets ERPNext (obrigatórios vs opcionais)*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
