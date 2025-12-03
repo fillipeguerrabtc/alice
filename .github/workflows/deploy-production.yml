@@ -163,6 +163,33 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
+      # Necessário para clip-inference-service
+      - name: Liberar espaço em disco
+        run: |
+          echo "📊 Espaço antes da limpeza:"
+          df -h /
+          
+          # Remover ferramentas pré-instaladas que não usamos (~10GB)
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /usr/share/swift || true
+          
+          # Limpar caches do sistema
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* || true
+          
+          # Limpar caches de package managers
+          rm -rf ~/.cache/pip || true
+          rm -rf ~/.npm || true
+          rm -rf ~/.pnpm-store || true
+          
+          echo "📊 Espaço após limpeza:"
+          df -h /
+
       - name: Extrair metadata
         id: meta
         run: |
@@ -835,8 +862,21 @@ jobs:
             fi
             
             if [ -z "$PREVIOUS_SHA" ]; then
-              echo "ERRO: Não foi possível identificar versão anterior"
-              echo "Rollback manual necessário!"
+              echo "=============================================="
+              echo "⚠️ ROLLBACK NÃO POSSÍVEL"
+              echo "=============================================="
+              echo "Motivo: Nenhuma versão anterior encontrada"
+              echo "Possíveis causas:"
+              echo "  - Primeiro deploy (não há versão para restaurar)"
+              echo "  - Diretório /opt/alice/app foi limpo"
+              echo "  - Manifesto de deploy não existe"
+              echo ""
+              echo "AÇÃO NECESSÁRIA: Verificar estado do servidor manualmente"
+              echo "  ssh \${HETZNER_VM_USER}@\${HETZNER_VM_HOST}"
+              echo "  cd /opt/alice/app/infra/docker && docker compose -f docker-compose.prod.yml ps"
+              echo "=============================================="
+              # Exit 1 para indicar que rollback falhou (deploy também falhou)
+              # Isso garante visibilidade do problema no GitHub Actions
               exit 1
             fi
             
