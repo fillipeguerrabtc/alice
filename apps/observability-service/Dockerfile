@@ -24,6 +24,7 @@ COPY packages/shared/package.json ./packages/shared/
 COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
+COPY packages/database/package.json ./packages/database/
 
 # Copiar package.json do serviço
 COPY apps/observability-service/package.json ./apps/observability-service/
