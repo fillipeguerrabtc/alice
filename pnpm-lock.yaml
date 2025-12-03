@@ -862,8 +862,8 @@ importers:
         specifier: 4.17.21
         version: 4.17.21
       '@types/node':
-        specifier: 22.10.2
-        version: 22.10.2
+        specifier: ^22.12.0
+        version: 22.19.1
       tsx:
         specifier: 4.20.6
         version: 4.20.6
@@ -6234,7 +6234,7 @@ snapshots:
 
   '@types/opossum@8.1.9':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/passport-github2@1.2.9':
     dependencies:
