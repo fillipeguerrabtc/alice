@@ -184,19 +184,29 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 |-------|---------|-------------|-----------|
 | **CI - Build & Test** | Push para `main` | ✅ Sim | TypeScript, ESLint, builds, security scan |
 | **Release & Tag** | CI passa | ✅ Sim | Versão incremental (v1.0.X++), Docker images |
-| **Deploy Production** | Manual | ❌ Não | Aprovação obrigatória, rollback automático |
+| **Deploy Production** | Release passa | ✅ Sim* | *Requer aprovação no ambiente `production` |
 
-**Fluxo:**
+**Fluxo Automático:**
 ```
-Push → CI (auto) → Release (auto v1.0.X) → Deploy (manual com aprovação)
+Push → CI (auto) → Release (auto) → Deploy (auto c/ aprovação*)
 ```
+
+*Deploy dispara automaticamente após Release, mas requer aprovação manual no ambiente `production`.
 
 **Benefícios:**
-- Versionamento automático sem intervenção manual
+- Pipeline 100% automático até aprovação de produção
+- Versionamento semântico automático
 - Imagens Docker sempre prontas para deploy
-- Controle total sobre quando deployar em produção
 - Rollback automático se health checks falharem
-- `pip install --no-cache-dir` - evita cache durante instalação
+
+### Docker Images Security Fix (03/12/2025)
+
+| Serviço | Imagem Antiga | Imagem Nova |
+|---------|---------------|-------------|
+| Node.js services (6) | node:20-slim (Debian) | node:22-alpine |
+| frontend-service | nginx:alpine | nginx:stable-alpine |
+
+**Motivo:** Trivy encontrou CVEs CRITICAL/HIGH nas imagens Debian. Alpine tem menor superfície de ataque + `apk upgrade` elimina CVEs conhecidos.
 
 ### Docker Best Practices (03/12/2025)
 

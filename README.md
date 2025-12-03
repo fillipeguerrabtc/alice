@@ -180,7 +180,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 ### Pipeline CI/CD (Best Practices 2025)
 
 ```
-Push → CI (auto) → Release (auto) → Deploy (manual)
+Push → CI (auto) → Release (auto) → Deploy (auto c/ aprovação*)
 
 1. Push para branch main
 2. CI - Build & Test (automático):
@@ -192,13 +192,13 @@ Push → CI (auto) → Release (auto) → Deploy (manual)
    ├── Cria tag v1.0.X (incremental)
    ├── Build imagens Docker
    └── Push para GHCR
-4. Deploy Production (manual):
-   ├── SSH para Hetzner
-   ├── Docker Compose up
+4. Deploy Production (automático):
+   ├── Dispara automaticamente após Release
+   ├── Requer aprovação no ambiente "production"*
    └── Health checks + Rollback automático
 ```
 
-**IMPORTANTE:** Release é automático, mas Deploy requer aprovação manual para controle total sobre produção.
+*Deploy dispara automaticamente após Release, mas requer aprovação manual no ambiente `production` do GitHub.
 
 ### URLs de Produção
 
@@ -272,7 +272,7 @@ alice/
 - Framer Motion, react-i18next
 
 ### Backend
-- Node.js 20, Express 4
+- Node.js 22 LTS, Express 4
 - Drizzle ORM, PostgreSQL 16 + pgvector
 - WebSocket (ws), Pino (logging)
 - Passport.js, openid-client

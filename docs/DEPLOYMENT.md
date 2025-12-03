@@ -339,7 +339,7 @@ O deploy é **100% automático** via GitHub Actions:
 │       │                                                          │
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
-│  │ Deploy Production   │ ← MANUAL (workflow_dispatch)           │
+│  │ Deploy Production   │ ← AUTO (requer aprovação ambiente*)    │
 │  │ • SSH para Hetzner  │                                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Health checks     │                                        │
@@ -355,26 +355,34 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Production** | Manual | Deploy controlado com aprovação |
+| **Deploy Production** | Release passa | Automático com aprovação no ambiente `production`* |
+
+*O deploy é disparado automaticamente após Release bem-sucedido, mas requer aprovação manual no ambiente `production` do GitHub.
 
 ### Versionamento Automático
 
 O Release é disparado automaticamente quando o CI passa, com versão incremental:
 - `v1.0.5` → `v1.0.6` → `v1.0.7` ...
 
-### Deploy Manual (Controlado)
+### Deploy Automático com Aprovação
+
+O deploy dispara **automaticamente** após Release bem-sucedido, mas requer aprovação manual:
 
 ```bash
-# Via GitHub UI
-Actions → Deploy to Production → Run workflow → Selecionar versão
+# Fluxo automático:
+1. Release cria tag e imagens Docker
+2. Workflow deploy-production.yml é disparado automaticamente
+3. GitHub mostra "Waiting for approval" no ambiente "production"
+4. Aprovador clica em "Approve and deploy"
+5. Deploy executa com health checks e rollback automático
 
-# Via CLI
-gh workflow run deploy-production.yml -f version=v1.0.6
+# Deploy manual (emergência):
+Actions → Deploy to Production → Run workflow → Selecionar versão
 ```
 
-**Benefícios do Deploy Manual:**
-- ✅ Controle total sobre quando deployar
-- ✅ Ambiente `production` com aprovação obrigatória
+**Benefícios do Deploy Automático com Gate:**
+- ✅ Pipeline 100% automático até aprovação de produção
+- ✅ Gate de segurança via ambiente `production`
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
 

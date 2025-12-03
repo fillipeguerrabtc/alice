@@ -19,10 +19,8 @@ on:
         description: 'É uma pré-release (alpha/beta)?'
         type: boolean
         default: false
-      trigger_deploy:
-        description: 'Disparar deploy após release?'
-        type: boolean
-        default: false
+      # NOTA: Deploy agora é automático após Release bem-sucedido
+      # O gate de segurança está no ambiente "production" do deploy-production.yml
 
 # =============================================================================
 # SEGURANÇA: Permissões mínimas (Best Practices 2025)
@@ -252,19 +250,27 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 
   # ===========================================================================
-  # Job 3: Disparar Deploy (opcional)
+  # Job 3: Disparar Deploy Automaticamente
+  # REGRA 4: Deploy automático após Release bem-sucedido (com gate de segurança)
+  # O deploy-production.yml tem aprovação manual obrigatória (environment: production)
   # ===========================================================================
   trigger-deploy:
-    name: Disparar Deploy
+    name: Disparar Deploy Automático
     runs-on: ubuntu-latest
     needs: [create-release, build-images]
-    if: ${{ inputs.trigger_deploy && !inputs.prerelease }}
+    # Dispara automaticamente se não for prerelease e builds passaram
+    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:
       - name: Disparar workflow de deploy
         uses: actions/github-script@v7
         with:
           script: |
+            console.log('🚀 Iniciando deploy automático após Release bem-sucedido');
+            console.log('📦 Versão: ${{ needs.create-release.outputs.version }}');
+            
+            // NOTA: deploy-production.yml aceita apenas 'version' e 'services'
+            // skip_approval e skip_tests foram removidos (REGRA 4 e 6 replit.md)
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -272,9 +278,9 @@ jobs:
               ref: 'main',
               inputs: {
                 version: '${{ needs.create-release.outputs.version }}',
-                services: 'all',
-                skip_approval: 'false',
-                skip_tests: 'false'
+                services: 'all'
               }
             });
-            console.log('✅ Deploy disparado para versão ${{ needs.create-release.outputs.version }}');
+            
+            console.log('✅ Deploy disparado automaticamente!');
+            console.log('⏳ Aguardando aprovação manual no ambiente "production"');

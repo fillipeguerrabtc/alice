@@ -4,10 +4,13 @@
 # Documentação em PT-BR (Regra 10 replit.md)
 # ==============================================================================
 
-FROM node:20-slim AS base
+# Usar Node.js 22 LTS Alpine para reduzir vulnerabilidades (menor superfície de ataque)
+FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+
+# Atualizar pacotes do sistema para eliminar CVEs conhecidos
+RUN apk update && apk upgrade --no-cache && corepack enable
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e criar bundle (determinístico)
@@ -59,14 +62,16 @@ RUN pnpm --filter @alice/rag-service deploy --prod --legacy /prod/rag-service
 # ==============================================================================
 # Stage: runner - Imagem final de produção (mínima)
 # ==============================================================================
-FROM node:20-slim AS runner
+# Usar Node.js 22 LTS Alpine para imagem final (mínima e segura)
+FROM node:22-alpine AS runner
 ENV NODE_ENV=production
 ENV SERVICE_NAME=rag-service
 ENV PORT=3003
 
-# Criar usuário não-root para segurança
-RUN groupadd --system --gid 1001 nodejs && \
-    useradd --system --uid 1001 --gid nodejs alice
+# Atualizar pacotes do sistema e criar usuário não-root
+RUN apk update && apk upgrade --no-cache && \
+    addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 --ingroup nodejs alice
 
 WORKDIR /app
 

@@ -4,10 +4,14 @@
 # Documentação em PT-BR (Regra 10 replit.md)
 # ==============================================================================
 
-FROM node:20-slim AS base
+# Usar Node.js 22 LTS Alpine para reduzir vulnerabilidades (menor superfície de ataque)
+# Alpine tem menos CVEs que Debian-based images
+FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+
+# Atualizar pacotes do sistema para eliminar CVEs conhecidos
+RUN apk update && apk upgrade --no-cache && corepack enable
 
 # ==============================================================================
 # Stage: deps - Copiar package.jsons para cache de dependências
@@ -54,13 +58,16 @@ RUN pnpm --filter @alice/frontend-service run build
 # Stage: runner - Nginx para servir assets estáticos
 # SEGURANÇA: Non-root container (Docker 2025 + OWASP Container Security)
 # ==============================================================================
-FROM nginx:alpine AS runner
+# Usar nginx:stable-alpine para imagem final (mínima e segura)
+FROM nginx:stable-alpine AS runner
 ENV SERVICE_NAME=frontend-service
 
-# SEGURANÇA: Configurar nginx para rodar como non-root
-# 1. Remover diretiva 'user' do nginx.conf principal (requer root para setuid)
-# 2. Ajustar permissões de diretórios necessários
-RUN sed -i 's/user  nginx;/#user  nginx;/' /etc/nginx/nginx.conf && \
+# SEGURANÇA: Atualizar pacotes e configurar nginx para rodar como non-root
+# 1. Atualizar pacotes do sistema para eliminar CVEs conhecidos
+# 2. Remover diretiva 'user' do nginx.conf principal (requer root para setuid)
+# 3. Ajustar permissões de diretórios necessários
+RUN apk update && apk upgrade --no-cache && \
+    sed -i 's/user  nginx;/#user  nginx;/' /etc/nginx/nginx.conf && \
     mkdir -p /var/cache/nginx/client_temp && \
     mkdir -p /var/cache/nginx/proxy_temp && \
     mkdir -p /var/cache/nginx/fastcgi_temp && \
