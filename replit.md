@@ -186,12 +186,12 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 | **Release & Tag** | CI passa | ✅ Sim | Versão incremental (v1.0.X++), Docker images |
 | **Deploy Production** | Release passa | ✅ Sim* | *Requer aprovação no ambiente `production` |
 
-**Fluxo Automático:**
+**Fluxo 100% Automático:**
 ```
-Push → CI (auto) → Release (auto) → Deploy (auto c/ aprovação*)
+Push → CI (auto) → Release (auto) → Deploy (auto)
 ```
 
-*Deploy dispara automaticamente após Release, mas requer aprovação manual no ambiente `production`.
+Pipeline totalmente automático: push para `main` vai direto para produção após CI, Release e Security Scan passarem.
 
 **Benefícios:**
 - Pipeline 100% automático até aprovação de produção

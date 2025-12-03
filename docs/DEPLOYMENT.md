@@ -339,7 +339,7 @@ O deploy é **100% automático** via GitHub Actions:
 │       │                                                          │
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
-│  │ Deploy Production   │ ← AUTO (requer aprovação ambiente*)    │
+│  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
 │  │ • SSH para Hetzner  │                                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Health checks     │                                        │
@@ -355,34 +355,37 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Production** | Release passa | Automático com aprovação no ambiente `production`* |
+| **Deploy Production** | Release passa | 100% automático (sem aprovação) |
 
-*O deploy é disparado automaticamente após Release bem-sucedido, mas requer aprovação manual no ambiente `production` do GitHub.
+Pipeline totalmente automático: push para `main` vai direto para produção.
 
 ### Versionamento Automático
 
 O Release é disparado automaticamente quando o CI passa, com versão incremental:
 - `v1.0.5` → `v1.0.6` → `v1.0.7` ...
 
-### Deploy Automático com Aprovação
+### Deploy 100% Automático
 
-O deploy dispara **automaticamente** após Release bem-sucedido, mas requer aprovação manual:
+O deploy dispara **automaticamente** após Release bem-sucedido, sem necessidade de aprovação manual:
 
 ```bash
-# Fluxo automático:
-1. Release cria tag e imagens Docker
-2. Workflow deploy-production.yml é disparado automaticamente
-3. GitHub mostra "Waiting for approval" no ambiente "production"
-4. Aprovador clica em "Approve and deploy"
-5. Deploy executa com health checks e rollback automático
+# Fluxo 100% automático:
+1. Push para main
+2. CI valida código (TypeScript, ESLint, testes)
+3. Release cria tag e imagens Docker
+4. Security Scan (Trivy) valida imagens
+5. Deploy executa automaticamente
+6. Health checks validam serviços
+7. Rollback automático se falhar
 
 # Deploy manual (emergência):
 Actions → Deploy to Production → Run workflow → Selecionar versão
 ```
 
-**Benefícios do Deploy Automático com Gate:**
-- ✅ Pipeline 100% automático até aprovação de produção
-- ✅ Gate de segurança via ambiente `production`
+**Benefícios do Pipeline 100% Automático:**
+- ✅ Zero intervenção humana no deploy
+- ✅ Feedback rápido (push → produção em minutos)
+- ✅ Security scan obrigatório antes do deploy
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
 

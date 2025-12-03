@@ -180,7 +180,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 ### Pipeline CI/CD (Best Practices 2025)
 
 ```
-Push → CI (auto) → Release (auto) → Deploy (auto c/ aprovação*)
+Push → CI (auto) → Release (auto) → Deploy (auto)
 
 1. Push para branch main
 2. CI - Build & Test (automático):
@@ -192,13 +192,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto c/ aprovação*)
    ├── Cria tag v1.0.X (incremental)
    ├── Build imagens Docker
    └── Push para GHCR
-4. Deploy Production (automático):
+4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Requer aprovação no ambiente "production"*
+   ├── Security scan (Trivy) das imagens
    └── Health checks + Rollback automático
 ```
 
-*Deploy dispara automaticamente após Release, mas requer aprovação manual no ambiente `production` do GitHub.
+**Pipeline 100% Automático:** Push para `main` vai direto para produção após todas as validações passarem.
 
 ### URLs de Produção
 

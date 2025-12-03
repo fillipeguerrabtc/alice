@@ -286,4 +286,4 @@ jobs:
             });
             
             console.log('✅ Deploy disparado automaticamente!');
-            console.log('⏳ Aguardando aprovação manual no ambiente "production"');
+            console.log('🚀 Pipeline 100% automático - deploy em andamento...');
