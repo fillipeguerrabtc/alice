@@ -155,6 +155,20 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 | `trivy-results.sarif` não existia quando Trivy falhava | Adicionado "Ensure SARIF file exists" fallback | Completo |
 | PyTorch (~2GB) consumia muito espaço | `pip install --no-cache-dir` + limpeza prévia | Completo |
 
+### Trivy Scan Fix (03/12/2025)
+
+| Problema | Solução | Status |
+|----------|---------|--------|
+| Trivy scan abortava no primeiro erro | Mudado `exit-code: '0'` para todos os scans | Completo |
+| Upload SARIF falhava "Path does not exist" | Step "Ensure SARIF files exist" com fallback | Completo |
+| Sem verificação agregada de vulnerabilidades | Step "Check for CRITICAL/HIGH" no final | Completo |
+
+**Fluxo Trivy Atualizado:**
+1. Scans rodam com `exit-code: '0'` (não aborta pipeline)
+2. Step garante SARIFs existam (fallback vazio se necessário)
+3. Upload de SARIFs para GitHub Security tab
+4. Step agregador verifica CRITICAL/HIGH e registra warnings
+
 **Steps adicionados ao CI/CD:**
 - `sudo apt-get clean` - limpa cache APT
 - `rm -rf ~/.cache/pip ~/.npm ~/.pnpm-store` - limpa caches de package managers

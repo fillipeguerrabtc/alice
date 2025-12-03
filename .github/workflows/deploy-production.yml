@@ -361,16 +361,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # REGRA 6: Pipeline DEVE falhar em vulnerabilidades CRITICAL/HIGH
+      # REGRA 6: Todos os scans executam (exit-code 0) para gerar SARIFs
+      # A verificação de CRITICAL/HIGH é feita no step agregador no final
       - name: Scan Auth Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
         with:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           format: 'sarif'
           output: 'trivy-auth.sarif'
+          limit-severities-for-sarif: true
 
       - name: Scan Chat Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
@@ -378,9 +380,10 @@ jobs:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           format: 'sarif'
           output: 'trivy-chat.sarif'
+          limit-severities-for-sarif: true
 
       - name: Scan Frontend Service Image
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
@@ -388,11 +391,23 @@ jobs:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '1'
+          exit-code: '0'
           format: 'sarif'
           output: 'trivy-frontend.sarif'
+          limit-severities-for-sarif: true
 
-      # Upload para GitHub Security tab (opcional, não bloqueia pipeline)
+      # Garantir que arquivos SARIF existam (fallback vazio se scan falhar)
+      - name: Ensure SARIF files exist
+        if: always()
+        run: |
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+            if [ ! -f "$f" ]; then
+              echo '{"version":"2.1.0","runs":[]}' > "$f"
+              echo "Criado fallback SARIF: $f"
+            fi
+          done
+
+      # Upload para GitHub Security tab
       - name: Upload Trivy Auth scan results
         if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
@@ -416,6 +431,47 @@ jobs:
           sarif_file: 'trivy-frontend.sarif'
           category: 'trivy-frontend-image'
         continue-on-error: true
+
+      # REGRA 6: Verificar CRITICAL/HIGH em todos os SARIFs e falhar se encontrar
+      - name: Check for CRITICAL/HIGH vulnerabilities
+        if: always()
+        run: |
+          echo "=============================================="
+          echo "VERIFICANDO VULNERABILIDADES CRITICAL/HIGH"
+          echo "=============================================="
+          
+          FAIL=0
+          
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+            if [ -f "$f" ]; then
+              echo "Analisando $f..."
+              
+              # Verificar se há resultados com severidade CRITICAL ou HIGH
+              # SARIF usa ruleId que contém a severidade ou propriedades
+              if grep -q '"level": "error"' "$f" 2>/dev/null; then
+                echo "⚠️ Vulnerabilidades encontradas em $f"
+                FAIL=1
+              elif grep -q '"level": "warning"' "$f" 2>/dev/null; then
+                echo "⚠️ Warnings encontrados em $f"
+                # Warnings não falham o build (apenas CRITICAL/HIGH)
+              else
+                echo "✅ $f: Nenhuma vulnerabilidade crítica"
+              fi
+            fi
+          done
+          
+          if [ "$FAIL" -eq 1 ]; then
+            echo "=============================================="
+            echo "❌ CRITICAL/HIGH vulnerabilities encontradas!"
+            echo "Verifique a aba Security do repositório para detalhes."
+            echo "=============================================="
+            # REGRA 6: Pipeline DEVE falhar em vulnerabilidades CRITICAL/HIGH
+            exit 1
+          else
+            echo "=============================================="
+            echo "✅ Nenhuma vulnerabilidade CRITICAL/HIGH detectada"
+            echo "=============================================="
+          fi
 
   # ===========================================================================
   # Job 5: Aprovação Manual (ambiente production)
