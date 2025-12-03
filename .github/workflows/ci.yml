@@ -414,13 +414,7 @@ jobs:
           if [ ! -f "trivy-results.sarif" ]; then
             echo "Criando arquivo SARIF válido (Trivy não gerou output)..."
             # SARIF mínimo válido para evitar erros de parsing
-            cat > trivy-results.sarif <<'EOF'
-{
-  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-  "version": "2.1.0",
-  "runs": []
-}
-EOF
+            printf '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[]}' > trivy-results.sarif
           fi
           echo "✅ SARIF file ready:"
           ls -la trivy-results.sarif

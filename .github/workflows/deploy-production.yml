@@ -421,15 +421,8 @@ jobs:
           for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
             if [ ! -f "$f" ]; then
               # Marcador especial para indicar que scan falhou (não apenas sem vulnerabilidades)
-              # SARIF mínimo válido para evitar erros de parsing
-              cat > "$f" <<'EOF'
-{
-  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-  "version": "2.1.0",
-  "runs": [],
-  "_scanFailed": true
-}
-EOF
+              # SARIF mínimo válido para evitar erros de parsing (usando printf para compatibilidade)
+              printf '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[],"_scanFailed":true}' > "$f"
               if [ -f "$f" ]; then
                 echo "⚠️ SARIF não gerado, criado fallback: $f"
               else
