@@ -1378,8 +1378,8 @@ router.post('/schedule/test', async (_req: Request, res: Response) => {
  * Formato: "MIN HOUR DOM MON DOW"
  * - MIN: 0-59
  * - HOUR: 0-23  
- * - DOM: 1-31 (dia do mês)
- * - MON: 1-12 (mês)
+ * - DOM: 1-31 (dia do mes)
+ * - MON: 1-12 (mes)
  * - DOW: 0-6 (dia da semana, 0=domingo)
  * 
  * Suporta:
@@ -1388,8 +1388,8 @@ router.post('/schedule/test', async (_req: Request, res: Response) => {
  * - Lists: 1,3,5
  * - Steps: */5, 0-30/10
  * 
- * @param cronExpression - Expressão cron no formato padrão
- * @returns ISO string da próxima execução
+ * @param cronExpression - Expressao cron no formato padrao
+ * @returns ISO string da proxima execucao
  */
 function getNextCronRun(cronExpression: string): string {
   const parts = cronExpression.split(' ');
