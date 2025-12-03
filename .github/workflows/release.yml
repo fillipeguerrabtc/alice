@@ -156,6 +156,9 @@ jobs:
   # ===========================================================================
   # Job 2: Build e Push Docker Images (opcional)
   # ===========================================================================
+  # NOTA: Cada runner da matrix executa em VM isolada, então a limpeza de disco
+  # precisa estar em cada job. O cache do Docker é via GHA (remoto), não local.
+  # ===========================================================================
   build-images:
     name: Build Docker Images
     runs-on: ubuntu-latest
@@ -193,6 +196,34 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ needs.create-release.outputs.version }}
+
+      # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
+      # Cada runner da matrix é uma VM isolada, então precisa limpar em cada uma
+      # NOTA: NÃO limpar cache do Docker - usamos GHA cache (remoto) que é preservado
+      - name: Liberar espaço em disco
+        run: |
+          echo "📊 Espaço antes da limpeza:"
+          df -h /
+          
+          # Remover ferramentas pré-instaladas que não usamos (~10GB)
+          sudo rm -rf /usr/share/dotnet || true
+          sudo rm -rf /usr/local/lib/android || true
+          sudo rm -rf /opt/ghc || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo rm -rf /usr/local/share/boost || true
+          sudo rm -rf /usr/share/swift || true
+          
+          # Limpar caches do sistema
+          sudo apt-get clean || true
+          sudo rm -rf /var/lib/apt/lists/* || true
+          
+          # Limpar caches de package managers (não afetam Docker GHA cache)
+          rm -rf ~/.cache/pip || true
+          rm -rf ~/.npm || true
+          rm -rf ~/.pnpm-store || true
+          
+          echo "📊 Espaço após limpeza:"
+          df -h /
 
       # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
       # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
