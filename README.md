@@ -177,19 +177,28 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | **Desenvolvimento** | Cursor IDE | IDE, hot reload, debugging, AI-assisted |
 | **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, Nuremberg |
 
-### Pipeline CI/CD (100% Automático)
+### Pipeline CI/CD (Best Practices 2025)
 
 ```
+Push → CI (auto) → Release (auto) → Deploy (manual)
+
 1. Push para branch main
-2. GitHub Actions executa automaticamente:
-   ├── Build pacotes compartilhados
+2. CI - Build & Test (automático):
+   ├── TypeScript check
+   ├── ESLint
+   ├── Build packages/services
+   └── Security scan (Trivy)
+3. Release & Tag (automático se CI passar):
+   ├── Cria tag v1.0.X (incremental)
    ├── Build imagens Docker
-   ├── Push para GHCR
-   └── Deploy SSH para Hetzner
-3. Health checks nos serviços
+   └── Push para GHCR
+4. Deploy Production (manual):
+   ├── SSH para Hetzner
+   ├── Docker Compose up
+   └── Health checks + Rollback automático
 ```
 
-**IMPORTANTE:** Nenhum comando manual é necessário em produção. Todo deploy acontece automaticamente via GitHub Actions quando você faz push para a branch `main`.
+**IMPORTANTE:** Release é automático, mas Deploy requer aprovação manual para controle total sobre produção.
 
 ### URLs de Produção
 

@@ -307,32 +307,76 @@ O deploy é **100% automático** via GitHub Actions:
 
 ---
 
-## Fluxo de Deploy
+## Fluxo de CI/CD (Best Practices 2025)
 
-### Deploy Automático (push para main)
+### Pipeline Automatizado
 
 ```
-1. Push para branch main
-2. Pipeline CI/CD executa automaticamente:
-   - Build pacotes compartilhados
-   - Build imagens Docker
-   - Push para GHCR
-3. Deploy para Hetzner (automático):
-   - SSH para VM
-   - Pull das novas imagens
-   - Docker Compose up
-   - Health checks
+┌─────────────────────────────────────────────────────────────────┐
+│                     FLUXO CI/CD ALICE                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Push para main                                                  │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────────────┐                                        │
+│  │ CI - Build & Test   │ ← AUTOMÁTICO                           │
+│  │ • TypeScript check  │                                        │
+│  │ • ESLint            │                                        │
+│  │ • Build packages    │                                        │
+│  │ • Build services    │                                        │
+│  │ • Security scan     │                                        │
+│  └─────────────────────┘                                        │
+│       │ (se passar)                                              │
+│       ▼                                                          │
+│  ┌─────────────────────┐                                        │
+│  │ Release & Tag       │ ← AUTOMÁTICO (v1.0.X incremental)      │
+│  │ • Cria Git tag      │                                        │
+│  │ • Build Docker imgs │                                        │
+│  │ • Push para GHCR    │                                        │
+│  │ • Cria GitHub Rel.  │                                        │
+│  └─────────────────────┘                                        │
+│       │                                                          │
+│       ▼                                                          │
+│  ┌─────────────────────┐                                        │
+│  │ Deploy Production   │ ← MANUAL (workflow_dispatch)           │
+│  │ • SSH para Hetzner  │                                        │
+│  │ • Docker Compose up │                                        │
+│  │ • Health checks     │                                        │
+│  │ • Rollback auto     │                                        │
+│  └─────────────────────┘                                        │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### Deploy Manual (apenas para emergências)
+### Etapas Detalhadas
+
+| Etapa | Trigger | Descrição |
+|-------|---------|-----------|
+| **CI - Build & Test** | Push para `main` | Validação automática de código |
+| **Release & Tag** | CI passa | Versionamento semântico automático |
+| **Deploy Production** | Manual | Deploy controlado com aprovação |
+
+### Versionamento Automático
+
+O Release é disparado automaticamente quando o CI passa, com versão incremental:
+- `v1.0.5` → `v1.0.6` → `v1.0.7` ...
+
+### Deploy Manual (Controlado)
 
 ```bash
 # Via GitHub UI
-Actions → Deploy to Production → Run workflow
+Actions → Deploy to Production → Run workflow → Selecionar versão
 
 # Via CLI
-gh workflow run deploy-production.yml
+gh workflow run deploy-production.yml -f version=v1.0.6
 ```
+
+**Benefícios do Deploy Manual:**
+- ✅ Controle total sobre quando deployar
+- ✅ Ambiente `production` com aprovação obrigatória
+- ✅ Rollback automático se health checks falharem
+- ✅ Rastreabilidade completa de releases
 
 ---
 

@@ -75,7 +75,7 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - **Authentication**: Robust enterprise authentication (OAuth 2.0, SAML 2.0, 6-level RBAC, HMAC-SHA256 for S2S).
 - **Real-time Communication**: WebSockets for LLM token streaming with rate limiting.
 - **AI/ML**: RAG backend, image generation (FLUX.1 Schnell), and multimodal embeddings (CLIP ViT-L/14) are all self-hosted on Salad Cloud.
-- **CI/CD**: Automated GitHub Actions for Docker builds and Hetzner deployments.
+- **CI/CD**: Automated GitHub Actions: CI (auto) → Release (auto) → Deploy (manual).
 - **Code Quality**: Strict TypeScript, Pino logging, health checks.
 - **Resilience & Performance**: Connection pooling, Circuit Breaker pattern, WebSocket rate limiting, graceful shutdowns.
 - **Security Hardening**: PostgreSQL RLS, `sslmode=prefer`, `tenant_id` indices, pgAudit, Docker Non-Root, Redis ACL, CSP, input validation (Zod), and image scanning.
@@ -158,6 +158,25 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - `sudo apt-get clean` - limpa cache APT
 - `rm -rf ~/.cache/pip ~/.npm ~/.pnpm-store` - limpa caches de package managers
 - `sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost` - remove ferramentas pré-instaladas (~5GB)
+
+### CI/CD Automation (Dezembro 2025)
+
+| Etapa | Trigger | Automático? | Descrição |
+|-------|---------|-------------|-----------|
+| **CI - Build & Test** | Push para `main` | ✅ Sim | TypeScript, ESLint, builds, security scan |
+| **Release & Tag** | CI passa | ✅ Sim | Versão incremental (v1.0.X++), Docker images |
+| **Deploy Production** | Manual | ❌ Não | Aprovação obrigatória, rollback automático |
+
+**Fluxo:**
+```
+Push → CI (auto) → Release (auto v1.0.X) → Deploy (manual com aprovação)
+```
+
+**Benefícios:**
+- Versionamento automático sem intervenção manual
+- Imagens Docker sempre prontas para deploy
+- Controle total sobre quando deployar em produção
+- Rollback automático se health checks falharem
 - `pip install --no-cache-dir` - evita cache durante instalação
 
 ---
