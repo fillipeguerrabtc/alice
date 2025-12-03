@@ -660,10 +660,11 @@ jobs:
               repo: context.repo.repo,
               workflow_id: 'release.yml',
               ref: 'main',
+              // NOTA: release.yml aceita apenas 'version' e 'prerelease'
+              // trigger_deploy foi removido (deploy agora é automático após Release)
               inputs: {
                 version: '${{ steps.version.outputs.version }}',
-                prerelease: 'false',
-                trigger_deploy: 'false'
+                prerelease: 'false'
               }
             });
-            console.log('Release ${{ steps.version.outputs.version }} disparado automaticamente!');
+            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado automaticamente!');
