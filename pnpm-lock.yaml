@@ -177,7 +177,7 @@ importers:
         version: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1)
       drizzle-zod:
         specifier: ^0.7.0
-        version: 0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(zod@3.24.2)
+        version: 0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(zod@3.25.76)
       embla-carousel-react:
         specifier: ^8.6.0
         version: 8.6.0(react@18.3.1)
@@ -285,10 +285,10 @@ importers:
         version: 2.15.2(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       stripe:
         specifier: ^18.5.0
-        version: 18.5.0(@types/node@22.10.2)
+        version: 18.5.0(@types/node@22.19.1)
       stripe-replit-sync:
         specifier: ^0.0.12
-        version: 0.0.12(bufferutil@4.0.9)(stripe@18.5.0(@types/node@22.10.2))
+        version: 0.0.12(bufferutil@4.0.9)(stripe@18.5.0(@types/node@22.19.1))
       tailwind-merge:
         specifier: ^2.6.0
         version: 2.6.0
@@ -308,11 +308,11 @@ importers:
         specifier: ^8.18.0
         version: 8.18.0(bufferutil@4.0.9)
       zod:
-        specifier: ^3.24.2
-        version: 3.24.2
+        specifier: ^3.24.4
+        version: 3.25.76
       zod-validation-error:
         specifier: ^3.4.0
-        version: 3.5.4(zod@3.24.2)
+        version: 3.5.4(zod@3.25.76)
     devDependencies:
       '@replit/vite-plugin-cartographer':
         specifier: ^0.4.4
@@ -336,8 +336,8 @@ importers:
         specifier: ^1.18.0
         version: 1.18.0
       '@types/node':
-        specifier: ^22.10.2
-        version: 22.10.2
+        specifier: ^22.12.0
+        version: 22.19.1
       '@types/oidc-provider':
         specifier: ^9.5.0
         version: 9.5.0
@@ -361,10 +361,10 @@ importers:
         version: 8.5.13
       '@vitejs/plugin-react':
         specifier: ^4.7.0
-        version: 4.7.0(vite@5.4.21(@types/node@22.10.2))
+        version: 4.7.0(vite@5.4.21(@types/node@22.19.1))
       '@vitest/coverage-v8':
         specifier: ^4.0.14
-        version: 4.0.14(vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6))
+        version: 4.0.14(vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6))
       autoprefixer:
         specifier: ^10.4.22
         version: 10.4.22(postcss@8.5.6)
@@ -391,10 +391,10 @@ importers:
         version: 5.7.2
       vite:
         specifier: ^5.4.21
-        version: 5.4.21(@types/node@22.10.2)
+        version: 5.4.21(@types/node@22.19.1)
       vitest:
         specifier: ^4.0.14
-        version: 4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6)
+        version: 4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6)
     optionalDependencies:
       bufferutil:
         specifier: ^4.0.8
@@ -407,7 +407,7 @@ importers:
         version: link:../../packages/logger
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -450,7 +450,7 @@ importers:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -459,10 +459,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       '@node-saml/passport-saml':
         specifier: 5.1.0
         version: 5.1.0
@@ -559,7 +559,7 @@ importers:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -568,10 +568,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -768,7 +768,7 @@ importers:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -777,10 +777,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -835,10 +835,10 @@ importers:
         version: link:../../packages/database
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       '@types/opossum':
         specifier: ^8.1.9
         version: 8.1.9
@@ -859,26 +859,26 @@ importers:
         version: 13.1.2
     devDependencies:
       '@types/cors':
-        specifier: 2.8.19
+        specifier: ^2.8.19
         version: 2.8.19
       '@types/express':
-        specifier: 4.17.21
-        version: 4.17.21
+        specifier: ^5.0.0
+        version: 5.0.6
       '@types/node':
-        specifier: 22.10.2
-        version: 22.10.2
+        specifier: ^22.12.0
+        version: 22.19.1
       tsx:
-        specifier: 4.20.6
+        specifier: ^4.20.6
         version: 4.20.6
       typescript:
-        specifier: 5.7.2
+        specifier: ^5.7.2
         version: 5.7.2
 
   apps/rag-service:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -887,10 +887,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -945,7 +945,7 @@ importers:
     dependencies:
       '@alice/config':
         specifier: workspace:*
-        version: link:../../packages/config
+        version: file:packages/config
       '@alice/database':
         specifier: workspace:*
         version: link:../../packages/database
@@ -954,10 +954,10 @@ importers:
         version: link:../../packages/logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../../packages/shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@alice/shared-utils':
         specifier: workspace:*
-        version: link:../../packages/shared-utils
+        version: file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)
       cors:
         specifier: 2.8.5
         version: 2.8.5
@@ -1022,7 +1022,7 @@ importers:
         version: link:../logger
       '@alice/shared':
         specifier: workspace:*
-        version: link:../shared
+        version: file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
       '@neondatabase/serverless':
         specifier: ^0.10.4
         version: 0.10.4
@@ -1143,6 +1143,28 @@ importers:
         version: 5.7.2
 
 packages:
+
+  '@alice/config@file:packages/config':
+    resolution: {directory: packages/config, type: directory}
+
+  '@alice/database@file:packages/database':
+    resolution: {directory: packages/database, type: directory}
+    peerDependencies:
+      '@neondatabase/serverless': ^0.10.4
+      drizzle-orm: 0.39.1
+
+  '@alice/logger@file:packages/logger':
+    resolution: {directory: packages/logger, type: directory}
+
+  '@alice/shared-utils@file:packages/shared-utils':
+    resolution: {directory: packages/shared-utils, type: directory}
+    peerDependencies:
+      express: ^4.21.2
+
+  '@alice/shared@file:packages/shared':
+    resolution: {directory: packages/shared, type: directory}
+    peerDependencies:
+      drizzle-orm: 0.39.1
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -2570,6 +2592,9 @@ packages:
   '@types/express-serve-static-core@4.19.7':
     resolution: {integrity: sha512-FvPtiIf1LfhzsaIXhv/PHan/2FeQBbtBDtfX2QfvPxdUelMDEckK08SM6nqo1MIZY3RUlfA+HV8+hFUSio78qg==}
 
+  '@types/express-serve-static-core@5.1.0':
+    resolution: {integrity: sha512-jnHMsrd0Mwa9Cf4IdOzbz543y4XJepXrbia2T4b6+spXC2We3t1y6K44D3mR8XMFSXMCf3/l7rCgddfx7UNVBA==}
+
   '@types/express-session@1.18.0':
     resolution: {integrity: sha512-27JdDRgor6PoYlURY+Y5kCakqp5ulC0kmf7y+QwaY+hv9jEFuQOThgkjyA53RP3jmKuBsH5GR6qEfFmvb8mwOA==}
 
@@ -2578,6 +2603,9 @@ packages:
 
   '@types/express@4.17.25':
     resolution: {integrity: sha512-dVd04UKsfpINUnK0yBoYHDF3xu7xVH4BuDotC/xGuycx4CgbP48X/KF/586bcObxT0HENHXEU8Nqtu6NR+eKhw==}
+
+  '@types/express@5.0.6':
+    resolution: {integrity: sha512-sKYVuV7Sv9fbPIt/442koC7+IIwK5olP1KWeD88e/idgoJqDm3JV/YUiPwkoKK92ylff2MGxSz1CSjsXelx0YA==}
 
   '@types/helmet@0.0.48':
     resolution: {integrity: sha512-C7MpnvSDrunS1q2Oy1VWCY7CDWHozqSnM8P4tFeRTuzwqni+PYOjEredwcqWG+kLpYcgLsgcY3orHB54gbx2Jw==}
@@ -2617,6 +2645,9 @@ packages:
 
   '@types/node@22.10.2':
     resolution: {integrity: sha512-Xxr6BBRCAOQixvonOye19wnzyDiUtTeqldOOmj3CkeblonbccA12PFwlufvRdrpjXxqnmUaeiU5EOA+7s5diUQ==}
+
+  '@types/node@22.19.1':
+    resolution: {integrity: sha512-LCCV0HdSZZZb34qifBsyWlUmok6W7ouER+oQIGBScS8EsZsQbrtFTUrDX4hOl+CS6p7cnNC4td+qrSVGSCTUfQ==}
 
   '@types/oauth@0.9.6':
     resolution: {integrity: sha512-H9TRCVKBNOhZZmyHLqFt9drPM9l+ShWiqqJijU1B8P3DX3ub84NjxDuy+Hjrz+fEca5Kwip3qPMKNyiLgNJtIA==}
@@ -4506,6 +4537,9 @@ packages:
   undici-types@6.20.0:
     resolution: {integrity: sha512-Ny6QZ2Nju20vw1SRHe3d9jVu6gJ+4e3+MMpqu7pqE5HT6WsTSlce++GQmK5UXS8mzV8DSYHrQH+Xrf2jVcuKNg==}
 
+  undici-types@6.21.0:
+    resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
+
   unpipe@1.0.0:
     resolution: {integrity: sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ==}
     engines: {node: '>= 0.8'}
@@ -4748,7 +4782,58 @@ packages:
   zod@3.24.2:
     resolution: {integrity: sha512-lY7CDW43ECgW9u1TcT3IoXHflywfVqDYze4waEz812jR/bZ8FHDsl7pFQoSZTz5N+2NqRXs8GBwnAwo3ZNxqhQ==}
 
+  zod@3.25.76:
+    resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
+
 snapshots:
+
+  '@alice/config@file:packages/config':
+    dependencies:
+      zod: 3.25.76
+
+  '@alice/database@file:packages/database(@neondatabase/serverless@0.10.4)(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))':
+    dependencies:
+      '@alice/logger': file:packages/logger
+      '@alice/shared': file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
+      '@neondatabase/serverless': 0.10.4
+      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1)
+      pg: 8.12.0
+      pgvector: 0.2.1
+    transitivePeerDependencies:
+      - pg-native
+
+  '@alice/logger@file:packages/logger':
+    dependencies:
+      pino: 10.1.0
+      pino-pretty: 13.1.2
+
+  '@alice/shared-utils@file:packages/shared-utils(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(express@4.21.2)':
+    dependencies:
+      '@alice/database': file:packages/database(@neondatabase/serverless@0.10.4)(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))
+      '@alice/logger': file:packages/logger
+      '@neondatabase/serverless': 0.10.4
+      '@types/redis': 4.0.11
+      compression: 1.8.1
+      express: 4.21.2
+      express-rate-limit: 8.2.1(express@4.21.2)
+      helmet: 8.1.0
+      opossum: 9.0.0
+      pino: 10.1.0
+      pino-pretty: 13.1.2
+      prom-client: 15.1.3
+      rate-limit-redis: 4.3.1(express-rate-limit@8.2.1(express@4.21.2))
+      redis: 5.10.0
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - drizzle-orm
+      - pg-native
+      - supports-color
+
+  '@alice/shared@file:packages/shared(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))':
+    dependencies:
+      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1)
+      drizzle-zod: 0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(zod@3.25.76)
+      zod: 3.25.76
 
   '@alloc/quick-lru@5.2.0': {}
 
@@ -6057,7 +6142,7 @@ snapshots:
 
   '@types/accepts@1.3.7':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/babel__core@7.20.5':
     dependencies:
@@ -6087,7 +6172,7 @@ snapshots:
   '@types/body-parser@1.19.6':
     dependencies:
       '@types/connect': 3.4.38
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/chai@5.2.3':
     dependencies:
@@ -6097,7 +6182,7 @@ snapshots:
   '@types/compression@1.8.1':
     dependencies:
       '@types/express': 4.17.21
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/connect-pg-simple@7.0.3':
     dependencies:
@@ -6107,7 +6192,7 @@ snapshots:
 
   '@types/connect@3.4.38':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/content-disposition@0.5.9': {}
 
@@ -6118,7 +6203,7 @@ snapshots:
       '@types/connect': 3.4.38
       '@types/express': 4.17.21
       '@types/keygrip': 1.0.6
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/cors@2.8.19':
     dependencies:
@@ -6158,7 +6243,14 @@ snapshots:
 
   '@types/express-serve-static-core@4.19.7':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
+      '@types/qs': 6.14.0
+      '@types/range-parser': 1.2.7
+      '@types/send': 1.2.1
+
+  '@types/express-serve-static-core@5.1.0':
+    dependencies:
+      '@types/node': 22.19.1
       '@types/qs': 6.14.0
       '@types/range-parser': 1.2.7
       '@types/send': 1.2.1
@@ -6181,6 +6273,12 @@ snapshots:
       '@types/qs': 6.14.0
       '@types/serve-static': 1.15.10
 
+  '@types/express@5.0.6':
+    dependencies:
+      '@types/body-parser': 1.19.6
+      '@types/express-serve-static-core': 5.1.0
+      '@types/serve-static': 2.2.0
+
   '@types/helmet@0.0.48':
     dependencies:
       '@types/express': 4.17.21
@@ -6191,7 +6289,7 @@ snapshots:
 
   '@types/http-proxy@1.17.17':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/keygrip@1.0.6': {}
 
@@ -6208,7 +6306,7 @@ snapshots:
       '@types/http-errors': 2.0.5
       '@types/keygrip': 1.0.6
       '@types/koa-compose': 3.2.9
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/memoizee@0.4.12': {}
 
@@ -6226,19 +6324,23 @@ snapshots:
     dependencies:
       undici-types: 6.20.0
 
+  '@types/node@22.19.1':
+    dependencies:
+      undici-types: 6.21.0
+
   '@types/oauth@0.9.6':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/oidc-provider@9.5.0':
     dependencies:
       '@types/keygrip': 1.0.6
       '@types/koa': 3.0.1
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/opossum@8.1.9':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/passport-github2@1.2.9':
     dependencies:
@@ -6309,28 +6411,28 @@ snapshots:
   '@types/send@0.17.6':
     dependencies:
       '@types/mime': 1.3.5
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/send@1.2.1':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/serve-static@1.15.10':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
       '@types/send': 0.17.6
 
   '@types/serve-static@2.2.0':
     dependencies:
       '@types/http-errors': 2.0.5
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/superagent@8.1.9':
     dependencies:
       '@types/cookiejar': 2.1.5
       '@types/methods': 1.1.4
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
       form-data: 4.0.5
 
   '@types/supertest@6.0.3':
@@ -6344,11 +6446,11 @@ snapshots:
 
   '@types/xml-encryption@1.2.4':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@types/xml2js@0.4.14':
     dependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
 
   '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.10.2))':
     dependencies:
@@ -6362,7 +6464,19 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@vitest/coverage-v8@4.0.14(vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6))':
+  '@vitejs/plugin-react@4.7.0(vite@5.4.21(@types/node@22.19.1))':
+    dependencies:
+      '@babel/core': 7.28.5
+      '@babel/plugin-transform-react-jsx-self': 7.27.1(@babel/core@7.28.5)
+      '@babel/plugin-transform-react-jsx-source': 7.27.1(@babel/core@7.28.5)
+      '@rolldown/pluginutils': 1.0.0-beta.27
+      '@types/babel__core': 7.20.5
+      react-refresh: 0.17.0
+      vite: 5.4.21(@types/node@22.19.1)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@vitest/coverage-v8@4.0.14(vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6))':
     dependencies:
       '@bcoe/v8-coverage': 1.0.2
       '@vitest/utils': 4.0.14
@@ -6375,7 +6489,7 @@ snapshots:
       obug: 2.1.1
       std-env: 3.10.0
       tinyrainbow: 3.0.3
-      vitest: 4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6)
+      vitest: 4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -6388,13 +6502,13 @@ snapshots:
       chai: 6.2.1
       tinyrainbow: 3.0.3
 
-  '@vitest/mocker@4.0.14(vite@7.2.6(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6))':
+  '@vitest/mocker@4.0.14(vite@7.2.6(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6))':
     dependencies:
       '@vitest/spy': 4.0.14
       estree-walker: 3.0.3
       magic-string: 0.30.21
     optionalDependencies:
-      vite: 7.2.6(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6)
+      vite: 7.2.6(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6)
 
   '@vitest/pretty-format@4.0.14':
     dependencies:
@@ -6753,6 +6867,11 @@ snapshots:
     dependencies:
       drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1)
       zod: 3.24.2
+
+  drizzle-zod@0.7.1(drizzle-orm@0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1))(zod@3.25.76):
+    dependencies:
+      drizzle-orm: 0.39.1(@neondatabase/serverless@0.10.4)(@opentelemetry/api@1.9.0)(@types/pg@8.12.0)(@types/react@18.3.11)(pg@8.12.0)(react@18.3.1)
+      zod: 3.25.76
 
   dunder-proto@1.0.1:
     dependencies:
@@ -8006,11 +8125,11 @@ snapshots:
 
   strip-json-comments@5.0.3: {}
 
-  stripe-replit-sync@0.0.12(bufferutil@4.0.9)(stripe@18.5.0(@types/node@22.10.2)):
+  stripe-replit-sync@0.0.12(bufferutil@4.0.9)(stripe@18.5.0(@types/node@22.19.1)):
     dependencies:
       pg: 8.12.0
       pg-node-migrations: 0.0.8
-      stripe: 18.5.0(@types/node@22.10.2)
+      stripe: 18.5.0(@types/node@22.19.1)
       ws: 8.18.0(bufferutil@4.0.9)
       yesql: 7.0.0
     transitivePeerDependencies:
@@ -8023,6 +8142,12 @@ snapshots:
       qs: 6.14.0
     optionalDependencies:
       '@types/node': 22.10.2
+
+  stripe@18.5.0(@types/node@22.19.1):
+    dependencies:
+      qs: 6.14.0
+    optionalDependencies:
+      '@types/node': 22.19.1
 
   sucrase@3.35.1:
     dependencies:
@@ -8175,6 +8300,8 @@ snapshots:
 
   undici-types@6.20.0: {}
 
+  undici-types@6.21.0: {}
+
   unpipe@1.0.0: {}
 
   update-browserslist-db@1.1.4(browserslist@4.28.0):
@@ -8243,7 +8370,16 @@ snapshots:
       '@types/node': 22.10.2
       fsevents: 2.3.3
 
-  vite@7.2.6(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6):
+  vite@5.4.21(@types/node@22.19.1):
+    dependencies:
+      esbuild: 0.25.12
+      postcss: 8.5.6
+      rollup: 4.53.3
+    optionalDependencies:
+      '@types/node': 22.19.1
+      fsevents: 2.3.3
+
+  vite@7.2.6(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6):
     dependencies:
       esbuild: 0.25.12
       fdir: 6.5.0(picomatch@4.0.3)
@@ -8252,15 +8388,15 @@ snapshots:
       rollup: 4.53.3
       tinyglobby: 0.2.15
     optionalDependencies:
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
       fsevents: 2.3.3
       jiti: 1.21.7
       tsx: 4.20.6
 
-  vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6):
+  vitest@4.0.14(@opentelemetry/api@1.9.0)(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6):
     dependencies:
       '@vitest/expect': 4.0.14
-      '@vitest/mocker': 4.0.14(vite@7.2.6(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6))
+      '@vitest/mocker': 4.0.14(vite@7.2.6(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6))
       '@vitest/pretty-format': 4.0.14
       '@vitest/runner': 4.0.14
       '@vitest/snapshot': 4.0.14
@@ -8277,11 +8413,11 @@ snapshots:
       tinyexec: 0.3.2
       tinyglobby: 0.2.15
       tinyrainbow: 3.0.3
-      vite: 7.2.6(@types/node@22.10.2)(jiti@1.21.7)(tsx@4.20.6)
+      vite: 7.2.6(@types/node@22.19.1)(jiti@1.21.7)(tsx@4.20.6)
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@opentelemetry/api': 1.9.0
-      '@types/node': 22.10.2
+      '@types/node': 22.19.1
     transitivePeerDependencies:
       - jiti
       - less
@@ -8350,8 +8486,10 @@ snapshots:
 
   yesql@7.0.0: {}
 
-  zod-validation-error@3.5.4(zod@3.24.2):
+  zod-validation-error@3.5.4(zod@3.25.76):
     dependencies:
-      zod: 3.24.2
+      zod: 3.25.76
 
   zod@3.24.2: {}
+
+  zod@3.25.76: {}
