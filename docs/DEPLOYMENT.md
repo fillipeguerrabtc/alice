@@ -445,6 +445,22 @@ O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
 | Mudança em 1 serviço | ~45 min | ~7 min |
 | Nenhuma mudança | ~45 min | ~3 min |
 
+### Cache de Dependências no CI
+
+O CI utiliza cache nativo do GitHub Actions para dependências:
+
+| Componente | Estratégia | Economia |
+|------------|------------|----------|
+| **pnpm (Node.js)** | `actions/setup-node` com `cache: 'pnpm'` | ~2 min/job |
+| **pip (Python/PyTorch)** | `actions/setup-python` com `cache: 'pip'` | ~900MB/build |
+| **Artifacts** | `packages/*/dist` compartilhado entre jobs | Build incremental |
+
+**⚠️ REGRA CRÍTICA:** NUNCA limpar caches do GitHub Actions nos workflows:
+- ❌ `rm -rf ~/.cache/pip` - Quebra cache do pip
+- ❌ `rm -rf ~/.pnpm-store` - Quebra cache do pnpm
+- ❌ `--no-cache-dir` no pip - Desabilita cache
+- ✅ Usar `cache: 'pnpm'` e `cache: 'pip'` nativos
+
 ---
 
 ## URLs de Produção

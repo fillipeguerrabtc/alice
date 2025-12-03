@@ -186,14 +186,9 @@ jobs:
           sudo rm -rf /usr/local/share/boost || true
           sudo rm -rf /usr/share/swift || true
           
-          # Limpar caches do sistema
+          # Limpar caches do sistema (NÃO limpar pip/pnpm - runners são efêmeros)
           sudo apt-get clean || true
           sudo rm -rf /var/lib/apt/lists/* || true
-          
-          # Limpar caches de package managers
-          rm -rf ~/.cache/pip || true
-          rm -rf ~/.npm || true
-          rm -rf ~/.pnpm-store || true
           
           echo "📊 Espaço após limpeza:"
           df -h /

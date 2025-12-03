@@ -296,13 +296,29 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 4. Remover volumes órfãos
 5. Remover imagens não utilizadas
 
-### Docker Build Cache Otimizado (03/12/2025)
+### Sistema de Cache Enterprise (03/12/2025)
+
+#### Cache de Docker Builds (Registry Cache)
 
 | Estratégia | Descrição | Benefício |
 |------------|-----------|-----------|
 | **Registry Cache** | `cache-from: type=registry,ref=...:cache` | Cache no GHCR (sem limite de tamanho) |
 | **Mode Max** | `cache-to: type=registry,...,mode=max` | Salva todas as layers intermediárias |
 | **Por Serviço** | Cada serviço tem sua própria imagem `:cache` | Cache isolado por microsserviço |
+
+#### Cache de Dependências no CI
+
+| Componente | Estratégia | Economia |
+|------------|------------|----------|
+| **pnpm (Node.js)** | `actions/setup-node` com `cache: 'pnpm'` | ~2 min/job |
+| **pip (Python/PyTorch)** | `actions/setup-python` com `cache: 'pip'` | ~900MB/build |
+| **Artifacts** | `packages/*/dist` compartilhado entre jobs | Build incremental |
+
+**⚠️ REGRA CRÍTICA:** NUNCA limpar caches do GitHub Actions:
+- ❌ `rm -rf ~/.cache/pip` - Quebra cache do pip
+- ❌ `rm -rf ~/.pnpm-store` - Quebra cache do pnpm
+- ❌ `--no-cache-dir` no pip - Desabilita cache
+- ✅ Usar `cache: 'pnpm'` e `cache: 'pip'` nativos
 
 **Vantagem do Registry Cache sobre GHA Cache:**
 - NÃO é branch-specific (compartilha entre tags e branches)
@@ -365,7 +381,7 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.7 - 03 de Dezembro de 2025*
+*Versão 3.8 - 03 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
