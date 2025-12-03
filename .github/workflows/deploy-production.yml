@@ -361,51 +361,77 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # REGRA 6: Todos os scans executam (exit-code 0) para gerar SARIFs
-      # A verificação de CRITICAL/HIGH é feita no step agregador no final
+      # REGRA 6: Todos os scans executam para gerar SARIFs
+      # continue-on-error: true permite coletar todos os resultados
+      # O step agregador verifica outcomes E vulnerabilidades
       - name: Scan Auth Service Image
+        id: scan-auth
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
         with:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-auth.sarif'
           limit-severities-for-sarif: true
 
       - name: Scan Chat Service Image
+        id: scan-chat
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
         with:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-chat.sarif'
           limit-severities-for-sarif: true
 
       - name: Scan Frontend Service Image
+        id: scan-frontend
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
         with:
           scan-type: 'image'
           image-ref: '${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}'
           severity: 'CRITICAL,HIGH'
-          exit-code: '0'
+          exit-code: '1'
           format: 'sarif'
           output: 'trivy-frontend.sarif'
           limit-severities-for-sarif: true
 
-      # Garantir que arquivos SARIF existam (fallback vazio se scan falhar)
+      # Garantir que arquivos SARIF existam para upload (fallback com marcador de falha)
       - name: Ensure SARIF files exist
         if: always()
         run: |
+          # Coletar todas as falhas antes de decidir (não usar set -e)
+          ERRORS=0
+          
           for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
             if [ ! -f "$f" ]; then
-              echo '{"version":"2.1.0","runs":[]}' > "$f"
-              echo "Criado fallback SARIF: $f"
+              # Marcador especial para indicar que scan falhou (não apenas sem vulnerabilidades)
+              if echo '{"version":"2.1.0","runs":[],"_scanFailed":true}' > "$f" 2>/dev/null; then
+                echo "⚠️ SARIF não gerado, criado fallback: $f"
+              else
+                echo "❌ ERRO CRÍTICO: Falha ao criar fallback SARIF: $f"
+                echo "Possíveis causas: permissões, espaço em disco, etc."
+                ERRORS=$((ERRORS + 1))
+              fi
+            else
+              echo "✅ SARIF existe: $f"
             fi
           done
+          
+          # Falhar apenas após tentar criar todos os arquivos
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "❌ $ERRORS arquivo(s) SARIF não puderam ser criados"
+            exit 1
+          fi
+          
+          echo "✅ Todos os arquivos SARIF verificados/criados com sucesso"
 
       # Upload para GitHub Security tab
       - name: Upload Trivy Auth scan results
@@ -432,44 +458,78 @@ jobs:
           category: 'trivy-frontend-image'
         continue-on-error: true
 
-      # REGRA 6: Verificar CRITICAL/HIGH em todos os SARIFs e falhar se encontrar
-      - name: Check for CRITICAL/HIGH vulnerabilities
+      # REGRA 6: Verificar se scans executaram E se há vulnerabilidades CRITICAL/HIGH
+      - name: Check scan results and vulnerabilities
         if: always()
+        env:
+          SCAN_AUTH_OUTCOME: ${{ steps.scan-auth.outcome }}
+          SCAN_CHAT_OUTCOME: ${{ steps.scan-chat.outcome }}
+          SCAN_FRONTEND_OUTCOME: ${{ steps.scan-frontend.outcome }}
         run: |
           echo "=============================================="
-          echo "VERIFICANDO VULNERABILIDADES CRITICAL/HIGH"
+          echo "VERIFICANDO RESULTADOS DOS SCANS TRIVY"
           echo "=============================================="
           
           FAIL=0
           
+          # 1. Verificar se algum scan falhou por erro técnico (imagem não encontrada, etc)
+          echo ""
+          echo "📋 Status dos scans:"
+          echo "  - Auth: $SCAN_AUTH_OUTCOME"
+          echo "  - Chat: $SCAN_CHAT_OUTCOME"
+          echo "  - Frontend: $SCAN_FRONTEND_OUTCOME"
+          
+          # Verificar se todos os SARIFs existem (falha parcial = erro crítico)
+          echo ""
+          echo "📁 Verificando existência dos arquivos SARIF..."
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+            if [ ! -f "$f" ]; then
+              echo "❌ ERRO CRÍTICO: Arquivo SARIF não existe: $f"
+              echo "O step 'Ensure SARIF files exist' pode ter falhado parcialmente."
+              FAIL=1
+            fi
+          done
+          
+          # Se scan falhou e SARIF tem marcador de falha, é erro crítico
+          echo ""
+          echo "🔍 Verificando marcadores de falha..."
           for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
             if [ -f "$f" ]; then
-              echo "Analisando $f..."
-              
-              # Verificar se há resultados com severidade CRITICAL ou HIGH
-              # SARIF usa ruleId que contém a severidade ou propriedades
-              if grep -q '"level": "error"' "$f" 2>/dev/null; then
-                echo "⚠️ Vulnerabilidades encontradas em $f"
+              if grep -q '"_scanFailed":true' "$f" 2>/dev/null; then
+                echo "❌ ERRO: Scan não executou corretamente: $f"
                 FAIL=1
-              elif grep -q '"level": "warning"' "$f" 2>/dev/null; then
-                echo "⚠️ Warnings encontrados em $f"
-                # Warnings não falham o build (apenas CRITICAL/HIGH)
-              else
-                echo "✅ $f: Nenhuma vulnerabilidade crítica"
               fi
             fi
           done
           
+          # Verificar vulnerabilidades CRITICAL/HIGH nos SARIFs
+          echo ""
+          echo "🔍 Verificando vulnerabilidades CRITICAL/HIGH..."
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+            if [ -f "$f" ]; then
+              # Com limit-severities-for-sarif, apenas CRITICAL/HIGH geram "level": "error"
+              if grep -q '"level": "error"' "$f" 2>/dev/null; then
+                echo "⚠️ Vulnerabilidades CRITICAL/HIGH em $f"
+                FAIL=1
+              else
+                echo "✅ $f: OK"
+              fi
+            fi
+          done
+          
+          # 3. Decisão final
+          echo ""
           if [ "$FAIL" -eq 1 ]; then
             echo "=============================================="
-            echo "❌ CRITICAL/HIGH vulnerabilities encontradas!"
+            echo "❌ PIPELINE BLOQUEADO"
+            echo "Motivo: Scan falhou ou vulnerabilidades CRITICAL/HIGH detectadas"
             echo "Verifique a aba Security do repositório para detalhes."
             echo "=============================================="
-            # REGRA 6: Pipeline DEVE falhar em vulnerabilidades CRITICAL/HIGH
             exit 1
           else
             echo "=============================================="
-            echo "✅ Nenhuma vulnerabilidade CRITICAL/HIGH detectada"
+            echo "✅ TODOS OS SCANS PASSARAM"
+            echo "Nenhuma vulnerabilidade CRITICAL/HIGH detectada"
             echo "=============================================="
           fi
 

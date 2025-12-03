@@ -159,15 +159,19 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 
 | Problema | Solução | Status |
 |----------|---------|--------|
-| Trivy scan abortava no primeiro erro | Mudado `exit-code: '0'` para todos os scans | Completo |
-| Upload SARIF falhava "Path does not exist" | Step "Ensure SARIF files exist" com fallback | Completo |
-| Sem verificação agregada de vulnerabilidades | Step "Check for CRITICAL/HIGH" no final | Completo |
+| Trivy scan abortava no primeiro erro | `continue-on-error: true` + IDs para verificação | Completo |
+| SARIF não filtrava por severidade | `limit-severities-for-sarif: true` | Completo |
+| Scan falho permitia deploy | Step agregador verifica outcomes + vulnerabilidades | Completo |
 
-**Fluxo Trivy Atualizado:**
-1. Scans rodam com `exit-code: '0'` (não aborta pipeline)
-2. Step garante SARIFs existam (fallback vazio se necessário)
-3. Upload de SARIFs para GitHub Security tab
-4. Step agregador verifica CRITICAL/HIGH e registra warnings
+**Fluxo Trivy Enterprise:**
+1. Scans com `exit-code: '1'` + `continue-on-error: true` (executa todos)
+2. `limit-severities-for-sarif: true` filtra apenas CRITICAL/HIGH no SARIF
+3. Fallback SARIF com marcador `_scanFailed` se scan não executar
+4. Upload de SARIFs para GitHub Security tab
+5. Step agregador verifica:
+   - Se algum scan falhou tecnicamente (marcador `_scanFailed`)
+   - Se há vulnerabilidades CRITICAL/HIGH (`"level": "error"`)
+6. Pipeline **bloqueia** deploy se encontrar problemas
 
 **Steps adicionados ao CI/CD:**
 - `sudo apt-get clean` - limpa cache APT
