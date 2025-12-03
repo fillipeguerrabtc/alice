@@ -20,7 +20,6 @@ import base64
 import logging
 import time
 import asyncio
-import signal
 from datetime import datetime
 from typing import Optional, Union, List
 from contextlib import asynccontextmanager
@@ -166,8 +165,9 @@ logger.info(f"Modelo CLIP carregado em {load_time:.2f}s")
 
 # =============================================================================
 # GRACEFUL SHUTDOWN (Fator 9 - Disposability - Best Practices 2025)
+# Lifespan manager cuida de startup/shutdown
+# uvicorn.run() já implementa signal handlers nativos para SIGTERM/SIGINT
 # =============================================================================
-shutdown_event = asyncio.Event()
 
 @asynccontextmanager
 async def lifespan(app):
@@ -505,29 +505,22 @@ async def root():
 
 if __name__ == "__main__":
     # ==========================================================================
-    # GRACEFUL SHUTDOWN HANDLERS (Fator 9 - Disposability)
-    # Kubernetes/Docker enviam SIGTERM para shutdown graceful
+    # GRACEFUL SHUTDOWN (Fator 9 - Disposability)
+    # uvicorn.run() já implementa signal handling nativo para SIGTERM/SIGINT
+    # O lifespan manager (definido acima) cuida do cleanup de recursos
+    # Ref: https://www.uvicorn.org/deployment/#running-programmatically
     # ==========================================================================
-    def handle_shutdown(signum, frame):
-        """Handler para SIGTERM/SIGINT - inicia graceful shutdown"""
-        sig_name = signal.Signals(signum).name
-        logger.info(f"Recebido {sig_name} - iniciando graceful shutdown...")
-        shutdown_event.set()
-    
-    # Registrar handlers para sinais de shutdown
-    signal.signal(signal.SIGTERM, handle_shutdown)
-    signal.signal(signal.SIGINT, handle_shutdown)
-    
     logger.info(f"Iniciando servidor CLIP na porta {PORT}")
-    logger.info("Graceful shutdown habilitado (SIGTERM/SIGINT)")
+    logger.info("Graceful shutdown habilitado via uvicorn (SIGTERM/SIGINT)")
     
-    # Configuração uvicorn com timeout para graceful shutdown
-    config = uvicorn.Config(
+    # uvicorn.run() já implementa:
+    # - Signal handlers para SIGTERM/SIGINT
+    # - Graceful shutdown com timeout
+    # - Aguarda requisições em andamento terminarem
+    uvicorn.run(
         app,
         host="::",  # IPv6 para Container Gateway da Salad Cloud
         port=PORT,
         log_level="info",
         timeout_graceful_shutdown=30,  # 30s para finalizar requisições
     )
-    server = uvicorn.Server(config)
-    server.run()
