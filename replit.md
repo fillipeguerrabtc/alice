@@ -76,7 +76,7 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - **Authentication**: Robust enterprise authentication (OAuth 2.0, SAML 2.0, 6-level RBAC, HMAC-SHA256 for S2S).
 - **Real-time Communication**: WebSockets for LLM token streaming with rate limiting.
 - **AI/ML**: RAG backend, image generation (FLUX.1 Schnell), and multimodal embeddings (CLIP ViT-L/14) are all self-hosted on Salad Cloud.
-- **CI/CD**: Automated GitHub Actions: CI (auto) → Release (auto) → Deploy (manual).
+- **CI/CD**: Automated GitHub Actions: CI (auto) → Release (auto) → Deploy (auto). Pipeline 100% automático.
 - **Code Quality**: Strict TypeScript, Pino logging, health checks.
 - **Resilience & Performance**: Connection pooling, Circuit Breaker pattern, WebSocket rate limiting, graceful shutdowns.
 - **Security Hardening**: PostgreSQL RLS, `sslmode=prefer`, `tenant_id` indices, pgAudit, Docker Non-Root, Redis ACL, CSP, input validation (Zod), and image scanning.
@@ -184,7 +184,7 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 |-------|---------|-------------|-----------|
 | **CI - Build & Test** | Push para `main` | ✅ Sim | TypeScript, ESLint, builds, security scan |
 | **Release & Tag** | CI passa | ✅ Sim | Versão incremental (v1.0.X++), Docker images |
-| **Deploy Production** | Release passa | ✅ Sim* | *Requer aprovação no ambiente `production` |
+| **Deploy Production** | Release passa | ✅ Sim | Deploy 100% automático (sem aprovação) |
 
 **Fluxo 100% Automático:**
 ```
@@ -194,10 +194,11 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 Pipeline totalmente automático: push para `main` vai direto para produção após CI, Release e Security Scan passarem.
 
 **Benefícios:**
-- Pipeline 100% automático até aprovação de produção
+- Pipeline 100% automático (push → produção)
 - Versionamento semântico automático
 - Imagens Docker sempre prontas para deploy
 - Rollback automático se health checks falharem
+- Zero intervenção humana no deploy
 
 ### Docker Images Security Fix (03/12/2025)
 
@@ -224,5 +225,6 @@ Pipeline totalmente automático: push para `main` vai direto para produção ap�
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.1 - Dezembro 2025*
+*Versão 3.2 - 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

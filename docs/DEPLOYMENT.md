@@ -696,6 +696,7 @@ curl http://localhost:3010/health
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: Dezembro 2025*
-*Versão: 5.2 - Arquitetura PROD-only Hetzner Cloud com 26 Containers*
+*Documento atualizado em: 03 de Dezembro de 2025*
+*Versão: 5.3 - Pipeline 100% Automático com 26 Containers*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

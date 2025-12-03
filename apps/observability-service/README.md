@@ -214,5 +214,6 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 2.3.0 - Dezembro 2025*
+*Versão 2.4.0 - 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

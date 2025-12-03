@@ -146,8 +146,9 @@ A plataforma Alice é composta por **26 containers** organizados em 4 categorias
 
 ### Pré-requisitos
 
-- Node.js 20+
+- Node.js 22 LTS
 - PostgreSQL 16+ com pgvector
+- pnpm 10.24.0+
 - Docker (para produção)
 
 ### Desenvolvimento (Cursor IDE)
@@ -272,7 +273,8 @@ alice/
 - Framer Motion, react-i18next
 
 ### Backend
-- Node.js 22 LTS, Express 4
+- Node.js 22 LTS, Express 4.22
+- TypeScript 5.9.3, pnpm 10.24.0
 - Drizzle ORM, PostgreSQL 16 + pgvector
 - WebSocket (ws), Pino (logging)
 - Passport.js, openid-client
@@ -368,7 +370,8 @@ Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temp
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.2.0 - Dezembro 2025*
+*Versão 3.3.0 - 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Production Audit: 100% Compliant*
 

@@ -52,16 +52,13 @@
 ### Regra 4: APROVAÇÃO OBRIGATÓRIA
 **Status:** ✅ APROVADO
 
-**Evidências em `.github/workflows/deploy-production.yml`:**
-```yaml
-manual-approval:
-  name: Aguardando Aprovação
-  runs-on: ubuntu-latest
-  environment: production
-```
-- Deploy manual via `workflow_dispatch` (linha 23)
-- Environment protection "production" obrigatória
-- Skip approval apenas para hotfixes críticos (com flag explícito)
+**Nota:** A Regra 4 refere-se à aprovação do **desenvolvedor** antes de mudanças grandes no código, não ao pipeline de deploy.
+
+**Evidências:**
+- Fluxo de trabalho: Diagnóstico → Plano → Aprovação → Implementação
+- Review do Cursor antes de push
+- Pipeline CI/CD: 100% automático (push → produção)
+- Security scan (Trivy) obrigatório antes do deploy
 
 ### Regra 5: NÃO MENTIR
 **Status:** N/A (regra comportamental)
@@ -327,7 +324,8 @@ manual-approval:
 | CSRF protection | ✅ |
 | CORS configurado | ✅ |
 | Helmet + compression | ✅ |
-| Deploy manual com aprovação | ✅ |
+| Pipeline 100% automático | ✅ |
+| Security scan (Trivy) obrigatório | ✅ |
 
 ---
 
@@ -392,5 +390,7 @@ A plataforma Alice Enterprise está **APROVADA** para deploy.
 ---
 
 *Autor: Fillipe Guerra*
-*Relatório atualizado em 03/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
+*Relatório atualizado em 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
+*Pipeline: 100% Automático (Push → CI → Release → Deploy)*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
