@@ -261,6 +261,21 @@ HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
 - Solução: criar venv em `/opt/venv` e configurar `ENV PATH`
 - Mais seguro que `--break-system-packages`
 
+### Docker Platform Fix (03/12/2025)
+
+| Problema | Solução | Containers Afetados |
+|----------|---------|---------------------|
+| Imagens multi-arch puxando ARM64 no servidor AMD64 | `platform: linux/amd64` em TODOS os containers | 26 containers (100%) |
+
+**Erro Original:**
+```
+postgres The requested image's platform (linux/arm64) does not match 
+the detected host platform (linux/amd64/v3)
+```
+
+**Solução Enterprise:**
+Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers para garantir arquitetura correta no Hetzner (x86_64).
+
 ### Docker Build Cache Otimizado (03/12/2025)
 
 | Estratégia | Descrição | Benefício |
@@ -292,6 +307,6 @@ HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.4 - 03 de Dezembro de 2025*
+*Versão 3.5 - 03 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
