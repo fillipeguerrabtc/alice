@@ -6,8 +6,8 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Arquitetura:** Replit é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 27 em produção (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)
+**Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
+**Total de Containers:** 26 em produção (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -32,7 +32,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | Local | O que vai lá | Observação |
 |-------|--------------|------------|
 | **GitHub Secrets** | Todos os secrets de produção | CI/CD cria `.env.prod` automaticamente |
-| **Replit Secrets** | Apenas para desenvolvimento local | NÃO usado em produção |
+| **Variáveis de Ambiente Local** | Apenas para desenvolvimento (`.env`) | NÃO usado em produção |
 | **Hetzner .env.prod** | Criado automaticamente | Gerado pelo GitHub Actions |
 
 ---
@@ -320,5 +320,5 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: Dezembro 2025*
-*Versão: 5.1 - Consolidado com 27 Containers Enterprise*
-*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão: 5.3 - Consolidado com 26 Containers Enterprise*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

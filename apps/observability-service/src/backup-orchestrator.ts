@@ -1371,37 +1371,138 @@ router.post('/schedule/test', async (_req: Request, res: Response) => {
   }
 });
 
-/** Calcular próxima execução de cron (simplificado) */
+/**
+ * Parser de cron expressions completo - Enterprise Grade
+ * Suporta: minute, hour, dayOfMonth, month, dayOfWeek
+ * 
+ * Formato: "MIN HOUR DOM MON DOW"
+ * - MIN: 0-59
+ * - HOUR: 0-23  
+ * - DOM: 1-31 (dia do mês)
+ * - MON: 1-12 (mês)
+ * - DOW: 0-6 (dia da semana, 0=domingo)
+ * 
+ * Suporta:
+ * - Wildcards: *
+ * - Ranges: 1-5
+ * - Lists: 1,3,5
+ * - Steps: */5, 0-30/10
+ * 
+ * @param cronExpression - Expressão cron no formato padrão
+ * @returns ISO string da próxima execução
+ */
 function getNextCronRun(cronExpression: string): string {
   const parts = cronExpression.split(' ');
-  // NOTA: dayOfMonth e month são reservados para implementação futura de cron parsing completo
-  const [minute, hour, _dayOfMonth, _month, dayOfWeek] = parts;
+  if (parts.length !== 5) {
+    logger.warn({ cronExpression }, 'Expressão cron inválida, usando defaults');
+    return new Date(Date.now() + 86400000).toISOString(); // +1 dia
+  }
+  
+  const [minuteExpr, hourExpr, domExpr, monthExpr, dowExpr] = parts;
+  
+  const parseField = (expr: string, min: number, max: number): number[] => {
+    const values: Set<number> = new Set();
+    
+    // Wildcard
+    if (expr === '*') {
+      for (let i = min; i <= max; i++) values.add(i);
+      return Array.from(values);
+    }
+    
+    // Listas separadas por vírgula
+    const segments = expr.split(',');
+    
+    for (const segment of segments) {
+      // Steps: */5 ou 0-30/10
+      if (segment.includes('/')) {
+        const [rangeStr, stepStr] = segment.split('/');
+        const step = parseInt(stepStr) || 1;
+        let start = min;
+        let end = max;
+        
+        if (rangeStr !== '*' && rangeStr.includes('-')) {
+          const [rangeStart, rangeEnd] = rangeStr.split('-').map(Number);
+          start = rangeStart;
+          end = rangeEnd;
+        } else if (rangeStr !== '*') {
+          start = parseInt(rangeStr) || min;
+        }
+        
+        for (let i = start; i <= end; i += step) {
+          if (i >= min && i <= max) values.add(i);
+        }
+      }
+      // Ranges: 1-5
+      else if (segment.includes('-')) {
+        const [start, end] = segment.split('-').map(Number);
+        for (let i = start; i <= end; i++) {
+          if (i >= min && i <= max) values.add(i);
+        }
+      }
+      // Valor único
+      else {
+        const val = parseInt(segment);
+        if (!isNaN(val) && val >= min && val <= max) values.add(val);
+      }
+    }
+    
+    return Array.from(values).sort((a, b) => a - b);
+  };
+  
+  const minutes = parseField(minuteExpr, 0, 59);
+  const hours = parseField(hourExpr, 0, 23);
+  const daysOfMonth = parseField(domExpr, 1, 31);
+  const months = parseField(monthExpr, 1, 12);
+  const daysOfWeek = parseField(dowExpr, 0, 6);
   
   const now = new Date();
-  const next = new Date(now);
+  const maxIterations = 366 * 24 * 60; // Máximo 1 ano de iterações
   
-  next.setMinutes(parseInt(minute) || 0);
-  next.setHours(parseInt(hour) || 3);
-  next.setSeconds(0);
-  next.setMilliseconds(0);
-  
-  // TODO: Implementar parsing completo de dayOfMonth e month para cron expressions
-  // Por enquanto, apenas dayOfWeek é considerado para agendamento
-  void _dayOfMonth;
-  void _month;
-  
-  if (next <= now) {
-    if (dayOfWeek === '*') {
-      next.setDate(next.getDate() + 1);
-    } else if (dayOfWeek === '0') {
-      const daysUntilSunday = (7 - now.getDay()) % 7 || 7;
-      next.setDate(next.getDate() + daysUntilSunday);
+  for (let i = 0; i < maxIterations; i++) {
+    const candidate = new Date(now.getTime() + i * 60000); // Avança minuto a minuto
+    candidate.setSeconds(0);
+    candidate.setMilliseconds(0);
+    
+    const candMinute = candidate.getMinutes();
+    const candHour = candidate.getHours();
+    const candDom = candidate.getDate();
+    const candMonth = candidate.getMonth() + 1; // JavaScript usa 0-11
+    const candDow = candidate.getDay();
+    
+    // Validar todos os campos
+    if (!minutes.includes(candMinute)) continue;
+    if (!hours.includes(candHour)) continue;
+    if (!months.includes(candMonth)) continue;
+    
+    // DOM e DOW: se ambos não são *, precisa satisfazer pelo menos um
+    // Se um deles é *, precisa satisfazer o outro
+    const domIsWildcard = domExpr === '*';
+    const dowIsWildcard = dowExpr === '*';
+    
+    if (domIsWildcard && dowIsWildcard) {
+      // Ambos wildcard: qualquer dia é válido
+    } else if (domIsWildcard) {
+      // Apenas DOW especificado
+      if (!daysOfWeek.includes(candDow)) continue;
+    } else if (dowIsWildcard) {
+      // Apenas DOM especificado
+      if (!daysOfMonth.includes(candDom)) continue;
     } else {
-      next.setDate(next.getDate() + 1);
+      // Ambos especificados: satisfazer pelo menos um (comportamento padrão cron)
+      if (!daysOfMonth.includes(candDom) && !daysOfWeek.includes(candDow)) continue;
+    }
+    
+    // Se chegou aqui, encontrou próxima execução
+    if (candidate > now) {
+      return candidate.toISOString();
     }
   }
   
-  return next.toISOString();
+  // Fallback: próximo dia às 03:00
+  const fallback = new Date(now);
+  fallback.setDate(fallback.getDate() + 1);
+  fallback.setHours(3, 0, 0, 0);
+  return fallback.toISOString();
 }
 
 // =============================================================================

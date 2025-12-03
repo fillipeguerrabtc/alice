@@ -423,12 +423,12 @@ function ConversationDetailPanel({
               <div className="flex gap-2">
                 <Textarea
                   value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
+                  onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setReplyText(e.target.value)}
                   placeholder="Digite sua resposta..."
                   className="resize-none"
                   rows={2}
                   data-testid="input-reply"
-                  onKeyDown={(e) => {
+                  onKeyDown={(e: React.KeyboardEvent<HTMLTextAreaElement>) => {
                     if (e.key === 'Enter' && !e.shiftKey) {
                       e.preventDefault();
                       handleSend();
@@ -725,7 +725,7 @@ export default function TakeoverPanel() {
               <Input
                 placeholder="Buscar cliente..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
                 className="pl-8"
                 data-testid="input-search"
               />

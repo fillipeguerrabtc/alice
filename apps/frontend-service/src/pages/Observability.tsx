@@ -5,7 +5,7 @@
  * de observabilidade: Prometheus, Grafana, Jaeger, Langfuse.
  * 
  * AMBIENTES:
- * - Desenvolvimento (Replit): Dados de preview via server/index-dev.ts
+ * - Desenvolvimento (Cursor IDE): Dados de preview via server/index-dev.ts
  * - Produção (Hetzner): API real via observability-service (porta 3007)
  * 
  * O frontend foi projetado para funcionar em ambos ambientes:

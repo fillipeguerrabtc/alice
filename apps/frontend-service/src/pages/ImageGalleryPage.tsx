@@ -271,7 +271,7 @@ function ImageDetailModal({
   };
   
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={open} onOpenChange={(o: boolean) => !o && onClose()}>
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
@@ -545,7 +545,7 @@ export default function ImageGalleryPage() {
           <div className="flex items-center gap-4 flex-wrap">
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Status:</span>
-              <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setPage(0); }}>
+              <Select value={filterStatus} onValueChange={(v: string) => { setFilterStatus(v); setPage(0); }}>
                 <SelectTrigger className="w-[150px]" data-testid="select-status">
                   <SelectValue />
                 </SelectTrigger>
@@ -561,7 +561,7 @@ export default function ImageGalleryPage() {
             
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Aprovação:</span>
-              <Select value={filterApproved} onValueChange={(v) => { setFilterApproved(v); setPage(0); }}>
+              <Select value={filterApproved} onValueChange={(v: string) => { setFilterApproved(v); setPage(0); }}>
                 <SelectTrigger className="w-[180px]" data-testid="select-approval">
                   <SelectValue />
                 </SelectTrigger>

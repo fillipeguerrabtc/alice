@@ -11,7 +11,7 @@
  * - Status em tempo real durante operações
  * 
  * AMBIENTES:
- * - Desenvolvimento (Replit): Dados de preview via server/index-dev.ts
+ * - Desenvolvimento (Cursor IDE): Dados de preview via server/index-dev.ts
  * - Produção (Hetzner): API real via observability-service
  * 
  * Regra 8 - TypeScript strict
@@ -940,7 +940,7 @@ export default function BackupAdmin() {
                       <Input
                         id="full-cron"
                         value={scheduleForm.fullBackup?.cronExpression ?? '0 3 * * 0'}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           fullBackup: { ...prev.fullBackup!, cronExpression: e.target.value }
                         }))}
@@ -954,7 +954,7 @@ export default function BackupAdmin() {
                       <Input
                         id="full-desc"
                         value={scheduleForm.fullBackup?.description ?? ''}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           fullBackup: { ...prev.fullBackup!, description: e.target.value }
                         }))}
@@ -986,7 +986,7 @@ export default function BackupAdmin() {
                       <Input
                         id="incr-cron"
                         value={scheduleForm.incrementalBackup?.cronExpression ?? '0 3 * * 1-6'}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           incrementalBackup: { ...prev.incrementalBackup!, cronExpression: e.target.value }
                         }))}
@@ -1000,7 +1000,7 @@ export default function BackupAdmin() {
                       <Input
                         id="incr-desc"
                         value={scheduleForm.incrementalBackup?.description ?? ''}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           incrementalBackup: { ...prev.incrementalBackup!, description: e.target.value }
                         }))}
@@ -1025,7 +1025,7 @@ export default function BackupAdmin() {
                         min={1}
                         max={365}
                         value={scheduleForm.retention?.fullBackupDays ?? 30}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           retention: { ...prev.retention!, fullBackupDays: parseInt(e.target.value) || 30 }
                         }))}
@@ -1040,7 +1040,7 @@ export default function BackupAdmin() {
                         min={1}
                         max={30}
                         value={scheduleForm.retention?.incrementalBackupDays ?? 7}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           retention: { ...prev.retention!, incrementalBackupDays: parseInt(e.target.value) || 7 }
                         }))}
@@ -1055,7 +1055,7 @@ export default function BackupAdmin() {
                         min={7}
                         max={3650}
                         value={scheduleForm.retention?.archiveDays ?? 90}
-                        onChange={(e) => setScheduleForm(prev => ({
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setScheduleForm(prev => ({
                           ...prev,
                           retention: { ...prev.retention!, archiveDays: parseInt(e.target.value) || 90 }
                         }))}

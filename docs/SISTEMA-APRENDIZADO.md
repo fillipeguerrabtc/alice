@@ -259,5 +259,5 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 1.2 - Dezembro 2025*
-*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão 1.3 - Dezembro 2025*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

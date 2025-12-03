@@ -1,5 +1,7 @@
 # ERPNext SSO com Alice IdP
 
+**Autor:** Fillipe Guerra
+
 ## Visão Geral
 
 O ERPNext v15 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC usando Social Login Keys.
@@ -181,3 +183,9 @@ O ERPNext será integrado com:
 - [Frappe OAuth Integration](https://frappeframework.com/docs/user/en/guides/integration/oauth)
 - [Social Login Keys](https://docs.erpnext.com/docs/user/manual/en/setting-up/users-and-permissions/social-login-keys)
 - [Alice OIDC Provider](../../apps/auth-service/src/oidc/)
+
+---
+
+*Autor: Fillipe Guerra*
+*Documentação em Português Brasileiro*
+*Atualizado: Dezembro 2025*

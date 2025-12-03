@@ -368,7 +368,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
               id="name"
               placeholder={t('training.createJob.namePlaceholder')}
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setName(e.target.value)}
               data-testid="input-job-name"
             />
           </div>
@@ -382,7 +382,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
                 min={1}
                 max={10}
                 value={epochs}
-                onChange={(e) => setEpochs(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setEpochs(Number(e.target.value))}
                 data-testid="input-epochs"
               />
             </div>
@@ -394,7 +394,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
                 min={1}
                 max={32}
                 value={batchSize}
-                onChange={(e) => setBatchSize(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setBatchSize(Number(e.target.value))}
                 data-testid="input-batch-size"
               />
             </div>
@@ -407,7 +407,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
                 min={0.00001}
                 max={0.01}
                 value={learningRate}
-                onChange={(e) => setLearningRate(Number(e.target.value))}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => setLearningRate(Number(e.target.value))}
                 data-testid="input-learning-rate"
               />
             </div>

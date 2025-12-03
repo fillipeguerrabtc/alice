@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useForm } from "react-hook-form";
+import { useForm, ControllerRenderProps } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
@@ -240,14 +240,14 @@ export default function Namespaces() {
                 <FormField
                   control={form.control}
                   name="nome"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<NamespaceFormData, 'nome'> }) => (
                     <FormItem>
                       <FormLabel>{t('namespaces.name')}</FormLabel>
                       <FormControl>
                         <Input
                           placeholder={t('namespaces.placeholders.name')}
                           {...field}
-                          onChange={(e) => {
+                          onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                             field.onChange(e);
                             if (!editingNamespace) {
                               form.setValue("slug", generateSlug(e.target.value));
@@ -263,7 +263,7 @@ export default function Namespaces() {
                 <FormField
                   control={form.control}
                   name="slug"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<NamespaceFormData, 'slug'> }) => (
                     <FormItem>
                       <FormLabel>{t('namespaces.slug')}</FormLabel>
                       <FormControl>
@@ -283,7 +283,7 @@ export default function Namespaces() {
                 <FormField
                   control={form.control}
                   name="descricao"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<NamespaceFormData, 'descricao'> }) => (
                     <FormItem>
                       <FormLabel>{t('namespaces.description')}</FormLabel>
                       <FormControl>
@@ -302,7 +302,7 @@ export default function Namespaces() {
                 <FormField
                   control={form.control}
                   name="cor"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<NamespaceFormData, 'cor'> }) => (
                     <FormItem>
                       <FormLabel>{t('namespaces.color')}</FormLabel>
                       <FormControl>

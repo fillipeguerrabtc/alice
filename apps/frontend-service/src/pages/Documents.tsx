@@ -506,13 +506,13 @@ export default function Documents() {
             <Input
               placeholder={t('documents.search.placeholder')}
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
               className="pl-9"
               data-testid="input-search-documents"
             />
           </div>
           
-          <Select value={filterStatus} onValueChange={(v) => setFilterStatus(v as typeof filterStatus)}>
+          <Select value={filterStatus} onValueChange={(v: string) => setFilterStatus(v as typeof filterStatus)}>
             <SelectTrigger className="w-[160px]" data-testid="select-filter-status">
               <Filter className="h-4 w-4 mr-2" />
               <SelectValue placeholder={t('documents.search.filter')} />

@@ -669,7 +669,7 @@ export default function Integrations() {
               <div className="flex gap-2 items-start">
                 <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5" />
                 <div className="text-xs text-amber-800 dark:text-amber-200">
-                  Configure estas variáveis no painel de Secrets do Replit ou no servidor de produção.
+                  Configure estas variáveis no arquivo `.env` local ou nos GitHub Secrets para produção.
                 </div>
               </div>
             </div>

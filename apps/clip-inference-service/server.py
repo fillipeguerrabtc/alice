@@ -20,8 +20,10 @@ import base64
 import logging
 import time
 import asyncio
+import signal
 from datetime import datetime
 from typing import Optional, Union, List
+from contextlib import asynccontextmanager
 
 import torch
 import clip
@@ -162,11 +164,39 @@ load_time = time.time() - start_time
 logger.info(f"Modelo CLIP carregado em {load_time:.2f}s")
 
 
-# FastAPI app
+# =============================================================================
+# GRACEFUL SHUTDOWN (Fator 9 - Disposability - Best Practices 2025)
+# =============================================================================
+shutdown_event = asyncio.Event()
+
+@asynccontextmanager
+async def lifespan(app):
+    """
+    Lifespan manager para graceful shutdown.
+    
+    - Startup: Modelo já carregado globalmente (acima)
+    - Shutdown: Aguarda requisições em andamento + cleanup
+    
+    Documentação: https://fastapi.tiangolo.com/advanced/events/
+    """
+    logger.info("CLIP Inference Service iniciado - pronto para requisições")
+    yield
+    # Shutdown graceful
+    logger.info("Iniciando graceful shutdown do CLIP Inference Service...")
+    # Aguardar um pouco para requisições em andamento terminarem
+    await asyncio.sleep(2)
+    # Liberar recursos do modelo (se necessário)
+    if model is not None:
+        logger.info("Liberando recursos do modelo CLIP...")
+    logger.info("CLIP Inference Service encerrado com sucesso")
+
+
+# FastAPI app com lifespan
 app = FastAPI(
     title="CLIP Inference Service",
     description="Embeddings multimodais (texto + imagem) via CLIP ViT-L/14",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # SEGURANÇA: Rate limiter exception handler
@@ -474,10 +504,30 @@ async def root():
 
 
 if __name__ == "__main__":
+    # ==========================================================================
+    # GRACEFUL SHUTDOWN HANDLERS (Fator 9 - Disposability)
+    # Kubernetes/Docker enviam SIGTERM para shutdown graceful
+    # ==========================================================================
+    def handle_shutdown(signum, frame):
+        """Handler para SIGTERM/SIGINT - inicia graceful shutdown"""
+        sig_name = signal.Signals(signum).name
+        logger.info(f"Recebido {sig_name} - iniciando graceful shutdown...")
+        shutdown_event.set()
+    
+    # Registrar handlers para sinais de shutdown
+    signal.signal(signal.SIGTERM, handle_shutdown)
+    signal.signal(signal.SIGINT, handle_shutdown)
+    
     logger.info(f"Iniciando servidor CLIP na porta {PORT}")
-    uvicorn.run(
+    logger.info("Graceful shutdown habilitado (SIGTERM/SIGINT)")
+    
+    # Configuração uvicorn com timeout para graceful shutdown
+    config = uvicorn.Config(
         app,
         host="::",  # IPv6 para Container Gateway da Salad Cloud
         port=PORT,
         log_level="info",
+        timeout_graceful_shutdown=30,  # 30s para finalizar requisições
     )
+    server = uvicorn.Server(config)
+    server.run()

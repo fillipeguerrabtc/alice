@@ -20,6 +20,8 @@ import {
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
+  registerShutdownCallback,
+  ShutdownPriority,
 } from '@alice/shared-utils';
 import { backupRouter } from './backup-orchestrator.js';
 
@@ -655,3 +657,40 @@ const server = app.listen(PORT, () => {
 server.timeout = 30000; // 30s timeout para requisições
 server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+
+// ============================================================================
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+// Ordem: Circuit Breakers → HTTP server
+// ============================================================================
+
+registerShutdownCallback(
+  'observability-circuit-breakers',
+  async () => {
+    logger.info('Encerrando circuit breakers de health check...');
+    circuitBreakers.forEach((breaker, name) => {
+      breaker.shutdown();
+      logger.info({ service: name }, 'Circuit breaker encerrado');
+    });
+  },
+  { priority: ShutdownPriority.EXTERNAL_CONNECTIONS }
+);
+
+registerShutdownCallback(
+  'observability-http-server',
+  async () => {
+    logger.info('Encerrando HTTP server...');
+    await new Promise<void>((resolve, reject) => {
+      server.close((err) => {
+        if (err) {
+          logger.error({ error: err }, 'Erro ao fechar HTTP server');
+          reject(err);
+        } else {
+          logger.info('HTTP server encerrado com sucesso');
+          resolve();
+        }
+      });
+    });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);

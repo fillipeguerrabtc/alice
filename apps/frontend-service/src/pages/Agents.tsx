@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { useForm } from "react-hook-form";
+import { useForm, ControllerRenderProps } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
@@ -274,7 +274,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="nome"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'nome'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.form.name')}</FormLabel>
                       <FormControl>
@@ -291,7 +291,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="slug"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'slug'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.form.slug')}</FormLabel>
                       <FormControl>
@@ -311,7 +311,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="status"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'status'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.status.label')}</FormLabel>
                       <Select onValueChange={field.onChange} value={field.value}>
@@ -335,7 +335,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="descricao"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'descricao'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.form.description')}</FormLabel>
                       <FormControl>
@@ -355,7 +355,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="instrucoes"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'instrucoes'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.form.instructions')}</FormLabel>
                       <FormControl>
@@ -378,7 +378,7 @@ export default function Agents() {
                 <FormField
                   control={form.control}
                   name="personalidade"
-                  render={({ field }) => (
+                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'personalidade'> }) => (
                     <FormItem>
                       <FormLabel>{t('agents.form.personality')}</FormLabel>
                       <FormControl>

@@ -39,18 +39,17 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
-| DESENVOLVIMENTO | Replit | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
+| DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
 | PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
-**IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Replit e NÃO é deployado para produção.
+**IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 27 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 26 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy).
-- **Alice Microservices (9 serviços)**:
-    - **API Gateway**: Internal routing, circuit breakers, health aggregation, rate limiting.
+- **Alice Microservices (8 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
     - **Chat Service**: Real-time LLM token streaming via WebSockets.
@@ -114,9 +113,9 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 |------|---------------|--------|
 | **FASE 1** | Content-Security-Policy (CSP) header no Traefik middleware | Completo |
 | **FASE 2** | Healthchecks em 4 ERPNext workers (scheduler, short, default, long) | Completo |
-| **FASE 3** | `security_opt: no-new-privileges:true` em TODOS 27 containers | Completo |
+| **FASE 3** | `security_opt: no-new-privileges:true` em TODOS 26 containers | Completo |
 | **FASE 4** | Imagens pinadas com SHA256 digests 2024/2025 | Completo |
-| **FASE 5** | `read_only: true` + tmpfs em TODOS 27 containers (Docker 2025 Best Practices) | Completo |
+| **FASE 5** | `read_only: true` + tmpfs em TODOS 26 containers (Docker 2025 Best Practices) | Completo |
 
 ### Image Versions (SHA256 Pinned)
 
@@ -134,9 +133,9 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 
 ### Compliance Verification (100% COMPLETO)
 
-- **27 containers** = **27 security_opt entries** (100% coverage)
-- **27 containers** = **27 read_only: true entries** (100% coverage)
-- **27 containers** = **27 resource limits entries** (100% coverage)
+- **26 containers** = **26 security_opt entries** (100% coverage)
+- **26 containers** = **26 read_only: true entries** (100% coverage)
+- **26 containers** = **26 resource limits entries** (100% coverage)
 - **18 imagens externas** = **18 SHA256 digests** (100% coverage)
 - **24 containers** = **24 healthchecks** (init containers excluídos)
 - **CSP Headers**: OWASP 2025 compliant (unsafe-inline/eval required for React/ERPNext)
@@ -160,3 +159,10 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 - `rm -rf ~/.cache/pip ~/.npm ~/.pnpm-store` - limpa caches de package managers
 - `sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost` - remove ferramentas pré-instaladas (~5GB)
 - `pip install --no-cache-dir` - evita cache durante instalação
+
+---
+
+*Autor: Fillipe Guerra*
+*Documentação em Português Brasileiro*
+*Versão 3.0 - Dezembro 2025*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

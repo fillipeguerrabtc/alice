@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
-import { useForm } from 'react-hook-form';
+import { useForm, ControllerRenderProps } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { asResolver } from '@/lib/form-helpers';
 import { z } from 'zod';
@@ -331,7 +331,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="codigo"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'codigo'> }) => (
                   <FormItem>
                     <FormLabel>Código</FormLabel>
                     <FormControl>
@@ -349,7 +349,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="nome"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'nome'> }) => (
                   <FormItem>
                     <FormLabel>Nome</FormLabel>
                     <FormControl>
@@ -368,7 +368,7 @@ function ModuleFormDialog({
             <FormField
               control={form.control}
               name="descricao"
-              render={({ field }) => (
+              render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'descricao'> }) => (
                 <FormItem>
                   <FormLabel>Descrição</FormLabel>
                   <FormControl>
@@ -388,7 +388,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="icone"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'icone'> }) => (
                   <FormItem>
                     <FormLabel>Ícone</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
@@ -415,7 +415,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="categoria"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'categoria'> }) => (
                   <FormItem>
                     <FormLabel>Categoria</FormLabel>
                     <Select onValueChange={field.onChange} defaultValue={field.value}>
@@ -441,7 +441,7 @@ function ModuleFormDialog({
             <FormField
               control={form.control}
               name="urlExterna"
-              render={({ field }) => (
+              render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'urlExterna'> }) => (
                 <FormItem>
                   <FormLabel>URL Externa (opcional)</FormLabel>
                   <FormControl>
@@ -463,7 +463,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="ordem"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'ordem'> }) => (
                   <FormItem>
                     <FormLabel>Ordem</FormLabel>
                     <FormControl>
@@ -480,7 +480,7 @@ function ModuleFormDialog({
               <FormField
                 control={form.control}
                 name="ativo"
-                render={({ field }) => (
+                render={({ field }: { field: ControllerRenderProps<ModuleFormData, 'ativo'> }) => (
                   <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3">
                     <div className="space-y-0.5">
                       <FormLabel>Ativo</FormLabel>

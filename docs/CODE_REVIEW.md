@@ -204,11 +204,10 @@ manual-approval:
 ### Regra 15: MICROSSERVIÇOS
 **Status:** ✅ APROVADO
 
-**Estrutura Verificada (9 Microsserviços Alice):**
+**Estrutura Verificada (8 Microsserviços Alice):**
 
 | Serviço | Porta | Dockerfile | Health Check |
 |---------|-------|------------|--------------|
-| api-gateway | 3000 | `apps/api-gateway/Dockerfile` | `/health` |
 | auth-service | 3001 | `apps/auth-service/Dockerfile` | `/api/auth/health` |
 | chat-service | 3002 | `apps/chat-service/Dockerfile` | `/api/chat/health` |
 | rag-service | 3003 | `apps/rag-service/Dockerfile` | `/api/rag/health` |
@@ -217,6 +216,8 @@ manual-approval:
 | observability-service | 3007 | `apps/observability-service/Dockerfile` | `/health` |
 | clip-inference-service | 8000 | `apps/clip-inference-service/Dockerfile` | `/ready` |
 | frontend-service | 8080 | `apps/frontend-service/Dockerfile` | `/health` |
+
+> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
 **Pacotes Compartilhados (packages/):**
 
@@ -383,4 +384,4 @@ A plataforma Alice Enterprise está **APROVADA** para deploy.
 
 *Autor: Fillipe Guerra*
 *Relatório gerado em 02/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
-*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

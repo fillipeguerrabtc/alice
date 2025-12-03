@@ -30,7 +30,6 @@ import {
   wiseSyncStatusEnum,
   backupJobStatusEnum,
   backupTypeEnum,
-  backupComponentStatusEnum,
 } from "./enums.js";
 import { tenants, users } from "./core.js";
 import {

@@ -15,9 +15,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { Message } from './types';
 import { InlineImage } from './InlineImage';
-import { AudioPlayer } from './AudioPlayer';
-import { VideoPlayer } from './VideoPlayer';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
+// AudioPlayer e VideoPlayer disponíveis via InlineMediaAttachment quando necessário
 
 const messageVariants = {
   hidden: { opacity: 0, y: 20, scale: 0.95 },

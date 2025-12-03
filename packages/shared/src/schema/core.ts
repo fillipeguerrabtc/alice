@@ -33,7 +33,7 @@ import {
 } from "./shared-zod.js";
 
 // ============================================================================
-// SESSÕES (Replit Auth - OBRIGATÓRIO)
+// SESSÕES (PostgreSQL Sessions - OBRIGATÓRIO)
 // ============================================================================
 
 export const sessions = pgTable(
@@ -70,7 +70,7 @@ export const tenants = pgTable("tenants", {
 
 // ============================================================================
 // USUÁRIOS (Autenticação Unificada: OAuth + SAML + Local)
-// Compatível com: Replit (DEV) e Hetzner Cloud (PROD)
+// Compatível com: Cursor IDE (DEV) e Hetzner Cloud (PROD)
 // ============================================================================
 
 export const users = pgTable(

@@ -581,7 +581,7 @@ export default function WisePayments() {
                   <Label>{t('wise.quotes.from')}</Label>
                   <Select
                     value={quoteForm.sourceCurrency}
-                    onValueChange={(value) => setQuoteForm({ ...quoteForm, sourceCurrency: value })}
+                    onValueChange={(value: string) => setQuoteForm({ ...quoteForm, sourceCurrency: value })}
                   >
                     <SelectTrigger data-testid="select-quote-source">
                       <SelectValue />
@@ -601,7 +601,7 @@ export default function WisePayments() {
                     type="number"
                     placeholder="1000"
                     value={quoteForm.sourceAmount}
-                    onChange={(e) => setQuoteForm({ ...quoteForm, sourceAmount: e.target.value })}
+                    onChange={(e: React.ChangeEvent<HTMLInputElement>) => setQuoteForm({ ...quoteForm, sourceAmount: e.target.value })}
                     data-testid="input-quote-amount"
                   />
                 </div>
@@ -609,7 +609,7 @@ export default function WisePayments() {
                   <Label>{t('wise.quotes.to')}</Label>
                   <Select
                     value={quoteForm.targetCurrency}
-                    onValueChange={(value) => setQuoteForm({ ...quoteForm, targetCurrency: value })}
+                    onValueChange={(value: string) => setQuoteForm({ ...quoteForm, targetCurrency: value })}
                   >
                     <SelectTrigger data-testid="select-quote-target">
                       <SelectValue />

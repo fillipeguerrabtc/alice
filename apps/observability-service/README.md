@@ -4,7 +4,7 @@
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço #12 dos 27 containers da plataforma Alice Enterprise (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs).
+**Contexto:** Este é o serviço de observabilidade dos 26 containers da plataforma Alice Enterprise (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs).
 
 ## Componentes
 
@@ -107,7 +107,7 @@ http:
 
 ### Autenticação
 
-- **Desenvolvimento (Replit)**: Sem autenticação (INTERNAL_API_TOKEN não configurado)
+- **Desenvolvimento (Cursor IDE)**: Sem autenticação (INTERNAL_API_TOKEN não configurado)
 - **Produção**: ForwardAuth middleware valida sessão do usuário via auth-service
 
 O frontend usa `credentials: 'include'` para enviar cookies de sessão automaticamente.
@@ -214,5 +214,5 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 replit.md)*
-*Versão 2.2.0 - Dezembro 2025*
-*Total de Containers: 27 (4 infraestrutura + 9 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão 2.3.0 - Dezembro 2025*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

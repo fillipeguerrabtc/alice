@@ -15,7 +15,7 @@
 - `apps/frontend-service/public/logo-round.png` - Sidebar header
 - `apps/frontend-service/public/favicon.png` - Tab do navegador
 
-### Client (Desenvolvimento Replit)
+### Client (Desenvolvimento Local)
 - `client/public/logo-round.png` - Sidebar header
 - `client/public/favicon.png` - Tab do navegador
 

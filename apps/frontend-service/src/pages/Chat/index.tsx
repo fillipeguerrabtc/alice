@@ -17,7 +17,6 @@ import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Send, 
-  Bot, 
   Loader2, 
   Plus, 
   MessageSquare,
@@ -481,7 +480,7 @@ export default function Chat() {
               <textarea
                 ref={textareaRef}
                 value={input}
-                onChange={(e) => {
+                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
                   setInput(e.target.value);
                   e.target.style.height = 'auto';
                   e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
