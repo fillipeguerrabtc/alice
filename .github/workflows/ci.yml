@@ -257,7 +257,7 @@ jobs:
           echo "=== Liberando espaço em disco para PyTorch ==="
           df -h /
           sudo apt-get clean
-          rm -rf ~/.cache/pip || true
+          # NOTA: NÃO limpar ~/.cache/pip - é usado pelo actions/setup-python cache
           sudo rm -rf /usr/share/dotnet || true
           sudo rm -rf /opt/ghc || true
           df -h /
@@ -273,7 +273,8 @@ jobs:
         run: |
           set -e
           cd apps/clip-inference-service
-          pip install --no-cache-dir -r requirements.txt
+          # Usar cache do pip (gerenciado por actions/setup-python)
+          pip install -r requirements.txt
           echo "Dependências instaladas com sucesso!"
           df -h /
 
@@ -344,14 +345,9 @@ jobs:
           echo "Espaço antes da limpeza:"
           df -h /
           
-          # Limpar caches do sistema
+          # Limpar caches do sistema (NÃO limpar pip/pnpm - são gerenciados pelo GitHub Actions)
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/*
-          
-          # Limpar caches do pip e npm de execuções anteriores
-          rm -rf ~/.cache/pip || true
-          rm -rf ~/.npm || true
-          rm -rf ~/.pnpm-store || true
           
           # Remover ferramentas pré-instaladas desnecessárias (economiza ~5GB)
           sudo rm -rf /usr/share/dotnet || true
@@ -389,7 +385,8 @@ jobs:
         run: |
           set -e
           echo "Instalando dependências Python para scan de segurança..."
-          pip install --no-cache-dir -r apps/clip-inference-service/requirements.txt
+          # Usar cache do pip (gerenciado por actions/setup-python)
+          pip install -r apps/clip-inference-service/requirements.txt
           echo "Dependências Python instaladas com sucesso!"
           df -h /
 
