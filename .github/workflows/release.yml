@@ -23,6 +23,14 @@ on:
       # O gate de segurança está no ambiente "production" do deploy-production.yml
 
 # =============================================================================
+# CONCURRENCY: Evitar múltiplos releases simultâneos
+# cancel-in-progress: true cancela runs anteriores automaticamente
+# =============================================================================
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+# =============================================================================
 # SEGURANÇA: Permissões mínimas (Best Practices 2025)
 # =============================================================================
 permissions:

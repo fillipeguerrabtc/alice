@@ -37,6 +37,14 @@ on:
         default: 'all'
 
 # =============================================================================
+# CONCURRENCY: Evitar múltiplos deploys simultâneos
+# cancel-in-progress: true cancela deploys anteriores automaticamente
+# =============================================================================
+concurrency:
+  group: deploy-production
+  cancel-in-progress: true
+
+# =============================================================================
 # SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
 # =============================================================================
 permissions:
