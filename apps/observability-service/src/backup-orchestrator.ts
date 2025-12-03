@@ -935,7 +935,7 @@ async function runUnifiedRestore(
 // ROTAS DA API
 // =============================================================================
 
-const router = Router();
+const router: ReturnType<typeof Router> = Router();
 
 // Schema de validação para backup (Zod - Regra 8)
 const BackupRequestSchema = z.object({
