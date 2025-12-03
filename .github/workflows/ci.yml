@@ -22,8 +22,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20'
-  PNPM_VERSION: '10.12.4'
+  NODE_VERSION: '22'
+  PNPM_VERSION: '10.24.0'
   # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
   # durante TypeScript compilation de monorepos grandes (8GB)
   NODE_OPTIONS: '--max-old-space-size=8192'
