@@ -7,11 +7,11 @@
 # SEGURANÇA: Non-root container (Docker 2025 Best Practices)
 #
 # ATUALIZAÇÃO DEZEMBRO 2025:
-# - CUDA 12.8.0 com cuDNN 8 runtime (tag disponivel no Docker Hub)
-# - Ubuntu 20.04
+# - CUDA 12.6.3 com cuDNN (tag confirmada no Docker Hub)
+# - Ubuntu 24.04 LTS (suporte até 2029 - Best Practices 2025)
 # - Referência: https://hub.docker.com/r/nvidia/cuda/tags
 
-FROM nvidia/cuda:12.8.0-cudnn8-runtime-ubuntu20.04
+FROM nvidia/cuda:12.6.3-cudnn-devel-ubuntu24.04
 
 LABEL maintainer="Alice Enterprise Platform"
 LABEL description="CLIP ViT-L/14 inference server para embeddings multimodais"

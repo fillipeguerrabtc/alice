@@ -12,7 +12,7 @@
 
 | Categoria | Status | Observações |
 |-----------|--------|-------------|
-| Aderência às 16 Regras | APROVADO COM OBSERVAÇÕES | 13 regras verificáveis aprovadas, 3 N/A (workflow) |
+| Aderência às 17 Regras | APROVADO COM OBSERVAÇÕES | 13 regras verificáveis aprovadas, 4 N/A (workflow) |
 | Segurança Enterprise | APROVADO | OWASP API Top 10 coberto, 1 parcial (API9) |
 | Qualidade de Código | APROVADO | TypeScript strict, Zod validation, Pino logging |
 | Infraestrutura | APROVADO | ERPNext CVE corrigido (v15.88.0) |

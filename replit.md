@@ -4,7 +4,7 @@
 Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate external API dependencies, mitigate privacy concerns, and offer an alternative to unpredictable token-based pricing. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend, image generation, aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
 
 ## User Preferences
-### 16 Regras Fundamentais
+### 17 Regras Fundamentais
 
 | # | Regra | Descrição |
 |---|-------|-----------|
@@ -24,6 +24,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
 | 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
+| 17 | **REVIEW ANTES DO PUSH** | Consolidar mudanças em commit único, aguardar Review automática do Cursor, e só fazer push após aprovação do usuário |
 
 ### Preferências de Idioma
 
