@@ -500,24 +500,7 @@ jobs:
             if [ ! -f "$f" ]; then
               # Criar SARIF vazio válido conforme especificação SARIF 2.1.0
               # Sem marcadores customizados - apenas SARIF padrão
-              cat > "$f" <<'EOF'
-{
-  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
-  "version": "2.1.0",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "Trivy",
-          "version": "0.28.0",
-          "informationUri": "https://github.com/aquasecurity/trivy"
-        }
-      },
-      "results": []
-    }
-  ]
-}
-EOF
+              echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.28.0","informationUri":"https://github.com/aquasecurity/trivy"}},"results":[]}]}' > "$f"
               if [ $? -eq 0 ]; then
                 echo "⚠️ SARIF não gerado pelo Trivy, criado fallback válido: $f"
               else
