@@ -162,6 +162,17 @@ The frontend utilizes React 18, TypeScript 5, Vite 5, shadcn/ui, and Tailwind CS
 | Trivy scan abortava no primeiro erro | `continue-on-error: true` + IDs para verificação | Completo |
 | SARIF não filtrava por severidade | `limit-severities-for-sarif: true` | Completo |
 | Scan falho permitia deploy | Step agregador verifica outcomes + vulnerabilidades | Completo |
+| Upload SARIF falha sem Advanced Security | Verificação via API antes do upload | Completo |
+
+### Code Scanning Fix (03/12/2025)
+
+| Problema | Solução | Status |
+|----------|---------|--------|
+| `upload-sarif` falha em repos privados sem GHAS | Verificar via API se Code Scanning está habilitado | Completo |
+| Erro "Resource not accessible by integration" | Condicional `if: steps.check-code-scanning.outputs.enabled == 'true'` | Completo |
+| SARIFs não salvos para debug | Upload como artifact independente do Code Scanning | Completo |
+
+**Nota:** GitHub Advanced Security (GHAS) é necessário para Code Scanning em repositórios privados. Repos públicos têm Code Scanning gratuito. A verificação via API detecta automaticamente a disponibilidade do recurso.
 
 **Fluxo Trivy Enterprise:**
 1. Scans com `exit-code: '1'` + `continue-on-error: true` (executa todos)
