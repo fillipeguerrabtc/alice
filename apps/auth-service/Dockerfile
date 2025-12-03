@@ -1,16 +1,18 @@
 # ==============================================================================
 # Alice Enterprise Platform - Auth Service
-# Dockerfile Enterprise com esbuild bundling para pacotes @alice/*
+# Dockerfile Enterprise com Google Distroless para ZERO CVEs
 # Documentação em PT-BR (Regra 10 replit.md)
+# SEGURANÇA: Distroless não tem shell, reduzindo superfície de ataque
 # ==============================================================================
 
-# Usar Node.js 22 LTS Alpine para reduzir vulnerabilidades (menor superfície de ataque)
-# Alpine tem menos CVEs que Debian-based images
+# ==============================================================================
+# Stage: base - Node.js Alpine para build (tem shell para pnpm/npm)
+# ==============================================================================
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-# Atualizar pacotes do sistema para eliminar CVEs conhecidos
+# Atualizar pacotes do sistema e habilitar corepack
 RUN apk update && apk upgrade --no-cache && corepack enable
 
 # ==============================================================================
@@ -61,33 +63,36 @@ WORKDIR /app
 RUN pnpm --filter @alice/auth-service deploy --prod --legacy /prod/auth-service
 
 # ==============================================================================
-# Stage: runner - Imagem final de produção (mínima)
+# Stage: runner - Google Distroless para ZERO CVEs em produção
+# SEGURANÇA ENTERPRISE: Sem shell, sem package manager, sem utilitários
+# Referência: https://github.com/GoogleContainerTools/distroless
 # ==============================================================================
-# Usar Node.js 22 LTS Alpine para imagem final (mínima e segura)
-FROM node:22-alpine AS runner
+FROM gcr.io/distroless/nodejs22-debian12 AS runner
+
+# Variáveis de ambiente (Distroless suporta ENV)
 ENV NODE_ENV=production
 ENV SERVICE_NAME=auth-service
 ENV PORT=3001
 
-# Atualizar pacotes do sistema e criar usuário não-root
-RUN apk update && apk upgrade --no-cache && \
-    addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 --ingroup nodejs alice
-
 WORKDIR /app
 
 # Copiar dependências de produção extraídas pelo pnpm deploy
-COPY --from=pruner --chown=alice:nodejs /prod/auth-service/node_modules ./node_modules
+# NOTA: Distroless roda como nonroot (uid 65532) por padrão
+COPY --from=pruner /prod/auth-service/node_modules ./node_modules
 
 # Copiar bundle compilado (com @alice/* inline)
-COPY --from=builder --chown=alice:nodejs /app/apps/auth-service/dist/bundle.js ./dist/bundle.js
-COPY --from=builder --chown=alice:nodejs /app/apps/auth-service/dist/bundle.js.map ./dist/bundle.js.map
+COPY --from=builder /app/apps/auth-service/dist/bundle.js ./dist/bundle.js
+COPY --from=builder /app/apps/auth-service/dist/bundle.js.map ./dist/bundle.js.map
 
-USER alice
+# Distroless já roda como nonroot por padrão (uid 65532)
+USER nonroot
+
 EXPOSE 3001
 
-# Health check - usa /ready para verificar dependências (Regra 16 - Kubernetes Best Practices 2025)
+# Health check compatível com Distroless (usa node diretamente, não shell)
+# NOTA: Distroless não tem shell, então usamos node -e diretamente
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3001/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+    CMD ["/nodejs/bin/node", "-e", "require('http').get('http://localhost:3001/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
 
-CMD ["node", "dist/bundle.js"]
+# Entrypoint do Distroless nodejs já é /nodejs/bin/node
+CMD ["dist/bundle.js"]

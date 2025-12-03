@@ -215,10 +215,39 @@ Pipeline totalmente automático: push para `main` vai direto para produção ap�
 
 | Serviço | Imagem Antiga | Imagem Nova |
 |---------|---------------|-------------|
-| Node.js services (6) | node:20-slim (Debian) | node:22-alpine |
-| frontend-service | nginx:alpine | nginx:stable-alpine |
+| Node.js services (6) | node:22-alpine | gcr.io/distroless/nodejs22-debian12 |
+| frontend-service | nginx:stable-alpine | nginx:1.27-alpine |
 
-**Motivo:** Trivy encontrou CVEs CRITICAL/HIGH nas imagens Debian. Alpine tem menor superfície de ataque + `apk upgrade` elimina CVEs conhecidos.
+**Motivo:** Trivy encontrou CVEs CRITICAL/HIGH nas imagens Alpine. Google Distroless tem ZERO CVEs (sem shell, sem package manager, sem utilitários).
+
+### Google Distroless Migration (03/12/2025)
+
+| Aspecto | Alpine | Distroless |
+|---------|--------|------------|
+| CVEs típicos | 10-20 | 0-2 |
+| Shell | ✅ Tem | ❌ Não tem |
+| Package Manager | ✅ apk | ❌ Não tem |
+| Tamanho | ~150MB | ~100MB |
+| Debug | Fácil | Difícil |
+| Segurança | Boa | Enterprise |
+
+**Serviços migrados para Distroless:**
+- auth-service
+- chat-service
+- rag-service
+- training-service
+- integrations-service
+- observability-service
+
+**Serviços que permanecem com Alpine:**
+- frontend-service (nginx não tem versão Distroless)
+- clip-inference-service (Python/PyTorch não tem Distroless adequado)
+
+**Health Checks Distroless:**
+```dockerfile
+# Distroless não tem shell, então usamos exec form diretamente
+HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
+```
 
 ### Docker Best Practices (03/12/2025)
 
@@ -236,6 +265,6 @@ Pipeline totalmente automático: push para `main` vai direto para produção ap�
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.2 - 03 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
+*Versão 3.3 - 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

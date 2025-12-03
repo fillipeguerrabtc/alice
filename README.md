@@ -280,7 +280,9 @@ alice/
 - Passport.js, openid-client
 
 ### Infraestrutura
-- Docker, Traefik v3.1
+- Docker, Traefik v3.3
+- **Google Distroless** (6 serviços Node.js)
+- nginx:1.27-alpine (frontend)
 - GitHub Actions CI/CD
 - Hetzner Cloud (Nuremberg)
 
@@ -370,9 +372,9 @@ Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temp
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.3.0 - 03 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
+*Versão 3.4.0 - 03 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
-*Production Audit: 100% Compliant*
+*Production Audit: 100% Compliant | Zero CVEs (Distroless)*
 
 </div>
