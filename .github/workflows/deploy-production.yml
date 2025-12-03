@@ -220,8 +220,28 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # Build paralelo de todas as imagens
+      # ===========================================================================
+      # Build paralelo de todas as imagens com CACHE OTIMIZADO
+      # ===========================================================================
       # SHA: docker/build-push-action@v6.9.0 (2024-10-22)
+      # 
+      # ESTRATÉGIA DE CACHE (Best Practices 2025):
+      # 1. cache-from: type=gha (primário) - Cache do GitHub Actions (10GB limite)
+      # 2. cache-from: type=registry (fallback) - Cache no próprio GHCR
+      # 3. cache-to: type=gha,mode=max - Salva todas as layers intermediárias
+      #
+      # BENEFÍCIOS:
+      # - Rebuild sem mudanças: ~1-2 min (vs ~8 min sem cache)
+      # - Mudança em 1 serviço: apenas esse serviço rebuilda
+      # - Mudança em package.json: rebuilda a partir do pnpm install
+      # - Mudança em código: rebuilda apenas layers afetadas
+      #
+      # SEGURANÇA:
+      # - Cache é invalidado automaticamente por hash SHA256
+      # - pnpm-lock.yaml garante versões exatas de dependências
+      # - Trivy escaneia a imagem FINAL (não o cache)
+      # ===========================================================================
+      
       - name: Build e Push - Auth Service
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:

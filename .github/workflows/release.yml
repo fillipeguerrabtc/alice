@@ -245,6 +245,13 @@ jobs:
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # ===========================================================================
+      # CACHE OTIMIZADO (Best Practices 2025):
+      # - GHA cache com mode=max salva todas as layers intermediárias
+      # - Hash SHA256 invalida cache automaticamente quando arquivos mudam
+      # - pnpm-lock.yaml garante versões exatas
+      # - Trivy escaneia imagem FINAL, não cache
+      # ===========================================================================
       - name: Build e Push
         uses: docker/build-push-action@v6
         with:

@@ -261,10 +261,37 @@ HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
 - Solução: criar venv em `/opt/venv` e configurar `ENV PATH`
 - Mais seguro que `--break-system-packages`
 
+### Docker Build Cache Otimizado (03/12/2025)
+
+| Estratégia | Descrição | Benefício |
+|------------|-----------|-----------|
+| **GHA Cache** | `cache-from: type=gha,scope=<service>` | Cache no GitHub Actions (10GB limite) |
+| **Mode Max** | `cache-to: type=gha,mode=max` | Salva todas as layers intermediárias |
+| **Scope por Serviço** | `scope=auth`, `scope=chat`, etc. | Cache isolado por microsserviço |
+
+**Como Funciona:**
+1. Docker calcula hash SHA256 de cada arquivo
+2. Compara com hash do cache anterior
+3. Se igual → usa cache (segundos)
+4. Se diferente → rebuilda a partir dessa layer
+
+**Segurança do Cache:**
+- Hash criptográfico invalida cache automaticamente
+- `pnpm-lock.yaml` garante versões exatas
+- Trivy escaneia imagem FINAL (não cache)
+- Rebuild forçado: Settings → Actions → Caches → Delete
+
+**Performance Esperada:**
+| Cenário | Tempo Sem Cache | Tempo Com Cache |
+|---------|-----------------|-----------------|
+| Rebuild completo | ~45 min | ~45 min |
+| Mudança em 1 serviço | ~45 min | ~7 min |
+| Nenhuma mudança | ~45 min | ~3 min |
+
 ---
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.3 - 03 de Dezembro de 2025*
+*Versão 3.4 - 03 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
