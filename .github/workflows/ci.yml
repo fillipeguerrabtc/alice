@@ -572,45 +572,48 @@ jobs:
           echo "Compliance:         ${{ needs.compliance-checks.result }}"
           echo "=============================================="
           
-          # CRÍTICO: Verificar TODOS os jobs obrigatórios
-          if [[ "${{ needs.build-and-check.result }}" == "failure" ]]; then
-            echo "ERRO: Build & Check falhou!"
+          # CRÍTICO: Verificar TODOS os jobs obrigatórios (deve ser 'success', não apenas 'não failure')
+          # Jobs podem ter status: success, failure, cancelled, skipped
+          # Apenas 'success' é aceitável para disparar Release
+          
+          if [[ "${{ needs.build-and-check.result }}" != "success" ]]; then
+            echo "ERRO: Build & Check não passou! Status: ${{ needs.build-and-check.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          if [[ "${{ needs.build-services.result }}" == "failure" ]]; then
-            echo "ERRO: Build Services (Node.js) falhou!"
+          if [[ "${{ needs.build-services.result }}" != "success" ]]; then
+            echo "ERRO: Build Services não passou! Status: ${{ needs.build-services.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          if [[ "${{ needs.build-clip-inference.result }}" == "failure" ]]; then
-            echo "ERRO: Build CLIP Inference (Python) falhou!"
+          if [[ "${{ needs.build-clip-inference.result }}" != "success" ]]; then
+            echo "ERRO: Build CLIP Inference não passou! Status: ${{ needs.build-clip-inference.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          if [[ "${{ needs.build-frontend.result }}" == "failure" ]]; then
-            echo "ERRO: Build Frontend falhou!"
+          if [[ "${{ needs.build-frontend.result }}" != "success" ]]; then
+            echo "ERRO: Build Frontend não passou! Status: ${{ needs.build-frontend.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          if [[ "${{ needs.security-scan.result }}" == "failure" ]]; then
-            echo "ERRO: Security Scan falhou!"
+          if [[ "${{ needs.security-scan.result }}" != "success" ]]; then
+            echo "ERRO: Security Scan não passou! Status: ${{ needs.security-scan.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
-          if [[ "${{ needs.compliance-checks.result }}" == "failure" ]]; then
-            echo "ERRO: Compliance Checks falhou!"
+          if [[ "${{ needs.compliance-checks.result }}" != "success" ]]; then
+            echo "ERRO: Compliance Checks não passou! Status: ${{ needs.compliance-checks.result }}"
             echo "success=false" >> $GITHUB_OUTPUT
             exit 1
           fi
           
           echo "success=true" >> $GITHUB_OUTPUT
-          echo "CI passou com sucesso!"
+          echo "CI passou com sucesso! Todos os jobs com status 'success'."
 
   # ===========================================================================
   # Job 9: Trigger Release Automatico (apenas em push para main)
