@@ -260,11 +260,45 @@ GRAFANA_ADMIN_PASSWORD=sua-senha-grafana
 
 **⚠️ IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.
 
-### 5. Configurar Servidor Hetzner (Primeira vez)
+### 5. Conexão SSH ao Servidor
+
+**Configuração local recomendada** (`~/.ssh/config`):
+
+```
+Host alice-hetzner
+    HostName 46.224.46.93
+    User root
+    IdentityFile ~/.ssh/alice-deploy
+```
+
+**Conexão rápida:**
+
+```bash
+# Usando alias (recomendado)
+ssh alice-hetzner
+
+# Ou diretamente com a chave
+ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+```
+
+**Especificações do Servidor (verificado em 03/12/2025):**
+
+| Recurso | Valor |
+|---------|-------|
+| **SO** | Ubuntu 24.04.3 LTS (Noble Numbat) |
+| **Docker** | 29.0.4 |
+| **Docker Compose** | v2.40.3 |
+| **CPU** | 8 vCPUs (AMD EPYC) |
+| **RAM** | 16GB |
+| **Disco** | 160GB NVMe SSD |
+| **IP** | 46.224.46.93 |
+| **Localização** | Hetzner Cloud |
+
+### 6. Configurar Servidor Hetzner (Primeira vez)
 
 ```bash
 # Conectar via SSH
-ssh root@46.224.46.93
+ssh alice-hetzner
 
 # Atualizar sistema
 apt update && apt upgrade -y
@@ -388,6 +422,28 @@ Actions → Deploy to Production → Run workflow → Selecionar versão
 - ✅ Security scan obrigatório antes do deploy
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
+
+### Docker Build Cache (Registry Cache)
+
+O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
+
+| Estratégia | Descrição |
+|------------|-----------|
+| `cache-from: type=registry` | Puxa cache do GHCR (não é branch-specific) |
+| `cache-to: type=registry,mode=max` | Salva todas as layers intermediárias |
+| Imagens `:cache` | Cada serviço tem sua própria imagem de cache |
+
+**Vantagens sobre GHA Cache:**
+- ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (main)
+- ✅ Sem limite de 10GB do GitHub Actions cache
+- ✅ Reprodutibilidade: releases usam a tag exata
+
+**Performance Esperada:**
+| Cenário | Sem Cache | Com Cache |
+|---------|-----------|-----------|
+| Rebuild completo | ~45 min | ~45 min |
+| Mudança em 1 serviço | ~45 min | ~7 min |
+| Nenhuma mudança | ~45 min | ~3 min |
 
 ---
 
@@ -615,11 +671,31 @@ Retenção Arquivo:   90 dias
 ### Problemas de Conexão SSH
 
 ```bash
-# Verificar chave SSH
-ssh -v root@46.224.46.93
+# Verificar se o alias está configurado (~/.ssh/config)
+cat ~/.ssh/config | grep -A3 alice-hetzner
 
-# Verificar permissões da chave
-chmod 600 ~/.ssh/id_rsa
+# Conectar usando alias (recomendado)
+ssh alice-hetzner
+
+# Ou conectar diretamente com a chave
+ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+
+# Verificar conexão com verbose
+ssh -v alice-hetzner
+
+# Verificar permissões da chave (deve ser 600)
+chmod 600 ~/.ssh/alice-deploy
+
+# No Windows PowerShell, verificar config
+Get-Content $env:USERPROFILE\.ssh\config
+```
+
+**Configuração SSH recomendada** (`~/.ssh/config`):
+```
+Host alice-hetzner
+    HostName 46.224.46.93
+    User root
+    IdentityFile ~/.ssh/alice-deploy
 ```
 
 ### Container não inicia
@@ -697,6 +773,7 @@ curl http://localhost:3010/health
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 03 de Dezembro de 2025*
-*Versão: 5.3 - Pipeline 100% Automático com 26 Containers*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
+*Versão: 5.4 - Pipeline 100% Automático com 26 Containers*
+*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*

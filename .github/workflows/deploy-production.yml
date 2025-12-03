@@ -226,11 +226,12 @@ jobs:
       # SHA: docker/build-push-action@v6.9.0 (2024-10-22)
       # 
       # ESTRATÉGIA DE CACHE (Best Practices 2025):
-      # 1. cache-from: type=gha (primário) - Cache do GitHub Actions (10GB limite)
-      # 2. cache-from: type=registry (fallback) - Cache no próprio GHCR
-      # 3. cache-to: type=gha,mode=max - Salva todas as layers intermediárias
+      # - Registry cache no GHCR: NÃO é branch-specific (compartilha entre workflows)
+      # - mode=max salva todas as layers intermediárias
+      # - Imagens de cache são armazenadas no próprio GHCR com tag :cache
       #
       # BENEFÍCIOS:
+      # - Cache compartilhado entre release.yml e deploy-production.yml
       # - Rebuild sem mudanças: ~1-2 min (vs ~8 min sem cache)
       # - Mudança em 1 serviço: apenas esse serviço rebuilda
       # - Mudança em package.json: rebuilda a partir do pnpm install
@@ -251,8 +252,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-auth:latest
-          cache-from: type=gha,scope=auth
-          cache-to: type=gha,mode=max,scope=auth
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-auth:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-auth:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - Chat Service
@@ -264,8 +265,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-chat:latest
-          cache-from: type=gha,scope=chat
-          cache-to: type=gha,mode=max,scope=chat
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-chat:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-chat:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - RAG Service
@@ -277,8 +278,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-rag:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-rag:latest
-          cache-from: type=gha,scope=rag
-          cache-to: type=gha,mode=max,scope=rag
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-rag:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-rag:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - Training Service
@@ -290,8 +291,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-training:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-training:latest
-          cache-from: type=gha,scope=training
-          cache-to: type=gha,mode=max,scope=training
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-training:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-training:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - Integrations Service
@@ -303,8 +304,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-integrations:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-integrations:latest
-          cache-from: type=gha,scope=integrations
-          cache-to: type=gha,mode=max,scope=integrations
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-integrations:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-integrations:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - Frontend Service
@@ -316,8 +317,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-frontend:latest
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-frontend:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-frontend:cache,mode=max
           platforms: linux/amd64
 
       # ===========================================================================
@@ -333,8 +334,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-observability:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-observability:latest
-          cache-from: type=gha,scope=observability
-          cache-to: type=gha,mode=max,scope=observability
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - CLIP Inference Service (GPU/Salad Cloud)
@@ -346,8 +347,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-clip-inference:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-clip-inference:latest
-          cache-from: type=gha,scope=clip-inference
-          cache-to: type=gha,mode=max,scope=clip-inference
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache,mode=max
           platforms: linux/amd64
 
       - name: Build e Push - API Gateway (Traefik Config)
@@ -359,8 +360,8 @@ jobs:
           tags: |
             ${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-api-gateway:latest
-          cache-from: type=gha,scope=api-gateway
-          cache-to: type=gha,mode=max,scope=api-gateway
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-api-gateway:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-api-gateway:cache,mode=max
           platforms: linux/amd64
 
   # ===========================================================================
@@ -803,12 +804,16 @@ jobs:
             docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
             docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
             
-            # PASSO 3: Limpar recursos órfãos
+            # PASSO 3: Limpar recursos órfãos (PRESERVA volumes nomeados!)
             echo "  [3/4] Limpando recursos órfãos..."
             docker container prune -f 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
             docker builder prune -f 2>/dev/null || true
-            docker volume prune -f 2>/dev/null || true
+            # NOTA: NÃO fazer volume prune aqui!
+            # Volumes nomeados (alice-postgres-data, erpnext-mariadb-data, etc.)
+            # são preservados pelo Docker, mas em caso de edge cases, melhor não arriscar.
+            # O prune de volumes só é seguro no rollback após verificar que dados estão backupeados.
+            # docker volume prune -f # REMOVIDO - Segurança dos dados
             
             # PASSO 4: Verificar limpeza (filtros separados - Docker usa AND entre múltiplos --filter)
             echo "  [4/4] Verificando limpeza..."
@@ -1104,8 +1109,10 @@ jobs:
               docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
               docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
               
-              echo "[CLEANUP 4/5] Removendo volumes órfãos..."
-              docker volume prune -f 2>/dev/null || true
+              echo "[CLEANUP 4/5] Listando volumes (NÃO removendo - contêm dados!)..."
+              # NOTA: NÃO remover volumes! Eles contêm dados do PostgreSQL, MariaDB, Redis
+              # Volumes só devem ser removidos manualmente após backup confirmado
+              docker volume ls | grep -E "(alice|erpnext)" || echo "Nenhum volume Alice/ERPNext encontrado"
               
               echo "[CLEANUP 5/5] Removendo imagens não utilizadas (apenas dangling)..."
               # Nota: Usando -f (não -af) para não remover imagens de outras aplicações
@@ -1144,10 +1151,12 @@ jobs:
               alice-frontend alice-auth alice-chat alice-rag \
               alice-training alice-integrations alice-observability 2>/dev/null || true
             
-            # Limpar imagens não utilizadas (agressivo)
-            docker image prune -af --filter "until=1h" 2>/dev/null || true
+            # Limpar imagens não utilizadas (APENAS dangling, preserva imagens taggeadas)
+            docker image prune -f 2>/dev/null || true
             docker container prune -f 2>/dev/null || true
-            docker volume prune -f 2>/dev/null || true
+            # NOTA: NÃO fazer volume prune durante rollback ativo
+            # Os volumes contêm dados importantes que devem ser preservados
+            # docker volume prune -f # REMOVIDO - Segurança dos dados
             
             echo "Limpeza concluída"
             

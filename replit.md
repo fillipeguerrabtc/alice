@@ -300,13 +300,18 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 
 | Estratégia | Descrição | Benefício |
 |------------|-----------|-----------|
-| **GHA Cache** | `cache-from: type=gha,scope=<service>` | Cache no GitHub Actions (10GB limite) |
-| **Mode Max** | `cache-to: type=gha,mode=max` | Salva todas as layers intermediárias |
-| **Scope por Serviço** | `scope=auth`, `scope=chat`, etc. | Cache isolado por microsserviço |
+| **Registry Cache** | `cache-from: type=registry,ref=...:cache` | Cache no GHCR (sem limite de tamanho) |
+| **Mode Max** | `cache-to: type=registry,...,mode=max` | Salva todas as layers intermediárias |
+| **Por Serviço** | Cada serviço tem sua própria imagem `:cache` | Cache isolado por microsserviço |
+
+**Vantagem do Registry Cache sobre GHA Cache:**
+- NÃO é branch-specific (compartilha entre tags e branches)
+- Releases (tags) e Deploys (main) compartilham o mesmo cache
+- Sem limite de 10GB do GitHub Actions cache
 
 **Como Funciona:**
 1. Docker calcula hash SHA256 de cada arquivo
-2. Compara com hash do cache anterior
+2. Compara com hash do cache no GHCR
 3. Se igual → usa cache (segundos)
 4. Se diferente → rebuilda a partir dessa layer
 
@@ -314,7 +319,7 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 - Hash criptográfico invalida cache automaticamente
 - `pnpm-lock.yaml` garante versões exatas
 - Trivy escaneia imagem FINAL (não cache)
-- Rebuild forçado: Settings → Actions → Caches → Delete
+- Rebuild forçado: Deletar imagem `:cache` no GHCR
 
 **Performance Esperada:**
 | Cenário | Tempo Sem Cache | Tempo Com Cache |
@@ -323,10 +328,44 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 | Mudança em 1 serviço | ~45 min | ~7 min |
 | Nenhuma mudança | ~45 min | ~3 min |
 
+### Servidor Hetzner - Conexão SSH (03/12/2025)
+
+**Configuração SSH Local** (`~/.ssh/config`):
+```
+Host alice-hetzner
+    HostName 46.224.46.93
+    User root
+    IdentityFile ~/.ssh/alice-deploy
+```
+
+**Comandos de Conexão:**
+```bash
+# Usando alias (recomendado)
+ssh alice-hetzner
+
+# Conexão direta
+ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+```
+
+**Especificações do Servidor (verificado 03/12/2025):**
+
+| Recurso | Valor |
+|---------|-------|
+| **SO** | Ubuntu 24.04.3 LTS |
+| **Docker** | 29.0.4 |
+| **Docker Compose** | v2.40.3 |
+| **CPU** | 8 vCPUs (AMD EPYC) |
+| **RAM** | 16GB |
+| **Disco** | 160GB NVMe SSD |
+| **IP** | 46.224.46.93 |
+
+**⚠️ IMPORTANTE:** Nunca executar comandos manuais no servidor. Todo deploy é 100% automático via GitHub Actions.
+
 ---
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.6 - 03 de Dezembro de 2025*
+*Versão 3.7 - 03 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
