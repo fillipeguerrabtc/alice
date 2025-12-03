@@ -7,11 +7,11 @@
 # SEGURANÇA: Non-root container (Docker 2025 Best Practices)
 #
 # ATUALIZAÇÃO DEZEMBRO 2025:
-# - CUDA 12.8.0 corrige CVEs do CUDA Toolkit (cuobjdump, nvdisasm)
-# - cuDNN 9 é a versão estável atual para deep learning
-# - Referência: https://nvidia.custhelp.com/app/answers/detail/a_id/5594
+# - CUDA 12.6.3 é a versão estável mais recente disponível no Docker Hub
+# - cuDNN 9 runtime para deep learning
+# - Referência: https://hub.docker.com/r/nvidia/cuda/tags
 
-FROM nvidia/cuda:12.8.0-cudnn9-runtime-ubuntu22.04
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
 
 LABEL maintainer="Alice Enterprise Platform"
 LABEL description="CLIP ViT-L/14 inference server para embeddings multimodais"
