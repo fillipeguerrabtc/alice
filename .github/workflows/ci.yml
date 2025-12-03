@@ -412,9 +412,27 @@ jobs:
         if: always()
         run: |
           if [ ! -f "trivy-results.sarif" ]; then
-            echo "Criando arquivo SARIF vazio (Trivy não gerou output)..."
-            echo '{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.28.0"}},"results":[]}]}' > trivy-results.sarif
+            echo "Criando arquivo SARIF válido (Trivy não gerou output)..."
+            cat > trivy-results.sarif <<'EOF'
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "version": "0.28.0",
+          "informationUri": "https://github.com/aquasecurity/trivy"
+        }
+      },
+      "results": []
+    }
+  ]
+}
+EOF
           fi
+          echo "✅ SARIF file ready:"
           ls -la trivy-results.sarif
 
       - name: Upload Trivy scan results to Security tab

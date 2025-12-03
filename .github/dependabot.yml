@@ -1,0 +1,203 @@
+# =============================================================================
+# Dependabot Configuration - Alice Enterprise Platform
+# =============================================================================
+# Descrição: Automação de atualizações de segurança para dependências e Actions
+# Documentação: https://docs.github.com/en/code-security/dependabot
+# Best Practices 2025: Atualizações automáticas semanais com limites
+# =============================================================================
+
+version: 2
+updates:
+  # ===========================================================================
+  # GitHub Actions - Segurança e Manutenção
+  # ===========================================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Europe/Lisbon"
+    # Limitar PRs para evitar spam
+    open-pull-requests-limit: 5
+    # Agrupar minor/patch updates
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    # Prefixo para identificar PRs do Dependabot
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Reviewers automáticos
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "automated"
+
+  # ===========================================================================
+  # npm - Dependências JavaScript/TypeScript
+  # ===========================================================================
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    # Limitar PRs para evitar spam
+    open-pull-requests-limit: 10
+    # Ignorar atualizações de patch para reduzir ruído
+    ignore:
+      # Manter versões específicas que foram testadas
+      - dependency-name: "drizzle-orm"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "drizzle-kit"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      # Node.js e TypeScript atualizados manualmente
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    # Agrupar por tipo de update
+    groups:
+      production-dependencies:
+        dependency-type: "production"
+        update-types:
+          - "minor"
+          - "patch"
+      development-dependencies:
+        dependency-type: "development"
+        update-types:
+          - "minor"
+          - "patch"
+      security-updates:
+        patterns:
+          - "*"
+        update-types:
+          - "security"
+    # Mensagens de commit
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+      include: "scope"
+    # Reviewers e labels
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "npm"
+      - "automated"
+
+  # ===========================================================================
+  # pip - Dependências Python (CLIP Inference Service)
+  # ===========================================================================
+  - package-ecosystem: "pip"
+    directory: "/apps/clip-inference-service"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    # Limitar PRs
+    open-pull-requests-limit: 5
+    # Ignorar atualizações que quebram compatibilidade
+    ignore:
+      # PyTorch e CUDA requerem testes específicos
+      - dependency-name: "torch"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "torchvision"
+        update-types: ["version-update:semver-major"]
+    # Agrupar atualizações
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Mensagens de commit
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    # Reviewers e labels
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "python"
+      - "clip-inference"
+      - "automated"
+
+  # ===========================================================================
+  # Docker - Imagens Base
+  # ===========================================================================
+  - package-ecosystem: "docker"
+    directory: "/apps/auth-service"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(docker)"
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/chat-service"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(docker)"
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/frontend-service"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(docker)"
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"
+
+  - package-ecosystem: "docker"
+    directory: "/apps/clip-inference-service"
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "10:00"
+      timezone: "Europe/Lisbon"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(docker)"
+    reviewers:
+      - "fillipeguerrabtc"
+    labels:
+      - "dependencies"
+      - "docker"
+      - "automated"

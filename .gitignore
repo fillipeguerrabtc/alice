@@ -4,3 +4,54 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+
+# Build artifacts
+*.tsbuildinfo
+*.log
+*.map
+.turbo
+.cache
+
+# Test coverage
+coverage
+.nyc_output
+
+# Environment files (segurança)
+.env
+.env.local
+.env.*.local
+.env.prod
+
+# IDE
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+tmp
+temp
+*.tmp
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# SARIF files (gerados em CI/CD)
+*.sarif

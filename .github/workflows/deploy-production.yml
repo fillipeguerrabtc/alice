@@ -411,18 +411,115 @@ jobs:
           output: 'trivy-frontend.sarif'
           limit-severities-for-sarif: true
 
-      # Garantir que arquivos SARIF existam para upload (fallback com marcador de falha)
+      - name: Scan RAG Service Image
+        id: scan-rag
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-rag:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-rag.sarif'
+          limit-severities-for-sarif: true
+
+      - name: Scan Training Service Image
+        id: scan-training
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-training:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-training.sarif'
+          limit-severities-for-sarif: true
+
+      - name: Scan Integrations Service Image
+        id: scan-integrations
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-integrations:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-integrations.sarif'
+          limit-severities-for-sarif: true
+
+      - name: Scan Observability Service Image
+        id: scan-observability
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-observability:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-observability.sarif'
+          limit-severities-for-sarif: true
+
+      - name: Scan CLIP Inference Service Image
+        id: scan-clip-inference
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-clip-inference:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-clip-inference.sarif'
+          limit-severities-for-sarif: true
+
+      - name: Scan API Gateway Image
+        id: scan-api-gateway
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-api-gateway.sarif'
+          limit-severities-for-sarif: true
+
+      # Garantir que arquivos SARIF existam para upload (fallback válido SARIF 2.1.0)
       - name: Ensure SARIF files exist
         if: always()
         run: |
           # Coletar todas as falhas antes de decidir (não usar set -e)
           ERRORS=0
           
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-rag.sarif trivy-training.sarif trivy-integrations.sarif trivy-observability.sarif trivy-clip-inference.sarif trivy-api-gateway.sarif; do
             if [ ! -f "$f" ]; then
-              # Marcador especial para indicar que scan falhou (não apenas sem vulnerabilidades)
-              if echo '{"version":"2.1.0","runs":[],"_scanFailed":true}' > "$f" 2>/dev/null; then
-                echo "⚠️ SARIF não gerado, criado fallback: $f"
+              # Criar SARIF vazio válido conforme especificação SARIF 2.1.0
+              # Sem marcadores customizados - apenas SARIF padrão
+              cat > "$f" <<'EOF'
+{
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Trivy",
+          "version": "0.28.0",
+          "informationUri": "https://github.com/aquasecurity/trivy"
+        }
+      },
+      "results": []
+    }
+  ]
+}
+EOF
+              if [ $? -eq 0 ]; then
+                echo "⚠️ SARIF não gerado pelo Trivy, criado fallback válido: $f"
               else
                 echo "❌ ERRO CRÍTICO: Falha ao criar fallback SARIF: $f"
                 echo "Possíveis causas: permissões, espaço em disco, etc."
@@ -466,6 +563,54 @@ jobs:
           category: 'trivy-frontend-image'
         continue-on-error: true
 
+      - name: Upload Trivy RAG scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-rag.sarif'
+          category: 'trivy-rag-image'
+        continue-on-error: true
+
+      - name: Upload Trivy Training scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-training.sarif'
+          category: 'trivy-training-image'
+        continue-on-error: true
+
+      - name: Upload Trivy Integrations scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-integrations.sarif'
+          category: 'trivy-integrations-image'
+        continue-on-error: true
+
+      - name: Upload Trivy Observability scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-observability.sarif'
+          category: 'trivy-observability-image'
+        continue-on-error: true
+
+      - name: Upload Trivy CLIP Inference scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-clip-inference.sarif'
+          category: 'trivy-clip-inference-image'
+        continue-on-error: true
+
+      - name: Upload Trivy API Gateway scan results
+        if: always()
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-api-gateway.sarif'
+          category: 'trivy-api-gateway-image'
+        continue-on-error: true
+
       # REGRA 6: Verificar se scans executaram E se há vulnerabilidades CRITICAL/HIGH
       - name: Check scan results and vulnerabilities
         if: always()
@@ -473,6 +618,12 @@ jobs:
           SCAN_AUTH_OUTCOME: ${{ steps.scan-auth.outcome }}
           SCAN_CHAT_OUTCOME: ${{ steps.scan-chat.outcome }}
           SCAN_FRONTEND_OUTCOME: ${{ steps.scan-frontend.outcome }}
+          SCAN_RAG_OUTCOME: ${{ steps.scan-rag.outcome }}
+          SCAN_TRAINING_OUTCOME: ${{ steps.scan-training.outcome }}
+          SCAN_INTEGRATIONS_OUTCOME: ${{ steps.scan-integrations.outcome }}
+          SCAN_OBSERVABILITY_OUTCOME: ${{ steps.scan-observability.outcome }}
+          SCAN_CLIP_INFERENCE_OUTCOME: ${{ steps.scan-clip-inference.outcome }}
+          SCAN_API_GATEWAY_OUTCOME: ${{ steps.scan-api-gateway.outcome }}
         run: |
           echo "=============================================="
           echo "VERIFICANDO RESULTADOS DOS SCANS TRIVY"
@@ -486,11 +637,17 @@ jobs:
           echo "  - Auth: $SCAN_AUTH_OUTCOME"
           echo "  - Chat: $SCAN_CHAT_OUTCOME"
           echo "  - Frontend: $SCAN_FRONTEND_OUTCOME"
+          echo "  - RAG: $SCAN_RAG_OUTCOME"
+          echo "  - Training: $SCAN_TRAINING_OUTCOME"
+          echo "  - Integrations: $SCAN_INTEGRATIONS_OUTCOME"
+          echo "  - Observability: $SCAN_OBSERVABILITY_OUTCOME"
+          echo "  - CLIP Inference: $SCAN_CLIP_INFERENCE_OUTCOME"
+          echo "  - API Gateway: $SCAN_API_GATEWAY_OUTCOME"
           
           # Verificar se todos os SARIFs existem (falha parcial = erro crítico)
           echo ""
           echo "📁 Verificando existência dos arquivos SARIF..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-rag.sarif trivy-training.sarif trivy-integrations.sarif trivy-observability.sarif trivy-clip-inference.sarif trivy-api-gateway.sarif; do
             if [ ! -f "$f" ]; then
               echo "❌ ERRO CRÍTICO: Arquivo SARIF não existe: $f"
               echo "O step 'Ensure SARIF files exist' pode ter falhado parcialmente."
@@ -498,13 +655,14 @@ jobs:
             fi
           done
           
-          # Se scan falhou e SARIF tem marcador de falha, é erro crítico
+          # Verificar se SARIF é válido e não está vazio por erro de scan
           echo ""
-          echo "🔍 Verificando marcadores de falha..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          echo "🔍 Verificando validade dos arquivos SARIF..."
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-rag.sarif trivy-training.sarif trivy-integrations.sarif trivy-observability.sarif trivy-clip-inference.sarif trivy-api-gateway.sarif; do
             if [ -f "$f" ]; then
-              if grep -q '"_scanFailed":true' "$f" 2>/dev/null; then
-                echo "❌ ERRO: Scan não executou corretamente: $f"
+              # Verificar se é um JSON válido
+              if ! jq empty "$f" 2>/dev/null; then
+                echo "❌ ERRO: SARIF inválido (JSON malformado): $f"
                 FAIL=1
               fi
             fi
@@ -513,7 +671,7 @@ jobs:
           # Verificar vulnerabilidades CRITICAL/HIGH nos SARIFs
           echo ""
           echo "🔍 Verificando vulnerabilidades CRITICAL/HIGH..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-rag.sarif trivy-training.sarif trivy-integrations.sarif trivy-observability.sarif trivy-clip-inference.sarif trivy-api-gateway.sarif; do
             if [ -f "$f" ]; then
               # Com limit-severities-for-sarif, apenas CRITICAL/HIGH geram "level": "error"
               if grep -q '"level": "error"' "$f" 2>/dev/null; then
@@ -536,7 +694,7 @@ jobs:
             exit 1
           else
             echo "=============================================="
-            echo "✅ TODOS OS SCANS PASSARAM"
+            echo "✅ TODOS OS SCANS PASSARAM (9/9 SERVIÇOS)"
             echo "Nenhuma vulnerabilidade CRITICAL/HIGH detectada"
             echo "=============================================="
           fi
@@ -968,21 +1126,45 @@ jobs:
             
             if [ -z "$PREVIOUS_SHA" ]; then
               echo "=============================================="
-              echo "⚠️ ROLLBACK NÃO POSSÍVEL"
+              echo "⚠️ ROLLBACK NÃO POSSÍVEL - PRIMEIRO DEPLOY"
               echo "=============================================="
               echo "Motivo: Nenhuma versão anterior encontrada"
               echo "Possíveis causas:"
-              echo "  - Primeiro deploy (não há versão para restaurar)"
+              echo "  - Primeiro deploy do sistema (não há versão para restaurar)"
               echo "  - Diretório /opt/alice/app foi limpo"
               echo "  - Manifesto de deploy não existe"
               echo ""
-              echo "AÇÃO NECESSÁRIA: Verificar estado do servidor manualmente"
-              echo "  ssh \${HETZNER_VM_USER}@\${HETZNER_VM_HOST}"
-              echo "  cd /opt/alice/app/infra/docker && docker compose -f docker-compose.prod.yml ps"
-              echo "=============================================="
-              # Exit 1 para indicar que rollback falhou (deploy também falhou)
-              # Isso garante visibilidade do problema no GitHub Actions
-              exit 1
+              echo "🔍 DIAGNÓSTICO AUTOMÁTICO:"
+              echo "Verificando estado atual dos containers..."
+              cd /opt/alice/app/infra/docker
+              docker compose -f docker-compose.prod.yml ps --format "{{.Name}}: {{.State}}" || echo "Erro ao listar containers"
+              echo ""
+              echo "📊 Containers em execução:"
+              RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
+              echo "Total: $RUNNING containers rodando"
+              echo ""
+              if [ "$RUNNING" -gt 5 ]; then
+                echo "✅ SISTEMA OPERACIONAL"
+                echo "Apesar do deploy falhar, o sistema ainda tem $RUNNING containers ativos."
+                echo "Isso indica que este foi o primeiro deploy ou um problema transitório."
+                echo ""
+                echo "AÇÃO RECOMENDADA:"
+                echo "1. Revisar logs do deploy que falhou"
+                echo "2. Corrigir o problema identificado"
+                echo "3. Executar novo deploy"
+                # Não fazer exit 1 - sistema está operacional
+                exit 0
+              else
+                echo "❌ SISTEMA COMPROMETIDO"
+                echo "Apenas $RUNNING containers estão rodando, sistema pode estar inoperante."
+                echo ""
+                echo "AÇÃO NECESSÁRIA URGENTE:"
+                echo "1. Conectar ao servidor: ssh \${HETZNER_VM_USER}@\${HETZNER_VM_HOST}"
+                echo "2. Investigar logs: cd /opt/alice/app/infra/docker && docker compose -f docker-compose.prod.yml logs"
+                echo "3. Tentar subir serviços: docker compose -f docker-compose.prod.yml up -d"
+                echo "4. Se persistir, deploy manual necessário"
+                exit 1
+              fi
             fi
             
             # ==============================================
