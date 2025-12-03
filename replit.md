@@ -180,9 +180,21 @@ Push → CI (auto) → Release (auto v1.0.X) → Deploy (manual com aprovação)
 - Rollback automático se health checks falharem
 - `pip install --no-cache-dir` - evita cache durante instalação
 
+### Docker Best Practices (03/12/2025)
+
+| Correção | Serviço | Descrição |
+|----------|---------|-----------|
+| **PEP 668 Compliance** | clip-inference-service | Virtual environment (`/opt/venv`) para Ubuntu 24.04 |
+| **GAP-GHACTIONS-002** | release.yml | `github.token` para GHCR (OIDC nativo, mais seguro que PAT) |
+
+**Detalhes PEP 668:**
+- Ubuntu 24.04 marca Python como "externally managed"
+- Solução: criar venv em `/opt/venv` e configurar `ENV PATH`
+- Mais seguro que `--break-system-packages`
+
 ---
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.0 - Dezembro 2025*
+*Versão 3.1 - Dezembro 2025*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

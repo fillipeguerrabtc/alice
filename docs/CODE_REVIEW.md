@@ -1,7 +1,7 @@
 # Code Review Imparcial - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 02 de Dezembro de 2025
+**Data:** 03 de Dezembro de 2025
 **Versão Analisada:** Commit atual (HEAD)
 **Revisor:** Análise automatizada
 **Production Audit:** 100% Compliant
@@ -382,6 +382,15 @@ A plataforma Alice Enterprise está **APROVADA** para deploy.
 
 ---
 
+### Correções Aplicadas (03/12/2025)
+
+| Correção | Arquivo | Descrição |
+|----------|---------|-----------|
+| PEP 668 Compliance | `apps/clip-inference-service/Dockerfile` | Usar venv para instalação de pacotes Python (Ubuntu 24.04) |
+| GAP-GHACTIONS-002 | `.github/workflows/release.yml` | Usar `github.token` para GHCR (OIDC nativo) |
+
+---
+
 *Autor: Fillipe Guerra*
-*Relatório gerado em 02/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
+*Relatório atualizado em 03/12/2025. Para dúvidas, consultar `replit.md` e `docs/SECRETS.md`.*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

@@ -26,10 +26,12 @@ ENV HOME=/app
 
 # Instalar dependências do sistema (inclui git para pip instalar pacotes git+https)
 # Docker 2025 Best Practices: Separar instalação de deps do sistema em layer dedicada
+# python3-venv necessário para criar virtual environment (PEP 668 - Ubuntu 24.04)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     python3-dev \
+    python3-venv \
     curl \
     git \
     && rm -rf /var/lib/apt/lists/* \
@@ -43,9 +45,17 @@ RUN groupadd --gid 1001 clipservice \
 WORKDIR /app
 RUN chown -R clipservice:clipservice /app
 
-# Instalar dependências Python (como root para cache)
+# Instalar dependências Python usando virtual environment
+# PEP 668 (Ubuntu 24.04): Usar venv para evitar "externally-managed-environment"
+# Best Practice 2025: venv é mais seguro que --break-system-packages
 COPY apps/clip-inference-service/requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --upgrade pip setuptools wheel \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt \
+    && chown -R clipservice:clipservice /opt/venv
+
+# Configurar PATH para usar Python do venv em todas as etapas seguintes
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Baixar modelo CLIP durante build (evita cold start)
 # Criar diretório cache com permissões corretas
@@ -69,5 +79,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Expor porta
 EXPOSE ${PORT}
 
-# Executar servidor
-CMD ["python3", "server.py"]
+# Executar servidor usando Python do venv (caminho explícito para segurança)
+CMD ["/opt/venv/bin/python3", "server.py"]
