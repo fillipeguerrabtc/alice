@@ -413,13 +413,14 @@ jobs:
         run: |
           if [ ! -f "trivy-results.sarif" ]; then
             echo "Criando arquivo SARIF válido (Trivy não gerou output)..."
+            # Formato minificado para evitar problemas com YAML heredoc
             echo '{"$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.28.0","informationUri":"https://github.com/aquasecurity/trivy"}},"results":[]}]}' > trivy-results.sarif
           fi
           echo "✅ SARIF file ready:"
           ls -la trivy-results.sarif
 
       - name: Upload Trivy scan results to Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         if: always()
         with:
           sarif_file: 'trivy-results.sarif'
