@@ -22,7 +22,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
 | **Alice Observability** | alice-observability | GRAFANA_*, LANGFUSE_* |
-| **ERPNext** | erpnext-* | ERPNEXT_* |
+| **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
 | **Deploy** | GitHub Actions | HETZNER_*, GH_PAT |
 
 ---
@@ -151,8 +151,12 @@ Estes são necessários para o deploy funcionar:
 | `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext | `openssl rand -base64 24` |
 | `ERPNEXT_API_KEY` | API Key ERPNext | Após setup: ERPNext → User → API Access |
 | `ERPNEXT_API_SECRET` | API Secret ERPNext | Gerado junto com API Key |
+| `REDIS_CACHE_PASSWORD` | Senha Redis Cache ERPNext | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue ERPNext | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
 
 **Nota:** API Keys do ERPNext são geradas após o primeiro deploy.
+
+**Redis ERPNext:** Os secrets `REDIS_CACHE_PASSWORD` e `REDIS_QUEUE_PASSWORD` são usados para autenticação ACL nos containers Redis do ERPNext (`erpnext-redis-cache` e `erpnext-redis-queue`).
 
 ### FASE 8: Observabilidade (Métricas LLM)
 
@@ -234,6 +238,8 @@ Estes são necessários para o deploy funcionar:
 | `ERPNEXT_DB_PASSWORD` | ⬜ |
 | `ERPNEXT_API_KEY` | ⬜ (após deploy) |
 | `ERPNEXT_API_SECRET` | ⬜ (após deploy) |
+| `REDIS_CACHE_PASSWORD` | ⬜ |
+| `REDIS_QUEUE_PASSWORD` | ⬜ |
 
 ### Observabilidade
 
@@ -319,6 +325,6 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: Dezembro 2025*
-*Versão: 5.3 - Consolidado com 26 Containers Enterprise*
+*Documento atualizado em: 03 de Dezembro de 2025*
+*Versão: 5.4 - Adicionado Redis ACL Secrets para ERPNext*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
