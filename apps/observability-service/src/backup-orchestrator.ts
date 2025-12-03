@@ -1386,7 +1386,7 @@ router.post('/schedule/test', async (_req: Request, res: Response) => {
  * - Wildcards: *
  * - Ranges: 1-5
  * - Lists: 1,3,5
- * - Steps: */5, 0-30/10
+ * - Steps: asterisco/5, 0-30/10 (exemplo: cada 5 unidades)
  * 
  * @param cronExpression - Expressao cron no formato padrao
  * @returns ISO string da proxima execucao
