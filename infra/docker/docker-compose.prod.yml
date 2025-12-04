@@ -8,8 +8,6 @@
 # IP: 46.224.46.93
 # =============================================================================
 
-version: "3.9"
-
 # =============================================================================
 # NETWORKS - Redes externas (criadas manualmente no servidor)
 # =============================================================================
@@ -371,7 +369,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -431,7 +430,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + LLM) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -481,7 +481,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -533,7 +534,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -613,7 +615,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + ERPNext) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -671,7 +674,8 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica observability stack) ao invés de /health (sempre 200)
-      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 3

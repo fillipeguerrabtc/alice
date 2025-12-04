@@ -719,6 +719,9 @@ jobs:
           ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org
           ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY }}
           ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET }}
+          
+          # Backup (pgBackRest) - Criptografia AES-256
+          BACKUP_CIPHER_PASS=${{ secrets.BACKUP_CIPHER_PASS }}
           EOF
           chmod 600 .env.prod
 

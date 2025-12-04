@@ -246,18 +246,21 @@ Pipeline totalmente automático: push para `main` vai direto para produção ap�
 **Health Checks Distroless:**
 ```dockerfile
 # Distroless não tem shell, então usamos exec form diretamente
-HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
+# IMPORTANTE: Docker requer "CMD" como primeiro elemento
+HEALTHCHECK CMD ["CMD", "/nodejs/bin/node", "-e", "require('http').get(...)"]
 ```
 
 **IMPORTANTE (04/12/2025): Health Checks no docker-compose.prod.yml:**
 - Serviços Distroless NÃO têm `curl` ou `wget`
 - Health checks devem usar Node.js diretamente COM timeout e consumo de body
 - **CRÍTICO:** Usar `/ready` (verifica dependências) ao invés de `/health` (sempre retorna 200)
+- **CRÍTICO:** Docker Compose v2+ REQUER "CMD" como primeiro elemento do array `test:`
 
 ```yaml
 healthcheck:
   # /ready verifica PostgreSQL, circuit breakers, etc. Retorna 503 se não pronto
-  test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:PORT/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+  # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+  test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:PORT/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
 ```
 
 **Diferença entre endpoints:**
@@ -427,9 +430,33 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 
 ---
 
+### Docker Compose v2+ Health Check Fix (04/12/2025)
+
+| Problema | Solução | Status |
+|----------|---------|--------|
+| `healthcheck.test must start with CMD` | Adicionado "CMD" como primeiro elemento do array | Completo |
+| `version: "3.9" is obsolete` | Removido atributo version (Docker Compose v2+ não requer) | Completo |
+| `BACKUP_CIPHER_PASS not set` | Adicionado ao workflow deploy-production.yml | Completo |
+
+**Correção aplicada em 6 serviços Distroless:**
+- alice-auth, alice-chat, alice-rag, alice-training, alice-integrations, alice-observability
+
+**Formato correto Docker Compose v2+:**
+```yaml
+# ERRADO (causa erro no Docker Compose v2.40+)
+test: ["/nodejs/bin/node", "-e", "..."]
+
+# CORRETO (Docker Compose v2+ oficial)
+test: ["CMD", "/nodejs/bin/node", "-e", "..."]
+```
+
+**Referência:** [Docker Compose Healthcheck Specification](https://docs.docker.com/compose/compose-file/05-services/#healthcheck)
+
+---
+
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.10 - 04 de Dezembro de 2025*
+*Versão 3.11 - 04 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*

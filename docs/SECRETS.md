@@ -174,6 +174,14 @@ Estes são necessários para o deploy funcionar:
 
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 
+### FASE 9: Backup (pgBackRest)
+
+| Secret | Descrição | Como Obter |
+|--------|-----------|------------|
+| `BACKUP_CIPHER_PASS` | Senha para criptografia AES-256 dos backups | `openssl rand -hex 32` |
+
+**Uso:** Criptografa backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
+
 ### Domínio e SSL
 
 | Secret | Descrição |
@@ -257,6 +265,12 @@ Estes são necessários para o deploy funcionar:
 | `GRAFANA_ADMIN_PASSWORD` | ⬜ |
 | `ACME_EMAIL` | ⬜ |
 
+### Backup (pgBackRest)
+
+| Secret | Status |
+|--------|--------|
+| `BACKUP_CIPHER_PASS` | ⬜ |
+
 ---
 
 ## URLs de Callback e Webhook
@@ -332,6 +346,6 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 03 de Dezembro de 2025*
-*Versão: 5.5 - Documentação completa de Secrets ERPNext (obrigatórios vs opcionais)*
+*Documento atualizado em: 04 de Dezembro de 2025*
+*Versão: 5.6 - Adicionado BACKUP_CIPHER_PASS para criptografia pgBackRest*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
