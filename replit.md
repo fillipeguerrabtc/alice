@@ -283,12 +283,19 @@ healthcheck:
 | alice-frontend | `/health` | nginx (wget) |
 | alice-clip-inference | `/health` | CUDA (curl) |
 
-### Docker Best Practices (03/12/2025)
+### Docker Best Practices (04/12/2025)
 
 | Correção | Serviço | Descrição |
 |----------|---------|-----------|
 | **PEP 668 Compliance** | clip-inference-service | Virtual environment (`/opt/venv`) para Ubuntu 24.04 |
 | **GAP-GHACTIONS-002** | release.yml | `github.token` para GHCR (OIDC nativo, mais seguro que PAT) |
+| **npm 11.6.4 Pinado** | 7 Node.js services | Versão específica para determinismo de builds |
+
+**npm Atualizado (04/12/2025):**
+- Node.js 22 Alpine vem com npm 10.9.4 por padrão
+- Atualizado para npm 11.6.4 em todos os 7 Dockerfiles Node.js
+- Versão PINADA (`npm@11.6.4`) para garantir builds determinísticos
+- **NÃO usar `@latest`** - quebra reprodutibilidade
 
 **Detalhes PEP 668:**
 - Ubuntu 24.04 marca Python como "externally managed"

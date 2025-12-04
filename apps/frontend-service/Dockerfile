@@ -13,8 +13,8 @@ FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-# Atualizar pacotes do sistema e habilitar corepack
-RUN apk update && apk upgrade --no-cache && corepack enable
+# Atualizar pacotes do sistema, habilitar corepack e atualizar npm para versão específica (determinismo)
+RUN apk update && apk upgrade --no-cache && corepack enable && npm install -g npm@11.6.4
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e serviço
