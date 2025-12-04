@@ -454,9 +454,49 @@ test: ["CMD", "/nodejs/bin/node", "-e", "..."]
 
 ---
 
+### Remoção npm Upgrade dos Dockerfiles (04/12/2025)
+
+| Problema | Causa | Solução |
+|----------|-------|---------|
+| Warnings `npm warn Unknown env config` | npm 11.6.4 não reconhece variáveis do pnpm/corepack | Removido `npm install -g npm@11.6.4` |
+
+**Warnings eliminados:**
+- `npm warn Unknown env config "verify-deps-before-run"`
+- `npm warn Unknown env config "npm-globalconfig"`
+- `npm warn Unknown env config "_jsr-registry"`
+- `npm warn Unknown env config "dedupe-peer-dependents"`
+- `npm warn Unknown env config "inject-workspace-packages"`
+- `npm warn Unknown env config "auto-install-peers"`
+- `npm warn Unknown env config "prefer-frozen-lockfile"`
+
+**Arquivos corrigidos (7 Dockerfiles):**
+- `apps/auth-service/Dockerfile`
+- `apps/chat-service/Dockerfile`
+- `apps/frontend-service/Dockerfile`
+- `apps/integrations-service/Dockerfile`
+- `apps/observability-service/Dockerfile`
+- `apps/rag-service/Dockerfile`
+- `apps/training-service/Dockerfile`
+
+**Mudança aplicada:**
+```dockerfile
+# ANTES (causava warnings)
+RUN apk update && apk upgrade --no-cache && npm install -g npm@11.6.4 && corepack enable
+
+# DEPOIS (enterprise-grade, zero warnings)
+RUN apk update && apk upgrade --no-cache && corepack enable
+```
+
+**Justificativa:** Usamos pnpm exclusivamente via corepack. Não há necessidade de atualizar npm global, pois:
+1. pnpm é gerenciado pelo corepack (versão definida em package.json)
+2. npm bundled no Node.js 22 é suficiente para bootstrap
+3. Elimina conflito de variáveis de ambiente entre npm e pnpm
+
+---
+
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.11 - 04 de Dezembro de 2025*
+*Versão 3.12 - 04 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*

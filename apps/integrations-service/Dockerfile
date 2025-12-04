@@ -12,9 +12,9 @@ FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
-# Atualizar pacotes do sistema, npm para versão específica (determinismo), e habilitar corepack
-# ORDEM CRÍTICA: npm upgrade ANTES de corepack (corepack cria shims que interceptam npm)
-RUN apk update && apk upgrade --no-cache && npm install -g npm@11.6.4 && corepack enable
+# Atualizar pacotes do sistema e habilitar corepack para pnpm
+# NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
+RUN apk update && apk upgrade --no-cache && corepack enable
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e criar bundle (determinístico)
