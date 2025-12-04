@@ -60,7 +60,18 @@ const SUPPORTED_MEDIA_TYPES = {
   image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
   video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
-  document: ['application/pdf', 'text/plain', 'text/markdown', 'application/json'],
+  // Documentos suportados pelo document-processor.ts (Regra 10 - Documentação PT-BR)
+  // PDF, Word (DOCX/DOC), Excel (XLSX/XLS), Texto puro (TXT/MD/CSV)
+  document: [
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+    'application/msword', // DOC
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+    'application/vnd.ms-excel', // XLS
+    'text/plain',
+    'text/markdown',
+    'text/csv',
+  ],
 } as const;
 
 const ALL_SUPPORTED_MIMES = [
@@ -87,11 +98,28 @@ function detectMediaType(mimeType: string): MediaType | null {
 // Magic bytes para validação de conteúdo real
 // Suporta múltiplos padrões por MIME type (ex: MP3 com/sem ID3 tag)
 const MAGIC_BYTES: Record<string, { bytes: number[]; offset?: number }[]> = {
+  // Imagens
   'image/jpeg': [{ bytes: [0xFF, 0xD8, 0xFF] }],
   'image/png': [{ bytes: [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A] }],
   'image/gif': [{ bytes: [0x47, 0x49, 0x46, 0x38] }], // GIF87a ou GIF89a
   'image/webp': [{ bytes: [0x52, 0x49, 0x46, 0x46], offset: 0 }], // RIFF
+  // Documentos
   'application/pdf': [{ bytes: [0x25, 0x50, 0x44, 0x46] }], // %PDF
+  // Microsoft Office Open XML (DOCX, XLSX) - são arquivos ZIP
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': [
+    { bytes: [0x50, 0x4B, 0x03, 0x04] }, // PK ZIP header
+  ],
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': [
+    { bytes: [0x50, 0x4B, 0x03, 0x04] }, // PK ZIP header
+  ],
+  // Microsoft Office Legacy (DOC, XLS) - OLE Compound Document
+  'application/msword': [
+    { bytes: [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] }, // OLE header
+  ],
+  'application/vnd.ms-excel': [
+    { bytes: [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1] }, // OLE header
+  ],
+  // Áudio
   // MP3: Pode começar com ID3 tag (ID3v2) ou sync word (0xFF 0xFB/0xFF 0xFA)
   'audio/mpeg': [
     { bytes: [0x49, 0x44, 0x33] }, // ID3 tag (maioria dos MP3s)
@@ -107,20 +135,32 @@ const MAGIC_BYTES: Record<string, { bytes: number[]; offset?: number }[]> = {
   ],
 };
 
-// MIME types de documentos que não têm magic bytes consistentes
+// MIME types de documentos que não têm magic bytes consistentes (texto puro)
+// Estes são validados por heurísticas de texto UTF-8 em vez de magic bytes
 const TEXT_BASED_MIMES = [
-  'text/plain',
-  'text/markdown',
-  'application/json',
-];
-
-// Whitelist de MIME types permitidos para upload de documentos RAG
-const DOCUMENT_UPLOAD_WHITELIST = [
   'text/plain',
   'text/markdown',
   'text/csv',
   'application/json',
+];
+
+// Whitelist de MIME types permitidos para upload de documentos RAG
+// Inclui todos os formatos suportados pelo document-processor.ts
+const DOCUMENT_UPLOAD_WHITELIST = [
+  // Texto puro
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  // PDF
   'application/pdf',
+  // Microsoft Word
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // DOCX
+  'application/msword', // DOC
+  // Microsoft Excel
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // XLSX
+  'application/vnd.ms-excel', // XLS
+  // Formatos estruturados (mantidos para compatibilidade)
+  'application/json',
   'application/xml',
   'text/xml',
   'text/html',
