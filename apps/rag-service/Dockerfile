@@ -117,8 +117,9 @@ USER node
 
 EXPOSE 3003
 
-# Health check
+# Health check com handlers de erro e timeout (mesmo padrão do docker-compose.prod.yml)
+# IMPORTANTE: Usa /ready que verifica PostgreSQL + embeddings (não /health que sempre retorna 200)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD node -e "require('http').get('http://localhost:3003/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"
+    CMD node -e "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"
 
 CMD ["node", "dist/bundle.js"]
