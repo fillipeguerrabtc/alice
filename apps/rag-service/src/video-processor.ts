@@ -241,6 +241,7 @@ class VideoProcessorService {
       let transcriptionLanguage: string | undefined;
       let transcriptionConfidence: number | undefined;
       let textEmbedding: number[] = [];
+      let audioEmbeddingModel = 'none'; // Rastrear modelo de áudio real
       
       if (generateTranscription && metadata.hasAudio) {
         logger.info({ processId }, 'Extraindo áudio do vídeo...');
@@ -266,10 +267,12 @@ class VideoProcessorService {
           transcriptionLanguage = audioResult.transcriptionLanguage;
           transcriptionConfidence = audioResult.transcriptionConfidence;
           textEmbedding = audioResult.embedding;
+          audioEmbeddingModel = audioResult.embeddingModel; // Capturar modelo real
         } catch (error) {
           logger.error({ error, processId }, 'Erro na transcrição do áudio do vídeo');
           transcription = '[Transcrição não disponível]';
           textEmbedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
+          audioEmbeddingModel = 'error';
         }
         
         // Limpar arquivo de áudio
@@ -278,12 +281,14 @@ class VideoProcessorService {
         textEmbedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
         if (!metadata.hasAudio) {
           logger.info({ processId }, 'Vídeo sem áudio - pulando transcrição');
+          audioEmbeddingModel = 'skipped-no-audio';
         }
       }
       
       // Extrair frames
       let frameEmbeddings: number[][] = [];
       let framesExtracted = 0;
+      let imageEmbeddingModel = 'none'; // Rastrear modelo de imagem real
       
       if (extractFrames && metadata.duration) {
         logger.info({ processId, duration: metadata.duration }, 'Extraindo frames do vídeo...');
@@ -327,6 +332,11 @@ class VideoProcessorService {
               frameEmbeddings.push(imageResult.embedding);
               framesExtracted++;
               
+              // Capturar modelo do primeiro frame processado com sucesso
+              if (imageEmbeddingModel === 'none') {
+                imageEmbeddingModel = imageResult.embeddingModel;
+              }
+              
               // Limpar frame
               await unlink(framePath).catch(() => {});
             }
@@ -336,6 +346,8 @@ class VideoProcessorService {
         }
         
         logger.info({ processId, framesExtracted, totalAttempted: totalFrames }, 'Frames processados');
+      } else {
+        imageEmbeddingModel = 'skipped-no-frames';
       }
       
       // Gerar embedding combinado
@@ -350,6 +362,18 @@ class VideoProcessorService {
         processingTimeMs,
       }, 'Vídeo processado com sucesso');
       
+      // Combinar modelos de forma dinâmica para rastreabilidade (Regra 16 - Observability)
+      const embeddingModelParts: string[] = [];
+      if (audioEmbeddingModel !== 'none' && audioEmbeddingModel !== 'skipped-no-audio') {
+        embeddingModelParts.push(`audio:${audioEmbeddingModel}`);
+      }
+      if (imageEmbeddingModel !== 'none' && imageEmbeddingModel !== 'skipped-no-frames') {
+        embeddingModelParts.push(`frames:${imageEmbeddingModel}`);
+      }
+      const embeddingModel = embeddingModelParts.length > 0 
+        ? embeddingModelParts.join(' + ') 
+        : 'none';
+      
       return {
         transcription,
         transcriptionLanguage,
@@ -357,7 +381,7 @@ class VideoProcessorService {
         textEmbedding,
         frameEmbeddings,
         combinedEmbedding,
-        embeddingModel: 'whisper-large-v3 + ViT-L/14',
+        embeddingModel,
         metadata,
         framesExtracted,
         processedAt: new Date().toISOString(),
