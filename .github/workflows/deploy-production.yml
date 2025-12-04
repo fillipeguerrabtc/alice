@@ -1046,13 +1046,21 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
+          IMAGE_PREFIX: ${{ env.IMAGE_PREFIX }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,GITHUB_SHA,GITHUB_ACTOR
+          envs: GH_PAT,GITHUB_SHA,GITHUB_ACTOR,IMAGE_PREFIX
           script: |
-            set -e
+            # Exportar IMAGE_PREFIX para docker compose
+            export IMAGE_PREFIX="${IMAGE_PREFIX}"
+            # ==============================================================
+            # ALICE ENTERPRISE - ROLLBACK COM LIMPEZA GARANTIDA
+            # ==============================================================
+            # CRÍTICO: NÃO usar "set -e" para garantir que limpeza SEMPRE execute
+            # Cada comando crítico é verificado manualmente
+            # ==============================================================
             
             echo "=============================================="
             echo "ALICE ENTERPRISE - ROLLBACK AUTOMÁTICO"
@@ -1062,173 +1070,220 @@ jobs:
             echo "Timestamp: $(date)"
             echo "=============================================="
             
-            cd /opt/alice/app/infra/docker
-            
-            # ==============================================
-            # PASSO 1: Capturar estado atual para diagnóstico
-            # ==============================================
-            echo "[1/5] Capturando estado atual dos containers..."
-            docker compose -f docker-compose.prod.yml ps > /tmp/rollback-state-before.txt 2>&1 || true
-            docker compose -f docker-compose.prod.yml logs --tail=100 > /tmp/rollback-logs-before.txt 2>&1 || true
-            
-            # ==============================================
-            # PASSO 2: Identificar versão anterior estável
-            # ==============================================
-            echo "[2/5] Identificando versão anterior..."
-            
-            # Verificar se existe manifesto de versão anterior
-            MANIFEST_DIR="/opt/alice/backups/manifests"
-            mkdir -p "$MANIFEST_DIR"
-            
-            # Encontrar o último deploy bem-sucedido
-            PREVIOUS_SHA=""
-            if [ -f "$MANIFEST_DIR/last-successful-deploy.txt" ]; then
-              PREVIOUS_SHA=$(cat "$MANIFEST_DIR/last-successful-deploy.txt")
-              echo "Versão anterior encontrada: $PREVIOUS_SHA"
-            else
-              echo "AVISO: Nenhuma versão anterior registrada, tentando git..."
-              cd /opt/alice/app
-              PREVIOUS_SHA=$(git rev-parse HEAD~1 2>/dev/null || echo "")
-              cd /opt/alice/app/infra/docker
-            fi
-            
-            if [ -z "$PREVIOUS_SHA" ]; then
-              echo "=============================================="
-              echo "⚠️ ROLLBACK NÃO POSSÍVEL - EXECUTANDO LIMPEZA"
-              echo "=============================================="
-              echo "Motivo: Nenhuma versão anterior encontrada (primeiro deploy)"
+            # ==============================================================
+            # FUNÇÃO DE LIMPEZA COMPLETA (chamada em caso de qualquer erro)
+            # ==============================================================
+            cleanup_server() {
               echo ""
-              echo "Executando limpeza completa para deixar servidor limpo..."
-              echo ""
+              echo "=============================================="
+              echo "🧹 EXECUTANDO LIMPEZA COMPLETA DO SERVIDOR"
+              echo "=============================================="
               
-              # LIMPEZA COMPLETA - Mesmo sem rollback, não deixar sujeira
-              # Regra 6: Sem soluções temporárias - servidor deve ficar limpo
+              echo "[CLEANUP 1/6] Docker Compose down (força)..."
+              # Tentar docker compose down se o arquivo existir (não depende de cd funcionar)
+              if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
+                docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+              fi
               
-              echo "[CLEANUP 0/5] Docker Compose down (força)..."
-              cd /opt/alice/app/infra/docker 2>/dev/null && docker compose -f docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
-              cd /opt/alice 2>/dev/null || true
-              
-              echo "[CLEANUP 1/5] Parando containers Alice..."
+              echo "[CLEANUP 2/6] Parando containers Alice..."
               docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
               
-              echo "[CLEANUP 2/5] Parando containers ERPNext..."
+              echo "[CLEANUP 3/6] Parando containers ERPNext..."
               docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
               
-              echo "[CLEANUP 3/5] Removendo containers (força)..."
+              echo "[CLEANUP 4/6] Removendo containers Alice (força)..."
               docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+              
+              echo "[CLEANUP 5/6] Removendo containers ERPNext (força)..."
               docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
               
-              echo "[CLEANUP 4/5] Listando volumes (NÃO removendo - contêm dados!)..."
-              # NOTA: NÃO remover volumes! Eles contêm dados do PostgreSQL, MariaDB, Redis
-              # Volumes só devem ser removidos manualmente após backup confirmado
-              docker volume ls | grep -E "(alice|erpnext)" || echo "Nenhum volume Alice/ERPNext encontrado"
-              
-              echo "[CLEANUP 5/5] Removendo imagens não utilizadas (apenas dangling)..."
-              # Nota: Usando -f (não -af) para não remover imagens de outras aplicações
+              echo "[CLEANUP 6/6] Limpando recursos órfãos..."
               docker image prune -f 2>/dev/null || true
+              docker container prune -f 2>/dev/null || true
               docker system prune -f 2>/dev/null || true
               
               echo ""
               echo "=============================================="
-              echo "✅ LIMPEZA COMPLETA - Servidor limpo"
+              echo "✅ LIMPEZA CONCLUÍDA"
               echo "=============================================="
-              echo "Status: Sem containers, volumes ou imagens órfãs"
-              echo "Próximo passo: Corrigir o erro e fazer novo deploy"
+              echo "Containers restantes:"
+              docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || echo "Nenhum"
               echo ""
-              echo "Verificação final:"
-              docker ps -a
-              docker volume ls
+              echo "Volumes preservados (dados importantes):"
+              docker volume ls | grep -E "(alice|erpnext)" || echo "Nenhum volume Alice/ERPNext"
               echo "=============================================="
+            }
+            
+            # ==============================================================
+            # PASSO 1: Capturar estado atual para diagnóstico
+            # ==============================================================
+            echo "[1/5] Capturando estado atual dos containers..."
+            
+            # Capturar estado usando docker diretamente (não depende de docker-compose.yml)
+            # NOTA: Usar comandos separados porque --filter usa AND logic
+            echo "=== CONTAINERS ALICE ===" > /tmp/rollback-state-before.txt
+            docker ps -a --filter "name=alice-" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" >> /tmp/rollback-state-before.txt 2>&1 || true
+            echo "" >> /tmp/rollback-state-before.txt
+            echo "=== CONTAINERS ERPNEXT ===" >> /tmp/rollback-state-before.txt
+            docker ps -a --filter "name=erpnext-" --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" >> /tmp/rollback-state-before.txt 2>&1 || true
+            
+            echo "=== LOGS DOS CONTAINERS COM ERRO ===" > /tmp/rollback-logs-before.txt
+            for container in $(docker ps -a --filter "name=alice-" --filter "status=exited" --format "{{.Names}}" 2>/dev/null); do
+              echo "--- $container ---" >> /tmp/rollback-logs-before.txt
+              docker logs --tail=50 "$container" >> /tmp/rollback-logs-before.txt 2>&1 || true
+            done
+            
+            # Se docker-compose.prod.yml existir, capturar info adicional
+            if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
+              cd /opt/alice/app/infra/docker
+              echo "=== DOCKER COMPOSE STATUS ===" >> /tmp/rollback-state-before.txt
+              docker compose -f docker-compose.prod.yml ps >> /tmp/rollback-state-before.txt 2>&1 || true
+            fi
+            
+            echo "Diagnóstico capturado em /tmp/rollback-*.txt"
+            
+            # ==============================================================
+            # PASSO 2: Identificar versão anterior estável
+            # ==============================================================
+            echo "[2/5] Identificando versão anterior..."
+            
+            MANIFEST_DIR="/opt/alice/backups/manifests"
+            mkdir -p "$MANIFEST_DIR"
+            
+            PREVIOUS_SHA=""
+            if [ -f "$MANIFEST_DIR/last-successful-deploy.txt" ]; then
+              PREVIOUS_SHA=$(cat "$MANIFEST_DIR/last-successful-deploy.txt")
+              echo "Versão anterior encontrada: $PREVIOUS_SHA"
+            fi
+            
+            # ==============================================================
+            # PASSO 3: SEMPRE limpar primeiro (independente de rollback)
+            # ==============================================================
+            echo "[3/5] Limpando containers falhos..."
+            
+            # Parar todos os containers Alice que podem estar em restart loop
+            docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
+            docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
+            
+            # Remover containers problemáticos
+            docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+            docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
+            
+            # Limpar recursos órfãos
+            docker image prune -f 2>/dev/null || true
+            docker container prune -f 2>/dev/null || true
+            
+            echo "Containers removidos."
+            
+            # ==============================================================
+            # PASSO 4: Tentar rollback SE existir versão anterior
+            # ==============================================================
+            if [ -z "$PREVIOUS_SHA" ]; then
+              echo ""
+              echo "=============================================="
+              echo "⚠️ ROLLBACK NÃO POSSÍVEL (Primeiro Deploy)"
+              echo "=============================================="
+              echo "Nenhuma versão anterior registrada."
+              echo "Servidor foi limpo. Próximo passo: corrigir código e fazer novo deploy."
               
-              # Exit 1 para indicar que rollback não foi possível
-              # Mas servidor está limpo para próxima tentativa
+              # Verificação final
+              echo ""
+              echo "Estado final do servidor:"
+              docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || echo "Nenhum container"
+              
               exit 1
             fi
             
-            # ==============================================
-            # PASSO 3: Parar containers falhos e limpar
-            # ==============================================
-            echo "[3/5] Parando containers e limpando sujeira..."
+            echo "[4/5] Tentando restaurar versão anterior: $PREVIOUS_SHA"
             
-            # Parar todos os containers Alice (mantém ERPNext se estava ok)
-            docker compose -f docker-compose.prod.yml stop \
-              alice-frontend alice-auth alice-chat alice-rag \
-              alice-training alice-integrations alice-observability 2>/dev/null || true
+            # Tentar checkout (mas não falhar se não conseguir)
+            CHECKOUT_SUCCESS=false
+            cd /opt/alice/app 2>/dev/null || true
             
-            # Remover containers parados
-            docker compose -f docker-compose.prod.yml rm -f \
-              alice-frontend alice-auth alice-chat alice-rag \
-              alice-training alice-integrations alice-observability 2>/dev/null || true
+            if [ -d "/opt/alice/app/.git" ]; then
+              # Configurar git para usar token
+              git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+              
+              if git fetch origin 2>/dev/null && git checkout "$PREVIOUS_SHA" --force 2>/dev/null; then
+                CHECKOUT_SUCCESS=true
+                echo "✅ Checkout bem-sucedido para $PREVIOUS_SHA"
+              else
+                echo "⚠️ Checkout falhou - servidor será deixado limpo"
+              fi
+            else
+              echo "⚠️ Repositório git não encontrado em /opt/alice/app"
+            fi
             
-            # Limpar imagens não utilizadas (APENAS dangling, preserva imagens taggeadas)
-            docker image prune -f 2>/dev/null || true
-            docker container prune -f 2>/dev/null || true
-            # NOTA: NÃO fazer volume prune durante rollback ativo
-            # Os volumes contêm dados importantes que devem ser preservados
-            # docker volume prune -f # REMOVIDO - Segurança dos dados
+            # Se checkout falhou, apenas limpar e sair
+            if [ "$CHECKOUT_SUCCESS" = false ]; then
+              echo ""
+              echo "=============================================="
+              echo "⚠️ ROLLBACK FALHOU - Servidor limpo"
+              echo "=============================================="
+              echo "Não foi possível restaurar versão anterior."
+              echo "Servidor está limpo para próxima tentativa."
+              
+              # Garantir limpeza final
+              cleanup_server
+              
+              exit 1
+            fi
             
-            echo "Limpeza concluída"
+            # Continuar com deploy da versão anterior
+            if ! cd /opt/alice/app/infra/docker; then
+              echo "❌ ERRO: Não foi possível acessar /opt/alice/app/infra/docker"
+              echo "Executando limpeza completa..."
+              cleanup_server
+              exit 1
+            fi
             
-            # ==============================================
-            # PASSO 4: Restaurar versão anterior
-            # ==============================================
-            echo "[4/5] Restaurando versão anterior: $PREVIOUS_SHA"
-            
-            cd /opt/alice/app
-            
-            # Checkout da versão anterior
-            git fetch origin
-            git checkout "$PREVIOUS_SHA" --force
-            
-            cd /opt/alice/app/infra/docker
+            # Verificar se arquivos necessários existem
+            if [ ! -f "docker-compose.prod.yml" ]; then
+              echo "❌ ERRO: docker-compose.prod.yml não encontrado"
+              echo "Executando limpeza completa..."
+              cleanup_server
+              exit 1
+            fi
             
             # Login no registry
-            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin 2>/dev/null || true
             
             # Pull das imagens da versão anterior
             export IMAGE_TAG="$PREVIOUS_SHA"
             docker compose -f docker-compose.prod.yml \
               --env-file .env.prod \
-              pull --ignore-pull-failures
+              pull --ignore-pull-failures 2>/dev/null || true
             
             # Iniciar containers com versão anterior
             docker compose -f docker-compose.prod.yml \
               --env-file .env.prod \
-              up -d --no-build --remove-orphans
+              up -d --no-build --remove-orphans 2>/dev/null || true
             
-            # ==============================================
+            # ==============================================================
             # PASSO 5: Verificar rollback e registrar
-            # ==============================================
+            # ==============================================================
             echo "[5/5] Verificando rollback..."
             
             sleep 30
             
-            # Verificar se serviços estão rodando
-            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
+            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" 2>/dev/null | grep -c "running" || echo "0")
             
             if [ "$RUNNING" -lt 3 ]; then
-              echo "CRÍTICO: Rollback pode ter falhado - apenas $RUNNING containers rodando"
-              docker compose -f docker-compose.prod.yml ps
+              echo "⚠️ Rollback pode ter falhado - apenas $RUNNING containers rodando"
+              echo "Executando limpeza completa..."
+              cleanup_server
               exit 1
             fi
             
-            # Registrar rollback no manifesto
+            # Registrar rollback bem-sucedido
             echo "$PREVIOUS_SHA" > "$MANIFEST_DIR/last-successful-deploy.txt"
             
-            # Criar log de rollback
-            cat > "$MANIFEST_DIR/rollback-$(date +%Y%m%d-%H%M%S).json" << EOF
-            {
-              "timestamp": "$(date -Iseconds)",
-              "failedCommit": "${GITHUB_SHA}",
-              "restoredTo": "$PREVIOUS_SHA",
-              "actor": "${GITHUB_ACTOR}",
-              "containersRunning": $RUNNING,
-              "status": "completed"
-            }
-            EOF
+            printf '{\n  "timestamp": "%s",\n  "failedCommit": "%s",\n  "restoredTo": "%s",\n  "actor": "%s",\n  "containersRunning": %s,\n  "status": "completed"\n}\n' \
+              "$(date -Iseconds)" "${GITHUB_SHA}" "$PREVIOUS_SHA" "${GITHUB_ACTOR}" "$RUNNING" \
+              > "$MANIFEST_DIR/rollback-$(date +%Y%m%d-%H%M%S).json"
             
             echo "=============================================="
-            echo "ROLLBACK CONCLUÍDO COM SUCESSO!"
+            echo "✅ ROLLBACK CONCLUÍDO COM SUCESSO!"
             echo "=============================================="
             echo "Versão restaurada: $PREVIOUS_SHA"
             echo "Containers rodando: $RUNNING"

@@ -249,6 +249,40 @@ Pipeline totalmente automático: push para `main` vai direto para produção ap�
 HEALTHCHECK CMD ["/nodejs/bin/node", "-e", "require('http').get(...)"]
 ```
 
+**IMPORTANTE (04/12/2025): Health Checks no docker-compose.prod.yml:**
+- Serviços Distroless NÃO têm `curl` ou `wget`
+- Health checks devem usar Node.js diretamente COM timeout e consumo de body
+- **CRÍTICO:** Usar `/ready` (verifica dependências) ao invés de `/health` (sempre retorna 200)
+
+```yaml
+healthcheck:
+  # /ready verifica PostgreSQL, circuit breakers, etc. Retorna 503 se não pronto
+  test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:PORT/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+```
+
+**Diferença entre endpoints:**
+| Endpoint | Comportamento | Uso |
+|----------|---------------|-----|
+| `/health` | Sempre 200 (processo vivo) | Liveness probe |
+| `/ready` | 200 ou 503 (dependências) | **Readiness probe (Docker healthcheck)** |
+
+**Detalhes do Health Check:**
+- `{timeout:5000}` - Timeout de 5 segundos para evitar hangs
+- `res.resume()` - Consome o body da resposta (evita memory leak)
+- `r.on('timeout')` - Handler explícito para timeout
+- `/ready` - Verifica PostgreSQL, circuit breakers, etc.
+
+| Serviço | Endpoint | O que verifica |
+|---------|----------|----------------|
+| alice-auth | `/ready` | PostgreSQL |
+| alice-chat | `/ready` | PostgreSQL + LLM |
+| alice-rag | `/ready` | PostgreSQL + embeddings |
+| alice-training | `/ready` | PostgreSQL + embeddings |
+| alice-integrations | `/ready` | PostgreSQL + ERPNext |
+| alice-observability | `/ready` | Observability stack |
+| alice-frontend | `/health` | nginx (wget) |
+| alice-clip-inference | `/health` | CUDA (curl) |
+
 ### Docker Best Practices (03/12/2025)
 
 | Correção | Serviço | Descrição |
@@ -381,7 +415,7 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.8 - 03 de Dezembro de 2025*
+*Versão 3.9 - 04 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*

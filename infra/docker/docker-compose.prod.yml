@@ -94,7 +94,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:2375/version"]
+      # Usar nc (netcat) que está disponível em Alpine/BusyBox
+      # Verifica se a porta 2375 está respondendo
+      test: ["CMD-SHELL", "nc -z localhost 2375 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -367,7 +369,9 @@ services:
       - "traefik.http.routers.alice-auth.middlewares=security-headers@docker,auth-rate-limit@docker"
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3001/api/auth/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica PostgreSQL) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -425,7 +429,9 @@ services:
       - "traefik.http.routers.alice-ws.middlewares=rate-limit@docker"
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3002/api/chat/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica PostgreSQL + LLM) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -473,7 +479,9 @@ services:
       - "traefik.http.routers.alice-rag.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3003/api/rag/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -523,7 +531,9 @@ services:
       - "traefik.http.routers.alice-training.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3004/api/training/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -601,7 +611,9 @@ services:
       - "traefik.http.routers.alice-webhook.middlewares=security-headers@docker"
       - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3005/api/integrations/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica PostgreSQL + ERPNext) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -657,7 +669,9 @@ services:
       - "traefik.http.routers.alice-observability.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3007/health"]
+      # Distroless não tem curl/wget, usar Node.js diretamente
+      # IMPORTANTE: Usar /ready (verifica observability stack) ao invés de /health (sempre 200)
+      test: ["/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
