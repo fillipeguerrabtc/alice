@@ -1,0 +1,41 @@
+[33mcommit ef23343aad1513f807f67f408ea408e37f9738be[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Fillipe Guerra <fillipe182#@hotmail.com>
+Date:   Thu Dec 4 13:56:23 2025 -0300
+
+    fix: atualizar npm para versao 11.6.4 pinada em todos os Dockerfiles
+    
+    PROBLEMA:
+    - Aviso 'npm notice New major version of npm available! 10.9.4 -> 11.6.4'
+    - Aparecia em todos os builds de Docker images
+    
+    SOLUCAO:
+    - Adicionar 'npm install -g npm@11.6.4' apos corepack enable
+    - Versao PINADA para garantir determinismo (Best Practice 2025)
+    - Atualizado em 7 Dockerfiles Node.js
+    
+    DETERMINISMO:
+    - NAO usar @latest (quebra reprodutibilidade)
+    - Versao especifica npm@11.6.4 garante builds identicos
+    
+    SERVICOS ATUALIZADOS:
+    - auth-service
+    - chat-service
+    - rag-service
+    - training-service
+    - integrations-service
+    - observability-service
+    - frontend-service
+    
+    Documentacao atualizada (replit.md v3.10)
+    
+    Autor: Fillipe Guerra
+
+ apps/auth-service/Dockerfile          | 4 [32m++[m[31m--[m
+ apps/chat-service/Dockerfile          | 4 [32m++[m[31m--[m
+ apps/frontend-service/Dockerfile      | 4 [32m++[m[31m--[m
+ apps/integrations-service/Dockerfile  | 4 [32m++[m[31m--[m
+ apps/observability-service/Dockerfile | 4 [32m++[m[31m--[m
+ apps/rag-service/Dockerfile           | 4 [32m++[m[31m--[m
+ apps/training-service/Dockerfile      | 4 [32m++[m[31m--[m
+ replit.md                             | 9 [32m++++++++[m[31m-[m
+ 8 files changed, 22 insertions(+), 15 deletions(-)
