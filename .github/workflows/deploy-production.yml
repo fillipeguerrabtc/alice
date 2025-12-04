@@ -790,28 +790,30 @@ jobs:
             echo "PRÉ-DEPLOY: LIMPEZA COMPLETA"
             
             # PASSO 1: Parar TODOS os containers Alice e ERPNext (incluindo restart loops)
-            echo "  [1/4] Parando containers existentes..."
+            echo "  [1/5] Parando containers existentes..."
             docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
             docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
             
             # PASSO 2: Remover TODOS os containers Alice e ERPNext
-            echo "  [2/4] Removendo containers..."
+            echo "  [2/5] Removendo containers..."
             docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
             docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
             
             # PASSO 3: Limpar recursos órfãos (PRESERVA volumes nomeados!)
-            echo "  [3/4] Limpando recursos órfãos..."
+            echo "  [3/5] Limpando recursos órfãos..."
             docker container prune -f 2>/dev/null || true
             docker image prune -f 2>/dev/null || true
             docker builder prune -f 2>/dev/null || true
-            # NOTA: NÃO fazer volume prune aqui!
-            # Volumes nomeados (alice-postgres-data, erpnext-mariadb-data, etc.)
-            # são preservados pelo Docker, mas em caso de edge cases, melhor não arriscar.
-            # O prune de volumes só é seguro no rollback após verificar que dados estão backupeados.
-            # docker volume prune -f # REMOVIDO - Segurança dos dados
             
-            # PASSO 4: Verificar limpeza (filtros separados - Docker usa AND entre múltiplos --filter)
-            echo "  [4/4] Verificando limpeza..."
+            # PASSO 4: Limpar volumes órfãos (anônimos)
+            echo "  [4/5] Limpando volumes órfãos..."
+            # NOTA: docker volume prune NÃO remove volumes nomeados (alice-postgres-data, etc.)
+            # Apenas remove volumes anônimos que não estão em uso por nenhum container
+            # Isso é SEGURO porque volumes nomeados são preservados pelo Docker
+            docker volume prune -f 2>/dev/null || true
+            
+            # PASSO 5: Verificar limpeza (filtros separados - Docker usa AND entre múltiplos --filter)
+            echo "  [5/5] Verificando limpeza..."
             REMAINING_ALICE=$(docker ps -aq --filter "name=alice-" | wc -l)
             REMAINING_ERPNEXT=$(docker ps -aq --filter "name=erpnext-" | wc -l)
             REMAINING=$((REMAINING_ALICE + REMAINING_ERPNEXT))
@@ -1079,27 +1081,34 @@ jobs:
               echo "🧹 EXECUTANDO LIMPEZA COMPLETA DO SERVIDOR"
               echo "=============================================="
               
-              echo "[CLEANUP 1/6] Docker Compose down (força)..."
+              echo "[CLEANUP 1/8] Docker Compose down (força)..."
               # Tentar docker compose down se o arquivo existir (não depende de cd funcionar)
               if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
                 docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
               fi
               
-              echo "[CLEANUP 2/6] Parando containers Alice..."
+              echo "[CLEANUP 2/8] Parando containers Alice..."
               docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
               
-              echo "[CLEANUP 3/6] Parando containers ERPNext..."
+              echo "[CLEANUP 3/8] Parando containers ERPNext..."
               docker ps -aq --filter "name=erpnext-" | xargs -r docker stop 2>/dev/null || true
               
-              echo "[CLEANUP 4/6] Removendo containers Alice (força)..."
+              echo "[CLEANUP 4/8] Removendo containers Alice (força)..."
               docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
               
-              echo "[CLEANUP 5/6] Removendo containers ERPNext (força)..."
+              echo "[CLEANUP 5/8] Removendo containers ERPNext (força)..."
               docker ps -aq --filter "name=erpnext-" | xargs -r docker rm -f 2>/dev/null || true
               
-              echo "[CLEANUP 6/6] Limpando recursos órfãos..."
+              echo "[CLEANUP 6/8] Limpando recursos órfãos..."
               docker image prune -f 2>/dev/null || true
               docker container prune -f 2>/dev/null || true
+              
+              echo "[CLEANUP 7/8] Limpando volumes órfãos (preserva volumes nomeados)..."
+              # NOTA: docker volume prune NÃO remove volumes nomeados (alice-postgres-data, etc.)
+              # Apenas remove volumes anônimos que não estão em uso por nenhum container
+              docker volume prune -f 2>/dev/null || true
+              
+              echo "[CLEANUP 8/8] Limpeza final do sistema (redes não utilizadas)..."
               docker system prune -f 2>/dev/null || true
               
               echo ""

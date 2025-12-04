@@ -310,25 +310,32 @@ the detected host platform (linux/amd64/v3)
 **Solução Enterprise:**
 Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers para garantir arquitetura correta no Hetzner (x86_64).
 
-### Deploy Cleanup Fix (03/12/2025)
+### Deploy Cleanup Fix (04/12/2025)
 
 | Problema | Solução | Impacto |
 |----------|---------|---------|
 | Containers em restart loop não eram removidos | Limpeza agressiva pré-deploy | Zero sujeira |
 | Rollback em 1º deploy deixava sujeira | Limpeza completa mesmo sem rollback | Servidor limpo |
+| Volumes órfãos acumulavam após deploys falhos | `docker volume prune -f` em cleanup | Zero volumes órfãos |
 
-**Limpeza Pré-Deploy (4 passos):**
+**Limpeza Pré-Deploy (5 passos):**
 1. Parar TODOS containers alice-* e erpnext-*
 2. Remover TODOS containers (não apenas órfãos)
-3. Limpar recursos órfãos (prune)
-4. Verificar e forçar remoção se necessário
+3. Limpar recursos órfãos (container/image/builder prune)
+4. Limpar volumes órfãos (`docker volume prune -f`)
+5. Verificar e forçar remoção se necessário
 
-**Limpeza em Rollback Impossível (5 passos):**
-1. Parar containers Alice
-2. Parar containers ERPNext
-3. Remover todos containers
-4. Remover volumes órfãos
-5. Remover imagens não utilizadas
+**Limpeza em Rollback/Cleanup (8 passos):**
+1. Docker Compose down (--remove-orphans)
+2. Parar containers Alice
+3. Parar containers ERPNext
+4. Remover containers Alice (força)
+5. Remover containers ERPNext (força)
+6. Limpar recursos órfãos (image/container prune)
+7. Limpar volumes órfãos (`docker volume prune -f`)
+8. Limpeza final do sistema (redes não utilizadas)
+
+**NOTA:** `docker volume prune` NÃO remove volumes nomeados (alice-postgres-data, etc.). Apenas volumes anônimos não utilizados são removidos. Dados importantes são SEMPRE preservados.
 
 ### Sistema de Cache Enterprise (03/12/2025)
 
@@ -415,7 +422,7 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.9 - 04 de Dezembro de 2025*
+*Versão 3.10 - 04 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
