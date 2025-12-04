@@ -73,7 +73,7 @@ services:
   # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
   # Expõe API Docker via TCP para o Traefik consumir
   dockerproxy:
-    image: tecnativa/docker-socket-proxy@sha256:2f92c6e85a1199b3403c99d7439695898a162c69689b11130450ffadb352f0a0
+    image: tecnativa/docker-socket-proxy:latest
     platform: linux/amd64
     container_name: alice-dockerproxy
     restart: always
@@ -113,7 +113,7 @@ services:
   # Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik-init:
-    image: busybox:1.36@sha256:2376a0c12759aa1214ba83e771ff252c7b1663216b192fbe5e0fb364e952f85c
+    image: busybox:1.36
     platform: linux/amd64
     container_name: alice-traefik-init
     security_opt:
@@ -142,7 +142,7 @@ services:
   # SEGURANÇA: CAP_NET_BIND_SERVICE + Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik:
-    image: traefik:v3.3@sha256:b8bded463620b7ab2e5d35ed16e7488a38bdf1c0f373a81587aa8e215ba19891
+    image: traefik:v3.3
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -245,7 +245,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   postgres:
-    image: pgvector/pgvector:pg16@sha256:d836ebbf9a0c199666bee6e6bdedee0ede3bdfc4f885d2dcedd0033a4443bdd4
+    image: pgvector/pgvector:pg16
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
@@ -733,7 +733,7 @@ services:
   # innodb_buffer_pool_size = 70% do container memory (1.4GB para 2GB container)
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-mariadb:
-    image: mariadb:10.11@sha256:dc249cd0b7e41739fc4c5dbfcfda160afc7d6d1e40ce14ffbe2b62c285dd06ef
+    image: mariadb:10.11
     platform: linux/amd64
     container_name: erpnext-mariadb
     restart: always
@@ -788,7 +788,7 @@ services:
   # Docs 2025: Redis 7.4 cache - maxmemory = 80-90% do container (200MB para 256MB)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
-    image: redis:7-alpine@sha256:e600a259cb3ef2c6ceace477022d6159c3e72763c694d54c0263365101de3266
+    image: redis:7-alpine
     platform: linux/amd64
     container_name: erpnext-redis-cache
     restart: always
@@ -847,7 +847,7 @@ services:
   # Docs 2025: Redis 7.4 queue - maxmemory = 80-90% do container (200MB para 256MB)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
-    image: redis:7-alpine@sha256:e600a259cb3ef2c6ceace477022d6159c3e72763c694d54c0263365101de3266
+    image: redis:7-alpine
     platform: linux/amd64
     container_name: erpnext-redis-queue
     restart: always
@@ -908,7 +908,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   erpnext-configurator:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
@@ -964,7 +964,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   erpnext-create-site:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
@@ -1038,7 +1038,7 @@ services:
   # Docs 2025: Frappe/Gunicorn production - 1.5 CPU, 2GB
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-backend:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-backend
     restart: always
@@ -1086,7 +1086,7 @@ services:
   # Docs 2025: Nginx static - 0.25 CPU, 256MB
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-frontend:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-frontend
     restart: always
@@ -1134,7 +1134,7 @@ services:
   # Docs 2025: Node.js Socket.io - 0.3 CPU, 256MB
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-websocket:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-websocket
     restart: always
@@ -1169,7 +1169,7 @@ services:
   # Docs 2025: Python scheduler - 0.3 CPU, 512MB
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-scheduler:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-scheduler
     restart: always
@@ -1207,7 +1207,7 @@ services:
   # Docs 2025: Python worker short - 0.4 CPU, 512MB
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-short:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-worker-short
     restart: always
@@ -1245,7 +1245,7 @@ services:
   # Docs 2025: Python worker default - 0.4 CPU, 512MB
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-default:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-worker-default
     restart: always
@@ -1283,7 +1283,7 @@ services:
   # Docs 2025: Python worker heavy - 0.75 CPU, 1GB
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   erpnext-worker-long:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.88.0
     platform: linux/amd64
     container_name: erpnext-worker-long
     restart: always
@@ -1327,7 +1327,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # =============================================================================
   pgbackrest:
-    image: woblerr/pgbackrest:2.54.2-alpine@sha256:8d74fa5cc4135b52927330b0a4c86821e598cbc57c48a1c1f5e6e58c0b5eae2c
+    image: woblerr/pgbackrest:2.54.2-alpine
     platform: linux/amd64
     container_name: alice-pgbackrest
     restart: always
@@ -1382,7 +1382,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   vector:
-    image: timberio/vector:0.43.1-alpine@sha256:ffa011051abe1fd0ef9597cf7db29e6ae5415722f37969c2a184802c7447b9aa
+    image: timberio/vector:0.43.1-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: always
