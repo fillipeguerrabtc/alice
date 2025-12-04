@@ -227,7 +227,14 @@ class DocumentProcessorService {
     let combinedEmbedding: number[] = new Array(TEXT_EMBEDDING_DIM).fill(0);
     let embeddingModel = 'none';
 
-    if (generateEmbeddings && this.isConfigured) {
+    if (generateEmbeddings) {
+      // Embeddings solicitados - verificar se está configurado
+      if (!this.isConfigured) {
+        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO quando embeddings são solicitados (Regra 6 replit.md)
+        logger.error('SALAD_API_KEY não configurado - embeddings solicitados mas indisponíveis');
+        throw new Error('Configuração Salad Cloud obrigatória para gerar embeddings. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
+      }
+      
       logger.info({ chunkCount: textChunks.length }, 'Gerando embeddings para chunks do documento');
 
       for (let i = 0; i < textChunks.length; i++) {
@@ -267,12 +274,10 @@ class DocumentProcessorService {
           }
         }
       }
-    } else if (!this.isConfigured) {
-      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
-      logger.error('SALAD_API_KEY não configurado - embeddings indisponíveis em produção');
-      throw new Error('Configuração Salad Cloud obrigatória para processamento de documentos. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
     } else {
-      // Sem embeddings solicitados - apenas chunks de texto
+      // Sem embeddings solicitados - apenas extração de texto (permitido mesmo sem Salad Cloud)
+      logger.info({ chunkCount: textChunks.length }, 'Extraindo texto sem embeddings (generateEmbeddings=false)');
+      
       for (let i = 0; i < textChunks.length; i++) {
         chunks.push({
           text: textChunks[i],

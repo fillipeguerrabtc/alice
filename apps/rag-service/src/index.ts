@@ -1721,7 +1721,8 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Processar vídeo: extrai áudio para transcrição + frames para CLIP
           const videoProcessor = getVideoProcessor();
           
-          if (!videoProcessor.isReady()) {
+          // Usar versão async para aguardar inicialização completa (evita race condition)
+          if (!(await videoProcessor.isReadyAsync())) {
             throw new Error('Video Processor não configurado. Verifique FFmpeg e Salad Cloud.');
           }
           

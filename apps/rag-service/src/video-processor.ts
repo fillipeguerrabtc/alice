@@ -125,11 +125,24 @@ async function runFFmpeg(params: FFmpegParams): Promise<void> {
 
 class VideoProcessorService {
   private isConfigured: boolean = false;
+  private configurationChecked: boolean = false;
+  private configurationPromise: Promise<void> | null = null;
   private tempDir: string;
   
   constructor() {
     this.tempDir = path.join(os.tmpdir(), 'alice-video-processor');
-    this.checkConfiguration();
+    // Iniciar verificação de configuração (lazy - será aguardada no primeiro uso)
+    this.configurationPromise = this.checkConfiguration();
+  }
+  
+  /**
+   * Aguarda a verificação de configuração completar (evita race condition)
+   * Chamado antes de qualquer operação que dependa da configuração
+   */
+  private async ensureConfigured(): Promise<void> {
+    if (!this.configurationChecked && this.configurationPromise) {
+      await this.configurationPromise;
+    }
   }
   
   private async checkConfiguration(): Promise<void> {
@@ -151,6 +164,8 @@ class VideoProcessorService {
     } catch (error) {
       logger.warn({ error }, 'FFmpeg não disponível - processamento de vídeo indisponível');
       this.isConfigured = false;
+    } finally {
+      this.configurationChecked = true;
     }
   }
   
@@ -190,6 +205,9 @@ class VideoProcessorService {
       maxFrames = MAX_FRAMES,
       generateTranscription = true,
     } = options;
+    
+    // Aguardar verificação de configuração completar (evita race condition - Bug Fix)
+    await this.ensureConfigured();
     
     if (!this.isConfigured) {
       throw new Error('Video Processor não configurado. Verifique FFmpeg e Salad Cloud.');
@@ -480,9 +498,19 @@ class VideoProcessorService {
   }
   
   /**
-   * Verifica se o serviço está configurado
+   * Verifica se o serviço está configurado (síncrono - pode retornar false durante inicialização)
+   * Para verificação garantida, use isReadyAsync()
    */
   isReady(): boolean {
+    return this.isConfigured;
+  }
+  
+  /**
+   * Verifica se o serviço está configurado (assíncrono - aguarda inicialização)
+   * Use este método para garantir que a verificação de configuração completou
+   */
+  async isReadyAsync(): Promise<boolean> {
+    await this.ensureConfigured();
     return this.isConfigured;
   }
   
