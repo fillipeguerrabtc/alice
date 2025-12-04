@@ -479,10 +479,10 @@ services:
       - "traefik.http.routers.alice-rag.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
-      # Distroless não tem curl/wget, usar Node.js diretamente
+      # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -490,11 +490,11 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.0'
+          memory: 2G
+          cpus: '2.0'
         reservations:
-          memory: 256M
-          cpus: '0.25'
+          memory: 512M
+          cpus: '0.5'
 
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado

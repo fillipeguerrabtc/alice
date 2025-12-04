@@ -45,6 +45,8 @@ import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
 import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
+import { getVideoProcessor, getFFmpegCircuitBreakerStatus } from './video-processor.js';
+import { getDocumentProcessor, getDocumentEmbeddingCircuitBreakerStatus } from './document-processor.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1715,17 +1717,98 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             language: result.transcriptionLanguage,
             embeddingDim: result.embedding.length,
           }, 'Áudio processado com sucesso');
-        } else {
-          // Para video/document - marcamos como pending_processing
-          // Será implementado nas próximas tarefas (vídeo usará frames + whisper)
+        } else if (mediaType === 'video') {
+          // Processar vídeo: extrai áudio para transcrição + frames para CLIP
+          const videoProcessor = getVideoProcessor();
+          
+          if (!videoProcessor.isReady()) {
+            throw new Error('Video Processor não configurado. Verifique FFmpeg e Salad Cloud.');
+          }
+          
+          const result = await videoProcessor.processVideo(
+            req.file!.buffer,
+            req.file!.mimetype,
+            { language: 'auto', extractFrames: true, generateTranscription: true }
+          );
+
+          // Atualizar registro com embeddings combinados e transcrição
           await db.update(schema.mediaUploads)
-            .set({ processingStatus: 'pending' })
+            .set({
+              processingStatus: 'completed',
+              transcription: result.transcription,
+              transcriptionLanguage: result.transcriptionLanguage,
+              transcriptionConfidence: result.transcriptionConfidence,
+              textEmbedding: result.textEmbedding.length > 0 ? result.textEmbedding : null,
+              clipEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                framesExtracted: result.framesExtracted,
+                frameEmbeddingsCount: result.frameEmbeddings.length,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
 
           logger.info({
             uploadId: mediaUploadRecord.id,
-            mediaType,
-          }, 'Mídia aguardando processamento (não implementado)');
+            transcriptionLength: result.transcription.length,
+            framesExtracted: result.framesExtracted,
+            textEmbeddingDim: result.textEmbedding.length,
+            combinedEmbeddingDim: result.combinedEmbedding.length,
+          }, 'Vídeo processado com sucesso');
+        } else if (mediaType === 'document') {
+          // Processar documento: extrai texto e gera embeddings
+          const documentProcessor = getDocumentProcessor();
+          
+          if (!documentProcessor.isReady()) {
+            throw new Error('Document Processor não configurado. Verifique Salad Cloud.');
+          }
+          
+          const result = await documentProcessor.processDocument(
+            req.file!.buffer,
+            req.file!.mimetype,
+            { extractMetadata: true, generateEmbeddings: true }
+          );
+
+          // Atualizar registro com embedding combinado e texto extraído
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              transcription: result.fullText.slice(0, 65000), // Limitar tamanho para o banco
+              textEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                chunksCount: result.chunks.length,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            format: result.metadata.format,
+            pageCount: result.metadata.pageCount,
+            wordCount: result.metadata.wordCount,
+            chunksCount: result.chunks.length,
+            embeddingDim: result.combinedEmbedding.length,
+          }, 'Documento processado com sucesso');
+        } else {
+          // Tipo de mídia não suportado
+          logger.warn({ uploadId: mediaUploadRecord.id, mediaType }, 'Tipo de mídia não suportado para processamento');
+          
+          await db.update(schema.mediaUploads)
+            .set({ 
+              processingStatus: 'failed',
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                processingError: `Tipo de mídia não suportado: ${mediaType}`,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
         }
       } catch (error) {
         logger.error({ error, uploadId: mediaUploadRecord.id }, 'Erro ao processar mídia');

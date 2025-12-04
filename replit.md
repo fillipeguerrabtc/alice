@@ -454,6 +454,40 @@ test: ["CMD", "/nodejs/bin/node", "-e", "..."]
 
 ---
 
+### Processamento Multimodal Completo (04/12/2025)
+
+Implementação enterprise completa de processamento de TODOS os tipos de mídia:
+
+| Tipo | Processador | Tecnologia | Embedding |
+|------|-------------|------------|-----------|
+| **Imagem** | `image-processor.ts` | CLIP ViT-L/14 (Salad Cloud) | 768 dim |
+| **Áudio** | `audio-processor.ts` | Whisper + text-embedding-3-small | 1536 dim |
+| **Vídeo** | `video-processor.ts` | FFmpeg + Whisper + CLIP | Combinado 768 dim |
+| **Documento** | `document-processor.ts` | pdf-parse + mammoth + xlsx | 1536 dim |
+
+**Processamento de Vídeo:**
+1. Extração de áudio via FFmpeg (WAV 16kHz mono)
+2. Transcrição via Whisper (Salad Cloud)
+3. Extração de frames chave (1 frame/10s, máx 30)
+4. CLIP embeddings dos frames
+5. Embedding combinado: 60% texto + 40% frames (normalizado L2)
+
+**Processamento de Documento:**
+- PDF: `pdf-parse` para extração de texto
+- DOCX: `mammoth` para extração de texto
+- XLSX: `xlsx` para conversão em texto
+- TXT/MD/CSV: Leitura direta
+- Chunking com 10% overlap para contexto
+- Embedding médio de todos os chunks
+
+**NOTA:** O rag-service usa `node:22-bookworm-slim` em vez de Distroless porque precisa de FFmpeg para processamento de vídeos. A imagem é segura e mantida pelo time oficial Node.js.
+
+**Recursos atualizados para rag-service:**
+- Memory: 2G (limite) / 512M (reserva)
+- CPU: 2.0 (limite) / 0.5 (reserva)
+
+---
+
 ### Remoção npm Upgrade dos Dockerfiles (04/12/2025)
 
 | Problema | Causa | Solução |
@@ -496,7 +530,7 @@ RUN apk update && apk upgrade --no-cache && corepack enable
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.12 - 04 de Dezembro de 2025*
+*Versão 3.13 - 04 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
