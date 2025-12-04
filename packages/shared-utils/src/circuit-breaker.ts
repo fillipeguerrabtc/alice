@@ -176,6 +176,34 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
+  /** Text Embeddings genérico - mesmo que saladEmbeddings (aliás para compatibilidade) */
+  textEmbeddings: {
+    timeout: 30000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** FFmpeg - processamento de vídeo local (timeout alto) */
+  ffmpeg: {
+    timeout: 120000, // 2 minutos para vídeos longos
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
+  },
+  /** Whisper - transcrição de áudio (timeout alto) */
+  whisper: {
+    timeout: 120000, // 2 minutos para áudios longos
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
+  },
+  /** Default - configuração padrão para novos serviços */
+  default: {
+    timeout: 30000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
 } as const;
 
 export type CircuitBreakerPreset = keyof typeof CIRCUIT_BREAKER_PRESETS;
