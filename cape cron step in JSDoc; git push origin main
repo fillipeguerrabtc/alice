@@ -1,5 +1,0 @@
-[33m160cd37[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m fix: encoding issues in cron parser comments
-[33m5e01665[m fix: cron parser zero value handling
-[33m55be77c[m feat: Enterprise Code Review - 26 containers production ready
-[33ma9355e0[m feat: Enterprise Code Review - 26 containers production ready
-[33m8bc3c73[m feat: Code Review Enterprise - 26 containers 100% production ready
