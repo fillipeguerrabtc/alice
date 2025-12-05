@@ -205,8 +205,8 @@
       "title": "LLM Latency (P95/P99)",
       "type": "timeseries",
       "targets": [
-        { "expr": "histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m]))", "legendFormat": "P95", "refId": "A" },
-        { "expr": "histogram_quantile(0.99, rate(llm_request_duration_seconds_bucket[5m]))", "legendFormat": "P99", "refId": "B" }
+        { "expr": "histogram_quantile(0.95, rate(alice_llm_inference_duration_seconds_bucket[5m]))", "legendFormat": "P95", "refId": "A" },
+        { "expr": "histogram_quantile(0.99, rate(alice_llm_inference_duration_seconds_bucket[5m]))", "legendFormat": "P99", "refId": "B" }
       ]
     },
     {
@@ -300,8 +300,8 @@
       "title": "Tokens Consumidos (LLM)",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(llm_tokens_total{type=\"input\"}[1h])", "legendFormat": "Input", "refId": "A" },
-        { "expr": "increase(llm_tokens_total{type=\"output\"}[1h])", "legendFormat": "Output", "refId": "B" }
+        { "expr": "increase(alice_llm_tokens_prompt_total[1h])", "legendFormat": "Prompt", "refId": "A" },
+        { "expr": "increase(alice_llm_tokens_generated_total[1h])", "legendFormat": "Generated", "refId": "B" }
       ]
     },
     {

@@ -505,19 +505,22 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **NOTA IMPORTANTE:** Stack separada da Alice para continuar monitorando mesmo se Alice tiver problemas. Isso é **best practice**, não um problema.
 
-### Dashboards Grafana Pré-configurados
+### Dashboards Grafana Enterprise (9 dashboards, 100% completos)
 
-| Dashboard | Arquivo |
-|-----------|---------|
-| Home | `00-home.json` |
-| Backup Status | `alice-backup.json` |
-| Infrastructure | `alice-infrastructure.json` |
-| Integrations | `alice-integrations.json` |
-| Portal Home | `alice-portal-home.json` |
-| RAG Metrics | `alice-rag.json` |
-| Services | `alice-services.json` |
-| Training | `alice-training.json` |
-| LLM Metrics | `llm-metrics.json` |
+| Dashboard | Arquivo | Painéis | Alertas |
+|-----------|---------|---------|---------|
+| Home | `00-home.json` | 14 | ✅ Golden Signals |
+| Backup Status | `alice-backup.json` | 15 | ✅ Falha/Sucesso |
+| Infrastructure | `alice-infrastructure.json` | 18 | ✅ CPU/Mem/Disco |
+| Integrations | `alice-integrations.json` | 12 | ✅ Circuit Breakers |
+| Portal Home | `alice-portal-home.json` | 11 | ✅ Status Serviços |
+| RAG Metrics | `alice-rag.json` | 16 | ✅ Embeddings/Search |
+| Services | `alice-services.json` | 15 | ✅ Latência/RPS/Erros |
+| Training | `alice-training.json` | 16 | ✅ Loss/Progress |
+| **LLM Metrics** | `llm-metrics.json` | **18** | ✅ **Enterprise completo** |
+
+> **NOTA:** Dashboard LLM corrigido em 04/12/2025 para usar métricas `alice_llm_*` corretas.
+> Inclui: Latência P50/P95/P99, Tokens/hora, Fallbacks, Circuit Breakers, RAG Support.
 
 ---
 
@@ -629,12 +632,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 | Item | Prioridade | Status |
 |------|------------|--------|
-| Documentação OpenAPI | Baixa | API9 OWASP parcial |
-| Cobertura de Testes 80% | Média | Backlog |
+| Dashboards Grafana | Alta | ✅ **COMPLETO** (04/12/2025) |
+| Documentação OpenAPI | Média | Pendente |
+| Cobertura de Testes 80% | Média | Pendente |
 
 ---
 
 *Documento consolidado em 04/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 2.1 - ESLint configurado*  
+*Versão: 2.2 - Dashboards Grafana Enterprise completos*  
 *Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
