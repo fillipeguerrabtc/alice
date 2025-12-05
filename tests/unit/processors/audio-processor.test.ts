@@ -287,10 +287,12 @@ describe('Audio Processor - Validação de Tamanho', () => {
   });
 
   it('deve calcular duração estimada baseado no tamanho e bitrate', () => {
-    const fileSizeBytes = 10 * 1024 * 1024; // 10MB
+    // Usar MB (1000*1000) para consistência com bitrate em kbps (não MiB)
+    const fileSizeBytes = 10 * 1000 * 1000; // 10MB = 10.000.000 bytes
     const bitrateKbps = 128;
+    // Fórmula: (bytes * 8 bits/byte) / (kbps * 1000 bits/s) = segundos
     const durationSeconds = (fileSizeBytes * 8) / (bitrateKbps * 1000);
-    expect(durationSeconds).toBeCloseTo(625, 0); // ~10 minutos
+    expect(durationSeconds).toBeCloseTo(625, 0); // 625 segundos = ~10.4 minutos
   });
 });
 
