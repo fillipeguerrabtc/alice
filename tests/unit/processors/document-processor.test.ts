@@ -49,14 +49,23 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
   /**
    * Simula o método extractCellText do DocumentProcessorService
    * Implementação espelho para testes unitários
+   * 
+   * @param cell - Valor da célula ExcelJS
+   * @param depth - Profundidade de recursão (proteção contra loops infinitos)
    */
-  function extractCellText(cell: unknown): string {
+  function extractCellText(cell: unknown, depth: number = 0): string {
+    // Proteção contra recursão infinita (máximo 3 níveis)
+    const MAX_DEPTH = 3;
+    if (depth > MAX_DEPTH) {
+      return '';
+    }
+
     // Null ou undefined
     if (cell === null || cell === undefined) {
       return '';
     }
 
-    // Primitivos
+    // Primitivos - conversão direta
     if (typeof cell === 'string') {
       return cell;
     }
@@ -64,7 +73,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
       return String(cell);
     }
 
-    // Date
+    // Date - conversão direta
     if (cell instanceof Date) {
       return cell.toISOString();
     }
@@ -88,10 +97,11 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
       // CellFormulaValue: { formula: string, result?: ... }
       if ('formula' in obj) {
         if ('result' in obj && obj.result !== undefined) {
-          if (obj.result instanceof Date) {
-            return obj.result.toISOString();
-          }
-          return String(obj.result);
+          const result = obj.result;
+          if (typeof result === 'string') return result;
+          if (typeof result === 'number' || typeof result === 'boolean') return String(result);
+          if (result instanceof Date) return result.toISOString();
+          return extractCellText(result, depth + 1);
         }
         return '';
       }
@@ -103,6 +113,15 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
           return String(error.message);
         }
         return '#ERROR';
+      }
+
+      // SharedStringValue ou outros: tenta .value
+      if ('value' in obj && obj.value !== undefined) {
+        const val = obj.value;
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        if (val instanceof Date) return val.toISOString();
+        return extractCellText(val, depth + 1);
       }
 
       // Objeto genérico com text - mas NÃO é hyperlink
@@ -262,6 +281,48 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
       const result = extractCellText(obj);
       expect(result).not.toBe('[object Object]');
       expect(result).toBe('');
+    });
+  });
+
+  describe('Proteção contra recursão infinita', () => {
+    it('deve limitar profundidade de recursão a 3 níveis', () => {
+      // Simula estrutura profundamente aninhada
+      const deepNested = {
+        value: {
+          value: {
+            value: {
+              value: {
+                value: 'muito profundo', // Nível 5 - não será alcançado
+              },
+            },
+          },
+        },
+      };
+      // Com MAX_DEPTH = 3, deve retornar vazio após 3 níveis
+      const result = extractCellText(deepNested);
+      expect(result).toBe('');
+    });
+
+    it('deve processar estrutura dentro do limite', () => {
+      // Estrutura com 2 níveis de aninhamento
+      const nested = {
+        value: {
+          value: 'valor válido',
+        },
+      };
+      const result = extractCellText(nested);
+      expect(result).toBe('valor válido');
+    });
+
+    it('deve processar fórmula com resultado aninhado', () => {
+      const formula = {
+        formula: 'INDIRECT(A1)',
+        result: {
+          value: 42,
+        },
+      };
+      const result = extractCellText(formula);
+      expect(result).toBe('42');
     });
   });
 });

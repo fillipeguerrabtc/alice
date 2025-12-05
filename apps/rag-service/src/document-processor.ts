@@ -364,14 +364,23 @@ class DocumentProcessorService {
    * - null/undefined: retorna string vazia
    * 
    * Evita "[object Object]" que ocorreria com String() simples
+   * 
+   * @param cell - Valor da célula ExcelJS
+   * @param depth - Profundidade de recursão (proteção contra loops infinitos)
    */
-  private extractCellText(cell: unknown): string {
+  private extractCellText(cell: unknown, depth: number = 0): string {
+    // Proteção contra recursão infinita (máximo 3 níveis)
+    const MAX_DEPTH = 3;
+    if (depth > MAX_DEPTH) {
+      return '';
+    }
+
     // Null ou undefined
     if (cell === null || cell === undefined) {
       return '';
     }
 
-    // Primitivos
+    // Primitivos - conversão direta, sem recursão
     if (typeof cell === 'string') {
       return cell;
     }
@@ -379,7 +388,7 @@ class DocumentProcessorService {
       return String(cell);
     }
 
-    // Date
+    // Date - conversão direta, sem recursão
     if (cell instanceof Date) {
       return cell.toISOString();
     }
@@ -402,27 +411,48 @@ class DocumentProcessorService {
       }
 
       // CellFormulaValue: { formula: string, result?: unknown }
+      // Para RAG, só o resultado importa - fórmula bruta não tem valor semântico
       if ('formula' in obj) {
         // Usa o resultado da fórmula se disponível
         if ('result' in obj && obj.result !== undefined) {
-          return this.extractCellText(obj.result);
+          // Conversão direta para tipos primitivos (evita recursão desnecessária)
+          const result = obj.result;
+          if (typeof result === 'string') return result;
+          if (typeof result === 'number' || typeof result === 'boolean') return String(result);
+          if (result instanceof Date) return result.toISOString();
+          // Objeto complexo: recursão com depth incrementado
+          return this.extractCellText(result, depth + 1);
         }
-        // Fallback: mostra a fórmula
-        return `=${String(obj.formula)}`;
+        // Sem resultado: retorna vazio (fórmula bruta não ajuda RAG)
+        return '';
       }
 
       // CellErrorValue: { error: { message?: string, ... } }
+      // Retorna apenas a mensagem de erro (ex: #DIV/0!, #REF!, #VALUE!)
+      // Sem prefixo redundante já que códigos Excel começam com #
       if ('error' in obj) {
         const error = obj.error as Record<string, unknown>;
         if (error && typeof error.message === 'string') {
-          return `#ERROR: ${error.message}`;
+          return error.message;
         }
         return '#ERROR';
       }
 
       // SharedStringValue ou outros: tenta .value
       if ('value' in obj && obj.value !== undefined) {
-        return this.extractCellText(obj.value);
+        // Conversão direta para tipos primitivos (evita recursão desnecessária)
+        const val = obj.value;
+        if (typeof val === 'string') return val;
+        if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+        if (val instanceof Date) return val.toISOString();
+        // Objeto complexo: recursão com depth incrementado
+        return this.extractCellText(val, depth + 1);
+      }
+
+      // Objeto genérico com text (mas NÃO é hyperlink - já verificado acima)
+      // Ex: { text: 'Texto simples' } sem propriedade hyperlink
+      if ('text' in obj && typeof obj.text === 'string') {
+        return obj.text;
       }
     }
 
