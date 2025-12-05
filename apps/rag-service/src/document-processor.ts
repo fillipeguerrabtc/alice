@@ -354,8 +354,92 @@ class DocumentProcessorService {
   }
 
   /**
+   * Extrai texto de uma célula ExcelJS, tratando todos os tipos possíveis:
+   * - Primitivos: string, number, boolean
+   * - Date: converte para ISO string
+   * - CellFormulaValue: extrai .result (resultado da fórmula)
+   * - CellHyperlinkValue: extrai .text (texto do link)
+   * - CellRichTextValue: concatena .richText[].text
+   * - CellErrorValue: extrai .error.message ou código
+   * - null/undefined: retorna string vazia
+   * 
+   * Evita "[object Object]" que ocorreria com String() simples
+   */
+  private extractCellText(cell: unknown): string {
+    // Null ou undefined
+    if (cell === null || cell === undefined) {
+      return '';
+    }
+
+    // Primitivos
+    if (typeof cell === 'string') {
+      return cell;
+    }
+    if (typeof cell === 'number' || typeof cell === 'boolean') {
+      return String(cell);
+    }
+
+    // Date
+    if (cell instanceof Date) {
+      return cell.toISOString();
+    }
+
+    // Objeto complexo do ExcelJS
+    if (typeof cell === 'object') {
+      const obj = cell as Record<string, unknown>;
+
+      // CellRichTextValue: { richText: [{ text: string, font?: ... }, ...] }
+      if ('richText' in obj && Array.isArray(obj.richText)) {
+        return (obj.richText as Array<{ text?: string }>)
+          .map(part => part.text || '')
+          .join('');
+      }
+
+      // CellHyperlinkValue: { text: string, hyperlink: string }
+      if ('text' in obj && typeof obj.text === 'string') {
+        return obj.text;
+      }
+
+      // CellFormulaValue: { formula: string, result?: unknown }
+      if ('formula' in obj) {
+        // Usa o resultado da fórmula se disponível
+        if ('result' in obj && obj.result !== undefined) {
+          return this.extractCellText(obj.result);
+        }
+        // Fallback: mostra a fórmula
+        return `=${String(obj.formula)}`;
+      }
+
+      // CellErrorValue: { error: { message?: string, ... } }
+      if ('error' in obj) {
+        const error = obj.error as Record<string, unknown>;
+        if (error && typeof error.message === 'string') {
+          return `#ERROR: ${error.message}`;
+        }
+        return '#ERROR';
+      }
+
+      // SharedStringValue ou outros: tenta .value
+      if ('value' in obj && obj.value !== undefined) {
+        return this.extractCellText(obj.value);
+      }
+    }
+
+    // Fallback: tenta converter para string (não deve chegar aqui)
+    const str = String(cell);
+    // Evita retornar "[object Object]"
+    if (str === '[object Object]') {
+      return '';
+    }
+    return str;
+  }
+
+  /**
    * Extrai texto de XLSX usando exceljs (substituição do xlsx vulnerável)
    * CVE-2024-22363, CVE-2024-3766 corrigidos pela substituição
+   * 
+   * Trata corretamente todos os tipos de célula do ExcelJS:
+   * Formula, Hyperlink, RichText, Error, além de primitivos e Date
    */
   private async extractXlsxText(
     buffer: Buffer
@@ -373,13 +457,9 @@ class DocumentProcessorService {
       const rows: string[] = [];
       
       worksheet.eachRow({ includeEmpty: false }, (row) => {
-        const values = row.values as (string | number | boolean | Date | null | undefined)[];
         // row.values é 1-indexed, então slice(1) para pular o primeiro elemento vazio
-        const rowText = values.slice(1).map(cell => {
-          if (cell === null || cell === undefined) return '';
-          if (cell instanceof Date) return cell.toISOString();
-          return String(cell);
-        }).join(',');
+        const values = row.values as unknown[];
+        const rowText = values.slice(1).map(cell => this.extractCellText(cell)).join(',');
         
         if (rowText.trim()) {
           rows.push(rowText);
