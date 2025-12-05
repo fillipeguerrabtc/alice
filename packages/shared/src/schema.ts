@@ -720,6 +720,7 @@ export const conversations = pgTable(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
     userId: varchar("user_id").references(() => users.id),
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
@@ -734,6 +735,7 @@ export const conversations = pgTable(
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
   (table) => ({
+    idxConversationsTenant: index("idx_conversations_tenant").on(table.tenantId),
     idxConversationsUser: index("idx_conversations_user").on(table.userId),
     idxConversationsAgent: index("idx_conversations_agent").on(table.agentId),
     idxConversationsNamespace: index("idx_conversations_namespace").on(table.namespaceId),
