@@ -386,7 +386,7 @@ export const openApiConfig = {
 | 1. Codebase | ✅ | Git + GitHub |
 | 2. Dependencies | ✅ | pnpm-lock.yaml |
 | 3. Config | ✅ | Environment variables |
-| 4. Backing Services | ✅ | PostgreSQL, Redis, S3 |
+| 4. Backing Services | ✅ | PostgreSQL, Redis, Volume Hetzner 100GB |
 | 5. Build, Release, Run | ✅ | CI/CD automático |
 | 6. Processes | ✅ | Stateless + Redis |
 | 7. Port Binding | ✅ | Cada serviço em porta própria |
@@ -417,7 +417,44 @@ Fases:
 
 *Documento atualizado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 2.4 - OpenAPI/Swagger COMPLETO*
+*Versão: 3.1 - Unificação de Migrações*
+
+---
+
+## 📝 ATUALIZAÇÃO 05/12/2025 - UNIFICAÇÃO DE MIGRAÇÕES ✅ COMPLETO
+
+### Problema Identificado:
+- Migrações em duas pastas separadas:
+  - `drizzle/migrations/` (pasta antiga)
+  - `migrations/` (pasta configurada em drizzle.config.ts)
+- Workflows CI/CD referenciando caminho antigo
+
+### Correções Aplicadas:
+
+| # | Correção | Arquivo |
+|---|----------|---------|
+| 1 | Git restaurado | `.git-backup` → `.git` |
+| 2 | RLS migração movida | `migrations/0001_rls_security_enterprise.sql` |
+| 3 | Feature flags renumerada | `migrations/0002_create_feature_flags.sql` |
+| 4 | CI workflow atualizado | `.github/workflows/ci.yml` |
+| 5 | Deploy workflow atualizado | `.github/workflows/deploy-production.yml` |
+| 6 | Pasta antiga removida | `drizzle/migrations/` (deletada) |
+
+### Estrutura Final de Migrações:
+```
+migrations/
+├── 0001_rls_security_enterprise.sql    # RLS + Índices + Grants
+└── 0002_create_feature_flags.sql       # Feature Flags Enterprise
+```
+
+### Ordem de Execução:
+1. **0001**: Cria funções `current_tenant_id()` e `is_super_admin()`, índices, e policies RLS
+2. **0002**: Cria tabela `feature_flags` usando as funções do 0001
+
+### Aderência:
+- ✅ Regra 2 (NÃO DUPLICAR): Migrações unificadas em pasta única
+- ✅ Regra 7 (MUDANÇAS CIRÚRGICAS): Cada arquivo com propósito específico
+- ✅ Regra 15 (MICROSSERVIÇOS): Configuração centralizada em `drizzle.config.ts`
 
 ---
 

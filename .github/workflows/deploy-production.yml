@@ -909,12 +909,13 @@ jobs:
             fi
             
             # Executar migração RLS
+            # Caminho unificado conforme drizzle.config.ts (out: "./migrations")
             echo "Executando migração RLS..."
-            if [ -f "../../drizzle/migrations/0001_rls_security_enterprise.sql" ]; then
+            if [ -f "../../migrations/0001_rls_security_enterprise.sql" ]; then
               docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres psql -U alice -d alice_prod \
-                -f /dev/stdin < ../../drizzle/migrations/0001_rls_security_enterprise.sql || echo "Migração RLS já aplicada ou erro ignorável"
+                -f /dev/stdin < ../../migrations/0001_rls_security_enterprise.sql || echo "Migração RLS já aplicada ou erro ignorável"
             fi
             
             echo "Migração concluída!"

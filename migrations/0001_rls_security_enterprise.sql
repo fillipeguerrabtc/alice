@@ -1,6 +1,11 @@
 -- ============================================================================
 -- MIGRAÇÃO: Row Level Security (RLS) Enterprise-Grade
--- Documentação: PostgreSQL 17 Security Hardening + OWASP API1/API5
+-- Descrição: Segurança multi-tenant com isolamento por tenant_id
+-- Documentação: PostgreSQL 16 Security Hardening + OWASP API1/API5
+-- 
+-- Author: Fillipe Guerra
+-- Data: 05 de Dezembro de 2025
+-- Versão: 1.1 - Unificação de migrações
 -- ============================================================================
 
 -- ============================================================================
@@ -101,7 +106,7 @@ END;
 $$ LANGUAGE plpgsql STABLE SECURITY DEFINER;
 
 -- ============================================================================
--- 3. ROW LEVEL SECURITY (RLS) - Aplicação Condicional
+-- 4. ROW LEVEL SECURITY (RLS) - Aplicação Condicional
 -- Verifica se tabelas existem antes de aplicar RLS
 -- ============================================================================
 
@@ -208,7 +213,7 @@ BEGIN
 END $$;
 
 -- ============================================================================
--- 4. AUDIT LOGGING (Via PostgreSQL nativo)
+-- 5. AUDIT LOGGING (Via PostgreSQL nativo)
 -- NOTA: pgaudit removido - usando log_statement nativo
 -- ============================================================================
 
@@ -218,7 +223,7 @@ END $$;
 -- ALTER SYSTEM SET log_min_duration_statement = 1000;  -- Log queries > 1s
 
 -- ============================================================================
--- 5. GRANT MÍNIMO NECESSÁRIO (Least Privilege)
+-- 6. GRANT MÍNIMO NECESSÁRIO (Least Privilege)
 -- ============================================================================
 
 -- Revogar permissões públicas
@@ -255,6 +260,7 @@ COMMENT ON FUNCTION is_super_admin() IS 'Verifica se usuário atual é super_adm
 
 -- ============================================================================
 -- Documento em Português Brasileiro
--- Atualizado: Novembro 2025
--- Versão: 1.0 - RLS Enterprise-Grade
+-- Author: Fillipe Guerra
+-- Data: 05 de Dezembro de 2025
+-- Versão: 1.1 - RLS Enterprise-Grade (Unificação de migrações)
 -- ============================================================================

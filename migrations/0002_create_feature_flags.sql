@@ -1,7 +1,12 @@
--- Migração: Criar tabela feature_flags
+-- ============================================================================
+-- MIGRAÇÃO: Criar tabela feature_flags
 -- Descrição: Sistema de Feature Flags Enterprise para Alice Platform
--- Data: Novembro 2025
 -- Regra 6: Persistência real em PostgreSQL (zero soluções temporárias)
+-- 
+-- Author: Fillipe Guerra
+-- Data: 05 de Dezembro de 2025
+-- Versão: 1.1 - Unificação de migrações
+-- ============================================================================
 
 -- ============================================================================
 -- TABELA: feature_flags
@@ -66,6 +71,7 @@ CREATE TRIGGER trigger_feature_flags_updated
 
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) - Isolamento Multi-Tenant
+-- Usa funções definidas em 0001_rls_security_enterprise.sql
 -- ============================================================================
 
 -- Habilitar RLS na tabela
@@ -75,7 +81,7 @@ ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
 CREATE POLICY feature_flags_super_admin_policy ON feature_flags
     FOR ALL
     USING (
-        current_setting('app.current_user_role', true) = 'super_admin'
+        is_super_admin() = true
     );
 
 -- Policy: Tenant admins podem ver flags globais e do seu tenant
@@ -83,17 +89,17 @@ CREATE POLICY feature_flags_tenant_read_policy ON feature_flags
     FOR SELECT
     USING (
         tenant_id IS NULL 
-        OR tenant_id::text = current_setting('app.current_tenant_id', true)
+        OR tenant_id = current_tenant_id()
     );
 
 -- Policy: Tenant admins podem modificar apenas flags do seu tenant
 CREATE POLICY feature_flags_tenant_write_policy ON feature_flags
     FOR ALL
     USING (
-        tenant_id::text = current_setting('app.current_tenant_id', true)
+        tenant_id = current_tenant_id()
     )
     WITH CHECK (
-        tenant_id::text = current_setting('app.current_tenant_id', true)
+        tenant_id = current_tenant_id()
     );
 
 -- ============================================================================
@@ -132,3 +138,10 @@ COMMENT ON COLUMN feature_flags.key IS 'Identificador único da flag (lowercase_
 COMMENT ON COLUMN feature_flags.enabled IS 'Estado da flag (true = habilitada)';
 COMMENT ON COLUMN feature_flags.tenant_id IS 'ID do tenant (NULL = flag global)';
 COMMENT ON COLUMN feature_flags.metadata IS 'Metadados extras em JSON (rollout percentual, etc)';
+
+-- ============================================================================
+-- Documento em Português Brasileiro
+-- Author: Fillipe Guerra
+-- Data: 05 de Dezembro de 2025
+-- Versão: 1.1 - Feature Flags Enterprise (Unificação de migrações)
+-- ============================================================================

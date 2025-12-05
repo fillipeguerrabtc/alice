@@ -562,16 +562,17 @@ jobs:
           set -e
           echo "Verificando migrações RLS..."
           
-          if [ -f "drizzle/migrations/0001_rls_security_enterprise.sql" ]; then
+          # Caminho unificado conforme drizzle.config.ts (out: "./migrations")
+          if [ -f "migrations/0001_rls_security_enterprise.sql" ]; then
             echo "Migração RLS encontrada"
-            if grep -q "CREATE POLICY\|ENABLE ROW LEVEL SECURITY" drizzle/migrations/0001_rls_security_enterprise.sql; then
+            if grep -q "CREATE POLICY\|ENABLE ROW LEVEL SECURITY" migrations/0001_rls_security_enterprise.sql; then
               echo "Policies RLS configuradas corretamente"
             else
               echo "ERRO: Policies RLS não encontradas na migração"
               exit 1
             fi
           else
-            echo "ERRO: Migração RLS não encontrada em drizzle/migrations/"
+            echo "ERRO: Migração RLS não encontrada em migrations/"
             exit 1
           fi
 
