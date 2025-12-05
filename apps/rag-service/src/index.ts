@@ -40,6 +40,8 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
+  setupSwaggerUI,
+  RAG_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
@@ -511,6 +513,19 @@ logger.info('Métricas RBAC Prometheus inicializadas no rag-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'rag-service',
+  version: '1.0.0',
+  description: 'Serviço RAG com busca semântica, embeddings multimodais e pgvector.',
+  port: Number(PORT),
+  tags: RAG_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // Middleware para coletar métricas HTTP automaticamente
 app.use(httpMetricsMiddleware);

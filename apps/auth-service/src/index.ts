@@ -71,6 +71,8 @@ import {
   featureFlagsMiddleware,
   FEATURE_FLAGS,
   isFeatureEnabled,
+  setupSwaggerUI,
+  AUTH_SERVICE_TAGS,
 } from '@alice/shared-utils';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
@@ -272,6 +274,19 @@ logger.info('Métricas RBAC Prometheus inicializadas no auth-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9 - Improper Inventory Management)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'auth-service',
+  version: '1.0.0',
+  description: 'Serviço de autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC e RBAC.',
+  port: config.PORT,
+  tags: AUTH_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // Middleware para coletar métricas HTTP automaticamente
 app.use(httpMetricsMiddleware);

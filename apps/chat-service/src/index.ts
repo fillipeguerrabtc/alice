@@ -22,6 +22,8 @@ import {
   createCacheAdapter,
   closeRedisCacheClient,
   type CacheAdapter,
+  setupSwaggerUI,
+  CHAT_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
@@ -150,6 +152,19 @@ logger.info('Métricas RBAC Prometheus inicializadas no chat-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'chat-service',
+  version: '1.0.0',
+  description: 'Serviço de chat com WebSocket, LLM streaming e geração de imagens.',
+  port: Number(PORT),
+  tags: CHAT_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // Middleware para coletar métricas HTTP automaticamente
 app.use(httpMetricsMiddleware);

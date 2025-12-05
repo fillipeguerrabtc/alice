@@ -29,6 +29,8 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
+  setupSwaggerUI,
+  INTEGRATIONS_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
@@ -57,6 +59,19 @@ logger.info('Métricas RBAC Prometheus inicializadas no integrations-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'integrations-service',
+  version: '1.0.0',
+  description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, Resend.',
+  port: config.PORT,
+  tags: INTEGRATIONS_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // Middleware para coletar métricas HTTP automaticamente
 app.use(httpMetricsMiddleware);

@@ -35,6 +35,8 @@ import {
   CIRCUIT_BREAKER_PRESETS,
   registerShutdownCallback,
   ShutdownPriority,
+  setupSwaggerUI,
+  TRAINING_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { eq, and, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
@@ -106,6 +108,19 @@ logger.info('Métricas RBAC Prometheus inicializadas no training-service');
 
 // Endpoint /metrics para Prometheus scraper (antes de outros middlewares)
 app.use(metricsRouter);
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'training-service',
+  version: '1.0.0',
+  description: 'Serviço de fine-tuning com SemHash, auto-learning e Salad Cloud.',
+  port: PORT,
+  tags: TRAINING_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // Middleware para coletar métricas HTTP automaticamente
 app.use(httpMetricsMiddleware);

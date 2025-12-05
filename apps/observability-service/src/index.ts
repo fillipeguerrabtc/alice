@@ -22,6 +22,8 @@ import {
   createNotFoundHandler,
   registerShutdownCallback,
   ShutdownPriority,
+  setupSwaggerUI,
+  OBSERVABILITY_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { backupRouter } from './backup-orchestrator.js';
 
@@ -306,6 +308,19 @@ async function checkAllServices(): Promise<StackHealth> {
 }
 
 const app = express();
+
+// ============================================================================
+// OPENAPI/SWAGGER: Documentação da API (OWASP API9)
+// ============================================================================
+setupSwaggerUI(app, {
+  serviceName: 'observability-service',
+  version: '1.0.0',
+  description: 'Serviço de observabilidade: backup, restore, métricas agregadas.',
+  port: Number(PORT),
+  tags: OBSERVABILITY_SERVICE_TAGS,
+  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+});
+logger.info('Swagger UI configurado em /api/docs');
 
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
