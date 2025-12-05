@@ -91,11 +91,15 @@ interface ComponentStatus {
   gtid?: string;
   binlogPosition?: string;
   rdbChecksum?: string;
-  s3VersionId?: string;
   filesCount?: number;
   size?: string;
 }
 
+/**
+ * Interface do manifesto de backup
+ * ATUALIZADO: 05/12/2025 - Migrado de offsite/S3 para storage local (Volume Hetzner)
+ * Alinhado com BackupManifestData em packages/shared/src/schema.ts
+ */
 interface BackupManifest {
   id: string;
   type: 'full' | 'incremental' | 'differential';
@@ -108,12 +112,11 @@ interface BackupManifest {
     postgresql?: ComponentStatus;
     mariadb?: ComponentStatus;
     redis?: ComponentStatus;
-    uploads?: ComponentStatus;
   };
-  offsite: {
-    enabled: boolean;
-    repository?: string;
-    synced?: boolean;
+  storage: {
+    type: 'local';
+    path: string;
+    volumeName: string;
   };
   encryption: {
     enabled: boolean;
@@ -145,6 +148,10 @@ interface BackupHistory {
   lastFailed?: BackupManifest;
 }
 
+/**
+ * Interface de configuração de agendamento de backup
+ * ATUALIZADO: 05/12/2025 - Migrado de offsite para storage local (Volume Hetzner)
+ */
 interface BackupSchedule {
   enabled: boolean;
   fullBackup: {
@@ -162,9 +169,10 @@ interface BackupSchedule {
     incrementalBackupDays: number;
     archiveDays: number;
   };
-  offsite: {
-    enabled: boolean;
-    syncAfterBackup: boolean;
+  storage: {
+    type: 'local';
+    path: string;
+    volumeName: string;
   };
   notifications: {
     onSuccess: boolean;

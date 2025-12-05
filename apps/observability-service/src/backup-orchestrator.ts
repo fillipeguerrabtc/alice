@@ -1077,7 +1077,10 @@ router.post('/verify/:id', async (req: Request, res: Response) => {
 // Regra 6: Sem workarounds - persistência real em arquivo JSON
 // =============================================================================
 
-/** Configuração de schedule de backup */
+/**
+ * Configuração de schedule de backup
+ * ATUALIZADO: 05/12/2025 - Migrado de offsite para storage local (Volume Hetzner)
+ */
 interface BackupSchedule {
   enabled: boolean;
   fullBackup: {
@@ -1095,9 +1098,10 @@ interface BackupSchedule {
     incrementalBackupDays: number;
     archiveDays: number;
   };
-  offsite: {
-    enabled: boolean;
-    syncAfterBackup: boolean;
+  storage: {
+    type: 'local';
+    path: string;
+    volumeName: string;
   };
   notifications: {
     onSuccess: boolean;
@@ -1128,9 +1132,10 @@ const DEFAULT_SCHEDULE: BackupSchedule = {
     incrementalBackupDays: 7,
     archiveDays: 30,         // Otimizado para Volume 100GB
   },
-  offsite: {
-    enabled: false,          // S3 externo DESABILITADO - usar volume local
-    syncAfterBackup: false,
+  storage: {
+    type: 'local',
+    path: '/opt/alice/backups',
+    volumeName: 'alice-data',
   },
   notifications: {
     onSuccess: false,
@@ -1190,9 +1195,10 @@ const scheduleUpdateSchema = z.object({
     incrementalBackupDays: z.number().min(1).max(30),
     archiveDays: z.number().min(7).max(3650),
   }).optional(),
-  offsite: z.object({
-    enabled: z.boolean(),
-    syncAfterBackup: z.boolean(),
+  storage: z.object({
+    type: z.literal('local'),
+    path: z.string(),
+    volumeName: z.string(),
   }).optional(),
   notifications: z.object({
     onSuccess: z.boolean(),
@@ -1247,9 +1253,9 @@ router.put('/schedule', async (req: Request, res: Response) => {
       retention: parsed.data.retention
         ? { ...currentSchedule.retention, ...parsed.data.retention }
         : currentSchedule.retention,
-      offsite: parsed.data.offsite
-        ? { ...currentSchedule.offsite, ...parsed.data.offsite }
-        : currentSchedule.offsite,
+      storage: parsed.data.storage
+        ? { ...currentSchedule.storage, ...parsed.data.storage }
+        : currentSchedule.storage,
       notifications: parsed.data.notifications
         ? { ...currentSchedule.notifications, ...parsed.data.notifications }
         : currentSchedule.notifications,
