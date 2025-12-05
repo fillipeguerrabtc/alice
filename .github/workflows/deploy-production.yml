@@ -20,7 +20,7 @@ on:
   # REGRA 4: Deploy APENAS manual (Aprovação Obrigatória)
   # Best Practices 2025: Usar Release & Tag para versionamento, depois deploy
   # 
-  # COMPLIANCE: Removidos skip_approval e skip_tests (REGRA 4 e 6 do replit.md)
+  # COMPLIANCE: Removidos skip_approval e skip_tests (REGRA 4 e 6 do CLAUDE.md)
   # - Testes são OBRIGATÓRIOS antes de qualquer deploy
   # - Aprovação manual é OBRIGATÓRIA sem exceções
   # - Para hotfixes críticos, usar branch hotfix/ com PR review
@@ -59,7 +59,7 @@ env:
 jobs:
   # ===========================================================================
   # Job 1: Análise de Código e Qualidade
-  # COMPLIANCE: Testes são SEMPRE obrigatórios (REGRA 4 e 6 do replit.md)
+  # COMPLIANCE: Testes são SEMPRE obrigatórios (REGRA 4 e 6 do CLAUDE.md)
   # ===========================================================================
   code-quality:
     name: Análise de Qualidade

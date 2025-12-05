@@ -3,7 +3,7 @@
 # Deploy: Salad Cloud (GPU RTX 3090/4090)
 # Licença: MIT (uso comercial permitido)
 #
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # SEGURANÇA: Non-root container (Docker 2025 Best Practices)
 #
 # ATUALIZAÇÃO DEZEMBRO 2025:

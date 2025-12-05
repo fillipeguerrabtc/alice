@@ -4,7 +4,7 @@
  * Cliente HTTP para API Salad Cloud Container Groups.
  * Implementa fine-tuning via Container Engine com Docker images customizadas.
  * Circuit Breaker pattern (Regra 16 - Best Practices 2025).
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * Referência: https://docs.salad.com/container-engine/tutorials/machine-learning/llm-fine-tuning
  * 

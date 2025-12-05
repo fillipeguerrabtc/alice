@@ -4,8 +4,8 @@
  * Tabelas de treinamento: training data, fine-tuning jobs, model versions, auto-learning.
  * Domínio de aprendizado e fine-tuning.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/training
  */

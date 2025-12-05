@@ -5,7 +5,7 @@
  * Integra com RAG Service para contexto de documentos (Fase 3 - Integração Chat+RAG).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -1535,7 +1535,7 @@ app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromReque
 });
 
 // ============================================================================
-// WEBSOCKET RATE LIMITING (Enterprise-Grade - Regra 16 replit.md)
+// WEBSOCKET RATE LIMITING (Enterprise-Grade - Regra 16 CLAUDE.md)
 // Implementa sliding window com cooldown progressivo após bloqueio
 // ============================================================================
 
@@ -3761,7 +3761,7 @@ server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
 // Ordem: Intervals → WebSocket → HTTP server → Database pool
 // ============================================================================

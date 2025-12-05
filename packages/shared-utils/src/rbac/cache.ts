@@ -3,7 +3,7 @@
  * 
  * Cache distribuído (Redis) para permissões por tenant.
  * C5 Code Review: Usa CacheAdapter (Redis em produção, in-memory em dev)
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils/rbac/cache
  * 
@@ -21,7 +21,7 @@
  * 3. **Invalidação**: auth-service deve chamar permissionCache.invalidate()
  *    ou permissionCache.invalidateTenant() em mudanças de permissão.
  * 
- * @see replit.md - OIDC Provider e 6-level RBAC
+ * @see CLAUDE.md - OIDC Provider e 6-level RBAC
  * @todo Implementar requirePermission() helper em packages/shared-utils/rbac
  * @todo Migrar verificações inline de roles nos microsserviços
  */

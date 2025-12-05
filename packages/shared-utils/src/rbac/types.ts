@@ -2,14 +2,14 @@
  * Tipos para Sistema RBAC - Alice Enterprise Platform
  * 
  * Define interfaces e tipos para Role-Based Access Control.
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils/rbac/types
  */
 
 /**
  * Roles disponíveis no sistema (6 níveis hierárquicos)
- * Conforme documentado no replit.md
+ * Conforme documentado no CLAUDE.md
  */
 export type Role =
   | 'super_admin'

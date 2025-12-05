@@ -6,7 +6,7 @@
 # NOTA: Este arquivo é processado por envsubst no entrypoint do container.
 # As variáveis ${VAR} são substituídas por valores reais antes do Alertmanager iniciar.
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 global:
   resolve_timeout: 5m

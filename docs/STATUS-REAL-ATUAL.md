@@ -555,7 +555,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ---
 
-## ✅ CONFORMIDADE COM 17 REGRAS (replit.md)
+## ✅ CONFORMIDADE COM 17 REGRAS (CLAUDE.md)
 
 | # | Regra | Status | Evidência |
 |---|-------|--------|-----------|

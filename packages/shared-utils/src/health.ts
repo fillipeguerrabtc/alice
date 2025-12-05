@@ -2,7 +2,7 @@
  * Sistema de Health Checks - Alice Enterprise Platform
  * 
  * Padroniza health checks para todos os serviços.
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils/health
  */

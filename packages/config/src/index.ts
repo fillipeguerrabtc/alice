@@ -120,7 +120,7 @@ export function getServiceUrl(serviceName: string): string {
 }
 
 // ============================================================================
-// SECRETS SANITIZATION (Enterprise-Grade - Regra 16 replit.md)
+// SECRETS SANITIZATION (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ============================================================================
 
 const SECRET_KEYS = new Set([

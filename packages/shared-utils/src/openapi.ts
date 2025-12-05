@@ -7,8 +7,8 @@
  * Author: Fillipe Guerra
  * Data: 05/12/2025
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * Melhores Práticas 2025 (Regra 11 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * Melhores Práticas 2025 (Regra 11 CLAUDE.md)
  */
 
 import { Express, Request, Response } from 'express';

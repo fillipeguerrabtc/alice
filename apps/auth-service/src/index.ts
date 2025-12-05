@@ -6,8 +6,8 @@
  * - SAML 2.0 (Azure AD, Okta)
  * - Autenticação local (email/senha com bcrypt)
  * 
- * Segue best practices 2025 para microserviços (Regra 16 replit.md)
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Segue best practices 2025 para microserviços (Regra 16 CLAUDE.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * REFATORADO: Usa @alice/database centralizado (Regra 2 - Não Duplicar)
  */
@@ -2203,7 +2203,7 @@ server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
 // Ordem: Identity Provisioning → HTTP server → Database pool
 // ============================================================================

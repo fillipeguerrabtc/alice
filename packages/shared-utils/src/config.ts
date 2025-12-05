@@ -4,7 +4,7 @@
  * Centraliza configurações de CORS, timeouts, limites e URLs.
  * Implementa padrão lazy loading com cache resetável para testabilidade.
  * 
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * TypeScript strict mode, `any` proibido (Regra 8).
  * 
  * @module @alice/shared-utils/config

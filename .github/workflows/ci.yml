@@ -4,7 +4,7 @@
 # Descrição: Pipeline de integração contínua para Alice Enterprise Platform
 # Usa pnpm (pnpm-lock.yaml) para gerenciamento de dependências
 # 
-# REGRA 6 (replit.md): PROIBIDO continue-on-error em steps críticos
+# REGRA 6 (CLAUDE.md): PROIBIDO continue-on-error em steps críticos
 # REGRA 8: Qualidade obrigatória - TypeScript strict, zero any
 # REGRA 9: Validação contínua - pipeline DEVE falhar em qualquer erro
 # =============================================================================
@@ -359,7 +359,7 @@ jobs:
   # ===========================================================================
   # Job 5: Security Scanning
   # CRÍTICO: exit-code: '1' para bloquear CI em vulnerabilidades CRITICAL/HIGH
-  # Regra 6 (replit.md): PROIBIDO workarounds - vulnerabilidades devem ser corrigidas
+  # Regra 6 (CLAUDE.md): PROIBIDO workarounds - vulnerabilidades devem ser corrigidas
   # ===========================================================================
   security-scan:
     name: Security Scan

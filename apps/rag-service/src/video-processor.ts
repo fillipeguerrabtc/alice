@@ -6,9 +6,9 @@
  * - Transcrição via Whisper (Salad Cloud)
  * - Extração de frames chave para CLIP embeddings
  * - Text embeddings da transcrição
- * - Circuit Breaker para resiliência (Regra 16 replit.md)
+ * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createLogger } from '@alice/logger';

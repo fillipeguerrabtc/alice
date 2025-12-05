@@ -7,7 +7,7 @@
  * 3. AbortController Timeouts - Todas chamadas externas
  * 4. HMAC Service-to-Service Auth - isInternalAuthEnabled guard
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module tests/unit/security-fixes
  */

@@ -10,7 +10,7 @@
  * - Helmet 8.x Configuration Guide
  * - express-rate-limit 8.2.1 + rate-limit-redis 4.3.0 (2025)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module @alice/shared-utils/express-hardening
  */

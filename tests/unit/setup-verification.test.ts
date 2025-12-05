@@ -4,7 +4,7 @@
  * Teste básico para validar que a configuração do Vitest está funcionando.
  * Este arquivo pode ser removido após confirmação do setup.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect } from 'vitest';

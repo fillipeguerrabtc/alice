@@ -2,7 +2,7 @@
  * Middleware RBAC - Alice Enterprise Platform
  * 
  * Middleware Express para verificação de permissões.
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * SEGURANÇA: Headers x-user-id/x-user-role REMOVIDOS por vulnerabilidade de spoofing.
  * Autenticação APENAS via sessão autenticada ou token interno assinado (HMAC).
@@ -26,7 +26,7 @@ const logger = createLogger('rbac');
 
 /**
  * Token interno para comunicação service-to-service segura.
- * OBRIGATÓRIO em produção (Regra 14 replit.md).
+ * OBRIGATÓRIO em produção (Regra 14 CLAUDE.md).
  * Em desenvolvimento, permite operação sem token para facilitar testes locais.
  */
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;

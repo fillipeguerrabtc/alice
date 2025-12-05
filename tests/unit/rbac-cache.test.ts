@@ -7,7 +7,7 @@
  * - Estatísticas de cache (hits, misses, invalidations)
  * - Integração com métricas Prometheus
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

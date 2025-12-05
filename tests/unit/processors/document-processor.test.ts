@@ -10,7 +10,7 @@
  * Author: Fillipe Guerra
  * Data: 04/12/2025
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';

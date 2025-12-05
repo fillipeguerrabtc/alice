@@ -11,7 +11,7 @@
  * - Proxy reverso para microserviços
  * - Logging centralizado via Pino
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -400,7 +400,7 @@ server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
 // Ordem: Circuit Breakers → HTTP server
 // ============================================================================

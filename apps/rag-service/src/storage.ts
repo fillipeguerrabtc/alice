@@ -13,7 +13,7 @@
  * - S3_BUCKET: Nome do bucket (default: alice-media)
  * - S3_REGION: Região S3 (default: us-east-1)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { promises as fs } from 'fs';
@@ -33,7 +33,7 @@ const logger = pino({
 }).child({ service: 'storage-service' });
 
 // ============================================================================
-// CIRCUIT BREAKER S3 (Enterprise-Grade - Regra 16 replit.md)
+// CIRCUIT BREAKER S3 (Enterprise-Grade - Regra 16 CLAUDE.md)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -213,7 +213,7 @@ export function getS3CircuitBreakerStatus(): S3CircuitBreakerStatus {
 }
 
 // ============================================================================
-// CONFIGURAÇÃO DE STORAGE (Regra 6 replit.md - SEM SOLUÇÕES TEMPORÁRIAS)
+// CONFIGURAÇÃO DE STORAGE (Regra 6 CLAUDE.md - SEM SOLUÇÕES TEMPORÁRIAS)
 // 
 // NÃO-DESENVOLVIMENTO: OBRIGA S3 - Hetzner Object Storage (fail-fast)
 // DESENVOLVIMENTO: Permite local OU S3 (deve ser explícito)
@@ -671,7 +671,7 @@ class S3StorageService implements StorageService {
 
 // ============================================================================
 // FACTORY - Seleciona o serviço de storage baseado na configuração
-// (Regra 6 replit.md - fail-fast em produção)
+// (Regra 6 CLAUDE.md - fail-fast em produção)
 // ============================================================================
 
 let storageInstance: StorageService | null = null;
@@ -703,7 +703,7 @@ export function getStorageService(): LocalStorageService | S3StorageService {
       storageInstance = new LocalStorageService();
     } else {
       // Nunca deve chegar aqui - validação fail-fast já disparou
-      throw new Error(`[FATAL] Storage local não permitido em ambiente ${NODE_ENV} (Regra 6 replit.md)`);
+      throw new Error(`[FATAL] Storage local não permitido em ambiente ${NODE_ENV} (Regra 6 CLAUDE.md)`);
     }
   }
   return storageInstance as LocalStorageService | S3StorageService;

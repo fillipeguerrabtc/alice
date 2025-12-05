@@ -8,7 +8,7 @@
 #
 # Uso: ./validate-deploy.sh [--verbose] [--domain DOMINIO]
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 # =============================================================================
 
 set -e

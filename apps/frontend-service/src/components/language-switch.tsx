@@ -1,5 +1,5 @@
 // Componente de Troca de Idioma - Alice Enterprise Platform
-// Conforme replit.md: Language switch OBRIGATÓRIO em TODAS as páginas (Regra 13)
+// Conforme CLAUDE.md: Language switch OBRIGATÓRIO em TODAS as páginas (Regra 13)
 
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";

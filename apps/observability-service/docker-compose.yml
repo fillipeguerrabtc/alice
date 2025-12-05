@@ -10,7 +10,7 @@
 # - OpenTelemetry Collector: Instrumentação (Apache 2.0)
 # - Langfuse: Métricas LLM específicas (MIT)
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 version: '3.8'
 

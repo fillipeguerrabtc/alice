@@ -4,7 +4,7 @@
  * Página inicial pública com informações sobre a plataforma.
  * Internacionalização completa (Regra 13 - i18n)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { useTranslation } from 'react-i18next';

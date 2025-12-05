@@ -1,7 +1,7 @@
 /// <reference types="vite/client" />
 
 // Declaração de tipos para variáveis de ambiente Vite
-// Conforme replit.md: TypeScript strict, zero LSP errors
+// Conforme CLAUDE.md: TypeScript strict, zero LSP errors
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   readonly VITE_APP_TITLE?: string;

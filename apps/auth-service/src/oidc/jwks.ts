@@ -2,7 +2,7 @@
  * OIDC JWKs Generator - Alice Enterprise Platform
  * Geração e gestão de chaves RS256 para assinatura de JWTs
  * 
- * Seguindo Regra 6 replit.md: Persistência em PostgreSQL (SEM in-memory!)
+ * Seguindo Regra 6 CLAUDE.md: Persistência em PostgreSQL (SEM in-memory!)
  * Seguindo Regra 42: JWT signing com RS256
  * Best Practices 2025: jose v6.1.2
  * 

@@ -12,7 +12,7 @@
  * - integrations-service (3005)
  * - observability-service (3007)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 16: Health checks obrigatórios em /api/servico/health
  */
 

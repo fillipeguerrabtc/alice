@@ -6,7 +6,7 @@
  * - Text embedding da transcrição
  * - Extração de metadata (duração, formato, bitrate)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import pino from 'pino';
@@ -95,7 +95,7 @@ class AudioProcessorService {
         transcription = '[Transcrição não disponível - erro no processamento]';
       }
     } else {
-      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
       logger.error('SALAD_API_KEY não configurado - transcrição indisponível em produção');
       throw new Error('Configuração Salad Cloud obrigatória para processamento de áudio. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
     }
@@ -116,7 +116,7 @@ class AudioProcessorService {
           embeddingModel = 'error-fallback-zero';
         }
       } else {
-        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
         // Este bloco não deve ser alcançado pois já lançamos erro acima
         logger.error('SALAD_API_KEY não configurado - embedding indisponível');
         embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
@@ -396,7 +396,7 @@ class AudioProcessorService {
    * Verifica se o serviço está configurado
    */
   isReady(): boolean {
-    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md)
+    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md)
     return this.isConfigured;
   }
 

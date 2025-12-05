@@ -299,7 +299,7 @@ alice/
 
 | Documento | Descrição |
 |-----------|-----------|
-| [replit.md](replit.md) | Contexto completo do projeto e 17 regras |
+| [CLAUDE.md](CLAUDE.md) | Contexto completo do projeto e 17 regras |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deploy para produção |
 | [docs/SECRETS.md](docs/SECRETS.md) | Guia de secrets e webhooks |
 | [docs/SISTEMA-APRENDIZADO.md](docs/SISTEMA-APRENDIZADO.md) | Sistema de auto-aprendizado |

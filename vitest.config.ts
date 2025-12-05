@@ -3,7 +3,7 @@
  * 
  * Configuração de testes automatizados seguindo melhores práticas 2025.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { defineConfig } from 'vitest/config';

@@ -2,7 +2,7 @@
  * Redis Cache Adapter - Alice Enterprise Platform
  * 
  * Adapter pattern para cache distribuído com Redis.
- * Regra 6 replit.md: PROIBIDO in-memory em produção.
+ * Regra 6 CLAUDE.md: PROIBIDO in-memory em produção.
  * 
  * Features:
  * - Fail-fast em produção se Redis indisponível

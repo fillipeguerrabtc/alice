@@ -3,7 +3,7 @@
  * 
  * Cliente HTTP para buscar contexto de documentos do RAG Service.
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module chat-service/rag-client
  */

@@ -4,8 +4,8 @@
  * Tabelas de chat: conversations, messages, handover/takeover.
  * Domínio de comunicação em tempo real.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/chat
  */

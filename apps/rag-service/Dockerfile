@@ -11,7 +11,7 @@
 # - Apenas dependências necessárias instaladas
 # - read_only filesystem em produção (via docker-compose)
 # 
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # ==============================================================================
 
 # ==============================================================================

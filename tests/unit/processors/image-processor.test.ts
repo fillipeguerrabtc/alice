@@ -10,7 +10,7 @@
  * Author: Fillipe Guerra
  * Data: 04/12/2025
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -330,7 +330,7 @@ describe('Image Processor - Validação de Tamanho', () => {
 // ============================================================================
 
 describe('Image Processor - Magic Bytes Validation', () => {
-  // Simula verificação de magic bytes para segurança (Regra 16 replit.md)
+  // Simula verificação de magic bytes para segurança (Regra 16 CLAUDE.md)
   function detectImageType(buffer: Buffer): string | null {
     // JPEG: FF D8 FF
     if (buffer[0] === 0xFF && buffer[1] === 0xD8 && buffer[2] === 0xFF) {

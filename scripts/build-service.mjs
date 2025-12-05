@@ -8,7 +8,7 @@
  * Uso: node scripts/build-service.mjs <service-name>
  * Exemplo: node scripts/build-service.mjs auth-service
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import * as esbuild from 'esbuild';

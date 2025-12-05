@@ -7,7 +7,7 @@
  * Modelo: FLUX.1 Schnell (Apache 2.0, uso comercial permitido)
  * Hospedagem: Salad Cloud Container Group dedicado
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';

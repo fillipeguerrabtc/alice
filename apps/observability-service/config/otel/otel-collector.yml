@@ -3,7 +3,7 @@
 # Configuração do OTel Collector para receber traces/métricas
 # dos microserviços Alice e exportar para Jaeger/Prometheus.
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 receivers:
   # Receptor OTLP para traces e métricas dos microserviços

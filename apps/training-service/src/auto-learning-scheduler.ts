@@ -7,7 +7,7 @@
  * - Fine-tuning incremental (LoRA): A cada 4 dias
  * - Fine-tuning completo: Quinzenal
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module training-service/auto-learning-scheduler
  */

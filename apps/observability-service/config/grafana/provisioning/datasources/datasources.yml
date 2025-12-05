@@ -3,7 +3,7 @@
 # Configuração automática de datasources para Grafana.
 # Conecta Prometheus (métricas) e Jaeger (traces).
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 apiVersion: 1
 

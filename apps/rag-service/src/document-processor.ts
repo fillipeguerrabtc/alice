@@ -7,13 +7,14 @@
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
  * - Text embeddings do conteúdo extraído (Salad Cloud)
- * - Circuit Breaker para resiliência (Regra 16 replit.md)
+ * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
 
@@ -230,7 +231,7 @@ class DocumentProcessorService {
     if (generateEmbeddings) {
       // Embeddings solicitados - verificar se está configurado
       if (!this.isConfigured) {
-        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO quando embeddings são solicitados (Regra 6 replit.md)
+        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO quando embeddings são solicitados (Regra 6 CLAUDE.md)
         logger.error('SALAD_API_KEY não configurado - embeddings solicitados mas indisponíveis');
         throw new Error('Configuração Salad Cloud obrigatória para gerar embeddings. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
       }
@@ -490,11 +491,11 @@ class DocumentProcessorService {
     let text = '';
     let totalRows = 0;
 
-    workbook.eachSheet((worksheet, sheetId) => {
+    workbook.eachSheet((worksheet: Worksheet, sheetId: number) => {
       const sheetName = worksheet.name || `Sheet${sheetId}`;
       const rows: string[] = [];
       
-      worksheet.eachRow({ includeEmpty: false }, (row) => {
+      worksheet.eachRow({ includeEmpty: false }, (row: Row) => {
         // row.values é 1-indexed, então slice(1) para pular o primeiro elemento vazio
         // Null-check para evitar TypeError se row.values for undefined
         const values = (row.values || []) as unknown[];

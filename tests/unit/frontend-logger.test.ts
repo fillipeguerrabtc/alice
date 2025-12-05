@@ -4,7 +4,7 @@
  * Testes de contrato para validar o sistema de logging do frontend.
  * Valida estrutura de logs, retry, queue e rota de observability.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 8: Pino logger obrigatório, console.log proibido
  */
 

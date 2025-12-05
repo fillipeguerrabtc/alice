@@ -5,7 +5,7 @@
  * Resolve TS2589 (Type instantiation is excessively deep) ao quebrar
  * a inferência recursiva de tipos do zodResolver.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import type { Resolver, FieldValues } from 'react-hook-form';

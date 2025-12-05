@@ -9,7 +9,7 @@
  * - Middleware RBAC
  * - Cache de permissões
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';

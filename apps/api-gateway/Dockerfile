@@ -1,6 +1,6 @@
 # ==============================================================================
 # Alice Enterprise Platform - API Gateway (Traefik)
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # SEGURANÇA: Traefik v3.3+ com configurações hardened
 # ==============================================================================
 FROM traefik:v3.3

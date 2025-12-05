@@ -4,8 +4,8 @@
  * Definições de relacionamentos Drizzle ORM entre tabelas.
  * Centraliza todos os relations para evitar dependências circulares.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/relations
  */

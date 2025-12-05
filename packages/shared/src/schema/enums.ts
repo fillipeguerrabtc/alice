@@ -4,8 +4,8 @@
  * Todos os enums do banco de dados centralizados.
  * Usados por múltiplos domínios via import.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/enums
  */

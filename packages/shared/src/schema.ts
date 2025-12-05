@@ -539,7 +539,7 @@ export const oauthTokens = pgTable(
 // ============================================================================
 // OIDC PAYLOADS (node-oidc-provider v9.5.2 - Persistência PostgreSQL)
 // Armazena tokens, codes, grants, sessions para OIDC Provider
-// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// Seguindo Regra 6 CLAUDE.md: PROIBIDO in-memory storage
 // ============================================================================
 
 export const oidcPayloads = pgTable(
@@ -565,7 +565,7 @@ export const oidcPayloads = pgTable(
 );
 
 // ============================================================================
-// OIDC JWKS (Persistência de Chaves RS256 - Regra 6 replit.md)
+// OIDC JWKS (Persistência de Chaves RS256 - Regra 6 CLAUDE.md)
 // Armazena chaves de assinatura JWT para sobreviver reinicializações
 // ============================================================================
 

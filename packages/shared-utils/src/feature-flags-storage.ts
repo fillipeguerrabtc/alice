@@ -4,7 +4,7 @@
  * Persistência real em PostgreSQL usando Drizzle ORM.
  * Suporta multi-tenant com isolamento por tenant_id.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module @alice/shared-utils/feature-flags-storage
  */

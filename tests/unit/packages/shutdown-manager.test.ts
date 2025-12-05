@@ -9,7 +9,7 @@
  * 
  * Usa _createTestableShutdownManager para criar instâncias isoladas
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 9: Validação contínua
  * Regra 16: Melhores práticas enterprise (ShutdownManager centralizado)
  */
@@ -217,7 +217,7 @@ describe('@alice/shared-utils - ShutdownManager (módulo real)', () => {
     });
   });
 
-  describe('prioridades padrão (conforme replit.md)', () => {
+  describe('prioridades padrão (conforme CLAUDE.md)', () => {
     it('deve suportar prioridades documentadas', async () => {
       const executionOrder: string[] = [];
       

@@ -255,7 +255,7 @@ export type InsertOAuthToken = typeof oauthTokens.$inferInsert;
 // ============================================================================
 // OIDC PAYLOADS (node-oidc-provider v9.5.2 - Persistência PostgreSQL)
 // Armazena tokens, codes, grants, sessions para OIDC Provider
-// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// Seguindo Regra 6 CLAUDE.md: PROIBIDO in-memory storage
 // ============================================================================
 
 export const oidcPayloads = pgTable(
@@ -285,7 +285,7 @@ export type InsertOidcPayload = typeof oidcPayloads.$inferInsert;
 
 // ============================================================================
 // OIDC JWKS (Chaves RS256 para assinatura de tokens - Persistência PostgreSQL)
-// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// Seguindo Regra 6 CLAUDE.md: PROIBIDO in-memory storage
 // ============================================================================
 
 export const oidcJwks = pgTable(
@@ -312,7 +312,7 @@ export type InsertOidcJwk = typeof oidcJwks.$inferInsert;
 
 // ============================================================================
 // IDENTITY PROVISIONING EVENTS (Outbox Pattern - Sincronização Alice → Grafana/ERPNext)
-// Seguindo Regra 6 replit.md: Persistência PostgreSQL para garantia de entrega
+// Seguindo Regra 6 CLAUDE.md: Persistência PostgreSQL para garantia de entrega
 // ============================================================================
 
 export const identityProvisioningStatusEnum = pgEnum("identity_provisioning_status", [

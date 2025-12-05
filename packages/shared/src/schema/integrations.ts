@@ -4,8 +4,8 @@
  * Tabelas de integrações: integrations, audit logs, webhooks, Stripe-ERPNext, Wise sync.
  * Domínio de integrações externas e auditoria.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/integrations
  */

@@ -6,7 +6,7 @@
  * - Clientes OAuth (Grafana, ERPNext)
  * - Chave JWKS RS256 para assinatura JWT
  * 
- * Seguindo Regra 6 replit.md: PROIBIDO dados hardcoded em produção
+ * Seguindo Regra 6 CLAUDE.md: PROIBIDO dados hardcoded em produção
  * Este seed é apenas para inicialização do sistema
  * 
  * Execução: npx tsx scripts/seed-oidc.ts

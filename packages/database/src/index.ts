@@ -6,7 +6,7 @@ import { createLogger } from '@alice/logger';
 
 const { Pool } = pg;
 
-// Logger singleton do módulo (Regra 8 replit.md - Pino obrigatório)
+// Logger singleton do módulo (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger('database');
 
 let dbInstance: NodePgDatabase<typeof schema> | null = null;
@@ -55,7 +55,7 @@ export function _resetForTesting(): void {
 }
 
 // ============================================================================
-// POOL METRICS (Enterprise-Grade - Regra 16 replit.md)
+// POOL METRICS (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ============================================================================
 
 export interface PoolMetrics {
@@ -104,7 +104,7 @@ export function getPoolMetrics(): PoolMetrics {
  * @param timeoutMs - Timeout em ms para a operação completa (default: 2000ms)
  * @returns Promise<boolean> - true se pool saudável, false caso contrário
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 export async function isPoolHealthy(timeoutMs = 2000): Promise<boolean> {
   if (!poolInstance || isShuttingDown) {
@@ -147,7 +147,7 @@ export async function isPoolHealthy(timeoutMs = 2000): Promise<boolean> {
 }
 
 // ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
 // Refatorado para usar ShutdownManager centralizado (elimina duplicação de listeners)
 // ============================================================================
 
@@ -188,7 +188,7 @@ export function setupGracefulShutdown(): void {
 }
 
 // ============================================================================
-// TENANT CONTEXT (RLS Enterprise-Grade - Regra 16 replit.md)
+// TENANT CONTEXT (RLS Enterprise-Grade - Regra 16 CLAUDE.md)
 // Implementação segura sem SQL injection, usando parameterized queries
 // ============================================================================
 
@@ -323,7 +323,7 @@ export { schema };
 export type Database = NodePgDatabase<typeof schema>;
 
 // ============================================================================
-// RE-EXPORTS DO DRIZZLE-ORM (Singleton Pattern - Regra 16 replit.md)
+// RE-EXPORTS DO DRIZZLE-ORM (Singleton Pattern - Regra 16 CLAUDE.md)
 // Todos os microsserviços DEVEM usar estas funções via @alice/database
 // para garantir uma única instância do drizzle-orm no monorepo
 // ============================================================================
@@ -369,7 +369,7 @@ export {
 // Uso: toSql([0.1, 0.2, ...]) -> string compatível com vector type
 export const toSql = pgvector.toSql;
 
-// Dimensões dos embeddings (conforme replit.md)
+// Dimensões dos embeddings (conforme CLAUDE.md)
 export const EMBEDDING_DIMENSIONS = {
   TEXT: 1536,   // text-embedding-3-small via Salad Cloud
   CLIP: 768,    // CLIP ViT-L/14 via Salad Cloud

@@ -10,7 +10,7 @@
  * - Velocidade: 1-3 segundos/imagem
  * - Custo: ~$0.20/hora (~$20 por 100k imagens)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module chat-service/flux-deployment
  */

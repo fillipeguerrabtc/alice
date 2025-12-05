@@ -9,7 +9,7 @@
  * - URLs de serviços (portas conforme Regra 16)
  * - Configuração Salad Cloud
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 8: Usar Pino, console.log é PROIBIDO
  */
 

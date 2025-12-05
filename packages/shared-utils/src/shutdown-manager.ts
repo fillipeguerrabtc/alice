@@ -10,8 +10,8 @@
  * 3. No shutdown, callbacks são executados em ordem de prioridade
  * 4. HTTP server fecha ANTES do pool de database
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * Enterprise-Grade (Regra 16 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * Enterprise-Grade (Regra 16 CLAUDE.md)
  * 
  * @module @alice/shared-utils/shutdown-manager
  */

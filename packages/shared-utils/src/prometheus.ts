@@ -11,7 +11,7 @@
  * - RAG: documentos indexados, busca vetorial
  * - Training: jobs ativos, loss, GPU utilization
  * 
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils/prometheus
  */

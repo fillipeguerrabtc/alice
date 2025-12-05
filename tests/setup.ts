@@ -4,7 +4,7 @@
  * Configuração executada antes de todos os testes.
  * Inicializa variáveis de ambiente e configurações necessárias.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 8: Usar Pino, console.log é PROIBIDO
  */
 

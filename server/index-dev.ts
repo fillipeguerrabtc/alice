@@ -1,11 +1,11 @@
 /**
  * Servidor de Desenvolvimento - Alice Enterprise Platform
  * 
- * APENAS PARA PREVIEW NO REPLIT (Regra 6 replit.md)
+ * APENAS PARA PREVIEW LOCAL (Regra 6 CLAUDE.md)
  * Dados de preview permitidos APENAS neste arquivo.
  * 
  * Produção: Hetzner Cloud via Docker Compose (Regra 12)
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import express from 'express';
@@ -14,7 +14,7 @@ import { setupVite, log } from './vite';
 import { storage } from './storage';
 
 // ============================================================================
-// PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 replit.md)
+// PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 CLAUDE.md)
 // Este código NAO é deployado para produção
 // ============================================================================
 

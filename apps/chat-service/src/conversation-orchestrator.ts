@@ -8,7 +8,7 @@
  * - Sentimento negativo
  * - Keywords de escalação
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { eq, and, isNull, lt, desc } from '@alice/database';

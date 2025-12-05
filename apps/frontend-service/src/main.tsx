@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
 
-// Inicialização i18n - OBRIGATÓRIO conforme replit.md Regra 13
+// Inicialização i18n - OBRIGATÓRIO conforme CLAUDE.md Regra 13
 import '@/lib/i18n';
 
 createRoot(document.getElementById('root')!).render(

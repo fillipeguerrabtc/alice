@@ -1,0 +1,165 @@
+# Alice - Plataforma Enterprise de IA Autônoma
+
+## Overview
+Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate external API dependencies, mitigate privacy concerns, and offer an alternative to unpredictable token-based pricing. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend, image generation, aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
+
+## User Preferences
+### 17 Regras Fundamentais
+
+| # | Regra | Descrição |
+|---|-------|-----------|
+| 1 | **LER ANTES DE AGIR** | Inspecionar arquivos antes de implementar |
+| 2 | **NÃO DUPLICAR** | Verificar código existente primeiro |
+| 3 | **WORKFLOW ESTRUTURADO** | Diagnóstico → Plano → Aprovação → Implementação |
+| 4 | **APROVAÇÃO OBRIGATÓRIA** | Pedir aprovação antes de mudanças grandes |
+| 5 | **NÃO MENTIR** | Dizer "não sei" quando não souber |
+| 6 | **SEM SOLUÇÕES TEMPORÁRIAS** | **PROIBIDO**: workarounds, mocks, dados hardcoded, in-memory storage, valores default falsos. TODA lógica deve ser enterprise-grade com persistência real em PostgreSQL |
+| 7 | **MUDANÇAS CIRÚRGICAS** | Diagnosticar causa raiz antes de agir. Analisar impacto em componentes dependentes. Implementar mudança isolada. |
+| 8 | **QUALIDADE OBRIGATÓRIA** | TypeScript strict, zero any, Pino |
+| 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
+| 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
+| 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
+| 12 | **PRODUÇÃO HETZNER** | Deploy via GitHub Actions |
+| 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
+| 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
+| 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
+| 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
+| 17 | **REVIEW ANTES DO PUSH** | Consolidar mudanças em commit único, aguardar Review automática do Cursor, e só fazer push após aprovação do usuário |
+
+### Preferências de Idioma
+
+| Contexto | Idioma |
+|----------|--------|
+| Documentação | Português Brasileiro |
+| Comentários no código | Português Brasileiro |
+| Mensagens de log | Português Brasileiro |
+| Nomes de variáveis | Inglês |
+| Termos técnicos | Inglês (OAuth, JWT, etc.) |
+
+### Ambiente de Desenvolvimento vs Produção
+
+| Ambiente | Local | Propósito | Regras |
+|----------|-------|-----------|--------|
+| DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
+| PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+
+**IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
+
+## System Architecture
+Alice employs a microservices architecture with 26 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+
+**Core Architectural Components:**
+- **Infrastructure Core**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy).
+- **Alice Microservices (8 serviços)**:
+    - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
+    - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
+    - **Chat Service**: Real-time LLM token streaming via WebSockets.
+    - **RAG Service**: Retrieval-Augmented Generation with embeddings and pgvector.
+    - **Training Service**: Fine-tuning and self-learning scheduler.
+    - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
+    - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
+    - **CLIP Inference**: Multimodal embeddings for images using CLIP ViT-L/14 (Python, PyTorch).
+- **ERPNext Stack**: Includes MariaDB, Redis, Frappe Bench services, and NGINX frontend for comprehensive ERP functionalities.
+- **Backup & Logs**: pgBackRest for PostgreSQL backups and Vector for log aggregation.
+
+**Shared Packages (`packages/`):**
+- `config`: Centralized configurations.
+- `database`: Drizzle ORM, PostgreSQL schemas.
+- `logger`: Pino structured logging.
+- `shared`: Shared TypeScript types.
+- `shared-utils`: Utilities like shutdown manager, circuit breaker, cache adapter.
+
+## External Dependencies
+- **LLM**: Llama 4 Maverick (400B params) on Salad Cloud.
+- **Embeddings**: text-embedding-3-small on Salad Cloud.
+- **Image Generation**: FLUX.1 Schnell on Salad Cloud.
+- **CLIP Inference**: CLIP ViT-L/14 on Salad Cloud.
+- **Payments**: Stripe, Wise.
+- **CRM/ERP**: ERPNext.
+- **Communication**: Twilio (WhatsApp, SMS), Resend (transactional emails).
+- **Database**: PostgreSQL with pgvector extension.
+- **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
+- **API Gateway**: Traefik v3.3.
+- **CI/CD**: GitHub Actions.
+- **Object Storage**: Hetzner Object Storage (S3-compatible).
+
+## Deploy Information
+- **Servidor**: Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe SSD)
+- **IP**: 46.224.46.93
+- **Domínio**: yesyoudeserve.duckdns.org
+- **SO**: Ubuntu 24.04.3 LTS
+- **Docker**: 29.0.4, Docker Compose v2.40.3
+- **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
+
+## URLs de Produção
+| Serviço | URL |
+|---------|-----|
+| Alice Frontend | https://yesyoudeserve.duckdns.org |
+| Alice Chat | https://yesyoudeserve.duckdns.org/chat |
+| ERPNext | https://erp.yesyoudeserve.duckdns.org |
+| Grafana | https://observability.yesyoudeserve.duckdns.org |
+| Prometheus | https://prometheus.yesyoudeserve.duckdns.org |
+| Jaeger | https://tracing.yesyoudeserve.duckdns.org |
+
+## Conexão SSH ao Servidor
+```bash
+# Usando alias (recomendado - configurar em ~/.ssh/config)
+ssh alice-hetzner
+
+# Conexão direta
+ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+```
+
+## Estrutura do Projeto
+```
+alice/
+├── apps/                           # Microserviços independentes (9)
+│   ├── frontend-service/           # React + Vite SPA
+│   ├── api-gateway/                # Traefik config (dev only)
+│   ├── auth-service/               # OAuth/SAML/RBAC
+│   ├── chat-service/               # LLM Proxy + WebSocket
+│   ├── rag-service/                # Embeddings + pgvector
+│   ├── training-service/           # Fine-tuning
+│   ├── integrations-service/       # Stripe, ERPNext, Twilio
+│   ├── observability-service/      # Prometheus, Grafana, Jaeger
+│   └── clip-inference-service/     # Python/PyTorch CLIP
+├── packages/                       # Código compartilhado (5)
+│   ├── shared/                     # Schema Drizzle ORM
+│   ├── database/                   # PostgreSQL + pgvector
+│   ├── shared-utils/               # Utilities
+│   ├── config/                     # Validação Zod
+│   └── logger/                     # Pino singleton
+├── infra/docker/                   # Docker Compose prod
+├── docs/                           # Documentação completa
+└── .github/workflows/              # CI/CD (3 workflows)
+```
+
+## Documentação Principal
+| Documento | Descrição |
+|-----------|-----------|
+| `docs/STATUS-REAL-ATUAL.md` | Status completo da plataforma |
+| `docs/PLANO-100%-BASE.md` | Plano de gaps e correções |
+| `docs/DEPLOYMENT.md` | Guia de deploy para produção |
+| `docs/SECRETS.md` | Guia de secrets e webhooks |
+| `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
+
+## Security Hardening (Dezembro 2025)
+- **26 containers** = 100% com `security_opt: no-new-privileges`
+- **26 containers** = 100% com `read_only: true` + tmpfs
+- **26 containers** = 100% com resource limits
+- **18 imagens externas** = 100% com SHA256 digests
+- **24 containers** = 100% com healthchecks (init excluídos)
+- **Google Distroless** = 6 serviços Node.js (0 CVEs)
+- **OWASP API Top 10** = 9/10 mitigados
+
+## Technical Stack
+- **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
+- **Backend**: Node.js 22 LTS, Express 4.22, pnpm 10.24.0
+- **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
+- **Python**: Python 3.11, PyTorch 2.9.1 (CLIP service)
+- **CI/CD**: GitHub Actions (100% automático)
+
+---
+*Autor: Fillipe Guerra*
+*Versão: 3.14 - 05 de Dezembro de 2025*
+*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

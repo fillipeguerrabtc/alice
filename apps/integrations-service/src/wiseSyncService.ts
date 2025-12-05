@@ -4,7 +4,7 @@
  * Sincronização evento-driven entre Wise e ERPNext.
  * Implementa reconciliação com detecção de divergências.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { eq, and, lt, desc } from '@alice/database';

@@ -2,7 +2,7 @@
 # Alice Enterprise Platform - Observability Service
 # Dockerfile Enterprise com Google Distroless para ZERO CVEs
 # Health Checker para stack de observabilidade (Prometheus, Grafana, Jaeger)
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 # SEGURANÇA: Distroless não tem shell, reduzindo superfície de ataque
 # ==============================================================================
 

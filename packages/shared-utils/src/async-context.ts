@@ -5,7 +5,7 @@
  * usando AsyncLocalStorage do Node.js 20 LTS.
  * 
  * Referência: https://nodejs.org/docs/latest-v20.x/api/async_context.html
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { AsyncLocalStorage } from 'async_hooks';

@@ -4,8 +4,8 @@
  * Tabelas fundamentais: tenants, users, sessions, permissions, OAuth, OIDC, feature flags.
  * Base para todos os outros domínios.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  * 
  * @module @alice/shared/schema/core
  */
@@ -221,7 +221,7 @@ export const oauthTokens = pgTable(
 
 // ============================================================================
 // OIDC PAYLOADS (node-oidc-provider v9.5.2 - Persistência PostgreSQL)
-// Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+// Seguindo Regra 6 CLAUDE.md: PROIBIDO in-memory storage
 // ============================================================================
 
 export const oidcPayloads = pgTable(
@@ -247,7 +247,7 @@ export const oidcPayloads = pgTable(
 );
 
 // ============================================================================
-// OIDC JWKS (Persistência de Chaves RS256 - Regra 6 replit.md)
+// OIDC JWKS (Persistência de Chaves RS256 - Regra 6 CLAUDE.md)
 // ============================================================================
 
 export const oidcJwks = pgTable(

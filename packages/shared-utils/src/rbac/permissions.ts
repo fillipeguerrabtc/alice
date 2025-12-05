@@ -2,7 +2,7 @@
  * Mapa de Permissões RBAC - Alice Enterprise Platform
  * 
  * Define quais roles têm acesso a quais recursos.
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils/rbac/permissions
  */

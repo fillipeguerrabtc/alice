@@ -1,7 +1,7 @@
 # ==============================================================================
 # Alice Enterprise Platform - Integrations Service
 # Dockerfile Enterprise com Google Distroless para ZERO CVEs
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # SEGURANÇA: Distroless não tem shell, reduzindo superfície de ataque
 # ==============================================================================
 

@@ -285,5 +285,5 @@ Antes de entregar qualquer página:
 ---
 
 *Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro (Regra 10 replit.md)*
+*Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Atualizado: 03 de Dezembro de 2025*

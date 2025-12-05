@@ -3,7 +3,7 @@
 # Configuração de scrape para todos os microserviços Alice.
 # Métricas específicas para LLM incluídas.
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 global:
   scrape_interval: 15s

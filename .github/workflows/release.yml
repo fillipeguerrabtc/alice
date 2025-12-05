@@ -287,7 +287,7 @@ jobs:
             console.log('📦 Versão: ${{ needs.create-release.outputs.version }}');
             
             // NOTA: deploy-production.yml aceita apenas 'version' e 'services'
-            // skip_approval e skip_tests foram removidos (REGRA 4 e 6 replit.md)
+            // skip_approval e skip_tests foram removidos (REGRA 4 e 6 CLAUDE.md)
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,

@@ -2,7 +2,7 @@
  * Utilitários Compartilhados - Alice Enterprise Platform
  * 
  * Módulo principal que exporta todos os utilitários.
- * Documentação em PT-BR (Regra 10 replit.md).
+ * Documentação em PT-BR (Regra 10 CLAUDE.md).
  * 
  * @module @alice/shared-utils
  */

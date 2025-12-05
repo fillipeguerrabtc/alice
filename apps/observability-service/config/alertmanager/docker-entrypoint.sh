@@ -4,7 +4,7 @@
 # Cria arquivos de secrets a partir de variáveis de ambiente
 # antes de iniciar o Alertmanager.
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 set -e
 

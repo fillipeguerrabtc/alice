@@ -25,7 +25,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.PORT || '5000', 10);
 
-// Logger singleton (Regra 8 replit.md - Pino obrigatório)
+// Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger('server-prod');
 
 async function startProdServer() {
@@ -33,7 +33,7 @@ async function startProdServer() {
   logger.info('Alice Enterprise Platform - PRODUCTION');
   logger.info('========================================');
   
-  // Inicializar ShutdownManager (replit.md - ShutdownManager Centralizado)
+  // Inicializar ShutdownManager (CLAUDE.md - ShutdownManager Centralizado)
   initializeShutdownManager();
 
   const app = express();
@@ -95,7 +95,7 @@ async function startProdServer() {
 
   const server = createServer(app);
 
-  // Registrar callback de shutdown para HTTP server (replit.md - ShutdownManager Centralizado)
+  // Registrar callback de shutdown para HTTP server (CLAUDE.md - ShutdownManager Centralizado)
   registerShutdownCallback(
     'http-server-prod',
     async () => {

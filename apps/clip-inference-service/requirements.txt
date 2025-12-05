@@ -1,7 +1,7 @@
 # CLIP Inference Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # Versões travadas e atualizadas para dezembro 2025 (Regra 11 - melhores práticas)
 # Última atualização: 02/12/2025
 
@@ -65,5 +65,5 @@ prometheus-client==0.23.1
 # Logging estruturado JSON - 4.0.0 (released Oct 6, 2025)
 python-json-logger==4.0.0
 
-# Circuit Breaker (Regra 16 replit.md - Best Practices 2025)
+# Circuit Breaker (Regra 16 CLAUDE.md - Best Practices 2025)
 pybreaker==1.0.2

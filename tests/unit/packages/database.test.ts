@@ -7,7 +7,7 @@
  * 
  * Usa dependency injection via _setPoolForTesting para testar o módulo real
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 9: Validação contínua
  * Regra 16: Melhores práticas enterprise
  */

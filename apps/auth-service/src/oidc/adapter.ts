@@ -2,7 +2,7 @@
  * OIDC Adapter PostgreSQL - Alice Enterprise Platform
  * Persistência de tokens, codes e grants no PostgreSQL
  * 
- * Seguindo Regra 6 replit.md: PROIBIDO in-memory storage
+ * Seguindo Regra 6 CLAUDE.md: PROIBIDO in-memory storage
  * Best Practices 2025: node-oidc-provider v9.5.2
  * 
  * @author Alice Team

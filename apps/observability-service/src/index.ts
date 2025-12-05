@@ -7,8 +7,8 @@
  * 
  * Porta: 3007
  * 
- * Documentação PT-BR (Regra 10 replit.md)
- * TypeScript strict (Regra 8 replit.md)
+ * Documentação PT-BR (Regra 10 CLAUDE.md)
+ * TypeScript strict (Regra 8 CLAUDE.md)
  */
 
 import express, { Request, Response, NextFunction } from 'express';
@@ -28,7 +28,7 @@ import {
 import { observabilityServicePaths, observabilityServiceSchemas } from './openapi-specs.js';
 import { backupRouter } from './backup-orchestrator.js';
 
-// Logger estruturado - JSON em produção (Regra 8 replit.md)
+// Logger estruturado - JSON em produção (Regra 8 CLAUDE.md)
 const isProduction = process.env.NODE_ENV === 'production';
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -676,7 +676,7 @@ server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
 server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
 
 // ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 replit.md)
+// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
 // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
 // Ordem: Circuit Breakers → HTTP server
 // ============================================================================

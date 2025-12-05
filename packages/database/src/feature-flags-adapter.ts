@@ -4,7 +4,7 @@
  * Implementação concreta que conecta o sistema de feature flags
  * ao PostgreSQL via Drizzle ORM com suporte a RLS multi-tenant.
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module @alice/database/feature-flags-adapter
  */

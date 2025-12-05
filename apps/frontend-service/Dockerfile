@@ -1,7 +1,7 @@
 # ==============================================================================
 # Alice Enterprise Platform - Frontend Service
 # Dockerfile Enterprise com nginx:1.27-alpine para servir SPA React
-# Documentação em PT-BR (Regra 10 replit.md)
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
 # NOTA: Frontend usa nginx para servir arquivos estáticos (não há Distroless nginx)
 # SEGURANÇA: Non-root container + Alpine hardened
 # ==============================================================================

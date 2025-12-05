@@ -3,7 +3,7 @@
 # Regras de alerta específicas para monitoramento de LLM.
 # Baseado em melhores práticas 2025 para observabilidade de IA.
 #
-# Documentação PT-BR (Regra 10 replit.md)
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 
 groups:
   - name: llm_alerts

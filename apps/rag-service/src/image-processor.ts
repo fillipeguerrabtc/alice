@@ -5,9 +5,9 @@
  * - CLIP embeddings (768 dimensões) via Salad Cloud
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
- * - Circuit breaker para resiliência (Regra 16 replit.md)
+ * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import pino from 'pino';
@@ -146,7 +146,7 @@ class ImageProcessorService {
         embeddingModel = 'error-fallback-zero';
       }
     } else {
-      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md - PROIBIDO mocks)
+      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
       logger.error('SALAD_API_KEY não configurado - embeddings indisponíveis em produção');
       throw new Error('Configuração Salad Cloud obrigatória para processamento de imagens. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
     }
@@ -518,7 +518,7 @@ class ImageProcessorService {
    * Verifica se o serviço está configurado corretamente
    */
   isReady(): boolean {
-    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 replit.md)
+    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md)
     return this.isConfigured;
   }
 

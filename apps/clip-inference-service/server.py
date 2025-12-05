@@ -9,8 +9,8 @@ Endpoints:
 - POST /inference/clip - Gera embedding de texto ou imagem (REQUER AUTH)
 - GET /health - Health check (público para docker healthcheck)
 
-Documentação em PT-BR (Regra 10 replit.md)
-Segurança Enterprise (Regra 16 replit.md)
+Documentação em PT-BR (Regra 10 CLAUDE.md)
+Segurança Enterprise (Regra 16 CLAUDE.md)
 """
 
 import os

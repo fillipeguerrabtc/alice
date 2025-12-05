@@ -8,7 +8,7 @@
  * - Fallback seguro para produção
  * - Auditoria de mudanças
  * 
- * Documentação em PT-BR (Regra 10 replit.md)
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * 
  * @module @alice/shared-utils/feature-flags
  */

@@ -355,7 +355,7 @@ export const openApiConfig = {
 
 ---
 
-## 🔒 ADERÊNCIA ÀS 17 REGRAS (replit.md)
+## 🔒 ADERÊNCIA ÀS 17 REGRAS (CLAUDE.md)
 
 | Regra | Status | Evidência |
 |-------|--------|-----------|

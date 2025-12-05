@@ -1,5 +1,5 @@
 // Configuração i18n - Alice Enterprise Platform
-// Biblioteca: react-i18next + i18next (conforme replit.md REGRA 11 e 13)
+// Biblioteca: react-i18next + i18next (conforme CLAUDE.md REGRA 11 e 13)
 // Idioma principal: Português Brasileiro (pt-BR)
 // Idioma secundário: English (en)
 // Timezone: Europe/Lisbon (Portugal)
@@ -32,8 +32,8 @@ i18n
   .use(initReactI18next) // Integração com React
   .init({
     resources,
-    fallbackLng: "pt-BR", // Idioma de fallback (conforme replit.md)
-    lng: "pt-BR", // Idioma padrão (conforme replit.md)
+    fallbackLng: "pt-BR", // Idioma de fallback (conforme CLAUDE.md)
+    lng: "pt-BR", // Idioma padrão (conforme CLAUDE.md)
     
     // Detecção de idioma
     detection: {
