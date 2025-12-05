@@ -25,6 +25,7 @@ export * from './prometheus.js';
 export * from './shutdown-manager.js';
 export * from './redis-cache-adapter.js';
 export * from './openapi.js';
+export * from './multi-tenant-validation.js';
 
 export * as rbac from './rbac/index.js';
 export { 

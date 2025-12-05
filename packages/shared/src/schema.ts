@@ -683,10 +683,21 @@ export const namespaces = pgTable(
 // AGENTES (Agentes de IA Especializados)
 // ============================================================================
 
+/**
+ * Tabela de Agentes IA
+ * 
+ * SEGURANÇA MULTI-TENANT:
+ * - tenantId DEVE ser igual ao tenantId do namespace referenciado
+ * - Validação obrigatória na camada de aplicação antes de INSERT/UPDATE
+ * - Use validateTenantConsistency() de @alice/shared-utils antes de criar/atualizar
+ * - PostgreSQL RLS policies também aplicam filtro por tenant em runtime
+ */
 export const agents = pgTable(
   "agents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // tenantId nullable para compatibilidade com migração de dados existentes
+    // Validação obrigatória na camada de aplicação via validateTenantConsistency()
     tenantId: uuid("tenant_id").references(() => tenants.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id, {
       onDelete: "cascade",
@@ -718,10 +729,21 @@ export const agents = pgTable(
 // CONVERSAS
 // ============================================================================
 
+/**
+ * Tabela de Conversas
+ * 
+ * SEGURANÇA MULTI-TENANT:
+ * - tenantId DEVE ser igual ao tenantId do agent e namespace referenciados
+ * - Validação obrigatória na camada de aplicação antes de INSERT/UPDATE
+ * - Use validateTenantConsistency() de @alice/shared-utils antes de criar/atualizar
+ * - PostgreSQL RLS policies também aplicam filtro por tenant em runtime
+ */
 export const conversations = pgTable(
   "conversations",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    // tenantId nullable para compatibilidade com migração de dados existentes
+    // Validação obrigatória na camada de aplicação via validateTenantConsistency()
     tenantId: uuid("tenant_id").references(() => tenants.id),
     userId: varchar("user_id").references(() => users.id),
     agentId: uuid("agent_id").references(() => agents.id),
