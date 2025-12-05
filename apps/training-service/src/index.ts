@@ -7,27 +7,19 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
-import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
-import CircuitBreaker from 'opossum';
-import { createLogger, runWithLogContext } from '@alice/logger';
+import { createLogger } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
-  getContextHeaders,
   createSecurityMiddleware,
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
-  asyncHandler,
   initFeatureFlags,
-  featureFlagsMiddleware,
-  FEATURE_FLAGS,
-  isFeatureEnabled,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
@@ -43,8 +35,6 @@ import { eq, and, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
 import { 
   requirePermission, 
-  requireAuth,
-  requireSameTenant,
   extractAuthContext,
 } from '@alice/shared-utils';
 import { 
