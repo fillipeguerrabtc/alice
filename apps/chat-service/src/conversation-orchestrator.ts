@@ -11,7 +11,7 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { eq, and, isNull, lt, desc } from '@alice/database';
+import { eq, and, isNull, lt, desc, inArray } from '@alice/database';
 import { createLogger } from '@alice/logger';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
@@ -559,9 +559,16 @@ export async function handbackToBot(
 
 /**
  * Lista conversas pendentes de handoff
- * Filtra por tenantId para garantir isolamento multi-tenant (Regra 6 CLAUDE.md)
+ * SEGURANÇA: tenantId é OBRIGATÓRIO para garantir isolamento multi-tenant (Regra 6 CLAUDE.md)
+ * Retorna array vazio se tenantId não for fornecido (fail-safe)
  */
-export async function getPendingHandoffs(tenantId?: string) {
+export async function getPendingHandoffs(tenantId: string | undefined) {
+  // SEGURANÇA: Rejeitar requisições sem tenantId para evitar vazamento de dados
+  if (!tenantId) {
+    logger.warn('getPendingHandoffs chamado sem tenantId - retornando vazio por segurança');
+    return [];
+  }
+  
   // Multi-tenancy: JOIN com conversations para filtrar por tenant
   const states = await db.select({
     id: schema.conversationStates.id,
@@ -584,12 +591,10 @@ export async function getPendingHandoffs(tenantId?: string) {
       eq(schema.conversationStates.conversationId, schema.conversations.id)
     )
     .where(
-      tenantId
-        ? and(
-            eq(schema.conversationStates.controlMode, 'pending_handoff'),
-            eq(schema.conversations.tenantId, tenantId)
-          )
-        : eq(schema.conversationStates.controlMode, 'pending_handoff')
+      and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        eq(schema.conversations.tenantId, tenantId)
+      )
     );
   
   return states;
@@ -597,17 +602,46 @@ export async function getPendingHandoffs(tenantId?: string) {
 
 /**
  * Lista conversas com SLA próximo de expirar
+ * SEGURANÇA: tenantId é OBRIGATÓRIO para garantir isolamento multi-tenant (Regra 6 CLAUDE.md)
  */
-export async function getUrgentConversations(minutesThreshold = 10) {
+export async function getUrgentConversations(tenantId: string | undefined, minutesThreshold = 10) {
+  // SEGURANÇA: Rejeitar requisições sem tenantId para evitar vazamento de dados
+  if (!tenantId) {
+    logger.warn('getUrgentConversations chamado sem tenantId - retornando vazio por segurança');
+    return [];
+  }
+  
   const threshold = new Date();
   threshold.setMinutes(threshold.getMinutes() + minutesThreshold);
   
-  const states = await db.query.conversationStates.findMany({
-    where: and(
-      eq(schema.conversationStates.controlMode, 'pending_handoff'),
-      lt(schema.conversationStates.slaDeadline, threshold)
-    ),
-  });
+  // Multi-tenancy: JOIN com conversations para filtrar por tenant
+  const states = await db.select({
+    id: schema.conversationStates.id,
+    conversationId: schema.conversationStates.conversationId,
+    controlMode: schema.conversationStates.controlMode,
+    assignedAgentId: schema.conversationStates.assignedAgentId,
+    pendingSince: schema.conversationStates.pendingSince,
+    confidenceScore: schema.conversationStates.confidenceScore,
+    fallbackCount: schema.conversationStates.fallbackCount,
+    sentimentScore: schema.conversationStates.sentimentScore,
+    slaDeadline: schema.conversationStates.slaDeadline,
+    slaBreached: schema.conversationStates.slaBreached,
+    notes: schema.conversationStates.notes,
+    criadoEm: schema.conversationStates.criadoEm,
+    atualizadoEm: schema.conversationStates.atualizadoEm,
+  })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
+    .where(
+      and(
+        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+        lt(schema.conversationStates.slaDeadline, threshold),
+        eq(schema.conversations.tenantId, tenantId)
+      )
+    );
   
   return states;
 }
@@ -628,23 +662,50 @@ export async function incrementFallbackCount(conversationId: string): Promise<nu
 
 /**
  * Verifica e marca SLAs violados
+ * SEGURANÇA: tenantId é OBRIGATÓRIO para garantir isolamento multi-tenant (Regra 6 CLAUDE.md)
+ * Para jobs de sistema (cron), usar tenantId = undefined e o sistema retorna 0 (fail-safe)
  */
-export async function checkSLABreaches() {
+export async function checkSLABreaches(tenantId: string | undefined) {
+  // SEGURANÇA: Rejeitar requisições sem tenantId para evitar modificação de dados cross-tenant
+  if (!tenantId) {
+    logger.warn('checkSLABreaches chamado sem tenantId - retornando 0 por segurança');
+    return 0;
+  }
+  
   const now = new Date();
   
-  const breached = await db.update(schema.conversationStates)
-    .set({ slaBreached: true, atualizadoEm: now })
+  // Primeiro, buscar IDs dos states que pertencem ao tenant e têm SLA violado
+  const statesWithBreachedSla = await db.select({
+    stateId: schema.conversationStates.id,
+  })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
     .where(
       and(
         eq(schema.conversationStates.controlMode, 'pending_handoff'),
         eq(schema.conversationStates.slaBreached, false),
-        lt(schema.conversationStates.slaDeadline, now)
+        lt(schema.conversationStates.slaDeadline, now),
+        eq(schema.conversations.tenantId, tenantId)
       )
-    )
+    );
+  
+  if (statesWithBreachedSla.length === 0) {
+    return 0;
+  }
+  
+  const stateIds = statesWithBreachedSla.map(s => s.stateId);
+  
+  // SEGURANÇA: Atualizar APENAS os states do tenant usando inArray
+  const breached = await db.update(schema.conversationStates)
+    .set({ slaBreached: true, atualizadoEm: now })
+    .where(inArray(schema.conversationStates.id, stateIds))
     .returning();
   
   if (breached.length > 0) {
-    logger.warn({ count: breached.length }, 'SLAs violados detectados');
+    logger.warn({ count: breached.length, tenantId }, 'SLAs violados detectados');
     
     for (const state of breached) {
       await db.insert(schema.conversationEscalations).values({
@@ -652,7 +713,7 @@ export async function checkSLABreaches() {
         trigger: 'sla_breach',
         fromMode: 'pending_handoff',
         toMode: 'pending_handoff',
-        triggerDetails: { slaDeadline: state.slaDeadline, breachedAt: now },
+        triggerDetails: { slaDeadline: state.slaDeadline, breachedAt: now, tenantId },
       });
     }
   }

@@ -2770,8 +2770,13 @@ app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(
 
 app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   try {
-    // Multi-tenancy: Filtrar por tenant do usuário autenticado (Regra 6 CLAUDE.md)
+    // SEGURANÇA: Validar tenantId obrigatório para isolamento multi-tenant (Regra 6 CLAUDE.md)
     const tenantId = req.tenantId;
+    if (!tenantId) {
+      logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a pending-handoffs sem tenantId');
+      return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+    }
+    
     const pending = await getPendingHandoffs(tenantId);
     res.json({ pending, count: pending.length });
   } catch (error) {
@@ -3156,8 +3161,15 @@ app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTena
   }
   const minutesThreshold = queryResult.data.minutes ? parseInt(queryResult.data.minutes, 10) : 10;
   
+  // SEGURANÇA: Validar tenantId obrigatório para isolamento multi-tenant (Regra 6 CLAUDE.md)
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de acesso a urgent-conversations sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
   try {
-    const urgent = await getUrgentConversations(minutesThreshold);
+    const urgent = await getUrgentConversations(tenantId, minutesThreshold);
     res.json({ urgent, count: urgent.length });
   } catch (error) {
     logger.error({ error }, 'Erro ao listar conversas urgentes');
@@ -3165,9 +3177,16 @@ app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTena
   }
 });
 
-app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:manage'), async (_req: Request, res: Response) => {
+app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:manage'), async (req: Request, res: Response) => {
+  // SEGURANÇA: Validar tenantId obrigatório para isolamento multi-tenant (Regra 6 CLAUDE.md)
+  const tenantId = req.tenantId;
+  if (!tenantId) {
+    logger.warn({ userId: req.user?.userId }, 'Tentativa de check-sla sem tenantId');
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
   try {
-    const breachedCount = await checkSLABreaches();
+    const breachedCount = await checkSLABreaches(tenantId);
     res.json({ breachedCount, message: `${breachedCount} SLAs violados processados` });
   } catch (error) {
     logger.error({ error }, 'Erro ao verificar SLAs');
