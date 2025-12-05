@@ -226,7 +226,7 @@ Vá para: Repositório → **Settings** → **Secrets and variables** → **Acti
 HETZNER_API_TOKEN=seu-token-api-hetzner
 HETZNER_VM_HOST=46.224.46.93
 HETZNER_VM_USER=root
-HETZNER_SSH_PRIVATE_KEY=-----BEGIN OPENSSH PRIVATE KEY-----...
+HETZNER_SSH_PRIVATE_KEY=<cole-sua-chave-ssh-privada-aqui>
 
 # ========== POSTGRESQL ==========
 POSTGRES_PASSWORD=senha-segura-gerada
