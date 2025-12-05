@@ -5,6 +5,6 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
-# Cursor IDE - imagens temporárias de chat
-assets/
+# Cursor IDE - imagens temporárias de chat (preserva assets/branding/)
+assets/c__Users_*
 .cursor/
