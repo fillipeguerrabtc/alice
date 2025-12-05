@@ -346,7 +346,7 @@ Retenção Arquivo:   30 dias
 
 ## 🐳 INFRAESTRUTURA DOCKER (27 containers)
 
-### Core Infra (4)
+### Core Infra (5)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
@@ -354,44 +354,44 @@ Retenção Arquivo:   30 dias
 | 2 | traefik-init | busybox:1.36 | Inicializa ACME |
 | 3 | traefik | traefik:v3.3 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
+| 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
 
 ### Alice Microservices (8)
 
 | # | Container | Imagem Base | Função |
 |---|-----------|-------------|--------|
-| 5 | alice-frontend | nginx:1.27-alpine | React/Nginx |
-| 6 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
-| 7 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
-| 8 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (precisa FFmpeg) |
-| 9 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
-| 10 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
-| 11 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
-| 12 | alice-clip-inference | python:3.11-slim | CLIP ViT-L/14 |
+| 6 | alice-frontend | nginx:1.27-alpine | React/Nginx |
+| 7 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
+| 8 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
+| 9 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (precisa FFmpeg) |
+| 10 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
+| 11 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
+| 12 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
+| 13 | alice-clip-inference | python:3.11-slim | CLIP ViT-L/14 |
 
 ### ERPNext Stack (12)
 
 | # | Container | Função |
 |---|-----------|--------|
-| 13 | erpnext-mariadb | Banco ERPNext |
-| 14 | erpnext-redis-cache | Cache |
-| 15 | erpnext-redis-queue | Filas |
-| 16 | erpnext-configurator | Configuração inicial |
-| 17 | erpnext-create-site | Criação site |
-| 18 | erpnext-backend | Frappe/Python |
-| 19 | erpnext-frontend | Nginx |
-| 20 | erpnext-websocket | Socket.io |
-| 21 | erpnext-scheduler | Tarefas agendadas |
-| 22 | erpnext-worker-short | Jobs curtos |
-| 23 | erpnext-worker-default | Jobs padrão |
-| 24 | erpnext-worker-long | Jobs longos |
+| 14 | erpnext-mariadb | Banco ERPNext |
+| 15 | erpnext-redis-cache | Cache |
+| 16 | erpnext-redis-queue | Filas |
+| 17 | erpnext-configurator | Configuração inicial |
+| 18 | erpnext-create-site | Criação site |
+| 19 | erpnext-backend | Frappe/Python |
+| 20 | erpnext-frontend | Nginx |
+| 21 | erpnext-websocket | Socket.io |
+| 22 | erpnext-scheduler | Tarefas agendadas |
+| 23 | erpnext-worker-short | Jobs curtos |
+| 24 | erpnext-worker-default | Jobs padrão |
+| 25 | erpnext-worker-long | Jobs longos |
 
 ### Backup & Logs (2)
 
 | # | Container | Função |
 |---|-----------|--------|
-| 25 | pgbackrest | Backup PostgreSQL (PITR, AES-256) |
-| 26 | vector | Log aggregation |
-| 27 | alice-redis | Cache distribuído dedicado para Alice |
+| 26 | pgbackrest | Backup PostgreSQL (PITR, AES-256) |
+| 27 | vector | Log aggregation |
 
 ---
 
