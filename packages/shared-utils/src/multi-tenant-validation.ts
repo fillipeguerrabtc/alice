@@ -110,11 +110,31 @@ export async function validateAgentTenantConsistency(
 }
 
 /**
+ * Erro lançado quando getter obrigatório não é fornecido
+ */
+export class MissingGetterError extends Error {
+  constructor(
+    public readonly entityType: string,
+    public readonly entityId: string,
+    public readonly context: string
+  ) {
+    super(
+      `Getter obrigatório não fornecido: ${entityType} (id=${entityId}) requer getter para validação em ${context}`
+    );
+    this.name = 'MissingGetterError';
+  }
+}
+
+/**
  * Valida consistência de tenant para criação de Conversation
+ * 
+ * SEGURANÇA: Se um ID é fornecido, o getter correspondente é OBRIGATÓRIO.
+ * Isso previne bypass de validação por omissão de getter.
  * 
  * @param params - Parâmetros da conversation
  * @param tenantId - TenantId da conversation sendo criada
- * @param getters - Funções para buscar entidades relacionadas
+ * @param getters - Funções para buscar entidades relacionadas (OBRIGATÓRIO se ID fornecido)
+ * @throws MissingGetterError se ID é fornecido mas getter não
  * @throws TenantConsistencyError se alguma entidade pertencer a outro tenant
  * 
  * @example
@@ -141,14 +161,30 @@ export async function validateConversationTenantConsistency(
   const { agentId, namespaceId } = params;
   const { getAgent, getNamespace } = getters;
 
-  // Validar agent se fornecido
-  if (agentId && getAgent) {
+  // Validar agent se fornecido - GETTER OBRIGATÓRIO (fail-safe)
+  if (agentId) {
+    if (!getAgent) {
+      logger.error({
+        agentId,
+        tenantId,
+        context: 'conversation',
+      }, 'SEGURANÇA: Tentativa de bypass de validação - getAgent não fornecido');
+      throw new MissingGetterError('agent', agentId, 'conversation');
+    }
     const agent = await getAgent(agentId);
     validateTenantConsistency('agent', agent, tenantId, 'conversation');
   }
 
-  // Validar namespace se fornecido
-  if (namespaceId && getNamespace) {
+  // Validar namespace se fornecido - GETTER OBRIGATÓRIO (fail-safe)
+  if (namespaceId) {
+    if (!getNamespace) {
+      logger.error({
+        namespaceId,
+        tenantId,
+        context: 'conversation',
+      }, 'SEGURANÇA: Tentativa de bypass de validação - getNamespace não fornecido');
+      throw new MissingGetterError('namespace', namespaceId, 'conversation');
+    }
     const namespace = await getNamespace(namespaceId);
     validateTenantConsistency('namespace', namespace, tenantId, 'conversation');
   }
