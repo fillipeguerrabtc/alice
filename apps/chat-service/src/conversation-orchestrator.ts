@@ -637,7 +637,7 @@ export async function getUrgentConversations(tenantId: string | undefined, minut
     )
     .where(
       and(
-        eq(schema.conversationStates.controlMode, 'pending_handoff'),
+      eq(schema.conversationStates.controlMode, 'pending_handoff'),
         lt(schema.conversationStates.slaDeadline, threshold),
         eq(schema.conversations.tenantId, tenantId)
       )

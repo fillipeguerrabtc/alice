@@ -2,8 +2,12 @@
  * Backup Orchestrator - Alice Enterprise Platform
  * 
  * Sistema unificado de backup e restore para toda a plataforma.
- * Coordena backups de PostgreSQL (pgBackRest), MariaDB (Mariabackup),
- * Redis (RDB) e uploads (S3) com manifesto único.
+ * Coordena backups de PostgreSQL (pgBackRest), MariaDB (Mariabackup) e
+ * Redis (RDB) com manifesto único.
+ * 
+ * STORAGE: Volume Local Hetzner (/opt/alice/backups) - SEM S3 EXTERNO
+ * Os uploads de mídia são armazenados em /opt/alice/uploads (Volume local)
+ * e NÃO são incluídos no backup automatizado (responsabilidade do admin).
  * 
  * Arquitetura: Orchestrator que dispara jobs em sequência com checkpoints
  * e validações - best practice enterprise 2025.
@@ -15,6 +19,10 @@
  * Regra 16: Circuit breakers, health checks
  * 
  * ATUALIZADO: Migrado de in-memory para PostgreSQL (REGRA 6 COMPLIANCE)
+ * ATUALIZADO: Removido S3 externo - 100% volume local (05/12/2025)
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 05 de Dezembro de 2025
  */
 
 import { Router, Request, Response } from 'express';
@@ -84,17 +92,11 @@ interface BackupManifest {
       rdbChecksum?: string;
       size?: string;
     };
-    uploads?: {
-      status: 'completed' | 'failed' | 'skipped';
-      s3VersionId?: string;
-      filesCount?: number;
-      size?: string;
-    };
   };
-  offsite: {
-    enabled: boolean;
-    repository?: string;
-    synced?: boolean;
+  storage: {
+    type: 'local';
+    path: string;
+    volumeName: string;
   };
   encryption: {
     enabled: boolean;
@@ -140,14 +142,11 @@ const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'erpnext-redis-cache';
 // Re-exportar para uso futuro em funções de health check
 export { _POSTGRES_CONTAINER as POSTGRES_CONTAINER };
 
-// Hetzner Object Storage (S3-compatible)
-const S3_ENDPOINT = process.env.HETZNER_S3_ENDPOINT || 'fsn1.your-objectstorage.com';
-const S3_BUCKET = process.env.BACKUP_S3_BUCKET || 'alice-backups';
-const S3_ACCESS_KEY = process.env.HETZNER_S3_ACCESS_KEY;
-const S3_SECRET_KEY = process.env.HETZNER_S3_SECRET_KEY;
-
 // Criptografia
 const BACKUP_CIPHER_PASS = process.env.BACKUP_CIPHER_PASS;
+
+// Diretório de uploads (para informação de tamanho no dashboard)
+const UPLOADS_DIR = process.env.UPLOADS_DIR || '/opt/alice/uploads';
 
 // =============================================================================
 // PERSISTÊNCIA POSTGRESQL (Regra 6 - Enterprise-Grade)
@@ -554,73 +553,29 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
 }
 
 /**
- * Sync uploads para Hetzner Object Storage (S3)
- * Retorna: version ID do S3
+ * Obter informações do diretório de uploads (para dashboard)
+ * NOTA: Uploads são armazenados em volume local, NÃO incluídos no backup automatizado
+ * Admin pode fazer backup manual via rsync ou download via Dashboard
  */
-async function backupUploads(): Promise<ComponentBackupStatus> {
-  const startTime = Date.now();
-  const component: ComponentBackupStatus = {
-    component: 'uploads',
-    status: 'running',
-    startedAt: new Date().toISOString(),
-  };
-  
-  logger.info('Iniciando sync de uploads para S3');
-  
+async function getUploadsInfo(): Promise<{ filesCount: number; totalSize: string }> {
   try {
-    // Verificar se credenciais S3 estão configuradas
-    if (!S3_ACCESS_KEY || !S3_SECRET_KEY) {
-      component.status = 'skipped';
-      component.completedAt = new Date().toISOString();
-      component.metadata = { reason: 'Credenciais S3 não configuradas' };
-      logger.warn('Backup de uploads ignorado: credenciais S3 não configuradas');
-      return component;
+    if (!existsSync(UPLOADS_DIR)) {
+      return { filesCount: 0, totalSize: '0 B' };
     }
     
-    const uploadsPath = '/opt/alice/uploads';
-    const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+    // Contar arquivos
+    const { stdout: countOutput } = await execAsync(`find ${UPLOADS_DIR} -type f | wc -l`);
+    const filesCount = parseInt(countOutput.trim(), 10) || 0;
     
-    // Sync usando aws-cli (ou rclone)
-    await execAsync(
-      `aws s3 sync ${uploadsPath} s3://${S3_BUCKET}/uploads/${timestamp}/ --endpoint-url=https://${S3_ENDPOINT}`,
-      { 
-        timeout: 3600000, // 1 hora
-        env: { 
-          ...process.env,
-          AWS_ACCESS_KEY_ID: S3_ACCESS_KEY,
-          AWS_SECRET_ACCESS_KEY: S3_SECRET_KEY,
-        }
-      }
-    );
+    // Calcular tamanho total
+    const { stdout: sizeOutput } = await execAsync(`du -sb ${UPLOADS_DIR} | cut -f1`);
+    const totalBytes = parseInt(sizeOutput.trim(), 10) || 0;
     
-    // Contar arquivos sincronizados
-    const { stdout: countOutput } = await execAsync(`find ${uploadsPath} -type f | wc -l`);
-    const filesCount = parseInt(countOutput.trim(), 10);
-    
-    component.status = 'completed';
-    component.completedAt = new Date().toISOString();
-    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    component.metadata = {
-      s3Path: `s3://${S3_BUCKET}/uploads/${timestamp}/`,
-      filesCount: String(filesCount),
-    };
-    
-    logger.info({ 
-      durationSeconds: component.durationSeconds,
-      filesCount
-    }, 'Sync de uploads concluído');
-    
+    return { filesCount, totalSize: formatBytes(totalBytes) };
   } catch (error) {
-    const err = error as Error;
-    component.status = 'failed';
-    component.completedAt = new Date().toISOString();
-    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
-    component.error = err.message;
-    
-    logger.error({ error: err.message }, 'Falha no sync de uploads');
+    logger.warn({ error }, 'Erro ao obter informações de uploads');
+    return { filesCount: 0, totalSize: '0 B' };
   }
-  
-  return component;
 }
 
 // =============================================================================
@@ -649,9 +604,10 @@ async function runUnifiedBackup(
     status: 'running',
     startedAt: new Date().toISOString(),
     components: {},
-    offsite: {
-      enabled: !!S3_ACCESS_KEY,
-      repository: S3_BUCKET,
+    storage: {
+      type: 'local',
+      path: BACKUP_DIR,
+      volumeName: 'alice-data',
     },
     encryption: {
       enabled: !!BACKUP_CIPHER_PASS,
@@ -733,26 +689,11 @@ async function runUnifiedBackup(
       if (redisResult.status === 'failed') hasFailures = true;
     }
     
-    await updateBackupJob(backupId, { progress: 85 });
+    await updateBackupJob(backupId, { progress: 95 });
     
-    // 4. Uploads (S3)
-    if (!skipComponents.includes('uploads')) {
-      await updateBackupJob(backupId, { currentComponent: 'uploads', progress: 90 });
-      
-      const uploadsResult = await backupUploads();
-      componentResults.push(uploadsResult as BackupComponentDetail);
-      await updateBackupJob(backupId, { components: componentResults });
-      
-      manifest.components.uploads = {
-        status: uploadsResult.status === 'completed' ? 'completed' : 
-                uploadsResult.status === 'skipped' ? 'skipped' : 'failed',
-        s3VersionId: uploadsResult.metadata?.s3Path,
-        filesCount: uploadsResult.metadata?.filesCount ? parseInt(uploadsResult.metadata.filesCount, 10) : undefined,
-        size: uploadsResult.size,
-      };
-      
-      manifest.offsite.synced = uploadsResult.status === 'completed';
-    }
+    // NOTA: Uploads NÃO são incluídos no backup automatizado
+    // Os uploads estão em /opt/alice/uploads (volume local) e devem ser
+    // gerenciados separadamente pelo admin (rsync, download manual, etc.)
     
     // Finalizar manifesto
     manifest.completedAt = new Date().toISOString();
@@ -777,7 +718,7 @@ async function runUnifiedBackup(
     // Atualizar job no PostgreSQL com status final (Regra 6)
     const manifestData: BackupManifestData = {
       components: manifest.components,
-      offsite: manifest.offsite,
+      storage: manifest.storage,
       encryption: manifest.encryption,
       notes: manifest.notes,
     };
@@ -909,18 +850,8 @@ async function runUnifiedRestore(
     }
   }
   
-  // 4. Restore Uploads
-  if (!skipComponents.includes('uploads') && manifest.components.uploads?.status === 'completed') {
-    try {
-      logger.info({ s3Path: manifest.components.uploads.s3VersionId }, 'Restaurando uploads');
-      // Implementar restore via aws s3 sync --source-region
-      details.uploads = 'restored';
-    } catch (error) {
-      const err = error as Error;
-      details.uploads = `failed: ${err.message}`;
-      hasErrors = true;
-    }
-  }
+  // NOTA: Uploads são armazenados em volume local separado (/opt/alice/uploads)
+  // e NÃO são incluídos no restore automatizado
   
   logger.info({ backupId, hasErrors, details }, 'Restore unificado concluído');
   
@@ -940,14 +871,14 @@ const router: ReturnType<typeof Router> = Router();
 // Schema de validação para backup (Zod - Regra 8)
 const BackupRequestSchema = z.object({
   type: z.enum(['full', 'incremental']).default('full'),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'uploads'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis'])).optional(),
   notes: z.string().max(500).optional(),
 });
 
 // Schema de validação para restore
 const RestoreRequestSchema = z.object({
   backupId: z.string().min(1),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'uploads'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis'])).optional(),
   dryRun: z.boolean().default(false),
   confirm: z.literal(true, { message: 'Confirmação obrigatória para restore' }),
 });
@@ -1193,13 +1124,13 @@ const DEFAULT_SCHEDULE: BackupSchedule = {
     description: 'Backup incremental de segunda a sábado às 03:00 UTC',
   },
   retention: {
-    fullBackupDays: 30,
+    fullBackupDays: 15,      // Otimizado para Volume 100GB
     incrementalBackupDays: 7,
-    archiveDays: 90,
+    archiveDays: 30,         // Otimizado para Volume 100GB
   },
   offsite: {
-    enabled: true,
-    syncAfterBackup: true,
+    enabled: false,          // S3 externo DESABILITADO - usar volume local
+    syncAfterBackup: false,
   },
   notifications: {
     onSuccess: false,
@@ -1533,7 +1464,11 @@ router.post('/pre-deploy', async (req: Request, res: Response) => {
       status: 'running',
       startedAt: new Date().toISOString(),
       components: {},
-      offsite: { enabled: true },
+      storage: {
+        type: 'local',
+        path: BACKUP_DIR,
+        volumeName: 'alice-data',
+      },
       encryption: { enabled: true, algorithm: 'AES-256-CBC' },
       createdBy: actor || 'ci-cd',
       notes: `Snapshot pré-deploy para versão ${version || 'unknown'}`,
@@ -1571,6 +1506,199 @@ router.post('/pre-deploy', async (req: Request, res: Response) => {
     const err = error as Error;
     logger.error({ error: err.message }, 'Erro ao criar snapshot pré-deploy');
     res.status(500).json({ error: 'Erro ao criar snapshot pré-deploy', details: err.message });
+  }
+});
+
+// =============================================================================
+// ENDPOINTS DE GESTÃO DE DISCO E BACKUPS (Enterprise - Volume Local)
+// =============================================================================
+
+/**
+ * GET /api/backup/disk-usage
+ * Obter informações de uso de disco do volume de backups
+ */
+router.get('/disk-usage', async (_req: Request, res: Response) => {
+  try {
+    // Obter uso de disco dos diretórios de backup
+    const getDirSize = async (dir: string): Promise<number> => {
+      if (!existsSync(dir)) return 0;
+      try {
+        const { stdout } = await execAsync(`du -sb ${dir} | cut -f1`);
+        return parseInt(stdout.trim(), 10) || 0;
+      } catch {
+        return 0;
+      }
+    };
+
+    const [postgresqlSize, mariadbSize, redisSize, manifestsSize] = await Promise.all([
+      getDirSize(path.join(BACKUP_DIR, 'postgresql')),
+      getDirSize(path.join(BACKUP_DIR, 'mariadb')),
+      getDirSize(path.join(BACKUP_DIR, 'redis')),
+      getDirSize(MANIFESTS_DIR),
+    ]);
+
+    // Obter informações de uploads (separado - para referência)
+    const uploadsInfo = await getUploadsInfo();
+
+    // Obter espaço livre no volume
+    let volumeFree = 0;
+    let volumeTotal = 0;
+    try {
+      const { stdout: dfOutput } = await execAsync(`df -B1 ${BACKUP_DIR} | tail -1`);
+      const parts = dfOutput.trim().split(/\s+/);
+      volumeTotal = parseInt(parts[1], 10) || 0;
+      volumeFree = parseInt(parts[3], 10) || 0;
+    } catch {
+      // Fallback se df falhar
+    }
+
+    const totalBackupSize = postgresqlSize + mariadbSize + redisSize + manifestsSize;
+
+    res.json({
+      backups: {
+        postgresql: formatBytes(postgresqlSize),
+        mariadb: formatBytes(mariadbSize),
+        redis: formatBytes(redisSize),
+        manifests: formatBytes(manifestsSize),
+        total: formatBytes(totalBackupSize),
+      },
+      uploads: {
+        filesCount: uploadsInfo.filesCount,
+        totalSize: uploadsInfo.totalSize,
+        path: UPLOADS_DIR,
+      },
+      volume: {
+        name: 'alice-data',
+        path: '/opt/alice',
+        total: formatBytes(volumeTotal),
+        free: formatBytes(volumeFree),
+        usedPercent: volumeTotal > 0 ? Math.round((1 - volumeFree / volumeTotal) * 100) : 0,
+      },
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao obter uso de disco');
+    res.status(500).json({ error: 'Erro ao obter uso de disco', details: err.message });
+  }
+});
+
+/**
+ * DELETE /api/backup/:id
+ * Excluir um backup específico
+ * ATENÇÃO: Operação irreversível - requer confirmação
+ */
+router.delete('/:id', async (req: Request, res: Response) => {
+  try {
+    const backupId = req.params.id;
+    const { confirm } = req.query;
+
+    if (confirm !== 'true') {
+      res.status(400).json({ 
+        error: 'Confirmação obrigatória', 
+        message: 'Adicione ?confirm=true para confirmar exclusão' 
+      });
+      return;
+    }
+
+    // Verificar se manifesto existe
+    const manifest = await loadManifest(backupId);
+    if (!manifest) {
+      res.status(404).json({ error: 'Backup não encontrado' });
+      return;
+    }
+
+    // Não permitir excluir backup em andamento
+    if (manifest.status === 'running') {
+      res.status(409).json({ error: 'Não é possível excluir backup em andamento' });
+      return;
+    }
+
+    // Excluir manifesto
+    const manifestPath = path.join(MANIFESTS_DIR, `${backupId}.json`);
+    if (existsSync(manifestPath)) {
+      const { unlink } = await import('fs/promises');
+      await unlink(manifestPath);
+    }
+
+    // NOTA: Os dados de backup do pgBackRest são gerenciados pelo próprio pgBackRest
+    // A exclusão manual de backups PostgreSQL deve ser feita via pgbackrest expire
+
+    logger.info({ backupId }, 'Manifesto de backup excluído');
+
+    res.json({
+      success: true,
+      message: `Manifesto do backup ${backupId} excluído`,
+      note: 'Dados do pgBackRest devem ser limpos via comando expire',
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao excluir backup');
+    res.status(500).json({ error: 'Erro ao excluir backup', details: err.message });
+  }
+});
+
+/**
+ * POST /api/backup/cleanup
+ * Executar limpeza de backups antigos baseado na retenção configurada
+ */
+router.post('/cleanup', async (_req: Request, res: Response) => {
+  try {
+    const schedule = await loadSchedule();
+    const { retention } = schedule;
+
+    logger.info({ retention }, 'Iniciando limpeza de backups antigos');
+
+    // Carregar todos os manifestos
+    const manifests = await listManifests();
+    const now = Date.now();
+    const deleted: string[] = [];
+
+    for (const manifest of manifests) {
+      const backupDate = new Date(manifest.startedAt).getTime();
+      const ageDays = (now - backupDate) / (1000 * 60 * 60 * 24);
+
+      let shouldDelete = false;
+
+      if (manifest.type === 'full' && ageDays > retention.fullBackupDays) {
+        shouldDelete = true;
+      } else if (manifest.type === 'incremental' && ageDays > retention.incrementalBackupDays) {
+        shouldDelete = true;
+      } else if (ageDays > retention.archiveDays) {
+        shouldDelete = true;
+      }
+
+      if (shouldDelete && manifest.status !== 'running') {
+        const manifestPath = path.join(MANIFESTS_DIR, `${manifest.id}.json`);
+        if (existsSync(manifestPath)) {
+          const { unlink } = await import('fs/promises');
+          await unlink(manifestPath);
+          deleted.push(manifest.id);
+        }
+      }
+    }
+
+    // Executar expire no pgBackRest
+    try {
+      await execAsync(
+        'docker exec alice-pgbackrest pgbackrest --stanza=alice expire',
+        { timeout: 300000 }
+      );
+    } catch (expireError) {
+      logger.warn({ error: expireError }, 'Erro ao executar pgbackrest expire');
+    }
+
+    logger.info({ deletedCount: deleted.length, deleted }, 'Limpeza de backups concluída');
+
+    res.json({
+      success: true,
+      deletedManifests: deleted.length,
+      deleted,
+      retention,
+    });
+  } catch (error) {
+    const err = error as Error;
+    logger.error({ error: err.message }, 'Erro ao executar limpeza');
+    res.status(500).json({ error: 'Erro ao executar limpeza', details: err.message });
   }
 });
 

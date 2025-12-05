@@ -1583,15 +1583,15 @@ export interface BackupComponentDetail {
 
 /**
  * Tipo JSONB para manifesto do backup
+ * ATUALIZADO: 05/12/2025 - Removido S3/uploads, adicionado storage local
  */
 export interface BackupManifestData {
   components: {
     postgresql?: { status: string; lsn?: string; backupSet?: string; size?: string; walArchived?: boolean; };
     mariadb?: { status: string; gtid?: string; binlogPosition?: string; size?: string; };
     redis?: { status: string; rdbChecksum?: string; size?: string; };
-    uploads?: { status: string; s3VersionId?: string; filesCount?: number; size?: string; };
   };
-  offsite: { enabled: boolean; repository?: string; synced?: boolean; };
+  storage: { type: 'local'; path: string; volumeName: string; };
   encryption: { enabled: boolean; algorithm?: string; };
   notes?: string;
 }

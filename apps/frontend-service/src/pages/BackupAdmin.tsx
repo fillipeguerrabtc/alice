@@ -75,6 +75,8 @@ import {
   Settings,
   Bell,
   Save,
+  Trash2,
+  Eraser,
 } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
@@ -327,6 +329,46 @@ export default function BackupAdmin() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: async (backupId: string) => {
+      return apiRequest('DELETE', `/api/backup/${backupId}?confirm=true`);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Backup excluído',
+        description: 'Manifesto do backup excluído com sucesso.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/backup/history'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro ao excluir',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const cleanupMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', '/api/backup/cleanup');
+    },
+    onSuccess: (data: { deletedManifests: number }) => {
+      toast({
+        title: 'Limpeza concluída',
+        description: `${data.deletedManifests} backups antigos removidos.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/backup/history'] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Erro na limpeza',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const updateScheduleMutation = useMutation({
     mutationFn: async (scheduleData: Partial<BackupSchedule>) => {
       return apiRequest('PUT', '/api/backup/schedule', scheduleData);
@@ -567,12 +609,10 @@ export default function BackupAdmin() {
                       )}
                     </div>
                     <div className="flex gap-1 flex-wrap">
-                      {history.lastSuccessful.offsite.synced && (
-                        <Badge variant="outline" className="gap-1">
-                          <Upload className="h-3 w-3" />
-                          Offsite
-                        </Badge>
-                      )}
+                      <Badge variant="outline" className="gap-1">
+                        <Archive className="h-3 w-3" />
+                        Local
+                      </Badge>
                       {history.lastSuccessful.encryption.enabled && (
                         <Badge variant="outline" className="gap-1">
                           <Shield className="h-3 w-3" />
@@ -594,13 +634,31 @@ export default function BackupAdmin() {
         <motion.div variants={item}>
           <Card>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
-                Histórico de Backups
-              </CardTitle>
-              <CardDescription>
-                {history?.totalCount || 0} backups registrados
-              </CardDescription>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    Histórico de Backups
+                  </CardTitle>
+                  <CardDescription>
+                    {history?.totalCount || 0} backups registrados
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => cleanupMutation.mutate()}
+                  disabled={cleanupMutation.isPending}
+                  data-testid="button-cleanup"
+                >
+                  {cleanupMutation.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Eraser className="h-4 w-4 mr-2" />
+                  )}
+                  Limpar Antigos
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {isLoadingHistory ? (
@@ -663,6 +721,19 @@ export default function BackupAdmin() {
                           data-testid={`button-verify-${manifest.id}`}
                         >
                           <Shield className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            if (window.confirm(`Excluir backup ${manifest.id}? Esta ação é irreversível.`)) {
+                              deleteMutation.mutate(manifest.id);
+                            }
+                          }}
+                          disabled={deleteMutation.isPending || manifest.status === 'running'}
+                          data-testid={`button-delete-${manifest.id}`}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </div>
@@ -748,15 +819,11 @@ export default function BackupAdmin() {
                     <span>Incremental {schedule.retention.incrementalBackupDays}d</span>
                     <span>|</span>
                     <span>Arquivo {schedule.retention.archiveDays}d</span>
-                    {schedule.offsite.enabled && (
-                      <>
-                        <span>|</span>
-                        <span className="flex items-center gap-1">
-                          <Upload className="h-3 w-3" />
-                          Offsite ativo
-                        </span>
-                      </>
-                    )}
+                    <span>|</span>
+                    <span className="flex items-center gap-1">
+                      <Archive className="h-3 w-3" />
+                      Volume Local
+                    </span>
                   </div>
                 </div>
               ) : (
@@ -779,10 +846,10 @@ export default function BackupAdmin() {
             <CardContent>
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
-                  { name: 'PostgreSQL', icon: Database, desc: 'pgBackRest + WAL', color: 'text-blue-500' },
+                  { name: 'PostgreSQL', icon: Database, desc: 'pgBackRest + WAL + PITR', color: 'text-blue-500' },
                   { name: 'MariaDB', icon: Server, desc: 'Mariabackup + GTID', color: 'text-orange-500' },
                   { name: 'Redis', icon: HardDrive, desc: 'RDB Snapshot', color: 'text-red-500' },
-                  { name: 'Uploads', icon: Upload, desc: 'S3 Sync', color: 'text-green-500' },
+                  { name: 'Volume Local', icon: Archive, desc: '/opt/alice/backups', color: 'text-green-500' },
                 ].map((comp) => (
                   <div
                     key={comp.name}
@@ -1098,19 +1165,15 @@ export default function BackupAdmin() {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-4 rounded-lg border">
-                  <div>
-                    <Label className="font-medium">Sincronização Offsite</Label>
-                    <p className="text-xs text-muted-foreground">Enviar backups para Hetzner Object Storage (S3)</p>
+                <div className="p-4 rounded-lg border bg-muted/30">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Archive className="h-4 w-4 text-green-500" />
+                    <Label className="font-medium">Storage Local</Label>
                   </div>
-                  <Switch
-                    checked={scheduleForm.offsite?.enabled ?? true}
-                    onCheckedChange={(checked) => setScheduleForm(prev => ({
-                      ...prev,
-                      offsite: { ...prev.offsite!, enabled: checked, syncAfterBackup: checked }
-                    }))}
-                    data-testid="switch-offsite-enabled"
-                  />
+                  <p className="text-xs text-muted-foreground">
+                    Backups são armazenados 100% localmente no Volume Hetzner (/opt/alice/backups).
+                    Para backups offsite, faça download manual ou configure rsync externo.
+                  </p>
                 </div>
               </div>
             </ScrollArea>

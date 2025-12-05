@@ -176,7 +176,15 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | Ambiente | Plataforma | Descrição |
 |----------|------------|-----------|
 | **Desenvolvimento** | Cursor IDE | IDE, hot reload, debugging, AI-assisted |
-| **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, Nuremberg |
+| **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, 160GB SSD + Volume 100GB |
+
+### Volume Persistente (alice-data)
+
+| Diretório | Propósito |
+|-----------|-----------|
+| `/opt/alice/data` | Dados PostgreSQL, MariaDB, Redis |
+| `/opt/alice/uploads` | Uploads RAG (imagens, áudios, vídeos, docs) |
+| `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) |
 
 ### Pipeline CI/CD (Best Practices 2025)
 
@@ -372,9 +380,11 @@ Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temp
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.5.0 - 04 de Dezembro de 2025*
+*Versão 3.7.0 - 05 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
+*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
+*Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 
 </div>

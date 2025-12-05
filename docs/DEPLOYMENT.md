@@ -138,9 +138,23 @@ A plataforma Alice é composta por **26 containers** organizados em 4 categorias
 |---------|---------------|-------|
 | CX43 (Cost-Optimized) | 8 vCPU, 16GB RAM, 160GB SSD | €8.99/mês |
 | IPv4 Público | Endereço dedicado | €0.50/mês |
-| Volumes (Opcional) | Expansão de disco | €0.044/GB/mês |
+| **Volume alice-data** | 100GB EXT4 (dados + uploads + backups) | €4.40/mês |
 | Snapshots | Backup automático | €0.012/GB/mês |
-| **Total Base** | | **€9.49/mês** |
+| **Total Base** | | **€13.89/mês** |
+
+### Volume Hetzner (alice-data)
+
+Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice`:
+
+| Diretório | Propósito | Uso Estimado |
+|-----------|-----------|--------------|
+| `/opt/alice/data/postgresql` | Dados PostgreSQL + pgvector | ~20-50GB |
+| `/opt/alice/data/mariadb` | Dados MariaDB (ERPNext) | ~5-20GB |
+| `/opt/alice/data/redis` | Persistência Redis | ~1GB |
+| `/opt/alice/uploads` | Uploads RAG (imagens, áudios, vídeos, docs) | ~10-30GB |
+| `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) | ~20-40GB |
+
+> **NOTA:** Volume expansível até 10TB a qualquer momento via Console Hetzner.
 
 ### GitHub (Gratuito)
 
@@ -319,9 +333,18 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw enable
 
-# Criar estrutura de pastas
-mkdir -p /opt/alice/{data,logs,ssl,backups}
-mkdir -p /opt/alice/data/{postgres,postgres-langfuse,mariadb,redis,erpnext,prometheus,grafana}
+# Verificar se volume Hetzner está montado
+df -h | grep alice-data
+
+# Se não estiver montado, verificar /mnt/HC_Volume_*
+ls -la /mnt/
+
+# Criar symlink se necessário (volume já deve estar montado pela Hetzner)
+# ln -sf /mnt/HC_Volume_XXXXXX /mnt/alice-data
+# ln -sf /mnt/alice-data /opt/alice
+
+# Verificar estrutura de diretórios (criada automaticamente pelo deploy)
+ls -la /opt/alice/
 ```
 
 ### 6. Primeiro Deploy
@@ -609,13 +632,16 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 
 | Funcionalidade | Descrição |
 |----------------|-----------|
-| **Backup Full** | Backup completo de PostgreSQL, MariaDB, Redis e uploads S3 com um clique |
+| **Backup Full** | Backup completo de PostgreSQL, MariaDB e Redis com um clique |
 | **Backup Incremental** | Backup incremental para economia de tempo e espaço |
 | **Restore Seletivo** | Restauração com seleção de ponto no tempo (PITR) |
 | **Histórico de Backups** | Lista completa com manifestos JSON de cada backup |
 | **Schedule Configurável** | Configuração de cron expressions para backups automáticos |
 | **Status em Tempo Real** | Monitoramento do progresso durante operações |
 | **Retenção Configurável** | Definição de dias de retenção para full, incremental e arquivo |
+| **Exclusão de Backups** | Excluir manifestos de backups antigos manualmente |
+| **Limpeza Automática** | Botão para limpar backups expirados baseado na retenção |
+| **Monitor de Disco** | Visualização de uso de disco do volume e uploads |
 
 #### Arquitetura de Backup
 
@@ -628,6 +654,8 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 │  │  PostgreSQL  │  │   MariaDB    │  │    Redis     │           │
 │  │  pgBackRest  │  │  Mariabackup │  │  RDB Dump    │           │
 │  └──────────────┘  └──────────────┘  └──────────────┘           │
+│           │                │                │                    │
+│           └────────────────┴────────────────┘                    │
 │                           │                                      │
 │                           ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐│
@@ -638,11 +666,18 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 │                           │                                      │
 │                           ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Hetzner Object Storage (S3)                    ││
-│  │              Offsite backup com versionamento               ││
+│  │              Volume Local Hetzner (/opt/alice/backups)      ││
+│  │              100GB EXT4 - Expansível até 10TB               ││
+│  │  ├── postgresql/   (pgBackRest full + incremental + WAL)    ││
+│  │  ├── mariadb/      (Mariabackup dumps comprimidos)          ││
+│  │  ├── redis/        (RDB snapshots)                          ││
+│  │  └── manifests/    (JSON de cada backup)                    ││
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+> **NOTA:** Backups são armazenados 100% localmente no Volume Hetzner. 
+> Para backups offsite, o admin pode fazer download manual via Dashboard ou configurar rsync externo.
 
 #### API Endpoints de Backup
 
@@ -651,20 +686,26 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 | `GET` | `/api/backup/status` | Status atual do job de backup |
 | `GET` | `/api/backup/history` | Histórico de backups com manifestos |
 | `GET` | `/api/backup/schedule` | Configuração atual de schedule |
+| `GET` | `/api/backup/disk-usage` | **Uso de disco do volume (Volume + Uploads)** |
 | `POST` | `/api/backup/run` | Iniciar backup (full ou incremental) |
 | `POST` | `/api/backup/restore` | Iniciar restauração |
 | `PUT` | `/api/backup/schedule` | Atualizar configuração de schedule |
 | `POST` | `/api/backup/pre-deploy` | Snapshot pré-deploy para rollback |
+| `POST` | `/api/backup/cleanup` | **Limpar backups antigos (por retenção)** |
+| `DELETE` | `/api/backup/:id` | **Excluir manifesto de backup específico** |
 
-#### Schedule Padrão
+#### Schedule Padrão (Configurável via Dashboard)
 
 ```
 Full Backup:        0 3 * * 0   (Domingo às 03:00)
 Incremental Backup: 0 3 * * 1-6 (Segunda a Sábado às 03:00)
-Retenção Full:      30 dias
+Retenção Full:      15 dias
 Retenção Incremental: 7 dias
-Retenção Arquivo:   90 dias
+Retenção Arquivo:   30 dias
 ```
+
+> **NOTA:** Valores de retenção configuráveis via Dashboard Admin → Backup → Configurar.
+> Retenção otimizada para Volume de 100GB.
 
 ---
 
@@ -823,8 +864,10 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 04 de Dezembro de 2025*
-*Versão: 5.5 - Docker Compose v2+ Health Check Fix*
+*Documento atualizado em: 05 de Dezembro de 2025*
+*Versão: 6.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
+*Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
+*Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

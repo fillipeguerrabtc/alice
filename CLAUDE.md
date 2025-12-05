@@ -81,10 +81,11 @@ Alice employs a microservices architecture with 26 containerized services orches
 - **Observability**: Prometheus 3.0, Grafana OSS 11.3, Jaeger 1.62, OpenTelemetry Collector, Langfuse 2.x.
 - **API Gateway**: Traefik v3.3.
 - **CI/CD**: GitHub Actions.
-- **Object Storage**: Hetzner Object Storage (S3-compatible).
+- **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
 
 ## Deploy Information
 - **Servidor**: Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe SSD)
+- **Volume Adicional**: Hetzner Volume 100GB (alice-data) montado em /mnt/alice-data
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
@@ -134,6 +135,28 @@ alice/
 └── .github/workflows/              # CI/CD (3 workflows)
 ```
 
+## Estrutura do Volume Hetzner (Produção)
+```
+/mnt/alice-data/                    # Volume Hetzner 100GB (expansível até 10TB)
+├── data/                           # Dados persistentes dos bancos
+│   ├── postgresql/                 # Dados PostgreSQL + pgvector
+│   ├── mariadb/                    # Dados MariaDB (ERPNext)
+│   └── redis/                      # Dados Redis (persistência)
+├── uploads/                        # Uploads de mídia (RAG multimodal)
+│   └── {tenantId}/                 # Isolamento por tenant
+│       ├── image/                  # Imagens processadas
+│       ├── audio/                  # Áudios processados
+│       ├── video/                  # Vídeos processados
+│       └── document/               # Documentos (PDF, DOCX, etc.)
+└── backups/                        # Backups locais
+    ├── postgresql/                 # pgBackRest (full + incremental + WAL)
+    ├── mariadb/                    # Mariabackup dumps
+    ├── redis/                      # RDB snapshots
+    └── manifests/                  # Manifestos JSON de cada backup
+
+/opt/alice -> /mnt/alice-data       # Symlink para acesso padrão
+```
+
 ## Documentação Principal
 | Documento | Descrição |
 |-----------|-----------|
@@ -161,5 +184,7 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.14 - 05 de Dezembro de 2025*
+*Versão: 3.16 - 05 de Dezembro de 2025*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
+*Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

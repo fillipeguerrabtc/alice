@@ -14,6 +14,7 @@
 | **Arquitetura** | Microsserviços containerizados |
 | **Total de Containers** | 26 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
+| **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
 | **Docker** | 29.0.4 + Compose v2.40.3 |
 | **Domínio** | yesyoudeserve.duckdns.org |
@@ -21,6 +22,7 @@
 | **LLM** | Llama 4 Maverick (400B params) via Salad Cloud |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
+| **Storage** | Volume local Hetzner (SEM S3 externo) |
 
 ---
 
@@ -91,7 +93,7 @@
 | Audio Processing (Whisper) | ✅ | `audio-processor.ts` |
 | Video Processing (FFmpeg+Whisper+CLIP) | ✅ | `video-processor.ts` |
 | Document Processing (PDF/DOCX/XLSX) | ✅ | `document-processor.ts` |
-| Hetzner Object Storage (S3) | ✅ | `storage.ts` |
+| **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
 | Multer Upload | ✅ | `index.ts` |
 | Circuit Breakers | ✅ | CLIP + Whisper + FFmpeg |
@@ -140,6 +142,10 @@
 | Health Checker (Jaeger) | ✅ | `index.ts` |
 | Health Checker (Langfuse) | ✅ | `index.ts` |
 | **Backup Orchestrator** | ✅ | `backup-orchestrator.ts` |
+| **Backup Schedule (Cron Parser)** | ✅ | `backup-orchestrator.ts` |
+| **Disk Usage Monitor** | ✅ | `backup-orchestrator.ts` |
+| **Backup Cleanup (Retenção)** | ✅ | `backup-orchestrator.ts` |
+| **Backup Delete** | ✅ | `backup-orchestrator.ts` |
 | Frontend Log Collector | ✅ | `/api/observability/logs` |
 | Circuit Breakers Status | ✅ | `/api/observability/circuit-breakers` |
 | Prometheus Metrics | ✅ | `/metrics` |
@@ -193,7 +199,7 @@
 
 ## 🔄 SISTEMA DE BACKUP ENTERPRISE
 
-### Arquitetura Unificada
+### Arquitetura Unificada (100% Local - Sem S3 Externo)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -216,20 +222,24 @@
 │                           │                                      │
 │                           ▼                                      │
 │  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Hetzner Object Storage (S3)                    ││
-│  │              Offsite backup com versionamento               ││
+│  │           Volume Local Hetzner (/opt/alice/backups)         ││
+│  │           100GB EXT4 - Expansível até 10TB                  ││
+│  │  ├── postgresql/   (pgBackRest full + incr + WAL)           ││
+│  │  ├── mariadb/      (Mariabackup comprimido)                 ││
+│  │  ├── redis/        (RDB snapshots)                          ││
+│  │  └── manifests/    (JSON de cada backup)                    ││
 │  └─────────────────────────────────────────────────────────────┘│
 └─────────────────────────────────────────────────────────────────┘
 ```
 
 ### Componentes de Backup
 
-| Componente | Tecnologia | Container | Descrição |
-|------------|------------|-----------|-----------|
-| PostgreSQL | pgBackRest 2.54.2 | pgbackrest | PITR, WAL archiving, AES-256 |
-| MariaDB | Mariabackup | erpnext-mariadb | Backup incremental, GTID |
-| Redis | RDB Snapshot | erpnext-redis-* | Dump RDB |
-| Uploads | S3 Sync | - | Hetzner Object Storage |
+| Componente | Tecnologia | Container | Local |
+|------------|------------|-----------|-------|
+| PostgreSQL | pgBackRest 2.54.2 | pgbackrest | /opt/alice/backups/postgresql |
+| MariaDB | Mariabackup | erpnext-mariadb | /opt/alice/backups/mariadb |
+| Redis | RDB Snapshot | erpnext-redis-* | /opt/alice/backups/redis |
+| Manifests | JSON | - | /opt/alice/backups/manifests |
 
 ### API de Backup
 
@@ -238,26 +248,31 @@
 | `GET` | `/api/backup/status` | Status atual do job |
 | `GET` | `/api/backup/history` | Histórico com manifestos |
 | `GET` | `/api/backup/schedule` | Configuração de schedule |
+| `GET` | `/api/backup/disk-usage` | **Uso de disco do volume** |
 | `POST` | `/api/backup/run` | Iniciar backup (full/incremental) |
 | `POST` | `/api/backup/restore` | Iniciar restauração |
 | `PUT` | `/api/backup/schedule` | Atualizar schedule |
 | `POST` | `/api/backup/pre-deploy` | Snapshot pré-deploy |
+| `POST` | `/api/backup/cleanup` | **Limpar backups antigos** |
+| `DELETE` | `/api/backup/:id` | **Excluir manifesto específico** |
 
-### Schedule Padrão
+### Schedule Padrão (Configurável via Dashboard)
 
 ```
 Full Backup:        0 3 * * 0   (Domingo às 03:00)
 Incremental Backup: 0 3 * * 1-6 (Segunda a Sábado às 03:00)
-Retenção Full:      30 dias
+Retenção Full:      15 dias
 Retenção Incremental: 7 dias
-Retenção Arquivo:   90 dias
+Retenção Arquivo:   30 dias
 ```
+
+> **NOTA:** Retenção otimizada para Volume de 100GB. Configurável via Dashboard Admin.
 
 ### Persistência (Regra 6 - Zero in-memory)
 
 | Tabela | Schema | Propósito |
 |--------|--------|-----------|
-| `backup_jobs` | `packages/shared/src/schema/integrations.ts` | Estado persistente de jobs |
+| `backup_jobs` | `packages/shared/src/schema.ts` | Estado persistente de jobs (Regra 6) |
 
 ---
 
@@ -586,7 +601,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | 1. Codebase | ✅ | Git + GitHub |
 | 2. Dependencies | ✅ | pnpm-lock.yaml, requirements.txt |
 | 3. Config | ✅ | Variáveis de ambiente, GitHub Secrets |
-| 4. Backing Services | ✅ | PostgreSQL, Redis, S3 como recursos |
+| 4. Backing Services | ✅ | PostgreSQL, Redis, Volume Local como recursos |
 | 5. Build, Release, Run | ✅ | CI → Release → Deploy separados |
 | 6. Processes | ✅ | Stateless, Redis para estado compartilhado |
 | 7. Port Binding | ✅ | Cada serviço expõe porta própria |
@@ -611,7 +626,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | **Geração** | ✅ | LLM + Image (FLUX.1) |
 | **Auto-learning** | ✅ | Scheduler + LoRA + Versioning |
 | **Takeover/Handover** | ✅ | Completo com escalação |
-| **Backup Enterprise** | ✅ | PostgreSQL, MariaDB, Redis, S3, PITR |
+| **Backup Enterprise** | ✅ | PostgreSQL, MariaDB, Redis, Volume Local, PITR |
 | **Observability** | ✅ | Prometheus, Grafana, Jaeger, Langfuse |
 | **Secrets** | 27/~34 | Configurados no GitHub |
 
@@ -640,8 +655,10 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 *Documento consolidado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 2.4 - Correções de Segurança Multi-Tenant*  
-*Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão: 3.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*  
+*Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*  
+*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
+*Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 
 ---
 

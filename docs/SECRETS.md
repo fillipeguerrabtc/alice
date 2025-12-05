@@ -346,6 +346,7 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 04 de Dezembro de 2025*
-*Versão: 5.6 - Adicionado BACKUP_CIPHER_PASS para criptografia pgBackRest*
+*Documento atualizado em: 05 de Dezembro de 2025*
+*Versão: 5.7 - Storage Local 100% (SEM S3 externo)*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Backup: Volume Hetzner 100GB local (/opt/alice/backups)*
