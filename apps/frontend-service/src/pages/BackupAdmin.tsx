@@ -358,10 +358,11 @@ export default function BackupAdmin() {
   });
 
   const cleanupMutation = useMutation({
-    mutationFn: async () => {
-      return apiRequest('POST', '/api/backup/cleanup');
+    mutationFn: async (): Promise<{ deletedManifests: number }> => {
+      const res = await apiRequest('POST', '/api/backup/cleanup');
+      return res.json();
     },
-    onSuccess: (data: { deletedManifests: number }) => {
+    onSuccess: (data) => {
       toast({
         title: 'Limpeza concluída',
         description: `${data.deletedManifests} backups antigos removidos.`,
