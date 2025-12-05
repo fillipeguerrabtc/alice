@@ -640,7 +640,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 *Documento consolidado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 2.3 - Testes Enterprise Completos*  
+*Versão: 2.4 - Correções de Segurança Multi-Tenant*  
 *Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
 
 ---
