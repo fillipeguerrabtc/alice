@@ -12,6 +12,7 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
+import { frontendLogger } from '@/lib/logger';
 
 // ============================================================================
 // CONFIGURAÇÃO DE RESILIÊNCIA (Regra 16 - Best Practices 2025)
@@ -550,7 +551,7 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
       } catch (sseError) {
         // Se fallback para polling está habilitado, tentar polling
         if (enablePollingFallback) {
-          console.warn('[useWebSocketChat] SSE falhou, usando fallback para polling:', sseError);
+          frontendLogger.warn('SSE falhou, usando fallback para polling', { error: String(sseError) });
           fullContent = await executePollingFallback(payload, assistantMessageId);
         } else {
           throw sseError;

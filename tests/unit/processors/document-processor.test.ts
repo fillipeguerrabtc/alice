@@ -54,9 +54,9 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
    * @param depth - Profundidade de recursão (proteção contra loops infinitos)
    */
   function extractCellText(cell: unknown, depth: number = 0): string {
-    // Proteção contra recursão infinita (máximo 3 níveis)
+    // Proteção contra recursão infinita (máximo 3 níveis: 0, 1, 2)
     const MAX_DEPTH = 3;
-    if (depth > MAX_DEPTH) {
+    if (depth >= MAX_DEPTH) {
       return '';
     }
 

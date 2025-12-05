@@ -369,9 +369,9 @@ class DocumentProcessorService {
    * @param depth - Profundidade de recursão (proteção contra loops infinitos)
    */
   private extractCellText(cell: unknown, depth: number = 0): string {
-    // Proteção contra recursão infinita (máximo 3 níveis)
+    // Proteção contra recursão infinita (máximo 3 níveis: 0, 1, 2)
     const MAX_DEPTH = 3;
-    if (depth > MAX_DEPTH) {
+    if (depth >= MAX_DEPTH) {
       return '';
     }
 
@@ -430,10 +430,11 @@ class DocumentProcessorService {
       // CellErrorValue: { error: { message?: string, ... } }
       // Retorna apenas a mensagem de erro (ex: #DIV/0!, #REF!, #VALUE!)
       // Sem prefixo redundante já que códigos Excel começam com #
-      if ('error' in obj) {
+      // Validação completa: error deve ser objeto não-nulo (não primitivo)
+      if ('error' in obj && typeof obj.error === 'object' && obj.error !== null) {
         const error = obj.error as Record<string, unknown>;
-        if (error && typeof error.message === 'string') {
-          return error.message;
+        if ('message' in error) {
+          return String(error.message);
         }
         return '#ERROR';
       }
@@ -475,7 +476,10 @@ class DocumentProcessorService {
   private async extractXlsxText(
     buffer: Buffer
   ): Promise<{ text: string; metadata: Partial<DocumentMetadata> }> {
-    const ExcelJS = await import('exceljs');
+    // Import dinâmico do exceljs
+    // exceljs pode exportar como default ou como módulo direto dependendo da versão/bundler
+    const excelModule = await import('exceljs');
+    const ExcelJS = (excelModule as { default?: typeof excelModule }).default || excelModule;
     
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(buffer);

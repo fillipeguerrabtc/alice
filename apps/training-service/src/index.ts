@@ -117,7 +117,7 @@ setupSwaggerUI(app, {
   serviceName: 'training-service',
   version: '1.0.0',
   description: 'Serviço de fine-tuning com SemHash, auto-learning e Salad Cloud.',
-  port: PORT,
+  port: Number(PORT),
   tags: TRAINING_SERVICE_TAGS,
   paths: trainingServicePaths,
   schemas: trainingServiceSchemas,
