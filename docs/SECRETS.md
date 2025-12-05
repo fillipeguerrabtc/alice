@@ -6,6 +6,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
+**Total de Secrets:** 35 (32 pré-deploy + 3 pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 27 em produção (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -352,7 +353,8 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 05 de Dezembro de 2025*
-*Versão: 5.8 - Checklist 100% Atualizado + Redis Alice Dedicado*
+*Versão: 5.9 - 35 Secrets Verificados (32 pré-deploy + 3 pós-deploy)*
 *Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Secrets: 35 (ACME_EMAIL, GRAFANA_ADMIN_PASSWORD, LANGFUSE_* incluídos)*
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*

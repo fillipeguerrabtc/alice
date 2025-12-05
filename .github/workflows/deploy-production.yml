@@ -735,6 +735,17 @@ jobs:
           
           # Backup (pgBackRest) - Criptografia AES-256
           BACKUP_CIPHER_PASS=${{ secrets.BACKUP_CIPHER_PASS }}
+          
+          # SSL/TLS (Let's Encrypt via Traefik)
+          ACME_EMAIL=${{ secrets.ACME_EMAIL }}
+          
+          # Grafana (Observabilidade)
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          
+          # Langfuse (Métricas LLM)
+          LANGFUSE_SECRET_KEY=${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_NEXT_AUTH_SECRET=${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}
           EOF
           chmod 600 .env.prod
 

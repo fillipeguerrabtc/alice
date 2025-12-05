@@ -198,7 +198,7 @@ services:
       - "--entrypoints.websecure.address=:443"
       
       # SSL/TLS Let's Encrypt
-      - "--certificatesresolvers.letsencrypt.acme.email=admin@yesyoudeserve.duckdns.org"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
       
