@@ -203,7 +203,7 @@ export async function validateMultipleTenantConsistencies(
     expectedTenantId: string;
     relatedEntity?: string;
   }>
-): TenantConsistencyError[] {
+): Promise<TenantConsistencyError[]> {
   const errors: TenantConsistencyError[] = [];
 
   for (const validation of validations) {
