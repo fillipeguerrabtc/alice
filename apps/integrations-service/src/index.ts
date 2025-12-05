@@ -68,7 +68,7 @@ setupSwaggerUI(app, {
   serviceName: 'integrations-service',
   version: '1.0.0',
   description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, Resend.',
-  port: config.PORT,
+  port: config.PORT ?? 3005,
   tags: INTEGRATIONS_SERVICE_TAGS,
   paths: integrationsServicePaths,
   schemas: integrationsServiceSchemas,

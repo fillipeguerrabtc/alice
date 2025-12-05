@@ -283,7 +283,7 @@ setupSwaggerUI(app, {
   serviceName: 'auth-service',
   version: '1.0.0',
   description: 'Serviço de autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC e RBAC.',
-  port: config.PORT,
+  port: config.PORT ?? 3001,
   tags: AUTH_SERVICE_TAGS,
   paths: authServicePaths,
   schemas: authServiceSchemas,
