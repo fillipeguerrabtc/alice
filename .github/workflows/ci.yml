@@ -75,6 +75,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
+      # Regra 16: Melhores práticas - resiliência com fallback automático
+      - name: Configure npm registry fallback
+        run: |
+          echo "Verificando disponibilidade do npm registry..."
+          if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
+            echo "⚠️ npm registry instável, configurando mirror npmmirror.com..."
+            npm config set registry https://registry.npmmirror.com/
+            echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
+          else
+            echo "✅ npm registry oficial disponível"
+          fi
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -181,6 +194,15 @@ jobs:
       fail-fast: true
     steps:
       - uses: actions/checkout@v4
+
+      # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
+      - name: Configure npm registry fallback
+        run: |
+          if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
+            echo "⚠️ npm registry instável, usando mirror npmmirror.com"
+            npm config set registry https://registry.npmmirror.com/
+            echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
+          fi
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -295,6 +317,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
+      - name: Configure npm registry fallback
+        run: |
+          if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
+            echo "⚠️ npm registry instável, usando mirror npmmirror.com"
+            npm config set registry https://registry.npmmirror.com/
+            echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
+          fi
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
@@ -356,6 +387,15 @@ jobs:
           
           echo "Espaço após limpeza:"
           df -h /
+
+      # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
+      - name: Configure npm registry fallback
+        run: |
+          if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
+            echo "⚠️ npm registry instável, usando mirror npmmirror.com"
+            npm config set registry https://registry.npmmirror.com/
+            echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
+          fi
 
       # Setup pnpm para instalar dependências Node.js (necessário para Trivy escanear)
       - name: Setup pnpm

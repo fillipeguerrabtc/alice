@@ -395,6 +395,37 @@ Adicionar `platform: linux/amd64` após cada `image:` em TODOS os 26 containers 
 | Mudança em 1 serviço | ~45 min | ~7 min |
 | Nenhuma mudança | ~45 min | ~3 min |
 
+### npm Registry Fallback Enterprise (05/12/2025)
+
+| Registry | URL | Tipo | Uso |
+|----------|-----|------|-----|
+| **npmjs.org** | `https://registry.npmjs.org/` | Oficial (primário) | Padrão |
+| **npmmirror.com** | `https://registry.npmmirror.com/` | Mirror Alibaba (fallback) | Se oficial retornar 500/503 |
+
+**Problema:** O npm registry oficial ocasionalmente retorna erros 500 Internal Server Error, causando falhas no CI/CD.
+
+**Solução Enterprise:** Fallback automático implementado em TODOS os workflows que usam pnpm:
+
+```yaml
+- name: Configure npm registry fallback
+  run: |
+    if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
+      echo "⚠️ npm registry instável, usando mirror npmmirror.com"
+      npm config set registry https://registry.npmmirror.com/
+      echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
+    fi
+```
+
+**Workflows com fallback:**
+- `ci.yml` (4 jobs: build-and-check, build-services, build-frontend, security-scan)
+- `deploy-production.yml` (1 job: code-quality)
+
+**Benefícios:**
+- ✅ Zero intervenção manual quando npm está instável
+- ✅ Fallback transparente para mirror confiável
+- ✅ Timeout de 10s evita espera excessiva
+- ✅ Regra 16: Melhores práticas de resiliência
+
 ### Servidor Hetzner - Conexão SSH (03/12/2025)
 
 **Configuração SSH Local** (`~/.ssh/config`):
@@ -538,7 +569,7 @@ RUN apk update && apk upgrade --no-cache && corepack enable
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro*
-*Versão 3.13 - 04 de Dezembro de 2025*
+*Versão 3.14 - 05 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
