@@ -477,10 +477,13 @@ class DocumentProcessorService {
     buffer: Buffer
   ): Promise<{ text: string; metadata: Partial<DocumentMetadata> }> {
     // Import dinâmico do exceljs
-    // exceljs exporta como módulo ES com default export
-    const ExcelJS = await import('exceljs');
+    // exceljs pode exportar como default ou como módulo direto dependendo do bundler/ambiente
+    // Abordagem defensiva: verificar ambos os padrões de export
+    const excelModule = await import('exceljs');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ExcelJSLib = (excelModule as any).default ?? excelModule;
     
-    const workbook = new ExcelJS.Workbook();
+    const workbook = new ExcelJSLib.Workbook();
     // Converter para Uint8Array para compatibilidade com exceljs 4.4.0+
     await workbook.xlsx.load(new Uint8Array(buffer));
     
