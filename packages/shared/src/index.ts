@@ -1,22 +1,13 @@
 /**
  * Alice Enterprise Platform - Shared Package
  * 
- * Re-exporta o schema principal para manter
- * compatibilidade com todos os serviços.
+ * Schema centralizado do Drizzle ORM para todos os microsserviços.
+ * Todos os serviços usam o mesmo PostgreSQL com isolamento via multi-tenancy.
  * 
- * NOTA: Estrutura modular criada em ./schema/ para futuras migrações
- * incrementais. Atualmente usa o schema.ts monolítico para estabilidade.
+ * Autor: Fillipe Guerra
+ * Data: 05 de Dezembro de 2025
  * 
  * @module @alice/shared
  */
 
 export * from './schema.js';
-
-// Re-exportar tipos/tabelas de backup que só existem no schema modular
-export type { BackupComponentDetail, BackupManifestData } from './schema/integrations.js';
-export {
-  backupJobs,
-  insertBackupJobSchema,
-  type InsertBackupJob,
-  type BackupJob,
-} from './schema/integrations.js';

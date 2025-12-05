@@ -1,3 +1,25 @@
+/**
+ * Schema Principal (Monolítico) - Alice Enterprise Platform
+ * 
+ * ⚠️ IMPORTANTE: Este é o ÚNICO schema em uso em produção.
+ * 
+ * Os arquivos em ./schema/ (rag.ts, chat.ts, etc.) são uma versão MODULAR
+ * preparada para migração futura, mas NÃO ESTÃO ATIVOS.
+ * 
+ * Para modificações no schema:
+ * 1. Edite ESTE arquivo (schema.ts)
+ * 2. Gere migrations com `pnpm drizzle-kit generate`
+ * 3. Os schemas modulares serão sincronizados em migração futura
+ * 
+ * Multi-tenancy:
+ * - agents e conversations possuem tenantId para isolamento
+ * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 05 de Dezembro de 2025
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ */
+
 import { sql, relations } from "drizzle-orm";
 import {
   pgTable,
@@ -347,6 +369,20 @@ export const taskStatusEnum = pgEnum("task_status", [
   "completed",
   "failed",
   "cancelled",
+]);
+
+export const backupJobStatusEnum = pgEnum("backup_job_status", [
+  "queued",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const backupTypeEnum = pgEnum("backup_type", [
+  "full",
+  "incremental",
+  "differential",
 ]);
 
 // ============================================================================
@@ -1524,6 +1560,79 @@ export const featureFlags = pgTable(
     idxFeatureFlagsTenantKey: index("idx_feature_flags_tenant_key").on(table.tenantId, table.key),
   })
 );
+
+// ============================================================================
+// BACKUP JOBS (Regra 6 - Enterprise-Grade Persistence)
+// Estado de backup persistido em PostgreSQL (NÃO in-memory)
+// ============================================================================
+
+/**
+ * Tipo JSONB para componentes do backup
+ * Cada componente (postgresql, mariadb, redis, uploads) tem seu status
+ */
+export interface BackupComponentDetail {
+  component: 'postgresql' | 'mariadb' | 'redis' | 'uploads';
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+  startedAt?: string;
+  completedAt?: string;
+  durationSeconds?: number;
+  size?: string;
+  error?: string;
+  metadata?: Record<string, string>;
+}
+
+/**
+ * Tipo JSONB para manifesto do backup
+ */
+export interface BackupManifestData {
+  components: {
+    postgresql?: { status: string; lsn?: string; backupSet?: string; size?: string; walArchived?: boolean; };
+    mariadb?: { status: string; gtid?: string; binlogPosition?: string; size?: string; };
+    redis?: { status: string; rdbChecksum?: string; size?: string; };
+    uploads?: { status: string; s3VersionId?: string; filesCount?: number; size?: string; };
+  };
+  offsite: { enabled: boolean; repository?: string; synced?: boolean; };
+  encryption: { enabled: boolean; algorithm?: string; };
+  notes?: string;
+}
+
+export const backupJobs = pgTable(
+  "backup_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    jobId: varchar("job_id", { length: 255 }).notNull().unique(),
+    status: backupJobStatusEnum("status").notNull().default("queued"),
+    backupType: backupTypeEnum("backup_type").notNull().default("full"),
+    progress: integer("progress").notNull().default(0),
+    currentComponent: varchar("current_component", { length: 50 }),
+    components: jsonb("components").$type<BackupComponentDetail[]>().default([]),
+    manifest: jsonb("manifest").$type<BackupManifestData>(),
+    totalSize: varchar("total_size", { length: 50 }),
+    startedAt: timestamp("started_at").notNull().defaultNow(),
+    estimatedCompletion: timestamp("estimated_completion"),
+    completedAt: timestamp("completed_at"),
+    durationSeconds: integer("duration_seconds"),
+    error: text("error"),
+    createdBy: varchar("created_by", { length: 255 }),
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxBackupJobsJobId: index("idx_backup_jobs_job_id").on(table.jobId),
+    idxBackupJobsStatus: index("idx_backup_jobs_status").on(table.status),
+    idxBackupJobsType: index("idx_backup_jobs_type").on(table.backupType),
+    idxBackupJobsStarted: index("idx_backup_jobs_started").on(table.startedAt),
+    idxBackupJobsCreated: index("idx_backup_jobs_created").on(table.criadoEm),
+  })
+);
+
+export const insertBackupJobSchema = createInsertSchema(backupJobs).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+export type InsertBackupJob = z.infer<typeof insertBackupJobSchema>;
+export type BackupJob = typeof backupJobs.$inferSelect;
 
 // ============================================================================
 // RELATIONS
