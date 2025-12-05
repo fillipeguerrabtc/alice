@@ -2,6 +2,7 @@
  * Alice Enterprise Platform - Auth Service OpenAPI Specs
  * 
  * Documentação OpenAPI 3.0 para o serviço de autenticação.
+ * Specs definidas como objeto para compatibilidade com esbuild.
  * 
  * Author: Fillipe Guerra
  * Data: 05/12/2025
@@ -9,602 +10,536 @@
  * Documentação em PT-BR (Regra 10 replit.md)
  */
 
-/**
- * @openapi
- * /health:
- *   get:
- *     summary: Health check básico
- *     tags: [Health]
- *     security: []
- *     responses:
- *       200:
- *         description: Serviço saudável
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 status:
- *                   type: string
- *                   example: ok
- *                 service:
- *                   type: string
- *                   example: auth-service
- */
+// Paths OpenAPI para auth-service (38 endpoints)
+export const authServicePaths = {
+  '/health': {
+    get: {
+      summary: 'Health check básico',
+      tags: ['Health'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Serviço saudável',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  status: { type: 'string', example: 'ok' },
+                  service: { type: 'string', example: 'auth-service' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/ready': {
+    get: {
+      summary: 'Readiness check com dependências',
+      tags: ['Health'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Serviço pronto',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/HealthCheck' },
+            },
+          },
+        },
+        503: { description: 'Serviço não pronto' },
+      },
+    },
+  },
+  '/api/auth/csrf-token': {
+    get: {
+      summary: 'Obtém token CSRF',
+      description: 'Retorna um token CSRF para proteção contra ataques CSRF em formulários.',
+      tags: ['Auth'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Token CSRF gerado',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  csrfToken: { type: 'string', example: 'a1b2c3d4e5f6...' },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/auth/register': {
+    post: {
+      summary: 'Registrar novo usuário',
+      description: 'Cria uma nova conta de usuário com email e senha.',
+      tags: ['Auth'],
+      security: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['email', 'password', 'name'],
+              properties: {
+                email: { type: 'string', format: 'email', example: 'usuario@empresa.com' },
+                password: { type: 'string', format: 'password', minLength: 8, example: 'SenhaSegura123!' },
+                name: { type: 'string', minLength: 2, example: 'João Silva' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        201: {
+          description: 'Usuário criado com sucesso',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean', example: true },
+                  user: { $ref: '#/components/schemas/User' },
+                },
+              },
+            },
+          },
+        },
+        400: { $ref: '#/components/responses/ValidationError' },
+        409: { description: 'Email já registrado' },
+        429: { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  },
+  '/api/auth/login': {
+    post: {
+      summary: 'Login com email e senha',
+      description: 'Autentica usuário e cria sessão.',
+      tags: ['Auth'],
+      security: [],
+      requestBody: {
+        required: true,
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['email', 'password'],
+              properties: {
+                email: { type: 'string', format: 'email' },
+                password: { type: 'string', format: 'password' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Login bem-sucedido',
+          headers: {
+            'Set-Cookie': {
+              description: 'Cookie de sessão',
+              schema: { type: 'string' },
+            },
+          },
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  success: { type: 'boolean' },
+                  user: { $ref: '#/components/schemas/User' },
+                },
+              },
+            },
+          },
+        },
+        401: { $ref: '#/components/responses/Unauthorized' },
+        429: { $ref: '#/components/responses/RateLimited' },
+      },
+    },
+  },
+  '/api/auth/logout': {
+    post: {
+      summary: 'Encerrar sessão',
+      description: 'Faz logout do usuário e invalida a sessão.',
+      tags: ['Auth'],
+      responses: {
+        200: { description: 'Logout bem-sucedido' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/me': {
+    get: {
+      summary: 'Dados do usuário autenticado',
+      description: 'Retorna informações do usuário logado.',
+      tags: ['Auth'],
+      responses: {
+        200: {
+          description: 'Dados do usuário',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  authenticated: { type: 'boolean' },
+                  user: { $ref: '#/components/schemas/User' },
+                },
+              },
+            },
+          },
+        },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/google': {
+    get: {
+      summary: 'Iniciar OAuth Google',
+      description: 'Redireciona para autenticação Google OAuth 2.0.',
+      tags: ['OAuth'],
+      security: [],
+      responses: {
+        302: { description: 'Redirect para Google' },
+      },
+    },
+  },
+  '/api/auth/google/callback': {
+    get: {
+      summary: 'Callback OAuth Google',
+      description: 'Processa retorno da autenticação Google.',
+      tags: ['OAuth'],
+      security: [],
+      parameters: [
+        { name: 'code', in: 'query', required: true, schema: { type: 'string' } },
+        { name: 'state', in: 'query', schema: { type: 'string' } },
+      ],
+      responses: {
+        302: { description: 'Redirect para aplicação' },
+        401: { $ref: '#/components/responses/Unauthorized' },
+      },
+    },
+  },
+  '/api/auth/github': {
+    get: {
+      summary: 'Iniciar OAuth GitHub',
+      description: 'Redireciona para autenticação GitHub OAuth 2.0.',
+      tags: ['OAuth'],
+      security: [],
+      responses: {
+        302: { description: 'Redirect para GitHub' },
+      },
+    },
+  },
+  '/api/auth/github/callback': {
+    get: {
+      summary: 'Callback OAuth GitHub',
+      description: 'Processa retorno da autenticação GitHub.',
+      tags: ['OAuth'],
+      security: [],
+      parameters: [
+        { name: 'code', in: 'query', required: true, schema: { type: 'string' } },
+      ],
+      responses: {
+        302: { description: 'Redirect para aplicação' },
+      },
+    },
+  },
+  '/api/auth/saml/azure/metadata': {
+    get: {
+      summary: 'Metadata SAML Azure AD',
+      description: 'Retorna XML de metadata para configuração no Azure AD.',
+      tags: ['SAML'],
+      security: [],
+      responses: {
+        200: {
+          description: 'XML de metadata',
+          content: {
+            'application/xml': { schema: { type: 'string' } },
+          },
+        },
+      },
+    },
+  },
+  '/api/auth/saml/azure': {
+    get: {
+      summary: 'Iniciar login SAML Azure',
+      tags: ['SAML'],
+      security: [],
+      responses: {
+        302: { description: 'Redirect para Azure AD' },
+      },
+    },
+  },
+  '/api/auth/saml/azure/callback': {
+    post: {
+      summary: 'Callback SAML Azure',
+      tags: ['SAML'],
+      security: [],
+      requestBody: {
+        content: {
+          'application/x-www-form-urlencoded': {
+            schema: {
+              type: 'object',
+              properties: {
+                SAMLResponse: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        302: { description: 'Redirect para aplicação' },
+      },
+    },
+  },
+  '/api/auth/users': {
+    get: {
+      summary: 'Listar usuários',
+      description: 'Lista todos os usuários (requer permissão users:read).',
+      tags: ['Users'],
+      parameters: [
+        { name: 'page', in: 'query', schema: { type: 'integer', default: 1 } },
+        { name: 'limit', in: 'query', schema: { type: 'integer', default: 20, maximum: 100 } },
+        { name: 'role', in: 'query', schema: { type: 'string', enum: ['guest', 'user', 'moderator', 'manager', 'admin', 'super_admin'] } },
+      ],
+      responses: {
+        200: {
+          description: 'Lista de usuários',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  users: { type: 'array', items: { $ref: '#/components/schemas/User' } },
+                  pagination: { $ref: '#/components/schemas/Pagination' },
+                },
+              },
+            },
+          },
+        },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+  },
+  '/api/auth/users/{id}': {
+    get: {
+      summary: 'Buscar usuário por ID',
+      tags: ['Users'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        200: {
+          description: 'Dados do usuário',
+          content: {
+            'application/json': {
+              schema: { $ref: '#/components/schemas/User' },
+            },
+          },
+        },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+    patch: {
+      summary: 'Atualizar usuário',
+      tags: ['Users'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                role: { type: 'string', enum: ['guest', 'user', 'moderator', 'manager', 'admin', 'super_admin'] },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Usuário atualizado' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+    delete: {
+      summary: 'Remover usuário',
+      tags: ['Users'],
+      parameters: [
+        { name: 'id', in: 'path', required: true, schema: { type: 'string', format: 'uuid' } },
+      ],
+      responses: {
+        204: { description: 'Usuário removido' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+  },
+  '/api/auth/sessions': {
+    get: {
+      summary: 'Listar sessões ativas',
+      description: 'Lista todas as sessões do usuário autenticado.',
+      tags: ['Sessions'],
+      responses: {
+        200: {
+          description: 'Lista de sessões',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  sessions: {
+                    type: 'array',
+                    items: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'string' },
+                        createdAt: { type: 'string', format: 'date-time' },
+                        userAgent: { type: 'string' },
+                        ip: { type: 'string' },
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/auth/sessions/{sessionId}': {
+    delete: {
+      summary: 'Revogar sessão',
+      tags: ['Sessions'],
+      parameters: [
+        { name: 'sessionId', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      responses: {
+        204: { description: 'Sessão revogada' },
+        404: { $ref: '#/components/responses/NotFound' },
+      },
+    },
+  },
+  '/api/auth/feature-flags': {
+    get: {
+      summary: 'Listar feature flags',
+      tags: ['Feature Flags'],
+      responses: {
+        200: {
+          description: 'Lista de flags',
+          content: {
+            'application/json': {
+              schema: { type: 'object', additionalProperties: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/auth/feature-flags/{flagName}': {
+    put: {
+      summary: 'Atualizar feature flag',
+      tags: ['Feature Flags'],
+      parameters: [
+        { name: 'flagName', in: 'path', required: true, schema: { type: 'string' } },
+      ],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: { enabled: { type: 'boolean' } },
+            },
+          },
+        },
+      },
+      responses: {
+        200: { description: 'Flag atualizada' },
+        403: { $ref: '#/components/responses/Forbidden' },
+      },
+    },
+  },
+  '/api/auth/rbac/permissions': {
+    get: {
+      summary: 'Listar permissões do usuário',
+      tags: ['RBAC'],
+      responses: {
+        200: {
+          description: 'Lista de permissões',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: {
+                  role: { type: 'string' },
+                  permissions: { type: 'array', items: { type: 'string' } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/api/auth/rbac/check': {
+    post: {
+      summary: 'Verificar permissão',
+      tags: ['RBAC'],
+      requestBody: {
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              required: ['permission'],
+              properties: {
+                permission: { type: 'string', example: 'users:write' },
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          description: 'Resultado da verificação',
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                properties: { allowed: { type: 'boolean' } },
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  '/metrics': {
+    get: {
+      summary: 'Métricas Prometheus',
+      tags: ['Health'],
+      security: [],
+      responses: {
+        200: {
+          description: 'Métricas no formato Prometheus',
+          content: {
+            'text/plain': { schema: { type: 'string' } },
+          },
+        },
+      },
+    },
+  },
+};
 
-/**
- * @openapi
- * /ready:
- *   get:
- *     summary: Readiness check com dependências
- *     tags: [Health]
- *     security: []
- *     responses:
- *       200:
- *         description: Serviço pronto
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/HealthCheck'
- *       503:
- *         description: Serviço não pronto
- */
-
-/**
- * @openapi
- * /api/auth/csrf-token:
- *   get:
- *     summary: Obtém token CSRF
- *     description: Retorna um token CSRF para proteção contra ataques CSRF em formulários.
- *     tags: [Auth]
- *     security: []
- *     responses:
- *       200:
- *         description: Token CSRF gerado
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 csrfToken:
- *                   type: string
- *                   example: 'a1b2c3d4e5f6...'
- */
-
-/**
- * @openapi
- * /api/auth/register:
- *   post:
- *     summary: Registrar novo usuário
- *     description: Cria uma nova conta de usuário com email e senha.
- *     tags: [Auth]
- *     security: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [email, password, name]
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *                 example: 'usuario@empresa.com'
- *               password:
- *                 type: string
- *                 format: password
- *                 minLength: 8
- *                 example: 'SenhaSegura123!'
- *               name:
- *                 type: string
- *                 minLength: 2
- *                 example: 'João Silva'
- *     responses:
- *       201:
- *         description: Usuário criado com sucesso
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: true
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *       400:
- *         $ref: '#/components/responses/ValidationError'
- *       409:
- *         description: Email já registrado
- *       429:
- *         $ref: '#/components/responses/RateLimited'
- */
-
-/**
- * @openapi
- * /api/auth/login:
- *   post:
- *     summary: Login com email e senha
- *     description: Autentica usuário e cria sessão.
- *     tags: [Auth]
- *     security: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [email, password]
- *             properties:
- *               email:
- *                 type: string
- *                 format: email
- *               password:
- *                 type: string
- *                 format: password
- *     responses:
- *       200:
- *         description: Login bem-sucedido
- *         headers:
- *           Set-Cookie:
- *             description: Cookie de sessão
- *             schema:
- *               type: string
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *       401:
- *         $ref: '#/components/responses/Unauthorized'
- *       429:
- *         $ref: '#/components/responses/RateLimited'
- */
-
-/**
- * @openapi
- * /api/auth/logout:
- *   post:
- *     summary: Encerrar sessão
- *     description: Faz logout do usuário e invalida a sessão.
- *     tags: [Auth]
- *     responses:
- *       200:
- *         description: Logout bem-sucedido
- *       401:
- *         $ref: '#/components/responses/Unauthorized'
- */
-
-/**
- * @openapi
- * /api/auth/me:
- *   get:
- *     summary: Dados do usuário autenticado
- *     description: Retorna informações do usuário logado.
- *     tags: [Auth]
- *     responses:
- *       200:
- *         description: Dados do usuário
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 authenticated:
- *                   type: boolean
- *                 user:
- *                   $ref: '#/components/schemas/User'
- *       401:
- *         $ref: '#/components/responses/Unauthorized'
- */
-
-/**
- * @openapi
- * /api/auth/google:
- *   get:
- *     summary: Iniciar OAuth Google
- *     description: Redireciona para autenticação Google OAuth 2.0.
- *     tags: [OAuth]
- *     security: []
- *     responses:
- *       302:
- *         description: Redirect para Google
- */
-
-/**
- * @openapi
- * /api/auth/google/callback:
- *   get:
- *     summary: Callback OAuth Google
- *     description: Processa retorno da autenticação Google.
- *     tags: [OAuth]
- *     security: []
- *     parameters:
- *       - name: code
- *         in: query
- *         required: true
- *         schema:
- *           type: string
- *       - name: state
- *         in: query
- *         schema:
- *           type: string
- *     responses:
- *       302:
- *         description: Redirect para aplicação
- *       401:
- *         $ref: '#/components/responses/Unauthorized'
- */
-
-/**
- * @openapi
- * /api/auth/github:
- *   get:
- *     summary: Iniciar OAuth GitHub
- *     description: Redireciona para autenticação GitHub OAuth 2.0.
- *     tags: [OAuth]
- *     security: []
- *     responses:
- *       302:
- *         description: Redirect para GitHub
- */
-
-/**
- * @openapi
- * /api/auth/github/callback:
- *   get:
- *     summary: Callback OAuth GitHub
- *     description: Processa retorno da autenticação GitHub.
- *     tags: [OAuth]
- *     security: []
- *     parameters:
- *       - name: code
- *         in: query
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       302:
- *         description: Redirect para aplicação
- */
-
-/**
- * @openapi
- * /api/auth/saml/azure/metadata:
- *   get:
- *     summary: Metadata SAML Azure AD
- *     description: Retorna XML de metadata para configuração no Azure AD.
- *     tags: [SAML]
- *     security: []
- *     responses:
- *       200:
- *         description: XML de metadata
- *         content:
- *           application/xml:
- *             schema:
- *               type: string
- */
-
-/**
- * @openapi
- * /api/auth/saml/azure:
- *   get:
- *     summary: Iniciar login SAML Azure
- *     tags: [SAML]
- *     security: []
- *     responses:
- *       302:
- *         description: Redirect para Azure AD
- */
-
-/**
- * @openapi
- * /api/auth/saml/azure/callback:
- *   post:
- *     summary: Callback SAML Azure
- *     tags: [SAML]
- *     security: []
- *     requestBody:
- *       content:
- *         application/x-www-form-urlencoded:
- *           schema:
- *             type: object
- *             properties:
- *               SAMLResponse:
- *                 type: string
- *     responses:
- *       302:
- *         description: Redirect para aplicação
- */
-
-/**
- * @openapi
- * /api/auth/saml/okta/metadata:
- *   get:
- *     summary: Metadata SAML Okta
- *     tags: [SAML]
- *     security: []
- *     responses:
- *       200:
- *         description: XML de metadata
- *         content:
- *           application/xml:
- *             schema:
- *               type: string
- */
-
-/**
- * @openapi
- * /api/auth/users:
- *   get:
- *     summary: Listar usuários
- *     description: Lista todos os usuários (requer permissão users:read).
- *     tags: [Users]
- *     parameters:
- *       - name: page
- *         in: query
- *         schema:
- *           type: integer
- *           default: 1
- *       - name: limit
- *         in: query
- *         schema:
- *           type: integer
- *           default: 20
- *           maximum: 100
- *       - name: role
- *         in: query
- *         schema:
- *           type: string
- *           enum: [guest, user, moderator, manager, admin, super_admin]
- *     responses:
- *       200:
- *         description: Lista de usuários
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 users:
- *                   type: array
- *                   items:
- *                     $ref: '#/components/schemas/User'
- *                 pagination:
- *                   $ref: '#/components/schemas/Pagination'
- *       403:
- *         $ref: '#/components/responses/Forbidden'
- */
-
-/**
- * @openapi
- * /api/auth/users/{id}:
- *   get:
- *     summary: Buscar usuário por ID
- *     tags: [Users]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       200:
- *         description: Dados do usuário
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/User'
- *       404:
- *         $ref: '#/components/responses/NotFound'
- *   patch:
- *     summary: Atualizar usuário
- *     tags: [Users]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               name:
- *                 type: string
- *               role:
- *                 type: string
- *                 enum: [guest, user, moderator, manager, admin, super_admin]
- *     responses:
- *       200:
- *         description: Usuário atualizado
- *       403:
- *         $ref: '#/components/responses/Forbidden'
- *   delete:
- *     summary: Remover usuário
- *     tags: [Users]
- *     parameters:
- *       - name: id
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *           format: uuid
- *     responses:
- *       204:
- *         description: Usuário removido
- *       403:
- *         $ref: '#/components/responses/Forbidden'
- */
-
-/**
- * @openapi
- * /api/auth/sessions:
- *   get:
- *     summary: Listar sessões ativas
- *     description: Lista todas as sessões do usuário autenticado.
- *     tags: [Sessions]
- *     responses:
- *       200:
- *         description: Lista de sessões
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 sessions:
- *                   type: array
- *                   items:
- *                     type: object
- *                     properties:
- *                       id:
- *                         type: string
- *                       createdAt:
- *                         type: string
- *                         format: date-time
- *                       userAgent:
- *                         type: string
- *                       ip:
- *                         type: string
- */
-
-/**
- * @openapi
- * /api/auth/sessions/{sessionId}:
- *   delete:
- *     summary: Revogar sessão
- *     tags: [Sessions]
- *     parameters:
- *       - name: sessionId
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *     responses:
- *       204:
- *         description: Sessão revogada
- *       404:
- *         $ref: '#/components/responses/NotFound'
- */
-
-/**
- * @openapi
- * /api/auth/feature-flags:
- *   get:
- *     summary: Listar feature flags
- *     tags: [Feature Flags]
- *     responses:
- *       200:
- *         description: Lista de flags
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               additionalProperties:
- *                 type: boolean
- */
-
-/**
- * @openapi
- * /api/auth/feature-flags/{flagName}:
- *   put:
- *     summary: Atualizar feature flag
- *     tags: [Feature Flags]
- *     parameters:
- *       - name: flagName
- *         in: path
- *         required: true
- *         schema:
- *           type: string
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             properties:
- *               enabled:
- *                 type: boolean
- *     responses:
- *       200:
- *         description: Flag atualizada
- *       403:
- *         $ref: '#/components/responses/Forbidden'
- */
-
-/**
- * @openapi
- * /api/auth/rbac/permissions:
- *   get:
- *     summary: Listar permissões do usuário
- *     tags: [RBAC]
- *     responses:
- *       200:
- *         description: Lista de permissões
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 role:
- *                   type: string
- *                 permissions:
- *                   type: array
- *                   items:
- *                     type: string
- */
-
-/**
- * @openapi
- * /api/auth/rbac/check:
- *   post:
- *     summary: Verificar permissão
- *     tags: [RBAC]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required: [permission]
- *             properties:
- *               permission:
- *                 type: string
- *                 example: 'users:write'
- *     responses:
- *       200:
- *         description: Resultado da verificação
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 allowed:
- *                   type: boolean
- */
-
-/**
- * @openapi
- * /metrics:
- *   get:
- *     summary: Métricas Prometheus
- *     tags: [Health]
- *     security: []
- *     responses:
- *       200:
- *         description: Métricas no formato Prometheus
- *         content:
- *           text/plain:
- *             schema:
- *               type: string
- */
-
-// Este arquivo é apenas para documentação JSDoc
-// Não exporta nada - as specs são lidas pelo swagger-jsdoc
-export {};
+// Schemas adicionais específicos do auth-service
+export const authServiceSchemas = {};

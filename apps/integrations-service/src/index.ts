@@ -32,6 +32,7 @@ import {
   setupSwaggerUI,
   INTEGRATIONS_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { integrationsServicePaths, integrationsServiceSchemas } from './openapi-specs.js';
 import { loadConfig, integrationsServiceConfigSchema } from '@alice/config';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { eq, desc, sql, and } from '@alice/database';
@@ -69,7 +70,8 @@ setupSwaggerUI(app, {
   description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, Resend.',
   port: config.PORT,
   tags: INTEGRATIONS_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: integrationsServicePaths,
+  schemas: integrationsServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

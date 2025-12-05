@@ -38,6 +38,7 @@ import {
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, desc, sql, isNull, not } from '@alice/database';
 import { z } from 'zod';
 import { 
@@ -118,7 +119,8 @@ setupSwaggerUI(app, {
   description: 'Serviço de fine-tuning com SemHash, auto-learning e Salad Cloud.',
   port: PORT,
   tags: TRAINING_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: trainingServicePaths,
+  schemas: trainingServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

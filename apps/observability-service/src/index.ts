@@ -25,6 +25,7 @@ import {
   setupSwaggerUI,
   OBSERVABILITY_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { observabilityServicePaths, observabilityServiceSchemas } from './openapi-specs.js';
 import { backupRouter } from './backup-orchestrator.js';
 
 // Logger estruturado - JSON em produção (Regra 8 replit.md)
@@ -318,7 +319,8 @@ setupSwaggerUI(app, {
   description: 'Serviço de observabilidade: backup, restore, métricas agregadas.',
   port: Number(PORT),
   tags: OBSERVABILITY_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: observabilityServicePaths,
+  schemas: observabilityServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

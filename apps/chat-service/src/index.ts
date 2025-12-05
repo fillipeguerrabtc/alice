@@ -25,6 +25,7 @@ import {
   setupSwaggerUI,
   CHAT_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
@@ -162,7 +163,8 @@ setupSwaggerUI(app, {
   description: 'Serviço de chat com WebSocket, LLM streaming e geração de imagens.',
   port: Number(PORT),
   tags: CHAT_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: chatServicePaths,
+  schemas: chatServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

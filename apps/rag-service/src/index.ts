@@ -43,6 +43,7 @@ import {
   setupSwaggerUI,
   RAG_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger, runWithLogContext } from '@alice/logger';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
@@ -523,7 +524,8 @@ setupSwaggerUI(app, {
   description: 'Serviço RAG com busca semântica, embeddings multimodais e pgvector.',
   port: Number(PORT),
   tags: RAG_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: ragServicePaths,
+  schemas: ragServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

@@ -74,6 +74,7 @@ import {
   setupSwaggerUI,
   AUTH_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { authServicePaths, authServiceSchemas } from './openapi-specs.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('auth-service');
@@ -284,7 +285,8 @@ setupSwaggerUI(app, {
   description: 'Serviço de autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC e RBAC.',
   port: config.PORT,
   tags: AUTH_SERVICE_TAGS,
-  apis: ['./src/openapi-specs.ts', './src/index.ts'],
+  paths: authServicePaths,
+  schemas: authServiceSchemas,
 });
 logger.info('Swagger UI configurado em /api/docs');
 

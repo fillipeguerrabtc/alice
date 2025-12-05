@@ -12,7 +12,6 @@
  */
 
 import { Express, Request, Response } from 'express';
-import swaggerJsdoc from 'swagger-jsdoc';
 import swaggerUi from 'swagger-ui-express';
 import { createLogger } from '@alice/logger';
 
@@ -33,8 +32,10 @@ export interface OpenApiServiceConfig {
   port: number;
   /** Tags para agrupamento de endpoints */
   tags: OpenApiTag[];
-  /** Caminhos para arquivos com JSDoc @openapi (glob patterns) */
-  apis: string[];
+  /** Paths/endpoints da API como objeto OpenAPI (não usa arquivos - compatível com esbuild) */
+  paths: Record<string, unknown>;
+  /** Schemas adicionais específicos do serviço (opcional) */
+  schemas?: Record<string, unknown>;
 }
 
 export interface OpenApiTag {
@@ -367,31 +368,44 @@ A API suporta múltiplos métodos de autenticação:
 // ============================================================================
 
 /**
- * Cria configuração OpenAPI específica para um serviço
+ * Cria especificação OpenAPI completa para um serviço
+ * 
+ * NOTA: Não usa swagger-jsdoc com glob patterns porque após o build
+ * com esbuild os arquivos .ts não existem mais. As specs são passadas
+ * diretamente como objeto.
  */
-export function createServiceOpenApiConfig(config: OpenApiServiceConfig): swaggerJsdoc.Options {
+export function createServiceOpenApiSpec(config: OpenApiServiceConfig): Record<string, unknown> {
+  const baseComponents = baseOpenApiConfig.components as Record<string, unknown>;
+  const baseSchemas = (baseComponents?.schemas || {}) as Record<string, unknown>;
+  
   return {
-    definition: {
-      ...baseOpenApiConfig,
-      info: {
-        ...baseOpenApiConfig.info,
-        title: `Alice API - ${config.serviceName}`,
-        version: config.version,
-        description: config.description,
-      },
-      servers: [
-        {
-          url: `https://yesyoudeserve.duckdns.org/api/${config.serviceName.replace('-service', '')}`,
-          description: 'Produção via Traefik',
-        },
-        {
-          url: `http://localhost:${config.port}`,
-          description: 'Desenvolvimento Local',
-        },
-      ],
-      tags: config.tags,
+    openapi: '3.0.3',
+    info: {
+      ...baseOpenApiConfig.info,
+      title: `Alice API - ${config.serviceName}`,
+      version: config.version,
+      description: config.description,
     },
-    apis: config.apis,
+    servers: [
+      {
+        url: `https://yesyoudeserve.duckdns.org/api/${config.serviceName.replace('-service', '')}`,
+        description: 'Produção via Traefik',
+      },
+      {
+        url: `http://localhost:${config.port}`,
+        description: 'Desenvolvimento Local',
+      },
+    ],
+    tags: config.tags,
+    paths: config.paths,
+    components: {
+      ...baseOpenApiConfig.components,
+      schemas: {
+        ...baseSchemas,
+        ...(config.schemas || {}),
+      },
+    },
+    security: baseOpenApiConfig.security,
   };
 }
 
@@ -399,11 +413,12 @@ export function createServiceOpenApiConfig(config: OpenApiServiceConfig): swagge
  * Configura Swagger UI em uma aplicação Express
  * 
  * @param app - Aplicação Express
- * @param config - Configuração do serviço
+ * @param config - Configuração do serviço com paths como objeto
  */
 export function setupSwaggerUI(app: Express, config: OpenApiServiceConfig): void {
   try {
-    const swaggerSpec = swaggerJsdoc(createServiceOpenApiConfig(config));
+    // Cria spec diretamente sem usar swagger-jsdoc (compatível com esbuild)
+    const swaggerSpec = createServiceOpenApiSpec(config);
     
     // Endpoint para especificação JSON
     app.get('/api/docs/openapi.json', (_req: Request, res: Response) => {
@@ -509,6 +524,5 @@ export const OBSERVABILITY_SERVICE_TAGS: OpenApiTag[] = [
 // ============================================================================
 
 export {
-  swaggerJsdoc,
   swaggerUi,
 };
