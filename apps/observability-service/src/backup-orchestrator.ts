@@ -801,7 +801,6 @@ async function runUnifiedRestore(
         postgresql: manifest.components.postgresql?.status || 'skip',
         mariadb: manifest.components.mariadb?.status || 'skip',
         redis: manifest.components.redis?.status || 'skip',
-        uploads: manifest.components.uploads?.status || 'skip',
       },
     };
   }
