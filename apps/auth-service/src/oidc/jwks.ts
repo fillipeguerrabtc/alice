@@ -206,9 +206,10 @@ export async function getJWKS(): Promise<{ keys: JWK[] }> {
 export async function getPublicJWKS(): Promise<{ keys: JWK[] }> {
   const jwks = await getJWKS();
   
-  // Filtrar apenas propriedades públicas
+  // Filtrar apenas propriedades públicas (remover propriedades privadas RSA)
+  // Prefixo _ indica variáveis intencionalmente não usadas (destructuring para omissão)
   const publicKeys = jwks.keys.map((key) => {
-    const { d, p, q, dp, dq, qi, ...publicKey } = key as JWK & {
+    const { d: _d, p: _p, q: _q, dp: _dp, dq: _dq, qi: _qi, ...publicKey } = key as JWK & {
       d?: string;
       p?: string;
       q?: string;

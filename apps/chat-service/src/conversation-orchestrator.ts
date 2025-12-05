@@ -12,17 +12,12 @@
  */
 
 import { eq, and, isNull, lt, desc } from '@alice/database';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ module: 'conversation-orchestrator' });
+// Logger compartilhado seguindo Regra 8 CLAUDE.md (Pino singleton)
+const logger = createLogger('conversation-orchestrator');
 
 let db: Database;
 
@@ -459,6 +454,7 @@ export async function processAutoEscalation(
 
 /**
  * Devolve controle para a IA (handback)
+ * Valida estado atual e permissões do agente antes de processar
  */
 export async function handbackToBot(
   conversationId: string,
@@ -467,6 +463,30 @@ export async function handbackToBot(
 ): Promise<HandoffResult> {
   try {
     const state = await getOrCreateConversationState(conversationId);
+    
+    // Validar que a conversa está em modo humano antes de fazer handback
+    if (state.controlMode === 'bot') {
+      logger.warn({ conversationId, agentId }, 'Tentativa de handback em conversa já controlada por bot');
+      return {
+        success: false,
+        newMode: 'bot',
+        error: 'Conversa já está sob controle da IA',
+      };
+    }
+    
+    // Validar que o agente fazendo handback é o mesmo que fez takeover
+    if (state.assignedAgentId && state.assignedAgentId !== agentId) {
+      logger.warn({ 
+        conversationId, 
+        requestingAgent: agentId, 
+        assignedAgent: state.assignedAgentId 
+      }, 'Agente tentando handback de conversa atribuída a outro agente');
+      return {
+        success: false,
+        newMode: 'human',
+        error: 'Apenas o agente responsável pode devolver a conversa',
+      };
+    }
     
     const [escalation] = await db.select()
       .from(schema.conversationEscalations)
@@ -538,11 +558,38 @@ export async function handbackToBot(
 
 /**
  * Lista conversas pendentes de handoff
+ * Filtra por tenantId para garantir isolamento multi-tenant (Regra 6 CLAUDE.md)
  */
 export async function getPendingHandoffs(tenantId?: string) {
-  const states = await db.query.conversationStates.findMany({
-    where: eq(schema.conversationStates.controlMode, 'pending_handoff'),
-  });
+  // Multi-tenancy: JOIN com conversations para filtrar por tenant
+  const states = await db.select({
+    id: schema.conversationStates.id,
+    conversationId: schema.conversationStates.conversationId,
+    controlMode: schema.conversationStates.controlMode,
+    assignedAgentId: schema.conversationStates.assignedAgentId,
+    pendingSince: schema.conversationStates.pendingSince,
+    confidenceScore: schema.conversationStates.confidenceScore,
+    fallbackCount: schema.conversationStates.fallbackCount,
+    sentimentScore: schema.conversationStates.sentimentScore,
+    slaDeadline: schema.conversationStates.slaDeadline,
+    slaBreached: schema.conversationStates.slaBreached,
+    notes: schema.conversationStates.notes,
+    criadoEm: schema.conversationStates.criadoEm,
+    atualizadoEm: schema.conversationStates.atualizadoEm,
+  })
+    .from(schema.conversationStates)
+    .innerJoin(
+      schema.conversations,
+      eq(schema.conversationStates.conversationId, schema.conversations.id)
+    )
+    .where(
+      tenantId
+        ? and(
+            eq(schema.conversationStates.controlMode, 'pending_handoff'),
+            eq(schema.conversations.tenantId, tenantId)
+          )
+        : eq(schema.conversationStates.controlMode, 'pending_handoff')
+    );
   
   return states;
 }

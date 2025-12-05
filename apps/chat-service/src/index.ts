@@ -8,13 +8,11 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';
-import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
 import { 
   createCircuitBreaker, 
   CIRCUIT_BREAKER_PRESETS, 
@@ -2770,9 +2768,11 @@ app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(
   }
 });
 
-app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (_req: Request, res: Response) => {
+app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   try {
-    const pending = await getPendingHandoffs();
+    // Multi-tenancy: Filtrar por tenant do usuário autenticado (Regra 6 CLAUDE.md)
+    const tenantId = req.tenantId;
+    const pending = await getPendingHandoffs(tenantId);
     res.json({ pending, count: pending.length });
   } catch (error) {
     logger.error({ error }, 'Erro ao listar handoffs pendentes');
