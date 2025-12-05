@@ -417,7 +417,8 @@ Fases:
 
 *Documento atualizado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.1 - Unificação de Migrações*
+*Versão: 3.2 - Redis Alice + Variáveis Inter-Service + Volume Hetzner*
+*Total de Containers: 27 (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
 
 ---
 
@@ -519,3 +520,85 @@ migrations/
 - `swagger-ui-express`: ^5.0.1
 - `@types/swagger-jsdoc`: ^6.0.4
 - `@types/swagger-ui-express`: ^4.1.8
+
+---
+
+## 📝 ATUALIZAÇÃO 05/12/2025 - REDIS ALICE + VARIÁVEIS INTER-SERVICE ✅ COMPLETO
+
+### Problema Identificado:
+- `alice-chat` faltava variáveis de comunicação inter-service
+- `alice-rag` faltava variáveis Salad Cloud para embeddings
+- Não existia Redis dedicado para serviços Alice (segregação do ERPNext)
+
+### Correções Aplicadas:
+
+| # | Correção | Container/Arquivo |
+|---|----------|-------------------|
+| 1 | SESSION_SECRET adicionado | alice-chat |
+| 2 | RAG_SERVICE_URL adicionado | alice-chat |
+| 3 | INTEGRATIONS_SERVICE_URL adicionado | alice-chat |
+| 4 | REDIS_URL adicionado | alice-chat |
+| 5 | SALAD_API_KEY adicionado | alice-rag |
+| 6 | SALAD_ORGANIZATION_ID adicionado | alice-rag |
+| 7 | Container alice-redis criado | docker-compose.prod.yml |
+| 8 | Volume alice_redis_data criado | docker-compose.prod.yml |
+
+### Container alice-redis (Enterprise):
+```yaml
+alice-redis:
+  image: redis:7-alpine@sha256:...  # SHA256 pinned
+  security_opt: no-new-privileges
+  read_only: true
+  maxmemory: 256mb
+  maxmemory-policy: allkeys-lru
+  Comandos desabilitados: FLUSHALL, FLUSHDB, CONFIG, DEBUG
+  healthcheck: redis-cli ping
+  resource limits: 512MB RAM, 0.5 CPU
+```
+
+### Total de Containers Atualizado:
+- **Antes:** 26 containers (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)
+- **Agora:** 27 containers (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs)
+
+### Aderência:
+- ✅ Regra 6 (SEM WORKAROUNDS): Redis dedicado, não compartilhado
+- ✅ Regra 15 (MICROSSERVIÇOS): Segregação enterprise Alice/ERPNext
+- ✅ Regra 16 (MELHORES PRÁTICAS): Cache distribuído, healthcheck, resource limits
+
+---
+
+## 📝 ATUALIZAÇÃO 05/12/2025 - VOLUME HETZNER 100GB ✅ DOCUMENTADO
+
+### Estrutura do Volume Hetzner (/opt/alice):
+
+```
+/opt/alice/                      # Symlink para /mnt/alice-data
+├── data/                        # Dados persistentes dos bancos
+│   ├── postgresql/              # PostgreSQL + pgvector
+│   ├── mariadb/                 # MariaDB (ERPNext)
+│   └── redis/                   # Redis persistence (RDB)
+├── uploads/                     # Uploads de mídia (RAG multimodal)
+│   └── {tenantId}/              # Isolamento por tenant
+│       ├── image/               # Imagens processadas
+│       ├── audio/               # Áudios processados
+│       ├── video/               # Vídeos processados
+│       └── document/            # Documentos (PDF, DOCX, etc.)
+└── backups/                     # Backups locais
+    ├── postgresql/              # pgBackRest (full + incremental + WAL)
+    ├── mariadb/                 # Mariabackup dumps
+    ├── redis/                   # RDB snapshots
+    └── manifests/               # Manifestos JSON de cada backup
+```
+
+### Serviços que Usam o Volume:
+
+| Serviço | Diretório | Propósito |
+|---------|-----------|-----------|
+| alice-rag | /opt/alice/uploads | Storage de arquivos multimodais |
+| alice-observability | /opt/alice/backups | Manifestos e orquestração de backup |
+| pgbackrest | /opt/alice/backups/pgbackrest | Backups PostgreSQL |
+
+### Aderência aos 12 Fatores:
+- ✅ Fator 4 (Backing Services): Volume como recurso anexado
+- ✅ Fator 11 (Logs): Estrutura separada para cada tipo de dado
+- ✅ Fator 12 (Admin Processes): Backups automatizados com retenção

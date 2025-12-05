@@ -88,11 +88,11 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 26 Containers em Produção
+### Arquitetura de Microsserviços - 27 Containers em Produção
 
-A plataforma Alice é composta por **26 containers** organizados em 4 categorias:
+A plataforma Alice é composta por **27 containers** organizados em 4 categorias:
 
-#### Categoria 1: Infraestrutura Core (4 serviços)
+#### Categoria 1: Infraestrutura Core (5 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
@@ -100,19 +100,20 @@ A plataforma Alice é composta por **26 containers** organizados em 4 categorias
 | 2 | Traefik Init | `traefik-init` | Inicializador de certificados SSL |
 | 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
 | 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
+| 5 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
 
 #### Categoria 2: Microsserviços Alice (8 serviços)
 
 | # | Serviço | Container | Porta | Descrição |
 |---|---------|-----------|-------|-----------|
-| 5 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
-| 6 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
-| 7 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
-| 8 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
-| 9 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
-| 10 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
-| 11 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 12 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (Python) |
+| 6 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
+| 7 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
+| 8 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
+| 9 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
+| 10 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
+| 11 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
+| 12 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
+| 13 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (Python) |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
@@ -120,25 +121,25 @@ A plataforma Alice é composta por **26 containers** organizados em 4 categorias
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 13 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
-| 14 | Redis Cache | `erpnext-redis-cache` | Cache de sessões |
-| 15 | Redis Queue | `erpnext-redis-queue` | Fila de jobs |
-| 16 | Configurator | `erpnext-configurator` | Configurador Frappe Bench |
-| 17 | Create Site | `erpnext-create-site` | Criador do site ERPNext |
-| 18 | Backend | `erpnext-backend` | Backend Python Frappe |
-| 19 | Frontend | `erpnext-frontend` | Frontend NGINX |
-| 20 | WebSocket | `erpnext-websocket` | Socket.io real-time |
-| 21 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
-| 22 | Worker Short | `erpnext-worker-short` | Jobs rápidos |
-| 23 | Worker Default | `erpnext-worker-default` | Jobs normais |
-| 24 | Worker Long | `erpnext-worker-long` | Jobs longos |
+| 14 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
+| 15 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
+| 16 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
+| 17 | Configurator | `erpnext-configurator` | Configurador Frappe Bench |
+| 18 | Create Site | `erpnext-create-site` | Criador do site ERPNext |
+| 19 | Backend | `erpnext-backend` | Backend Python Frappe |
+| 20 | Frontend | `erpnext-frontend` | Frontend NGINX |
+| 21 | WebSocket | `erpnext-websocket` | Socket.io real-time |
+| 22 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
+| 23 | Worker Short | `erpnext-worker-short` | Jobs rápidos |
+| 24 | Worker Default | `erpnext-worker-default` | Jobs normais |
+| 25 | Worker Long | `erpnext-worker-long` | Jobs longos |
 
 #### Categoria 4: Infraestrutura Backup/Logs (2 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 25 | pgBackRest | `pgbackrest` | Backup enterprise PostgreSQL (PITR) |
-| 26 | Vector | `vector` | Agregador de logs (Datadog Vector) |
+| 26 | pgBackRest | `pgbackrest` | Backup enterprise PostgreSQL (PITR) |
+| 27 | Vector | `vector` | Agregador de logs (Datadog Vector) |
 
 ---
 
@@ -348,11 +349,11 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 26/26 containers | 100% |
-| **read_only: true** | 26/26 containers | 100% |
-| **security_opt: no-new-privileges** | 26/26 containers | 100% |
-| **Healthchecks** | 24/24 containers (init excluídos) | 100% |
-| **SHA256 Digests** | 9 imagens externas únicas | 100% |
+| **Resource Limits** | 27/27 containers | 100% |
+| **read_only: true** | 27/27 containers | 100% |
+| **security_opt: no-new-privileges** | 27/27 containers | 100% |
+| **Healthchecks** | 25/25 containers (init excluídos) | 100% |
+| **SHA256 Digests** | 10 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
 
 ### Supply Chain Security (SHA256 Pinned Images)
@@ -371,7 +372,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temporária, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
+Todos os 27 containers operam com filesystem read-only + tmpfs para escrita temporária, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
 
 ---
 
@@ -380,11 +381,12 @@ Todos os 26 containers operam com filesystem read-only + tmpfs para escrita temp
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.7.0 - 05 de Dezembro de 2025*
+*Versão 3.8.0 - 05 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
+*Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 
 </div>

@@ -7,7 +7,8 @@
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 26 em produção (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
+**Total de Containers:** 27 em produção (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)
+**Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
@@ -192,84 +193,88 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
+> **Status atualizado em:** 05 de Dezembro de 2025  
+> **Todas as secrets pré-deploy estão ✅ configuradas no GitHub Actions Secrets**
+
 ### Infraestrutura
 
 | Secret | Status |
 |--------|--------|
-| `HETZNER_VM_HOST` | ⬜ |
-| `HETZNER_VM_USER` | ⬜ |
-| `HETZNER_SSH_PRIVATE_KEY` | ⬜ |
-| `GH_PAT` | ⬜ |
-| `POSTGRES_PASSWORD` | ⬜ |
-| `SESSION_SECRET` | ⬜ |
+| `HETZNER_VM_HOST` | ✅ |
+| `HETZNER_VM_USER` | ✅ |
+| `HETZNER_SSH_PRIVATE_KEY` | ✅ |
+| `GH_PAT` | ✅ |
+| `POSTGRES_PASSWORD` | ✅ (PGPASSWORD) |
+| `SESSION_SECRET` | ✅ |
+| `INTERNAL_API_SECRET` | ✅ |
 
 ### OAuth (pelo menos 1)
 
 | Secret | Status |
 |--------|--------|
-| `GOOGLE_CLIENT_ID` | ⬜ |
-| `GOOGLE_CLIENT_SECRET` | ⬜ |
-| `OAUTH_GITHUB_CLIENT_ID` | ⬜ |
-| `OAUTH_GITHUB_CLIENT_SECRET` | ⬜ |
+| `GOOGLE_CLIENT_ID` | ✅ |
+| `GOOGLE_CLIENT_SECRET` | ✅ |
+| `OAUTH_GITHUB_CLIENT_ID` | ✅ |
+| `OAUTH_GITHUB_CLIENT_SECRET` | ✅ |
 
 ### Salad Cloud (LLM)
 
 | Secret | Status |
 |--------|--------|
-| `SALAD_API_KEY` | ⬜ |
-| `SALAD_ORGANIZATION_ID` | ⬜ |
+| `SALAD_API_KEY` | ✅ |
+| `SALAD_ORGANIZATION_ID` | ✅ |
 
 ### Stripe (Pagamentos)
 
 | Secret | Status |
 |--------|--------|
-| `STRIPE_SECRET_KEY` | ⬜ |
-| `STRIPE_PUBLISHABLE_KEY` | ⬜ |
-| `STRIPE_WEBHOOK_SECRET` | ⬜ |
+| `STRIPE_SECRET_KEY` | ✅ |
+| `STRIPE_PUBLISHABLE_KEY` | ✅ |
+| `STRIPE_WEBHOOK_SECRET` | ✅ |
 
 ### Wise (Transferências)
 
 | Secret | Status |
 |--------|--------|
-| `WISE_API_KEY` | ⬜ |
-| `WISE_PROFILE_ID` | ⬜ |
-| `WISE_WEBHOOK_SECRET` | ⬜ (opcional) |
+| `WISE_API_KEY` | ✅ |
+| `WISE_PROFILE_ID` | ✅ |
+| `WISE_WEBHOOK_SECRET` | ⏳ (gerar após deploy via Wise Dashboard) |
 
 ### Comunicação
 
 | Secret | Status |
 |--------|--------|
-| `TWILIO_ACCOUNT_SID` | ⬜ |
-| `TWILIO_AUTH_TOKEN` | ⬜ |
-| `TWILIO_WHATSAPP_NUMBER` | ⬜ |
-| `RESEND_API_KEY` | ⬜ |
+| `TWILIO_ACCOUNT_SID` | ✅ |
+| `TWILIO_AUTH_TOKEN` | ✅ |
+| `TWILIO_WHATSAPP_NUMBER` | ✅ |
+| `RESEND_API_KEY` | ✅ |
 
 ### ERPNext
 
 | Secret | Status | Obrigatório |
 |--------|--------|-------------|
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ⬜ | 🔴 Sim |
-| `ERPNEXT_DB_PASSWORD` | ⬜ | 🔴 Sim |
-| `ERPNEXT_ADMIN_PASSWORD` | ⬜ | 🔴 Sim |
-| `REDIS_CACHE_PASSWORD` | ⬜ | 🔴 Sim |
-| `REDIS_QUEUE_PASSWORD` | ⬜ | 🔴 Sim |
-| `ERPNEXT_API_KEY` | ⬜ (após deploy) | 🟢 Não |
-| `ERPNEXT_API_SECRET` | ⬜ (após deploy) | 🟢 Não |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ✅ | 🔴 Sim |
+| `ERPNEXT_DB_PASSWORD` | ✅ | 🔴 Sim |
+| `ERPNEXT_ADMIN_PASSWORD` | ✅ | 🔴 Sim |
+| `REDIS_CACHE_PASSWORD` | ✅ | 🔴 Sim |
+| `REDIS_QUEUE_PASSWORD` | ✅ | 🔴 Sim |
+| `ERPNEXT_API_KEY` | ⏳ (gerar após deploy via ERPNext) | 🟢 Não |
+| `ERPNEXT_API_SECRET` | ⏳ (gerar após deploy via ERPNext) | 🟢 Não |
 
 ### Observabilidade
 
 | Secret | Status |
 |--------|--------|
-| `LANGFUSE_SECRET_KEY` | ⬜ |
-| `LANGFUSE_NEXT_AUTH_SECRET` | ⬜ |
-| `GRAFANA_ADMIN_PASSWORD` | ⬜ |
-| `ACME_EMAIL` | ⬜ |
+| `LANGFUSE_SECRET_KEY` | ✅ |
+| `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
+| `GRAFANA_ADMIN_PASSWORD` | ✅ |
+| `ACME_EMAIL` | ✅ |
 
 ### Backup (pgBackRest)
 
 | Secret | Status |
 |--------|--------|
-| `BACKUP_CIPHER_PASS` | ⬜ |
+| `BACKUP_CIPHER_PASS` | ✅ |
 
 ---
 
@@ -347,6 +352,7 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 05 de Dezembro de 2025*
-*Versão: 5.7 - Storage Local 100% (SEM S3 externo)*
-*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Versão: 5.8 - Checklist 100% Atualizado + Redis Alice Dedicado*
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*
+*Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*

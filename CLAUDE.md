@@ -46,7 +46,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 26 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 27 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy).
@@ -167,9 +167,9 @@ alice/
 | `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 
 ## Security Hardening (Dezembro 2025)
-- **26 containers** = 100% com `security_opt: no-new-privileges`
-- **26 containers** = 100% com `read_only: true` + tmpfs
-- **26 containers** = 100% com resource limits
+- **27 containers** = 100% com `security_opt: no-new-privileges`
+- **27 containers** = 100% com `read_only: true` + tmpfs
+- **27 containers** = 100% com resource limits
 - **18 imagens externas** = 100% com SHA256 digests
 - **24 containers** = 100% com healthchecks (init excluídos)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
@@ -185,6 +185,6 @@ alice/
 ---
 *Autor: Fillipe Guerra*
 *Versão: 3.16 - 05 de Dezembro de 2025*
-*Total de Containers: 26 (4 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

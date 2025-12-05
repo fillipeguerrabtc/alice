@@ -286,4 +286,5 @@ Antes de entregar qualquer página:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Atualizado: 03 de Dezembro de 2025*
+*Atualizado: 05 de Dezembro de 2025*
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

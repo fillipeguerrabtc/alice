@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 26 (produção) |
+| **Total de Containers** | 27 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -344,7 +344,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (26 containers)
+## 🐳 INFRAESTRUTURA DOCKER (27 containers)
 
 ### Core Infra (4)
 
@@ -391,6 +391,7 @@ Retenção Arquivo:   30 dias
 |---|-----------|--------|
 | 25 | pgbackrest | Backup PostgreSQL (PITR, AES-256) |
 | 26 | vector | Log aggregation |
+| 27 | alice-redis | Cache distribuído dedicado para Alice |
 
 ---
 
@@ -400,10 +401,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 26/26 containers |
-| read_only: true | ✅ | 26/26 containers |
-| resource limits | ✅ | 26/26 containers |
-| platform: linux/amd64 | ✅ | 26/26 containers |
+| no-new-privileges | ✅ | 27/27 containers |
+| read_only: true | ✅ | 27/27 containers |
+| resource limits | ✅ | 27/27 containers |
+| platform: linux/amd64 | ✅ | 27/27 containers |
 | SHA256 digests | ✅ | 9 imagens externas |
 | healthchecks | ✅ | 24/24 (init excluídos) |
 
@@ -655,8 +656,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 *Documento consolidado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*  
-*Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*  
+*Versão: 3.2 - Redis Alice Dedicado + Variáveis Inter-Service*
+*Total de Containers: 27 (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 

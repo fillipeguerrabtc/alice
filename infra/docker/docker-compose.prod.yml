@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE PLATFORM - DOCKER COMPOSE PRODUÇÃO
 # =============================================================================
-# Versão: 4.0
+# Versão: 4.1
 # Ambiente: Produção (Hetzner Cloud CX43)
 # Servidor: 8 vCPU, 16GB RAM, 160GB NVMe SSD
 # Volume Adicional: Hetzner Volume 100GB (alice-data) montado em /opt/alice
@@ -12,6 +12,9 @@
 # - Dados: /opt/alice/data (PostgreSQL, MariaDB, Redis)
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
+#
+# CONTAINERS: 27 total (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs)
+# - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 #
 # Autor: Fillipe Guerra
 # Data: 05 de Dezembro de 2025
@@ -41,7 +44,11 @@ volumes:
   postgres_data:
     name: alice-postgres-data
     driver: local
-  
+
+  alice_redis_data:
+    name: alice-redis-data
+    driver: local
+
   traefik_acme:
     name: alice-traefik-acme
     driver: local
@@ -290,6 +297,68 @@ services:
           cpus: '0.5'
 
   # ===========================================================================
+  # ALICE REDIS - Cache Distribuído para Serviços Alice
+  # Docs 2025: Redis 7.4 - Cache de sessões e dados temporários
+  # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
+  # ISOLAMENTO: Redis dedicado para Alice (segregação de ERPNext - Regra 15)
+  # ===========================================================================
+  alice-redis:
+    image: redis:7-alpine@sha256:4706ecab5371690fecfdd782268929c94ad5b5ce9ce0b35bfdfe191c4ad17851
+    platform: linux/amd64
+    container_name: alice-redis
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    command:
+      - redis-server
+      - --maxmemory
+      - 256mb
+      - --maxmemory-policy
+      - allkeys-lru
+      - --appendonly
+      - "yes"
+      - --save
+      - "900"
+      - "1"
+      - --save
+      - "300"
+      - "10"
+      # Segurança: Desabilitar comandos perigosos
+      - --rename-command
+      - FLUSHALL
+      - ""
+      - --rename-command
+      - FLUSHDB
+      - ""
+      - --rename-command
+      - CONFIG
+      - ""
+      - --rename-command
+      - DEBUG
+      - ""
+    volumes:
+      - alice_redis_data:/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
   # ALICE FRONTEND SERVICE - React/Nginx
   # ===========================================================================
   alice-frontend:
@@ -415,11 +484,20 @@ services:
       SERVICE_NAME: chat-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # Sessão WebSocket (OBRIGATÓRIO em produção - Regra 6)
+      SESSION_SECRET: ${SESSION_SECRET}
       # Salad Cloud LLM
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+      # Comunicação inter-service (URLs Docker DNS)
+      RAG_SERVICE_URL: http://alice-rag:3003
+      INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      REDIS_URL: redis://alice-redis:6379
     depends_on:
       postgres:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
@@ -479,6 +557,9 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # Salad Cloud Embeddings (OBRIGATÓRIO - Regra 6)
+      SALAD_API_KEY: ${SALAD_API_KEY}
+      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads
       STORAGE_BASE_URL: /api/media/files

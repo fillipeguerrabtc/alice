@@ -464,5 +464,12 @@ Após todas as fases, Alice será capaz de:
 
 ---
 
+*Autor: Fillipe Guerra*
+*Documento em Português Brasileiro*
+*Atualizado: 05 de Dezembro de 2025*
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Storage: Volume Hetzner 100GB local (/opt/alice) para uploads multimodais e backups*
+*Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
+
 *Plano salvo em `docs/PLANO-MULTIMODAL-COMPLETO.md` para referência futura*
 

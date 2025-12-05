@@ -40,4 +40,4 @@ Sempre atualize aqui primeiro e depois copie para os destinos.
 ---
 
 *Autor: Fillipe Guerra*
-*Atualizado: Dezembro 2025*
+*Atualizado: 05 de Dezembro de 2025*
