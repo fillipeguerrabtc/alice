@@ -687,6 +687,7 @@ export const agents = pgTable(
   "agents",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id, {
       onDelete: "cascade",
     }),
@@ -707,6 +708,7 @@ export const agents = pgTable(
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
   (table) => ({
+    idxAgentsTenant: index("idx_agents_tenant").on(table.tenantId),
     idxAgentsNamespace: index("idx_agents_namespace").on(table.namespaceId),
     idxAgentsStatus: index("idx_agents_status").on(table.status),
   })
@@ -1508,6 +1510,7 @@ export const featureFlags = pgTable(
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   users: many(users),
   namespaces: many(namespaces),
+  agents: many(agents),
   conversations: many(conversations),
   integrations: many(integrations),
   llmConfigs: many(llmConfig),
@@ -1538,6 +1541,10 @@ export const namespacesRelations = relations(namespaces, ({ one, many }) => ({
 }));
 
 export const agentsRelations = relations(agents, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [agents.tenantId],
+    references: [tenants.id],
+  }),
   namespace: one(namespaces, {
     fields: [agents.namespaceId],
     references: [namespaces.id],
