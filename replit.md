@@ -475,10 +475,18 @@ Implementação enterprise completa de processamento de TODOS os tipos de mídia
 **Processamento de Documento:**
 - PDF: `pdf-parse` para extração de texto
 - DOCX: `mammoth` para extração de texto
-- XLSX: `xlsx` para conversão em texto
+- XLSX: `exceljs` para conversão em texto (substituiu xlsx vulnerável)
 - TXT/MD/CSV: Leitura direta
 - Chunking com 10% overlap para contexto
 - Embedding médio de todos os chunks
+
+### Correção de Vulnerabilidades npm (05/12/2025)
+
+| Pacote Antigo | CVEs | Pacote Novo | Status |
+|---------------|------|-------------|--------|
+| xlsx 0.18.5 | CVE-2024-22363, CVE-2024-3766 (HIGH) | exceljs 4.4.0 | ✅ Corrigido |
+
+**Motivo:** O pacote SheetJS xlsx tinha vulnerabilidades ReDoS (Regular Expression Denial of Service) sem patch disponível. Substituído por exceljs que é ativamente mantido e seguro.
 
 **NOTA:** O rag-service usa `node:22-bookworm-slim` em vez de Distroless porque precisa de FFmpeg para processamento de vídeos. A imagem é segura e mantida pelo time oficial Node.js.
 

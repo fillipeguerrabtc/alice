@@ -4,7 +4,7 @@
  * Processamento de documentos:
  * - PDF: Extração de texto via pdf-parse
  * - DOCX: Extração de texto via mammoth
- * - XLSX: Extração de texto via xlsx
+ * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
  * - Text embeddings do conteúdo extraído (Salad Cloud)
  * - Circuit Breaker para resiliência (Regra 16 replit.md)
@@ -354,32 +354,48 @@ class DocumentProcessorService {
   }
 
   /**
-   * Extrai texto de XLSX usando xlsx
+   * Extrai texto de XLSX usando exceljs (substituição do xlsx vulnerável)
+   * CVE-2024-22363, CVE-2024-3766 corrigidos pela substituição
    */
   private async extractXlsxText(
     buffer: Buffer
   ): Promise<{ text: string; metadata: Partial<DocumentMetadata> }> {
-    const XLSX = await import('xlsx');
+    const ExcelJS = await import('exceljs');
     
-    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
     
     let text = '';
     let totalRows = 0;
 
-    for (const sheetName of workbook.SheetNames) {
-      const sheet = workbook.Sheets[sheetName];
-      const csvText = XLSX.utils.sheet_to_csv(sheet, { blankrows: false });
+    workbook.eachSheet((worksheet, sheetId) => {
+      const sheetName = worksheet.name || `Sheet${sheetId}`;
+      const rows: string[] = [];
       
-      if (csvText.trim()) {
-        text += `\n=== Planilha: ${sheetName} ===\n${csvText}\n`;
-        totalRows += csvText.split('\n').length;
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        const values = row.values as (string | number | boolean | Date | null | undefined)[];
+        // row.values é 1-indexed, então slice(1) para pular o primeiro elemento vazio
+        const rowText = values.slice(1).map(cell => {
+          if (cell === null || cell === undefined) return '';
+          if (cell instanceof Date) return cell.toISOString();
+          return String(cell);
+        }).join(',');
+        
+        if (rowText.trim()) {
+          rows.push(rowText);
+        }
+      });
+      
+      if (rows.length > 0) {
+        text += `\n=== Planilha: ${sheetName} ===\n${rows.join('\n')}\n`;
+        totalRows += rows.length;
       }
-    }
+    });
 
     return {
       text: text.trim(),
       metadata: {
-        pageCount: workbook.SheetNames.length,
+        pageCount: workbook.worksheets.length,
       },
     };
   }
