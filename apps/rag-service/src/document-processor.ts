@@ -396,7 +396,8 @@ class DocumentProcessorService {
       }
 
       // CellHyperlinkValue: { text: string, hyperlink: string }
-      if ('text' in obj && typeof obj.text === 'string') {
+      // Verifica AMBOS text e hyperlink para garantir que é realmente um hyperlink
+      if ('text' in obj && 'hyperlink' in obj && typeof obj.text === 'string') {
         return obj.text;
       }
 
@@ -458,11 +459,14 @@ class DocumentProcessorService {
       
       worksheet.eachRow({ includeEmpty: false }, (row) => {
         // row.values é 1-indexed, então slice(1) para pular o primeiro elemento vazio
-        const values = row.values as unknown[];
-        const rowText = values.slice(1).map(cell => this.extractCellText(cell)).join(',');
+        // Null-check para evitar TypeError se row.values for undefined
+        const values = (row.values || []) as unknown[];
+        const cellTexts = values.slice(1).map(cell => this.extractCellText(cell));
         
-        if (rowText.trim()) {
-          rows.push(rowText);
+        // Verifica se pelo menos uma célula tem conteúdo real (não apenas vírgulas vazias)
+        const hasContent = cellTexts.some(text => text.trim() !== '');
+        if (hasContent) {
+          rows.push(cellTexts.join(','));
         }
       });
       
