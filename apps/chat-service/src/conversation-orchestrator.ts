@@ -479,11 +479,12 @@ export async function handbackToBot(
       logger.warn({ 
         conversationId, 
         requestingAgent: agentId, 
-        assignedAgent: state.assignedAgentId 
+        assignedAgent: state.assignedAgentId,
+        currentMode: state.controlMode,
       }, 'Agente tentando handback de conversa atribuída a outro agente');
       return {
         success: false,
-        newMode: 'human',
+        newMode: (state.controlMode as ConversationControlMode) || 'human',
         error: 'Apenas o agente responsável pode devolver a conversa',
       };
     }
