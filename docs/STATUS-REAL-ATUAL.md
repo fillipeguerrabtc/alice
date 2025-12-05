@@ -638,7 +638,34 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ---
 
-*Documento consolidado em 04/12/2025*  
+*Documento consolidado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 2.2 - Dashboards Grafana Enterprise completos*  
+*Versão: 2.3 - Testes Enterprise Completos*  
 *Total de Containers: 26 (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
+
+---
+
+## 📊 ATUALIZAÇÃO 05/12/2025 - TESTES ENTERPRISE
+
+### Arquivos de Teste Criados:
+- `tests/unit/services/` - 6 arquivos (auth, chat, integrations, rag, training, observability)
+- `tests/unit/processors/` - 4 arquivos (document, audio, image, video)
+- **Total: ~5000 linhas de testes enterprise**
+
+### Cobertura por Serviço:
+| Serviço | Testes | Funcionalidades |
+|---------|--------|-----------------|
+| auth-service | ✅ | CSRF, OAuth, SAML, RBAC, sessions |
+| chat-service | ✅ | WebSocket, LLM, escalação, RAG |
+| integrations-service | ✅ | Stripe, Wise, webhooks, idempotency |
+| rag-service | ✅ | embeddings, busca semântica, upload |
+| training-service | ✅ | Salad Cloud, SemHash, JSONL |
+| observability-service | ✅ | backup, restore, métricas |
+
+### Cobertura por Processor:
+| Processor | Testes | Funcionalidades |
+|-----------|--------|-----------------|
+| document-processor | ✅ | ExcelJS, chunking, MIME types |
+| audio-processor | ✅ | Whisper, metadata, transcrição |
+| image-processor | ✅ | CLIP, magic bytes, thumbnails |
+| video-processor | ✅ | FFmpeg, frames, metadata |
