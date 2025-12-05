@@ -1508,6 +1508,7 @@ export const featureFlags = pgTable(
 export const tenantsRelations = relations(tenants, ({ many }) => ({
   users: many(users),
   namespaces: many(namespaces),
+  conversations: many(conversations),
   integrations: many(integrations),
   llmConfigs: many(llmConfig),
   auditLogs: many(auditLogs),
@@ -1547,6 +1548,10 @@ export const agentsRelations = relations(agents, ({ one, many }) => ({
 }));
 
 export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [conversations.tenantId],
+    references: [tenants.id],
+  }),
   user: one(users, {
     fields: [conversations.userId],
     references: [users.id],
