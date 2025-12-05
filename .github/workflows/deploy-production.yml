@@ -153,6 +153,7 @@ jobs:
           exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
+          trivyignores: '.trivyignore'
 
       # Upload results to GitHub Security tab (opcional, não bloqueia pipeline)
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)

@@ -1,0 +1,14 @@
+# Trivy Ignore File - Alice Enterprise Platform
+#
+# Autor: Fillipe Guerra
+# Data: 05 de Dezembro de 2025
+#
+# Referência: https://aquasecurity.github.io/trivy/latest/docs/configuration/filtering/
+
+# ==============================================================================
+# FALSOS POSITIVOS - Secret Detection
+# ==============================================================================
+
+# Chave SSH necessária para conexão com servidor Hetzner durante deploy
+# Esta chave é injetada via GitHub Secrets e é necessária para o CI/CD
+private-key
