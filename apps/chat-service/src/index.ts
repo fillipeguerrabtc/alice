@@ -969,9 +969,9 @@ async function sendWhatsAppMessage(
 
 /**
  * Retorna estatísticas do circuit breaker do Integrations Service
- * Usado no endpoint /api/chat/health para monitoramento
+ * Usado no endpoint /api/chat/health para monitoramento completo
  */
-function _getIntegrationsBreakerStats() {
+function getIntegrationsBreakerStats() {
   return {
     state: integrationsServiceBreaker.opened ? 'open' : (integrationsServiceBreaker.halfOpen ? 'half-open' : 'closed'),
     stats: integrationsServiceBreaker.stats,
@@ -1010,8 +1010,10 @@ app.use(express.json({ limit: '10mb' }));
 app.get('/api/chat/health', (_req: Request, res: Response) => {
   const llmCircuitState = saladCloudBreaker.opened ? 'open' : (saladCloudBreaker.halfOpen ? 'half-open' : 'closed');
   const ragStats = getRAGBreakerStats();
+  const integrationsStats = getIntegrationsBreakerStats();
   
-  const overallStatus = llmCircuitState === 'open' ? 'degraded' : 'ok';
+  // Status degradado se qualquer circuit breaker crítico estiver aberto
+  const overallStatus = (llmCircuitState === 'open' || integrationsStats.state === 'open') ? 'degraded' : 'ok';
   
   res.json({ 
     status: overallStatus, 
@@ -1029,6 +1031,7 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
         },
       },
       rag: ragStats,
+      integrations: integrationsStats,
     },
   });
 });
