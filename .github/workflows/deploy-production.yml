@@ -1178,6 +1178,21 @@ jobs:
             }
             
             # ==============================================================
+            # LIMPEZA TOTAL - Sem versão anterior (Best Practices 2025)
+            # ==============================================================
+            full_system_cleanup() {
+              echo "🔥 LIMPEZA TOTAL - Removendo TODAS imagens"
+              docker stop $(docker ps -aq) 2>/dev/null || true
+              docker rm -f $(docker ps -aq) 2>/dev/null || true
+              docker rmi -f $(docker images -aq) 2>/dev/null || true
+              docker system prune -af 2>/dev/null || true
+              docker volume prune -f 2>/dev/null || true
+              docker network create --driver bridge --subnet 172.28.0.0/16 alice-network 2>/dev/null || true
+              docker network create --driver bridge erpnext-network 2>/dev/null || true
+              echo "✅ Servidor 100% limpo"
+            }
+            
+            # ==============================================================
             # PASSO 1: Capturar estado atual para diagnóstico
             # ==============================================================
             echo "[1/5] Capturando estado atual dos containers..."
@@ -1247,13 +1262,13 @@ jobs:
               echo "⚠️ ROLLBACK NÃO POSSÍVEL (Primeiro Deploy)"
               echo "=============================================="
               echo "Nenhuma versão anterior registrada."
-              echo "Servidor foi limpo. Próximo passo: corrigir código e fazer novo deploy."
+              echo "Executando LIMPEZA TOTAL para ambiente 100% limpo..."
               
-              # Verificação final
+              # Best Practices 2025: Limpar TUDO quando não há versão anterior
+              full_system_cleanup
+              
               echo ""
-              echo "Estado final do servidor:"
-              docker ps -a --format 'table {{.Names}}\t{{.Status}}' 2>/dev/null || echo "Nenhum container"
-              
+              echo "Próximo passo: corrigir código e fazer novo deploy."
               exit 1
             fi
             
@@ -1284,10 +1299,10 @@ jobs:
               echo "⚠️ ROLLBACK FALHOU - Servidor limpo"
               echo "=============================================="
               echo "Não foi possível restaurar versão anterior."
-              echo "Servidor está limpo para próxima tentativa."
+              echo "Executando limpeza total para próxima tentativa..."
               
-              # Garantir limpeza final
-              cleanup_server
+              # Limpeza total quando rollback falha
+              full_system_cleanup
               
               exit 1
             fi
@@ -1295,16 +1310,16 @@ jobs:
             # Continuar com deploy da versão anterior
             if ! cd /opt/alice/app/infra/docker; then
               echo "❌ ERRO: Não foi possível acessar /opt/alice/app/infra/docker"
-              echo "Executando limpeza completa..."
-              cleanup_server
+              echo "Executando limpeza total..."
+              full_system_cleanup
               exit 1
             fi
             
             # Verificar se arquivos necessários existem
             if [ ! -f "docker-compose.prod.yml" ]; then
               echo "❌ ERRO: docker-compose.prod.yml não encontrado"
-              echo "Executando limpeza completa..."
-              cleanup_server
+              echo "Executando limpeza total..."
+              full_system_cleanup
               exit 1
             fi
             
@@ -1333,8 +1348,8 @@ jobs:
             
             if [ "$RUNNING" -lt 3 ]; then
               echo "⚠️ Rollback pode ter falhado - apenas $RUNNING containers rodando"
-              echo "Executando limpeza completa..."
-              cleanup_server
+              echo "Executando limpeza total..."
+              full_system_cleanup
               exit 1
             fi
             
