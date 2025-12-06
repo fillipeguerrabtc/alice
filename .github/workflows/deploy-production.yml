@@ -155,9 +155,7 @@ jobs:
           exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
-          trivyignores: '.trivyignore'
-          
-                trivyignores: '.trivyignore'
+                   trivyignores: '.trivyignore'
 
       # Garantir que arquivo SARIF exista para upload (fallback se Trivy falhar)
       - name: Ensure SARIF file exists
@@ -181,10 +179,9 @@ jobs:
           path: trivy-results.sarif
           retention-days: 30
 
-      # Upload results to GitHub Security tab
-
       # Upload results to GitHub Security tab (opcional, não bloqueia pipeline)
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
+
       - name: Upload Trivy scan results
         if: always()
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
