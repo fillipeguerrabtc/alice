@@ -1,27 +1,21 @@
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
-import CircuitBreaker from 'opossum';
+// rateLimit via createRateLimiter de @alice/shared-utils
+// CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import crypto from 'crypto';
-import { createLogger, runWithLogContext } from '@alice/logger';
+import { createLogger } from '@alice/logger';
 import { 
   createCorrelationMiddleware, 
-  getContextHeaders,
   createSecurityMiddleware,
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
-  asyncHandler,
   requirePermission, 
-  requireAuth,
   extractAuthContext,
   initFeatureFlags,
-  featureFlagsMiddleware,
-  FEATURE_FLAGS,
-  isFeatureEnabled,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
@@ -39,7 +33,7 @@ import { eq, desc, sql, and } from '@alice/database';
 import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
-import { initWiseSyncService, syncWiseTransfer, getSyncStats as getWiseSyncStats } from './wiseSyncService.js';
+import { initWiseSyncService } from './wiseSyncService.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -282,6 +276,12 @@ app.use(createCorrelationMiddleware({ serviceName: 'integrations-service' }));
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());
 
+// SEGURANÇA: Helmet para headers HTTP seguros (OWASP)
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
   credentials: CORS_ORIGINS.length > 0,
@@ -463,8 +463,8 @@ const numericIdParamSchema = z.object({
   id: z.string().regex(/^\d+$/, 'ID deve ser numérico').transform(Number).refine(n => n > 0, 'ID deve ser positivo'),
 });
 
-// Schema para ID string (batch groups usam UUID)
-const stringIdParamSchema = z.object({
+// Schema para ID string (batch groups usam UUID) - reservado para uso futuro
+const _stringIdParamSchema = z.object({
   id: z.string().min(1).max(100),
 });
 

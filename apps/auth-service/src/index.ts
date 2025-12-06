@@ -26,10 +26,9 @@ import { Strategy as GitHubStrategy } from 'passport-github2';
 import { Strategy as LocalStrategy } from 'passport-local';
 import { Strategy as SamlStrategy, Profile as SamlProfile, VerifiedCallback } from '@node-saml/passport-saml';
 import bcrypt from 'bcrypt';
-import { createLogger, runWithLogContext } from '@alice/logger';
+import { createLogger } from '@alice/logger';
 import { 
   createCorrelationMiddleware, 
-  getContextHeaders,
   createSecurityMiddleware,
   createRateLimiter,
   createErrorHandler,
@@ -45,7 +44,6 @@ import {
   ShutdownPriority,
   Counter as PromCounter,
   Gauge as PromGauge,
-  type AliceMetrics,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
@@ -56,7 +54,6 @@ import {
   getPool, 
   schema, 
   closeDatabasePool,
-  getPoolMetrics,
   isPoolHealthy,
   createDrizzleFeatureFlagStorage,
 } from '@alice/database';
@@ -68,9 +65,6 @@ import {
 } from './identity-provisioning/index.js';
 import { 
   initFeatureFlags,
-  featureFlagsMiddleware,
-  FEATURE_FLAGS,
-  isFeatureEnabled,
   setupSwaggerUI,
   AUTH_SERVICE_TAGS,
 } from '@alice/shared-utils';
@@ -321,6 +315,12 @@ app.use(createRateLimiter({
   serviceName: 'auth-service',
 }));
 
+// SEGURANÇA: Helmet para headers HTTP seguros (OWASP)
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginEmbedderPolicy: false,
+}));
+
 // CORS configurado para desenvolvimento e produção
 const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5000'];
 app.use(cors({
@@ -416,11 +416,8 @@ const authAttemptsCounter = new PromCounter({
   registers: [metrics.registry],
 });
 
-const authActiveSessionsGauge = new PromGauge({
-  name: 'alice_auth_active_sessions',
-  help: 'Número de sessões ativas',
-  registers: [metrics.registry],
-});
+// NOTA: Métrica de sessões ativas removida - requer implementação com Redis pub/sub
+// para contagem precisa de sessões distribuídas (TODO: fase futura)
 
 const authMetrics = {
   attempts: { google: 0, github: 0, saml: 0, local: 0 },
@@ -1028,8 +1025,8 @@ app.get('/api/auth/user', async (req: Request, res: Response) => {
     // Gerar/obter CSRF token para a sessão (Regra 16 - Segurança Enterprise)
     const csrfToken = getOrCreateCsrfToken(req.session);
 
-    // Remover campos sensíveis
-    const { passwordHash, ...safeUser } = user;
+    // Remover campos sensíveis (prefixo _ indica variável descartada intencionalmente)
+    const { passwordHash: _passwordHash, ...safeUser } = user;
     
     // Incluir CSRF token no response para o frontend usar em mutations
     res.json({ 

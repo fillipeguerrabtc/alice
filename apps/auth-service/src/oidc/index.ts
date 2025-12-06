@@ -281,7 +281,7 @@ export async function mountOIDCRoutes(app: Express): Promise<void> {
   app.post('/auth/interaction/:uid/confirm', async (req: Request, res: Response) => {
     try {
       const interactionDetails = await provider.interactionDetails(req, res);
-      const { prompt: { name, details }, params, session } = interactionDetails;
+      const { prompt: { name: _name, details: _details }, params, session } = interactionDetails;
       
       if (!session?.accountId) {
         return res.status(401).json({ error: 'not_authenticated' });

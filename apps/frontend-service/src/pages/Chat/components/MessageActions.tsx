@@ -37,6 +37,7 @@ export function MessageActions({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
+      // Falha silenciosa - clipboard pode não estar disponível em alguns contextos
     }
   }, [content]);
 

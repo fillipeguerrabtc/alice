@@ -521,7 +521,7 @@ app.get('/metrics', async (_req: Request, res: Response) => {
     
     res.set('Content-Type', 'text/plain');
     res.send(metrics);
-  } catch (error) {
+  } catch (_error) {
     res.status(500).send('# Error generating metrics\n');
   }
 });

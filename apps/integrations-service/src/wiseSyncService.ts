@@ -91,7 +91,7 @@ interface SyncResult {
 
 // Usa CIRCUIT_BREAKER_PRESETS.erpnext centralizado (Regra 2 - Não Duplicar)
 
-const wiseBreakerOptions = {
+const _wiseBreakerOptions = {
   timeout: 15000,
   errorThresholdPercentage: 50,
   resetTimeout: 30000,

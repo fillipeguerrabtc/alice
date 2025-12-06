@@ -361,7 +361,7 @@ export class WiseService {
     targetCurrency: string,
     sourceAmount: number
   ): Promise<unknown[]> {
-    const profileId = getWiseProfileId();
+    const _profileId = getWiseProfileId(); // Validação de configuração
     logger.info({ sourceCurrency, targetCurrency, sourceAmount }, 'Obtendo requisitos de destinatário Wise');
     
     const quote = await this.createQuote({

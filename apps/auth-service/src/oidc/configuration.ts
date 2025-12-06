@@ -11,7 +11,7 @@
  * @version 1.0.0
  */
 
-import type { Configuration, ClientMetadata, KoaContextWithOIDC } from 'oidc-provider';
+import type { Configuration, ClientMetadata } from 'oidc-provider';
 import { createAdapter } from './adapter.js';
 import { getJWKS } from './jwks.js';
 import { getDatabase } from '@alice/database';

@@ -24,11 +24,10 @@ import {
   CHAT_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
-import { createLogger, runWithLogContext } from '@alice/logger';
+import { createLogger } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
-  getContextHeaders,
   createSecurityMiddleware,
   createRateLimiter,
   createErrorHandler,
@@ -37,14 +36,10 @@ import {
   requirePermission, 
   requireAuth,
   requireSameTenant,
-  extractAuthContext,
   generateInternalAuthHeaders,
   isInternalAuthEnabled,
   checkPermission,
   initFeatureFlags,
-  featureFlagsMiddleware,
-  FEATURE_FLAGS,
-  isFeatureEnabled,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
@@ -59,10 +54,7 @@ import {
   buscarContextoRAG, 
   formatarContextoParaLLM, 
   getRAGBreakerStats,
-  RAGContextResponse,
   uploadMediaToRAG,
-  getMediaStatus,
-  MediaUploadResult,
 } from './rag-client.js';
 import {
   initOrchestrator,
@@ -540,7 +532,7 @@ const wss = new WebSocketServer({
 
 // SEGURANÇA: Ping/Pong heartbeat para detectar conexões mortas (ws v8.18.3)
 const HEARTBEAT_INTERVAL = 30000; // 30 segundos
-const CONNECTION_TIMEOUT = 35000; // 35 segundos (um pouco mais que heartbeat)
+const _CONNECTION_TIMEOUT = 35000; // 35 segundos (reservado para timeout de conexão)
 
 interface ExtendedWebSocket extends WebSocket {
   isAlive?: boolean;
@@ -979,7 +971,7 @@ async function sendWhatsAppMessage(
  * Retorna estatísticas do circuit breaker do Integrations Service
  * Usado no endpoint /api/chat/health para monitoramento
  */
-function getIntegrationsBreakerStats() {
+function _getIntegrationsBreakerStats() {
   return {
     state: integrationsServiceBreaker.opened ? 'open' : (integrationsServiceBreaker.halfOpen ? 'half-open' : 'closed'),
     stats: integrationsServiceBreaker.stats,
@@ -1272,7 +1264,7 @@ const wsMessageSchema = z.object({
   namespaceId: z.string().uuid().optional(),
 });
 
-const wsAgentMessageSchema = z.object({
+const _wsAgentMessageSchema = z.object({
   type: z.enum(['takeover_message', 'takeover_note', 'handback', 'ping', 'subscribe']),
   conversationId: z.string().uuid().optional(),
   content: z.string().max(10000).optional(),
@@ -1481,7 +1473,7 @@ app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromReque
   if (!parseResult.success) {
     return res.status(400).json({ error: 'Input inválido' });
   }
-  const { messages: inputMessages, conversationId, namespaceId } = parseResult.data;
+  const { messages: inputMessages, conversationId: _conversationId, namespaceId } = parseResult.data;
 
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
@@ -2192,7 +2184,7 @@ wss.on('connection', (ws, req) => {
         
         if (postResponseEscalation) {
           // LLM atingiu limite de respostas de baixa confiança - escalar
-          const escalationResult = await processAutoEscalation(postResponseEscalation);
+          const _escalationResult = await processAutoEscalation(postResponseEscalation);
           
           ws.send(JSON.stringify({
             type: 'escalation',
@@ -2409,7 +2401,7 @@ wss.on('connection', (ws, req) => {
         const llmStartTime = Date.now();
         
         // Para imagens, construir mensagem multimodal (Llama 4 Maverick suporta)
-        interface MultimodalContent {
+        interface _MultimodalContent {
           type: 'text' | 'image_url';
           text?: string;
           image_url?: { url: string };
@@ -3148,8 +3140,8 @@ const uuidParamSchema = z.object({
   id: z.string().uuid('ID deve ser um UUID válido'),
 });
 
-// Schema para parâmetros de rota com nome de serviço
-const serviceNameParamSchema = z.object({
+// Schema para parâmetros de rota com nome de serviço (reservado para uso futuro)
+const _serviceNameParamSchema = z.object({
   name: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Nome deve conter apenas letras minúsculas, números e hífens'),
 });
 

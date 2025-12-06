@@ -7,17 +7,17 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+// rateLimit via createRateLimiter de @alice/shared-utils
 import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
-import CircuitBreaker from 'opossum';
+// CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
-import { eq, sql, desc, and, isNotNull } from '@alice/database';
+import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
 import { 
   requirePermission, 
@@ -27,12 +27,8 @@ import {
   createRateLimiter,
   createErrorHandler,
   createNotFoundHandler,
-  asyncHandler,
   createCorrelationMiddleware,
   initFeatureFlags,
-  featureFlagsMiddleware,
-  FEATURE_FLAGS,
-  isFeatureEnabled,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
   instrumentCircuitBreaker,
@@ -44,12 +40,12 @@ import {
   RAG_SERVICE_TAGS,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
-import { createLogger, runWithLogContext } from '@alice/logger';
+import { createLogger } from '@alice/logger';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
-import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
-import { getVideoProcessor, getFFmpegCircuitBreakerStatus } from './video-processor.js';
-import { getDocumentProcessor, getDocumentEmbeddingCircuitBreakerStatus } from './document-processor.js';
+import { getAudioProcessor } from './audio-processor.js';
+import { getVideoProcessor } from './video-processor.js';
+import { getDocumentProcessor } from './document-processor.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -784,6 +780,12 @@ app.use(createCorrelationMiddleware({ serviceName: 'rag-service' }));
 
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());
+
+// SEGURANÇA: Helmet para headers HTTP seguros (OWASP)
+app.use(helmet({
+  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
+  crossOriginEmbedderPolicy: false,
+}));
 
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
