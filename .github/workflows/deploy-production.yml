@@ -156,6 +156,16 @@ jobs:
           format: 'sarif'
           output: 'trivy-results.sarif'
           trivyignores: '.trivyignore'
+          
+      # Upload SARIF como artifact para download e análise
+      # SHA: actions/upload-artifact@v4.6.0 (2024-12-18)
+      - name: Upload Trivy SARIF as artifact
+        if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
+        with:
+          name: trivy-filesystem-sarif
+          path: trivy-results.sarif
+          retention-days: 30
 
       # Upload results to GitHub Security tab (opcional, não bloqueia pipeline)
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
