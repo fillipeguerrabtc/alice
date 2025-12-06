@@ -16,7 +16,7 @@ import express, { Request, Response, NextFunction } from 'express';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';
-import helmet from 'helmet';
+// helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
@@ -315,11 +315,7 @@ app.use(createRateLimiter({
   serviceName: 'auth-service',
 }));
 
-// SEGURANÇA: Helmet para headers HTTP seguros (OWASP)
-app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
-  crossOriginEmbedderPolicy: false,
-}));
+// NOTA: Helmet já aplicado via createSecurityMiddleware() acima
 
 // CORS configurado para desenvolvimento e produção
 const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5000'];

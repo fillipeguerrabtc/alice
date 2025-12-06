@@ -1,7 +1,7 @@
 import express, { Request, Response } from 'express';
 import Stripe from 'stripe';
 import cors from 'cors';
-import helmet from 'helmet';
+// helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
 // rateLimit via createRateLimiter de @alice/shared-utils
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
@@ -276,11 +276,7 @@ app.use(createCorrelationMiddleware({ serviceName: 'integrations-service' }));
 // PERFORMANCE: Compression para reduzir tamanho de respostas (Express.js 2025)
 app.use(compression());
 
-// SEGURANÇA: Helmet para headers HTTP seguros (OWASP)
-app.use(helmet({
-  contentSecurityPolicy: process.env.NODE_ENV === 'production' ? undefined : false,
-  crossOriginEmbedderPolicy: false,
-}));
+// NOTA: Helmet já aplicado via createSecurityMiddleware() acima
 
 app.use(cors({
   origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false,
