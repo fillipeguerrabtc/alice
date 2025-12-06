@@ -913,8 +913,8 @@ importers:
         specifier: 8.1.0
         version: 8.1.0
       mammoth:
-        specifier: 1.8.0
-        version: 1.8.0
+        specifier: 1.11.0
+        version: 1.11.0
       multer:
         specifier: 2.0.2
         version: 2.0.2
@@ -4388,8 +4388,8 @@ packages:
     resolution: {integrity: sha512-hXdUTZYIVOt1Ex//jAQi+wTZZpUpwBj/0QsOzqegb3rGMMeJiSEu5xLHnYfBrRV4RH2+OCSOO95Is/7x1WJ4bw==}
     engines: {node: '>=10'}
 
-  mammoth@1.8.0:
-    resolution: {integrity: sha512-pJNfxSk9IEGVpau+tsZFz22ofjUsl2mnA5eT8PjPs2n0BP+rhVte4Nez6FdgEuxv3IGI3afiV46ImKqTGDVlbA==}
+  mammoth@1.11.0:
+    resolution: {integrity: sha512-BcEqqY/BOwIcI1iR5tqyVlqc3KIaMRa4egSoK83YAVrBf6+yqdAAbtUcFDCWX8Zef8/fgNZ6rl4VUv+vVX8ddQ==}
     engines: {node: '>=12.0.0'}
     hasBin: true
 
@@ -9144,7 +9144,7 @@ snapshots:
     dependencies:
       semver: 7.7.3
 
-  mammoth@1.8.0:
+  mammoth@1.11.0:
     dependencies:
       '@xmldom/xmldom': 0.8.11
       argparse: 1.0.10
