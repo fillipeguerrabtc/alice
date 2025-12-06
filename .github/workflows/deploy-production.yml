@@ -155,7 +155,7 @@ jobs:
           exit-code: '1'
           format: 'sarif'
           output: 'trivy-results.sarif'
-                   trivyignores: '.trivyignore'
+          trivyignores: '.trivyignore'
 
       # Garantir que arquivo SARIF exista para upload (fallback se Trivy falhar)
       - name: Ensure SARIF file exists
