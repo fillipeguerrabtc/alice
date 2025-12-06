@@ -157,6 +157,20 @@ jobs:
           output: 'trivy-results.sarif'
           trivyignores: '.trivyignore'
           
+                trivyignores: '.trivyignore'
+
+      # Garantir que arquivo SARIF exista para upload (fallback se Trivy falhar)
+      - name: Ensure SARIF file exists
+        if: always()
+        run: |
+          if [ ! -f "trivy-results.sarif" ]; then
+            echo "⚠️ SARIF não gerado pelo Trivy, criando fallback..."
+            printf '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[],"_scanFailed":true}' > trivy-results.sarif
+            echo "Fallback SARIF criado para diagnóstico"
+          else
+            echo "✅ SARIF existe: trivy-results.sarif"
+          fi
+          
       # Upload SARIF como artifact para download e análise
       # SHA: actions/upload-artifact@v4.6.0 (2024-12-18)
       - name: Upload Trivy SARIF as artifact
@@ -166,6 +180,8 @@ jobs:
           name: trivy-filesystem-sarif
           path: trivy-results.sarif
           retention-days: 30
+
+      # Upload results to GitHub Security tab
 
       # Upload results to GitHub Security tab (opcional, não bloqueia pipeline)
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
