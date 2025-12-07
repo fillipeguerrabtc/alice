@@ -573,8 +573,8 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=64M
     volumes:
-      # Volume Hetzner para uploads RAG (imagens, áudios, vídeos, documentos)
-      - /opt/alice/uploads:/opt/alice/uploads
+      # Volume Hetzner para uploads RAG (imagens, áudios, vídeos, documentos) - rw explícito necessário com read_only: true
+      - /opt/alice/uploads:/opt/alice/uploads:rw
     environment:
       NODE_ENV: production
       PORT: 3003
@@ -761,8 +761,8 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=64M
     volumes:
-      # Volume Hetzner para backups e manifestos
-      - /opt/alice/backups:/opt/alice/backups
+      # Volume Hetzner para backups e manifestos - rw explícito necessário com read_only: true
+      - /opt/alice/backups:/opt/alice/backups:rw
     environment:
       NODE_ENV: production
       PORT: 3007
@@ -1574,10 +1574,10 @@ services:
     volumes:
       # Dados PostgreSQL (read-only para backup)
       - postgres_data:/var/lib/postgresql/data:ro
-      # Repositório de backups (volume Hetzner persistente)
-      - /opt/alice/backups/postgresql:/var/lib/pgbackrest
-      # Logs persistentes (volume Hetzner para troubleshooting)
-      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest
+      # Repositório de backups (volume Hetzner persistente) - rw explícito necessário com read_only: true
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      # Logs persistentes (volume Hetzner para troubleshooting) - rw explícito necessário com read_only: true
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
       # Configuração pgBackRest (read-only)
       - ./infra/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     depends_on:
