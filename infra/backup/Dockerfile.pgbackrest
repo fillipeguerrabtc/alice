@@ -48,13 +48,14 @@ RUN addgroup -g 1000 pgbackrest \
 
 USER pgbackrest
 
-# Healthcheck
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD pgbackrest info --output=json || exit 1
+# Healthcheck (stanza será definido via variável de ambiente)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD pgbackrest info --stanza=${PGBACKREST_STANZA:-alice_prod} --output=json || exit 1
 
 # Volume para persistência
 VOLUME ["/var/lib/pgbackrest", "/var/log/pgbackrest"]
 
 # Comando padrão: servidor de arquivamento contínuo
+# Stanza será definido via variável de ambiente no entrypoint.sh
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["archive-push", "--stanza=alice"]
+CMD ["archive-push"]

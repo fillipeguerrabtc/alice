@@ -1548,18 +1548,29 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=64M
     environment:
-      PGBACKREST_DB_HOST: postgres
-      PGBACKREST_DB_PORT: 5432
+      # Stanza name (deve corresponder ao nome no pgbackrest.conf e entrypoint.sh)
+      PGBACKREST_STANZA: alice_prod
+      # PostgreSQL connection
+      PGBACKREST_PG1_HOST: postgres
+      PGBACKREST_PG1_PORT: "5432"
+      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
+      # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
       PGBACKREST_DB_PATH: /var/lib/postgresql/data/pgdata
+      # Repositório de backup (volume local Hetzner)
       PGBACKREST_REPO1_PATH: /opt/alice/backups/postgresql
+      # Retenção de backups
       PGBACKREST_REPO1_RETENTION_FULL: 15
       PGBACKREST_REPO1_RETENTION_DIFF: 7
       PGBACKREST_REPO1_RETENTION_ARCHIVE: 30
+      # Criptografia
       PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
-      PGBACKREST_STANZA: alice_prod
-      POSTGRES_USER: ${POSTGRES_USER:-alice}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       PGBACKREST_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      # Logging
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
+      # PostgreSQL credentials
+      PGUSER: ${POSTGRES_USER:-alice}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data:ro
       - /opt/alice/backups/postgresql:/opt/alice/backups/postgresql

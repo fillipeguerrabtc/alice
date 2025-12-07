@@ -21,33 +21,41 @@ if [ -z "$PGBACKREST_CIPHER_PASS" ]; then
     exit 1
 fi
 
+# Usar variável de ambiente para stanza (default: alice_prod)
+STANZA="${PGBACKREST_STANZA:-alice_prod}"
+
 # Aguardar PostgreSQL estar pronto
 echo "[INFO] Aguardando PostgreSQL..."
-until pg_isready -h alice-postgres -p 5432 -U alice 2>/dev/null; do
+PG_HOST="${PGBACKREST_PG1_HOST:-postgres}"
+PG_PORT="${PGBACKREST_PG1_PORT:-5432}"
+PG_USER="${PGUSER:-alice}"
+
+until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" 2>/dev/null; do
     echo "[INFO] PostgreSQL não está pronto, aguardando 5s..."
     sleep 5
 done
 echo "[OK] PostgreSQL está pronto!"
 
 # Verificar se stanza existe, senão criar
-echo "[INFO] Verificando stanza 'alice'..."
-if ! pgbackrest info --stanza=alice --output=json 2>/dev/null | grep -q '"status":'; then
-    echo "[INFO] Criando stanza 'alice'..."
-    pgbackrest --stanza=alice stanza-create
+echo "[INFO] Verificando stanza '$STANZA'..."
+if ! pgbackrest info --stanza="$STANZA" --output=json 2>/dev/null | grep -q '"status":'; then
+    echo "[INFO] Criando stanza '$STANZA'..."
+    pgbackrest --stanza="$STANZA" stanza-create
     echo "[OK] Stanza criada com sucesso!"
 else
-    echo "[OK] Stanza 'alice' já existe."
+    echo "[OK] Stanza '$STANZA' já existe."
 fi
 
 # Verificar integridade da stanza
 echo "[INFO] Verificando integridade da stanza..."
-pgbackrest --stanza=alice check || {
+pgbackrest --stanza="$STANZA" check || {
     echo "[AVISO] Verificação falhou, tentando upgrade da stanza..."
-    pgbackrest --stanza=alice stanza-upgrade
+    pgbackrest --stanza="$STANZA" stanza-upgrade
 }
 
 echo "=================================================="
 echo "  pgBackRest pronto para operação!"
+echo "  Stanza: $STANZA"
 echo "  Modo: $1"
 echo "=================================================="
 
