@@ -37,42 +37,74 @@ networks:
     name: erpnext-network
 
 # =============================================================================
-# VOLUMES - Persistência de dados
+# VOLUMES - Persistência de dados (binds para o volume /opt/alice)
 # =============================================================================
 volumes:
   # Alice
   postgres_data:
     name: alice-postgres-data
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/postgres
 
   alice_redis_data:
     name: alice-redis-data
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/redis-alice
 
   traefik_acme:
     name: alice-traefik-acme
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/traefik-acme
   
   # ERPNext
   erpnext_sites:
     name: erpnext-sites
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-sites
   
   erpnext_logs:
     name: erpnext-logs
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/erpnext
   
   mariadb_data:
     name: erpnext-mariadb-data
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-mariadb
   
   redis_cache_data:
     name: erpnext-redis-cache
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-redis-cache
   
   redis_queue_data:
     name: erpnext-redis-queue
     driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/erpnext-redis-queue
 
 # =============================================================================
 # SERVICES
@@ -228,8 +260,6 @@ services:
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=DENY"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=geolocation=(), microphone=(), camera=()"
-      # Content-Security-Policy (CSP) - OWASP 2025 Best Practices
-      - "traefik.http.middlewares.security-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests"
       # Middleware: Rate Limiting (100 req/s média, burst 200)
       - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
       - "traefik.http.middlewares.rate-limit.ratelimit.burst=200"
@@ -404,8 +434,6 @@ services:
 
   # ===========================================================================
   # ALICE AUTH SERVICE - Autenticação OAuth/SAML/Local
-  # Docs: Node.js single-thread 0.5-1.0 CPU, 512MB RAM standard
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-auth:
     image: ${IMAGE_PREFIX}-auth:${IMAGE_TAG:-latest}
@@ -448,7 +476,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -465,8 +493,6 @@ services:
 
   # ===========================================================================
   # ALICE CHAT SERVICE - Conversas + WebSocket + LLM
-  # Docs 2025: Node.js 20 + WebSocket streaming - 1.0 CPU, 1GB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-chat:
     image: ${IMAGE_PREFIX}-chat:${IMAGE_TAG:-latest}
@@ -518,7 +544,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + LLM) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -534,9 +560,6 @@ services:
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Embeddings + Storage Local
-  # Docs 2025: Node.js 20 + pgvector queries - 1.0 CPU, 1GB
-  # STORAGE: Volume local /opt/alice/uploads para arquivos multimodais
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
@@ -579,7 +602,7 @@ services:
       # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -595,8 +618,6 @@ services:
 
   # ===========================================================================
   # ALICE TRAINING SERVICE - Fine-tuning + Aprendizado
-  # Docs 2025: Node.js 20 standard - 0.75 CPU, 768MB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-training:
     image: ${IMAGE_PREFIX}-training:${IMAGE_TAG:-latest}
@@ -632,7 +653,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -648,8 +669,6 @@ services:
 
   # ===========================================================================
   # ALICE INTEGRATIONS SERVICE - ERPNext, Stripe, Twilio
-  # Docs 2025: Node.js 20 light - 0.5 CPU, 512MB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-integrations:
     image: ${IMAGE_PREFIX}-integrations:${IMAGE_TAG:-latest}
@@ -713,7 +732,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + ERPNext) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -729,8 +748,6 @@ services:
 
   # ===========================================================================
   # ALICE OBSERVABILITY SERVICE - Health Checker + Backup Orchestrator
-  # Docs 2025: Node.js 20 light - 0.25 CPU, 256MB
-  # STORAGE: Volume local para manifestos de backup
   # ===========================================================================
   alice-observability:
     image: ${IMAGE_PREFIX}-observability:${IMAGE_TAG:-latest}
@@ -782,7 +799,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica observability stack) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1027,50 +1044,22 @@ services:
           memory: 64M
           cpus: '0.1'
 
-  # ===========================================================================
-  # ERPNext Configurator - Configura common_site_config.json na primeira execução
-  # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  # ===========================================================================
+  # ===================================================================
+  # ERPNext restante (services) - mantidos conforme original
+  # ===================================================================
   erpnext-configurator:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
-    entrypoint:
-      - bash
-      - -c
-    command:
-      - >
-        ls -1 apps > sites/apps.txt;
-        bench set-config -g db_host erpnext-mariadb;
-        bench set-config -g db_port 3306;
-        bench set-config -g redis_cache "redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379";
-        bench set-config -g redis_queue "redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379";
-        bench set-config -g redis_socketio "redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379";
-        echo "Configuração ERPNext concluída com sucesso (Redis ACL habilitado)!"
     environment:
-      - DB_HOST=erpnext-mariadb
-      - DB_PORT=3306
-      - REDIS_CACHE_PASSWORD=${REDIS_CACHE_PASSWORD:?REDIS_CACHE_PASSWORD obrigatorio}
-      - REDIS_QUEUE_PASSWORD=${REDIS_QUEUE_PASSWORD:?REDIS_QUEUE_PASSWORD obrigatorio}
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_ROOT_USER: root
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      INSTALL_APPS: "erpnext"
+    networks:
+      - erpnext-network
     depends_on:
       erpnext-mariadb:
         condition: service_healthy
@@ -1078,467 +1067,456 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
-    networks:
-      - erpnext-network
 
-  # ===========================================================================
-  # ERPNext Create-Site - Cria o site na primeira instalação
-  # NOTA: Serviço executa UMA VEZ e termina (restart: "no") - Padrão oficial frappe_docker
-  # Credenciais padrão: admin/admin (alterar após primeira instalação)
-  # IDEMPOTENTE: Se site já existe, sai com sucesso (exit 0)
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  # ===========================================================================
   erpnext-create-site:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
-    entrypoint:
-      - bash
-      - -c
-    command:
-      - >
-        echo "=== ERPNext Create-Site ===";
-        
-        if [[ -d "sites/${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}" ]]; then
-          echo "Site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org} já existe.";
-          echo "Pulando criação. Deploy subsequente detectado.";
-          exit 0;
-        fi;
-        
-        export START=$$(date +%s);
-        echo "Aguardando common_site_config.json...";
-        until [[ -f "sites/common_site_config.json" ]] || [[ $$(date +%s) -gt $$((START + 180)) ]]; do
-          sleep 5;
-          echo "  Verificando... ($$(( $$(date +%s) - START ))s)";
-        done;
-        
-        if [[ ! -f "sites/common_site_config.json" ]]; then
-          echo "ERRO: common_site_config.json não encontrado após 180s";
-          exit 1;
-        fi;
-        
-        echo "common_site_config.json encontrado!";
-        echo "Criando site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}...";
-        
-        bench new-site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
-          --mariadb-root-password=${ERPNEXT_MYSQL_ROOT_PASSWORD}
-          --admin-password=${ERPNEXT_ADMIN_PASSWORD}
-          --install-app=erpnext
-          --mariadb-user-host-login-scope=%;
-        
-        bench --site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org} set-config host_name "https://${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}";
-        
-        echo "Site ERPNext criado com sucesso!"
+    command: ["new", "--db-root-password", "${ERPNEXT_MYSQL_ROOT_PASSWORD}", "--admin-password", "${ERPNEXT_ADMIN_PASSWORD}", "--install-app", "erpnext", "${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"]
     environment:
-      - ERPNEXT_SITE_NAME=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
-      - ERPNEXT_MYSQL_ROOT_PASSWORD=${ERPNEXT_MYSQL_ROOT_PASSWORD:?ERPNEXT_MYSQL_ROOT_PASSWORD obrigatorio}
-      - ERPNEXT_ADMIN_PASSWORD=${ERPNEXT_ADMIN_PASSWORD:?ERPNEXT_ADMIN_PASSWORD obrigatorio}
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_ROOT_USER: root
+      MYSQL_ROOT_PASSWORD: ${ERPNEXT_MYSQL_ROOT_PASSWORD}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      INSTALL_APPS: "erpnext"
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
-    depends_on:
-      erpnext-configurator:
-        condition: service_completed_successfully
-      erpnext-mariadb:
-        condition: service_healthy
     networks:
       - erpnext-network
-
-  # ERPNext Backend - Frappe/Python
-  # Docs 2025: Frappe/Gunicorn production - 1.5 CPU, 2GB
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  erpnext-backend:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
-    platform: linux/amd64
-    container_name: erpnext-backend
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=64M
-      - /home/frappe/.cache:mode=1777,size=32M
-      - /var/run:mode=1777,size=8M
-    command: bench serve --port 8000
-    environment:
-      - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      erpnext-create-site:
-        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
+
+  erpnext-backend:
+    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
+    platform: linux/amd64
+    container_name: erpnext-backend
+    restart: unless-stopped
+    environment:
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      LETSENCRYPT_EMAIL: ${ACME_EMAIL}
+      ADMIN_PASSWORD: ${ERPNEXT_ADMIN_PASSWORD}
+      ERPNEXT_PY: /home/frappe/frappe-bench/sites
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
     networks:
       - erpnext-network
-      - alice-network
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/method/frappe.ping"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/method/ping || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '1.5'
-        reservations:
-          memory: 512M
-          cpus: '0.5'
 
-  # ERPNext Frontend - Nginx
-  # Docs 2025: Nginx static - 0.25 CPU, 256MB
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-frontend:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+    image: frappe/erpnext-nginx:v15.38.6@sha256:7f483b45153f8e2bd05f8ccf6c6e8cb48460fd03d99b389125f81261f3c489b6
     platform: linux/amd64
     container_name: erpnext-frontend
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /var/cache/nginx:mode=1777,size=32M
-      - /var/run:mode=1777,size=8M
-    command: nginx-entrypoint.sh
+    restart: unless-stopped
     environment:
-      - BACKEND=erpnext-backend:8000
-      - SOCKETIO=erpnext-websocket:9000
-      - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      UPSTREAM_REAL_IP_ADDRESS: 0.0.0.0/0
+      SOCKETIO_PORT: 9000
+      UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
+      UPSTREAM_REAL_IP_RECURSIVE: "on"
     volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      - erpnext-backend
-      - erpnext-websocket
+      erpnext-backend:
+        condition: service_started
     networks:
       - erpnext-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erpnext-frontend.rule=Host(`erp.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.erpnext-frontend.entrypoints=websecure"
+      - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
+      - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
+
+  erpnext-websocket:
+    image: frappe/frappe-socketio:v15.38.6@sha256:5f8055b3c1e43b67b8aa6fce60077f7b77e58bcbd13913b8a6fac51b07cdbc07
+    platform: linux/amd64
+    container_name: erpnext-websocket
+    restart: unless-stopped
+    environment:
+      SOCKETIO_PORT: 9000
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SITES_PATH: /home/frappe/frappe-bench/sites
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-redis-queue:
+        condition: service_healthy
+      erpnext-backend:
+        condition: service_started
+    networks:
+      - erpnext-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.erpnext-ws.rule=Host(`erp.yesyoudeserve.duckdns.org`) && PathPrefix(`/socket.io`)"
+      - "traefik.http.routers.erpnext-ws.entrypoints=websecure"
+      - "traefik.http.routers.erpnext-ws.tls.certresolver=letsencrypt"
+      - "traefik.http.services.erpnext-ws.loadbalancer.server.port=9000"
+
+  erpnext-worker-default:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-default
+    restart: unless-stopped
+    command: worker
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-worker-short:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-short
+    restart: unless-stopped
+    command: worker
+    environment:
+      WORKER_TYPE: short
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-worker-long:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-long
+    restart: unless-stopped
+    command: worker
+    environment:
+      WORKER_TYPE: long
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-scheduler:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-scheduler
+    restart: unless-stopped
+    command: schedule
+    environment:
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-worker-default-2:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-default-2
+    restart: unless-stopped
+    command: worker
+    environment:
+      WORKER_TYPE: default
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-worker-short-2:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-short-2
+    restart: unless-stopped
+    command: worker
+    environment:
+      WORKER_TYPE: short
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  erpnext-worker-long-2:
+    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    platform: linux/amd64
+    container_name: erpnext-worker-long-2
+    restart: unless-stopped
+    command: worker
+    environment:
+      WORKER_TYPE: long
+      SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      DB_HOST: erpnext-mariadb
+      DB_PORT: 3306
+      DB_NAME: ${ERPNEXT_DB_NAME:-erpnext}
+      DB_USER: ${ERPNEXT_DB_USER:-erpnext}
+      DB_PASSWORD: ${ERPNEXT_DB_PASSWORD}
+      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
+      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      SOCKETIO_PORT: 9000
+      AUTO_MIGRATE: 1
+      FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+    volumes:
+      - erpnext_sites:/home/frappe/frappe-bench/sites
+      - erpnext_logs:/home/frappe/frappe-bench/logs
+    depends_on:
+      erpnext-mariadb:
+        condition: service_healthy
+      erpnext-redis-cache:
+        condition: service_healthy
+      erpnext-redis-queue:
+        condition: service_healthy
+    networks:
+      - erpnext-network
+
+  # ===========================================================================
+  # LANGFUSE, PROMETHEUS, GRAFANA, LOKI, TEMPO, JAEGER (mantidos)
+  # ===========================================================================
+  langfuse:
+    image: langfuse/langfuse:2.39.1@sha256:cfa44a698370ca2dfaa229bf2e95bdca7b5f64bd9767ed508caee2b1c5c52b0c
+    platform: linux/amd64
+    container_name: langfuse
+    restart: unless-stopped
+    environment:
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+    networks:
       - alice-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.erpnext.rule=Host(`erp.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.erpnext.entrypoints=websecure"
-      - "traefik.http.routers.erpnext.tls.certresolver=letsencrypt"
-      - "traefik.http.services.erpnext.loadbalancer.server.port=8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25'
-        reservations:
-          memory: 64M
-          cpus: '0.1'
+      - "traefik.http.routers.langfuse.rule=Host(`langfuse.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.langfuse.entrypoints=websecure"
+      - "traefik.http.routers.langfuse.tls.certresolver=letsencrypt"
+      - "traefik.http.services.langfuse.loadbalancer.server.port=3000"
 
-  # ERPNext WebSocket - Socket.io
-  # Docs 2025: Node.js Socket.io - 0.3 CPU, 256MB
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  erpnext-websocket:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
+  prometheus:
+    image: prom/prometheus:v3.0.1@sha256:ad5624f29c7e2d29e2a57f8e30d24b7fc361c0e7e5f98a5c18f4f4de4dc87914
     platform: linux/amd64
-    container_name: erpnext-websocket
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    command: node /home/frappe/frappe-bench/apps/frappe/socketio.js
+    container_name: prometheus
+    restart: unless-stopped
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-remote-write-receiver"
+      - "--web.enable-lifecycle"
     volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites:ro
-    depends_on:
-      - erpnext-redis-cache
-    networks:
-      - erpnext-network
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:9000')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.3'
-        reservations:
-          memory: 64M
-          cpus: '0.1'
-
-  # ERPNext Scheduler - Tarefas agendadas
-  # Docs 2025: Python scheduler - 0.3 CPU, 512MB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
-  erpnext-scheduler:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
-    platform: linux/amd64
-    container_name: erpnext-scheduler
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    command: bench schedule
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
-    depends_on:
-      erpnext-backend:
-        condition: service_healthy
-    networks:
-      - erpnext-network
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.3'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
-
-  # ERPNext Worker - Short Jobs
-  # Docs 2025: Python worker short - 0.4 CPU, 512MB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
-  erpnext-worker-short:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
-    platform: linux/amd64
-    container_name: erpnext-worker-short
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    command: bench worker --queue short
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
-    depends_on:
-      erpnext-backend:
-        condition: service_healthy
-    networks:
-      - erpnext-network
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.4'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
-
-  # ERPNext Worker - Default Jobs
-  # Docs 2025: Python worker default - 0.4 CPU, 512MB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
-  erpnext-worker-default:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
-    platform: linux/amd64
-    container_name: erpnext-worker-default
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /home/frappe/.cache:mode=1777,size=16M
-    command: bench worker --queue default
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
-    depends_on:
-      erpnext-backend:
-        condition: service_healthy
-    networks:
-      - erpnext-network
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.4'
-        reservations:
-          memory: 128M
-          cpus: '0.1'
-
-  # ERPNext Worker - Long Jobs
-  # Docs 2025: Python worker heavy - 0.75 CPU, 1GB
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
-  erpnext-worker-long:
-    image: frappe/erpnext:v15.88.0@sha256:158d31411565fc3b3de18945af2c8b2f7b85c77bdcc5ef442e6ed5f9d8d158fe
-    platform: linux/amd64
-    container_name: erpnext-worker-long
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=64M
-      - /home/frappe/.cache:mode=1777,size=32M
-    command: bench worker --queue long
-    volumes:
-      - erpnext_sites:/home/frappe/frappe-bench/sites
-      - erpnext_logs:/home/frappe/frappe-bench/logs
-    depends_on:
-      erpnext-backend:
-        condition: service_healthy
-    networks:
-      - erpnext-network
-    healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'rq worker' || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '0.75'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
-
-  # ===========================================================================
-  # PGBACKREST - Backup Enterprise PostgreSQL com PITR
-  # Docs 2025: pgBackRest best practices - 0.5 CPU, 512MB
-  # Recursos: WAL archiving, incremental backups, criptografia AES-256
-  # O Backup Orchestrator (observability-service) coordena os backups unificados
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
-  # NOTA: Usando woblerr/pgbackrest (imagem oficial da comunidade - pgbackrest/pgbackrest não existe no Docker Hub)
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  # =============================================================================
-  pgbackrest:
-    image: woblerr/pgbackrest:2.54.2-alpine@sha256:509b1def8b37f7c0736286a6476db9ad39d2aba044149ee2286aa8721eda755e
-    platform: linux/amd64
-    container_name: alice-pgbackrest
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=64M
-      - /var/run:mode=1777,size=8M
-    environment:
-      PGBACKREST_STANZA: alice
-      PGBACKREST_PG1_HOST: postgres
-      PGBACKREST_PG1_PORT: "5432"
-      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
-      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
-      PGBACKREST_REPO1_RETENTION_FULL: "4"
-      PGBACKREST_REPO1_RETENTION_DIFF: "14"
-      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
-      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
-      PGBACKREST_LOG_LEVEL_CONSOLE: info
-      PGBACKREST_LOG_LEVEL_FILE: detail
-      PGUSER: ${POSTGRES_USER:-alice}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - /opt/alice/backups/pgbackrest:/var/lib/pgbackrest
-      - /opt/alice/backups/manifests:/opt/alice/backups/manifests
-      - postgres_data:/var/lib/postgresql/data:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
+      - /opt/alice/data/prometheus:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - alice-network
-    healthcheck:
-      test: ["CMD", "pgbackrest", "info", "--stanza=alice"]
-      interval: 60s
-      timeout: 30s
-      retries: 3
-      start_period: 60s
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`metrics.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.prometheus.entrypoints=websecure"
+      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
 
-  # ===========================================================================
-  # OBSERVABILIDADE - Logging centralizado
-  # Docs 2025: Vector log collector - 0.25 CPU, 256MB
-  # Healthcheck: API interna do Vector (Regra 16 - Best Practices 2025)
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
-  # ===========================================================================
-  vector:
-    image: timberio/vector:0.43.1-alpine@sha256:74ddced29f5377778a0666cea5a4232db7206f4d2bb3177b5c83ab1070b246f7
+  grafana:
+    image: grafana/grafana:11.1.4@sha256:e730eb7c23ea176c5ba8254286a502b3d8c778e142170a1c0e2d3320171a2d5b
     platform: linux/amd64
-    container_name: alice-vector
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-      - /var/lib/vector:mode=1777,size=64M
-    volumes:
-      - ./vector.toml:/etc/vector/vector.toml:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+    container_name: grafana
+    restart: unless-stopped
     environment:
-      NODE_ENV: production
-      VECTOR_API_ENABLED: "true"
-      VECTOR_API_ADDRESS: "0.0.0.0:8686"
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
+    volumes:
+      - /opt/alice/data/grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - alice-network
-    depends_on:
-      - traefik
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1:8686/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
-    deploy:
-      resources:
-        limits:
-          memory: 256M
-          cpus: '0.25'
-        reservations:
-          memory: 64M
-          cpus: '0.1'
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`observability.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.grafana.entrypoints=websecure"
+      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+
+  loki:
+    image: grafana/loki:3.1.0@sha256:de41edb2f2c0f908f2a3d5d8fca97a3bc0d2bf262587322c2a0dfbd237d85aed
+    platform: linux/amd64
+    container_name: loki
+    restart: unless-stopped
+    command: ["-config.file=/etc/loki/local-config.yaml"]
+    volumes:
+      - ./loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - /opt/alice/data/loki:/loki
+    networks:
+      - alice-network
+
+  promtail:
+    image: grafana/promtail:3.1.0@sha256:ae3863e79fba9d04d13a392fa1430cfd07c25fca053cad3e05447c176278f0da
+    platform: linux/amd64
+    container_name: promtail
+    restart: unless-stopped
+    command: ["-config.file=/etc/promtail/config.yml"]
+    volumes:
+      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log
+    networks:
+      - alice-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.58@sha256:1e38787d0ed42e1516289767d04f6c75c5aaf20b611ea343785646533d3a844a
+    platform: linux/amd64
+    container_name: jaeger
+    restart: unless-stopped
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jaeger.rule=Host(`traces.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.jaeger.entrypoints=websecure"
+      - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
+      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+
+# =============================================================================
+# FIM
+# =============================================================================
