@@ -59,5 +59,13 @@ echo "  Stanza: $STANZA"
 echo "  Modo: $1"
 echo "=================================================="
 
-# Executar comando passado
-exec "$@"
+# Executar comando passado COM stanza explícito
+# Bug fix: pgBackRest requer --stanza= explícito em todos os comandos
+if [ $# -eq 0 ]; then
+    # Se não houver argumentos, usar archive-push como padrão
+    exec pgbackrest --stanza="$STANZA" archive-push
+else
+    # Se houver argumentos, adicionar --stanza= antes do primeiro argumento
+    # Exemplo: archive-push -> pgbackrest --stanza=alice_prod archive-push
+    exec pgbackrest --stanza="$STANZA" "$@"
+fi
