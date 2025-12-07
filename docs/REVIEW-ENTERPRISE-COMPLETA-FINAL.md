@@ -645,7 +645,7 @@ Upload manual de dados de treinamento está disponível via API REST (`POST /api
 ### Regra 3: WORKFLOW ESTRUTURADO ✅
 - ✅ Diagnóstico → Plano → Aprovação → Implementação
 - ✅ Documentação de planos antes de executar
-- ✅ `docs/PLANO-REVIEW-COMPLETA-ENTERPRISE-FINAL.md` aprovado
+- ✅ Plano de revisão completa aprovado e executado (consolidado neste documento)
 
 ### Regra 4: APROVAÇÃO OBRIGATÓRIA ✅
 - ✅ Planos documentados e aprovados
@@ -815,9 +815,10 @@ Upload manual de dados de treinamento está disponível via API REST (`POST /api
 | `docs/FRAPPE-PATCHING.md` | ✅ | 2025-12-09 |
 | `docs/PLANO-100%-BASE.md` | ✅ | 2025-12-09 |
 | `docs/PLANO-MULTIMODAL-COMPLETO.md` | ✅ | 2025-12-09 |
-| `docs/PLANO-REVIEW-COMPLETA-ENTERPRISE-FINAL.md` | ✅ | 2025-12-09 |
 | `docs/REVIEW-ENTERPRISE-COMPLETA-FINAL.md` | ✅ | 2025-12-09 |
-| `docs/CODE-REVIEW-ENTERPRISE-COMPLETA.md` | ✅ | 2025-12-09 |
+| `docs/REVIEW-COMPLETA-SISTEMATICA-EM-ANDAMENTO.md` | 🔄 | 2025-12-09 (em execução) |
+| `docs/CODE-REVIEW-ENTERPRISE-COMPLETA.md` | ❌ Removido | Consolidado neste documento |
+| `docs/PLANO-REVIEW-COMPLETA-ENTERPRISE-FINAL.md` | ❌ Removido | Plano obsoleto (já executado) |
 | `docs/ANALISE-COMPLETA-TAKEOVER-HANDOVER.md` | ✅ | 2025-12-09 |
 | `docs/GAPS-CRITICOS-ENCONTRADOS.md` | ✅ | 2025-12-09 |
 | `docs/CONSOLIDACAO-DOCUMENTACAO.md` | ✅ | 2025-12-09 |
