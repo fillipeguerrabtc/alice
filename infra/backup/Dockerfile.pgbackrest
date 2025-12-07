@@ -50,14 +50,14 @@ USER pgbackrest
 
 # Healthcheck
 # NOTA: Docker não faz substituição de variáveis de ambiente em runtime no HEALTHCHECK
-# O healthcheck usa um script wrapper que lê a variável de ambiente em runtime
-# O script healthcheck.sh será criado pelo entrypoint.sh ou podemos usar um valor fixo
-# Como fallback, usamos alice_prod (valor padrão) - será sobrescrito pelo docker-compose healthcheck
+# O healthcheck usa valor fixo alice_prod (padrão) - será sobrescrito pelo docker-compose healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD pgbackrest info --stanza=alice_prod --output=json || exit 1
 
-# Volume para persistência
-VOLUME ["/var/lib/pgbackrest", "/var/log/pgbackrest"]
+# NOTA: VOLUME removido - usamos bind mounts explícitos no docker-compose.prod.yml
+# Isso evita criação de volumes anônimos que são descartados a cada restart
+# Os diretórios /var/lib/pgbackrest e /var/log/pgbackrest serão montados explicitamente
+# no docker-compose para garantir persistência no volume Hetzner
 
 # Comando padrão: servidor de arquivamento contínuo
 # Stanza será definido via variável de ambiente no entrypoint.sh

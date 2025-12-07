@@ -1572,8 +1572,13 @@ services:
       PGUSER: ${POSTGRES_USER:-alice}
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
+      # Dados PostgreSQL (read-only para backup)
       - postgres_data:/var/lib/postgresql/data:ro
-      - /opt/alice/backups/postgresql:/opt/alice/backups/postgresql
+      # Repositório de backups (volume Hetzner persistente)
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest
+      # Logs persistentes (volume Hetzner para troubleshooting)
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest
+      # Configuração pgBackRest (read-only)
       - ./infra/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     depends_on:
       postgres:
