@@ -768,7 +768,7 @@ jobs:
           STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          STRIPE_WEBHOOK_BASE_URL=${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
+          STRIPE_WEBHOOK_BASE_URL=${{ secrets.STRIPE_WEBHOOK_BASE_URL || 'https://yesyoudeserve.duckdns.org' }}
           
           # Twilio
           TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
@@ -781,8 +781,8 @@ jobs:
           # Wise (pagamentos globais)
           WISE_API_KEY=${{ secrets.WISE_API_KEY }}
           WISE_PROFILE_ID=${{ secrets.WISE_PROFILE_ID }}
-          WISE_WEBHOOK_SECRET=${{ secrets.WISE_WEBHOOK_SECRET }}
-          WISE_SANDBOX=false
+          WISE_WEBHOOK_SECRET=${{ secrets.WISE_WEBHOOK_SECRET || '' }}
+          WISE_SANDBOX=${{ secrets.WISE_SANDBOX || 'false' }}
           
           # ERPNext Database
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
@@ -792,10 +792,10 @@ jobs:
           ERPNEXT_DB_USER=erpnext
           ERPNEXT_DB_PASSWORD=${{ secrets.ERPNEXT_DB_PASSWORD }}
           
-          # ERPNext API (para integrations-service)
+          # ERPNext API (para integrations-service) - Opcionais (gerados após deploy)
           ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org
-          ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY }}
-          ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET }}
+          ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY || '' }}
+          ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET || '' }}
           
           # Backup (pgBackRest) - Criptografia AES-256
           BACKUP_CIPHER_PASS=${{ secrets.BACKUP_CIPHER_PASS }}

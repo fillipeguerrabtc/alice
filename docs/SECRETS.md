@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 2025-12-07
+**Data:** 2025-12-09
 
 ## Visão Geral
 
@@ -99,7 +99,7 @@ Estes são necessários para o deploy funcionar:
 | `STRIPE_SECRET_KEY` | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
 | `STRIPE_PUBLISHABLE_KEY` | dashboard.stripe.com/apikeys |
 | `STRIPE_WEBHOOK_SECRET` | dashboard.stripe.com/webhooks |
-| `STRIPE_WEBHOOK_BASE_URL` | Base URL para webhooks (ex: `https://yesyoudeserve.duckdns.org`) |
+| `STRIPE_WEBHOOK_BASE_URL` | Base URL para webhooks (opcional, default: `https://yesyoudeserve.duckdns.org`) |
 
 **Configuração de Webhook:**
 1. Stripe Dashboard → Developers → Webhooks → Add endpoint
@@ -118,8 +118,8 @@ Estes são necessários para o deploy funcionar:
 |--------|------------|
 | `WISE_API_KEY` | [wise.com/settings](https://wise.com/settings) → API Tokens |
 | `WISE_PROFILE_ID` | URL: `wise.com/user/account/XXXXX` |
-| `WISE_WEBHOOK_SECRET` | wise.com/settings → Webhooks (opcional) |
-| `WISE_SANDBOX` | `true` para sandbox, `false` para produção |
+| `WISE_WEBHOOK_SECRET` | wise.com/settings → Webhooks (opcional, gerado após configurar webhook) |
+| `WISE_SANDBOX` | `true` para sandbox, `false` para produção (opcional, default: `false`) |
 
 **Configuração:**
 1. Wise Business → Settings → API Tokens → Add new token
@@ -236,7 +236,7 @@ Estes são necessários para o deploy funcionar:
 | `STRIPE_SECRET_KEY` | ✅ |
 | `STRIPE_PUBLISHABLE_KEY` | ✅ |
 | `STRIPE_WEBHOOK_SECRET` | ✅ |
-| `STRIPE_WEBHOOK_BASE_URL` | ✅ |
+| `STRIPE_WEBHOOK_BASE_URL` | ⚠️ Opcional (tem fallback para domínio padrão) |
 
 ### Wise (Transferências)
 
@@ -244,8 +244,8 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `WISE_API_KEY` | ✅ |
 | `WISE_PROFILE_ID` | ✅ |
-| `WISE_WEBHOOK_SECRET` | ⏳ (gerar após deploy via Wise Dashboard) |
-| `WISE_SANDBOX` | ✅ |
+| `WISE_WEBHOOK_SECRET` | ⏳ Opcional (gerar após configurar webhook no Wise Dashboard) |
+| `WISE_SANDBOX` | ⚠️ Opcional (default: `false` para produção) |
 
 ### Comunicação
 
@@ -358,8 +358,8 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 2025-12-07*  
-*Versão: 6.0*  
+*Documento atualizado em: 2025-12-09*  
+*Versão: 6.1*  
 *Total de Secrets: 38 (35 pré-deploy + 3 pós-deploy)*  
 *Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  

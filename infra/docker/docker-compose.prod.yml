@@ -691,10 +691,10 @@ services:
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
       STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
-      # ERPNext
+      # ERPNext (opcionais - gerados após deploy via ERPNext UI)
       ERPNEXT_URL: http://erpnext-backend:8000
-      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY}
-      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET}
+      ERPNEXT_API_KEY: ${ERPNEXT_API_KEY:-}
+      ERPNEXT_API_SECRET: ${ERPNEXT_API_SECRET:-}
       # Twilio
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
@@ -704,7 +704,9 @@ services:
       # Wise (pagamentos globais)
       WISE_API_KEY: ${WISE_API_KEY}
       WISE_PROFILE_ID: ${WISE_PROFILE_ID}
-      WISE_WEBHOOK_SECRET: ${WISE_WEBHOOK_SECRET}
+      # Wise webhook secret (opcional - gerado após configurar webhook no Wise Dashboard)
+      WISE_WEBHOOK_SECRET: ${WISE_WEBHOOK_SECRET:-}
+      # Wise sandbox mode (opcional - default: false para produção)
       WISE_SANDBOX: ${WISE_SANDBOX:-false}
       # Inter-service communication
       CHAT_SERVICE_URL: http://alice-chat:3002
@@ -1573,6 +1575,8 @@ services:
       PGBACKREST_LOG_LEVEL_CONSOLE: info
       PGBACKREST_LOG_LEVEL_FILE: detail
       # PostgreSQL credentials
+      # NOTA: PGPASSWORD é variável de ambiente do pgBackRest (não é secret do GitHub)
+      # Recebe valor de POSTGRES_PASSWORD (secret do GitHub)
       PGUSER: ${POSTGRES_USER:-alice}
       PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
