@@ -260,6 +260,7 @@ services:
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=DENY"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
       - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=geolocation=(), microphone=(), camera=()"
+      - "traefik.http.middlewares.security-headers.headers.contentSecurityPolicy=default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'"
       # Middleware: Rate Limiting (100 req/s média, burst 200)
       - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
       - "traefik.http.middlewares.rate-limit.ratelimit.burst=200"
@@ -476,7 +477,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -544,7 +545,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + LLM) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -602,7 +603,7 @@ services:
       # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -653,7 +654,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -732,7 +733,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica PostgreSQL + ERPNext) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -799,7 +800,7 @@ services:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # IMPORTANTE: Usar /ready (verifica observability stack) ao invés de /health (sempre 200)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1))"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1086,6 +1087,8 @@ services:
     networks:
       - erpnext-network
     depends_on:
+      erpnext-configurator:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1119,6 +1122,8 @@ services:
     networks:
       - erpnext-network
     depends_on:
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1139,6 +1144,8 @@ services:
     restart: unless-stopped
     environment:
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+      BACKEND: erpnext-backend:8000
+      SOCKETIO: erpnext-websocket:9000
       UPSTREAM_REAL_IP_ADDRESS: 0.0.0.0/0
       SOCKETIO_PORT: 9000
       UPSTREAM_REAL_IP_HEADER: X-Forwarded-For
