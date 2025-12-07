@@ -357,10 +357,10 @@ openssl rand -hex 64
 
 ---
 
-*Autor: Fillipe Guerra*
-*Documento atualizado em: 2025-12-07*
-*Versão: 6.0 - 38 Secrets Verificados (35 pré-deploy + 3 pós-deploy)*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
-*Total de Secrets: 38 (incluindo STRIPE_WEBHOOK_BASE_URL, WISE_SANDBOX, BACKUP_CIPHER_PASS)*
-*Backup: Volume Hetzner 100GB local (/opt/alice/backups)*
+*Autor: Fillipe Guerra*  
+*Documento atualizado em: 2025-12-07*  
+*Versão: 6.0*  
+*Total de Secrets: 38 (35 pré-deploy + 3 pós-deploy)*  
+*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*  
+*Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
