@@ -16,8 +16,8 @@ echo "  Inicializando backup enterprise..."
 echo "=================================================="
 
 # Verificar variáveis obrigatórias
-if [ -z "$PGBACKREST_CIPHER_PASS" ]; then
-    echo "[ERRO] PGBACKREST_CIPHER_PASS não está definida!"
+if [ -z "$PGBACKREST_REPO1_CIPHER_PASS" ]; then
+    echo "[ERRO] PGBACKREST_REPO1_CIPHER_PASS não está definida!"
     exit 1
 fi
 
