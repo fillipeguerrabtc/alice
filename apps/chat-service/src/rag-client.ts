@@ -19,7 +19,13 @@ const logger = pino({
   }
 }).child({ service: 'chat-rag-client' });
 
-const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL || 'http://localhost:3003';
+// REGRA 6: Sem fallbacks localhost em produção - variável DEVE estar definida
+const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL;
+if (!RAG_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('RAG_SERVICE_URL é obrigatório em produção');
+}
+// Fallback apenas para desenvolvimento
+const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL || 'http://localhost:3003';
 
 /**
  * Fonte de documento retornada pelo RAG
@@ -49,7 +55,7 @@ async function fetchContextInternal(
   limit = 5,
   threshold = 0.7
 ): Promise<RAGContextResponse> {
-  const response = await fetch(`${RAG_SERVICE_URL}/api/rag/context`, {
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/context`, {
     method: 'POST',
     headers: { 
       'Content-Type': 'application/json',
@@ -140,7 +146,7 @@ export async function buscarContextoRAG(
  */
 export async function verificarDisponibilidadeRAG(): Promise<boolean> {
   try {
-    const response = await fetch(`${RAG_SERVICE_URL}/api/rag/health`, {
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/rag/health`, {
       method: 'GET',
       signal: AbortSignal.timeout(5000),
     });
@@ -217,7 +223,7 @@ export async function uploadMediaToRAG(
     const startTime = Date.now();
     
     // Usar endpoint JSON dedicado para uploads base64
-    const response = await fetch(`${RAG_SERVICE_URL}/api/media/upload/json`, {
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/media/upload/json`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -272,7 +278,7 @@ export async function getMediaStatus(
   tenantId: string,
 ): Promise<MediaUploadResult | null> {
   try {
-    const response = await fetch(`${RAG_SERVICE_URL}/api/media/${uploadId}`, {
+    const response = await fetch(`${RAG_SERVICE_URL_FINAL}/api/media/${uploadId}`, {
       method: 'GET',
       headers: {
         'X-Tenant-Id': tenantId,

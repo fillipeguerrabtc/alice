@@ -184,7 +184,7 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.16 - 05 de Dezembro de 2025*
+*Versão: 3.17 - 09 de Dezembro de 2025*
 *Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

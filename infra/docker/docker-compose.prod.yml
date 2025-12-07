@@ -1058,7 +1058,13 @@ services:
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
-    command: ["bash", "-c", "bench set-config -g db_host erpnext-mariadb && bench set-config -g db_port 3306 && bench set-config -g redis_cache redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379 && bench set-config -g redis_queue redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379"]
+    # REGRA 6 + Security: Senhas Redis escapadas corretamente para prevenir shell injection
+    # Aspas duplas ao redor das URLs Redis protegem contra interpretação de caracteres especiais
+    # NOTA: Se REDIS_CACHE_PASSWORD ou REDIS_QUEUE_PASSWORD contiverem caracteres especiais
+    # (ex: $, &, ;, ", '), eles devem ser URL-encoded antes de serem definidos como secrets
+    # Docker Compose expande ${VAR} antes de executar o comando, então aspas duplas protegem
+    # a URL completa de interpretação pelo shell bash
+    command: ["bash", "-c", "bench set-config -g db_host erpnext-mariadb && bench set-config -g db_port 3306 && bench set-config -g redis_cache \"redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379\" && bench set-config -g redis_queue \"redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379\""]
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root

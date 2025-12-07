@@ -865,7 +865,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 05 de Dezembro de 2025*
+*Documento atualizado em: 09 de Dezembro de 2025*
 *Versão: 6.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*

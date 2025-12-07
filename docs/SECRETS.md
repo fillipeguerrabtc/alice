@@ -198,7 +198,7 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 2025-12-07
+> **Status atualizado em:** 2025-12-09
 > **Todas as secrets pré-deploy estão ✅ configuradas no GitHub Actions Secrets**
 
 ### Infraestrutura

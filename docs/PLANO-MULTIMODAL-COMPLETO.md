@@ -2,8 +2,8 @@
 ## Alice - IA Autônoma Multimodal Universal
 
 **Autor:** Fillipe Guerra  
-**Data:** 04 de Dezembro de 2025  
-**Versão:** 3.0 (Final)
+**Data:** 09 de Dezembro de 2025  
+**Versão:** 3.1 (Final)
 
 ---
 

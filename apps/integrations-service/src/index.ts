@@ -1761,7 +1761,13 @@ app.get('/api/integrations/wise/status', (_req: Request, res: Response) => {
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
-const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL || 'http://localhost:3002';
+// REGRA 6: Sem fallbacks localhost em produção - variável DEVE estar definida
+const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL;
+if (!CHAT_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('CHAT_SERVICE_URL é obrigatório em produção');
+}
+// Fallback apenas para desenvolvimento
+const CHAT_SERVICE_URL_FINAL = CHAT_SERVICE_URL || 'http://localhost:3002';
 
 /**
  * Valida assinatura do webhook Twilio
@@ -1911,7 +1917,7 @@ async function processMessageWithLLM(
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s para LLM processing
 
   try {
-    const response = await fetch(`${CHAT_SERVICE_URL}/api/chat/message`, {
+    const response = await fetch(`${CHAT_SERVICE_URL_FINAL}/api/chat/message`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -2118,7 +2124,7 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
       const notifyController = new AbortController();
       const notifyTimeoutId = setTimeout(() => notifyController.abort(), 5000);
       try {
-        await fetch(`${CHAT_SERVICE_URL}/api/chat/notify-agent`, {
+        await fetch(`${CHAT_SERVICE_URL_FINAL}/api/chat/notify-agent`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

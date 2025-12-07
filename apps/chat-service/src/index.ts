@@ -89,8 +89,13 @@ const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/pu
 const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
-// Porta 3005 é padrão do integrations-service (ver server/index-dev.ts)
-const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL || 'http://localhost:3005';
+// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
+const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
+if (!INTEGRATIONS_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório em produção');
+}
+// Fallback apenas para desenvolvimento (server/index-dev.ts)
+const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL || 'http://localhost:3005';
 
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
@@ -894,7 +899,7 @@ async function sendWhatsAppMessageInternal(
       }, 'Chamada cross-service sem autenticação HMAC em produção');
     }
     
-    const response = await fetch(`${INTEGRATIONS_SERVICE_URL}/api/integrations/twilio/send`, {
+    const response = await fetch(`${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/twilio/send`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
