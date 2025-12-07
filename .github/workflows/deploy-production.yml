@@ -398,6 +398,19 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-api-gateway:cache,mode=max
           platforms: linux/amd64
 
+      - name: Build e Push - pgBackRest (Backup Enterprise)
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
+        with:
+          context: ./infra/backup
+          file: ./infra/backup/Dockerfile.pgbackrest
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-pgbackrest:latest
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-pgbackrest:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-pgbackrest:cache,mode=max
+          platforms: linux/amd64
+
   # ===========================================================================
   # Job 4: Container Image Security Scan (Trivy)
   # A1 Code Review: Trivy image scan para vulnerabilidades em containers
@@ -466,6 +479,19 @@ jobs:
           output: 'trivy-frontend.sarif'
           limit-severities-for-sarif: true
 
+      - name: Scan pgBackRest Image
+        id: scan-pgbackrest
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
+        continue-on-error: true
+        with:
+          scan-type: 'image'
+          image-ref: '${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          format: 'sarif'
+          output: 'trivy-pgbackrest.sarif'
+          limit-severities-for-sarif: true
+
       # Garantir que arquivos SARIF existam para upload (fallback com marcador de falha)
       - name: Ensure SARIF files exist
         if: always()
@@ -473,7 +499,7 @@ jobs:
           # Coletar todas as falhas antes de decidir (não usar set -e)
           ERRORS=0
           
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-pgbackrest.sarif; do
             if [ ! -f "$f" ]; then
               # Marcador especial para indicar que scan falhou (não apenas sem vulnerabilidades)
               # SARIF mínimo válido para evitar erros de parsing (usando printf para compatibilidade)
@@ -566,9 +592,17 @@ jobs:
           sarif_file: 'trivy-frontend.sarif'
           category: 'trivy-frontend-image'
 
+      - name: Upload Trivy pgBackRest scan results
+        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
+        with:
+          sarif_file: 'trivy-pgbackrest.sarif'
+          category: 'trivy-pgbackrest-image'
+
       # CRÍTICO: Salvar SARIFs como artifacts para debug (sempre, independente de Code Scanning)
+      # SHA: actions/upload-artifact@v4.6.0 (2024-12-18)
       - name: Upload Trivy results as artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         if: always()
         with:
           name: trivy-image-scans
@@ -576,6 +610,7 @@ jobs:
             trivy-auth.sarif
             trivy-chat.sarif
             trivy-frontend.sarif
+            trivy-pgbackrest.sarif
           retention-days: 30
 
       # REGRA 6: Verificar se scans executaram E se há vulnerabilidades CRITICAL/HIGH
@@ -585,6 +620,7 @@ jobs:
           SCAN_AUTH_OUTCOME: ${{ steps.scan-auth.outcome }}
           SCAN_CHAT_OUTCOME: ${{ steps.scan-chat.outcome }}
           SCAN_FRONTEND_OUTCOME: ${{ steps.scan-frontend.outcome }}
+          SCAN_PGBACKREST_OUTCOME: ${{ steps.scan-pgbackrest.outcome }}
         run: |
           echo "=============================================="
           echo "VERIFICANDO RESULTADOS DOS SCANS TRIVY"
@@ -598,11 +634,12 @@ jobs:
           echo "  - Auth: $SCAN_AUTH_OUTCOME"
           echo "  - Chat: $SCAN_CHAT_OUTCOME"
           echo "  - Frontend: $SCAN_FRONTEND_OUTCOME"
+          echo "  - pgBackRest: $SCAN_PGBACKREST_OUTCOME"
           
           # Verificar se todos os SARIFs existem (falha parcial = erro crítico)
           echo ""
           echo "📁 Verificando existência dos arquivos SARIF..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-pgbackrest.sarif; do
             if [ ! -f "$f" ]; then
               echo "❌ ERRO CRÍTICO: Arquivo SARIF não existe: $f"
               echo "O step 'Ensure SARIF files exist' pode ter falhado parcialmente."
@@ -613,7 +650,7 @@ jobs:
           # Se scan falhou e SARIF tem marcador de falha, é erro crítico
           echo ""
           echo "🔍 Verificando marcadores de falha..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-pgbackrest.sarif; do
             if [ -f "$f" ]; then
               if grep -q '"_scanFailed":true' "$f" 2>/dev/null; then
                 echo "❌ ERRO: Scan não executou corretamente: $f"
@@ -625,7 +662,7 @@ jobs:
           # Verificar vulnerabilidades CRITICAL/HIGH nos SARIFs
           echo ""
           echo "🔍 Verificando vulnerabilidades CRITICAL/HIGH..."
-          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif; do
+          for f in trivy-auth.sarif trivy-chat.sarif trivy-frontend.sarif trivy-pgbackrest.sarif; do
             if [ -f "$f" ]; then
               # Com limit-severities-for-sarif, apenas CRITICAL/HIGH geram "level": "error"
               if grep -q '"level": "error"' "$f" 2>/dev/null; then
