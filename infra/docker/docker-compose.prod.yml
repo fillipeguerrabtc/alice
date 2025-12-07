@@ -1547,6 +1547,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=64M
+      # Spool directory necessário para archive-async=y (operações assíncronas de arquivamento)
+      # pgBackRest precisa de escrita neste diretório para status files e queue de arquivamento
+      - /var/spool/pgbackrest:mode=1777,size=256M
     environment:
       # Stanza name (deve corresponder ao nome no pgbackrest.conf e entrypoint.sh)
       PGBACKREST_STANZA: alice_prod
