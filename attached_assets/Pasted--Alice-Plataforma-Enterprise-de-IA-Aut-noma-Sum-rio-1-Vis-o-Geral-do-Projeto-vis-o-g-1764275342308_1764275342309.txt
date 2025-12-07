@@ -298,7 +298,7 @@ O sistema de handover/takeover (511 linhas em `apps/chat-service/src/conversatio
 | `HETZNER_VM_USER` | Deploy | Usuário SSH do servidor |
 | `OAUTH_GITHUB_CLIENT_ID` | OAuth | Client ID do GitHub OAuth |
 | `OAUTH_GITHUB_CLIENT_SECRET` | OAuth | Client Secret do GitHub OAuth |
-| `PGPASSWORD` | PostgreSQL | Senha do banco de dados Alice |
+| `POSTGRES_PASSWORD` | PostgreSQL | Senha do banco de dados Alice |
 | `RESEND_API_KEY` | Email | API key do Resend para emails transacionais |
 | `SALAD_API_KEY` | LLM | API key da Salad Cloud |
 | `SALAD_ORGANIZATION_ID` | LLM | ID da organização na Salad Cloud |
@@ -306,6 +306,9 @@ O sistema de handover/takeover (511 linhas em `apps/chat-service/src/conversatio
 | `STRIPE_PUBLISHABLE_KEY` | Pagamentos | Chave pública do Stripe Portugal |
 | `STRIPE_SECRET_KEY` | Pagamentos | Chave secreta do Stripe Portugal |
 | `STRIPE_WEBHOOK_SECRET` | Pagamentos | Secret para validar webhooks Stripe |
+| `STRIPE_WEBHOOK_BASE_URL` | Pagamentos | Base URL para webhooks Stripe |
+| `BACKUP_CIPHER_PASS` | Backup | Senha para criptografia AES-256 dos backups |
+| `WISE_SANDBOX` | Pagamentos | Flag para usar sandbox do Wise |
 | `TWILIO_ACCOUNT_SID` | WhatsApp | Account SID do Twilio |
 | `TWILIO_AUTH_TOKEN` | WhatsApp | Auth Token do Twilio |
 | `TWILIO_WHATSAPP_NUMBER` | WhatsApp | Número do WhatsApp Business |
@@ -409,4 +412,6 @@ Exportados no `packages/database/src/index.ts`:
 ---
 
 Documento em Português Brasileiro
-Versão 5.4 - Novembro 2025
+Versão 5.5 - Dezembro 2025
+Autor: Fillipe Guerra
+Data: 2025-12-07

@@ -704,7 +704,7 @@ jobs:
           
           # PostgreSQL Alice
           POSTGRES_USER=alice
-          POSTGRES_PASSWORD=${{ secrets.PGPASSWORD }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
           POSTGRES_DB=alice_prod
           
           # Redis ERPNext (ACL habilitado - GAP-ERPNEXT-001)
@@ -731,6 +731,7 @@ jobs:
           STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          STRIPE_WEBHOOK_BASE_URL=${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
           
           # Twilio
           TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
@@ -784,7 +785,7 @@ jobs:
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
-          PGPASSWORD: ${{ secrets.PGPASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
           DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
@@ -795,7 +796,7 @@ jobs:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,PGPASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR
+          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR
           script: |
             set -e
             
