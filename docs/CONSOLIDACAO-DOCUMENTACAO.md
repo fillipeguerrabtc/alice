@@ -29,22 +29,22 @@
 
 **Justificativa:** Escopos diferentes - um foca em gaps resolvidos, outro em roadmap futuro.
 
-### Documentos Depreciados
+### Documentos Removidos (Consolidados)
 
 | Documento | Status | Ação |
 |-----------|--------|------|
-| `docs/CODE-REVIEW-COMPLETA.md` | ⚠️ Depreciado | Marcado como depreciado, consolidado em `CODE-REVIEW-ENTERPRISE-COMPLETA.md` |
+| `docs/CODE-REVIEW-COMPLETA.md` | ❌ Removido | Consolidado em `CODE-REVIEW-ENTERPRISE-COMPLETA.md` |
+| `docs/PLANO-REVIEW-COMPLETA-ENTERPRISE.md` | ❌ Removido | Plano de execução obsoleto, resultado final em `CODE-REVIEW-ENTERPRISE-COMPLETA.md` |
 
-**Ação:** Documento mantido com nota de depreciação para referência histórica.
+**Ação:** Documentos removidos para evitar fragmentação e confusão.
 
 ---
 
 ## Resumo de Consolidação
 
-**Total de Documentos:** 11  
-**Documentos Mantidos:** 11  
-**Documentos Depreciados:** 1 (com nota)  
-**Documentos Removidos:** 0  
+**Total de Documentos:** 10  
+**Documentos Mantidos:** 10  
+**Documentos Removidos:** 2  
 
 **Conclusão:** Documentação está bem organizada, sem redundâncias críticas. Todos os documentos têm propósito específico.
 
