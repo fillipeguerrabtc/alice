@@ -307,7 +307,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-alice}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB:-alice_prod}
-      PGDATA: /var/lib/postgresql/data/pgdata
+      # PGDATA padrão do PostgreSQL: /var/lib/postgresql/data (não usar subdiretório /pgdata)
+      PGDATA: /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
@@ -1568,7 +1569,8 @@ services:
       PGBACKREST_PG1_PORT: "5432"
       PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
       # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
-      PGBACKREST_DB_PATH: /var/lib/postgresql/data/pgdata
+      # PostgreSQL usa /var/lib/postgresql/data diretamente (padrão, não subdiretório /pgdata)
+      PGBACKREST_DB_PATH: /var/lib/postgresql/data
       # Repositório de backup (caminho DENTRO do container, não do host)
       # O volume /opt/alice/backups/postgresql do host é montado em /var/lib/pgbackrest no container
       PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
