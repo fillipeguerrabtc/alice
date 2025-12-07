@@ -34,7 +34,7 @@ RUN mkdir -p /var/lib/pgbackrest \
 # Copiar configuração
 COPY pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 
-# Copiar scripts de automação
+# Copiar scripts de automação (inclui healthcheck.sh)
 COPY scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
@@ -50,7 +50,9 @@ USER pgbackrest
 
 # Healthcheck
 # NOTA: Docker não faz substituição de variáveis de ambiente em runtime no HEALTHCHECK
-# O healthcheck usa valor fixo alice_prod (padrão) - será sobrescrito pelo docker-compose healthcheck
+# O healthcheck no Dockerfile usa valor fixo alice_prod (padrão)
+# O docker-compose.prod.yml sobrescreve este healthcheck com um que usa PGBACKREST_STANZA
+# CORREÇÃO BUG #2: Healthcheck do docker-compose agora usa variável de ambiente corretamente
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD pgbackrest info --stanza=alice_prod --output=json || exit 1
 

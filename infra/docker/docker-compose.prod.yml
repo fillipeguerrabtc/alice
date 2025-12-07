@@ -1605,7 +1605,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "pgbackrest info --stanza=alice_prod --output=json || exit 1"]
+      # CORREÇÃO BUG #2: Usar variável de ambiente PGBACKREST_STANZA (default: alice_prod)
+      # Usa script wrapper que expande corretamente a variável de ambiente
+      test: ["CMD-SHELL", "/usr/local/bin/healthcheck.sh || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

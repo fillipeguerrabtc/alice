@@ -3835,11 +3835,14 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
     // Se rating >= 4, coletar dados para treinamento (GAP CRÍTICO #1)
     if (finalRating >= 4 && message.conversationId && messageTenantId) {
       try {
-        // Buscar mensagem do usuário anterior (se houver) e resposta do assistente
+        // Buscar mensagens da conversa em torno da mensagem avaliada
+        // CORREÇÃO BUG #1: Buscar mensagens próximas à mensagem avaliada, não apenas últimas 10
+        // Isso garante que encontramos o par user/assistant correto mesmo se a mensagem for antiga
+        const messageTimestamp = new Date(message.criadoEm);
         const conversationMessages = await db.query.messages.findMany({
           where: eq(schema.messages.conversationId, message.conversationId),
           orderBy: [desc(schema.messages.criadoEm)],
-          limit: 10, // Buscar últimas 10 mensagens para contexto
+          limit: 50, // Buscar mais mensagens para garantir que encontramos o par correto
         });
         
         // Encontrar par user/assistant mais recente
@@ -3849,12 +3852,20 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
         // Se a mensagem avaliada é do assistente, buscar mensagem do usuário anterior
         if (!message.isFromUser) {
           assistantMessage = message;
-          // Buscar última mensagem do usuário antes desta
-          userMessage = conversationMessages.find(m => m.isFromUser && new Date(m.criadoEm) < new Date(message.criadoEm));
+          // Buscar última mensagem do usuário antes desta (ordenar por timestamp)
+          // CORREÇÃO BUG #1: Buscar em todas as mensagens, não apenas nas últimas 10
+          const userMessages = conversationMessages
+            .filter(m => m.isFromUser && new Date(m.criadoEm) < messageTimestamp)
+            .sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+          userMessage = userMessages[0]; // Mensagem do usuário mais recente antes da resposta
         } else {
           // Se é do usuário, buscar resposta do assistente seguinte
           userMessage = message;
-          assistantMessage = conversationMessages.find(m => !m.isFromUser && new Date(m.criadoEm) > new Date(message.criadoEm));
+          // CORREÇÃO BUG #1: Buscar em todas as mensagens, não apenas nas últimas 10
+          const assistantMessages = conversationMessages
+            .filter(m => !m.isFromUser && new Date(m.criadoEm) > messageTimestamp)
+            .sort((a, b) => new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime());
+          assistantMessage = assistantMessages[0]; // Resposta do assistente mais próxima após a mensagem do usuário
         }
         
         // Se temos par user/assistant, coletar para treinamento
