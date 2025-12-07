@@ -2,9 +2,9 @@
 
 **Autor:** Fillipe Guerra
 
-## Visão Geral da Arquitetura - 27 Containers em Produção
+## Visão Geral da Arquitetura - 35 Containers em Produção
 
-A plataforma Alice é composta por **27 containers** organizados em 4 categorias:
+A plataforma Alice é composta por **35 containers** organizados em 6 categorias:
 
 ### Categoria 1: Infraestrutura Core (5 serviços)
 
@@ -85,7 +85,7 @@ A plataforma Alice é composta por **27 containers** organizados em 4 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 27 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 35 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -868,7 +868,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Documento atualizado em: 09 de Dezembro de 2025*
 *Versão: 6.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

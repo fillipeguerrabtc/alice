@@ -293,6 +293,40 @@ export default function Chat() {
     rateImage.mutate({ imageId, score });
   }, [rateImage]);
 
+  // GAP CRÍTICO #1: Handler para feedback de mensagens de texto
+  // Alice MULTIMODAL: coleta feedback de texto, imagens, áudio, vídeo
+  const rateMessage = useMutation({
+    mutationFn: async ({ messageId, isPositive }: { messageId: string; isPositive: boolean }) => {
+      // Converter ThumbsUp/ThumbsDown para rating (5 para positivo, 1 para negativo)
+      const rating = isPositive ? 5 : 1;
+      await apiRequest('POST', `/api/chat/messages/${messageId}/rate`, { 
+        rating,
+        isPositive,
+      });
+    },
+    onSuccess: (_, { messageId, isPositive }) => {
+      setMessages((prev) =>
+        prev.map((msg) => {
+          if (msg.id === messageId) {
+            return {
+              ...msg,
+              metadata: {
+                ...msg.metadata,
+                rating: isPositive ? 5 : 1,
+                feedback: isPositive ? 'positive' : 'negative',
+              },
+            };
+          }
+          return msg;
+        })
+      );
+    },
+  });
+
+  const handleFeedback = useCallback((messageId: string, isPositive: boolean) => {
+    rateMessage.mutate({ messageId, isPositive });
+  }, [rateMessage]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && pendingMedia.length === 0) || isStreaming) return;
@@ -422,6 +456,7 @@ export default function Chat() {
                     isStreaming={isStreaming}
                     isLast={index === messages.length - 1}
                     onRateImage={handleRateImage}
+                    onFeedback={handleFeedback}
                   />
                 ))}
               </motion.div>

@@ -13,7 +13,7 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 28 total (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs + 1 pgbackrest)
+# CONTAINERS: 35 total (5 infra + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 #
 # Autor: Fillipe Guerra
@@ -519,6 +519,7 @@ services:
       # Comunicação inter-service (URLs Docker DNS)
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
+      TRAINING_SERVICE_URL: http://alice-training:3004
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       REDIS_URL: redis://alice-redis:6379
     depends_on:
@@ -710,6 +711,7 @@ services:
       WISE_SANDBOX: ${WISE_SANDBOX:-false}
       # Inter-service communication
       CHAT_SERVICE_URL: http://alice-chat:3002
+      TRAINING_SERVICE_URL: http://alice-training:3004
     depends_on:
       postgres:
         condition: service_healthy

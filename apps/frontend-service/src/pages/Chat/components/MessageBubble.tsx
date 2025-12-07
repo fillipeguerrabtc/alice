@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils';
 import { Message } from './types';
 import { InlineImage } from './InlineImage';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
+import { MessageActions } from './MessageActions';
 // AudioPlayer e VideoPlayer disponíveis via InlineMediaAttachment quando necessário
 
 const messageVariants = {
@@ -41,6 +42,8 @@ export function MessageBubble({
   isStreaming, 
   isLast,
   onRateImage,
+  onFeedback,
+  onRegenerate,
 }: MessageBubbleProps) {
   const [copied, setCopied] = useState(false);
 
@@ -113,6 +116,16 @@ export function MessageBubble({
           'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity',
           isUser ? 'flex-row-reverse' : ''
         )}>
+          {!isUser && (
+            <MessageActions
+              content={message.content}
+              messageId={message.id}
+              isAssistant={true}
+              onFeedback={onFeedback}
+              onRegenerate={onRegenerate}
+            />
+          )}
+          
           <Tooltip>
             <TooltipTrigger asChild>
               <Button

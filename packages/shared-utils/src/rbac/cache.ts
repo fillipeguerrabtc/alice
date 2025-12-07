@@ -22,8 +22,7 @@
  *    ou permissionCache.invalidateTenant() em mudanças de permissão.
  * 
  * @see CLAUDE.md - OIDC Provider e 6-level RBAC
- * @todo Implementar requirePermission() helper em packages/shared-utils/rbac
- * @todo Migrar verificações inline de roles nos microsserviços
+ * @see packages/shared-utils/src/rbac/middleware.ts - requirePermission() já implementado
  */
 
 import { createLogger } from '../logger.js';

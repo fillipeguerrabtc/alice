@@ -97,6 +97,15 @@ if (!INTEGRATIONS_SERVICE_URL && process.env.NODE_ENV === 'production') {
 // Fallback apenas para desenvolvimento (server/index-dev.ts)
 const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL || 'http://localhost:3005';
 
+// URL do Training Service para coleta de dados de treinamento (Regra 15 - Microsserviços)
+// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
+const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
+if (!TRAINING_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório em produção');
+}
+// Fallback apenas para desenvolvimento (server/index-dev.ts)
+const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL || 'http://localhost:3004';
+
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices
 const getTenantIdFromRequest = (req: Request): string | undefined => {
@@ -1367,6 +1376,12 @@ const imageScoreSchema = z.object({
 
 const imageApproveSchema = z.object({
   approved: z.boolean(),
+});
+
+// Schema para rating de mensagens de texto (GAP CRÍTICO #1 - Sistema de Aprendizado)
+const messageRatingSchema = z.object({
+  rating: z.number().int().min(1).max(5),
+  isPositive: z.boolean().optional(), // ThumbsUp/ThumbsDown convertido para rating
 });
 
 app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
@@ -3736,6 +3751,178 @@ app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRe
     res.json({ image });
   } catch (error) {
     logger.error({ error, imageId: id }, 'Erro ao buscar imagem');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
+// MESSAGE RATING ROUTES (GAP CRÍTICO #1 - Sistema de Aprendizado)
+// Coleta dados de treinamento quando usuários avaliam mensagens de texto
+// Alice é MULTIMODAL: coleta dados de texto, imagens, áudio, vídeo
+// ============================================================================
+
+/**
+ * Endpoint para rating de mensagens de texto
+ * Quando rating >= 4, coleta dados para treinamento via training-service
+ * 
+ * REGRA 6: Enterprise-grade - integração real com training-service
+ * Alice MULTIMODAL: suporta texto, imagens, áudio, vídeo para aprendizado
+ */
+app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+  // OWASP API3: Validação Zod obrigatória de parâmetros de rota
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de mensagem inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  
+  // SEGURANÇA: Usar req.tenantId populado pelo middleware
+  const tenantId = req.tenantId;
+  
+  // OWASP API3 - Validação Zod obrigatória
+  const parseResult = messageRatingSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Input inválido', details: parseResult.error.format() });
+  }
+  const { rating, isPositive } = parseResult.data;
+  
+  // Converter isPositive para rating se fornecido
+  const finalRating = isPositive !== undefined ? (isPositive ? 5 : 1) : rating;
+  
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Autenticação necessária' });
+  }
+  
+  try {
+    // Buscar mensagem e verificar tenant
+    const message = await db.query.messages.findFirst({
+      where: eq(schema.messages.id, id),
+      with: {
+        conversation: {
+          with: {
+            agent: {
+              with: {
+                namespace: true,
+              },
+            },
+          },
+        },
+      },
+    });
+    
+    if (!message) {
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    // Verificar se mensagem pertence ao tenant correto
+    const messageTenantId = message.conversation?.agent?.namespace?.tenantId;
+    if (!messageTenantId || messageTenantId !== tenantId) {
+      logger.warn({ messageId: id, requestedBy: tenantId, ownedBy: messageTenantId }, 'Tentativa de rating de mensagem de outro tenant');
+      return res.status(404).json({ error: 'Mensagem não encontrada' });
+    }
+    
+    // Salvar rating na mensagem (metadata)
+    await db.update(schema.messages)
+      .set({
+        metadata: {
+          ...(message.metadata as Record<string, unknown> || {}),
+          rating: finalRating,
+          ratedAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(schema.messages.id, id));
+    
+    // Se rating >= 4, coletar dados para treinamento (GAP CRÍTICO #1)
+    if (finalRating >= 4 && message.conversationId && messageTenantId) {
+      try {
+        // Buscar mensagem do usuário anterior (se houver) e resposta do assistente
+        const conversationMessages = await db.query.messages.findMany({
+          where: eq(schema.messages.conversationId, message.conversationId),
+          orderBy: [desc(schema.messages.criadoEm)],
+          limit: 10, // Buscar últimas 10 mensagens para contexto
+        });
+        
+        // Encontrar par user/assistant mais recente
+        let userMessage: typeof schema.messages.$inferSelect | undefined;
+        let assistantMessage: typeof schema.messages.$inferSelect | undefined;
+        
+        // Se a mensagem avaliada é do assistente, buscar mensagem do usuário anterior
+        if (!message.isFromUser) {
+          assistantMessage = message;
+          // Buscar última mensagem do usuário antes desta
+          userMessage = conversationMessages.find(m => m.isFromUser && new Date(m.criadoEm) < new Date(message.criadoEm));
+        } else {
+          // Se é do usuário, buscar resposta do assistente seguinte
+          userMessage = message;
+          assistantMessage = conversationMessages.find(m => !m.isFromUser && new Date(m.criadoEm) > new Date(message.criadoEm));
+        }
+        
+        // Se temos par user/assistant, coletar para treinamento
+        if (userMessage && assistantMessage && userMessage.conteudo && assistantMessage.conteudo) {
+          const namespaceId = message.conversation?.agent?.namespaceId;
+          
+          // Chamar training-service para coletar dados
+          // REGRA 6: Integração real com training-service (sem mocks)
+          // Alice MULTIMODAL: coleta dados de texto, imagens, áudio, vídeo para aprendizado
+          const internalHeaders = generateInternalAuthHeaders({
+            userId: req.user?.userId || '',
+            tenantId: messageTenantId,
+            role: req.user?.role || 'user',
+          });
+          
+          const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Internal-Signature': internalHeaders.signature,
+              'X-Internal-Timestamp': internalHeaders.timestamp,
+              'X-Internal-User-Id': req.user?.userId || '',
+              'X-Internal-Tenant-Id': messageTenantId,
+              'X-Internal-Role': req.user?.role || 'user',
+            },
+            body: JSON.stringify({
+              tenantId: messageTenantId,
+              namespaceId: namespaceId || undefined,
+              conversationId: message.conversationId,
+              source: 'chat', // Fonte: chat web
+              messages: [
+                { role: 'user', content: userMessage.conteudo },
+                { role: 'assistant', content: assistantMessage.conteudo },
+              ],
+              rating: finalRating,
+            }),
+          });
+          
+          if (!trainingResponse.ok) {
+            const errorText = await trainingResponse.text();
+            logger.error({ 
+              messageId: id, 
+              status: trainingResponse.status,
+              error: errorText,
+            }, 'Falha ao coletar dados de treinamento');
+          } else {
+            const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
+            logger.info({ 
+              messageId: id, 
+              trainingDataId: trainingData.trainingData?.id,
+              isDuplicate: trainingData.isDuplicate,
+              rating: finalRating,
+            }, 'Dados de treinamento coletados com sucesso');
+          }
+        }
+      } catch (trainingError) {
+        // Não falhar o endpoint se coleta de treinamento falhar (não crítico)
+        logger.error({ error: trainingError, messageId: id }, 'Erro ao coletar dados de treinamento (não crítico)');
+      }
+    }
+    
+    res.json({ 
+      message: 'Feedback registrado com sucesso',
+      rating: finalRating,
+      collectedForTraining: finalRating >= 4,
+    });
+  } catch (error) {
+    logger.error({ error, messageId: id }, 'Erro ao registrar feedback de mensagem');
     res.status(500).json({ error: 'Erro interno do servidor' });
   }
 });

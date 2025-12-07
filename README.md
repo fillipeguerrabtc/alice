@@ -88,9 +88,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 27 Containers em Produção
+### Arquitetura de Microsserviços - 35 Containers em Produção
 
-A plataforma Alice é composta por **27 containers** organizados em 4 categorias:
+A plataforma Alice é composta por **35 containers** organizados em 6 categorias:
 
 #### Categoria 1: Infraestrutura Core (5 serviços)
 
@@ -349,10 +349,10 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 27/27 containers | 100% |
-| **read_only: true** | 27/27 containers | 100% |
-| **security_opt: no-new-privileges** | 27/27 containers | 100% |
-| **Healthchecks** | 25/25 containers (init excluídos) | 100% |
+| **Resource Limits** | 35/35 containers | 100% |
+| **read_only: true** | 35/35 containers | 100% |
+| **security_opt: no-new-privileges** | 35/35 containers | 100% |
+| **Healthchecks** | 33/33 containers (init excluídos) | 100% |
 | **SHA256 Digests** | 10 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
 
@@ -383,7 +383,7 @@ Todos os 27 containers operam com filesystem read-only + tmpfs para escrita temp
 *Autor: Fillipe Guerra*
 *Versão 3.9.0 - 09 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

@@ -16,7 +16,7 @@
 - Documentação superficial
 
 **O que FALTOU:**
-- ❌ Análise completa dos 27 containers
+- ❌ Análise completa dos 35 containers
 - ❌ Verificação de integrações entre containers
 - ❌ Análise dos 3 macroblocos (Alice + ERPNext + Observability)
 - ❌ Verificação de autenticação centralizada
@@ -29,7 +29,7 @@
 ## 🎯 OBJETIVO
 
 Realizar uma **code review COMPLETA e ENTERPRISE** de:
-1. ✅ Todos os 27 containers e suas funcionalidades
+1. ✅ Todos os 35 containers e suas funcionalidades
 2. ✅ Todas as integrações entre containers
 3. ✅ Os 3 macroblocos independentes (Alice + ERPNext + Observability)
 4. ✅ Autenticação centralizada na Alice
@@ -44,7 +44,7 @@ Realizar uma **code review COMPLETA e ENTERPRISE** de:
 
 ## 📊 ESTRUTURA DA REVISÃO
 
-### FASE 1: Mapeamento Completo dos 27 Containers
+### FASE 1: Mapeamento Completo dos 35 Containers
 
 **Containers Identificados no docker-compose.prod.yml:**
 
@@ -79,11 +79,19 @@ Realizar uma **code review COMPLETA e ENTERPRISE** de:
 24. `erpnext-worker-short` - Worker Short
 25. `erpnext-worker-long` - Worker Long
 
-#### Observability Stack (2)
-26. `pgbackrest` - Backup PostgreSQL
-27. `vector` - Log Aggregator
+#### Observability Stack (6)
+28. `langfuse` - LLM observability e tracing
+29. `prometheus` - Métricas e scraping
+30. `grafana` - Dashboards e visualização
+31. `loki` - Agregação de logs
+32. `promtail` - Coleta de logs
+33. `jaeger` - Distributed tracing
 
-**Total:** 27 containers
+#### Backup e Logs (2)
+34. `alice-pgbackrest` - Backup PostgreSQL
+35. `vector` - Log Aggregator
+
+**Total:** 35 containers
 
 ---
 
@@ -204,7 +212,7 @@ Verificar cada fator:
 ## ⚠️ APROVAÇÃO NECESSÁRIA
 
 Este plano é extenso e requerirá análise profunda de:
-- **27 containers** e suas configurações
+- **35 containers** e suas configurações
 - **8 microsserviços Alice** (código completo)
 - **12 serviços ERPNext** (configurações)
 - **Todas as integrações** entre serviços

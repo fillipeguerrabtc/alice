@@ -15,6 +15,7 @@ import {
   createNotFoundHandler,
   requirePermission, 
   extractAuthContext,
+  generateInternalAuthHeaders,
   initFeatureFlags,
   createAlicePrometheus,
   initRbacPrometheusMetrics,
@@ -1769,6 +1770,16 @@ if (!CHAT_SERVICE_URL && process.env.NODE_ENV === 'production') {
 // Fallback apenas para desenvolvimento
 const CHAT_SERVICE_URL_FINAL = CHAT_SERVICE_URL || 'http://localhost:3002';
 
+// URL do Training Service para coleta de dados de treinamento (GAP CRÍTICO #2 - WhatsApp)
+// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
+// Alice MULTIMODAL: coleta dados de WhatsApp (texto, imagens, áudio, vídeo) para aprendizado
+const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
+if (!TRAINING_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório em produção');
+}
+// Fallback apenas para desenvolvimento
+const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL || 'http://localhost:3004';
+
 /**
  * Valida assinatura do webhook Twilio
  * Segue especificação oficial: https://www.twilio.com/docs/usage/security
@@ -2217,6 +2228,74 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
           conversationId: conversation.id,
           error: sendResult.error,
         }, 'Falha ao enviar resposta WhatsApp');
+      }
+
+      // GAP CRÍTICO #2: Coletar dados de treinamento para WhatsApp
+      // Alice MULTIMODAL: coleta dados de texto, imagens, áudio, vídeo do WhatsApp para aprendizado
+      // Rating inferido: se não houve escalação = positivo (5), se houve = negativo (1)
+      // REGRA 6: Enterprise-grade - integração real com training-service (sem mocks)
+      try {
+        const rating = chatResult.escalated ? 1 : 5; // Inferir rating baseado em escalação
+        
+        // Coletar dados apenas se rating >= 4 (positivo) ou se houve escalação (para aprendizado negativo)
+        if (rating >= 4 || chatResult.escalated) {
+          const namespaceId = conversation.agent?.namespaceId;
+          const tenantId = user.tenantId;
+          
+          if (tenantId) {
+            // Gerar headers de autenticação interna para training-service
+            const internalHeaders = generateInternalAuthHeaders({
+              userId: user.id,
+              tenantId: tenantId,
+              role: 'super_admin', // Service-to-service usa role privilegiado
+            });
+            
+            // Chamar training-service para coletar dados
+            const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Internal-Signature': internalHeaders.signature,
+                'X-Internal-Timestamp': internalHeaders.timestamp,
+                'X-Internal-User-Id': user.id,
+                'X-Internal-Tenant-Id': tenantId,
+                'X-Internal-Role': 'super_admin',
+              },
+              body: JSON.stringify({
+                tenantId: tenantId,
+                namespaceId: namespaceId || undefined,
+                conversationId: conversation.id,
+                source: 'whatsapp', // Fonte: WhatsApp
+                messages: [
+                  { role: 'user', content: Body },
+                  { role: 'assistant', content: chatResult.response || '' },
+                ],
+                rating: rating,
+              }),
+            });
+            
+            if (!trainingResponse.ok) {
+              const errorText = await trainingResponse.text();
+              logger.error({ 
+                conversationId: conversation.id, 
+                status: trainingResponse.status,
+                error: errorText,
+              }, 'Falha ao coletar dados de treinamento do WhatsApp');
+            } else {
+              const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
+              logger.info({ 
+                conversationId: conversation.id, 
+                trainingDataId: trainingData.trainingData?.id,
+                isDuplicate: trainingData.isDuplicate,
+                rating: rating,
+                source: 'whatsapp',
+              }, 'Dados de treinamento do WhatsApp coletados com sucesso');
+            }
+          }
+        }
+      } catch (trainingError) {
+        // Não falhar o webhook se coleta de treinamento falhar (não crítico)
+        logger.error({ error: trainingError, conversationId: conversation.id }, 'Erro ao coletar dados de treinamento do WhatsApp (não crítico)');
       }
     }
 

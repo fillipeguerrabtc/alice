@@ -553,9 +553,9 @@ Esta code review completa foi realizada seguindo rigorosamente as **17 Regras Fu
 **Status:** ✅ **Enterprise-Grade**
 
 **Verificações:**
-- ✅ 27 containers com `security_opt: no-new-privileges`
-- ✅ 27 containers com `read_only: true` + tmpfs
-- ✅ 27 containers com resource limits
+- ✅ 35 containers com `security_opt: no-new-privileges`
+- ✅ 35 containers com `read_only: true` + tmpfs
+- ✅ 35 containers com resource limits
 - ✅ 18 imagens externas com SHA256 digests
 - ✅ 24 containers com healthchecks
 - ✅ Volumes com `:rw` explícito onde necessário (corrigido)

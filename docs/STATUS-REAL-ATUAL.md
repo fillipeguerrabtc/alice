@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 09 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte  
-> **Versão:** 3.1 - PLATAFORMA 100% ENTERPRISE COMPLETA
+> **Versão:** 3.2 - PLATAFORMA 100% ENTERPRISE COMPLETA
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 27 (produção) |
+| **Total de Containers** | 35 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -344,7 +344,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (27 containers)
+## 🐳 INFRAESTRUTURA DOCKER (35 containers)
 
 ### Core Infra (5)
 
@@ -401,12 +401,12 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 27/27 containers |
-| read_only: true | ✅ | 27/27 containers |
-| resource limits | ✅ | 27/27 containers |
-| platform: linux/amd64 | ✅ | 27/27 containers |
+| no-new-privileges | ✅ | 35/35 containers |
+| read_only: true | ✅ | 35/35 containers |
+| resource limits | ✅ | 35/35 containers |
+| platform: linux/amd64 | ✅ | 35/35 containers |
 | SHA256 digests | ✅ | 9 imagens externas |
-| healthchecks | ✅ | 24/24 (init excluídos) |
+| healthchecks | ✅ | 33/33 (init excluídos) |
 
 ### Segurança Aplicação
 
@@ -478,7 +478,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ## 🔑 SECRETS DOCUMENTADOS
 
-### Por Categoria (Total: ~34, 27 configurados no GitHub)
+### Por Categoria (Total: ~38, 35 configurados no GitHub)
 
 | Categoria | Secrets |
 |-----------|---------|
@@ -657,7 +657,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 *Documento consolidado em 05/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.2 - Redis Alice Dedicado + Variáveis Inter-Service*
-*Total de Containers: 27 (5 infra + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 35 (5 infra + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 

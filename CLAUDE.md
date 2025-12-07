@@ -46,7 +46,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 27 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 35 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core (5 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache).
@@ -59,8 +59,9 @@ Alice employs a microservices architecture with 27 containerized services orches
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
     - **CLIP Inference**: Multimodal embeddings for images using CLIP ViT-L/14 (Python, PyTorch).
-- **ERPNext Stack**: Includes MariaDB, Redis, Frappe Bench services, and NGINX frontend for comprehensive ERP functionalities.
-- **Backup & Logs**: pgBackRest for PostgreSQL backups and Vector for log aggregation.
+- **ERPNext Stack (12 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services, NGINX frontend, WebSocket, Scheduler, and Workers for comprehensive ERP functionalities.
+- **Observability Stack (6 serviços)**: Langfuse (LLM observability), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing).
+- **Backup & Logs (2 serviços)**: pgBackRest for PostgreSQL backups and Vector for log aggregation.
 
 **Shared Packages (`packages/`):**
 - `config`: Centralized configurations.
@@ -167,11 +168,11 @@ alice/
 | `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 
 ## Security Hardening (Dezembro 2025)
-- **27 containers** = 100% com `security_opt: no-new-privileges`
-- **27 containers** = 100% com `read_only: true` + tmpfs
-- **27 containers** = 100% com resource limits
+- **35 containers** = 100% com `security_opt: no-new-privileges`
+- **35 containers** = 100% com `read_only: true` + tmpfs
+- **35 containers** = 100% com resource limits
 - **18 imagens externas** = 100% com SHA256 digests
-- **24 containers** = 100% com healthchecks (init excluídos)
+- **33 containers** = 100% com healthchecks (init excluídos)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
 - **OWASP API Top 10** = 9/10 mitigados
 
@@ -185,6 +186,6 @@ alice/
 ---
 *Autor: Fillipe Guerra*
 *Versão: 3.17 - 09 de Dezembro de 2025*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

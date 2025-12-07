@@ -261,5 +261,5 @@ Acessíveis em `/dashboard/analytics`:
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 1.6 - 09 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*
