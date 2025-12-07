@@ -1556,8 +1556,9 @@ services:
       PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
       # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
       PGBACKREST_DB_PATH: /var/lib/postgresql/data/pgdata
-      # Repositório de backup (volume local Hetzner)
-      PGBACKREST_REPO1_PATH: /opt/alice/backups/postgresql
+      # Repositório de backup (caminho DENTRO do container, não do host)
+      # O volume /opt/alice/backups/postgresql do host é montado em /var/lib/pgbackrest no container
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
       # Retenção de backups
       PGBACKREST_REPO1_RETENTION_FULL: 15
       PGBACKREST_REPO1_RETENTION_DIFF: 7
@@ -1579,7 +1580,8 @@ services:
       # Logs persistentes (volume Hetzner para troubleshooting) - rw explícito necessário com read_only: true
       - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
       # Configuração pgBackRest (read-only)
-      - ./infra/backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
+      # Caminho relativo: docker-compose está em infra/docker/, config está em infra/backup/
+      - ../backup/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro
     depends_on:
       postgres:
         condition: service_healthy
