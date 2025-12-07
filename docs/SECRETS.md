@@ -1,6 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
+**Data:** 2025-12-07
 
 ## Visão Geral
 
@@ -53,6 +54,7 @@ Estes são necessários para o deploy funcionar:
 | `GH_PAT` | Token GitHub | Personal Access Token com write:packages |
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
+| `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
 
 ### FASE 2: Autenticação (mínimo 1 provider)
 
@@ -97,6 +99,7 @@ Estes são necessários para o deploy funcionar:
 | `STRIPE_SECRET_KEY` | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
 | `STRIPE_PUBLISHABLE_KEY` | dashboard.stripe.com/apikeys |
 | `STRIPE_WEBHOOK_SECRET` | dashboard.stripe.com/webhooks |
+| `STRIPE_WEBHOOK_BASE_URL` | Base URL para webhooks (ex: `https://yesyoudeserve.duckdns.org`) |
 
 **Configuração de Webhook:**
 1. Stripe Dashboard → Developers → Webhooks → Add endpoint
@@ -116,13 +119,14 @@ Estes são necessários para o deploy funcionar:
 | `WISE_API_KEY` | [wise.com/settings](https://wise.com/settings) → API Tokens |
 | `WISE_PROFILE_ID` | URL: `wise.com/user/account/XXXXX` |
 | `WISE_WEBHOOK_SECRET` | wise.com/settings → Webhooks (opcional) |
+| `WISE_SANDBOX` | `true` para sandbox, `false` para produção |
 
 **Configuração:**
 1. Wise Business → Settings → API Tokens → Add new token
 2. Permissões: `Read balances`, `Read transfers`, `Create transfers`
 3. Profile ID está na URL quando você acessa sua conta
 
-**Nota:** Defina `WISE_SANDBOX=true` para usar API de testes.
+**Nota:** Use `WISE_SANDBOX=false` em produção.
 
 ### FASE 6: Comunicação (WhatsApp/SMS/Email)
 
@@ -194,7 +198,7 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 05 de Dezembro de 2025  
+> **Status atualizado em:** 2025-12-07
 > **Todas as secrets pré-deploy estão ✅ configuradas no GitHub Actions Secrets**
 
 ### Infraestrutura
@@ -205,7 +209,7 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_VM_USER` | ✅ |
 | `HETZNER_SSH_PRIVATE_KEY` | ✅ |
 | `GH_PAT` | ✅ |
-| `POSTGRES_PASSWORD` | ✅ (PGPASSWORD) |
+| `POSTGRES_PASSWORD` | ✅ |
 | `SESSION_SECRET` | ✅ |
 | `INTERNAL_API_SECRET` | ✅ |
 
@@ -232,6 +236,7 @@ Estes são necessários para o deploy funcionar:
 | `STRIPE_SECRET_KEY` | ✅ |
 | `STRIPE_PUBLISHABLE_KEY` | ✅ |
 | `STRIPE_WEBHOOK_SECRET` | ✅ |
+| `STRIPE_WEBHOOK_BASE_URL` | ✅ |
 
 ### Wise (Transferências)
 
@@ -240,6 +245,7 @@ Estes são necessários para o deploy funcionar:
 | `WISE_API_KEY` | ✅ |
 | `WISE_PROFILE_ID` | ✅ |
 | `WISE_WEBHOOK_SECRET` | ⏳ (gerar após deploy via Wise Dashboard) |
+| `WISE_SANDBOX` | ✅ |
 
 ### Comunicação
 
@@ -352,9 +358,9 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 05 de Dezembro de 2025*
-*Versão: 5.9 - 35 Secrets Verificados (32 pré-deploy + 3 pós-deploy)*
+*Documento atualizado em: 2025-12-07*
+*Versão: 6.0 - 38 Secrets Verificados (35 pré-deploy + 3 pós-deploy)*
 *Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
-*Total de Secrets: 35 (ACME_EMAIL, GRAFANA_ADMIN_PASSWORD, LANGFUSE_* incluídos)*
+*Total de Secrets: 38 (incluindo STRIPE_WEBHOOK_BASE_URL, WISE_SANDBOX, BACKUP_CIPHER_PASS)*
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
