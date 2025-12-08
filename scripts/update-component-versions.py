@@ -78,22 +78,19 @@ COMPONENT_CONFIG = {
         "version_prefix": "v15.",
         "services": [
             "erpnext-backend",
-            "erpnext-scheduler",
         ],
     },
     "erpnext-worker": {
         "docker_image": "frappe/erpnext-worker",
         "version_prefix": "v15.",
         "services": [
-            "erpnext-worker-default-1",
+            "erpnext-worker-default",
             "erpnext-worker-default-2",
-            "erpnext-worker-default-3",
-            "erpnext-worker-short-1",
+            "erpnext-worker-short",
             "erpnext-worker-short-2",
-            "erpnext-worker-short-3",
-            "erpnext-worker-long-1",
+            "erpnext-worker-long",
             "erpnext-worker-long-2",
-            "erpnext-worker-long-3",
+            "erpnext-scheduler",  # scheduler também usa frappe/erpnext-worker
         ],
     },
     "erpnext-nginx": {
