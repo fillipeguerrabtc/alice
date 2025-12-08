@@ -365,3 +365,5 @@ Todos os endpoints têm validação Zod, circuit breakers, error handling adequa
 *Status: ✅ AUTH SERVICE VERIFICADO*
 
 
+
+
