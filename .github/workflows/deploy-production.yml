@@ -759,13 +759,36 @@ jobs:
             echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
             exit 1
           fi
-          GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET:-${ADMIN_USER}}"
-          GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET:-${ADMIN_PWD}}"
-          ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET:-${ADMIN_PWD}}"
+          # REGRA 14: Fallback seguro para secrets opcionais (GitHub Actions define ausentes como empty strings)
+          # Usar verificação explícita [ -z ] ao invés de ${VAR:-default} para garantir fallback correto
+          if [ -z "${GRAFANA_ADMIN_USER_SECRET}" ]; then
+            GRAFANA_ADMIN_USER="${ADMIN_USER}"
+          else
+            GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET}"
+          fi
+          if [ -z "${GRAFANA_ADMIN_PASSWORD_SECRET}" ]; then
+            GRAFANA_ADMIN_PASSWORD="${ADMIN_PWD}"
+          else
+            GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET}"
+          fi
+          if [ -z "${ERPNEXT_ADMIN_PASSWORD_SECRET}" ]; then
+            ERPNEXT_ADMIN_PASSWORD="${ADMIN_PWD}"
+          else
+            ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET}"
+          fi
           # Secrets opcionais (com fallback seguro)
-          STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET:-https://yesyoudeserve.duckdns.org}"
+          # REGRA 14: Verificação explícita para fallback correto (GitHub Actions define ausentes como empty strings)
+          if [ -z "${STRIPE_WEBHOOK_BASE_URL_SECRET}" ]; then
+            STRIPE_WEBHOOK_BASE_URL="https://yesyoudeserve.duckdns.org"
+          else
+            STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET}"
+          fi
           WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET:-}"
-          WISE_SANDBOX="${WISE_SANDBOX_SECRET:-false}"
+          if [ -z "${WISE_SANDBOX_SECRET}" ]; then
+            WISE_SANDBOX="false"
+          else
+            WISE_SANDBOX="${WISE_SANDBOX_SECRET}"
+          fi
           ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET:-}"
           ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET:-}"
           cat > .env.prod << EOF
