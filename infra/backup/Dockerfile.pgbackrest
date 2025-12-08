@@ -12,15 +12,19 @@
 # REGRA 16: Usar SHA256 digest para segurança (imagens externas)
 FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300 AS builder
 
-# Versão do pgBackRest
-ENV PGBACKREST_VERSION=2.57
+# Versão do pgBackRest (semantic versioning completo)
+# REGRA 11: pgBackRest usa versionamento semântico completo nos branches (ex: 2.57.0)
+ENV PGBACKREST_VERSION=2.57.0
 
 # Instalar dependências de build
+# REGRA 11: Alpine 3.15+ separou pacotes PostgreSQL
+# libpq-dev é necessário para aplicações que linkam contra libpq (pgBackRest)
+# postgresql-dev é apenas para construir extensões PostgreSQL
 RUN apk add --no-cache \
     meson \
     gcc \
     musl-dev \
-    postgresql-dev \
+    libpq-dev \
     openssl-dev \
     libxml2-dev \
     lz4-dev \
