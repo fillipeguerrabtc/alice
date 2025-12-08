@@ -286,9 +286,13 @@ jobs:
           
           # ERPNext (buscar última versão v15.x)
           # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
+          # Bug 1 corrigido: verificar se resultado está vazio antes de usar fallback
           ERPNEXT_VERSION=$(curl -s --max-time 10 "https://api.github.com/repos/frappe/erpnext/releases" | \
             jq -r '[.[] | select(.tag_name | startswith("v15.")) | .tag_name] | first // empty' 2>/dev/null | \
-            sed 's/^v15\.//' || echo "38.6")
+            sed 's/^v15\.//')
+          if [ -z "$ERPNEXT_VERSION" ]; then
+            ERPNEXT_VERSION="38.6"
+          fi
           echo "ERPNEXT_VERSION=$ERPNEXT_VERSION" >> $GITHUB_ENV
           echo "erpnext_version=$ERPNEXT_VERSION" >> $GITHUB_OUTPUT
           echo "✅ ERPNext: v15.$ERPNEXT_VERSION"
@@ -300,25 +304,37 @@ jobs:
           echo "✅ Docker Socket Proxy: $DOCKER_SOCKET_PROXY_VERSION"
           
           # Busybox (buscar última versão 1.x)
+          # Bug 1 corrigido: verificar se resultado está vazio antes de usar fallback
           BUSYBOX_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/busybox/tags?page_size=100" | \
             jq -r '.results[] | select(.name | test("^1\\.[0-9]+$")) | .name' 2>/dev/null | \
-            sort -V | tail -1 || echo "1.36")
+            sort -V | tail -1)
+          if [ -z "$BUSYBOX_VERSION" ]; then
+            BUSYBOX_VERSION="1.36"
+          fi
           echo "BUSYBOX_VERSION=$BUSYBOX_VERSION" >> $GITHUB_ENV
           echo "busybox_version=$BUSYBOX_VERSION" >> $GITHUB_OUTPUT
           echo "✅ Busybox: $BUSYBOX_VERSION"
           
           # Redis (buscar última versão 7-alpine)
+          # Bug 1 corrigido: verificar se resultado está vazio antes de usar fallback
           REDIS_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/redis/tags?page_size=100" | \
             jq -r '.results[] | select(.name | test("^7.*-alpine$")) | .name' 2>/dev/null | \
-            sort -V | tail -1 || echo "7-alpine")
+            sort -V | tail -1)
+          if [ -z "$REDIS_VERSION" ]; then
+            REDIS_VERSION="7-alpine"
+          fi
           echo "REDIS_VERSION=$REDIS_VERSION" >> $GITHUB_ENV
           echo "redis_version=$REDIS_VERSION" >> $GITHUB_OUTPUT
           echo "✅ Redis: $REDIS_VERSION"
           
           # MariaDB (buscar última versão 10.11)
+          # Bug 1 corrigido: verificar se resultado está vazio antes de usar fallback
           MARIADB_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/mariadb/tags?page_size=100" | \
             jq -r '.results[] | select(.name | test("^10\\.11\\.[0-9]+$")) | .name' 2>/dev/null | \
-            sort -V | tail -1 || echo "10.11")
+            sort -V | tail -1)
+          if [ -z "$MARIADB_VERSION" ]; then
+            MARIADB_VERSION="10.11"
+          fi
           echo "MARIADB_VERSION=$MARIADB_VERSION" >> $GITHUB_ENV
           echo "mariadb_version=$MARIADB_VERSION" >> $GITHUB_OUTPUT
           echo "✅ MariaDB: $MARIADB_VERSION"
@@ -1186,6 +1202,16 @@ jobs:
           ERPNEXT_NGINX_DIGEST: ${{ env.ERPNEXT_NGINX_DIGEST }}
           ERPNEXT_SOCKETIO_DIGEST: ${{ env.ERPNEXT_SOCKETIO_DIGEST }}
           ERPNEXT_WORKER_DIGEST: ${{ env.ERPNEXT_WORKER_DIGEST }}
+          DOCKER_SOCKET_PROXY_VERSION: ${{ env.DOCKER_SOCKET_PROXY_VERSION }}
+          DOCKER_SOCKET_PROXY_DIGEST: ${{ env.DOCKER_SOCKET_PROXY_DIGEST }}
+          BUSYBOX_VERSION: ${{ env.BUSYBOX_VERSION }}
+          BUSYBOX_DIGEST: ${{ env.BUSYBOX_DIGEST }}
+          REDIS_VERSION: ${{ env.REDIS_VERSION }}
+          REDIS_DIGEST: ${{ env.REDIS_DIGEST }}
+          MARIADB_VERSION: ${{ env.MARIADB_VERSION }}
+          MARIADB_DIGEST: ${{ env.MARIADB_DIGEST }}
+          PGVECTOR_TAG: ${{ env.PGVECTOR_TAG }}
+          PGVECTOR_DIGEST: ${{ env.PGVECTOR_DIGEST }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
