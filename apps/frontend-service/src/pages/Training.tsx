@@ -588,14 +588,60 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
       let entries: BulkImportEntry[] = [];
 
       // Parse JSON ou JSONL
+      // REGRA 8: Error handling enterprise com logging estruturado e feedback detalhado
       if (fileExtension === '.json') {
         const parsed = JSON.parse(text) as BulkImportData;
         entries = parsed.data || (Array.isArray(parsed) ? parsed : []);
       } else if (fileExtension === '.jsonl') {
-        entries = text
-          .split('\n')
-          .filter(line => line.trim())
-          .map(line => JSON.parse(line) as BulkImportEntry);
+        const lines = text.split('\n');
+        const parsedEntries: BulkImportEntry[] = [];
+        const errors: Array<{ lineNumber: number; error: string }> = [];
+        
+        lines.forEach((line, index) => {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) return; // Ignorar linhas vazias
+          
+          const lineNumber = index + 1; // Linhas começam em 1 para usuário
+          try {
+            const parsed = JSON.parse(trimmedLine) as BulkImportEntry;
+            parsedEntries.push(parsed);
+          } catch (parseError) {
+            const errorMessage = parseError instanceof Error ? parseError.message : String(parseError);
+            errors.push({ lineNumber, error: errorMessage });
+            
+            // REGRA 8: Logger estruturado para observability stack
+            frontendLogger.error('Erro ao fazer parse de linha JSONL', {
+              lineNumber,
+              lineContent: trimmedLine.substring(0, 100), // Primeiros 100 chars para não logar dados sensíveis
+              error: errorMessage,
+              fileName: selectedFile.name,
+            });
+          }
+        });
+        
+        // Se houver erros, mostrar feedback detalhado ao usuário
+        if (errors.length > 0) {
+          const firstError = errors[0];
+          setValidationError(
+            t('training.bulkImport.errors.jsonlParseErrorDesc', {
+              lineNumber: firstError.lineNumber,
+              error: firstError.error,
+            })
+          );
+          
+          // Log completo para observability
+          frontendLogger.error('Falha ao processar arquivo JSONL - múltiplas linhas com erro', {
+            totalErrors: errors.length,
+            errors: errors.map(e => ({ line: e.lineNumber, error: e.error })),
+            fileName: selectedFile.name,
+            totalLines: lines.length,
+            successfulParses: parsedEntries.length,
+          });
+          
+          return;
+        }
+        
+        entries = parsedEntries;
       }
 
       // Validação 3: Máximo 1000 entradas

@@ -967,7 +967,9 @@
       "errors": {
         "importFailed": "Falha na importação",
         "invalidFile": "Arquivo inválido",
-        "parseError": "Erro ao processar arquivo"
+        "parseError": "Erro ao processar arquivo",
+        "jsonlParseError": "Erro na linha {{lineNumber}} do arquivo JSONL",
+        "jsonlParseErrorDesc": "JSON inválido na linha {{lineNumber}}: {{error}}"
       },
       "empty": {
         "title": "Nenhum arquivo selecionado",

@@ -276,8 +276,23 @@ class ImageProcessorService {
       // Se sharp não estiver disponível, usamos fallback
       try {
         // Tenta carregar sharp dinamicamente (módulo opcional)
+        // REGRA 8: TypeScript strict, zero any - tipagem explícita para módulo dinâmico
         const sharpModule = await import('sharp').catch(() => null);
-        const sharp = sharpModule ? (sharpModule as unknown as { default?: any }).default ?? sharpModule : null;
+        
+        // Tipo helper para módulo sharp (pode ser default export ou named export)
+        type SharpModule = {
+          default?: (input?: Buffer | string) => SharpInstance;
+        } & ((input?: Buffer | string) => SharpInstance);
+        
+        type SharpInstance = {
+          resize: (width: number, height: number, options?: { fit?: string; withoutEnlargement?: boolean }) => SharpInstance;
+          jpeg: (options?: { quality?: number }) => SharpInstance;
+          toBuffer: () => Promise<Buffer>;
+        };
+        
+        const sharp = sharpModule 
+          ? ((sharpModule as unknown as SharpModule).default ?? (sharpModule as unknown as SharpModule))
+          : null;
         
         if (sharp && typeof sharp === 'function') {
           const thumbnailBuffer = await sharp(imageBuffer)
