@@ -1136,6 +1136,11 @@ jobs:
             printf 'JAEGER_VERSION=%s\n' "${{ needs.build-docker.outputs.jaeger_version }}"
             printf 'LANGFUSE_VERSION=%s\n' "${{ needs.build-docker.outputs.langfuse_version }}"
             printf 'ERPNEXT_VERSION=%s\n' "${{ needs.build-docker.outputs.erpnext_version }}"
+            printf 'DOCKER_SOCKET_PROXY_VERSION=%s\n' "${{ needs.build-docker.outputs.docker_socket_proxy_version }}"
+            printf 'BUSYBOX_VERSION=%s\n' "${{ needs.build-docker.outputs.busybox_version }}"
+            printf 'REDIS_VERSION=%s\n' "${{ needs.build-docker.outputs.redis_version }}"
+            printf 'MARIADB_VERSION=%s\n' "${{ needs.build-docker.outputs.mariadb_version }}"
+            printf 'PGVECTOR_TAG=%s\n' "${{ needs.build-docker.outputs.pgvector_tag }}"
             printf '\n'
             printf '# PostgreSQL Alice\n'
             printf 'POSTGRES_USER=alice\n'
