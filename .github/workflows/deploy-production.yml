@@ -1252,12 +1252,14 @@ jobs:
             # REGRA 6: Enterprise-grade - usar script Python dedicado (não regex inline)
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
               # Instalar ruamel.yaml (biblioteca enterprise para manipulação YAML)
+              # REGRA 6: Enterprise-grade - falhar se dependência crítica não puder ser instalada
               pip3 install --quiet --user ruamel.yaml >/dev/null 2>&1 || {
                 echo "⚠️  Falha ao instalar ruamel.yaml, tentando instalação global..."
                 pip3 install --quiet ruamel.yaml >/dev/null 2>&1 || {
-                  echo "❌ ERRO: Não foi possível instalar ruamel.yaml"
-                  echo "   Usando versões do .env.prod (digests precisam ser atualizados manualmente)"
-                  exit 0
+                  echo "❌ ERRO CRÍTICO: Não foi possível instalar ruamel.yaml"
+                  echo "   Versionamento automático é obrigatório para supply chain security"
+                  echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
+                  exit 1
                 }
               }
               
@@ -1294,8 +1296,10 @@ jobs:
                 --pgvector-tag "${PGVECTOR_TAG}" \
                 --pgvector-digest "${PGVECTOR_DIGEST:-}" \
                 --compose-file infra/docker/docker-compose.prod.yml || {
-                  echo "⚠️  Falha ao atualizar docker-compose.prod.yml"
-                  echo "   Continuando com versões existentes..."
+                  echo "❌ ERRO CRÍTICO: Falha ao atualizar docker-compose.prod.yml"
+                  echo "   Versionamento automático é obrigatório para supply chain security"
+                  echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
+                  exit 1
                 }
             else
               echo "⚠️ docker-compose.prod.yml não encontrado ou python3 não disponível"
