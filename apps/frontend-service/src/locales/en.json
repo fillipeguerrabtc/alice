@@ -351,6 +351,13 @@
       "audio": "Audio",
       "video": "Video",
       "file": "File"
+    },
+    "actions": {
+      "copy": "Copy",
+      "copied": "Copied!",
+      "regenerate": "Regenerate",
+      "helpful": "Helpful",
+      "notHelpful": "Not helpful"
     }
   },
   "agents": {

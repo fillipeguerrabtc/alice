@@ -327,6 +327,36 @@ export default function Chat() {
     rateMessage.mutate({ messageId, isPositive });
   }, [rateMessage]);
 
+  // Handler para regenerar última resposta do assistente
+  // Remove a última mensagem do assistente e reenvia a última mensagem do usuário
+  const handleRegenerate = useCallback(() => {
+    if (isStreaming || messages.length === 0) return;
+
+    // Encontrar última mensagem do usuário (iterar de trás para frente)
+    let lastUserMessageIndex = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') {
+        lastUserMessageIndex = i;
+        break;
+      }
+    }
+
+    if (lastUserMessageIndex === -1) return;
+
+    // Remover todas as mensagens após a última mensagem do usuário (incluindo resposta do assistente)
+    const messagesUpToUser = messages.slice(0, lastUserMessageIndex + 1);
+    setMessages(messagesUpToUser);
+
+    // Reenviar última mensagem do usuário
+    const lastUserMessage = messages[lastUserMessageIndex];
+    if (lastUserMessage) {
+      sendMessage.mutate({
+        content: lastUserMessage.content || '',
+        mediaAttachments: lastUserMessage.mediaAttachments,
+      });
+    }
+  }, [messages, isStreaming, sendMessage]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if ((!input.trim() && pendingMedia.length === 0) || isStreaming) return;
@@ -457,6 +487,7 @@ export default function Chat() {
                     isLast={index === messages.length - 1}
                     onRateImage={handleRateImage}
                     onFeedback={handleFeedback}
+                    onRegenerate={handleRegenerate}
                   />
                 ))}
               </motion.div>

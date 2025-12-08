@@ -8,7 +8,7 @@
 # Regra 10: Documentação PT-BR
 # =============================================================================
 
-set -e
+set -euo pipefail
 
 echo "=================================================="
 echo "  pgBackRest Enterprise - Alice Platform"

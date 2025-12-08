@@ -9,6 +9,7 @@
 import { useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { Bot, User, Copy, Check } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -35,6 +36,8 @@ interface MessageBubbleProps {
   isStreaming: boolean;
   isLast: boolean;
   onRateImage?: (imageId: string, score: number) => void;
+  onFeedback?: (messageId: string, isPositive: boolean) => void;
+  onRegenerate?: () => void;
 }
 
 export function MessageBubble({ 
@@ -45,12 +48,17 @@ export function MessageBubble({
   onFeedback,
   onRegenerate,
 }: MessageBubbleProps) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(message.content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Falha silenciosa - clipboard pode não estar disponível em alguns contextos
+    }
   }, [message.content]);
 
   const isUser = message.role === 'user';
@@ -116,7 +124,8 @@ export function MessageBubble({
           'flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity',
           isUser ? 'flex-row-reverse' : ''
         )}>
-          {!isUser && (
+          {!isUser ? (
+            // Mensagens do assistente: usar MessageActions (inclui copiar, regenerar, feedback)
             <MessageActions
               content={message.content}
               messageId={message.id}
@@ -124,27 +133,31 @@ export function MessageBubble({
               onFeedback={onFeedback}
               onRegenerate={onRegenerate}
             />
+          ) : (
+            // Mensagens do usuário: apenas botão de copiar (sem ações de feedback/regenerate)
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7"
+                  onClick={handleCopy}
+                  data-testid={`button-copy-message-${message.id}`}
+                >
+                  {copied ? (
+                    <Check className="h-3 w-3 text-green-500" />
+                  ) : (
+                    <Copy className="h-3 w-3" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {copied 
+                  ? t('chat.actions.copied') 
+                  : t('chat.actions.copy')}
+              </TooltipContent>
+            </Tooltip>
           )}
-          
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={handleCopy}
-              >
-                {copied ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {copied ? 'Copiado!' : 'Copiar'}
-            </TooltipContent>
-          </Tooltip>
           
           {message.tokensUsados && (
             <span className="text-xs text-muted-foreground">

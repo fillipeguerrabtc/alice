@@ -344,6 +344,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=16M
+    environment:
+      # CORREÇÃO SEGURANÇA: Redis password obrigatório em produção
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD é obrigatório em produção}
     command:
       - redis-server
       - --maxmemory
@@ -358,6 +361,9 @@ services:
       - --save
       - "300"
       - "10"
+      # CORREÇÃO SEGURANÇA: Requer senha para autenticação
+      - --requirepass
+      - "${REDIS_PASSWORD}"
       # Segurança: Desabilitar comandos perigosos
       - --rename-command
       - FLUSHALL
@@ -376,7 +382,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      # CORREÇÃO SEGURANÇA: Health check usa autenticação via flag -a (padrão redis-cli)
+      # Docker Compose interpola ${REDIS_PASSWORD} antes de executar o comando
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD} --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
@@ -522,7 +530,8 @@ services:
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
-      REDIS_URL: redis://alice-redis:6379
+      # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -1061,13 +1070,18 @@ services:
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
-    # REGRA 6 + Security: Senhas Redis escapadas corretamente para prevenir shell injection
-    # Aspas duplas ao redor das URLs Redis protegem contra interpretação de caracteres especiais
-    # NOTA: Se REDIS_CACHE_PASSWORD ou REDIS_QUEUE_PASSWORD contiverem caracteres especiais
-    # (ex: $, &, ;, ", '), eles devem ser URL-encoded antes de serem definidos como secrets
-    # Docker Compose expande ${VAR} antes de executar o comando, então aspas duplas protegem
-    # a URL completa de interpretação pelo shell bash
-    command: ["bash", "-c", "bench set-config -g db_host erpnext-mariadb && bench set-config -g db_port 3306 && bench set-config -g redis_cache \"redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379\" && bench set-config -g redis_queue \"redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379\""]
+    # REGRA 6 + Security: gera URLs Redis de forma segura sem reinterpretação pelo shell
+    command:
+      - bash
+      - -c
+      - |
+        set -euo pipefail
+        CACHE_URL="$(printf 'redis://:%s@erpnext-redis-cache:6379' "$REDIS_CACHE_PASSWORD")"
+        QUEUE_URL="$(printf 'redis://:%s@erpnext-redis-queue:6379' "$REDIS_QUEUE_PASSWORD")"
+        bench set-config -g db_host erpnext-mariadb
+        bench set-config -g db_port 3306
+        bench set-config -g redis_cache "$CACHE_URL"
+        bench set-config -g redis_queue "$QUEUE_URL"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root
@@ -1091,7 +1105,7 @@ services:
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
-    command: ["new", "--db-root-password", "${ERPNEXT_MYSQL_ROOT_PASSWORD}", "--admin-password", "${ERPNEXT_ADMIN_PASSWORD}", "--mariadb-user-host-login-scope", "%", "--install-app", "erpnext", "${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"]
+    command: ["new", "--db-root-password", "${ERPNEXT_MYSQL_ROOT_PASSWORD}", "--admin-password", "${ERPNEXT_ADMIN_PASSWORD}", "--install-app", "erpnext", "${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"]
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root

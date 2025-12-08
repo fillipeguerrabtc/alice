@@ -1,22 +1,22 @@
 # Auditoria Completa de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 2025-12-09  
-**Versão:** 1.0
+**Data:** 2025-12-08  
+**Versão:** 1.1
 
 ## Resumo Executivo
 
 Este documento apresenta uma auditoria completa comparando os secrets configurados no GitHub Actions com os secrets utilizados no código e documentados na documentação.
 
-**Total de Secrets no Repositório:** 32  
-**Total de Secrets no Código/Documentação:** 38  
-**Discrepâncias Encontradas:** 6
+**Total de Secrets no Repositório:** 33  
+**Total de Secrets no Código/Documentação:** 37  
+**Discrepâncias Encontradas:** 4 (todas opcionais)
 
 ---
 
 ## 1. Secrets Presentes no Repositório GitHub
 
-### ✅ Secrets Corretos e Consistentes (32)
+### ✅ Secrets Corretos e Consistentes (33)
 
 | Secret | Usado no Código | Documentado | Status |
 |--------|----------------|-------------|--------|
@@ -44,6 +44,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 | `SALAD_ORGANIZATION_ID` | ✅ | ✅ | ✅ OK |
 | `SESSION_SECRET` | ✅ | ✅ | ✅ OK |
 | `STRIPE_PUBLISHABLE_KEY` | ✅ | ✅ | ✅ OK |
+| `POSTGRES_PASSWORD` | ✅ | ✅ | ✅ OK |
 | `STRIPE_SECRET_KEY` | ✅ | ✅ | ✅ OK |
 | `STRIPE_WEBHOOK_SECRET` | ✅ | ✅ | ✅ OK |
 | `TWILIO_ACCOUNT_SID` | ✅ | ✅ | ✅ OK |
@@ -54,34 +55,9 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-## 2. 🔴 PROBLEMAS CRÍTICOS ENCONTRADOS
+## 2. 🔔 PENDÊNCIAS ATUAIS (Todas Opcionais)
 
-### 2.1. INCONSISTÊNCIA: `PGPASSWORD` vs `POSTGRES_PASSWORD`
-
-**Problema:** O repositório GitHub tem `PGPASSWORD`, mas o código usa `POSTGRES_PASSWORD`.
-
-**Evidências:**
-- **Repositório GitHub:** `PGPASSWORD` ✅ (presente)
-- **Código (`deploy-production.yml` linha 744):** `POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}` ❌
-- **Código (`docker-compose.prod.yml` linha 308):** `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}` ❌
-- **Documentação (`SECRETS.md` linha 55):** `POSTGRES_PASSWORD` ✅
-
-**Impacto:** 🔴 **CRÍTICO** - O deploy falhará porque o secret `POSTGRES_PASSWORD` não existe no repositório.
-
-**Solução:**
-1. **Opção A (Recomendada):** Renomear o secret no GitHub de `PGPASSWORD` para `POSTGRES_PASSWORD`
-2. **Opção B:** Alterar todo o código para usar `PGPASSWORD` (menos recomendado, quebra padrão)
-
-**Arquivos Afetados:**
-- `.github/workflows/deploy-production.yml` (linhas 744, 825)
-- `infra/docker/docker-compose.prod.yml` (linha 308)
-- `docs/SECRETS.md` (já está correto)
-
----
-
-### 2.2. Secrets Faltando no Repositório GitHub
-
-#### 2.2.1. `STRIPE_WEBHOOK_BASE_URL`
+#### 2.1. `STRIPE_WEBHOOK_BASE_URL`
 
 **Status:** ❌ **FALTANDO no repositório**
 
@@ -96,7 +72,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.2.2. `WISE_WEBHOOK_SECRET`
+#### 2.2. `WISE_WEBHOOK_SECRET`
 
 **Status:** ❌ **FALTANDO no repositório**
 
@@ -114,7 +90,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.2.3. `WISE_SANDBOX`
+#### 2.3. `WISE_SANDBOX`
 
 **Status:** ⚠️ **HARDCODED no código**
 
@@ -132,7 +108,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.2.4. `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`
+#### 2.4. `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`
 
 **Status:** ⏳ **OPCIONAIS (pós-deploy)**
 
@@ -153,33 +129,21 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 | Tipo | Quantidade | Severidade |
 |------|------------|------------|
-| Inconsistência de Nome | 1 | 🔴 CRÍTICO |
-| Secrets Faltando (Obrigatórios) | 1 | 🟡 MÉDIO |
-| Secrets Faltando (Opcionais) | 4 | 🟢 BAIXO |
+| Inconsistência de Nome | 0 | - |
+| Secrets Faltando (Obrigatórios) | 0 | - |
+| Secrets Faltando (Opcionais) | 4 | 🟢 |
 
 ---
 
 ## 4. ✅ Ações Recomendadas (Prioridade)
 
-### 🔴 PRIORIDADE CRÍTICA (Fazer Imediatamente)
+### 🟡 PRIORIDADE ALTA
+1. **Adicionar `STRIPE_WEBHOOK_BASE_URL`** — valor recomendado: `https://yesyoudeserve.duckdns.org`
 
-1. **Corrigir `PGPASSWORD` → `POSTGRES_PASSWORD`**
-   - Renomear secret no GitHub de `PGPASSWORD` para `POSTGRES_PASSWORD`
-   - OU alterar código para usar `PGPASSWORD` (não recomendado)
-
-### 🟡 PRIORIDADE ALTA (Fazer em Breve)
-
-2. **Adicionar `STRIPE_WEBHOOK_BASE_URL`**
-   - Adicionar no GitHub Secrets: `https://yesyoudeserve.duckdns.org`
-
-3. **Decidir sobre `WISE_SANDBOX`**
-   - Se precisa flexibilidade: Adicionar no GitHub Secrets
-   - Se sempre produção: Manter hardcoded mas documentar claramente
-
-### 🟢 PRIORIDADE BAIXA (Opcional)
-
-4. **Adicionar `WISE_WEBHOOK_SECRET`** (após configurar webhook no Wise)
-5. **Adicionar `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`** (após ERPNext iniciar)
+### 🟢 PRIORIDADE BAIXA (Opcionais)
+2. **Adicionar `WISE_WEBHOOK_SECRET`** após configurar webhook no Wise  
+3. **Adicionar `WISE_SANDBOX`** se precisar alternar sandbox/produção via secret (default já é `false`)  
+4. **Adicionar `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`** após gerar no ERPNext UI
 
 ---
 
@@ -191,7 +155,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 - [x] `HETZNER_VM_USER`
 - [x] `HETZNER_SSH_PRIVATE_KEY`
 - [x] `GH_PAT`
-- [ ] `POSTGRES_PASSWORD` ⚠️ **PROBLEMA: Repositório tem `PGPASSWORD`**
+- [x] `POSTGRES_PASSWORD`
 - [x] `SESSION_SECRET`
 - [x] `INTERNAL_API_SECRET`
 - [x] `ACME_EMAIL`
@@ -200,7 +164,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 - [x] OAuth (pelo menos 1): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` ou `OAUTH_GITHUB_*`
 - [x] LLM: `SALAD_API_KEY`, `SALAD_ORGANIZATION_ID`
-- [ ] Stripe: `STRIPE_WEBHOOK_BASE_URL` ⚠️ **FALTANDO**
+- [ ] Stripe: `STRIPE_WEBHOOK_BASE_URL` (opcional; ausência já coberta por fallback)
 - [x] ERPNext: `ERPNEXT_MYSQL_ROOT_PASSWORD`, `ERPNEXT_DB_PASSWORD`, `ERPNEXT_ADMIN_PASSWORD`, `REDIS_CACHE_PASSWORD`, `REDIS_QUEUE_PASSWORD`
 - [x] Backup: `BACKUP_CIPHER_PASS`
 - [x] Observabilidade: `GRAFANA_ADMIN_PASSWORD`, `LANGFUSE_SECRET_KEY`, `LANGFUSE_NEXT_AUTH_SECRET`
@@ -223,6 +187,6 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento gerado em: 2025-12-09*  
-*Versão: 1.0*  
-*Próxima Revisão: Após correção dos problemas críticos*
+*Documento atualizado em: 2025-12-08*  
+*Versão: 1.1*  
+*Próxima Revisão: Após inclusão dos opcionais pendentes*

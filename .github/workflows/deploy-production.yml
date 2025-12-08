@@ -727,7 +727,33 @@ jobs:
           ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
       - name: Criar arquivo .env.prod seguro
+        env:
+          POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
+          REDIS_PASSWORD_SECRET: ${{ secrets.REDIS_PASSWORD }}
+          STRIPE_WEBHOOK_BASE_URL_SECRET: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
+          WISE_WEBHOOK_SECRET_SECRET: ${{ secrets.WISE_WEBHOOK_SECRET }}
+          WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
+          ERPNEXT_API_KEY_SECRET: ${{ secrets.ERPNEXT_API_KEY }}
+          ERPNEXT_API_SECRET_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
         run: |
+          set -euo pipefail
+          # Secrets obrigatórias (fail-fast em produção)
+          POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
+          if [ -z "${POSTGRES_PASSWORD}" ]; then
+            echo "::error::POSTGRES_PASSWORD não definido. Configure o secret POSTGRES_PASSWORD no repositório." >&2
+            exit 1
+          fi
+          REDIS_PASSWORD="${REDIS_PASSWORD_SECRET:-}"
+          if [ -z "${REDIS_PASSWORD}" ]; then
+            echo "::error::REDIS_PASSWORD não definido. Configure o secret REDIS_PASSWORD no repositório." >&2
+            exit 1
+          fi
+          # Secrets opcionais (com fallback seguro)
+          STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET:-https://yesyoudeserve.duckdns.org}"
+          WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET:-}"
+          WISE_SANDBOX="${WISE_SANDBOX_SECRET:-false}"
+          ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET:-}"
+          ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET:-}"
           cat > .env.prod << EOF
           # ==============================================
           # ALICE PLATFORM - PRODUÇÃO
@@ -741,8 +767,11 @@ jobs:
           
           # PostgreSQL Alice
           POSTGRES_USER=alice
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
           POSTGRES_DB=alice_prod
+          
+          # Redis Alice (Cache distribuído dedicado - CORREÇÃO SEGURANÇA)
+          REDIS_PASSWORD=${REDIS_PASSWORD}
           
           # Redis ERPNext (ACL habilitado - GAP-ERPNEXT-001)
           REDIS_CACHE_PASSWORD=${{ secrets.REDIS_CACHE_PASSWORD }}
@@ -768,7 +797,7 @@ jobs:
           STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
           STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          STRIPE_WEBHOOK_BASE_URL=${{ secrets.STRIPE_WEBHOOK_BASE_URL || 'https://yesyoudeserve.duckdns.org' }}
+          STRIPE_WEBHOOK_BASE_URL=${STRIPE_WEBHOOK_BASE_URL}
           
           # Twilio
           TWILIO_ACCOUNT_SID=${{ secrets.TWILIO_ACCOUNT_SID }}
@@ -781,8 +810,8 @@ jobs:
           # Wise (pagamentos globais)
           WISE_API_KEY=${{ secrets.WISE_API_KEY }}
           WISE_PROFILE_ID=${{ secrets.WISE_PROFILE_ID }}
-          WISE_WEBHOOK_SECRET=${{ secrets.WISE_WEBHOOK_SECRET || '' }}
-          WISE_SANDBOX=${{ secrets.WISE_SANDBOX || 'false' }}
+          WISE_WEBHOOK_SECRET=${WISE_WEBHOOK_SECRET}
+          WISE_SANDBOX=${WISE_SANDBOX}
           
           # ERPNext Database
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
@@ -794,8 +823,8 @@ jobs:
           
           # ERPNext API (para integrations-service) - Opcionais (gerados após deploy)
           ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org
-          ERPNEXT_API_KEY=${{ secrets.ERPNEXT_API_KEY || '' }}
-          ERPNEXT_API_SECRET=${{ secrets.ERPNEXT_API_SECRET || '' }}
+          ERPNEXT_API_KEY=${ERPNEXT_API_KEY}
+          ERPNEXT_API_SECRET=${ERPNEXT_API_SECRET}
           
           # Backup (pgBackRest) - Criptografia AES-256
           BACKUP_CIPHER_PASS=${{ secrets.BACKUP_CIPHER_PASS }}

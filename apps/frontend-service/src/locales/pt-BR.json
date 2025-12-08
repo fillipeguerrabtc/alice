@@ -351,6 +351,13 @@
       "audio": "Áudio",
       "video": "Vídeo",
       "file": "Arquivo"
+    },
+    "actions": {
+      "copy": "Copiar",
+      "copied": "Copiado!",
+      "regenerate": "Regenerar",
+      "helpful": "Útil",
+      "notHelpful": "Não útil"
     }
   },
   "agents": {

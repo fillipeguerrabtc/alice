@@ -1,13 +1,13 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 2025-12-09
+**Data:** 2025-12-08
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 35 (32 pré-deploy + 3 pós-deploy)
+**Total de Secrets:** 37 (33 pré-deploy + 4 opcionais/pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 35 em produção (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -20,7 +20,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 
 | Categoria | Serviços | Secrets Relacionados |
 |-----------|----------|----------------------|
-| **Infraestrutura** | postgres, traefik | POSTGRES_PASSWORD, ACME_EMAIL |
+| **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
@@ -53,6 +53,7 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` |
 | `GH_PAT` | Token GitHub | Personal Access Token com write:packages |
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
+| `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
 
@@ -198,8 +199,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 2025-12-09
-> **Todas as secrets pré-deploy estão ✅ configuradas no GitHub Actions Secrets**
+> **Status atualizado em:** 2025-12-08  
+> **Resumo:** Secrets obrigatórias de produção ✅ configuradas. Faltam apenas opcionais (`STRIPE_WEBHOOK_BASE_URL`, `WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`).
 
 ### Infraestrutura
 
@@ -210,6 +211,7 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_SSH_PRIVATE_KEY` | ✅ |
 | `GH_PAT` | ✅ |
 | `POSTGRES_PASSWORD` | ✅ |
+| `REDIS_PASSWORD` | ✅ |
 | `SESSION_SECRET` | ✅ |
 | `INTERNAL_API_SECRET` | ✅ |
 
@@ -236,7 +238,7 @@ Estes são necessários para o deploy funcionar:
 | `STRIPE_SECRET_KEY` | ✅ |
 | `STRIPE_PUBLISHABLE_KEY` | ✅ |
 | `STRIPE_WEBHOOK_SECRET` | ✅ |
-| `STRIPE_WEBHOOK_BASE_URL` | ⚠️ Opcional (tem fallback para domínio padrão) |
+| `STRIPE_WEBHOOK_BASE_URL` | ⏳ Opcional (hoje ausente; fallback `https://yesyoudeserve.duckdns.org`) |
 
 ### Wise (Transferências)
 
@@ -245,7 +247,7 @@ Estes são necessários para o deploy funcionar:
 | `WISE_API_KEY` | ✅ |
 | `WISE_PROFILE_ID` | ✅ |
 | `WISE_WEBHOOK_SECRET` | ⏳ Opcional (gerar após configurar webhook no Wise Dashboard) |
-| `WISE_SANDBOX` | ⚠️ Opcional (default: `false` para produção) |
+| `WISE_SANDBOX` | ⏳ Opcional (default aplicado: `false`) |
 
 ### Comunicação
 
@@ -360,7 +362,7 @@ openssl rand -hex 64
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 2025-12-09*  
 *Versão: 6.1*  
-*Total de Secrets: 38 (35 pré-deploy + 3 pós-deploy)*  
+*Total de Secrets: 39 (36 pré-deploy + 3 pós-deploy)*  
 *Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
