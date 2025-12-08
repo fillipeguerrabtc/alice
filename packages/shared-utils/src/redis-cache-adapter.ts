@@ -333,5 +333,4 @@ export async function closeRedisCacheClient(): Promise<void> {
     }
   }
   redisClient = null;
-  redisConnectionPromise = null;
 }
