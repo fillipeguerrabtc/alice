@@ -68,6 +68,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { frontendLogger } from '@/lib/logger';
 
 interface TrainingData {
   id: string;
@@ -518,7 +519,14 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
       setAutoApprove(false);
     },
     onError: (error) => {
-      logger.error({ error }, 'Erro ao importar dados');
+      // REGRA 8: Logger estruturado enviado para observability stack
+      frontendLogger.error('Erro ao importar dados de treinamento em massa', {
+        error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        source,
+        autoApprove,
+        entriesCount: parsedData.length,
+      });
       toast({ 
         title: t('training.bulkImport.errors.importFailed'),
         description: error instanceof Error ? error.message : 'Erro desconhecido',
@@ -608,7 +616,14 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
       setFile(selectedFile);
       setParsedData(entries);
     } catch (error) {
-      logger.error({ error }, 'Erro ao fazer parse do arquivo');
+      // REGRA 8: Logger estruturado enviado para observability stack
+      frontendLogger.error('Erro ao fazer parse do arquivo de bulk import', {
+        error: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        fileName: selectedFile.name,
+        fileSize: selectedFile.size,
+        fileType: selectedFile.type,
+      });
       setValidationError(t('training.bulkImport.errors.parseError'));
     }
   };
@@ -891,11 +906,6 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
     </div>
   );
 }
-
-// Logger para erros de validação (Regra 8 - Pino logging)
-const logger = {
-  error: (obj: Record<string, unknown>, msg: string) => console.error(msg, obj),
-};
 
 export default function Training() {
   const { t } = useTranslation();
