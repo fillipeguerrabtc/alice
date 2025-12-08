@@ -2266,8 +2266,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
-                  'X-Internal-Signature': internalHeaders.signature,
-                  'X-Internal-Timestamp': internalHeaders.timestamp,
+                  'X-Internal-Signature': internalHeaders['x-internal-signature'],
+                  'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
                   'X-Internal-User-Id': user.id,
                   'X-Internal-Tenant-Id': tenantId,
                   'X-Internal-Role': 'super_admin',

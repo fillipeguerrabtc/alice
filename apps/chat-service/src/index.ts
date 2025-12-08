@@ -3878,7 +3878,7 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
           const internalHeaders = generateInternalAuthHeaders({
             userId: req.user?.userId || '',
             tenantId: messageTenantId,
-            role: req.user?.role || 'user',
+            role: req.user?.role || ('guest' as Role),
           });
           
           // RESILIÊNCIA: AbortController com timeout para prevenir hang
@@ -3890,11 +3890,11 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
-                'X-Internal-Signature': internalHeaders.signature,
-                'X-Internal-Timestamp': internalHeaders.timestamp,
+                'X-Internal-Signature': internalHeaders['x-internal-signature'],
+                'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
                 'X-Internal-User-Id': req.user?.userId || '',
                 'X-Internal-Tenant-Id': messageTenantId,
-                'X-Internal-Role': req.user?.role || 'user',
+                'X-Internal-Role': req.user?.role || 'guest',
               },
               body: JSON.stringify({
                 tenantId: messageTenantId,
