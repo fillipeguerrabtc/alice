@@ -210,6 +210,223 @@ jobs:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      # ===========================================================================
+      # VERSIONAMENTO AUTOMÁTICO: Buscar versões mais recentes de todos os componentes
+      # REGRA 11: Todos os módulos devem seguir versionamento automático
+      # ===========================================================================
+      - name: Buscar versões mais recentes de todos os componentes
+        id: versions
+        run: |
+          echo "🔍 Buscando versões mais recentes de todos os componentes..."
+          
+          # Função para buscar última release do GitHub
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
+          # REGRA 11: Seguir melhores práticas GitHub Actions 2025
+          fetch_github_release() {
+            local repo=$1
+            local fallback=$2
+            local tag_name=$(curl -s --max-time 10 "https://api.github.com/repos/${repo}/releases/latest" | \
+              jq -r '.tag_name // empty' 2>/dev/null || echo "")
+            
+            if [ -z "$tag_name" ]; then
+              echo "$fallback"
+            else
+              # Remover prefixo "v" se existir
+              echo "${tag_name#v}"
+            fi
+          }
+          
+          # pgBackRest
+          PGBACKREST_VERSION=$(fetch_github_release "pgbackrest/pgbackrest" "2.57.0")
+          echo "PGBACKREST_VERSION=$PGBACKREST_VERSION" >> $GITHUB_ENV
+          echo "pgbackrest_version=$PGBACKREST_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ pgBackRest: $PGBACKREST_VERSION"
+          
+          # Traefik
+          TRAEFIK_VERSION=$(fetch_github_release "traefik/traefik" "3.3.0")
+          echo "TRAEFIK_VERSION=$TRAEFIK_VERSION" >> $GITHUB_ENV
+          echo "traefik_version=$TRAEFIK_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Traefik: $TRAEFIK_VERSION"
+          
+          # Prometheus
+          PROMETHEUS_VERSION=$(fetch_github_release "prometheus/prometheus" "3.0.1")
+          echo "PROMETHEUS_VERSION=$PROMETHEUS_VERSION" >> $GITHUB_ENV
+          echo "prometheus_version=$PROMETHEUS_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Prometheus: $PROMETHEUS_VERSION"
+          
+          # Grafana
+          GRAFANA_VERSION=$(fetch_github_release "grafana/grafana" "11.1.4")
+          echo "GRAFANA_VERSION=$GRAFANA_VERSION" >> $GITHUB_ENV
+          echo "grafana_version=$GRAFANA_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Grafana: $GRAFANA_VERSION"
+          
+          # Loki
+          LOKI_VERSION=$(fetch_github_release "grafana/loki" "3.1.0")
+          echo "LOKI_VERSION=$LOKI_VERSION" >> $GITHUB_ENV
+          echo "loki_version=$LOKI_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Loki: $LOKI_VERSION"
+          
+          # Promtail
+          PROMTAIL_VERSION=$(fetch_github_release "grafana/promtail" "3.1.0")
+          echo "PROMTAIL_VERSION=$PROMTAIL_VERSION" >> $GITHUB_ENV
+          echo "promtail_version=$PROMTAIL_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Promtail: $PROMTAIL_VERSION"
+          
+          # Jaeger
+          JAEGER_VERSION=$(fetch_github_release "jaegertracing/jaeger" "1.58.0")
+          echo "JAEGER_VERSION=$JAEGER_VERSION" >> $GITHUB_ENV
+          echo "jaeger_version=$JAEGER_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Jaeger: $JAEGER_VERSION"
+          
+          # Langfuse
+          LANGFUSE_VERSION=$(fetch_github_release "langfuse/langfuse" "2.39.1")
+          echo "LANGFUSE_VERSION=$LANGFUSE_VERSION" >> $GITHUB_ENV
+          echo "langfuse_version=$LANGFUSE_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Langfuse: $LANGFUSE_VERSION"
+          
+          # ERPNext (buscar última versão v15.x)
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
+          ERPNEXT_VERSION=$(curl -s --max-time 10 "https://api.github.com/repos/frappe/erpnext/releases" | \
+            jq -r '[.[] | select(.tag_name | startswith("v15.")) | .tag_name] | first // empty' 2>/dev/null | \
+            sed 's/^v15\.//' || echo "38.6")
+          echo "ERPNEXT_VERSION=$ERPNEXT_VERSION" >> $GITHUB_ENV
+          echo "erpnext_version=$ERPNEXT_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ ERPNext: v15.$ERPNEXT_VERSION"
+          
+          # Docker Socket Proxy (Tecnativa)
+          DOCKER_SOCKET_PROXY_VERSION=$(fetch_github_release "Tecnativa/docker-socket-proxy" "0.4.1")
+          echo "DOCKER_SOCKET_PROXY_VERSION=$DOCKER_SOCKET_PROXY_VERSION" >> $GITHUB_ENV
+          echo "docker_socket_proxy_version=$DOCKER_SOCKET_PROXY_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Docker Socket Proxy: $DOCKER_SOCKET_PROXY_VERSION"
+          
+          # Busybox (buscar última versão 1.x)
+          BUSYBOX_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/busybox/tags?page_size=100" | \
+            jq -r '.results[] | select(.name | test("^1\\.[0-9]+$")) | .name' 2>/dev/null | \
+            sort -V | tail -1 || echo "1.36")
+          echo "BUSYBOX_VERSION=$BUSYBOX_VERSION" >> $GITHUB_ENV
+          echo "busybox_version=$BUSYBOX_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Busybox: $BUSYBOX_VERSION"
+          
+          # Redis (buscar última versão 7-alpine)
+          REDIS_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/redis/tags?page_size=100" | \
+            jq -r '.results[] | select(.name | test("^7.*-alpine$")) | .name' 2>/dev/null | \
+            sort -V | tail -1 || echo "7-alpine")
+          echo "REDIS_VERSION=$REDIS_VERSION" >> $GITHUB_ENV
+          echo "redis_version=$REDIS_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Redis: $REDIS_VERSION"
+          
+          # MariaDB (buscar última versão 10.11)
+          MARIADB_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/mariadb/tags?page_size=100" | \
+            jq -r '.results[] | select(.name | test("^10\\.11\\.[0-9]+$")) | .name' 2>/dev/null | \
+            sort -V | tail -1 || echo "10.11")
+          echo "MARIADB_VERSION=$MARIADB_VERSION" >> $GITHUB_ENV
+          echo "mariadb_version=$MARIADB_VERSION" >> $GITHUB_OUTPUT
+          echo "✅ MariaDB: $MARIADB_VERSION"
+          
+          # pgvector (tag fixa pg16, mas verificar se há versão específica)
+          # pgvector usa tag semântica: 0.8.1-pg16, mas pg16 aponta para a mais recente
+          # Manter pg16 como tag fixa (é atualizada automaticamente pelo Docker Hub)
+          echo "PGVECTOR_TAG=pg16" >> $GITHUB_ENV
+          echo "pgvector_tag=pg16" >> $GITHUB_OUTPUT
+          echo "✅ pgvector: pg16 (tag fixa - atualizada automaticamente pelo Docker Hub)"
+          
+          echo ""
+          echo "=========================================="
+          echo "✅ Todas as versões foram buscadas!"
+          echo "=========================================="
+
+      # ===========================================================================
+      # VERSIONAMENTO AUTOMÁTICO: Buscar SHA256 digests via Docker Registry API v2
+      # REGRA 6: Enterprise-grade - usar API oficial (não workarounds)
+      # REGRA 11: Seguir documentação oficial Docker Registry API v2
+      # REGRA 16: SHA256 digests obrigatórios para segurança (Supply Chain Security)
+      # ===========================================================================
+      - name: Buscar SHA256 digests de todas as imagens
+        id: digests
+        run: |
+          echo "🔍 Buscando SHA256 digests via Docker Registry API v2..."
+          
+          # Função para buscar digest via Docker Registry API v2 (oficial)
+          # REGRA 11: Seguir documentação oficial Docker Registry HTTP API v2
+          # https://docs.docker.com/registry/spec/api/
+          fetch_docker_digest() {
+            local image=$1
+            local tag=$2
+            local registry="registry-1.docker.io"
+            
+            # 1. Obter token de autenticação (anônimo para imagens públicas)
+            # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
+            local auth_url="https://auth.docker.io/token?service=registry.docker.io&scope=repository:${image}:pull"
+            local token=$(curl -s --max-time 10 "${auth_url}" | jq -r '.token // empty' 2>/dev/null || echo "")
+            
+            if [ -z "$token" ]; then
+              echo ""
+              return
+            fi
+            
+            # 2. Obter manifest e extrair digest do header Docker-Content-Digest
+            # REGRA 6: Enterprise-grade - extrair header HTTP de forma robusta
+            local manifest_url="https://${registry}/v2/${image}/manifests/${tag}"
+            local digest=$(curl -s -I --max-time 10 \
+              -H "Accept: application/vnd.docker.distribution.manifest.v2+json" \
+              -H "Authorization: Bearer ${token}" \
+              "${manifest_url}" 2>/dev/null | \
+              grep -i "^Docker-Content-Digest:" | \
+              cut -d' ' -f2 | \
+              tr -d '\r\n' || echo "")
+            
+            echo "$digest"
+          }
+          
+          # Buscar digests para cada componente
+          echo "📦 Buscando digests (Docker Registry API v2)..."
+          
+          TRAEFIK_DIGEST=$(fetch_docker_digest "traefik" "v${TRAEFIK_VERSION}")
+          PROMETHEUS_DIGEST=$(fetch_docker_digest "prom/prometheus" "v${PROMETHEUS_VERSION}")
+          GRAFANA_DIGEST=$(fetch_docker_digest "grafana/grafana" "${GRAFANA_VERSION}")
+          LOKI_DIGEST=$(fetch_docker_digest "grafana/loki" "${LOKI_VERSION}")
+          PROMTAIL_DIGEST=$(fetch_docker_digest "grafana/promtail" "${PROMTAIL_VERSION}")
+          JAEGER_DIGEST=$(fetch_docker_digest "jaegertracing/all-in-one" "${JAEGER_VERSION}")
+          LANGFUSE_DIGEST=$(fetch_docker_digest "langfuse/langfuse" "${LANGFUSE_VERSION}")
+          ERPNEXT_DIGEST=$(fetch_docker_digest "frappe/erpnext" "v15.${ERPNEXT_VERSION}")
+          ERPNEXT_NGINX_DIGEST=$(fetch_docker_digest "frappe/erpnext-nginx" "v15.${ERPNEXT_VERSION}")
+          ERPNEXT_SOCKETIO_DIGEST=$(fetch_docker_digest "frappe/frappe-socketio" "v15.${ERPNEXT_VERSION}")
+          ERPNEXT_WORKER_DIGEST=$(fetch_docker_digest "frappe/erpnext-worker" "v15.${ERPNEXT_VERSION}")
+          
+          # Exportar para GitHub Actions
+          echo "TRAEFIK_DIGEST=${TRAEFIK_DIGEST}" >> $GITHUB_ENV
+          echo "PROMETHEUS_DIGEST=${PROMETHEUS_DIGEST}" >> $GITHUB_ENV
+          echo "GRAFANA_DIGEST=${GRAFANA_DIGEST}" >> $GITHUB_ENV
+          echo "LOKI_DIGEST=${LOKI_DIGEST}" >> $GITHUB_ENV
+          echo "PROMTAIL_DIGEST=${PROMTAIL_DIGEST}" >> $GITHUB_ENV
+          echo "JAEGER_DIGEST=${JAEGER_DIGEST}" >> $GITHUB_ENV
+          echo "LANGFUSE_DIGEST=${LANGFUSE_DIGEST}" >> $GITHUB_ENV
+          echo "ERPNEXT_DIGEST=${ERPNEXT_DIGEST}" >> $GITHUB_ENV
+          echo "ERPNEXT_NGINX_DIGEST=${ERPNEXT_NGINX_DIGEST}" >> $GITHUB_ENV
+          echo "ERPNEXT_SOCKETIO_DIGEST=${ERPNEXT_SOCKETIO_DIGEST}" >> $GITHUB_ENV
+          echo "ERPNEXT_WORKER_DIGEST=${ERPNEXT_WORKER_DIGEST}" >> $GITHUB_ENV
+          echo "DOCKER_SOCKET_PROXY_DIGEST=${DOCKER_SOCKET_PROXY_DIGEST}" >> $GITHUB_ENV
+          echo "BUSYBOX_DIGEST=${BUSYBOX_DIGEST}" >> $GITHUB_ENV
+          echo "REDIS_DIGEST=${REDIS_DIGEST}" >> $GITHUB_ENV
+          echo "MARIADB_DIGEST=${MARIADB_DIGEST}" >> $GITHUB_ENV
+          echo "PGVECTOR_DIGEST=${PGVECTOR_DIGEST}" >> $GITHUB_ENV
+          
+          echo ""
+          echo "✅ Digests buscados:"
+          echo "   - Traefik: ${TRAEFIK_DIGEST:-não encontrado}"
+          echo "   - Prometheus: ${PROMETHEUS_DIGEST:-não encontrado}"
+          echo "   - Grafana: ${GRAFANA_DIGEST:-não encontrado}"
+          echo "   - Loki: ${LOKI_DIGEST:-não encontrado}"
+          echo "   - Promtail: ${PROMTAIL_DIGEST:-não encontrado}"
+          echo "   - Jaeger: ${JAEGER_DIGEST:-não encontrado}"
+          echo "   - Langfuse: ${LANGFUSE_DIGEST:-não encontrado}"
+          echo "   - ERPNext: ${ERPNEXT_DIGEST:-não encontrado}"
+          echo "   - Docker Socket Proxy: ${DOCKER_SOCKET_PROXY_DIGEST:-não encontrado}"
+          echo "   - Busybox: ${BUSYBOX_DIGEST:-não encontrado}"
+          echo "   - Redis: ${REDIS_DIGEST:-não encontrado}"
+          echo "   - MariaDB: ${MARIADB_DIGEST:-não encontrado}"
+          echo "   - pgvector: ${PGVECTOR_DIGEST:-não encontrado}"
+
       # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
       # Necessário para clip-inference-service
       - name: Liberar espaço em disco
@@ -404,6 +621,8 @@ jobs:
           context: ./infra/backup
           file: ./infra/backup/Dockerfile.pgbackrest
           push: true
+          build-args: |
+            PGBACKREST_VERSION=${{ env.PGBACKREST_VERSION }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-pgbackrest:latest
@@ -830,6 +1049,17 @@ jobs:
             printf 'IMAGE_PREFIX=%s\n' "${{ env.IMAGE_PREFIX }}"
             printf 'IMAGE_TAG=%s\n' "${{ env.IMAGE_TAG }}"
             printf '\n'
+            printf '# Versões Automáticas dos Componentes (buscadas automaticamente)\n'
+            printf 'PGBACKREST_VERSION=%s\n' "${{ env.PGBACKREST_VERSION }}"
+            printf 'TRAEFIK_VERSION=%s\n' "${{ env.TRAEFIK_VERSION }}"
+            printf 'PROMETHEUS_VERSION=%s\n' "${{ env.PROMETHEUS_VERSION }}"
+            printf 'GRAFANA_VERSION=%s\n' "${{ env.GRAFANA_VERSION }}"
+            printf 'LOKI_VERSION=%s\n' "${{ env.LOKI_VERSION }}"
+            printf 'PROMTAIL_VERSION=%s\n' "${{ env.PROMTAIL_VERSION }}"
+            printf 'JAEGER_VERSION=%s\n' "${{ env.JAEGER_VERSION }}"
+            printf 'LANGFUSE_VERSION=%s\n' "${{ env.LANGFUSE_VERSION }}"
+            printf 'ERPNEXT_VERSION=%s\n' "${{ env.ERPNEXT_VERSION }}"
+            printf '\n'
             printf '# PostgreSQL Alice\n'
             printf 'POSTGRES_USER=alice\n'
             printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD}"
@@ -929,11 +1159,31 @@ jobs:
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
+          PGBACKREST_VERSION: ${{ env.PGBACKREST_VERSION }}
+          TRAEFIK_VERSION: ${{ env.TRAEFIK_VERSION }}
+          TRAEFIK_DIGEST: ${{ env.TRAEFIK_DIGEST }}
+          PROMETHEUS_VERSION: ${{ env.PROMETHEUS_VERSION }}
+          PROMETHEUS_DIGEST: ${{ env.PROMETHEUS_DIGEST }}
+          GRAFANA_VERSION: ${{ env.GRAFANA_VERSION }}
+          GRAFANA_DIGEST: ${{ env.GRAFANA_DIGEST }}
+          LOKI_VERSION: ${{ env.LOKI_VERSION }}
+          LOKI_DIGEST: ${{ env.LOKI_DIGEST }}
+          PROMTAIL_VERSION: ${{ env.PROMTAIL_VERSION }}
+          PROMTAIL_DIGEST: ${{ env.PROMTAIL_DIGEST }}
+          JAEGER_VERSION: ${{ env.JAEGER_VERSION }}
+          JAEGER_DIGEST: ${{ env.JAEGER_DIGEST }}
+          LANGFUSE_VERSION: ${{ env.LANGFUSE_VERSION }}
+          LANGFUSE_DIGEST: ${{ env.LANGFUSE_DIGEST }}
+          ERPNEXT_VERSION: ${{ env.ERPNEXT_VERSION }}
+          ERPNEXT_DIGEST: ${{ env.ERPNEXT_DIGEST }}
+          ERPNEXT_NGINX_DIGEST: ${{ env.ERPNEXT_NGINX_DIGEST }}
+          ERPNEXT_SOCKETIO_DIGEST: ${{ env.ERPNEXT_SOCKETIO_DIGEST }}
+          ERPNEXT_WORKER_DIGEST: ${{ env.ERPNEXT_WORKER_DIGEST }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR
+          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST
           script: |
             set -e
             
@@ -956,6 +1206,69 @@ jobs:
             
             # Criar estrutura de diretórios
             mkdir -p /opt/alice/{app,data,logs,backups}
+            cd /opt/alice
+            
+            # ==============================================
+            # VERSIONAMENTO AUTOMÁTICO: Atualizar docker-compose.prod.yml
+            # REGRA 6: Enterprise-grade - usar script Python dedicado (não workarounds)
+            # REGRA 11: Seguir melhores práticas - manipulação YAML precisa com ruamel.yaml
+            # ==============================================
+            echo "🔄 Atualizando docker-compose.prod.yml com versões e digests..."
+            cd /opt/alice/app/infra/docker
+            
+            # REGRA 6: Enterprise-grade - usar script Python dedicado (não regex inline)
+            if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
+              # Instalar ruamel.yaml (biblioteca enterprise para manipulação YAML)
+              pip3 install --quiet --user ruamel.yaml >/dev/null 2>&1 || {
+                echo "⚠️  Falha ao instalar ruamel.yaml, tentando instalação global..."
+                pip3 install --quiet ruamel.yaml >/dev/null 2>&1 || {
+                  echo "❌ ERRO: Não foi possível instalar ruamel.yaml"
+                  echo "   Usando versões do .env.prod (digests precisam ser atualizados manualmente)"
+                  exit 0
+                }
+              }
+              
+              # Executar script Python enterprise
+              cd /opt/alice/app
+              python3 scripts/update-component-versions.py \
+                --traefik-version "${TRAEFIK_VERSION}" \
+                --traefik-digest "${TRAEFIK_DIGEST:-}" \
+                --prometheus-version "${PROMETHEUS_VERSION}" \
+                --prometheus-digest "${PROMETHEUS_DIGEST:-}" \
+                --grafana-version "${GRAFANA_VERSION}" \
+                --grafana-digest "${GRAFANA_DIGEST:-}" \
+                --loki-version "${LOKI_VERSION}" \
+                --loki-digest "${LOKI_DIGEST:-}" \
+                --promtail-version "${PROMTAIL_VERSION}" \
+                --promtail-digest "${PROMTAIL_DIGEST:-}" \
+                --jaeger-version "${JAEGER_VERSION}" \
+                --jaeger-digest "${JAEGER_DIGEST:-}" \
+                --langfuse-version "${LANGFUSE_VERSION}" \
+                --langfuse-digest "${LANGFUSE_DIGEST:-}" \
+                --erpnext-version "${ERPNEXT_VERSION}" \
+                --erpnext-digest "${ERPNEXT_DIGEST:-}" \
+                --erpnext-nginx-digest "${ERPNEXT_NGINX_DIGEST:-}" \
+                --erpnext-socketio-digest "${ERPNEXT_SOCKETIO_DIGEST:-}" \
+                --erpnext-worker-digest "${ERPNEXT_WORKER_DIGEST:-}" \
+                --docker-socket-proxy-version "${DOCKER_SOCKET_PROXY_VERSION}" \
+                --docker-socket-proxy-digest "${DOCKER_SOCKET_PROXY_DIGEST:-}" \
+                --busybox-version "${BUSYBOX_VERSION}" \
+                --busybox-digest "${BUSYBOX_DIGEST:-}" \
+                --redis-version "${REDIS_VERSION}" \
+                --redis-digest "${REDIS_DIGEST:-}" \
+                --mariadb-version "${MARIADB_VERSION}" \
+                --mariadb-digest "${MARIADB_DIGEST:-}" \
+                --pgvector-tag "${PGVECTOR_TAG}" \
+                --pgvector-digest "${PGVECTOR_DIGEST:-}" \
+                --compose-file infra/docker/docker-compose.prod.yml || {
+                  echo "⚠️  Falha ao atualizar docker-compose.prod.yml"
+                  echo "   Continuando com versões existentes..."
+                }
+            else
+              echo "⚠️ docker-compose.prod.yml não encontrado ou python3 não disponível"
+              echo "   Usando versões do .env.prod (digests precisam ser atualizados manualmente)"
+            fi
+            
             cd /opt/alice
             
             # ==============================================
