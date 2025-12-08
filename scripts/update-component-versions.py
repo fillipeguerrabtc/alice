@@ -253,12 +253,16 @@ def main():
     
     compose_file = args.compose_file
     if not compose_file.is_absolute():
-        # Relativo ao diretório do script
-        script_dir = Path(__file__).parent.parent
-        compose_file = script_dir / compose_file
+        # Bug 1 corrigido: usar CWD (diretório de trabalho atual) como base para caminhos relativos
+        # Isso funciona corretamente quando o script é executado de /opt/alice/app
+        # e recebe --compose-file infra/docker/docker-compose.prod.yml
+        cwd = Path.cwd()
+        compose_file = cwd / compose_file
     
     if not compose_file.exists():
         print(f"❌ ERRO: docker-compose.prod.yml não encontrado em {compose_file}")
+        print(f"   CWD atual: {Path.cwd()}")
+        print(f"   Caminho relativo fornecido: {args.compose_file}")
         sys.exit(1)
     
     print(f"📄 Arquivo: {compose_file}")
