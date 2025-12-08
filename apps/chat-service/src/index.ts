@@ -3881,44 +3881,53 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
             role: req.user?.role || 'user',
           });
           
-          const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'X-Internal-Signature': internalHeaders.signature,
-              'X-Internal-Timestamp': internalHeaders.timestamp,
-              'X-Internal-User-Id': req.user?.userId || '',
-              'X-Internal-Tenant-Id': messageTenantId,
-              'X-Internal-Role': req.user?.role || 'user',
-            },
-            body: JSON.stringify({
-              tenantId: messageTenantId,
-              namespaceId: namespaceId || undefined,
-              conversationId: message.conversationId,
-              source: 'chat', // Fonte: chat web
-              messages: [
-                { role: 'user', content: userMessage.conteudo },
-                { role: 'assistant', content: assistantMessage.conteudo },
-              ],
-              rating: finalRating,
-            }),
-          });
+          // RESILIÊNCIA: AbortController com timeout para prevenir hang
+          const trainingController = new AbortController();
+          const trainingTimeoutId = setTimeout(() => trainingController.abort(), 10000); // 10s timeout
           
-          if (!trainingResponse.ok) {
-            const errorText = await trainingResponse.text();
-            logger.error({ 
-              messageId: id, 
-              status: trainingResponse.status,
-              error: errorText,
-            }, 'Falha ao coletar dados de treinamento');
-          } else {
-            const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
-            logger.info({ 
-              messageId: id, 
-              trainingDataId: trainingData.trainingData?.id,
-              isDuplicate: trainingData.isDuplicate,
-              rating: finalRating,
-            }, 'Dados de treinamento coletados com sucesso');
+          try {
+            const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Internal-Signature': internalHeaders.signature,
+                'X-Internal-Timestamp': internalHeaders.timestamp,
+                'X-Internal-User-Id': req.user?.userId || '',
+                'X-Internal-Tenant-Id': messageTenantId,
+                'X-Internal-Role': req.user?.role || 'user',
+              },
+              body: JSON.stringify({
+                tenantId: messageTenantId,
+                namespaceId: namespaceId || undefined,
+                conversationId: message.conversationId,
+                source: 'chat', // Fonte: chat web
+                messages: [
+                  { role: 'user', content: userMessage.conteudo },
+                  { role: 'assistant', content: assistantMessage.conteudo },
+                ],
+                rating: finalRating,
+              }),
+              signal: trainingController.signal,
+            });
+            
+            if (!trainingResponse.ok) {
+              const errorText = await trainingResponse.text();
+              logger.error({ 
+                messageId: id, 
+                status: trainingResponse.status,
+                error: errorText,
+              }, 'Falha ao coletar dados de treinamento');
+            } else {
+              const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
+              logger.info({ 
+                messageId: id, 
+                trainingDataId: trainingData.trainingData?.id,
+                isDuplicate: trainingData.isDuplicate,
+                rating: finalRating,
+              }, 'Dados de treinamento coletados com sucesso');
+            }
+          } finally {
+            clearTimeout(trainingTimeoutId);
           }
         }
       } catch (trainingError) {

@@ -2256,46 +2256,55 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
               role: 'super_admin', // Service-to-service usa role privilegiado
             });
             
-            // Chamar training-service para coletar dados
-            const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Internal-Signature': internalHeaders.signature,
-                'X-Internal-Timestamp': internalHeaders.timestamp,
-                'X-Internal-User-Id': user.id,
-                'X-Internal-Tenant-Id': tenantId,
-                'X-Internal-Role': 'super_admin',
-              },
-              body: JSON.stringify({
-                tenantId: tenantId,
-                namespaceId: namespaceId || undefined,
-                conversationId: conversation.id,
-                source: 'whatsapp', // Fonte: WhatsApp
-                messages: [
-                  { role: 'user', content: Body },
-                  { role: 'assistant', content: chatResult.response },
-                ],
-                rating: rating,
-              }),
-            });
+            // RESILIÊNCIA: AbortController com timeout para prevenir hang
+            const trainingController = new AbortController();
+            const trainingTimeoutId = setTimeout(() => trainingController.abort(), 10000); // 10s timeout
             
-            if (!trainingResponse.ok) {
-              const errorText = await trainingResponse.text();
-              logger.error({ 
-                conversationId: conversation.id, 
-                status: trainingResponse.status,
-                error: errorText,
-              }, 'Falha ao coletar dados de treinamento do WhatsApp');
-            } else {
-              const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
-              logger.info({ 
-                conversationId: conversation.id, 
-                trainingDataId: trainingData.trainingData?.id,
-                isDuplicate: trainingData.isDuplicate,
-                rating: rating,
-                source: 'whatsapp',
-              }, 'Dados de treinamento do WhatsApp coletados com sucesso');
+            try {
+              // Chamar training-service para coletar dados
+              const trainingResponse = await fetch(`${TRAINING_SERVICE_URL_FINAL}/api/training/data`, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Internal-Signature': internalHeaders.signature,
+                  'X-Internal-Timestamp': internalHeaders.timestamp,
+                  'X-Internal-User-Id': user.id,
+                  'X-Internal-Tenant-Id': tenantId,
+                  'X-Internal-Role': 'super_admin',
+                },
+                body: JSON.stringify({
+                  tenantId: tenantId,
+                  namespaceId: namespaceId || undefined,
+                  conversationId: conversation.id,
+                  source: 'whatsapp', // Fonte: WhatsApp
+                  messages: [
+                    { role: 'user', content: Body },
+                    { role: 'assistant', content: chatResult.response },
+                  ],
+                  rating: rating,
+                }),
+                signal: trainingController.signal,
+              });
+              
+              if (!trainingResponse.ok) {
+                const errorText = await trainingResponse.text();
+                logger.error({ 
+                  conversationId: conversation.id, 
+                  status: trainingResponse.status,
+                  error: errorText,
+                }, 'Falha ao coletar dados de treinamento do WhatsApp');
+              } else {
+                const trainingData = await trainingResponse.json() as { trainingData?: { id: string }; isDuplicate?: boolean };
+                logger.info({ 
+                  conversationId: conversation.id, 
+                  trainingDataId: trainingData.trainingData?.id,
+                  isDuplicate: trainingData.isDuplicate,
+                  rating: rating,
+                  source: 'whatsapp',
+                }, 'Dados de treinamento do WhatsApp coletados com sucesso');
+              }
+            } finally {
+              clearTimeout(trainingTimeoutId);
             }
           }
         }
