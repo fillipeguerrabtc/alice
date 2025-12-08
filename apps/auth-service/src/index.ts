@@ -306,21 +306,29 @@ async function ensureGlobalAdmin(): Promise<void> {
   }
 
   // Atualizar role e senha para garantir alinhamento com os secrets
-  await db
+  // REGRA 8: Capturar resultado do update para verificar sucesso (Drizzle ORM best practice)
+  const [updated] = await db
     .update(schema.users)
     .set({
       ...baseUser,
     })
-    .where(eq(schema.users.id, existing.id));
+    .where(eq(schema.users.id, existing.id))
+    .returning();
 
-  logger.info({ userId: existing.id, email: adminEmail }, 'Administrador global atualizado via seed');
+  // Verificar se update teve sucesso antes de logar e provisionar
+  if (!updated) {
+    logger.error({ userId: existing.id, email: adminEmail }, 'Falha ao atualizar administrador global via seed');
+    return;
+  }
+
+  logger.info({ userId: updated.id, email: adminEmail }, 'Administrador global atualizado via seed');
   publishProvisioningEvent('user.updated', {
-    userId: existing.id,
-    email: existing.email || adminEmail,
-    firstName: existing.firstName || undefined,
-    lastName: existing.lastName || undefined,
-    role: 'super_admin',
-    tenantId: existing.tenantId || undefined,
+    userId: updated.id,
+    email: updated.email || adminEmail,
+    firstName: updated.firstName || undefined,
+    lastName: updated.lastName || undefined,
+    role: updated.role || 'super_admin',
+    tenantId: updated.tenantId || undefined,
   }).catch((error) => logger.warn({ error }, 'Provisionamento do admin global falhou (não crítico)'));
 }
 
