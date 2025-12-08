@@ -876,6 +876,7 @@ jobs:
             printf '# Grafana (Observabilidade)\n'
             printf 'GRAFANA_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
             printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
+            printf 'GF_SECURITY_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
             printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
             printf '\n'
             printf '# Admin centralizado (Alice/ERPNext/Grafana)\n'
