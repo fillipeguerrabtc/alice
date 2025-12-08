@@ -13,8 +13,7 @@ import { createLogger } from './logger.js';
 import { 
   FeatureFlagStorage, 
   FeatureFlag, 
-  CreateFeatureFlag,
-  featureFlagSchema
+  CreateFeatureFlag
 } from './feature-flags.js';
 
 const logger = createLogger('feature-flags-storage');

@@ -20,7 +20,7 @@ import {
   PermissionCheckResult,
 } from './types.js';
 import { hasPermission, hasMinimumRole, getRolePermissions } from './permissions.js';
-import { permissionCache, PermissionCache } from './cache.js';
+import { permissionCache } from './cache.js';
 
 const logger = createLogger('rbac');
 

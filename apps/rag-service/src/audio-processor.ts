@@ -10,7 +10,6 @@
  */
 
 import pino from 'pino';
-import crypto from 'crypto';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -318,7 +317,6 @@ class AudioProcessorService {
 
           // Versão MPEG
           const version = (byte1 >> 3) & 0x03;
-          const layer = (byte1 >> 1) & 0x03;
           
           // Tabela de bitrates (Layer III, MPEG1)
           const bitrateIndex = (byte2 >> 4) & 0x0F;
@@ -345,7 +343,7 @@ class AudioProcessorService {
         }
       }
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }
@@ -387,7 +385,7 @@ class AudioProcessorService {
         if (chunkSize % 2 !== 0) offset++; // Padding
       }
       return null;
-    } catch (error) {
+    } catch {
       return null;
     }
   }

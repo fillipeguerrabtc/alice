@@ -30,8 +30,6 @@ import {
   CacheAdapter, 
   createCacheAdapter, 
   initializeRedisCache, 
-  closeRedisCacheClient,
-  isRedisAvailable,
 } from '../redis-cache-adapter.js';
 
 const logger = createLogger('rbac-cache');

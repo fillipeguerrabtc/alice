@@ -13,7 +13,7 @@
  */
 
 import pino from 'pino';
-import { eq, and, lt, gte, desc, isNull } from '@alice/database';
+import { eq, and, lt, desc, isNull } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 

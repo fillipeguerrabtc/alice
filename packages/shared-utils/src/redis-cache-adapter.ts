@@ -20,7 +20,6 @@ const logger = createLogger('redis-cache-adapter');
 
 // Cliente Redis singleton
 let redisClient: RedisClientType | null = null;
-let redisConnectionPromise: Promise<RedisClientType | null> | null = null;
 let isProduction = false;
 
 /**

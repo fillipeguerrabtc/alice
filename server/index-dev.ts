@@ -11,7 +11,6 @@
 import express from 'express';
 import { registerRoutes } from './routes';
 import { setupVite, log } from './vite';
-import { storage } from './storage';
 
 // ============================================================================
 // PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 CLAUDE.md)

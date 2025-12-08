@@ -43,7 +43,6 @@ import {
   registerShutdownCallback,
   ShutdownPriority,
   Counter as PromCounter,
-  Gauge as PromGauge,
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';

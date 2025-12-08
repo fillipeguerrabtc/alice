@@ -225,7 +225,7 @@ class DocumentProcessorService {
 
     // Gerar embeddings para cada chunk
     const chunks: DocumentChunk[] = [];
-    let combinedEmbedding: number[] = new Array(TEXT_EMBEDDING_DIM).fill(0);
+    const combinedEmbedding: number[] = new Array(TEXT_EMBEDDING_DIM).fill(0);
     let embeddingModel = 'none';
 
     if (generateEmbeddings) {
@@ -489,8 +489,6 @@ class DocumentProcessorService {
     await workbook.xlsx.load(new Uint8Array(buffer));
     
     let text = '';
-    let totalRows = 0;
-
     workbook.eachSheet((worksheet: Worksheet, sheetId: number) => {
       const sheetName = worksheet.name || `Sheet${sheetId}`;
       const rows: string[] = [];
@@ -510,7 +508,6 @@ class DocumentProcessorService {
       
       if (rows.length > 0) {
         text += `\n=== Planilha: ${sheetName} ===\n${rows.join('\n')}\n`;
-        totalRows += rows.length;
       }
     });
 

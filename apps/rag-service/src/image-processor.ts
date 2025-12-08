@@ -11,7 +11,6 @@
  */
 
 import pino from 'pino';
-import crypto from 'crypto';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = pino({
@@ -276,9 +275,9 @@ class ImageProcessorService {
       // Para imagens grandes, tentamos carregar sharp dinamicamente
       // Se sharp não estiver disponível, usamos fallback
       try {
-        // Tenta carregar sharp usando require (mais tolerante com módulos opcionais)
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const sharp = require('sharp');
+        // Tenta carregar sharp dinamicamente (módulo opcional)
+        const sharpModule = await import('sharp').catch(() => null);
+        const sharp = sharpModule ? (sharpModule as unknown as { default?: any }).default ?? sharpModule : null;
         
         if (sharp && typeof sharp === 'function') {
           const thumbnailBuffer = await sharp(imageBuffer)
@@ -296,7 +295,7 @@ class ImageProcessorService {
             mimeType: 'image/jpeg',
           };
         }
-      } catch (sharpError) {
+      } catch {
         // Sharp não instalado ou não funciona - usar fallback silenciosamente
         logger.debug('Sharp não disponível, usando fallback');
       }

@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { z } from "zod";
-import { llmClient, chatMessageSchema } from "./services/llm-client";
+import { llmClient } from "./services/llm-client";
 
 const createConversationSchema = z.object({
   titulo: z.string().optional(),

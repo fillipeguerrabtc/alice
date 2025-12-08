@@ -734,7 +734,6 @@ function classifyQuery(query: string): ClassificationResult {
     return lowerQuery.includes(keyword) ? score + 1 : score;
   }, 0);
   
-  const hasQuestionMark = query.includes('?');
   const hasCurrentTimeReference = /(?:hoje|agora|atualmente|202\d)/i.test(query);
   
   if (internalScore > 0 && webScore === 0) {
@@ -801,8 +800,6 @@ app.use(express.json({ limit: '10mb' }));
 
 const CHUNK_SIZE = 1000;
 const CHUNK_OVERLAP = 200;
-const EMBEDDING_DIMENSIONS = 1536;
-
 function chunkText(text: string): string[] {
   const chunks: string[] = [];
   let start = 0;
@@ -818,22 +815,6 @@ function chunkText(text: string): string[] {
 
 function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) return 0;
-  
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
-  
-  for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
-  }
-  
-  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
 }
 
 app.get('/api/rag/health', (_req: Request, res: Response) => {
@@ -1022,8 +1003,6 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
 app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:documents:upload'), requireSameTenant(getTenantIdFromRequest), upload.single('file'), async (req: MulterRequest, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
-  const tenantId = req.tenantId;
-  
   if (!req.file) {
     return res.status(400).json({ error: 'Nenhum arquivo enviado' });
   }
@@ -1117,7 +1096,7 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
     const pool = getPool();
     // MULTI-TENANCY: tenant_id é parâmetro obrigatório na busca
     const queryParams: (string | number)[] = [embeddingVector, body.limit * 2, tenantId];
-    let paramIndex = 4;
+    const paramIndex = 4;
     
     let namespaceFilter = '';
     if (body.namespaceId) {
@@ -1208,7 +1187,7 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
     // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
     const pool = getPool();
     const queryParams: (string | number)[] = [embeddingVector, body.limit * 2];
-    let paramIndex = 3;
+    const paramIndex = 3;
     
     let namespaceFilter = '';
     if (body.namespaceId) {
@@ -1440,7 +1419,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
       // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
       const pool = getPool();
       const queryParams: (string | number)[] = [embeddingVector, tenantId, body.limit * 2];
-      let paramIndex = 4;
+      const paramIndex = 4;
       
       let namespaceFilter = '';
       if (body.namespaceId) {
@@ -2564,7 +2543,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
     // Similaridade = 1 - (distância / 2) para normalizar para [0, 1]
     const pool = getPool();
     const queryParams: (string | number)[] = [embeddingVector, tenantId, safeLimit];
-    let paramIndex = 4;
+    const paramIndex = 4;
     
     let excludeImageFilter = '';
     if (imageId) {

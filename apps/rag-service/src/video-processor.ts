@@ -16,7 +16,6 @@ import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-uti
 import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM } from './image-processor.js';
 import { spawn } from 'child_process';
-import { promisify } from 'util';
 import { writeFile, readFile, unlink, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -286,7 +285,7 @@ class VideoProcessorService {
       }
       
       // Extrair frames
-      let frameEmbeddings: number[][] = [];
+      const frameEmbeddings: number[][] = [];
       let framesExtracted = 0;
       let imageEmbeddingModel = 'none'; // Rastrear modelo de imagem real
       

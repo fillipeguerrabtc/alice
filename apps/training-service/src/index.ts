@@ -225,7 +225,6 @@ app.use(createRateLimiter({
 app.use(express.json({ limit: '10mb' }));
 
 const SIMILARITY_THRESHOLD = 0.85;
-const EMBEDDING_DIMENSIONS = 1536;
 const JOB_POLLING_INTERVAL_MS = 30000;
 
 function computeSemHash(text: string): string {
@@ -614,6 +613,8 @@ async function startFineTuningJob(jobId: string, hyperparameters: { epochs: numb
         messages: d.messages as Array<{ role: string; content: string }>,
       }))
     );
+    const jsonlSizeBytes = Buffer.byteLength(jsonlData, 'utf-8');
+    logger.debug({ jobId, jsonlSizeBytes }, 'Payload JSONL de treinamento gerado');
 
     const dataUrl = `s3://alice-training-data/${jobId}/training.jsonl`;
     const outputUrl = `s3://alice-training-output/${jobId}/`;
