@@ -48,10 +48,20 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 - Visualizar galeria de imagens geradas
 - Aprovar imagens para treinamento
 - Marcar dados como "alta qualidade"
+- **Bulk Import:** Interface visual para importação em massa de dados de treinamento (JSON/JSONL)
 
 **Acesso:**
-- Rota: `/dashboard/training`
+- Rota: `/training`
 - Requer role: `admin` ou `super_admin`
+
+**Bulk Import (Nova Funcionalidade - 09/12/2025):**
+- Upload de arquivos JSON ou JSONL (até 10MB, máx 1000 entradas)
+- Validação automática com Zod schema
+- Preview dos dados antes da importação
+- Auto-aprovação configurável
+- Drag & drop enterprise
+- Feedback visual de progresso
+- Deduplicação automática via SemHash
 
 ### 4. API de Bulk Import (Programático)
 
@@ -203,17 +213,40 @@ Se uma nova versão tiver degradação > 5%:
 - Avalie as respostas (estrelas)
 - Faça upload de documentos
 
-### 2. Dashboard Admin
-- Rota: `/dashboard/training`
+### 2. Dashboard Admin - Bulk Import (NOVO - 09/12/2025)
+- **Rota:** `/training` → Tab "Import em Massa"
+- **Funcionalidades:**
+  - Upload de arquivos JSON/JSONL via drag & drop
+  - Validação automática de formato
+  - Preview dos dados antes de importar
+  - Auto-aprovação opcional
+  - Importação de até 1000 entradas por arquivo
+  - Deduplicação automática via SemHash
+- **Formatos Aceitos:**
+  - **JSON:** `{"data": [{"messages": [...], "rating": 5}, ...]}`
+  - **JSONL:** Uma entrada por linha
+- **Validações:**
+  - Tamanho máximo: 10MB
+  - Máximo 1000 entradas por importação
+  - Schema Zod enterprise para garantir qualidade
+  - Rating entre 1 e 5 (opcional)
+
+### 3. Dashboard Admin - Manual
+- Rota: `/training` → Tab "Dados de Treinamento"
 - Aprovar/Reprovar dados em lote
-- Importar datasets externos
 - Visualizar galeria de imagens
 
-### 3. API REST
+### 4. API REST
 
 ```bash
-# Importar dados de treinamento
+# Importar dados de treinamento em massa
 POST /api/training/bulk-import
+Content-Type: application/json
+{
+  "data": [...],
+  "source": "bulk-import",
+  "autoApprove": false
+}
 
 # Upload de documento para RAG
 POST /api/rag/documents
@@ -257,9 +290,61 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
+---
+
+## 📝 Atualização 09/12/2025 - Interface Bulk Import Enterprise
+
+### Funcionalidade Implementada
+
+✅ **Interface Visual para Bulk Import de Training Data**
+
+**Localização:** `/training` → Tab "Import em Massa"
+
+**Capacidades:**
+- Upload de arquivos JSON/JSONL via drag & drop enterprise
+- Validação automática com Zod schema (TypeScript strict)
+- Preview dos dados antes da importação (mostra primeiras 5 entradas)
+- Auto-aprovação configurável (apenas dados com rating >= 4)
+- Source customizável para rastreabilidade
+- Progress feedback visual durante importação
+- Deduplicação automática via SemHash
+- Error handling completo com mensagens descritivas
+- Suporte a até 1000 entradas por arquivo (10MB máx)
+
+**Validações Implementadas:**
+- ✅ Tamanho de arquivo (máx 10MB)
+- ✅ Formato JSON/JSONL válido
+- ✅ Estrutura de dados (messages array obrigatório)
+- ✅ Limite de 1000 entradas
+- ✅ Rating entre 1 e 5 (opcional)
+- ✅ Role válido (user, assistant, system)
+- ✅ Content não vazio
+
+**UX Enterprise:**
+- ✅ Drag & drop zone com feedback visual
+- ✅ Preview com scroll area
+- ✅ Badges de status
+- ✅ Progress bar durante upload
+- ✅ Alerts para erros de validação
+- ✅ Internacionalização PT-BR e EN
+
+**Componentes Criados:**
+- `apps/frontend-service/src/components/ui/alert.tsx` (shadcn/ui)
+- Tab "Import em Massa" em `apps/frontend-service/src/pages/Training.tsx`
+
+**Aderência às 17 Regras:**
+- ✅ Regra 6: Zero workarounds, API real `/api/training/bulk-import`
+- ✅ Regra 8: TypeScript strict, validação Zod, zero `any`
+- ✅ Regra 10: Comentários em PT-BR
+- ✅ Regra 13: Internacionalização PT-BR primário, EN secundário
+- ✅ Regra 16: Best practices UX 2025 (drag & drop, validação client-side)
+
+---
+
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 1.6 - 09 de Dezembro de 2025*
+*Versão 1.7 - 09 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
 *Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*
+*Bulk Import: Interface visual enterprise implementada (09/12/2025)*

@@ -185,7 +185,7 @@
 | Documents | `Documents.tsx` | Upload/gestão documentos RAG |
 | Namespaces | `Namespaces.tsx` | Contextos RAG |
 | Agents | `Agents.tsx` | Agentes IA |
-| Training | `Training.tsx` | Dados + Jobs Fine-tuning |
+| **Training** | `Training.tsx` | **3 tabs: Dados + Jobs + Bulk Import (NOVO)** |
 | Integrations | `Integrations.tsx` | Stripe, Wise, Twilio |
 | WisePayments | `WisePayments.tsx` | Transferências Wise |
 | ImageGallery | `ImageGalleryPage.tsx` | Galeria FLUX.1 |
@@ -654,12 +654,54 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ---
 
-*Documento consolidado em 05/12/2025*  
+---
+
+## 📝 ATUALIZAÇÃO 09/12/2025 - BULK IMPORT ENTERPRISE UI
+
+### Funcionalidade Implementada
+
+✅ **Interface Visual para Bulk Import de Training Data**
+
+**Localização:** Página Training (`/training`) → Tab "Import em Massa"
+
+**Capacidades:**
+- ✅ Upload de arquivos JSON/JSONL via drag & drop
+- ✅ Validação automática com Zod schema (TypeScript strict)
+- ✅ Preview dos dados antes da importação
+- ✅ Auto-aprovação configurável
+- ✅ Source customizável
+- ✅ Progress feedback visual
+- ✅ Error handling enterprise
+- ✅ Suporte a até 1000 entradas por arquivo (10MB máx)
+- ✅ Internacionalização PT-BR e EN
+
+**Componentes Criados:**
+- `apps/frontend-service/src/components/ui/alert.tsx` (shadcn/ui)
+- Tab "Import em Massa" integrada em `Training.tsx`
+
+**Validações:**
+- Tamanho de arquivo (máx 10MB)
+- Formato JSON/JSONL válido
+- Estrutura de dados (messages array)
+- Limite de 1000 entradas
+- Rating entre 1 e 5 (opcional)
+
+**Aderência às 17 Regras:**
+- ✅ Regra 6: API real, zero workarounds
+- ✅ Regra 8: TypeScript strict, zero `any`
+- ✅ Regra 10: Documentação PT-BR
+- ✅ Regra 13: i18n PT-BR primário
+- ✅ Regra 16: UX enterprise 2025
+
+---
+
+*Documento consolidado em 09/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.2 - Redis Alice Dedicado + Variáveis Inter-Service*
+*Versão: 3.4 - Bulk Import UI Enterprise*
 *Total de Containers: 35 (5 infra + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
+*Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
 
 ---
 

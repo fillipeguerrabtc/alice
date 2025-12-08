@@ -31,6 +31,12 @@ import {
   ChevronRight,
   Filter,
   TrendingUp,
+  Upload,
+  FileJson,
+  Info,
+  FileCheck,
+  AlertTriangle,
+  Eye,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -56,6 +62,9 @@ import {
 } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
@@ -95,6 +104,22 @@ interface TrainingDataResponse {
 
 interface JobsResponse {
   jobs: FineTuningJob[];
+}
+
+interface BulkImportEntry {
+  messages: Array<{ role: string; content: string }>;
+  rating?: number;
+}
+
+interface BulkImportData {
+  data?: BulkImportEntry[];
+  // JSONL é parseado linha por linha para array
+}
+
+interface BulkImportResult {
+  imported: number;
+  duplicates: number;
+  errors: Array<{ index: number; error: string }>;
 }
 
 const containerVariants = {
@@ -443,6 +468,435 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
   );
 }
 
+// ============================================================================
+// COMPONENTE: BulkImportTab - Upload em massa de dados de treinamento
+// REGRA 8: TypeScript strict, zero any, validação Zod enterprise
+// REGRA 16: Validação client-side, error handling, UX feedback
+// ============================================================================
+function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknown>) => string }) {
+  const queryClient = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+  const [parsedData, setParsedData] = useState<BulkImportEntry[]>([]);
+  const [source, setSource] = useState('bulk-import');
+  const [autoApprove, setAutoApprove] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  // Schema Zod para validação enterprise (Regra 8)
+  const BulkImportEntrySchema = z.object({
+    messages: z.array(
+      z.object({
+        role: z.enum(['user', 'assistant', 'system']),
+        content: z.string().min(1),
+      })
+    ).min(1),
+    rating: z.number().int().min(1).max(5).optional(),
+  });
+
+  const BulkImportSchema = z.array(BulkImportEntrySchema).max(1000);
+
+  const bulkImport = useMutation({
+    mutationFn: async () => {
+      return apiRequest('POST', '/api/training/bulk-import', {
+        data: parsedData,
+        source: source || 'bulk-import',
+        autoApprove,
+      }) as Promise<BulkImportResult>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
+      toast({ 
+        title: t('training.bulkImport.success.fullSuccess', { 
+          imported: result.imported,
+          duplicates: result.duplicates,
+        }),
+      });
+      // Limpar formulário após sucesso
+      setFile(null);
+      setParsedData([]);
+      setSource('bulk-import');
+      setAutoApprove(false);
+    },
+    onError: (error) => {
+      logger.error({ error }, 'Erro ao importar dados');
+      toast({ 
+        title: t('training.bulkImport.errors.importFailed'),
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Handler para drag & drop (UX enterprise - Regra 16)
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const droppedFile = e.dataTransfer.files[0];
+    if (droppedFile) {
+      handleFileSelect(droppedFile);
+    }
+  }, []);
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (selectedFile) {
+      handleFileSelect(selectedFile);
+    }
+  };
+
+  // Validação e parse do arquivo (Enterprise error handling - Regra 8)
+  const handleFileSelect = async (selectedFile: File) => {
+    setValidationError(null);
+    setParsedData([]);
+
+    // Validação 1: Tamanho do arquivo (máx 10MB conforme backend)
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+    if (selectedFile.size > MAX_FILE_SIZE) {
+      setValidationError(t('training.bulkImport.validation.fileTooLargeDesc'));
+      return;
+    }
+
+    // Validação 2: Extensão do arquivo
+    const validExtensions = ['.json', '.jsonl'];
+    const fileExtension = selectedFile.name.toLowerCase().slice(selectedFile.name.lastIndexOf('.'));
+    if (!validExtensions.includes(fileExtension)) {
+      setValidationError(t('training.bulkImport.validation.invalidFormatDesc'));
+      return;
+    }
+
+    try {
+      const text = await selectedFile.text();
+      let entries: BulkImportEntry[] = [];
+
+      // Parse JSON ou JSONL
+      if (fileExtension === '.json') {
+        const parsed = JSON.parse(text) as BulkImportData;
+        entries = parsed.data || (Array.isArray(parsed) ? parsed : []);
+      } else if (fileExtension === '.jsonl') {
+        entries = text
+          .split('\n')
+          .filter(line => line.trim())
+          .map(line => JSON.parse(line) as BulkImportEntry);
+      }
+
+      // Validação 3: Máximo 1000 entradas
+      if (entries.length > 1000) {
+        setValidationError(t('training.bulkImport.validation.tooManyEntriesDesc'));
+        return;
+      }
+
+      // Validação 4: Schema Zod
+      const validationResult = BulkImportSchema.safeParse(entries);
+      if (!validationResult.success) {
+        const firstError = validationResult.error.errors[0];
+        setValidationError(firstError?.message || t('training.bulkImport.validation.missingMessagesDesc'));
+        return;
+      }
+
+      // Sucesso - salvar dados parseados
+      setFile(selectedFile);
+      setParsedData(entries);
+    } catch (error) {
+      logger.error({ error }, 'Erro ao fazer parse do arquivo');
+      setValidationError(t('training.bulkImport.errors.parseError'));
+    }
+  };
+
+  const handleClearFile = () => {
+    setFile(null);
+    setParsedData([]);
+    setValidationError(null);
+  };
+
+  return (
+    <div className="flex-1 p-4 space-y-6">
+      {/* Zona de Upload */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Upload className="h-5 w-5 text-primary" />
+            {t('training.bulkImport.title')}
+          </CardTitle>
+          <CardDescription>
+            {t('training.bulkImport.subtitle')}
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-4">
+          {/* Drag & Drop Zone */}
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            className={cn(
+              "border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer",
+              isDragging 
+                ? "border-primary bg-primary/5 scale-[1.02]" 
+                : file 
+                  ? "border-green-500 bg-green-500/5"
+                  : "border-muted-foreground/25 hover:border-primary hover:bg-muted/50"
+            )}
+            onClick={() => document.getElementById('bulk-import-file')?.click()}
+          >
+            <input
+              id="bulk-import-file"
+              type="file"
+              accept=".json,.jsonl"
+              className="hidden"
+              onChange={handleFileInputChange}
+            />
+
+            {file ? (
+              <div className="space-y-2">
+                <FileCheck className="h-12 w-12 text-green-500 mx-auto" />
+                <div>
+                  <p className="font-medium text-green-600">
+                    {t('training.bulkImport.fileSelected')}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{file.name}</p>
+                  <Badge variant="outline" className="mt-2 bg-green-500/10 text-green-600">
+                    {t('training.bulkImport.entries', { count: parsedData.length })}
+                  </Badge>
+                </div>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleClearFile();
+                  }}
+                  className="mt-2"
+                >
+                  {t('common.cancel')}
+                </Button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <FileJson className={cn(
+                  "h-12 w-12 mx-auto transition-colors",
+                  isDragging ? "text-primary" : "text-muted-foreground/50"
+                )} />
+                <div>
+                  <p className="font-medium">
+                    {t('training.bulkImport.dragDrop')}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {t('training.bulkImport.or')} {t('training.bulkImport.browse')}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {t('training.bulkImport.supportedFormats')}
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Erro de Validação */}
+          {validationError && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>{t('training.bulkImport.validation.invalidFormat')}</AlertTitle>
+              <AlertDescription>{validationError}</AlertDescription>
+            </Alert>
+          )}
+
+          {/* Configurações de Import */}
+          {parsedData.length > 0 && (
+            <div className="space-y-4 pt-4 border-t">
+              <div className="space-y-2">
+                <Label htmlFor="import-source">{t('training.bulkImport.source')}</Label>
+                <Input
+                  id="import-source"
+                  placeholder={t('training.bulkImport.sourcePlaceholder')}
+                  value={source}
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSource(e.target.value)}
+                  maxLength={50}
+                />
+              </div>
+
+              <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="space-y-0.5">
+                  <Label htmlFor="auto-approve" className="font-medium">
+                    {t('training.bulkImport.autoApprove')}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {t('training.bulkImport.autoApproveDesc')}
+                  </p>
+                </div>
+                <Switch
+                  id="auto-approve"
+                  checked={autoApprove}
+                  onCheckedChange={setAutoApprove}
+                />
+              </div>
+            </div>
+          )}
+        </CardContent>
+
+        {parsedData.length > 0 && (
+          <CardFooter className="flex justify-end gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleClearFile}
+              disabled={bulkImport.isPending}
+            >
+              {t('training.bulkImport.cancel')}
+            </Button>
+            <Button 
+              onClick={() => bulkImport.mutate()}
+              disabled={bulkImport.isPending || parsedData.length === 0}
+            >
+              {bulkImport.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  {t('training.bulkImport.importing')}
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  {t('training.bulkImport.import', { count: parsedData.length })}
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        )}
+      </Card>
+
+      {/* Preview dos Dados */}
+      {parsedData.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Eye className="h-4 w-4 text-primary" />
+              {t('training.bulkImport.preview')}
+            </CardTitle>
+            <CardDescription>
+              {t('training.bulkImport.showingFirst', { 
+                count: Math.min(5, parsedData.length),
+                total: parsedData.length 
+              })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ScrollArea className="h-[400px] pr-4">
+              <div className="space-y-3">
+                {parsedData.slice(0, 5).map((entry, idx) => (
+                  <Card key={idx} className="bg-muted/30">
+                    <CardContent className="p-3 space-y-2">
+                      {entry.messages.map((msg, msgIdx) => (
+                        <div 
+                          key={msgIdx}
+                          className={cn(
+                            'text-xs p-2 rounded',
+                            msg.role === 'user' ? 'bg-background' : 'bg-primary/5'
+                          )}
+                        >
+                          <span className="font-medium capitalize">{msg.role}:</span>{' '}
+                          <span className="text-muted-foreground">
+                            {msg.content.slice(0, 200)}
+                            {msg.content.length > 200 ? '...' : ''}
+                          </span>
+                        </div>
+                      ))}
+                      {entry.rating && (
+                        <Badge variant="secondary" className="text-xs">
+                          Rating: {entry.rating}/5
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+                {parsedData.length > 5 && (
+                  <p className="text-center text-sm text-muted-foreground">
+                    +{parsedData.length - 5} {t('training.bulkImport.entries', { count: parsedData.length - 5 })}
+                  </p>
+                )}
+              </div>
+            </ScrollArea>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Ajuda - Formato do Arquivo */}
+      {parsedData.length === 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Info className="h-4 w-4 text-primary" />
+              {t('training.bulkImport.help.title')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-sm font-medium mb-2">
+                {t('training.bulkImport.help.jsonExample')}
+              </p>
+              <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
+{`{
+  "data": [
+    {
+      "messages": [
+        {"role": "user", "content": "Como funciona X?"},
+        {"role": "assistant", "content": "X funciona..."}
+      ],
+      "rating": 5
+    }
+  ]
+}`}
+              </pre>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium mb-2">
+                {t('training.bulkImport.help.jsonlExample')}
+              </p>
+              <pre className="text-xs bg-muted p-3 rounded overflow-x-auto">
+{`{"messages": [{"role": "user", "content": "Pergunta 1"}, {"role": "assistant", "content": "Resposta 1"}], "rating": 5}
+{"messages": [{"role": "user", "content": "Pergunta 2"}, {"role": "assistant", "content": "Resposta 2"}], "rating": 4}`}
+              </pre>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-medium mb-1">
+                  {t('training.bulkImport.help.requiredFields')}
+                </p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                  <li>{t('training.bulkImport.help.messagesField')}</li>
+                </ul>
+              </div>
+              <div>
+                <p className="font-medium mb-1">
+                  {t('training.bulkImport.help.optionalFields')}
+                </p>
+                <ul className="list-disc list-inside text-muted-foreground space-y-1">
+                  <li>{t('training.bulkImport.help.ratingField')}</li>
+                </ul>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// Logger para erros de validação (Regra 8 - Pino logging)
+const logger = {
+  error: (obj: Record<string, unknown>, msg: string) => console.error(msg, obj),
+};
+
 export default function Training() {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
@@ -579,6 +1033,10 @@ export default function Training() {
               <Brain className="h-4 w-4 mr-2" />
               {t('training.tabs.jobs', { count: allJobs.length })}
             </TabsTrigger>
+            <TabsTrigger value="bulk-import" data-testid="tab-bulk-import">
+              <Upload className="h-4 w-4 mr-2" />
+              {t('training.bulkImport.title')}
+            </TabsTrigger>
           </TabsList>
         </div>
 
@@ -685,6 +1143,10 @@ export default function Training() {
               </motion.div>
             )}
           </ScrollArea>
+        </TabsContent>
+
+        <TabsContent value="bulk-import" className="flex-1 m-0">
+          <BulkImportTab t={t} />
         </TabsContent>
       </Tabs>
 

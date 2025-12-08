@@ -928,6 +928,60 @@
     "errors": {
       "createJob": "Error creating job",
       "updateStatus": "Error updating status"
+    },
+    "bulkImport": {
+      "title": "Bulk Import",
+      "subtitle": "Import multiple training data at once",
+      "dragDrop": "Drag and drop JSON/JSONL file here",
+      "or": "or",
+      "browse": "browse your computer",
+      "supportedFormats": "Formats: JSON, JSONL (up to 10MB, max 1000 entries)",
+      "fileSelected": "File selected",
+      "entries": "{{count}} entry(ies)",
+      "preview": "Data Preview",
+      "showingFirst": "Showing first {{count}} entries of {{total}}",
+      "source": "Source",
+      "sourcePlaceholder": "E.g.: bulk-import, sales-dataset",
+      "autoApprove": "Auto-approve data",
+      "autoApproveDesc": "Data will be automatically approved (only if quality >= 4)",
+      "import": "Import {{count}} entries",
+      "importing": "Importing...",
+      "cancel": "Cancel",
+      "validation": {
+        "invalidFormat": "Invalid format",
+        "invalidFormatDesc": "File must be valid JSON or JSONL",
+        "tooManyEntries": "Too many entries",
+        "tooManyEntriesDesc": "Maximum of 1000 entries per import",
+        "fileTooLarge": "File too large",
+        "fileTooLargeDesc": "Maximum size: 10MB",
+        "missingMessages": "Invalid structure",
+        "missingMessagesDesc": "Each entry must have 'messages' array with role and content",
+        "invalidRating": "Invalid rating",
+        "invalidRatingDesc": "Rating must be between 1 and 5"
+      },
+      "success": {
+        "imported": "{{count}} entries imported successfully",
+        "duplicates": "{{count}} duplicates ignored",
+        "fullSuccess": "Import complete: {{imported}} imported, {{duplicates}} duplicates"
+      },
+      "errors": {
+        "importFailed": "Import failed",
+        "invalidFile": "Invalid file",
+        "parseError": "Error parsing file"
+      },
+      "empty": {
+        "title": "No file selected",
+        "description": "Drag a JSON/JSONL file or click to select"
+      },
+      "help": {
+        "title": "File Format",
+        "jsonExample": "JSON (array with 'data'):",
+        "jsonlExample": "JSONL (one entry per line):",
+        "requiredFields": "Required fields:",
+        "messagesField": "messages: array with role + content",
+        "optionalFields": "Optional fields:",
+        "ratingField": "rating: number between 1 and 5"
+      }
     }
   },
   "erpnext": {

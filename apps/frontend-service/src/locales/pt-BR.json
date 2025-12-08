@@ -928,6 +928,60 @@
     "errors": {
       "createJob": "Erro ao criar job",
       "updateStatus": "Erro ao atualizar status"
+    },
+    "bulkImport": {
+      "title": "Import em Massa",
+      "subtitle": "Importe múltiplos dados de treinamento de uma vez",
+      "dragDrop": "Arraste e solte arquivo JSON/JSONL aqui",
+      "or": "ou",
+      "browse": "procure em seu computador",
+      "supportedFormats": "Formatos: JSON, JSONL (até 10MB, máx 1000 entradas)",
+      "fileSelected": "Arquivo selecionado",
+      "entries": "{{count}} entrada(s)",
+      "preview": "Prévia dos Dados",
+      "showingFirst": "Mostrando primeiras {{count}} entradas de {{total}}",
+      "source": "Source",
+      "sourcePlaceholder": "Ex: bulk-import, dataset-vendas",
+      "autoApprove": "Auto-aprovar dados",
+      "autoApproveDesc": "Dados serão aprovados automaticamente (apenas se qualidade >= 4)",
+      "import": "Importar {{count}} entradas",
+      "importing": "Importando...",
+      "cancel": "Cancelar",
+      "validation": {
+        "invalidFormat": "Formato inválido",
+        "invalidFormatDesc": "Arquivo deve ser JSON ou JSONL válido",
+        "tooManyEntries": "Muitas entradas",
+        "tooManyEntriesDesc": "Máximo de 1000 entradas por importação",
+        "fileTooLarge": "Arquivo muito grande",
+        "fileTooLargeDesc": "Tamanho máximo: 10MB",
+        "missingMessages": "Estrutura inválida",
+        "missingMessagesDesc": "Cada entrada deve ter array 'messages' com role e content",
+        "invalidRating": "Rating inválido",
+        "invalidRatingDesc": "Rating deve estar entre 1 e 5"
+      },
+      "success": {
+        "imported": "{{count}} entradas importadas com sucesso",
+        "duplicates": "{{count}} duplicadas ignoradas",
+        "fullSuccess": "Import concluído: {{imported}} importadas, {{duplicates}} duplicadas"
+      },
+      "errors": {
+        "importFailed": "Falha na importação",
+        "invalidFile": "Arquivo inválido",
+        "parseError": "Erro ao processar arquivo"
+      },
+      "empty": {
+        "title": "Nenhum arquivo selecionado",
+        "description": "Arraste um arquivo JSON/JSONL ou clique para selecionar"
+      },
+      "help": {
+        "title": "Formato do Arquivo",
+        "jsonExample": "JSON (array com 'data'):",
+        "jsonlExample": "JSONL (uma entrada por linha):",
+        "requiredFields": "Campos obrigatórios:",
+        "messagesField": "messages: array com role + content",
+        "optionalFields": "Campos opcionais:",
+        "ratingField": "rating: número entre 1 e 5"
+      }
     }
   },
   "erpnext": {
