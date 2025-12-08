@@ -5,22 +5,72 @@
 # Documentação: https://pgbackrest.org/
 #
 # Regra 6: Enterprise-grade (sem workarounds)
-# Regra 11: Seguir docs oficiais pgBackRest 2025
+# Regra 11: Seguir docs oficiais pgBackRest 2025 - build from source
 # =============================================================================
 
-FROM pgbackrest/pgbackrest:2.57
+# Stage 1: Build pgBackRest from source
+# REGRA 16: Usar SHA256 digest para segurança (imagens externas)
+FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300 AS builder
+
+# Versão do pgBackRest
+ENV PGBACKREST_VERSION=2.57
+
+# Instalar dependências de build
+RUN apk add --no-cache \
+    meson \
+    gcc \
+    musl-dev \
+    postgresql-dev \
+    openssl-dev \
+    libxml2-dev \
+    lz4-dev \
+    zstd-dev \
+    bzip2-dev \
+    yaml-dev \
+    libssh2-dev \
+    make \
+    wget \
+    tar \
+    ninja \
+    git
+
+# Download e build pgBackRest from source
+# REGRA 11: Usar git clone com branch release/ para garantir versão exata
+RUN git clone --branch release/${PGBACKREST_VERSION} --depth 1 \
+    https://github.com/pgbackrest/pgbackrest.git /tmp/pgbackrest
+
+# Build e instalar pgBackRest
+WORKDIR /tmp/pgbackrest
+RUN meson setup build
+RUN ninja -C build
+RUN ninja -C build install
+
+# Stage 2: Runtime image (minimal)
+# REGRA 16: Usar SHA256 digest para segurança (imagens externas)
+FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300
 
 LABEL maintainer="Alice Enterprise Platform"
 LABEL description="pgBackRest enterprise backup with PITR, encryption, S3 offsite"
 
-# Instalar dependências adicionais
+# Copiar binário compilado do stage builder
+COPY --from=builder /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
+COPY --from=builder /usr/local/share/man/man1/pgbackrest.1 /usr/local/share/man/man1/pgbackrest.1
+
+# Instalar apenas dependências de runtime (sem build tools)
 USER root
 RUN apk add --no-cache \
     bash \
     curl \
     ca-certificates \
     openssl \
-    tzdata
+    tzdata \
+    postgresql-client \
+    libxml2 \
+    lz4 \
+    zstd \
+    bzip2 \
+    yaml \
+    libssh2
 
 # Configurar timezone Brasil
 ENV TZ=America/Sao_Paulo
