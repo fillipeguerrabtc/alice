@@ -79,6 +79,12 @@ COMPONENT_CONFIG = {
         "services": [
             "erpnext-backend",
             "erpnext-scheduler",
+        ],
+    },
+    "erpnext-worker": {
+        "docker_image": "frappe/erpnext-worker",
+        "version_prefix": "v15.",
+        "services": [
             "erpnext-worker-default-1",
             "erpnext-worker-default-2",
             "erpnext-worker-default-3",
@@ -278,6 +284,7 @@ def main():
             print(f"✅ {component}: {version}{' @' + digest[:20] + '...' if digest else ' (sem digest)'}")
     
     # ERPNext imagens adicionais (herdam versão do erpnext)
+    # Bug 2 corrigido: erpnext-worker é componente separado (imagem frappe/erpnext-worker)
     if "erpnext" in versions:
         erpnext_version = versions["erpnext"]
         for suffix in ["nginx", "socketio", "worker"]:

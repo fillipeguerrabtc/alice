@@ -393,6 +393,13 @@ jobs:
           ERPNEXT_SOCKETIO_DIGEST=$(fetch_docker_digest "frappe/frappe-socketio" "v15.${ERPNEXT_VERSION}")
           ERPNEXT_WORKER_DIGEST=$(fetch_docker_digest "frappe/erpnext-worker" "v15.${ERPNEXT_VERSION}")
           
+          # Buscar digests para componentes adicionais (Bug 1: faltavam essas chamadas)
+          DOCKER_SOCKET_PROXY_DIGEST=$(fetch_docker_digest "tecnativa/docker-socket-proxy" "v${DOCKER_SOCKET_PROXY_VERSION}")
+          BUSYBOX_DIGEST=$(fetch_docker_digest "library/busybox" "${BUSYBOX_VERSION}")
+          REDIS_DIGEST=$(fetch_docker_digest "library/redis" "${REDIS_VERSION}")
+          MARIADB_DIGEST=$(fetch_docker_digest "library/mariadb" "${MARIADB_VERSION}")
+          PGVECTOR_DIGEST=$(fetch_docker_digest "pgvector/pgvector" "${PGVECTOR_TAG}")
+          
           # Exportar para GitHub Actions
           echo "TRAEFIK_DIGEST=${TRAEFIK_DIGEST}" >> $GITHUB_ENV
           echo "PROMETHEUS_DIGEST=${PROMETHEUS_DIGEST}" >> $GITHUB_ENV
