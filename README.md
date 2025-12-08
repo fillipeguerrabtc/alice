@@ -381,12 +381,13 @@ Todos os 27 containers operam com filesystem read-only + tmpfs para escrita temp
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.9.0 - 09 de Dezembro de 2025*
+*Versão 3.10.0 - 08 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
+*Total de Containers: 35 (5 infra + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
+*Última Revisão Enterprise: 08/12/2025 - 10 bugs críticos corrigidos*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 
 </div>

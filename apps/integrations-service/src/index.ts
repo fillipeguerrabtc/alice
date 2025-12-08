@@ -2237,8 +2237,14 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
       try {
         const rating = chatResult.escalated ? 1 : 5; // Inferir rating baseado em escalação
         
-        // Coletar dados apenas se rating >= 4 (positivo) ou se houve escalação (para aprendizado negativo)
-        if (rating >= 4 || chatResult.escalated) {
+        // VALIDAÇÃO: Só coletar dados se houver resposta válida do LLM
+        // Previne coleta de dados malformados (rating alto com resposta vazia)
+        const hasValidResponse = chatResult.response && chatResult.response.trim().length > 0;
+        
+        // Coletar dados apenas se:
+        // 1. Rating >= 4 (positivo) E houver resposta válida, OU
+        // 2. Houve escalação (para aprendizado negativo) E houver resposta válida
+        if ((rating >= 4 || chatResult.escalated) && hasValidResponse) {
           const namespaceId = conversation.agent?.namespaceId;
           const tenantId = user.tenantId;
           
@@ -2268,7 +2274,7 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
                 source: 'whatsapp', // Fonte: WhatsApp
                 messages: [
                   { role: 'user', content: Body },
-                  { role: 'assistant', content: chatResult.response || '' },
+                  { role: 'assistant', content: chatResult.response },
                 ],
                 rating: rating,
               }),
