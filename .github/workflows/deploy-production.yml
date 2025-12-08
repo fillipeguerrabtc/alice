@@ -794,14 +794,27 @@ jobs:
           else
             STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET}"
           fi
-          WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET:-}"
+          # REGRA 14: Verificação explícita para fallback correto (consistência com padrão estabelecido)
+          if [ -z "${WISE_WEBHOOK_SECRET_SECRET}" ]; then
+            WISE_WEBHOOK_SECRET=""
+          else
+            WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET}"
+          fi
           if [ -z "${WISE_SANDBOX_SECRET}" ]; then
             WISE_SANDBOX="false"
           else
             WISE_SANDBOX="${WISE_SANDBOX_SECRET}"
           fi
-          ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET:-}"
-          ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET:-}"
+          if [ -z "${ERPNEXT_API_KEY_SECRET}" ]; then
+            ERPNEXT_API_KEY=""
+          else
+            ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET}"
+          fi
+          if [ -z "${ERPNEXT_API_SECRET_SECRET}" ]; then
+            ERPNEXT_API_SECRET=""
+          else
+            ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET}"
+          fi
           
           # REGRA 14: Criar .env.prod usando printf com escape adequado para proteger secrets
           # Protege contra caracteres especiais ($, backticks, backslashes) sendo interpretados pelo shell

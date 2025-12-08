@@ -302,7 +302,8 @@ const app = express();
 async function ensureGlobalAdmin(): Promise<void> {
   // REGRA 14: ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)
   // Schema Zod valida obrigatoriedade e formato de email em produção, mas em desenvolvimento são opcionais
-  const adminEmail = config.ADMIN_USER?.toLowerCase().trim();
+  // REGRA 8: Optional chaining em ambas as chamadas para evitar TypeError se ADMIN_USER for undefined
+  const adminEmail = config.ADMIN_USER?.toLowerCase()?.trim();
   const adminPassword = config.ADMIN_PWD;
 
   if (!adminEmail || !adminPassword) {
