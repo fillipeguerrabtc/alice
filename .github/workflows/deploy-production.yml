@@ -759,6 +759,17 @@ jobs:
             echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
             exit 1
           fi
+          # REGRA 14: Validar formato de email do ADMIN_USER (Zod valida .email() em runtime)
+          # Fail-fast no CI/CD para evitar falha silenciosa em produção
+          if ! echo "${ADMIN_USER}" | grep -qE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
+            echo "::error::ADMIN_USER deve ser um email válido (formato: user@example.com). Valor fornecido: ${ADMIN_USER}" >&2
+            exit 1
+          fi
+          # Validar comprimento mínimo da senha (Zod valida .min(8) em runtime)
+          if [ ${#ADMIN_PWD} -lt 8 ]; then
+            echo "::error::ADMIN_PWD deve ter no mínimo 8 caracteres. Comprimento atual: ${#ADMIN_PWD}" >&2
+            exit 1
+          fi
           # REGRA 14: Fallback seguro para secrets opcionais (GitHub Actions define ausentes como empty strings)
           # Usar verificação explícita [ -z ] ao invés de ${VAR:-default} para garantir fallback correto
           if [ -z "${GRAFANA_ADMIN_USER_SECRET}" ]; then

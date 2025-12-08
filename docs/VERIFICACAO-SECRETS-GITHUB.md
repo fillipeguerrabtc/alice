@@ -40,8 +40,8 @@ Estes secrets têm fallback para `ADMIN_USER`/`ADMIN_PWD` se ausentes:
 |--------|--------|-------------|
 | `REDIS_CACHE_PASSWORD` | ✅ Confirmado | Atualizado 5 dias atrás |
 | `REDIS_QUEUE_PASSWORD` | ✅ Confirmado | Atualizado 5 dias atrás |
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ⚠️ Não visível | Verificar se existe |
-| `ERPNEXT_DB_PASSWORD` | ⚠️ Não visível | Verificar se existe |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | ✅ Confirmado | Atualizado 5 dias atrás |
+| `ERPNEXT_DB_PASSWORD` | ✅ Confirmado | Atualizado 5 dias atrás |
 
 ## Secrets de Segurança e Sessão
 
@@ -54,8 +54,8 @@ Estes secrets têm fallback para `ADMIN_USER`/`ADMIN_PWD` se ausentes:
 
 | Secret | Status | Observações |
 |--------|--------|-------------|
-| `GOOGLE_CLIENT_ID` | ⚠️ Não visível | Verificar se existe |
-| `GOOGLE_CLIENT_SECRET` | ⚠️ Não visível | Verificar se existe |
+| `GOOGLE_CLIENT_ID` | ✅ Confirmado | Atualizado 2 semanas atrás |
+| `GOOGLE_CLIENT_SECRET` | ✅ Confirmado | Atualizado 2 semanas atrás |
 | `OAUTH_GITHUB_CLIENT_ID` | ✅ Confirmado | Atualizado 2 semanas atrás |
 | `OAUTH_GITHUB_CLIENT_SECRET` | ✅ Confirmado | Atualizado 2 semanas atrás |
 
@@ -126,29 +126,24 @@ Estes secrets têm fallback para `ADMIN_USER`/`ADMIN_PWD` se ausentes:
 
 ## Resumo
 
-### ✅ Secrets Confirmados: 32
-### ⚠️ Secrets Não Visíveis (mas podem existir): 9
+### ✅ Secrets Confirmados: 36
+### ⚠️ Secrets Não Visíveis (mas podem existir): 5
 
-**Secrets que precisam verificação manual:**
-1. `ERPNEXT_MYSQL_ROOT_PASSWORD` - Obrigatório para ERPNext
-2. `ERPNEXT_DB_PASSWORD` - Obrigatório para ERPNext
-3. `GOOGLE_CLIENT_ID` - Obrigatório se OAuth Google estiver habilitado
-4. `GOOGLE_CLIENT_SECRET` - Obrigatório se OAuth Google estiver habilitado
-5. `STRIPE_WEBHOOK_BASE_URL` - Opcional (tem fallback)
-6. `WISE_WEBHOOK_SECRET` - Opcional (pode ser vazio)
-7. `WISE_SANDBOX` - Opcional (fallback para `false`)
-8. `ERPNEXT_API_KEY` - Opcional (gerado após deploy)
-9. `ERPNEXT_API_SECRET` - Opcional (gerado após deploy)
+**Secrets que precisam verificação manual (opcionais):**
+1. `STRIPE_WEBHOOK_BASE_URL` - Opcional (tem fallback para URL padrão)
+2. `WISE_WEBHOOK_SECRET` - Opcional (pode ser vazio)
+3. `WISE_SANDBOX` - Opcional (fallback para `false`)
+4. `ERPNEXT_API_KEY` - Opcional (gerado após deploy)
+5. `ERPNEXT_API_SECRET` - Opcional (gerado após deploy)
 
 ## Recomendações
 
-1. **Verificar manualmente** os 9 secrets não visíveis nas imagens
-2. **Garantir** que `ERPNEXT_MYSQL_ROOT_PASSWORD` e `ERPNEXT_DB_PASSWORD` estão configurados (obrigatórios)
-3. **Verificar** se `GOOGLE_CLIENT_ID` e `GOOGLE_CLIENT_SECRET` estão configurados se OAuth Google estiver em uso
-4. **Confirmar** que secrets opcionais (`WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`) podem ser deixados vazios se não estiverem em uso
+1. **Todos os secrets obrigatórios estão confirmados** ✅
+2. **Secrets opcionais** (`STRIPE_WEBHOOK_BASE_URL`, `WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`) podem ser deixados vazios se não estiverem em uso - todos têm fallback seguro no workflow
 
 ## Notas
 
-- Secrets marcados como "Não visível" podem existir mas não apareceram nas screenshots fornecidas
-- Secrets opcionais têm fallback seguro no workflow
-- Todos os secrets obrigatórios foram confirmados nas imagens
+- **36 secrets confirmados** nas imagens fornecidas
+- **5 secrets opcionais** não visíveis nas imagens (todos têm fallback seguro no workflow)
+- **Todos os secrets obrigatórios estão configurados** ✅
+- Secrets opcionais podem ser deixados vazios se não estiverem em uso

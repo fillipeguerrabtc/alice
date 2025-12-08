@@ -192,7 +192,9 @@ function csrfProtection(req: Request, res: Response, next: NextFunction): void {
 }
 
 // Schema de configuração do auth-service
-const authConfigSchema = z.object({
+// REGRA 14: ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)
+// Schema Zod deve refletir requisito de runtime - obrigatórios em produção, opcionais em desenvolvimento
+const baseAuthConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3001),
   DATABASE_URL: z.string().optional(),
@@ -210,6 +212,22 @@ const authConfigSchema = z.object({
   SAML_ISSUER: z.string().optional(),
   SAML_CERT: z.string().optional(),
 });
+
+// Schema com validação condicional: ADMIN_USER e ADMIN_PWD obrigatórios apenas em produção
+const authConfigSchema = baseAuthConfigSchema.refine(
+  (data) => {
+    // Em produção, ADMIN_USER e ADMIN_PWD são obrigatórios (fail-fast no GitHub Actions)
+    if (data.NODE_ENV === 'production') {
+      return !!data.ADMIN_USER && !!data.ADMIN_PWD;
+    }
+    // Em desenvolvimento/test, são opcionais
+    return true;
+  },
+  {
+    message: 'ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)',
+    path: ['ADMIN_USER', 'ADMIN_PWD'],
+  }
+);
 
 type AuthConfig = z.infer<typeof authConfigSchema>;
 
@@ -234,8 +252,27 @@ try {
   if (result.success) {
     config = result.data;
   } else {
+    // REGRA 14: Em produção, validação de schema deve falhar explicitamente
+    // GitHub Actions já validou formato de email, mas Zod é a fonte da verdade
     if (nodeEnv === 'production') {
-      logger.error({ errors: result.error.format() }, 'Configuração inválida em produção. Abortando.');
+      const formattedErrors = result.error.format();
+      logger.error({ 
+        errors: formattedErrors,
+        env: {
+          ADMIN_USER: process.env.ADMIN_USER ? '[SET]' : '[NOT SET]',
+          ADMIN_PWD: process.env.ADMIN_PWD ? '[SET]' : '[NOT SET]',
+        }
+      }, 'Configuração inválida em produção. Abortando.');
+      
+      // Log detalhado dos erros de validação para facilitar debug
+      result.error.errors.forEach((err) => {
+        logger.error({ 
+          path: err.path.join('.'),
+          message: err.message,
+          code: err.code,
+        }, 'Erro de validação Zod');
+      });
+      
       process.exit(1);
     }
     logger.warn({ errors: result.error.format() }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
@@ -243,7 +280,10 @@ try {
   }
 } catch (error) {
   if (nodeEnv === 'production') {
-    logger.error({ error }, 'Falha crítica ao carregar configuração em produção. Abortando.');
+    logger.error({ 
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    }, 'Falha crítica ao carregar configuração em produção. Abortando.');
     process.exit(1);
   }
   logger.error({ error }, 'Falha ao carregar configuração. Usando valores padrão (apenas desenvolvimento).');
@@ -260,11 +300,39 @@ const app = express();
 // SEED: Usuário Administrador Global (Regra 14 - Autenticação Centralizada)
 // ============================================================================
 async function ensureGlobalAdmin(): Promise<void> {
+  // REGRA 14: ADMIN_USER e ADMIN_PWD são obrigatórios em produção (fail-fast no GitHub Actions)
+  // Schema Zod valida obrigatoriedade e formato de email em produção, mas em desenvolvimento são opcionais
   const adminEmail = config.ADMIN_USER?.toLowerCase().trim();
   const adminPassword = config.ADMIN_PWD;
 
   if (!adminEmail || !adminPassword) {
+    // Em produção, o schema Zod já garantiu que existem e são válidos (validação com refine + .email())
+    // Se chegou aqui em produção, é um bug crítico - o schema deveria ter falhado
+    if (config.NODE_ENV === 'production') {
+      logger.error({ 
+        ADMIN_USER: config.ADMIN_USER ? '[SET]' : '[NOT SET]',
+        ADMIN_PWD: config.ADMIN_PWD ? '[SET]' : '[NOT SET]',
+      }, 'ADMIN_USER/ADMIN_PWD não configurados em produção - schema deveria ter validado e abortado');
+      throw new Error('ADMIN_USER e ADMIN_PWD são obrigatórios em produção - falha crítica de validação');
+    }
+    // Em desenvolvimento, apenas loga warning e continua (opcional)
     logger.warn('ADMIN_USER/ADMIN_PWD não configurados - seed de administrador global ignorado');
+    return;
+  }
+  
+  // Validação adicional de formato de email (defesa em profundidade)
+  // REGRA 14: GitHub Actions já validou, mas validar novamente em runtime para garantir
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(adminEmail)) {
+    logger.error({ 
+      adminEmail,
+      NODE_ENV: config.NODE_ENV,
+    }, 'ADMIN_USER não é um email válido - validação falhou em runtime');
+    
+    if (config.NODE_ENV === 'production') {
+      throw new Error(`ADMIN_USER deve ser um email válido. Valor fornecido: ${adminEmail}`);
+    }
+    logger.warn('ADMIN_USER com formato inválido - seed de administrador global ignorado');
     return;
   }
 
@@ -292,7 +360,15 @@ async function ensureGlobalAdmin(): Promise<void> {
   };
 
   if (!existing) {
+    // REGRA 8: Capturar resultado do insert para verificar sucesso (Drizzle ORM best practice)
     const [created] = await db.insert(schema.users).values(baseUser).returning();
+    
+    // Verificar se insert teve sucesso antes de logar e provisionar
+    if (!created) {
+      logger.error({ email: adminEmail }, 'Falha ao criar administrador global via seed');
+      return;
+    }
+    
     logger.info({ userId: created.id, email: adminEmail }, 'Administrador global criado via seed');
     publishProvisioningEvent('user.created', {
       userId: created.id,
