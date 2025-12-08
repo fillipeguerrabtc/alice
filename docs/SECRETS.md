@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 37 (33 pré-deploy + 4 opcionais/pós-deploy)
+**Total de Secrets:** 39 (35 pré-deploy + 4 opcionais/pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 35 em produção (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -56,6 +56,8 @@ Estes são necessários para o deploy funcionar:
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
+| `ADMIN_USER` | Email do administrador global (Alice/ERPNext/Grafana) | Definir seu email corporativo |
+| `ADMIN_PWD` | Senha do administrador global (mín. 8 chars) | Definir forte e exclusiva |
 
 ### FASE 2: Autenticação (mínimo 1 provider)
 
@@ -177,7 +179,8 @@ Estes são necessários para o deploy funcionar:
 |--------|-----------|------------|
 | `LANGFUSE_SECRET_KEY` | Chave secreta Langfuse | `openssl rand -hex 32` com prefixo `sk-lf-` |
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
-| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana | Senha segura de sua escolha |
+| `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
+| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
 
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 

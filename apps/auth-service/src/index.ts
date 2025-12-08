@@ -197,6 +197,8 @@ const authConfigSchema = z.object({
   PORT: z.coerce.number().default(3001),
   DATABASE_URL: z.string().optional(),
   SESSION_SECRET: z.string().default('dev-secret-min-32-characters-long!'),
+  ADMIN_USER: z.string().email().optional(),
+  ADMIN_PWD: z.string().min(8, 'ADMIN_PWD deve ter no mínimo 8 caracteres').optional(),
   // OAuth Google
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
@@ -253,6 +255,74 @@ try {
 }
 
 const app = express();
+
+// ============================================================================
+// SEED: Usuário Administrador Global (Regra 14 - Autenticação Centralizada)
+// ============================================================================
+async function ensureGlobalAdmin(): Promise<void> {
+  const adminEmail = config.ADMIN_USER?.toLowerCase().trim();
+  const adminPassword = config.ADMIN_PWD;
+
+  if (!adminEmail || !adminPassword) {
+    logger.warn('ADMIN_USER/ADMIN_PWD não configurados - seed de administrador global ignorado');
+    return;
+  }
+
+  if (adminPassword.length < 8) {
+    logger.error('ADMIN_PWD não atende ao requisito mínimo de 8 caracteres');
+    return;
+  }
+
+  const db = getDatabase();
+  const existing = await db.query.users.findFirst({
+    where: eq(schema.users.email, adminEmail),
+  });
+
+  const passwordHash = await bcrypt.hash(adminPassword, 12);
+  const baseUser = {
+    email: adminEmail,
+    passwordHash,
+    firstName: 'Administrator',
+    lastName: 'Global',
+    authProvider: 'local' as const,
+    emailVerified: true,
+    role: 'super_admin' as const,
+    idioma: 'pt-BR',
+    timezone: 'UTC',
+  };
+
+  if (!existing) {
+    const [created] = await db.insert(schema.users).values(baseUser).returning();
+    logger.info({ userId: created.id, email: adminEmail }, 'Administrador global criado via seed');
+    publishProvisioningEvent('user.created', {
+      userId: created.id,
+      email: created.email || adminEmail,
+      firstName: created.firstName || undefined,
+      lastName: created.lastName || undefined,
+      role: created.role || 'super_admin',
+      tenantId: created.tenantId || undefined,
+    }).catch((error) => logger.warn({ error }, 'Provisionamento do admin global falhou (não crítico)'));
+    return;
+  }
+
+  // Atualizar role e senha para garantir alinhamento com os secrets
+  await db
+    .update(schema.users)
+    .set({
+      ...baseUser,
+    })
+    .where(eq(schema.users.id, existing.id));
+
+  logger.info({ userId: existing.id, email: adminEmail }, 'Administrador global atualizado via seed');
+  publishProvisioningEvent('user.updated', {
+    userId: existing.id,
+    email: existing.email || adminEmail,
+    firstName: existing.firstName || undefined,
+    lastName: existing.lastName || undefined,
+    role: 'super_admin',
+    tenantId: existing.tenantId || undefined,
+  }).catch((error) => logger.warn({ error }, 'Provisionamento do admin global falhou (não crítico)'));
+}
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
@@ -2179,6 +2249,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
     }
   }, 'Provedores de autenticação disponíveis');
   
+  // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
+  ensureGlobalAdmin().catch((error) => {
+    logger.error({ error }, 'Falha ao criar/atualizar administrador global');
+  });
+
   // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
   // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
   try {

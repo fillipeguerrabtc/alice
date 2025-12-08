@@ -43,6 +43,11 @@ export interface Message {
   anexos?: unknown[];
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
+  metadata?: {
+    rating?: number;
+    feedback?: 'positive' | 'negative';
+    [key: string]: unknown;
+  };
 }
 
 export interface Conversation {

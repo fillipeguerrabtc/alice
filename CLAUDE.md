@@ -167,6 +167,12 @@ alice/
 | `docs/SECRETS.md` | Guia de secrets e webhooks |
 | `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 
+## Contas Administrativas (Acesso Inicial)
+- **Alice/Auth (admin global)**: `ADMIN_USER` + `ADMIN_PWD` (semeados no auth-service; role `super_admin`).
+- **Grafana**: `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` (por padrão herdam `ADMIN_USER/ADMIN_PWD` via CI).
+- **ERPNext**: usuário fixo `Administrator` + `ERPNEXT_ADMIN_PASSWORD` (pode usar a mesma senha do admin global).
+- Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
+
 ## Security Hardening (Dezembro 2025)
 - **35 containers** = 100% com `security_opt: no-new-privileges`
 - **35 containers** = 100% com `read_only: true` + tmpfs
@@ -185,8 +191,8 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.18 - 08 de Dezembro de 2025*
+*Versão: 3.19 - 08 de Dezembro de 2025*
 *Total de Containers: 35 (5 infra + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Última Revisão Completa: 08/12/2025 - 10 bugs críticos corrigidos*
+*Última Revisão Completa: 08/12/2025 - Admin global centralizado e secrets alinhados*

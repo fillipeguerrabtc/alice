@@ -8,15 +8,15 @@
 
 Este documento apresenta uma auditoria completa comparando os secrets configurados no GitHub Actions com os secrets utilizados no código e documentados na documentação.
 
-**Total de Secrets no Repositório:** 33  
-**Total de Secrets no Código/Documentação:** 37  
+**Total de Secrets no Repositório:** 35  
+**Total de Secrets no Código/Documentação:** 39  
 **Discrepâncias Encontradas:** 4 (todas opcionais)
 
 ---
 
 ## 1. Secrets Presentes no Repositório GitHub
 
-### ✅ Secrets Corretos e Consistentes (33)
+### ✅ Secrets Corretos e Consistentes (35)
 
 | Secret | Usado no Código | Documentado | Status |
 |--------|----------------|-------------|--------|
@@ -29,6 +29,8 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 | `GOOGLE_CLIENT_ID` | ✅ | ✅ | ✅ OK |
 | `GOOGLE_CLIENT_SECRET` | ✅ | ✅ | ✅ OK |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ | ✅ | ✅ OK |
+| `ADMIN_USER` | ✅ | ✅ | ✅ OK |
+| `ADMIN_PWD` | ✅ | ✅ | ✅ OK |
 | `HETZNER_SSH_PRIVATE_KEY` | ✅ | ✅ | ✅ OK |
 | `HETZNER_VM_HOST` | ✅ | ✅ | ✅ OK |
 | `HETZNER_VM_USER` | ✅ | ✅ | ✅ OK |

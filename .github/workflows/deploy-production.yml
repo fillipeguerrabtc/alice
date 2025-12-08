@@ -730,6 +730,11 @@ jobs:
         env:
           POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
           REDIS_PASSWORD_SECRET: ${{ secrets.REDIS_PASSWORD }}
+          ADMIN_USER_SECRET: ${{ secrets.ADMIN_USER }}
+          ADMIN_PWD_SECRET: ${{ secrets.ADMIN_PWD }}
+          GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          ERPNEXT_ADMIN_PASSWORD_SECRET: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
           STRIPE_WEBHOOK_BASE_URL_SECRET: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
           WISE_WEBHOOK_SECRET_SECRET: ${{ secrets.WISE_WEBHOOK_SECRET }}
           WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
@@ -748,6 +753,15 @@ jobs:
             echo "::error::REDIS_PASSWORD não definido. Configure o secret REDIS_PASSWORD no repositório." >&2
             exit 1
           fi
+          ADMIN_USER="${ADMIN_USER_SECRET:-}"
+          ADMIN_PWD="${ADMIN_PWD_SECRET:-}"
+          if [ -z "${ADMIN_USER}" ] || [ -z "${ADMIN_PWD}" ]; then
+            echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
+            exit 1
+          fi
+          GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET:-${ADMIN_USER}}"
+          GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET:-${ADMIN_PWD}}"
+          ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET:-${ADMIN_PWD}}"
           # Secrets opcionais (com fallback seguro)
           STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET:-https://yesyoudeserve.duckdns.org}"
           WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET:-}"
@@ -816,7 +830,7 @@ jobs:
           # ERPNext Database
           ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org
           ERPNEXT_MYSQL_ROOT_PASSWORD=${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
-          ERPNEXT_ADMIN_PASSWORD=${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
+          ERPNEXT_ADMIN_PASSWORD=${ERPNEXT_ADMIN_PASSWORD}
           ERPNEXT_DB_NAME=erpnext
           ERPNEXT_DB_USER=erpnext
           ERPNEXT_DB_PASSWORD=${{ secrets.ERPNEXT_DB_PASSWORD }}
@@ -833,8 +847,13 @@ jobs:
           ACME_EMAIL=${{ secrets.ACME_EMAIL }}
           
           # Grafana (Observabilidade)
-          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          GF_SECURITY_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_ADMIN_USER=${GRAFANA_ADMIN_USER}
+          GRAFANA_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+          GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+          
+          # Admin centralizado (Alice/ERPNext/Grafana)
+          ADMIN_USER=${ADMIN_USER}
+          ADMIN_PWD=${ADMIN_PWD}
           
           # Langfuse (Métricas LLM)
           LANGFUSE_SECRET_KEY=${{ secrets.LANGFUSE_SECRET_KEY }}

@@ -270,7 +270,10 @@ ACME_EMAIL=seu-email@exemplo.com
 # ========== OBSERVABILITY (Langfuse + Grafana) ==========
 LANGFUSE_SECRET_KEY=sk-lf-xxxxx
 LANGFUSE_NEXT_AUTH_SECRET=sua-chave-segura-32-chars
-GRAFANA_ADMIN_PASSWORD=sua-senha-grafana
+ADMIN_USER=seu-email-admin
+ADMIN_PWD=sua-senha-forte
+GRAFANA_ADMIN_USER=${ADMIN_USER}
+GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 ```
 
 **⚠️ IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.
