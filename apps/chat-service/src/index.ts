@@ -3838,7 +3838,8 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
         // Buscar mensagens da conversa em torno da mensagem avaliada
         // CORREÇÃO BUG #1: Buscar mensagens próximas à mensagem avaliada, não apenas últimas 10
         // Isso garante que encontramos o par user/assistant correto mesmo se a mensagem for antiga
-        const messageTimestamp = new Date(message.criadoEm);
+        // VALIDAÇÃO TYPESCRIPT: criadoEm pode ser null, usar Date.now() como fallback
+        const messageTimestamp = message.criadoEm ? new Date(message.criadoEm) : new Date();
         const conversationMessages = await db.query.messages.findMany({
           where: eq(schema.messages.conversationId, message.conversationId),
           orderBy: [desc(schema.messages.criadoEm)],
@@ -3854,17 +3855,25 @@ app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenant
           assistantMessage = message;
           // Buscar última mensagem do usuário antes desta (ordenar por timestamp)
           // CORREÇÃO BUG #1: Buscar em todas as mensagens, não apenas nas últimas 10
+          // VALIDAÇÃO TYPESCRIPT: filtrar nulls e validar antes de comparar timestamps
           const userMessages = conversationMessages
-            .filter(m => m.isFromUser && new Date(m.criadoEm) < messageTimestamp)
-            .sort((a, b) => new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime());
+            .filter(m => m.isFromUser && m.criadoEm && new Date(m.criadoEm) < messageTimestamp)
+            .sort((a, b) => {
+              if (!a.criadoEm || !b.criadoEm) return 0;
+              return new Date(b.criadoEm).getTime() - new Date(a.criadoEm).getTime();
+            });
           userMessage = userMessages[0]; // Mensagem do usuário mais recente antes da resposta
         } else {
           // Se é do usuário, buscar resposta do assistente seguinte
           userMessage = message;
           // CORREÇÃO BUG #1: Buscar em todas as mensagens, não apenas nas últimas 10
+          // VALIDAÇÃO TYPESCRIPT: filtrar nulls e validar antes de comparar timestamps
           const assistantMessages = conversationMessages
-            .filter(m => !m.isFromUser && new Date(m.criadoEm) > messageTimestamp)
-            .sort((a, b) => new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime());
+            .filter(m => !m.isFromUser && m.criadoEm && new Date(m.criadoEm) > messageTimestamp)
+            .sort((a, b) => {
+              if (!a.criadoEm || !b.criadoEm) return 0;
+              return new Date(a.criadoEm).getTime() - new Date(b.criadoEm).getTime();
+            });
           assistantMessage = assistantMessages[0]; // Resposta do assistente mais próxima após a mensagem do usuário
         }
         
