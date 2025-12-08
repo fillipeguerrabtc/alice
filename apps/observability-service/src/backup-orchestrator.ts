@@ -375,14 +375,14 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
     // Executar backup via pgBackRest (container dedicado)
     // NOTA: backupOutput capturado para logging futuro se necessário
     const { stdout: _backupOutput } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest --stanza=alice --type=${pgbackrestType} backup`,
+      `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --type=${pgbackrestType} backup`,
       { timeout: 1800000 } // 30 min timeout para backup full
     );
     logger.debug({ backupOutputLength: _backupOutput.length }, 'pgBackRest backup output recebido');
     
     // Obter informações do backup
     const { stdout: infoOutput } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest info --stanza=alice --output=json`
+      `docker exec alice-pgbackrest pgbackrest info --stanza=alice_prod --output=json`
     );
     
     const info = JSON.parse(infoOutput);
@@ -811,7 +811,7 @@ async function runUnifiedRestore(
       logger.info({ backupSet: manifest.components.postgresql.backupSet }, 'Restaurando PostgreSQL');
       
       await execAsync(
-        `docker exec alice-pgbackrest pgbackrest --stanza=alice --set=${manifest.components.postgresql.backupSet} restore`,
+        `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --set=${manifest.components.postgresql.backupSet} restore`,
         { timeout: 3600000 }
       );
       
@@ -1051,7 +1051,7 @@ router.post('/verify/:id', async (req: Request, res: Response) => {
     logger.info({ backupId: req.params.id }, 'Verificando integridade do backup');
     
     const { stdout } = await execAsync(
-      `docker exec alice-pgbackrest pgbackrest --stanza=alice verify`,
+      `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod verify`,
       { timeout: 600000 }
     );
     
@@ -1483,7 +1483,7 @@ router.post('/pre-deploy', async (req: Request, res: Response) => {
     
     try {
       await execAsync(
-        `docker exec alice-pgbackrest pgbackrest --stanza=alice --type=full backup`,
+        `docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --type=full backup`,
         { timeout: 1800000 }
       );
       
@@ -1685,7 +1685,7 @@ router.post('/cleanup', async (_req: Request, res: Response) => {
     // Executar expire no pgBackRest
     try {
       await execAsync(
-        'docker exec alice-pgbackrest pgbackrest --stanza=alice expire',
+        'docker exec alice-pgbackrest pgbackrest --stanza=alice_prod expire',
         { timeout: 300000 }
       );
     } catch (expireError) {
