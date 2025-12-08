@@ -2245,7 +2245,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
         // 1. Rating >= 4 (positivo) E houver resposta válida, OU
         // 2. Houve escalação (para aprendizado negativo) E houver resposta válida
         if ((rating >= 4 || chatResult.escalated) && hasValidResponse) {
-          const namespaceId = conversation.agent?.namespaceId;
+          // conversations não possui objeto agent; usar namespaceId já persistido na conversa
+          const namespaceId = conversation.namespaceId || undefined;
           const tenantId = user.tenantId;
           
           if (tenantId) {
