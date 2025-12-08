@@ -204,6 +204,38 @@ jobs:
 
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}
+      # Versões dos componentes (buscadas automaticamente)
+      pgbackrest_version: ${{ steps.versions.outputs.pgbackrest_version }}
+      traefik_version: ${{ steps.versions.outputs.traefik_version }}
+      prometheus_version: ${{ steps.versions.outputs.prometheus_version }}
+      grafana_version: ${{ steps.versions.outputs.grafana_version }}
+      loki_version: ${{ steps.versions.outputs.loki_version }}
+      promtail_version: ${{ steps.versions.outputs.promtail_version }}
+      jaeger_version: ${{ steps.versions.outputs.jaeger_version }}
+      langfuse_version: ${{ steps.versions.outputs.langfuse_version }}
+      erpnext_version: ${{ steps.versions.outputs.erpnext_version }}
+      docker_socket_proxy_version: ${{ steps.versions.outputs.docker_socket_proxy_version }}
+      busybox_version: ${{ steps.versions.outputs.busybox_version }}
+      redis_version: ${{ steps.versions.outputs.redis_version }}
+      mariadb_version: ${{ steps.versions.outputs.mariadb_version }}
+      pgvector_tag: ${{ steps.versions.outputs.pgvector_tag }}
+      # SHA256 Digests dos componentes
+      traefik_digest: ${{ steps.digests.outputs.traefik_digest }}
+      prometheus_digest: ${{ steps.digests.outputs.prometheus_digest }}
+      grafana_digest: ${{ steps.digests.outputs.grafana_digest }}
+      loki_digest: ${{ steps.digests.outputs.loki_digest }}
+      promtail_digest: ${{ steps.digests.outputs.promtail_digest }}
+      jaeger_digest: ${{ steps.digests.outputs.jaeger_digest }}
+      langfuse_digest: ${{ steps.digests.outputs.langfuse_digest }}
+      erpnext_digest: ${{ steps.digests.outputs.erpnext_digest }}
+      erpnext_nginx_digest: ${{ steps.digests.outputs.erpnext_nginx_digest }}
+      erpnext_socketio_digest: ${{ steps.digests.outputs.erpnext_socketio_digest }}
+      erpnext_worker_digest: ${{ steps.digests.outputs.erpnext_worker_digest }}
+      docker_socket_proxy_digest: ${{ steps.digests.outputs.docker_socket_proxy_digest }}
+      busybox_digest: ${{ steps.digests.outputs.busybox_digest }}
+      redis_digest: ${{ steps.digests.outputs.redis_digest }}
+      mariadb_digest: ${{ steps.digests.outputs.mariadb_digest }}
+      pgvector_digest: ${{ steps.digests.outputs.pgvector_digest }}
 
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23)
@@ -241,6 +273,8 @@ jobs:
           echo "PGBACKREST_VERSION=$PGBACKREST_VERSION" >> $GITHUB_ENV
           echo "pgbackrest_version=$PGBACKREST_VERSION" >> $GITHUB_OUTPUT
           echo "✅ pgBackRest: $PGBACKREST_VERSION"
+          
+          # NOTA: pgBackRest não precisa de digest (build from source, não usa imagem Docker)
           
           # Traefik
           TRAEFIK_VERSION=$(fetch_github_release "traefik/traefik" "3.3.0")
@@ -416,7 +450,8 @@ jobs:
           MARIADB_DIGEST=$(fetch_docker_digest "library/mariadb" "${MARIADB_VERSION}")
           PGVECTOR_DIGEST=$(fetch_docker_digest "pgvector/pgvector" "${PGVECTOR_TAG}")
           
-          # Exportar para GitHub Actions
+          # Exportar para GitHub Actions (ambos ENV e OUTPUT)
+          # ENV: para uso no mesmo job
           echo "TRAEFIK_DIGEST=${TRAEFIK_DIGEST}" >> $GITHUB_ENV
           echo "PROMETHEUS_DIGEST=${PROMETHEUS_DIGEST}" >> $GITHUB_ENV
           echo "GRAFANA_DIGEST=${GRAFANA_DIGEST}" >> $GITHUB_ENV
@@ -433,6 +468,24 @@ jobs:
           echo "REDIS_DIGEST=${REDIS_DIGEST}" >> $GITHUB_ENV
           echo "MARIADB_DIGEST=${MARIADB_DIGEST}" >> $GITHUB_ENV
           echo "PGVECTOR_DIGEST=${PGVECTOR_DIGEST}" >> $GITHUB_ENV
+          
+          # OUTPUT: para passar entre jobs (Bug 1 corrigido)
+          echo "traefik_digest=${TRAEFIK_DIGEST}" >> $GITHUB_OUTPUT
+          echo "prometheus_digest=${PROMETHEUS_DIGEST}" >> $GITHUB_OUTPUT
+          echo "grafana_digest=${GRAFANA_DIGEST}" >> $GITHUB_OUTPUT
+          echo "loki_digest=${LOKI_DIGEST}" >> $GITHUB_OUTPUT
+          echo "promtail_digest=${PROMTAIL_DIGEST}" >> $GITHUB_OUTPUT
+          echo "jaeger_digest=${JAEGER_DIGEST}" >> $GITHUB_OUTPUT
+          echo "langfuse_digest=${LANGFUSE_DIGEST}" >> $GITHUB_OUTPUT
+          echo "erpnext_digest=${ERPNEXT_DIGEST}" >> $GITHUB_OUTPUT
+          echo "erpnext_nginx_digest=${ERPNEXT_NGINX_DIGEST}" >> $GITHUB_OUTPUT
+          echo "erpnext_socketio_digest=${ERPNEXT_SOCKETIO_DIGEST}" >> $GITHUB_OUTPUT
+          echo "erpnext_worker_digest=${ERPNEXT_WORKER_DIGEST}" >> $GITHUB_OUTPUT
+          echo "docker_socket_proxy_digest=${DOCKER_SOCKET_PROXY_DIGEST}" >> $GITHUB_OUTPUT
+          echo "busybox_digest=${BUSYBOX_DIGEST}" >> $GITHUB_OUTPUT
+          echo "redis_digest=${REDIS_DIGEST}" >> $GITHUB_OUTPUT
+          echo "mariadb_digest=${MARIADB_DIGEST}" >> $GITHUB_OUTPUT
+          echo "pgvector_digest=${PGVECTOR_DIGEST}" >> $GITHUB_OUTPUT
           
           echo ""
           echo "✅ Digests buscados:"
@@ -1069,19 +1122,20 @@ jobs:
             printf '# ==============================================\n'
             printf '\n'
             printf '# Imagens Docker\n'
-            printf 'IMAGE_PREFIX=%s\n' "${{ env.IMAGE_PREFIX }}"
-            printf 'IMAGE_TAG=%s\n' "${{ env.IMAGE_TAG }}"
+            printf 'IMAGE_PREFIX=%s\n' "ghcr.io/${{ github.repository_owner }}/alice"
+            printf 'IMAGE_TAG=%s\n' "${{ needs.build-docker.outputs.image_tag || github.sha }}"
             printf '\n'
             printf '# Versões Automáticas dos Componentes (buscadas automaticamente)\n'
-            printf 'PGBACKREST_VERSION=%s\n' "${{ env.PGBACKREST_VERSION }}"
-            printf 'TRAEFIK_VERSION=%s\n' "${{ env.TRAEFIK_VERSION }}"
-            printf 'PROMETHEUS_VERSION=%s\n' "${{ env.PROMETHEUS_VERSION }}"
-            printf 'GRAFANA_VERSION=%s\n' "${{ env.GRAFANA_VERSION }}"
-            printf 'LOKI_VERSION=%s\n' "${{ env.LOKI_VERSION }}"
-            printf 'PROMTAIL_VERSION=%s\n' "${{ env.PROMTAIL_VERSION }}"
-            printf 'JAEGER_VERSION=%s\n' "${{ env.JAEGER_VERSION }}"
-            printf 'LANGFUSE_VERSION=%s\n' "${{ env.LANGFUSE_VERSION }}"
-            printf 'ERPNEXT_VERSION=%s\n' "${{ env.ERPNEXT_VERSION }}"
+            # Bug 1 corrigido: usar outputs do job build-docker (não env que não persiste entre jobs)
+            printf 'PGBACKREST_VERSION=%s\n' "${{ needs.build-docker.outputs.pgbackrest_version }}"
+            printf 'TRAEFIK_VERSION=%s\n' "${{ needs.build-docker.outputs.traefik_version }}"
+            printf 'PROMETHEUS_VERSION=%s\n' "${{ needs.build-docker.outputs.prometheus_version }}"
+            printf 'GRAFANA_VERSION=%s\n' "${{ needs.build-docker.outputs.grafana_version }}"
+            printf 'LOKI_VERSION=%s\n' "${{ needs.build-docker.outputs.loki_version }}"
+            printf 'PROMTAIL_VERSION=%s\n' "${{ needs.build-docker.outputs.promtail_version }}"
+            printf 'JAEGER_VERSION=%s\n' "${{ needs.build-docker.outputs.jaeger_version }}"
+            printf 'LANGFUSE_VERSION=%s\n' "${{ needs.build-docker.outputs.langfuse_version }}"
+            printf 'ERPNEXT_VERSION=%s\n' "${{ needs.build-docker.outputs.erpnext_version }}"
             printf '\n'
             printf '# PostgreSQL Alice\n'
             printf 'POSTGRES_USER=alice\n'
@@ -1182,36 +1236,37 @@ jobs:
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
-          PGBACKREST_VERSION: ${{ env.PGBACKREST_VERSION }}
-          TRAEFIK_VERSION: ${{ env.TRAEFIK_VERSION }}
-          TRAEFIK_DIGEST: ${{ env.TRAEFIK_DIGEST }}
-          PROMETHEUS_VERSION: ${{ env.PROMETHEUS_VERSION }}
-          PROMETHEUS_DIGEST: ${{ env.PROMETHEUS_DIGEST }}
-          GRAFANA_VERSION: ${{ env.GRAFANA_VERSION }}
-          GRAFANA_DIGEST: ${{ env.GRAFANA_DIGEST }}
-          LOKI_VERSION: ${{ env.LOKI_VERSION }}
-          LOKI_DIGEST: ${{ env.LOKI_DIGEST }}
-          PROMTAIL_VERSION: ${{ env.PROMTAIL_VERSION }}
-          PROMTAIL_DIGEST: ${{ env.PROMTAIL_DIGEST }}
-          JAEGER_VERSION: ${{ env.JAEGER_VERSION }}
-          JAEGER_DIGEST: ${{ env.JAEGER_DIGEST }}
-          LANGFUSE_VERSION: ${{ env.LANGFUSE_VERSION }}
-          LANGFUSE_DIGEST: ${{ env.LANGFUSE_DIGEST }}
-          ERPNEXT_VERSION: ${{ env.ERPNEXT_VERSION }}
-          ERPNEXT_DIGEST: ${{ env.ERPNEXT_DIGEST }}
-          ERPNEXT_NGINX_DIGEST: ${{ env.ERPNEXT_NGINX_DIGEST }}
-          ERPNEXT_SOCKETIO_DIGEST: ${{ env.ERPNEXT_SOCKETIO_DIGEST }}
-          ERPNEXT_WORKER_DIGEST: ${{ env.ERPNEXT_WORKER_DIGEST }}
-          DOCKER_SOCKET_PROXY_VERSION: ${{ env.DOCKER_SOCKET_PROXY_VERSION }}
-          DOCKER_SOCKET_PROXY_DIGEST: ${{ env.DOCKER_SOCKET_PROXY_DIGEST }}
-          BUSYBOX_VERSION: ${{ env.BUSYBOX_VERSION }}
-          BUSYBOX_DIGEST: ${{ env.BUSYBOX_DIGEST }}
-          REDIS_VERSION: ${{ env.REDIS_VERSION }}
-          REDIS_DIGEST: ${{ env.REDIS_DIGEST }}
-          MARIADB_VERSION: ${{ env.MARIADB_VERSION }}
-          MARIADB_DIGEST: ${{ env.MARIADB_DIGEST }}
-          PGVECTOR_TAG: ${{ env.PGVECTOR_TAG }}
-          PGVECTOR_DIGEST: ${{ env.PGVECTOR_DIGEST }}
+          # Bug 1 corrigido: usar outputs do job build-docker (não env que não persiste entre jobs)
+          PGBACKREST_VERSION: ${{ needs.build-docker.outputs.pgbackrest_version }}
+          TRAEFIK_VERSION: ${{ needs.build-docker.outputs.traefik_version }}
+          TRAEFIK_DIGEST: ${{ needs.build-docker.outputs.traefik_digest }}
+          PROMETHEUS_VERSION: ${{ needs.build-docker.outputs.prometheus_version }}
+          PROMETHEUS_DIGEST: ${{ needs.build-docker.outputs.prometheus_digest }}
+          GRAFANA_VERSION: ${{ needs.build-docker.outputs.grafana_version }}
+          GRAFANA_DIGEST: ${{ needs.build-docker.outputs.grafana_digest }}
+          LOKI_VERSION: ${{ needs.build-docker.outputs.loki_version }}
+          LOKI_DIGEST: ${{ needs.build-docker.outputs.loki_digest }}
+          PROMTAIL_VERSION: ${{ needs.build-docker.outputs.promtail_version }}
+          PROMTAIL_DIGEST: ${{ needs.build-docker.outputs.promtail_digest }}
+          JAEGER_VERSION: ${{ needs.build-docker.outputs.jaeger_version }}
+          JAEGER_DIGEST: ${{ needs.build-docker.outputs.jaeger_digest }}
+          LANGFUSE_VERSION: ${{ needs.build-docker.outputs.langfuse_version }}
+          LANGFUSE_DIGEST: ${{ needs.build-docker.outputs.langfuse_digest }}
+          ERPNEXT_VERSION: ${{ needs.build-docker.outputs.erpnext_version }}
+          ERPNEXT_DIGEST: ${{ needs.build-docker.outputs.erpnext_digest }}
+          ERPNEXT_NGINX_DIGEST: ${{ needs.build-docker.outputs.erpnext_nginx_digest }}
+          ERPNEXT_SOCKETIO_DIGEST: ${{ needs.build-docker.outputs.erpnext_socketio_digest }}
+          ERPNEXT_WORKER_DIGEST: ${{ needs.build-docker.outputs.erpnext_worker_digest }}
+          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.build-docker.outputs.docker_socket_proxy_version }}
+          DOCKER_SOCKET_PROXY_DIGEST: ${{ needs.build-docker.outputs.docker_socket_proxy_digest }}
+          BUSYBOX_VERSION: ${{ needs.build-docker.outputs.busybox_version }}
+          BUSYBOX_DIGEST: ${{ needs.build-docker.outputs.busybox_digest }}
+          REDIS_VERSION: ${{ needs.build-docker.outputs.redis_version }}
+          REDIS_DIGEST: ${{ needs.build-docker.outputs.redis_digest }}
+          MARIADB_VERSION: ${{ needs.build-docker.outputs.mariadb_version }}
+          MARIADB_DIGEST: ${{ needs.build-docker.outputs.mariadb_digest }}
+          PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
+          PGVECTOR_DIGEST: ${{ needs.build-docker.outputs.pgvector_digest }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
