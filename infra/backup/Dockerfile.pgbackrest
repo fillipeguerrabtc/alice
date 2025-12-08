@@ -13,7 +13,7 @@
 FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300 AS builder
 
 # Versão do pgBackRest (semantic versioning completo)
-# REGRA 11: pgBackRest usa tags no formato release/x.y.z (ex: release/2.57.0)
+# REGRA 11: pgBackRest usa tags no formato vx.y.z (ex: v2.57.0)
 # v2.57.0 foi lançado em 18/10/2025 - versão estável atual com correções de segurança
 ENV PGBACKREST_VERSION=2.57.0
 
@@ -40,8 +40,8 @@ RUN apk add --no-cache \
     git
 
 # Download e build pgBackRest from source
-# REGRA 11: pgBackRest usa tags no formato release/x.y.z (ex: release/2.57.0)
-RUN git clone --branch release/${PGBACKREST_VERSION} --depth 1 \
+# REGRA 11: pgBackRest usa tags no formato vx.y.z (ex: v2.57.0)
+RUN git clone --branch v${PGBACKREST_VERSION} --depth 1 \
     https://github.com/pgbackrest/pgbackrest.git /tmp/pgbackrest
 
 # Build e instalar pgBackRest
