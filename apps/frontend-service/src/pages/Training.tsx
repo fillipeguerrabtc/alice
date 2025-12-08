@@ -497,12 +497,15 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
   const BulkImportSchema = z.array(BulkImportEntrySchema).max(1000);
 
   const bulkImport = useMutation({
-    mutationFn: async () => {
-      return apiRequest('POST', '/api/training/bulk-import', {
+    mutationFn: async (): Promise<BulkImportResult> => {
+      // REGRA 8: apiRequest retorna Response, precisa fazer .json() para parsear
+      // Segue padrão usado em Namespaces.tsx, Agents.tsx, BackupAdmin.tsx
+      const res = await apiRequest('POST', '/api/training/bulk-import', {
         data: parsedData,
         source: source || 'bulk-import',
         autoApprove,
-      }) as Promise<BulkImportResult>;
+      });
+      return res.json();
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['/api/training/data'] });
