@@ -316,15 +316,28 @@ jobs:
       - name: Ler versão do pnpm do package.json
         id: pnpm-version
         run: |
+          # REGRA 6: Enterprise-grade - validar que package.json existe
           if [ ! -f "package.json" ]; then
             echo "::error::Arquivo package.json não encontrado!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          
+          # REGRA 6: Enterprise-grade - validar que versão foi encontrada
           if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
             echo "::error::Campo packageManager não encontrado em package.json!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y.Z)
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          
+          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
@@ -527,15 +540,28 @@ jobs:
       - name: Ler versão do pnpm do package.json
         id: pnpm-version
         run: |
+          # REGRA 6: Enterprise-grade - validar que package.json existe
           if [ ! -f "package.json" ]; then
             echo "::error::Arquivo package.json não encontrado!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          
+          # REGRA 6: Enterprise-grade - validar que versão foi encontrada
           if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
             echo "::error::Campo packageManager não encontrado em package.json!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y.Z)
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          
+          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
@@ -616,15 +642,28 @@ jobs:
       - name: Ler versão do pnpm do package.json
         id: pnpm-version
         run: |
+          # REGRA 6: Enterprise-grade - validar que package.json existe
           if [ ! -f "package.json" ]; then
             echo "::error::Arquivo package.json não encontrado!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          
+          # REGRA 6: Enterprise-grade - validar que versão foi encontrada
           if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
             echo "::error::Campo packageManager não encontrado em package.json!" >&2
             exit 1
           fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y.Z)
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          
+          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
