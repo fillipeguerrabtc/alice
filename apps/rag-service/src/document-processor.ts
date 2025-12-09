@@ -504,14 +504,21 @@ class DocumentProcessorService {
     // Garantir que buffer é um Buffer do Node.js (não Buffer<ArrayBufferLike> de Web APIs)
     // exceljs 4.4.0+ requer Buffer do Node.js, não tipos genéricos de Buffer
     // REGRA 6: Enterprise-grade - validação robusta + isolamento TOTAL de buffer
-    // Buffer.isBuffer() valida se é um Buffer válido do Node.js
-    // .slice() SEMPRE cria uma CÓPIA isolada, mesmo para ArrayBuffer (que compartilha memória)
+    // Buffer.from(buffer) cria cópia quando buffer é Buffer ou TypedArray
+    // Buffer.from(arrayBuffer) compartilha memória - converter via Uint8Array para forçar cópia
     // Isso garante isolamento verdadeiro e evita mutação do buffer original durante load
-    const nodeBuffer: Buffer = Buffer.from(
-      Buffer.isBuffer(buffer)
-        ? buffer
-        : ((buffer as any).buffer || buffer)
-    ).slice();
+    let nodeBuffer: Buffer;
+    if (Buffer.isBuffer(buffer)) {
+      // Buffer do Node.js - Buffer.from() cria cópia isolada
+      nodeBuffer = Buffer.from(buffer);
+    } else if (ArrayBuffer.isView(buffer)) {
+      // TypedArray (Uint8Array, etc.) - Buffer.from() cria cópia isolada
+      nodeBuffer = Buffer.from(buffer);
+    } else {
+      // ArrayBuffer ou Buffer<ArrayBufferLike> - converter via Uint8Array para forçar cópia
+      const arrayBuffer = (buffer as any).buffer || buffer;
+      nodeBuffer = Buffer.from(new Uint8Array(arrayBuffer));
+    }
     await workbook.xlsx.load(nodeBuffer);
     
     let text = '';
