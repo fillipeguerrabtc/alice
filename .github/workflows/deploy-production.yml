@@ -346,8 +346,9 @@ jobs:
             local fallback_env_var=$2  # Nome da variável de ambiente com fallback (ex: PGBACKREST_FALLBACK)
             
             # REGRA 6: Enterprise-grade - usar variável de ambiente (não hardcoded)
-            # Usar eval para acessar variável dinamicamente (bash indireto)
-            local fallback=$(eval echo \$${fallback_env_var})
+            # REGRA 7: Mudanças cirúrgicas - corrigir bug: usar sintaxe moderna do bash para indireção
+            # ${!fallback_env_var} é mais segura e confiável que eval echo \$${fallback_env_var}
+            local fallback="${!fallback_env_var}"
             
             # REGRA 6: Enterprise-grade - validar que fallback foi carregado
             if [ -z "$fallback" ]; then
