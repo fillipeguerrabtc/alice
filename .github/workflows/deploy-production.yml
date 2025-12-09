@@ -347,9 +347,30 @@ jobs:
             # Extrair apenas números e pontos (formato semântico X.Y.Z)
             # REGRA 6: Enterprise-grade - usar sed para extração precisa
             # Isso garante que mesmo tags como "v2.57.0-beta" ou "release/2.57.0-rc1" retornem "2.57.0"
-            version=$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/' 2>/dev/null || echo "$version")
+            # REGRA 7: Mudanças cirúrgicas - corrigir bug: sed retorna exit code 0 mesmo sem match
+            # Solução: capturar resultado e validar se está no formato correto antes de usar
+            local sed_result=$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/' 2>/dev/null)
             
-            # Validar que resultado é formato semântico válido (X.Y.Z)
+            # Verificar se sed fez match (resultado deve estar no formato X.Y.Z)
+            # Se sed não fez match, retorna string original (que pode não ser X.Y.Z)
+            if echo "$sed_result" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              # sed fez match e extraiu versão válida
+              version="$sed_result"
+            else
+              # sed não fez match ou retornou algo inválido
+              # Tentar adicionar .0 se estiver no formato X.Y (ex: 3.6 -> 3.6.0)
+              if echo "$version" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                version="${version}.0"
+                echo "🔧 Versão normalizada de ${repo}: $version (adicionado patch .0 ao formato X.Y)" >&2
+              else
+                # Formato inválido, usar fallback
+                echo "⚠️ AVISO: Versão normalizada inválida para ${repo}: '$version' (tag original: '$tag_name'), usando fallback: $fallback" >&2
+                echo "$fallback"
+                return
+              fi
+            fi
+            
+            # Validação final: garantir que resultado é formato semântico válido (X.Y.Z)
             # REGRA 6: Enterprise-grade - validação rigorosa antes de usar
             if ! echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
               echo "⚠️ AVISO: Versão normalizada inválida para ${repo}: '$version' (tag original: '$tag_name'), usando fallback: $fallback" >&2
