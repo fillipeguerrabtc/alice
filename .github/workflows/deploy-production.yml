@@ -268,20 +268,45 @@ jobs:
           # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           # REGRA 7: Mudanças cirúrgicas - corrigir bug: $GITHUB_ENV só disponibiliza variáveis no próximo step
           # Solução: exportar no shell atual E escrever em $GITHUB_ENV para próximos steps
-          export PGBACKREST_FALLBACK=$(jq -r '.pgbackrest // "2.57.0"' .github/component-versions.json)
-          export TRAEFIK_FALLBACK=$(jq -r '.traefik // "3.6.4"' .github/component-versions.json)
-          export PROMETHEUS_FALLBACK=$(jq -r '.prometheus // "3.8.0"' .github/component-versions.json)
-          export GRAFANA_FALLBACK=$(jq -r '.grafana // "11.3"' .github/component-versions.json)
-          export LOKI_FALLBACK=$(jq -r '.loki // "3.6.2"' .github/component-versions.json)
-          export PROMTAIL_FALLBACK=$(jq -r '.promtail // "3.6.2"' .github/component-versions.json)
-          export JAEGER_FALLBACK=$(jq -r '.jaeger // "1.76.0"' .github/component-versions.json)
-          export LANGFUSE_FALLBACK=$(jq -r '.langfuse // "2.39.1"' .github/component-versions.json)
-          export ERPNEXT_FALLBACK=$(jq -r '.erpnext // "91.0"' .github/component-versions.json)
-          export DOCKER_SOCKET_PROXY_FALLBACK=$(jq -r '.["docker-socket-proxy"] // "0.4.1"' .github/component-versions.json)
-          export BUSYBOX_FALLBACK=$(jq -r '.busybox // "1.37"' .github/component-versions.json)
-          export REDIS_FALLBACK=$(jq -r '.redis // "7.4-alpine"' .github/component-versions.json)
-          export MARIADB_FALLBACK=$(jq -r '.mariadb // "10.11.15"' .github/component-versions.json)
-          export PGVECTOR_FALLBACK=$(jq -r '.pgvector // "pg16"' .github/component-versions.json)
+          # REGRA 6: Enterprise-grade - não duplicar valores hardcoded (manter apenas no JSON)
+          # Validar que todos os campos existem no JSON antes de usar
+          export PGBACKREST_FALLBACK=$(jq -r '.pgbackrest // empty' .github/component-versions.json)
+          export TRAEFIK_FALLBACK=$(jq -r '.traefik // empty' .github/component-versions.json)
+          export PROMETHEUS_FALLBACK=$(jq -r '.prometheus // empty' .github/component-versions.json)
+          export GRAFANA_FALLBACK=$(jq -r '.grafana // empty' .github/component-versions.json)
+          export LOKI_FALLBACK=$(jq -r '.loki // empty' .github/component-versions.json)
+          export PROMTAIL_FALLBACK=$(jq -r '.promtail // empty' .github/component-versions.json)
+          export JAEGER_FALLBACK=$(jq -r '.jaeger // empty' .github/component-versions.json)
+          export LANGFUSE_FALLBACK=$(jq -r '.langfuse // empty' .github/component-versions.json)
+          export ERPNEXT_FALLBACK=$(jq -r '.erpnext // empty' .github/component-versions.json)
+          export DOCKER_SOCKET_PROXY_FALLBACK=$(jq -r '.["docker-socket-proxy"] // empty' .github/component-versions.json)
+          export BUSYBOX_FALLBACK=$(jq -r '.busybox // empty' .github/component-versions.json)
+          export REDIS_FALLBACK=$(jq -r '.redis // empty' .github/component-versions.json)
+          export MARIADB_FALLBACK=$(jq -r '.mariadb // empty' .github/component-versions.json)
+          export PGVECTOR_FALLBACK=$(jq -r '.pgvector // empty' .github/component-versions.json)
+          
+          # REGRA 6: Enterprise-grade - validar que todas as versões fallback foram carregadas
+          # Fail-fast se algum campo estiver ausente no JSON
+          local missing_fields=()
+          [ -z "$PGBACKREST_FALLBACK" ] && missing_fields+=("pgbackrest")
+          [ -z "$TRAEFIK_FALLBACK" ] && missing_fields+=("traefik")
+          [ -z "$PROMETHEUS_FALLBACK" ] && missing_fields+=("prometheus")
+          [ -z "$GRAFANA_FALLBACK" ] && missing_fields+=("grafana")
+          [ -z "$LOKI_FALLBACK" ] && missing_fields+=("loki")
+          [ -z "$PROMTAIL_FALLBACK" ] && missing_fields+=("promtail")
+          [ -z "$JAEGER_FALLBACK" ] && missing_fields+=("jaeger")
+          [ -z "$LANGFUSE_FALLBACK" ] && missing_fields+=("langfuse")
+          [ -z "$ERPNEXT_FALLBACK" ] && missing_fields+=("erpnext")
+          [ -z "$DOCKER_SOCKET_PROXY_FALLBACK" ] && missing_fields+=("docker-socket-proxy")
+          [ -z "$BUSYBOX_FALLBACK" ] && missing_fields+=("busybox")
+          [ -z "$REDIS_FALLBACK" ] && missing_fields+=("redis")
+          [ -z "$MARIADB_FALLBACK" ] && missing_fields+=("mariadb")
+          [ -z "$PGVECTOR_FALLBACK" ] && missing_fields+=("pgvector")
+          
+          if [ ${#missing_fields[@]} -gt 0 ]; then
+            echo "::error::Campos ausentes em .github/component-versions.json: ${missing_fields[*]}" >&2
+            exit 1
+          fi
           
           # REGRA 6: Enterprise-grade - também escrever em $GITHUB_ENV para disponibilizar em próximos steps
           echo "PGBACKREST_FALLBACK=$PGBACKREST_FALLBACK" >> $GITHUB_ENV
@@ -376,10 +401,14 @@ jobs:
               version="$sed_result"
             else
               # sed não fez match ou retornou algo inválido
-              # Tentar adicionar .0 se estiver no formato X.Y (ex: 3.6 -> 3.6.0)
-              if echo "$version" | grep -qE '^[0-9]+\.[0-9]+$'; then
-                version="${version}.0"
-                echo "🔧 Versão normalizada de ${repo}: $version (adicionado patch .0 ao formato X.Y)" >&2
+              # REGRA 7: Mudanças cirúrgicas - corrigir bug: extrair prefixo numérico antes de verificar formato X.Y
+              # Se version tiver sufixos como "-rc1" (ex: "3.6-rc1"), extrair apenas "3.6" primeiro
+              local numeric_prefix=$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/' 2>/dev/null)
+              
+              # Tentar adicionar .0 se o prefixo numérico estiver no formato X.Y (ex: 3.6 -> 3.6.0)
+              if echo "$numeric_prefix" | grep -qE '^[0-9]+\.[0-9]+$'; then
+                version="${numeric_prefix}.0"
+                echo "🔧 Versão normalizada de ${repo}: $version (extraído prefixo numérico e adicionado patch .0)" >&2
               else
                 # Formato inválido, usar fallback
                 echo "⚠️ AVISO: Versão normalizada inválida para ${repo}: '$version' (tag original: '$tag_name'), usando fallback: $fallback" >&2
