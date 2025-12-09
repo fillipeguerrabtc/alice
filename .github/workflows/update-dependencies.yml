@@ -1,0 +1,321 @@
+# =============================================================================
+# GitHub Actions Workflow - Atualização Automática de Dependências
+# =============================================================================
+# Descrição: Verifica e atualiza automaticamente todas as dependências npm/pnpm
+# Execução: Semanal (domingos às 02:00 UTC)
+# REGRA 4: Aprovação obrigatória - cria PR, não faz push direto
+# REGRA 6: Enterprise-grade - sem workarounds, validação completa
+# REGRA 11: Melhores práticas GitHub Actions 2025
+# =============================================================================
+
+name: Update Dependencies
+
+on:
+  # Executar semanalmente (domingos às 02:00 UTC)
+  schedule:
+    - cron: '0 2 * * 0'  # Todo domingo às 02:00 UTC
+  # Permitir execução manual
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Tipo de atualização (all, patch, minor, major)'
+        required: false
+        default: 'patch'
+        type: choice
+        options:
+          - all
+          - patch
+          - minor
+          - major
+
+concurrency:
+  group: update-dependencies
+  cancel-in-progress: false  # Não cancelar se já estiver rodando
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  # ===========================================================================
+  # Job 1: Verificar Atualizações Disponíveis
+  # ===========================================================================
+  check-updates:
+    name: Verificar Atualizações
+    runs-on: ubuntu-latest
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          echo "🔍 Buscando versão LTS mais recente do Node.js..."
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
+          
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
+          fi
+          
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security (Regra 11)
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
+
+      # REGRA 6: Enterprise-grade - versionamento automático do pnpm
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "::error::Arquivo package.json não encontrado!" >&2
+            exit 1
+          fi
+          
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          
+          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
+      # Best Practices 2025: pnpm/action-setup@v4 (Node.js 20, November 2025)
+      # Nota: pnpm/action-setup não fornece SHA, mas v4 é a versão mais recente e estável
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ steps.pnpm-version.outputs.version }}
+
+      - name: Instalar dependências
+        run: pnpm install --frozen-lockfile
+
+      # REGRA 6: Enterprise-grade - verificar atualizações usando pnpm outdated
+      - name: Verificar atualizações disponíveis
+        id: check-updates
+        run: |
+          echo "🔍 Verificando atualizações disponíveis..."
+          
+          # pnpm outdated retorna lista de pacotes desatualizados
+          # Formato: Package Name  Current  Wanted  Latest
+          UPDATES=$(pnpm outdated --format json 2>/dev/null || echo "[]")
+          
+          if [ "$UPDATES" = "[]" ] || [ -z "$UPDATES" ]; then
+            echo "✅ Nenhuma atualização disponível"
+            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "updates_json=[]" >> $GITHUB_OUTPUT
+          else
+            echo "📦 Atualizações encontradas:"
+            echo "$UPDATES" | jq '.'
+            echo "has_updates=true" >> $GITHUB_OUTPUT
+            echo "updates_json<<EOF" >> $GITHUB_OUTPUT
+            echo "$UPDATES" >> $GITHUB_OUTPUT
+            echo "EOF" >> $GITHUB_OUTPUT
+          fi
+
+      # REGRA 6: Enterprise-grade - criar resumo das atualizações
+      - name: Criar resumo das atualizações
+        if: steps.check-updates.outputs.has_updates == 'true'
+        run: |
+          echo "## 📦 Resumo de Atualizações Disponíveis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.check-updates.outputs.updates_json }}" | jq -r '.[] | "- **\(.name)**: \(.current) → \(.latest) (\(.type))**"' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Total de pacotes desatualizados: $(echo '${{ steps.check-updates.outputs.updates_json }}' | jq 'length')" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 2: Atualizar Dependências e Criar PR
+  # ===========================================================================
+  update-and-pr:
+    name: Atualizar Dependências e Criar PR
+    needs: check-updates
+    if: needs.check-updates.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
+          
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          fi
+          
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security (Regra 11)
+      - name: Setup Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
+        with: node-version: ${{ steps.node-version.outputs.version }}
+
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
+      # Best Practices 2025: pnpm/action-setup@v4 (Node.js 20, November 2025)
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with: version: ${{ steps.pnpm-version.outputs.version }}
+
+      # REGRA 4: Aprovação obrigatória - criar branch para PR
+      - name: Criar branch para atualizações
+        run: |
+          BRANCH_NAME="deps/update-$(date +%Y%m%d)"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH_NAME"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      # REGRA 6: Enterprise-grade - atualizar dependências baseado no tipo
+      - name: Atualizar dependências
+        run: |
+          UPDATE_TYPE="${{ github.event.inputs.update_type || 'patch' }}"
+          
+          echo "📦 Atualizando dependências (tipo: $UPDATE_TYPE)..."
+          
+          if [ "$UPDATE_TYPE" = "all" ]; then
+            # Atualizar todas as dependências para a versão mais recente
+            pnpm update --latest
+          elif [ "$UPDATE_TYPE" = "major" ]; then
+            # Atualizar major, minor e patch
+            pnpm update --latest
+          elif [ "$UPDATE_TYPE" = "minor" ]; then
+            # Atualizar apenas minor e patch (não major)
+            pnpm update --latest --filter '!@*'  # Atualizar tudo exceto workspaces
+            # Para workspaces, usar update sem --latest para respeitar ranges
+            pnpm update
+          else
+            # Padrão: apenas patch (mais seguro)
+            pnpm update
+          fi
+          
+          echo "✅ Dependências atualizadas"
+
+      # REGRA 9: Validação contínua - testar após atualização
+      - name: Instalar dependências atualizadas
+        run: pnpm install
+
+      - name: TypeScript Check
+        run: pnpm run typecheck
+
+      - name: Build packages
+        run: pnpm run build:packages
+
+      # REGRA 4: Aprovação obrigatória - criar commit e PR
+      - name: Criar commit e PR
+        if: success()
+        run: |
+          git add package.json pnpm-lock.yaml
+          
+          # Verificar se há mudanças
+          if git diff --staged --quiet; then
+            echo "⚠️ Nenhuma mudança detectada após atualização"
+            exit 0
+          fi
+          
+          # Criar commit
+          COMMIT_MSG="chore(deps): atualizar dependências automaticamente
+
+          - Atualização automática via GitHub Actions
+          - Data: $(date +'%Y-%m-%d %H:%M:%S UTC')
+          - Tipo: ${{ github.event.inputs.update_type || 'patch' }}
+          
+          [skip ci]"
+          
+          git commit -m "$COMMIT_MSG"
+          
+          # Push da branch
+          git push origin "$BRANCH_NAME"
+          
+          # Criar PR usando GitHub CLI
+          gh pr create \
+            --title "chore(deps): Atualização automática de dependências" \
+            --body "## 📦 Atualização Automática de Dependências
+          
+          Este PR foi criado automaticamente pelo workflow de atualização de dependências.
+          
+          ### Tipo de Atualização
+          - **Tipo**: ${{ github.event.inputs.update_type || 'patch' }}
+          - **Data**: $(date +'%Y-%m-%d %H:%M:%S UTC')
+          
+          ### Validações Realizadas
+          - ✅ TypeScript check passou
+          - ✅ Build de packages passou
+          
+          ### Próximos Passos
+          1. Revisar as mudanças no \`package.json\` e \`pnpm-lock.yaml\`
+          2. Executar testes localmente se necessário
+          3. Aprovar e fazer merge após revisão
+          
+          ---
+          *Este PR foi criado automaticamente. Por favor, revise antes de fazer merge.*
+          " \
+            --base main \
+            --head "$BRANCH_NAME" \
+            --label "dependencies,automated"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

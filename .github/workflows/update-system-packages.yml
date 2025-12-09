@@ -1,0 +1,312 @@
+# =============================================================================
+# GitHub Actions Workflow - Atualização de Pacotes do Sistema (Hetzner)
+# =============================================================================
+# Descrição: Atualiza pacotes do sistema (apt) no servidor Hetzner
+# Execução: Semanal (domingos às 03:00 UTC)
+# REGRA 4: Aprovação obrigatória - cria issue com resumo, não atualiza automaticamente
+# REGRA 6: Enterprise-grade - backup antes de atualizar, validação completa
+# REGRA 11: Melhores práticas GitHub Actions 2025
+# REGRA 16: Health checks após atualização
+# =============================================================================
+
+name: Update System Packages (Hetzner)
+
+on:
+  # Executar semanalmente (domingos às 03:00 UTC)
+  schedule:
+    - cron: '0 3 * * 0'  # Todo domingo às 03:00 UTC
+  # Permitir execução manual
+  workflow_dispatch:
+    inputs:
+      auto_update:
+        description: 'Atualizar automaticamente (true) ou apenas verificar (false)'
+        required: false
+        default: 'false'
+        type: boolean
+
+concurrency:
+  group: update-system-packages
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  # ===========================================================================
+  # Job 1: Verificar Atualizações Disponíveis no Servidor Hetzner
+  # ===========================================================================
+  check-updates:
+    name: Verificar Atualizações no Servidor
+    runs-on: ubuntu-latest
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # REGRA 6: Enterprise-grade - verificar atualizações sem instalar
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Verificar atualizações disponíveis
+        id: check-updates
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            
+            echo "🔍 Verificando atualizações disponíveis..."
+            
+            # Atualizar lista de pacotes (não instalar)
+            apt update -qq
+            
+            # Verificar atualizações disponíveis
+            UPDATES=$(apt list --upgradable 2>/dev/null | grep -c "upgradable" || echo "0")
+            
+            if [ "$UPDATES" -eq 0 ]; then
+              echo "✅ Nenhuma atualização disponível"
+              echo "has_updates=false" > /tmp/updates_status.txt
+            else
+              echo "📦 $UPDATES pacotes podem ser atualizados"
+              
+              # Listar pacotes que serão atualizados
+              apt list --upgradable 2>/dev/null | grep -v "Listing..." > /tmp/upgradable_packages.txt || true
+              
+              echo "has_updates=true" > /tmp/updates_status.txt
+              echo "updates_count=$UPDATES" >> /tmp/updates_status.txt
+            fi
+            
+            # Verificar versão do kernel
+            CURRENT_KERNEL=$(uname -r)
+            AVAILABLE_KERNEL=$(apt list --upgradable 2>/dev/null | grep -i "linux-image" | head -1 | cut -d'/' -f1 || echo "none")
+            
+            echo "current_kernel=$CURRENT_KERNEL" >> /tmp/updates_status.txt
+            echo "available_kernel=$AVAILABLE_KERNEL" >> /tmp/updates_status.txt
+            
+            # Verificar versão do Docker
+            DOCKER_VERSION=$(docker --version 2>/dev/null || echo "not installed")
+            echo "docker_version=$DOCKER_VERSION" >> /tmp/updates_status.txt
+            
+            # Verificar versão do Docker Compose
+            DOCKER_COMPOSE_VERSION=$(docker compose version 2>/dev/null || echo "not installed")
+            echo "docker_compose_version=$DOCKER_COMPOSE_VERSION" >> /tmp/updates_status.txt
+            
+            # Criar resumo
+            cat /tmp/updates_status.txt
+            if [ -f /tmp/upgradable_packages.txt ]; then
+              echo "--- Pacotes que serão atualizados ---"
+              cat /tmp/upgradable_packages.txt
+            fi
+
+      # REGRA 6: Enterprise-grade - criar resumo das atualizações
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Criar resumo das atualizações
+        if: always()
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            if [ -f /tmp/updates_status.txt ]; then
+              cat /tmp/updates_status.txt
+            fi
+            if [ -f /tmp/upgradable_packages.txt ]; then
+              echo "--- Pacotes que serão atualizados ---"
+              head -50 /tmp/upgradable_packages.txt
+            fi
+
+  # ===========================================================================
+  # Job 2: Criar Issue com Resumo (se houver atualizações)
+  # ===========================================================================
+  create-issue:
+    name: Criar Issue com Resumo
+    needs: check-updates
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # REGRA 4: Aprovação obrigatória - criar issue para revisão manual
+      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security (Regra 11)
+      - name: Criar issue com resumo de atualizações
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          script: |
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'system-updates'
+            });
+            
+            // Verificar se já existe issue aberta
+            const existingIssue = issues.find(issue => 
+              issue.title.includes('Atualização de Pacotes do Sistema') &&
+              issue.created_at > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString()
+            );
+            
+            if (existingIssue) {
+              console.log(`Issue já existe: #${existingIssue.number}`);
+              return;
+            }
+            
+            // Buscar informações do servidor via SSH (simulado - na prática, usar output do job anterior)
+            const issueBody = `## 📦 Atualização de Pacotes do Sistema - Hetzner
+            
+            Este issue foi criado automaticamente pelo workflow de atualização de pacotes do sistema.
+            
+            ### ⚠️ Ação Necessária
+            
+            **REGRAS:**
+            - ✅ Backup completo antes de atualizar (Regra 6)
+            - ✅ Atualizar em janela de manutenção (Regra 4)
+            - ✅ Health checks após atualização (Regra 16)
+            
+            ### 📋 Próximos Passos
+            
+            1. **Revisar atualizações disponíveis**
+               - Conectar ao servidor: \`ssh alice-hetzner\`
+               - Verificar: \`apt list --upgradable\`
+            
+            2. **Fazer backup completo**
+               - Backup PostgreSQL: \`docker compose exec postgres pg_dumpall > backup.sql\`
+               - Backup volumes: \`docker compose down\` + backup de \`/opt/alice\`
+            
+            3. **Atualizar pacotes**
+               - \`apt update && apt upgrade -y\`
+               - Verificar serviços: \`systemctl status docker\`
+            
+            4. **Health checks**
+               - Verificar containers: \`docker ps\`
+               - Verificar logs: \`docker compose logs --tail=100\`
+               - Testar endpoints: \`curl https://yesyoudeserve.duckdns.org/api/health\`
+            
+            5. **Fechar este issue após conclusão**
+            
+            ---
+            *Issue criada automaticamente em ${new Date().toISOString()}*
+            `;
+            
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `📦 Atualização de Pacotes do Sistema - ${new Date().toISOString().split('T')[0]}`,
+              body: issueBody,
+              labels: ['system-updates', 'maintenance']
+            });
+            
+            console.log(`Issue criada: #${issue.data.number}`);
+
+  # ===========================================================================
+  # Job 3: Atualizar Pacotes (apenas se auto_update=true)
+  # ===========================================================================
+  update-packages:
+    name: Atualizar Pacotes do Sistema
+    needs: check-updates
+    if: |
+      github.event.inputs.auto_update == 'true' &&
+      needs.check-updates.outputs.has_updates == 'true'
+    runs-on: ubuntu-latest
+    
+    steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
+      - name: Checkout código
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # REGRA 6: Enterprise-grade - backup antes de atualizar
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Backup antes de atualizar
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            
+            echo "💾 Criando backup antes de atualizar..."
+            
+            BACKUP_DIR="/opt/alice/backups/system-update-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR"
+            
+            # Backup de configurações importantes
+            cp -r /etc/apt/sources.list* "$BACKUP_DIR/" 2>/dev/null || true
+            cp -r /etc/docker "$BACKUP_DIR/" 2>/dev/null || true
+            
+            # Backup de status dos containers
+            docker ps -a > "$BACKUP_DIR/containers_before.txt" 2>/dev/null || true
+            docker images > "$BACKUP_DIR/images_before.txt" 2>/dev/null || true
+            
+            echo "✅ Backup criado em: $BACKUP_DIR"
+
+      # REGRA 6: Enterprise-grade - atualizar pacotes
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Atualizar pacotes do sistema
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            
+            echo "📦 Atualizando pacotes do sistema..."
+            
+            # Atualizar lista de pacotes
+            apt update -y
+            
+            # Atualizar pacotes (sem atualizar kernel automaticamente - requer reboot)
+            DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confold"
+            
+            # Limpar pacotes órfãos
+            apt autoremove -y
+            apt autoclean
+            
+            echo "✅ Pacotes atualizados com sucesso"
+
+      # REGRA 16: Health checks após atualização
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Health checks após atualização
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            
+            echo "🏥 Executando health checks..."
+            
+            # Verificar Docker
+            if ! systemctl is-active --quiet docker; then
+              echo "❌ Docker não está rodando!"
+              systemctl status docker
+              exit 1
+            fi
+            echo "✅ Docker está rodando"
+            
+            # Verificar containers
+            CONTAINERS_RUNNING=$(docker ps -q | wc -l)
+            echo "📦 Containers rodando: $CONTAINERS_RUNNING"
+            
+            # Verificar se containers críticos estão rodando
+            if ! docker ps --format '{{.Names}}' | grep -q "alice-postgres"; then
+              echo "⚠️ AVISO: Container alice-postgres não está rodando"
+            fi
+            
+            # Verificar espaço em disco
+            DISK_USAGE=$(df -h / | tail -1 | awk '{print $5}' | sed 's/%//')
+            if [ "$DISK_USAGE" -gt 90 ]; then
+              echo "⚠️ AVISO: Uso de disco acima de 90%: ${DISK_USAGE}%"
+            else
+              echo "✅ Uso de disco: ${DISK_USAGE}%"
+            fi
+            
+            echo "✅ Health checks concluídos"
+

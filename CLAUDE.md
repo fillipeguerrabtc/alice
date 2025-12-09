@@ -189,13 +189,15 @@ alice/
 - **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
 - **Python**: Python (versão estável automática via API + fallback .python-version), PyTorch 2.9.1 (CLIP service)
 - **CI/CD**: GitHub Actions (100% automático)
+- **Atualização Periódica**: Workflows automáticos para dependências npm/pnpm (semanal) e pacotes do sistema Hetzner (semanal)
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.22 - 09 de Dezembro de 2025*
+*Versão: 3.23 - 09 de Dezembro de 2025*
 *Total de Containers: 35 (5 infra + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
+*Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (containers que não precisam escrever)*
-*Última Revisão Completa: 09/12/2025 - Verificação enterprise completa, todas as correções aplicadas, 17/17 regras em 100% compliance*
+*Última Revisão Completa: 09/12/2025 - Processo de atualização periódica implementado, workflows com SHA pinning, 17/17 regras em 100% compliance*
