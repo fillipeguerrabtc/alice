@@ -515,7 +515,7 @@ class DocumentProcessorService {
       // TypedArray (Uint8Array, etc.) - Buffer.from() cria cópia isolada
       const typedArray = buffer as ArrayBufferView;
       const { buffer: arrayBuffer, byteOffset, byteLength } = typedArray;
-      nodeBuffer = Buffer.from(arrayBuffer, byteOffset, byteLength);
+      nodeBuffer = Buffer.from(new Uint8Array(arrayBuffer, byteOffset, byteLength));
     } else {
       // ArrayBuffer ou Buffer<ArrayBufferLike> - converter via Uint8Array para forçar cópia
       if (buffer instanceof ArrayBuffer) {
