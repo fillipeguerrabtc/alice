@@ -501,8 +501,9 @@ class DocumentProcessorService {
       : excelModule;
     
     const workbook = new ExcelJSLib.Workbook();
-    // Converter para Uint8Array para compatibilidade com exceljs 4.4.0+
-    await workbook.xlsx.load(new Uint8Array(buffer));
+    // exceljs 4.4.0+ aceita Buffer diretamente (Node.js Buffer é compatível)
+    // REGRA 8: TypeScript strict - passar Buffer diretamente, não Uint8Array
+    await workbook.xlsx.load(buffer);
     
     let text = '';
     workbook.eachSheet((worksheet: Worksheet, sheetId: number) => {
