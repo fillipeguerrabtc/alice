@@ -102,7 +102,7 @@ jobs:
           echo "🔍 Buscando versão LTS mais recente do Node.js..."
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
-            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
             sed 's/^v//' | sed 's/\.[0-9]*$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
@@ -285,7 +285,7 @@ jobs:
           echo "🔍 Buscando versão LTS mais recente do Node.js..."
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
-            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
             sed 's/^v//' | sed 's/\.[0-9]*$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
@@ -496,7 +496,7 @@ jobs:
           echo "🔍 Buscando versão LTS mais recente do Node.js..."
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
-            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
             sed 's/^v//' | sed 's/\.[0-9]*$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
@@ -627,6 +627,42 @@ jobs:
           fi
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
+      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
+      # Buscar versão LTS mais recente via API oficial do Node.js
+      # Fallback para .nvmrc se API falhar
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          # REGRA 6: Enterprise-grade - buscar versão LTS mais recente via API oficial
+          echo "🔍 Buscando versão LTS mais recente do Node.js..."
+          
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed 's/\.[0-9]*$//')
+          
+          # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão LTS da API, usando fallback do .nvmrc" >&2
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X ou X.Y)
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
