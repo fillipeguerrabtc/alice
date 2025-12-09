@@ -85,6 +85,14 @@ fi
 
 log_info "📦 $UPDATES pacotes podem ser atualizados"
 
+# REGRA 6: Enterprise-grade - verificar se kernel será atualizado ANTES do upgrade
+# Isso permite avisar o usuário que reboot será necessário
+KERNEL_UPDATE=0
+if apt list --upgradable 2>/dev/null | grep -qi "linux-image"; then
+    KERNEL_UPDATE=1
+    log_warn "⚠️ Kernel será atualizado - REBOOT NECESSÁRIO após atualização"
+fi
+
 # Listar pacotes que serão atualizados
 log_info "Pacotes que serão atualizados:"
 apt list --upgradable 2>/dev/null | grep -v "Listing..." | head -20
@@ -162,10 +170,15 @@ else
     log_info "✅ Uso de memória: ${MEMORY_USAGE}%"
 fi
 
-# Verificar se kernel foi atualizado (requer reboot)
-KERNEL_UPDATE=$(apt list --upgradable 2>/dev/null | grep -i "linux-image" | wc -l)
-if [ "$KERNEL_UPDATE" -gt 0 ]; then
+# REGRA 6: Enterprise-grade - verificar se kernel foi atualizado (requer reboot)
+# Usar variável KERNEL_UPDATE definida ANTES do upgrade (linha 88)
+# Alternativamente, verificar se kernel instalado é diferente do kernel em execução
+CURRENT_KERNEL=$(uname -r)
+INSTALLED_KERNELS=$(dpkg -l | grep -E '^ii.*linux-image-[0-9]' | awk '{print $2}' | sort -V | tail -1 | sed 's/linux-image-//')
+if [ "$KERNEL_UPDATE" -eq 1 ] || [ "$CURRENT_KERNEL" != "$INSTALLED_KERNELS" ]; then
     log_warn "⚠️ Kernel atualizado - REBOOT NECESSÁRIO após verificação completa"
+    log_warn "   Kernel atual: $CURRENT_KERNEL"
+    log_warn "   Kernel instalado mais recente: $INSTALLED_KERNELS"
 fi
 
 log_info "✅ Health checks concluídos"
@@ -181,7 +194,7 @@ echo "Pacotes atualizados: $UPDATES"
 echo "Containers rodando: $CONTAINERS_RUNNING"
 echo "Uso de disco: ${DISK_USAGE}%"
 echo "Uso de memória: ${MEMORY_USAGE}%"
-if [ "$KERNEL_UPDATE" -gt 0 ]; then
+if [ "$KERNEL_UPDATE" -eq 1 ]; then
     echo "⚠️ REBOOT NECESSÁRIO (kernel atualizado)"
 fi
 
