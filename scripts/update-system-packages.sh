@@ -174,8 +174,19 @@ fi
 # Usar variável KERNEL_UPDATE definida ANTES do upgrade (linha 88)
 # Alternativamente, verificar se kernel instalado é diferente do kernel em execução
 CURRENT_KERNEL=$(uname -r)
-INSTALLED_KERNELS=$(dpkg -l | grep -E '^ii.*linux-image-[0-9]' | awk '{print $2}' | sort -V | tail -1 | sed 's/linux-image-//')
-if [ "$KERNEL_UPDATE" -eq 1 ] || [ "$CURRENT_KERNEL" != "$INSTALLED_KERNELS" ]; then
+INSTALLED_KERNELS=$(dpkg -l | grep -E '^ii.*linux-image-[0-9]' | awk '{print $2}' | sort -V | tail -1 | sed 's/linux-image-//' || echo "")
+
+# REGRA 6: Enterprise-grade - validar que INSTALLED_KERNELS não está vazio antes de comparar
+# Se dpkg não encontrar pacotes linux-image, INSTALLED_KERNELS será vazio
+# Comparar string vazia com CURRENT_KERNEL sempre retorna true (falso positivo)
+if [ "$KERNEL_UPDATE" -eq 1 ]; then
+    log_warn "⚠️ Kernel atualizado - REBOOT NECESSÁRIO após verificação completa"
+    log_warn "   Kernel atual: $CURRENT_KERNEL"
+    if [ -n "$INSTALLED_KERNELS" ]; then
+        log_warn "   Kernel instalado mais recente: $INSTALLED_KERNELS"
+    fi
+elif [ -n "$INSTALLED_KERNELS" ] && [ "$CURRENT_KERNEL" != "$INSTALLED_KERNELS" ]; then
+    # Só comparar se INSTALLED_KERNELS não estiver vazio
     log_warn "⚠️ Kernel atualizado - REBOOT NECESSÁRIO após verificação completa"
     log_warn "   Kernel atual: $CURRENT_KERNEL"
     log_warn "   Kernel instalado mais recente: $INSTALLED_KERNELS"
