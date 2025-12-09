@@ -1156,6 +1156,8 @@ services:
     platform: linux/amd64
     container_name: erpnext-backend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command: ["bench", "serve", "--port", "8000"]
     environment:
       DB_HOST: erpnext-mariadb
@@ -1198,6 +1200,8 @@ services:
     platform: linux/amd64
     container_name: erpnext-frontend
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       BACKEND: erpnext-backend:8000
@@ -1226,6 +1230,8 @@ services:
     platform: linux/amd64
     container_name: erpnext-websocket
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       SOCKETIO_PORT: 9000
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
@@ -1570,6 +1576,8 @@ services:
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
@@ -1587,6 +1595,8 @@ services:
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
@@ -1609,6 +1619,8 @@ services:
     platform: linux/amd64
     container_name: grafana
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
@@ -1630,6 +1642,8 @@ services:
     platform: linux/amd64
     container_name: loki
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command: ["-config.file=/etc/loki/local-config.yaml"]
     volumes:
       - ./loki/local-config.yaml:/etc/loki/local-config.yaml:ro
@@ -1642,6 +1656,8 @@ services:
     platform: linux/amd64
     container_name: promtail
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
       - ./promtail/config.yml:/etc/promtail/config.yml:ro
@@ -1654,6 +1670,8 @@ services:
     platform: linux/amd64
     container_name: jaeger
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       - COLLECTOR_OTLP_ENABLED=true
     networks:

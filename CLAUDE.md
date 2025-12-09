@@ -175,7 +175,7 @@ alice/
 
 ## Security Hardening (Dezembro 2025)
 - **35 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
-- **21 containers** = 100% com `read_only: true` + tmpfs (containers que não precisam escrever)
+- **21 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
 - **35 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **17 containers** = 100% com healthchecks (init excluídos)
@@ -199,5 +199,5 @@ alice/
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
-*Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (containers que não precisam escrever)*
+*Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (aplicável apenas onde não há escrita)*
 *Última Revisão Completa: 09/12/2025 - Processo de atualização periódica implementado, workflows com SHA pinning, 17/17 regras em 100% compliance*

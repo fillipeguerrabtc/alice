@@ -351,10 +351,10 @@ Proprietário - Todos os direitos reservados.
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
 | **Resource Limits** | 35/35 containers | 100% |
-| **read_only: true** | 35/35 containers | 100% |
+| **read_only: true** | 21/35 containers | 100% aplicável (somente onde não há escrita) |
 | **security_opt: no-new-privileges** | 35/35 containers | 100% |
 | **Healthchecks** | 33/33 containers (init excluídos) | 100% |
-| **SHA256 Digests** | 10 imagens externas únicas | 100% |
+| **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
 
 ### Supply Chain Security (SHA256 Pinned Images)

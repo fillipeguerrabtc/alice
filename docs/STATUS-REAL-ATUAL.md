@@ -24,6 +24,16 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
+### Security Hardening (09/12/2025)
+
+| Item | Status | Cobertura |
+|------|--------|-----------|
+| `security_opt: no-new-privileges` | ✅ | 35/35 containers (100%) |
+| `read_only: true` | ✅ | 21/35 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 35/35 containers (100%) |
+| SHA256 digests | ✅ | 26 imagens externas únicas |
+| Healthchecks | ✅ | 17/17 containers (init excluídos) |
+
 ---
 
 ## 🏗️ MICROSSERVIÇOS ALICE

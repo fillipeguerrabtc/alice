@@ -877,7 +877,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 |------|--------|-----------|
 | **no-new-privileges** | ✅ | 35/35 containers (100%) |
 | **resource limits** | ✅ | 35/35 containers (100%) |
-| **read_only: true** | ✅ | 21/35 containers (containers que não precisam escrever) |
+| **read_only: true** | ✅ | 21/35 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 17/17 containers (init excluídos) |
 
