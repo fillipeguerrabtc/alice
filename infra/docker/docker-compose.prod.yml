@@ -1067,6 +1067,9 @@ services:
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
+    # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
+    security_opt:
+      - no-new-privileges:true
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
@@ -1099,12 +1102,24 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
+    # REGRA 16: Resource limits para init containers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
 
   erpnext-create-site:
     image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
+    # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: ["new", "--db-root-password", "${ERPNEXT_MYSQL_ROOT_PASSWORD}", "--admin-password", "${ERPNEXT_ADMIN_PASSWORD}", "--install-app", "erpnext", "${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"]
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1126,6 +1141,15 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
+    # REGRA 16: Resource limits para init containers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
 
   erpnext-backend:
     image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
@@ -1230,6 +1254,9 @@ services:
     platform: linux/amd64
     container_name: erpnext-worker-default
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1256,12 +1283,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-worker-short:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-worker-short
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       WORKER_TYPE: short
@@ -1289,12 +1328,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-worker-long:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-worker-long
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       WORKER_TYPE: long
@@ -1322,12 +1373,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-scheduler:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-scheduler
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (scheduler precisa escrever, não pode ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: schedule
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1354,12 +1417,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para scheduler (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-worker-default-2:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-worker-default-2
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       WORKER_TYPE: default
@@ -1387,12 +1462,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-worker-short-2:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-worker-short-2
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       WORKER_TYPE: short
@@ -1420,12 +1507,24 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   erpnext-worker-long-2:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
     platform: linux/amd64
     container_name: erpnext-worker-long-2
     restart: unless-stopped
+    # REGRA 16: Security Hardening - no-new-privileges (workers precisam escrever, não podem ter read_only)
+    security_opt:
+      - no-new-privileges:true
     command: worker
     environment:
       WORKER_TYPE: long
@@ -1453,6 +1552,15 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    # REGRA 16: Resource limits para workers (best practice enterprise)
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   # ===========================================================================
   # LANGFUSE, PROMETHEUS, GRAFANA, LOKI, TEMPO, JAEGER (mantidos)

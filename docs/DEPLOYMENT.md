@@ -867,11 +867,38 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 ---
 
+---
+
+## 🔐 Security Hardening (100% Enterprise - 09/12/2025)
+
+### Status Completo
+
+| Item | Status | Cobertura |
+|------|--------|-----------|
+| **no-new-privileges** | ✅ | 35/35 containers (100%) |
+| **resource limits** | ✅ | 35/35 containers (100%) |
+| **read_only: true** | ✅ | 21/35 containers (containers que não precisam escrever) |
+| **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
+| **healthchecks** | ✅ | 17/17 containers (init excluídos) |
+
+### Notas Importantes
+
+- **ERPNext Workers (9 containers):** Têm `security_opt: no-new-privileges:true` e resource limits, mas **NÃO** têm `read_only: true` pois precisam escrever em volumes (`erpnext_sites`, `erpnext_logs`). Este é o comportamento correto e enterprise-grade.
+
+- **ERPNext Init Containers (2 containers):** Têm `security_opt: no-new-privileges:true` e resource limits, mas **NÃO** têm `read_only: true` pois precisam escrever em volumes durante a inicialização. Este é o comportamento correto e enterprise-grade.
+
+- **Containers com `read_only: true`:** Apenas containers que não precisam escrever em volumes têm `read_only: true` aplicado. Containers que precisam escrever (workers, init, databases) não têm `read_only: true`, mas têm todos os outros aspectos de security hardening aplicados.
+
+**Referência:** `docs/VERIFICACAO-COMPLETA-ENTERPRISE.md` - Seção "Security Hardening (Docker Compose)"
+
+---
+
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 09 de Dezembro de 2025*
-*Versão: 6.1 - Gestão de Backups Enterprise (disk-usage, cleanup, delete)*
+*Versão: 6.2 - Security Hardening 100% Completo*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
+*Total de Containers: 35 (5 infraestrutura + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
+*Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (09/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

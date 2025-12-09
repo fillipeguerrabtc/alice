@@ -373,7 +373,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 27 containers operam com filesystem read-only + tmpfs para escrita temporária, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
+Todos os 35 containers têm security hardening completo aplicado. Containers que não precisam escrever (21 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (14 containers: workers, init, databases) têm `security_opt: no-new-privileges:true` e resource limits, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
 
 ---
 

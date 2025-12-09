@@ -480,9 +480,20 @@ class DocumentProcessorService {
     // Import dinâmico do exceljs
     // exceljs pode exportar como default ou como módulo direto dependendo do bundler/ambiente
     // Abordagem defensiva: verificar ambos os padrões de export
+    // REGRA 8: TypeScript strict, zero any - tipagem correta do dynamic import
     const excelModule = await import('exceljs');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const ExcelJSLib = (excelModule as any).default ?? excelModule;
+    
+    // Type guard para verificar se é default export ou named export
+    // exceljs 4.4.0 pode exportar como { default: { Workbook, ... } } ou { Workbook, ... }
+    // Verificar se tem propriedade 'default' e se é um objeto válido
+    const ExcelJSLib = (
+      'default' in excelModule &&
+      typeof excelModule.default === 'object' &&
+      excelModule.default !== null &&
+      'Workbook' in excelModule.default
+    )
+      ? excelModule.default as typeof excelModule
+      : excelModule;
     
     const workbook = new ExcelJSLib.Workbook();
     // Converter para Uint8Array para compatibilidade com exceljs 4.4.0+
