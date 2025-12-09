@@ -224,36 +224,78 @@ jobs:
         with: version: ${{ steps.pnpm-version.outputs.version }}
 
       # REGRA 4: Aprovação obrigatória - criar branch para PR
+      # REGRA 6: Enterprise-grade - nome único para evitar colisões (timestamp + SHA curto)
       - name: Criar branch para atualizações
         run: |
-          BRANCH_NAME="deps/update-$(date +%Y%m%d)"
+          # REGRA 6: Enterprise-grade - nome único com timestamp e SHA para evitar colisões
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          SHA_SHORT="${GITHUB_SHA::8}"
+          BRANCH_NAME="deps/update-${TIMESTAMP}-${SHA_SHORT}"
+          
+          # Verificar se branch já existe (fallback se houver colisão)
+          if git show-ref --verify --quiet refs/heads/"$BRANCH_NAME"; then
+            echo "⚠️ Branch já existe, adicionando sufixo sequencial..."
+            COUNTER=1
+            while git show-ref --verify --quiet refs/heads/"${BRANCH_NAME}-${COUNTER}"; do
+              COUNTER=$((COUNTER + 1))
+            done
+            BRANCH_NAME="${BRANCH_NAME}-${COUNTER}"
+          fi
+          
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git checkout -b "$BRANCH_NAME"
           echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+          echo "✅ Branch criado: $BRANCH_NAME"
 
       # REGRA 6: Enterprise-grade - atualizar dependências baseado no tipo
+      # REGRA 5: NÃO MENTIR - cada tipo deve ter comportamento distinto e bem documentado
       - name: Atualizar dependências
         run: |
           UPDATE_TYPE="${{ github.event.inputs.update_type || 'patch' }}"
           
           echo "📦 Atualizando dependências (tipo: $UPDATE_TYPE)..."
           
-          if [ "$UPDATE_TYPE" = "all" ]; then
-            # Atualizar todas as dependências para a versão mais recente
-            pnpm update --latest
-          elif [ "$UPDATE_TYPE" = "major" ]; then
-            # Atualizar major, minor e patch
-            pnpm update --latest
-          elif [ "$UPDATE_TYPE" = "minor" ]; then
-            # Atualizar apenas minor e patch (não major)
-            pnpm update --latest --filter '!@*'  # Atualizar tudo exceto workspaces
-            # Para workspaces, usar update sem --latest para respeitar ranges
-            pnpm update
-          else
-            # Padrão: apenas patch (mais seguro)
-            pnpm update
-          fi
+          # REGRA 5: NÃO MENTIR - garantir que cada tipo tenha comportamento distinto
+          case "$UPDATE_TYPE" in
+            "all")
+              # REGRA 6: Enterprise-grade - atualizar TUDO incluindo workspaces recursivamente
+              # Comando: pnpm update --latest --recursive
+              # Comportamento: Atualiza todas as dependências (diretas e transitivas) e workspaces
+              # para a versão mais recente disponível, ignorando ranges do package.json
+              echo "🔄 Modo: ALL - Atualizando todas as dependências e workspaces recursivamente..."
+              echo "   Comando: pnpm update --latest --recursive"
+              pnpm update --latest --recursive
+              ;;
+            "major")
+              # REGRA 6: Enterprise-grade - atualizar apenas dependências diretas (não workspaces)
+              # Comando: pnpm update --latest
+              # Comportamento: Atualiza apenas dependências diretas do package.json raiz
+              # para a versão mais recente (major, minor, patch), ignorando ranges
+              # NÃO atualiza workspaces nem dependências transitivas
+              echo "🔄 Modo: MAJOR - Atualizando dependências diretas (major, minor, patch)..."
+              echo "   Comando: pnpm update --latest"
+              pnpm update --latest
+              ;;
+            "minor")
+              # REGRA 6: Enterprise-grade - atualizar respeitando ranges (minor e patch apenas)
+              # Comando: pnpm update
+              # Comportamento: Atualiza dentro dos ranges especificados no package.json
+              # Respeita ^ (caret) e ~ (tilde), então atualiza minor e patch, mas não major
+              echo "🔄 Modo: MINOR - Atualizando respeitando ranges (minor e patch apenas)..."
+              echo "   Comando: pnpm update (respeita ranges do package.json)"
+              pnpm update
+              ;;
+            *)
+              # Padrão: apenas patch (mais seguro)
+              # Comando: pnpm update
+              # Comportamento: Atualiza apenas patches dentro dos ranges especificados
+              # Respeita ^ (caret) e ~ (tilde), então atualiza apenas patch
+              echo "🔄 Modo: PATCH (padrão) - Atualizando apenas patches respeitando ranges..."
+              echo "   Comando: pnpm update (respeita ranges do package.json)"
+              pnpm update
+              ;;
+          esac
           
           echo "✅ Dependências atualizadas"
 

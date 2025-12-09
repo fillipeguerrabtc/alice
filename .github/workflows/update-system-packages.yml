@@ -40,8 +40,8 @@ jobs:
     name: Verificar Atualizações no Servidor
     runs-on: ubuntu-latest
     outputs:
-      has_updates: ${{ steps.set-outputs.outputs.has_updates }}
-      updates_count: ${{ steps.set-outputs.outputs.updates_count }}
+      has_updates: ${{ steps.parse-status.outputs.has_updates }}
+      updates_count: ${{ steps.parse-status.outputs.updates_count }}
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
@@ -103,37 +103,34 @@ jobs:
               echo "--- Pacotes que serão atualizados ---"
               cat /tmp/upgradable_packages.txt
             fi
-            
-            # REGRA 6: Enterprise-grade - exportar status em formato parseável
-            # O appleboy/ssh-action captura stdout, então vamos usar um formato específico
-            # que pode ser parseado no step seguinte (linhas com prefixo GITHUB_OUTPUT:)
-            if [ "$UPDATES" -eq 0 ]; then
-              echo "GITHUB_OUTPUT:has_updates=false"
-              echo "GITHUB_OUTPUT:updates_count=0"
-            else
-              echo "GITHUB_OUTPUT:has_updates=true"
-              echo "GITHUB_OUTPUT:updates_count=$UPDATES"
-            fi
 
       # REGRA 6: Enterprise-grade - definir outputs do job baseado no resultado SSH
-      # Como o SSH executa remotamente, precisamos parsear o output do step anterior
+      # Como appleboy/ssh-action não exporta stdout como output reutilizável,
+      # vamos usar um step que lê o arquivo de status diretamente via SSH e define outputs
       - name: Definir outputs do job
-        id: set-outputs
+        id: parse-status
         run: |
-          # REGRA 6: Enterprise-grade - parsear output do SSH para definir outputs
-          # O appleboy/ssh-action captura stdout no step anterior
-          # Vamos buscar as linhas com prefixo GITHUB_OUTPUT: e extrair os valores
-          SSH_OUTPUT="${{ steps.check-updates.outputs.stdout }}"
+          # REGRA 6: Enterprise-grade - ler arquivo de status via SSH e definir outputs
+          # Como não podemos acessar stdout do step SSH anterior diretamente,
+          # vamos usar ssh diretamente para ler o arquivo de status criado no servidor
+          SSH_KEY_FILE=$(mktemp)
+          echo "${{ secrets.HETZNER_SSH_KEY }}" > "$SSH_KEY_FILE"
+          chmod 600 "$SSH_KEY_FILE"
           
-          # Extrair has_updates
-          if echo "$SSH_OUTPUT" | grep -q "GITHUB_OUTPUT:has_updates=true"; then
+          # Ler arquivo de status via SSH
+          STATUS_CONTENT=$(ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${{ secrets.HETZNER_HOST }} "cat /tmp/updates_status.txt 2>/dev/null || echo 'HAS_UPDATES=false|UPDATES_COUNT=0'")
+          
+          # Parsear valores
+          if echo "$STATUS_CONTENT" | grep -q "HAS_UPDATES=true"; then
             HAS_UPDATES="true"
-            # Extrair updates_count
-            UPDATES_COUNT=$(echo "$SSH_OUTPUT" | grep "GITHUB_OUTPUT:updates_count=" | sed 's/.*GITHUB_OUTPUT:updates_count=//' | head -1 || echo "0")
+            UPDATES_COUNT=$(echo "$STATUS_CONTENT" | grep "UPDATES_COUNT=" | cut -d'=' -f2 | head -1 || echo "0")
           else
             HAS_UPDATES="false"
             UPDATES_COUNT="0"
           fi
+          
+          # Limpar chave SSH
+          rm -f "$SSH_KEY_FILE"
           
           echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
           echo "updates_count=$UPDATES_COUNT" >> $GITHUB_OUTPUT
@@ -158,6 +155,7 @@ jobs:
 
       # REGRA 6: Enterprise-grade - buscar lista de pacotes via SSH
       # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      # REGRA 6: Enterprise-grade - salvar lista em arquivo para leitura posterior
       - name: Buscar lista de pacotes para atualização
         id: fetch-packages
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
@@ -170,7 +168,8 @@ jobs:
             
             # Atualizar lista e buscar pacotes
             apt update -qq > /dev/null 2>&1
-            apt list --upgradable 2>/dev/null | grep -v "Listing..." | head -50
+            apt list --upgradable 2>/dev/null | grep -v "Listing..." | head -50 > /tmp/upgradable_packages_list.txt || echo "" > /tmp/upgradable_packages_list.txt
+            cat /tmp/upgradable_packages_list.txt
 
       # REGRA 4: Aprovação obrigatória - criar issue para revisão manual
       # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security (Regra 11)
@@ -198,11 +197,43 @@ jobs:
             
             // Extrair informações dos outputs do job anterior
             const updatesCount = '${{ needs.check-updates.outputs.updates_count }}';
-            const packagesList = `${{ steps.fetch-packages.outputs.stdout }}`
-              .split('\n')
-              .filter(line => line.trim() && !line.includes('Listing'))
-              .slice(0, 50)
-              .join('\n');
+            
+            // REGRA 6: Enterprise-grade - ler lista de pacotes via SSH
+            // Como appleboy/ssh-action não exporta stdout, vamos ler o arquivo diretamente via SSH
+            const { execSync } = require('child_process');
+            const fs = require('fs');
+            const path = require('path');
+            const crypto = require('crypto');
+            
+            let packagesList = 'Nenhum pacote listado';
+            try {
+              // REGRA 6: Enterprise-grade - ler arquivo de pacotes via SSH
+              const sshKeyFile = path.join(process.env.RUNNER_TEMP || '/tmp', 'ssh_key_' + crypto.randomBytes(8).toString('hex'));
+              const sshKey = process.env.HETZNER_SSH_KEY || '';
+              const sshHost = process.env.HETZNER_HOST || '';
+              
+              if (!sshKey || !sshHost) {
+                throw new Error('HETZNER_SSH_KEY ou HETZNER_HOST não configurados');
+              }
+              
+              fs.writeFileSync(sshKeyFile, sshKey, { mode: 0o600 });
+              
+              const packagesContent = execSync(
+                `ssh -i "${sshKeyFile}" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${sshHost} "cat /tmp/upgradable_packages_list.txt 2>/dev/null || echo ''"`,
+                { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
+              );
+              
+              fs.unlinkSync(sshKeyFile);
+              
+              packagesList = packagesContent
+                .split('\n')
+                .filter(line => line.trim() && !line.includes('Listing') && line.length > 0)
+                .slice(0, 50)
+                .join('\n') || 'Nenhum pacote listado';
+            } catch (error) {
+              console.warn('Erro ao ler lista de pacotes:', error.message);
+              packagesList = 'Erro ao buscar lista de pacotes. Verifique manualmente via SSH: `ssh alice-hetzner` e execute `apt list --upgradable`.';
+            }
             
             const issueBody = `## 📦 Atualização de Pacotes do Sistema - Hetzner
             

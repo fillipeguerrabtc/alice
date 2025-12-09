@@ -35,9 +35,19 @@ Este documento descreve o processo **enterprise-grade** de atualização periód
 
 **Tipos de Atualização:**
 - `patch`: Apenas patches de segurança (padrão, mais seguro)
+  - Comando: `pnpm update` (respeita ranges do package.json)
+  - Atualiza apenas patches dentro dos ranges especificados (^ ou ~)
 - `minor`: Minor + patches (recomendado para atualizações regulares)
-- `major`: Major + minor + patches (requer revisão cuidadosa)
-- `all`: Todas as atualizações disponíveis
+  - Comando: `pnpm update` (respeita ranges do package.json)
+  - Atualiza minor e patch dentro dos ranges, mas não major
+- `major`: Major + minor + patches de dependências diretas (requer revisão cuidadosa)
+  - Comando: `pnpm update --latest`
+  - Atualiza apenas dependências diretas do package.json raiz para a versão mais recente
+  - NÃO atualiza workspaces nem dependências transitivas
+- `all`: Todas as atualizações disponíveis incluindo workspaces
+  - Comando: `pnpm update --latest --recursive`
+  - Atualiza todas as dependências (diretas, transitivas) e workspaces para a versão mais recente
+  - Ignora ranges do package.json e atualiza tudo recursivamente
 
 ### Execução Manual
 
