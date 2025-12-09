@@ -10,7 +10,7 @@
 ## 📊 RESUMO EXECUTIVO
 
 Este plano documenta a verificação completa e rigorosa de toda a plataforma Alice para garantir:
-- ✅ Contagem correta de containers (35 total)
+- ✅ Contagem correta de containers (40 total)
 - ✅ Code review rigoroso de todos os componentes
 - ✅ Verificação de compliance com 17 regras CLAUDE.md
 - ✅ Verificação de compliance com 12 Fatores App
@@ -32,10 +32,10 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - Microsserviços Alice: 8 containers
 - ERPNext Stack: **15 containers** (não 12!)
   - mariadb, redis-cache, redis-queue, configurator, create-site, backend, frontend, websocket, scheduler, worker-default, worker-short, worker-long, **worker-default-2, worker-short-2, worker-long-2**
-- Observability: 6 containers (langfuse, prometheus, grafana, loki, promtail, jaeger)
+- Observability: 11 containers (prometheus, grafana, loki, promtail, jaeger, langfuse, vector, alertmanager, otel-collector, node-exporter, cadvisor)
 - Backup: 1 container (pgbackrest)
 
-**Total:** 5 + 8 + 15 + 6 + 1 = **35 containers** ✅
+**Total:** 5 + 8 + 15 + 11 + 1 = **40 containers** ✅
 
 ### Ações Necessárias
 
@@ -194,7 +194,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 
 ## 🔍 FASE 3: VERIFICAÇÃO DE SECURITY HARDENING
 
-### Containers a Verificar (35 total)
+### Containers a Verificar (40 total)
 
 #### Infraestrutura Core (5)
 - [ ] dockerproxy: security_opt, resource limits, healthcheck
@@ -230,13 +230,18 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - [ ] erpnext-worker-short-2: security_opt, resource limits, healthcheck
 - [ ] erpnext-worker-long-2: security_opt, resource limits, healthcheck
 
-#### Observability (6)
-- [ ] langfuse: security_opt, resource limits, healthcheck
+#### Observability (11)
 - [ ] prometheus: security_opt, resource limits, healthcheck
 - [ ] grafana: security_opt, resource limits, healthcheck
 - [ ] loki: security_opt, resource limits, healthcheck
 - [ ] promtail: security_opt, resource limits, healthcheck
 - [ ] jaeger: security_opt, resource limits, healthcheck
+- [ ] langfuse: security_opt, resource limits, healthcheck
+- [ ] vector: security_opt, resource limits, healthcheck
+- [ ] alertmanager: security_opt, resource limits, healthcheck
+- [ ] otel-collector: security_opt, resource limits, healthcheck
+- [ ] node-exporter: security_opt, resource limits, healthcheck
+- [ ] cadvisor: security_opt, resource limits, healthcheck
 
 #### Backup (1)
 - [ ] pgbackrest: security_opt, read_only, resource limits, healthcheck
@@ -332,7 +337,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - [ ] Revisar todos os 5 workflows GitHub Actions
 
 ### Prioridade 3: Security Hardening
-- [ ] Verificar todos os 35 containers
+- [ ] Verificar todos os 40 containers
 - [ ] Documentar compliance
 
 ### Prioridade 4: Documentação
@@ -351,9 +356,9 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 
 Após execução completa deste plano:
 
-1. ✅ Contagem correta de containers documentada (35 total, 15 ERPNext)
+1. ✅ Contagem correta de containers documentada (40 total, 15 ERPNext)
 2. ✅ Code review completo de todos os componentes
-3. ✅ Security hardening verificado em todos os 35 containers
+3. ✅ Security hardening verificado em todos os 40 containers
 4. ✅ Documentação consolidada e atualizada
 5. ✅ 100% compliance com 17 regras CLAUDE.md
 6. ✅ 100% compliance com 12 Fatores App

@@ -709,7 +709,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 *Documento consolidado em 09/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.4 - Bulk Import UI Enterprise*
-*Total de Containers: 35 (5 infra + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
+*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*

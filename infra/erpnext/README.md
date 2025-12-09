@@ -1,6 +1,7 @@
 # ERPNext SSO com Alice IdP
 
-**Autor:** Fillipe Guerra
+**Autor:** Fillipe Guerra  
+**Data:** 09 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -186,7 +187,7 @@ O ERPNext será integrado com:
 
 ---
 
-*Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro*
-*Atualizado: 05 de Dezembro de 2025*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Autor: Fillipe Guerra*  
+*Documentação em Português Brasileiro*  
+*Atualizado: 09 de Dezembro de 2025*  
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*

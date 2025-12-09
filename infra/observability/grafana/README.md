@@ -1,10 +1,11 @@
 # Grafana SSO com Alice IdP
 
-**Autor:** Fillipe Guerra
+**Autor:** Fillipe Guerra  
+**Data:** 09 de Dezembro de 2025
 
 ## Visão Geral
 
-O Grafana OSS 11.3 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
+O Grafana OSS 11.1.4 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
 
 ## Arquitetura
 
@@ -12,7 +13,7 @@ O Grafana OSS 11.3 está configurado para usar **Alice Enterprise Platform** com
 ┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
 │                 │ ◄────────────────────► │                 │
 │   Grafana OSS   │   Authorization Code   │   Alice IdP     │
-│     11.3.0      │         + PKCE         │  (auth-service) │
+│     11.1.4      │         + PKCE         │  (auth-service) │
 │                 │                        │                 │
 └─────────────────┘                        └─────────────────┘
          │                                          │
@@ -127,7 +128,7 @@ docker logs alice-grafana -f --tail 100
 
 ---
 
-*Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro*
-*Atualizado: 05 de Dezembro de 2025*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Autor: Fillipe Guerra*  
+*Documentação em Português Brasileiro*  
+*Atualizado: 09 de Dezembro de 2025*  
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*

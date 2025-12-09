@@ -106,6 +106,22 @@ volumes:
       o: bind
       device: /opt/alice/data/erpnext-redis-queue
 
+  vector_data:
+    name: alice-vector-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/vector
+
+  alertmanager_data:
+    name: alice-alertmanager-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/alertmanager
+
 # =============================================================================
 # SERVICES
 # =============================================================================
@@ -1682,6 +1698,214 @@ services:
       - "traefik.http.routers.jaeger.entrypoints=websecure"
       - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
       - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+
+  # ===========================================================================
+  # VECTOR - Agregador de logs para Loki
+  # ===========================================================================
+  vector:
+    image: timberio/vector:0.43.1-alpine@sha256:17f7fd57b9a5bba2b7e8f5c4d4d589c98c47ffc4d7254598b3d5f0f7f6d93c5f
+    platform: linux/amd64
+    container_name: alice-vector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    environment:
+      - GRAFANA_LOKI_URL=http://loki:3100
+    volumes:
+      - ./vector.toml:/etc/vector/vector.toml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - vector_data:/var/lib/vector
+      - /var/log/vector:/var/log/vector
+    networks:
+      - alice-network
+    depends_on:
+      loki:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "vector", "--version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # ALERTMANAGER - Notificações Prometheus
+  # ===========================================================================
+  alertmanager:
+    image: prom/alertmanager:v0.27.0@sha256:bf9a10d03fb3d909c8c46f476405d720a54245cb713d1c4bd82cb1c2c44b007d
+    platform: linux/amd64
+    container_name: alice-alertmanager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=16M
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
+      - '--cluster.listen-address='
+    environment:
+      SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_FROM: ${SMTP_FROM:-alertas@alice.yesyoudeserve.duckdns.org}
+      SMTP_USERNAME: ${SMTP_USERNAME:-resend}
+      SMTP_PASSWORD: ${SMTP_PASSWORD}
+      ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
+      CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
+      ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
+      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+      SLACK_WEBHOOK_TOKEN: ${SLACK_WEBHOOK_TOKEN:-}
+    volumes:
+      - ../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - alice-network
+    depends_on:
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # OTEL COLLECTOR - Pipeline unificado de telemetria
+  # ===========================================================================
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.114.0@sha256:5d2f6e388933c51dd1bc75fa2d38c2b0b4c6d37cb1e11a77d8f263c3e50c9b0d
+    platform: linux/amd64
+    container_name: alice-otel-collector
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    ports:
+      - "4319:4317"
+      - "4320:4318"
+      - "8888:8888"
+      - "8889:8889"
+    volumes:
+      - ../apps/observability-service/config/otel/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    networks:
+      - alice-network
+    depends_on:
+      jaeger:
+        condition: service_started
+      prometheus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # NODE EXPORTER - Métricas do host
+  # ===========================================================================
+  node-exporter:
+    image: prom/node-exporter:v1.8.2@sha256:f503a55e9c5017d6f7282678ae77658e3d0f157f5b1032d5db36b27ca2e8bbdb
+    platform: linux/amd64
+    container_name: alice-node-exporter
+    restart: unless-stopped
+    network_mode: host
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.sysfs=/host/sys'
+      - '--path.rootfs=/rootfs'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+      - '--collector.textfile.directory=/var/lib/node_exporter/textfile_collector'
+      - '--collector.netclass.ignored-devices=^(veth.*|docker.*|br-.*)$$'
+      - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
+      - '--web.listen-address=:9100'
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.1'
+        reservations:
+          memory: 64M
+          cpus: '0.05'
+
+  # ===========================================================================
+  # CADVISOR - Métricas de containers Docker
+  # ===========================================================================
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1@sha256:df9ecdeb7be0287defd063fa6bae7c14def5cdbf0b8d4754e1691f7b3e80e124
+    platform: linux/amd64
+    container_name: alice-cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    ports:
+      - "9101:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
 
   # ===========================================================================
   # PGBACKREST - Backup Enterprise PostgreSQL (WAL Archiving + Incremental)

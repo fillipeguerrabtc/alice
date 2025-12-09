@@ -275,4 +275,4 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
 *Documento em Português Brasileiro*
 *Atualizado: 09 de Dezembro de 2025*
 *Versão: 1.3*
-*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*

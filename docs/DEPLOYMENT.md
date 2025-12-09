@@ -897,7 +897,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Documento atualizado em: 09 de Dezembro de 2025*
 *Versão: 6.2 - Security Hardening 100% Completo*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 35 (5 infraestrutura + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
 *Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (09/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*

@@ -194,7 +194,7 @@ alice/
 ---
 *Autor: Fillipe Guerra*
 *Versão: 3.23 - 09 de Dezembro de 2025*
-*Total de Containers: 35 (5 infra + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
+*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*

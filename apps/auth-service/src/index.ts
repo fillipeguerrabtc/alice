@@ -567,7 +567,7 @@ const authAttemptsCounter = new PromCounter({
 });
 
 // NOTA: Métrica de sessões ativas removida - requer implementação com Redis pub/sub
-// para contagem precisa de sessões distribuídas (TODO: fase futura)
+// para contagem precisa de sessões distribuídas; pendente de requisito específico.
 
 const authMetrics = {
   attempts: { google: 0, github: 0, saml: 0, local: 0 },

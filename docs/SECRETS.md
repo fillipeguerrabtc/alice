@@ -9,7 +9,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 
 **Total de Secrets:** 39 (35 pré-deploy + 4 opcionais/pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 35 em produção (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)
+**Total de Containers:** 40 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
@@ -366,6 +366,6 @@ openssl rand -hex 64
 *Documento atualizado em: 2025-12-09*  
 *Versão: 6.1*  
 *Total de Secrets: 39 (36 pré-deploy + 3 pós-deploy)*  
-*Total de Containers: 35 (5 infraestrutura + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)*  
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*

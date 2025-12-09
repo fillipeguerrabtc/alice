@@ -1,18 +1,19 @@
 # Observability Service - Alice Enterprise Platform
 
-**Autor:** Fillipe Guerra
+**Autor:** Fillipe Guerra  
+**Data:** 09 de Dezembro de 2025
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 27 containers da plataforma Alice Enterprise (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs).
+**Contexto:** Este é o serviço de observabilidade dos 40 containers da plataforma Alice Enterprise (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup).
 
 ## Componentes
 
 | Componente | Porta | Tecnologia | Licença | Função |
 |------------|-------|------------|---------|--------|
-| Prometheus | 9090 | Prometheus 3.0 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS 11.3 | AGPL 3.0 | Dashboards e alertas |
-| Jaeger | 16686 | Jaeger 1.62 | Apache 2.0 | Distributed tracing |
+| Prometheus | 9090 | Prometheus 3.0.1 | Apache 2.0 | Coleta de métricas |
+| Grafana | 3000 | Grafana OSS 11.1.4 | AGPL 3.0 | Dashboards e alertas |
+| Jaeger | 16686 | Jaeger 1.58 | Apache 2.0 | Distributed tracing |
 | OTel Collector | 4317/4318 | OpenTelemetry | Apache 2.0 | Instrumentação |
 | Langfuse | 3006 | Langfuse 2.x | MIT | Métricas LLM |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
@@ -216,4 +217,4 @@ apps/observability-service/
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 2.5.0 - 05 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 27 (5 infraestrutura + 8 Alice + 12 ERPNext + 2 backup/logs)*
+*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
