@@ -501,9 +501,15 @@ class DocumentProcessorService {
       : excelModule;
     
     const workbook = new ExcelJSLib.Workbook();
-    // exceljs 4.4.0+ aceita Buffer diretamente (Node.js Buffer é compatível)
-    // Passar Buffer diretamente evita erro de tipo TypeScript (Uint8Array não é compatível com tipo Buffer esperado)
-    await workbook.xlsx.load(buffer);
+    // Garantir que buffer é um Buffer do Node.js (não Buffer<ArrayBufferLike> de Web APIs)
+    // exceljs 4.4.0+ requer Buffer do Node.js, não tipos genéricos de Buffer
+    // REGRA 6: Enterprise-grade - validação e conversão explícita para garantir compatibilidade
+    // Converter para Buffer do Node.js explicitamente para evitar conflitos de tipo TypeScript
+    // Buffer.isBuffer() garante que é um Buffer do Node.js, não um tipo genérico
+    const nodeBuffer: Buffer = Buffer.isBuffer(buffer)
+      ? buffer
+      : Buffer.from(buffer as ArrayBufferLike);
+    await workbook.xlsx.load(nodeBuffer);
     
     let text = '';
     workbook.eachSheet((worksheet: Worksheet, sheetId: number) => {
