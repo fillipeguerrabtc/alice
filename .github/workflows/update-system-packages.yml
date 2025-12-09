@@ -114,6 +114,10 @@ jobs:
           # Como não podemos acessar stdout do step SSH anterior diretamente,
           # vamos usar ssh diretamente para ler o arquivo de status criado no servidor
           SSH_KEY_FILE=$(mktemp)
+          # REGRA 6: Enterprise-grade - garantir que chave SSH seja sempre removida, mesmo em caso de erro
+          # Segurança crítica: chave privada não pode permanecer no disco
+          trap 'rm -f "$SSH_KEY_FILE"' EXIT ERR
+          
           echo "${{ secrets.HETZNER_SSH_KEY }}" > "$SSH_KEY_FILE"
           chmod 600 "$SSH_KEY_FILE"
           
@@ -128,9 +132,6 @@ jobs:
             HAS_UPDATES="false"
             UPDATES_COUNT="0"
           fi
-          
-          # Limpar chave SSH
-          rm -f "$SSH_KEY_FILE"
           
           echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
           echo "updates_count=$UPDATES_COUNT" >> $GITHUB_OUTPUT
@@ -210,9 +211,10 @@ jobs:
             const crypto = require('crypto');
             
             let packagesList = 'Nenhum pacote listado';
+            let sshKeyFile = null;
             try {
               // REGRA 6: Enterprise-grade - ler arquivo de pacotes via SSH
-              const sshKeyFile = path.join(process.env.RUNNER_TEMP || '/tmp', 'ssh_key_' + crypto.randomBytes(8).toString('hex'));
+              sshKeyFile = path.join(process.env.RUNNER_TEMP || '/tmp', 'ssh_key_' + crypto.randomBytes(8).toString('hex'));
               const sshKey = process.env.HETZNER_SSH_KEY || '';
               const sshHost = process.env.HETZNER_HOST || '';
               
@@ -227,8 +229,6 @@ jobs:
                 { encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
               );
               
-              fs.unlinkSync(sshKeyFile);
-              
               packagesList = packagesContent
                 .split('\n')
                 .filter(line => line.trim() && !line.includes('Listing') && line.length > 0)
@@ -237,6 +237,16 @@ jobs:
             } catch (error) {
               console.warn('Erro ao ler lista de pacotes:', error.message);
               packagesList = 'Erro ao buscar lista de pacotes. Verifique manualmente via SSH: `ssh alice-hetzner` e execute `apt list --upgradable`.';
+            } finally {
+              // REGRA 6: Enterprise-grade - garantir que chave SSH seja sempre removida, mesmo em caso de erro
+              // Segurança crítica: chave privada não pode permanecer no disco
+              if (sshKeyFile && fs.existsSync(sshKeyFile)) {
+                try {
+                  fs.unlinkSync(sshKeyFile);
+                } catch (unlinkError) {
+                  console.warn('Erro ao remover arquivo de chave SSH:', unlinkError.message);
+                }
+              }
             }
             
             const issueBody = `## 📦 Atualização de Pacotes do Sistema - Hetzner
