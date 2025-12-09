@@ -502,7 +502,7 @@ class DocumentProcessorService {
     
     const workbook = new ExcelJSLib.Workbook();
     // exceljs 4.4.0+ aceita Buffer diretamente (Node.js Buffer é compatível)
-    // REGRA 8: TypeScript strict - passar Buffer diretamente, não Uint8Array
+    // Passar Buffer diretamente evita erro de tipo TypeScript (Uint8Array não é compatível com tipo Buffer esperado)
     await workbook.xlsx.load(buffer);
     
     let text = '';
