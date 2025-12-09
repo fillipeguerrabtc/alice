@@ -35,11 +35,13 @@ Este documento descreve o processo **enterprise-grade** de atualização periód
 
 **Tipos de Atualização:**
 - `patch`: Apenas patches de segurança (padrão, mais seguro)
-  - Comando: `pnpm update` (respeita ranges do package.json)
-  - Atualiza apenas patches dentro dos ranges especificados (^ ou ~)
+  - Estratégia: Backup `package.json` → conversão de ranges `^` para `~` → `pnpm update` → restore `package.json` → `pnpm install --lockfile-only`
+  - Atualiza APENAS patches (X.Y.Z → X.Y.Z+1), não minor nem major
+  - Mantém ranges originais no `package.json`, atualiza apenas `pnpm-lock.yaml`
 - `minor`: Minor + patches (recomendado para atualizações regulares)
-  - Comando: `pnpm update` (respeita ranges do package.json)
-  - Atualiza minor e patch dentro dos ranges, mas não major
+  - Estratégia: `pnpm outdated --format json` → filtragem de pacotes com updates minor/patch → `pnpm update <pacotes>`
+  - Atualiza minor e patch (X.Y.Z → X.Y+1.0 ou X.Y.Z+1), mas não major
+  - Respeita ranges `^` do `package.json` (atualiza para 'wanted', não 'latest')
 - `major`: Major + minor + patches de dependências diretas (requer revisão cuidadosa)
   - Comando: `pnpm update --latest`
   - Atualiza apenas dependências diretas do package.json raiz para a versão mais recente

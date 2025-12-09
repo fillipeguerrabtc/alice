@@ -19,6 +19,7 @@
 - **Aprovação:** ✅ Cria PR para revisão manual (Regra 4)
 - **Comentários:** ✅ Todos em PT-BR com referências às regras
 - **`[skip ci]`:** ✅ Aceitável (prática recomendada para evitar loops)
+- **Diferenciação patch/minor:** ✅ Implementado corretamente (Bug corrigido em 09/12/2025)
 
 #### ✅ `.github/workflows/update-system-packages.yml`
 - **SHA Pinning:** ✅ Todas as actions com SHA (supply chain security)
@@ -159,6 +160,36 @@ A implementação do processo de atualização periódica está **100% enterpris
 1. Workflows ativos e funcionando
 2. Primeira execução automática no próximo domingo
 3. Monitorar PRs e issues criados automaticamente
+
+---
+
+## 🔧 CORREÇÕES ADICIONAIS (09/12/2025)
+
+### Bug 3: Diferenciação patch/minor idêntica (update-dependencies.yml)
+**Status:** ✅ **CORRIGIDO**
+
+**Problema:**
+- Linhas 282-299: os casos `minor` e `patch` executavam `pnpm update` identicamente
+- Ambos respeitavam ranges do `package.json`, sem diferenciação real de comportamento
+- `patch` deveria atualizar apenas patches (X.Y.Z → X.Y.Z+1)
+- `minor` deveria atualizar minor e patches (X.Y.Z → X.Y+1.0 ou X.Y.Z+1)
+
+**Solução (MINOR):**
+- Implementada estratégia: `pnpm outdated --format json` → filtrar pacotes com `current != wanted` → `pnpm update <pacotes>`
+- `wanted` = versão dentro do range (minor/patch), `latest` = versão mais recente (pode incluir major)
+- `pnpm update` sem `--latest` respeita ranges `^`, atualizando para `wanted` (minor/patch), não `latest`
+
+**Solução (PATCH):**
+- Implementada estratégia: Backup `package.json` → conversão `^` para `~` → `pnpm update` → restore `package.json` → `pnpm install --lockfile-only`
+- Ranges `^` permitem minor+patch (`^1.2.3` = `>=1.2.3 <2.0.0`)
+- Ranges `~` permitem apenas patch (`~1.2.3` = `>=1.2.3 <1.3.0`)
+- Mantém ranges originais `^` no `package.json`, mas `pnpm-lock.yaml` atualizado apenas com patches
+
+**Resultado:**
+- `patch`: atualiza APENAS patches (mais conservador e seguro)
+- `minor`: atualiza minor e patches (recomendado para atualizações regulares)
+- `major`: atualiza major, minor e patches de dependências diretas
+- `all`: atualiza tudo recursivamente incluindo workspaces
 
 ---
 

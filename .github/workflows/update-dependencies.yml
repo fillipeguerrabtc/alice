@@ -280,22 +280,56 @@ jobs:
               pnpm update --latest
               ;;
             "minor")
-              # REGRA 6: Enterprise-grade - atualizar respeitando ranges (minor e patch apenas)
-              # Comando: pnpm update
-              # Comportamento: Atualiza dentro dos ranges especificados no package.json
-              # Respeita ^ (caret) e ~ (tilde), então atualiza minor e patch, mas não major
-              echo "🔄 Modo: MINOR - Atualizando respeitando ranges (minor e patch apenas)..."
-              echo "   Comando: pnpm update (respeita ranges do package.json)"
-              pnpm update
+              # REGRA 6: Enterprise-grade - atualizar minor e patch, mas não major
+              # Estratégia: Usar pnpm update com filtragem baseada em pnpm outdated
+              # Comportamento: Atualiza apenas minor e patch (não major)
+              echo "🔄 Modo: MINOR - Atualizando minor e patch (não major)..."
+              echo "   Estratégia: pnpm outdated + filtragem semântica + pnpm update"
+              
+              # Obter lista de pacotes com atualizações minor/patch disponíveis
+              # pnpm outdated retorna JSON com current, wanted, latest
+              # wanted = versão dentro do range (minor/patch), latest = versão mais recente (pode incluir major)
+              PACKAGES_TO_UPDATE=$(pnpm outdated --format json 2>/dev/null | \
+                jq -r '.[] | select(.current != .wanted) | .name' | \
+                tr '\n' ' ' || echo "")
+              
+              if [ -n "$PACKAGES_TO_UPDATE" ]; then
+                echo "   Pacotes a atualizar (minor/patch): $PACKAGES_TO_UPDATE"
+                # pnpm update sem --latest respeita ranges do package.json
+                # Isso atualiza para 'wanted' (minor/patch), não 'latest' (que pode incluir major)
+                pnpm update $PACKAGES_TO_UPDATE
+              else
+                echo "   Nenhum pacote com atualização minor/patch disponível"
+              fi
               ;;
             *)
-              # Padrão: apenas patch (mais seguro)
-              # Comando: pnpm update
-              # Comportamento: Atualiza apenas patches dentro dos ranges especificados
-              # Respeita ^ (caret) e ~ (tilde), então atualiza apenas patch
-              echo "🔄 Modo: PATCH (padrão) - Atualizando apenas patches respeitando ranges..."
-              echo "   Comando: pnpm update (respeita ranges do package.json)"
+              # Padrão: apenas patch (mais seguro e conservador)
+              # REGRA 6: Enterprise-grade - atualizar apenas patch, não minor nem major
+              # Estratégia: Modificar temporariamente ranges para ~ (tilde) e depois restaurar
+              echo "🔄 Modo: PATCH (padrão) - Atualizando apenas patches (não minor nem major)..."
+              echo "   Estratégia: Backup package.json + conversão ranges para ~ + pnpm update + restore"
+              
+              # REGRA 6: Enterprise-grade - backup antes de modificar
+              cp package.json package.json.backup
+              
+              # Converter ranges ^ (caret) para ~ (tilde) temporariamente
+              # ^ permite minor e patch (^1.2.3 = >=1.2.3 <2.0.0)
+              # ~ permite apenas patch (~1.2.3 = >=1.2.3 <1.3.0)
+              # Isso garante que pnpm update só atualize patches
+              sed -i 's/"\^/"\~/g' package.json
+              
+              # Atualizar apenas patches (respeitando ranges ~ agora)
               pnpm update
+              
+              # REGRA 6: Enterprise-grade - restaurar package.json original
+              # Mantém os ranges originais ^, mas pnpm-lock.yaml foi atualizado com patches
+              mv package.json.backup package.json
+              
+              # Executar pnpm install --lockfile-only para consolidar
+              # Atualiza lock file com as versões patch instaladas, mantendo ranges originais
+              pnpm install --lockfile-only
+              
+              echo "   ✅ Apenas patches atualizados, ranges originais (^) mantidos no package.json"
               ;;
           esac
           
