@@ -424,14 +424,18 @@ jobs:
       # REGRA 6: Enterprise-grade - versionamento automático do Python
       # Buscar versão estável mais recente via API oficial do Python
       # Fallback para .python-version se API falhar
+      # REGRA 11: Documentação oficial Python.org API v2: /api/v2/downloads/release/ (singular)
+      # Campo correto: .pre_release (não .is_prerelease)
       - name: Buscar versão do Python
         id: python-version
         run: |
           # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API oficial
+          # API oficial: https://www.python.org/api/v2/downloads/release/ (singular, não plural)
+          # Campo correto: .pre_release (boolean, false = versão estável)
           echo "🔍 Buscando versão estável mais recente do Python..."
           
-          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
-            jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
+          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/release/" 2>/dev/null | \
+            jq -r '[.[] | select(.pre_release == false) | .name] | first // empty' 2>/dev/null | \
             sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
           
           # REGRA 6: Enterprise-grade - fallback para .python-version se API falhar
@@ -720,13 +724,18 @@ jobs:
       # Setup Python para instalar dependências Python (necessário para Trivy escanear)
       # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha
       # REGRA 6: Enterprise-grade - versionamento automático do Python
+      # REGRA 11: Documentação oficial Python.org API v2: /api/v2/downloads/release/ (singular)
+      # Campo correto: .pre_release (não .is_prerelease)
       - name: Buscar versão do Python
         id: python-version
         run: |
+          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API oficial
+          # API oficial: https://www.python.org/api/v2/downloads/release/ (singular, não plural)
+          # Campo correto: .pre_release (boolean, false = versão estável)
           echo "🔍 Buscando versão estável mais recente do Python..."
           
-          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
-            jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
+          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/release/" 2>/dev/null | \
+            jq -r '[.[] | select(.pre_release == false) | .name] | first // empty' 2>/dev/null | \
             sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
           
           if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
