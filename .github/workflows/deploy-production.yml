@@ -566,15 +566,17 @@ jobs:
           
           # Busybox (buscar última versão 1.x)
           # REGRA 6: Enterprise-grade - usar variável de ambiente para fallback (não hardcoded)
-          # REGRA 7: Mudanças cirúrgicas - normalizar versão para formato X.Y.Z consistente
+          # REGRA 7: Mudanças cirúrgicas - NÃO normalizar BusyBox (Docker Hub usa formato X.Y, não X.Y.Z)
+          # BusyBox é exceção: tags no Docker Hub são X.Y (ex: "1.37"), não X.Y.Z
+          # Normalizar para X.Y.Z quebraria o digest lookup (tag "1.37.0" não existe)
           BUSYBOX_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/busybox/tags?page_size=100" | \
             jq -r '.results[] | select(.name | test("^1\\.[0-9]+$")) | .name' 2>/dev/null | \
             sort -V | tail -1)
           if [ -z "$BUSYBOX_VERSION" ]; then
             BUSYBOX_VERSION="$BUSYBOX_FALLBACK"
           fi
-          # REGRA 6: Enterprise-grade - normalizar versão para formato X.Y.Z (Docker Hub retorna X.Y)
-          BUSYBOX_VERSION=$(normalize_version "$BUSYBOX_VERSION")
+          # NOTA: BusyBox NÃO é normalizado - Docker Hub usa formato X.Y (ex: "1.37")
+          # O fallback também deve estar em formato X.Y para consistência
           echo "BUSYBOX_VERSION=$BUSYBOX_VERSION" >> $GITHUB_ENV
           echo "busybox_version=$BUSYBOX_VERSION" >> $GITHUB_OUTPUT
           echo "✅ Busybox: $BUSYBOX_VERSION"
