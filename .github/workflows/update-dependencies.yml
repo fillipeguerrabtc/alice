@@ -44,6 +44,9 @@ jobs:
   check-updates:
     name: Verificar Atualizações
     runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.check-updates.outputs.has_updates }}
+      updates_json: ${{ steps.check-updates.outputs.updates_json }}
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)

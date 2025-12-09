@@ -39,6 +39,9 @@ jobs:
   check-updates:
     name: Verificar Atualizações no Servidor
     runs-on: ubuntu-latest
+    outputs:
+      has_updates: ${{ steps.set-outputs.outputs.has_updates }}
+      updates_count: ${{ steps.set-outputs.outputs.updates_count }}
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
@@ -100,7 +103,42 @@ jobs:
               echo "--- Pacotes que serão atualizados ---"
               cat /tmp/upgradable_packages.txt
             fi
+            
+            # REGRA 6: Enterprise-grade - exportar status em formato parseável
+            # O appleboy/ssh-action captura stdout, então vamos usar um formato específico
+            # que pode ser parseado no step seguinte (linhas com prefixo GITHUB_OUTPUT:)
+            if [ "$UPDATES" -eq 0 ]; then
+              echo "GITHUB_OUTPUT:has_updates=false"
+              echo "GITHUB_OUTPUT:updates_count=0"
+            else
+              echo "GITHUB_OUTPUT:has_updates=true"
+              echo "GITHUB_OUTPUT:updates_count=$UPDATES"
+            fi
 
+      # REGRA 6: Enterprise-grade - definir outputs do job baseado no resultado SSH
+      # Como o SSH executa remotamente, precisamos parsear o output do step anterior
+      - name: Definir outputs do job
+        id: set-outputs
+        run: |
+          # REGRA 6: Enterprise-grade - parsear output do SSH para definir outputs
+          # O appleboy/ssh-action captura stdout no step anterior
+          # Vamos buscar as linhas com prefixo GITHUB_OUTPUT: e extrair os valores
+          SSH_OUTPUT="${{ steps.check-updates.outputs.stdout }}"
+          
+          # Extrair has_updates
+          if echo "$SSH_OUTPUT" | grep -q "GITHUB_OUTPUT:has_updates=true"; then
+            HAS_UPDATES="true"
+            # Extrair updates_count
+            UPDATES_COUNT=$(echo "$SSH_OUTPUT" | grep "GITHUB_OUTPUT:updates_count=" | sed 's/.*GITHUB_OUTPUT:updates_count=//' | head -1 || echo "0")
+          else
+            HAS_UPDATES="false"
+            UPDATES_COUNT="0"
+          fi
+          
+          echo "has_updates=$HAS_UPDATES" >> $GITHUB_OUTPUT
+          echo "updates_count=$UPDATES_COUNT" >> $GITHUB_OUTPUT
+          
+          echo "✅ Outputs definidos: has_updates=$HAS_UPDATES, updates_count=$UPDATES_COUNT"
 
   # ===========================================================================
   # Job 2: Criar Issue com Resumo (se houver atualizações)
@@ -109,12 +147,30 @@ jobs:
     name: Criar Issue com Resumo
     needs: check-updates
     runs-on: ubuntu-latest
-    if: always() && needs.check-updates.result == 'success'
+    # REGRA 6: Enterprise-grade - criar issue apenas se houver atualizações
+    # REGRA 5: NÃO MENTIR - só criar issue se realmente houver atualizações disponíveis
+    if: needs.check-updates.result == 'success' && needs.check-updates.outputs.has_updates == 'true'
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      # REGRA 6: Enterprise-grade - buscar lista de pacotes via SSH
+      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
+      - name: Buscar lista de pacotes para atualização
+        id: fetch-packages
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_HOST }}
+          username: root
+          key: ${{ secrets.HETZNER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            
+            # Atualizar lista e buscar pacotes
+            apt update -qq > /dev/null 2>&1
+            apt list --upgradable 2>/dev/null | grep -v "Listing..." | head -50
 
       # REGRA 4: Aprovação obrigatória - criar issue para revisão manual
       # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security (Regra 11)
@@ -140,10 +196,28 @@ jobs:
               return;
             }
             
-            // Buscar informações do servidor via SSH (simulado - na prática, usar output do job anterior)
+            // Extrair informações dos outputs do job anterior
+            const updatesCount = '${{ needs.check-updates.outputs.updates_count }}';
+            const packagesList = `${{ steps.fetch-packages.outputs.stdout }}`
+              .split('\n')
+              .filter(line => line.trim() && !line.includes('Listing'))
+              .slice(0, 50)
+              .join('\n');
+            
             const issueBody = `## 📦 Atualização de Pacotes do Sistema - Hetzner
             
             Este issue foi criado automaticamente pelo workflow de atualização de pacotes do sistema.
+            
+            ### 📊 Resumo das Atualizações
+            
+            - **Total de pacotes:** ${updatesCount}
+            - **Data da verificação:** ${new Date().toISOString()}
+            
+            ### 📦 Pacotes que serão atualizados
+            
+            \`\`\`
+            ${packagesList || 'Nenhum pacote listado'}
+            \`\`\`
             
             ### ⚠️ Ação Necessária
             
@@ -193,9 +267,11 @@ jobs:
   update-packages:
     name: Atualizar Pacotes do Sistema
     needs: check-updates
+    # REGRA 6: Enterprise-grade - atualizar apenas se houver atualizações disponíveis
     if: |
       github.event.inputs.auto_update == 'true' &&
-      needs.check-updates.result == 'success'
+      needs.check-updates.result == 'success' &&
+      needs.check-updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     
     steps:
