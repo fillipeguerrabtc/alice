@@ -103,7 +103,7 @@ jobs:
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed 's/\.[0-9]*$//')
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
           if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
@@ -286,7 +286,7 @@ jobs:
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed 's/\.[0-9]*$//')
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
           if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
@@ -419,7 +419,7 @@ jobs:
           
           PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
             jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
-            sed 's/^Python //' | sed 's/\.[0-9]*$//')
+            sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
           
           # REGRA 6: Enterprise-grade - fallback para .python-version se API falhar
           if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
@@ -497,7 +497,7 @@ jobs:
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed 's/\.[0-9]*$//')
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
           if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
@@ -639,7 +639,7 @@ jobs:
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed 's/\.[0-9]*$//')
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
           if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
@@ -688,7 +688,7 @@ jobs:
           
           PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
             jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
-            sed 's/^Python //' | sed 's/\.[0-9]*$//')
+            sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
           
           if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
             echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2

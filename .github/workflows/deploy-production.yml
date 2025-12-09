@@ -103,7 +103,7 @@ jobs:
           
           NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
-            sed 's/^v//' | sed 's/\.[0-9]*$//')
+            sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
           
           # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
           if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
