@@ -267,18 +267,18 @@ jobs:
           # Exportar versões fallback como variáveis de ambiente
           # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           echo "PGBACKREST_FALLBACK=$(jq -r '.pgbackrest // "2.57.0"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "TRAEFIK_FALLBACK=$(jq -r '.traefik // "3.3.0"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "PROMETHEUS_FALLBACK=$(jq -r '.prometheus // "3.0.1"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "GRAFANA_FALLBACK=$(jq -r '.grafana // "11.1.4"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "LOKI_FALLBACK=$(jq -r '.loki // "3.1.0"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "PROMTAIL_FALLBACK=$(jq -r '.promtail // "3.1.0"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "JAEGER_FALLBACK=$(jq -r '.jaeger // "1.58.0"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "TRAEFIK_FALLBACK=$(jq -r '.traefik // "3.6.4"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "PROMETHEUS_FALLBACK=$(jq -r '.prometheus // "3.8.0"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "GRAFANA_FALLBACK=$(jq -r '.grafana // "11.3"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "LOKI_FALLBACK=$(jq -r '.loki // "3.6.2"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "PROMTAIL_FALLBACK=$(jq -r '.promtail // "3.6.2"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "JAEGER_FALLBACK=$(jq -r '.jaeger // "1.76.0"' .github/component-versions.json)" >> $GITHUB_ENV
           echo "LANGFUSE_FALLBACK=$(jq -r '.langfuse // "2.39.1"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "ERPNEXT_FALLBACK=$(jq -r '.erpnext // "38.6"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "ERPNEXT_FALLBACK=$(jq -r '.erpnext // "91.0"' .github/component-versions.json)" >> $GITHUB_ENV
           echo "DOCKER_SOCKET_PROXY_FALLBACK=$(jq -r '.["docker-socket-proxy"] // "0.4.1"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "BUSYBOX_FALLBACK=$(jq -r '.busybox // "1.36"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "REDIS_FALLBACK=$(jq -r '.redis // "7-alpine"' .github/component-versions.json)" >> $GITHUB_ENV
-          echo "MARIADB_FALLBACK=$(jq -r '.mariadb // "10.11"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "BUSYBOX_FALLBACK=$(jq -r '.busybox // "1.37"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "REDIS_FALLBACK=$(jq -r '.redis // "7.4-alpine"' .github/component-versions.json)" >> $GITHUB_ENV
+          echo "MARIADB_FALLBACK=$(jq -r '.mariadb // "10.11.15"' .github/component-versions.json)" >> $GITHUB_ENV
           echo "PGVECTOR_FALLBACK=$(jq -r '.pgvector // "pg16"' .github/component-versions.json)" >> $GITHUB_ENV
           
           echo "✅ Versões fallback carregadas do arquivo de configuração"

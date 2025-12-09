@@ -289,16 +289,17 @@ alice/
 - Passport.js, openid-client
 
 ### Infraestrutura
-- Docker, Traefik v3.3
+- Docker, Traefik v3.6
 - **Google Distroless** (6 serviços Node.js)
 - nginx:1.27-alpine (frontend)
 - GitHub Actions CI/CD
 - Hetzner Cloud (Nuremberg)
 
 ### Observabilidade
-- Prometheus 3.0 (métricas)
+- Prometheus 3.8 (métricas)
 - Grafana OSS 11.3 (dashboards)
-- Jaeger 1.62 (tracing distribuído)
+- Jaeger 1.76 (tracing distribuído)
+- Loki 3.6, Promtail 3.6 (logs)
 - OpenTelemetry (instrumentação)
 - Langfuse (métricas LLM)
 
@@ -360,15 +361,15 @@ Proprietário - Todos os direitos reservados.
 
 | Imagem | Versão | Status |
 |--------|--------|--------|
-| Traefik | v3.3 | Pinned |
+| Traefik | v3.6 | Pinned |
 | PostgreSQL | pg16 (pgvector) | Pinned |
-| MariaDB | 10.11 | Pinned |
-| Redis | 7-alpine | Pinned |
-| ERPNext | v15.88.0 | Pinned |
+| MariaDB | 10.11.15 | Pinned |
+| Redis | 7.4-alpine | Pinned |
+| ERPNext | v15.91.0 | Pinned |
 | Vector | 0.43.1-alpine | Pinned |
-| pgBackRest | 2.54.2-alpine | Pinned |
+| pgBackRest | 2.57.0 | Pinned |
 | Docker Socket Proxy | latest | Pinned |
-| BusyBox | 1.36 | Pinned |
+| BusyBox | 1.37 | Pinned |
 
 ### Immutable Infrastructure
 
