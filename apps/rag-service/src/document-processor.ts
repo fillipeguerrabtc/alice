@@ -475,7 +475,7 @@ class DocumentProcessorService {
    * Formula, Hyperlink, RichText, Error, além de primitivos e Date
    */
   private async extractXlsxText(
-    buffer: Buffer
+    buffer: Buffer | ArrayBuffer | ArrayBufferView
   ): Promise<{ text: string; metadata: Partial<DocumentMetadata> }> {
     // Import dinâmico do exceljs
     // exceljs pode exportar como default ou como módulo direto dependendo do bundler/ambiente
