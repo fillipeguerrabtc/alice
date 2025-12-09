@@ -505,10 +505,21 @@ class DocumentProcessorService {
     // exceljs 4.4.0+ requer Buffer do Node.js, não tipos genéricos de Buffer
     // REGRA 6: Enterprise-grade - validação e conversão explícita para garantir compatibilidade
     // Converter para Buffer do Node.js explicitamente para evitar conflitos de tipo TypeScript
-    // Buffer.isBuffer() garante que é um Buffer do Node.js, não um tipo genérico
-    const nodeBuffer: Buffer = Buffer.isBuffer(buffer)
-      ? buffer
-      : Buffer.from(buffer as ArrayBufferLike);
+    let nodeBuffer: Buffer;
+    if (Buffer.isBuffer(buffer)) {
+      // Já é um Buffer do Node.js - usar diretamente
+      nodeBuffer = buffer;
+    } else if (buffer instanceof ArrayBuffer) {
+      // ArrayBuffer - converter para Buffer do Node.js
+      nodeBuffer = Buffer.from(buffer);
+    } else if (ArrayBuffer.isView(buffer)) {
+      // TypedArray (Uint8Array, etc.) - converter usando buffer.buffer
+      nodeBuffer = Buffer.from(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    } else {
+      // Fallback: tentar converter como ArrayBuffer
+      // REGRA 5: NÃO MENTIR - se não conseguir converter, lançar erro explícito
+      throw new Error('Tipo de buffer não suportado para processamento XLSX. Esperado: Buffer, ArrayBuffer ou TypedArray.');
+    }
     await workbook.xlsx.load(nodeBuffer);
     
     let text = '';
