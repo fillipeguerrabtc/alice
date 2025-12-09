@@ -513,11 +513,16 @@ class DocumentProcessorService {
       nodeBuffer = Buffer.from(buffer);
     } else if (ArrayBuffer.isView(buffer)) {
       // TypedArray (Uint8Array, etc.) - Buffer.from() cria cópia isolada
-      nodeBuffer = Buffer.from(buffer);
+      const typedArray = buffer as ArrayBufferView;
+      const { buffer: arrayBuffer, byteOffset, byteLength } = typedArray;
+      nodeBuffer = Buffer.from(arrayBuffer, byteOffset, byteLength);
     } else {
       // ArrayBuffer ou Buffer<ArrayBufferLike> - converter via Uint8Array para forçar cópia
-      const arrayBuffer = (buffer as any).buffer || buffer;
-      nodeBuffer = Buffer.from(new Uint8Array(arrayBuffer));
+      if (buffer instanceof ArrayBuffer) {
+        nodeBuffer = Buffer.from(new Uint8Array(buffer));
+      } else {
+        throw new Error('Tipo de buffer não suportado para processamento XLSX. Esperado Buffer, TypedArray ou ArrayBuffer.');
+      }
     }
     await workbook.xlsx.load(nodeBuffer);
     
