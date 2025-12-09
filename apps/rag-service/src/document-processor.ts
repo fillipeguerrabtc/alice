@@ -484,13 +484,18 @@ class DocumentProcessorService {
     const excelModule = await import('exceljs');
     
     // Type guard para verificar se é default export ou named export
-    // exceljs 4.4.0 pode exportar como { default: { Workbook, ... } } ou { Workbook, ... }
-    // Verificar se tem propriedade 'default' e se é um objeto válido
+    // exceljs 4.4.0 pode exportar como:
+    // - { default: { Workbook, ... } } (objeto com propriedades)
+    // - { default: class Workbook {} } (função construtora/classe como default)
+    // - { Workbook, ... } (named exports diretos)
+    // Verificar se tem propriedade 'default' e se é um objeto ou função válida
     const ExcelJSLib = (
       'default' in excelModule &&
-      typeof excelModule.default === 'object' &&
       excelModule.default !== null &&
-      'Workbook' in excelModule.default
+      (
+        (typeof excelModule.default === 'object' && 'Workbook' in excelModule.default) ||
+        typeof excelModule.default === 'function'
+      )
     )
       ? excelModule.default as typeof excelModule
       : excelModule;
