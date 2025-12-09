@@ -67,15 +67,16 @@ jobs:
             
             if [ "$UPDATES" -eq 0 ]; then
               echo "✅ Nenhuma atualização disponível"
-              echo "has_updates=false" > /tmp/updates_status.txt
+              echo "HAS_UPDATES=false" > /tmp/updates_status.txt
+              echo "UPDATES_COUNT=0" >> /tmp/updates_status.txt
             else
               echo "📦 $UPDATES pacotes podem ser atualizados"
               
               # Listar pacotes que serão atualizados
               apt list --upgradable 2>/dev/null | grep -v "Listing..." > /tmp/upgradable_packages.txt || true
               
-              echo "has_updates=true" > /tmp/updates_status.txt
-              echo "updates_count=$UPDATES" >> /tmp/updates_status.txt
+              echo "HAS_UPDATES=true" > /tmp/updates_status.txt
+              echo "UPDATES_COUNT=$UPDATES" >> /tmp/updates_status.txt
             fi
             
             # Verificar versão do kernel
@@ -100,23 +101,6 @@ jobs:
               cat /tmp/upgradable_packages.txt
             fi
 
-      # REGRA 6: Enterprise-grade - criar resumo das atualizações
-      # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16) - Supply Chain Security (Regra 11)
-      - name: Criar resumo das atualizações
-        if: always()
-        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
-        with:
-          host: ${{ secrets.HETZNER_HOST }}
-          username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
-          script: |
-            if [ -f /tmp/updates_status.txt ]; then
-              cat /tmp/updates_status.txt
-            fi
-            if [ -f /tmp/upgradable_packages.txt ]; then
-              echo "--- Pacotes que serão atualizados ---"
-              head -50 /tmp/upgradable_packages.txt
-            fi
 
   # ===========================================================================
   # Job 2: Criar Issue com Resumo (se houver atualizações)
@@ -125,7 +109,7 @@ jobs:
     name: Criar Issue com Resumo
     needs: check-updates
     runs-on: ubuntu-latest
-    if: always()
+    if: always() && needs.check-updates.result == 'success'
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
@@ -211,7 +195,7 @@ jobs:
     needs: check-updates
     if: |
       github.event.inputs.auto_update == 'true' &&
-      needs.check-updates.outputs.has_updates == 'true'
+      needs.check-updates.result == 'success'
     runs-on: ubuntu-latest
     
     steps:
