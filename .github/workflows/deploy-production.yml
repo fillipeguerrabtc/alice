@@ -336,6 +336,36 @@ jobs:
         run: |
           echo "🔍 Buscando versões mais recentes de todos os componentes..."
           
+          # Função auxiliar para normalizar versão para formato X.Y.Z
+          # REGRA 6: Enterprise-grade - garantir formato consistente X.Y.Z para todas as versões
+          # REGRA 7: Mudanças cirúrgicas - normalizar fallbacks também para evitar inconsistências
+          normalize_version() {
+            local version="$1"
+            
+            # Se já está no formato X.Y.Z, retornar como está
+            if echo "$version" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "$version"
+              return
+            fi
+            
+            # Tentar extrair X.Y.Z primeiro
+            local sed_result=$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+\.[0-9]+).*/\1/' 2>/dev/null)
+            if echo "$sed_result" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+              echo "$sed_result"
+              return
+            fi
+            
+            # Tentar extrair X.Y e adicionar .0
+            local numeric_prefix=$(echo "$version" | sed -E 's/^([0-9]+\.[0-9]+).*/\1/' 2>/dev/null)
+            if echo "$numeric_prefix" | grep -qE '^[0-9]+\.[0-9]+$'; then
+              echo "${numeric_prefix}.0"
+              return
+            fi
+            
+            # Formato inválido, retornar original (será validado depois)
+            echo "$version"
+          }
+          
           # Função para buscar última release do GitHub
           # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
           # REGRA 11: Seguir melhores práticas GitHub Actions 2025
@@ -356,11 +386,15 @@ jobs:
               exit 1
             fi
             
+            # REGRA 7: Mudanças cirúrgicas - normalizar fallback para garantir formato X.Y.Z consistente
+            # Isso garante que mesmo se o JSON tiver X.Y, será normalizado para X.Y.Z
+            fallback=$(normalize_version "$fallback")
+            
             # REGRA 6: Enterprise-grade - usar API oficial do GitHub com tratamento de erros
             local api_response=$(curl -s --max-time 10 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null || echo "")
             
             if [ -z "$api_response" ]; then
-              echo "⚠️ AVISO: Falha ao buscar release de ${repo}, usando fallback: $fallback" >&2
+              echo "⚠️ AVISO: Falha ao buscar release de ${repo}, usando fallback normalizado: $fallback" >&2
               echo "$fallback"
               return
             fi
@@ -369,7 +403,7 @@ jobs:
             local tag_name=$(echo "$api_response" | jq -r '.tag_name // empty' 2>/dev/null || echo "")
             
             if [ -z "$tag_name" ] || [ "$tag_name" = "null" ]; then
-              echo "⚠️ AVISO: tag_name não encontrado para ${repo}, usando fallback: $fallback" >&2
+              echo "⚠️ AVISO: tag_name não encontrado para ${repo}, usando fallback normalizado: $fallback" >&2
               echo "$fallback"
               return
             fi
@@ -532,12 +566,15 @@ jobs:
           
           # Busybox (buscar última versão 1.x)
           # REGRA 6: Enterprise-grade - usar variável de ambiente para fallback (não hardcoded)
+          # REGRA 7: Mudanças cirúrgicas - normalizar versão para formato X.Y.Z consistente
           BUSYBOX_VERSION=$(curl -s --max-time 10 "https://registry.hub.docker.com/v2/repositories/library/busybox/tags?page_size=100" | \
             jq -r '.results[] | select(.name | test("^1\\.[0-9]+$")) | .name' 2>/dev/null | \
             sort -V | tail -1)
           if [ -z "$BUSYBOX_VERSION" ]; then
             BUSYBOX_VERSION="$BUSYBOX_FALLBACK"
           fi
+          # REGRA 6: Enterprise-grade - normalizar versão para formato X.Y.Z (Docker Hub retorna X.Y)
+          BUSYBOX_VERSION=$(normalize_version "$BUSYBOX_VERSION")
           echo "BUSYBOX_VERSION=$BUSYBOX_VERSION" >> $GITHUB_ENV
           echo "busybox_version=$BUSYBOX_VERSION" >> $GITHUB_OUTPUT
           echo "✅ Busybox: $BUSYBOX_VERSION"
