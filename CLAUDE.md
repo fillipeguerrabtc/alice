@@ -184,16 +184,16 @@ alice/
 
 ## Technical Stack
 - **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
-- **Backend**: Node.js 22 LTS, Express 4.22, pnpm 10.24.0
+- **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22, pnpm (versão automática via package.json)
 - **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
-- **Python**: Python 3.11, PyTorch 2.9.1 (CLIP service)
+- **Python**: Python (versão estável automática via API + fallback .python-version), PyTorch 2.9.1 (CLIP service)
 - **CI/CD**: GitHub Actions (100% automático)
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.20 - 09 de Dezembro de 2025*
+*Versão: 3.21 - 09 de Dezembro de 2025*
 *Total de Containers: 35 (5 infra + 8 Alice + 15 ERPNext + 6 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Última Revisão Completa: 08/12/2025 - Admin global centralizado e secrets alinhados*
-*Bulk Import UI: Interface enterprise implementada (09/12/2025)*
+*Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
+*Última Revisão Completa: 09/12/2025 - Versionamento automático 100% enterprise implementado (sem hardcoded)*

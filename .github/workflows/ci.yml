@@ -22,8 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '22'
-  PNPM_VERSION: '10.24.0'
+  # REGRA 6: Enterprise-grade - versionamento automático (não hardcoded)
+  # NODE_VERSION será lido automaticamente do .nvmrc ou API do Node.js
+  # PNPM_VERSION será lido automaticamente do package.json (packageManager field)
   # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
   # durante TypeScript compilation de monorepos grandes (8GB)
   NODE_OPTIONS: '--max-old-space-size=8192'
@@ -88,15 +89,85 @@ jobs:
             echo "✅ npm registry oficial disponível"
           fi
 
+      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
+      # Buscar versão LTS mais recente via API oficial do Node.js
+      # Fallback para .nvmrc se API falhar
+      # REGRA 11: Melhores práticas GitHub Actions 2025 - versionamento automático
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          # REGRA 6: Enterprise-grade - buscar versão LTS mais recente via API oficial
+          # API: https://nodejs.org/dist/index.json retorna todas as versões
+          # Filtrar apenas versões LTS (lts !== null)
+          echo "🔍 Buscando versão LTS mais recente do Node.js..."
+          
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed 's/\.[0-9]*$//')
+          
+          # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão LTS da API, usando fallback do .nvmrc" >&2
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X ou X.Y)
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+
+      # REGRA 6: Enterprise-grade - versionamento automático do pnpm
+      # Ler versão do package.json (packageManager field) - single source of truth
+      # REGRA 11: Melhores práticas GitHub Actions 2025 - versionamento automático
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          # REGRA 6: Enterprise-grade - validar que package.json existe
+          if [ ! -f "package.json" ]; then
+            echo "::error::Arquivo package.json não encontrado!" >&2
+            exit 1
+          fi
+          
+          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          
+          # REGRA 6: Enterprise-grade - validar que versão foi encontrada
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y.Z)
+          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
+            exit 1
+          fi
+          
+          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -204,15 +275,68 @@ jobs:
             echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
           fi
 
+      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
+      # Buscar versão LTS mais recente via API oficial do Node.js
+      # Fallback para .nvmrc se API falhar
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          # REGRA 6: Enterprise-grade - buscar versão LTS mais recente via API oficial
+          echo "🔍 Buscando versão LTS mais recente do Node.js..."
+          
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed 's/\.[0-9]*$//')
+          
+          # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão LTS da API, usando fallback do .nvmrc" >&2
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X ou X.Y)
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+
+      # REGRA 6: Enterprise-grade - usar versão do package.json (já lida no job build-and-check)
+      # Reutilizar versão do job anterior via artifact ou ler novamente
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "::error::Arquivo package.json não encontrado!" >&2
+            exit 1
+          fi
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -284,10 +408,46 @@ jobs:
           sudo rm -rf /opt/ghc || true
           df -h /
 
+      # REGRA 6: Enterprise-grade - versionamento automático do Python
+      # Buscar versão estável mais recente via API oficial do Python
+      # Fallback para .python-version se API falhar
+      - name: Buscar versão do Python
+        id: python-version
+        run: |
+          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API oficial
+          echo "🔍 Buscando versão estável mais recente do Python..."
+          
+          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
+            jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
+            sed 's/^Python //' | sed 's/\.[0-9]*$//')
+          
+          # REGRA 6: Enterprise-grade - fallback para .python-version se API falhar
+          if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2
+            if [ -f ".python-version" ]; then
+              PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
+              echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
+            else
+              echo "::error::Arquivo .python-version não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão estável do Python encontrada via API: $PYTHON_VERSION"
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y)
+          if ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do Python em formato inválido: '$PYTHON_VERSION'. Deve ser X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
+          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ steps.python-version.outputs.version }}
           cache: 'pip'
           cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
 
@@ -326,15 +486,68 @@ jobs:
             echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
           fi
 
+      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
+      # Buscar versão LTS mais recente via API oficial do Node.js
+      # Fallback para .nvmrc se API falhar
+      - name: Buscar versão LTS do Node.js
+        id: node-version
+        run: |
+          # REGRA 6: Enterprise-grade - buscar versão LTS mais recente via API oficial
+          echo "🔍 Buscando versão LTS mais recente do Node.js..."
+          
+          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+            jq -r '[.[] | select(.lts != null) | .version] | first // empty' 2>/dev/null | \
+            sed 's/^v//' | sed 's/\.[0-9]*$//')
+          
+          # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
+          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão LTS da API, usando fallback do .nvmrc" >&2
+            if [ -f ".nvmrc" ]; then
+              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
+              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
+            else
+              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
+          fi
+          
+          # REGRA 6: Enterprise-grade - validar formato da versão (X ou X.Y)
+          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
+            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
+          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+
+      # REGRA 6: Enterprise-grade - usar versão do package.json (já lida no job build-and-check)
+      # Reutilizar versão do job anterior via artifact ou ler novamente
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "::error::Arquivo package.json não encontrado!" >&2
+            exit 1
+          fi
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
 
       - name: Install dependencies
@@ -398,15 +611,32 @@ jobs:
           fi
 
       # Setup pnpm para instalar dependências Node.js (necessário para Trivy escanear)
+      # REGRA 6: Enterprise-grade - usar versão do package.json (já lida no job build-and-check)
+      # Reutilizar versão do job anterior via artifact ou ler novamente
+      - name: Ler versão do pnpm do package.json
+        id: pnpm-version
+        run: |
+          if [ ! -f "package.json" ]; then
+            echo "::error::Arquivo package.json não encontrado!" >&2
+            exit 1
+          fi
+          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
+            echo "::error::Campo packageManager não encontrado em package.json!" >&2
+            exit 1
+          fi
+          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
+          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
+
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
+          node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
 
       - name: Install Node.js dependencies
@@ -414,10 +644,41 @@ jobs:
 
       # Setup Python para instalar dependências Python (necessário para Trivy escanear)
       # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha
+      # REGRA 6: Enterprise-grade - versionamento automático do Python
+      - name: Buscar versão do Python
+        id: python-version
+        run: |
+          echo "🔍 Buscando versão estável mais recente do Python..."
+          
+          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/releases/" 2>/dev/null | \
+            jq -r '[.[] | select(.is_prerelease == false) | .name] | first // empty' 2>/dev/null | \
+            sed 's/^Python //' | sed 's/\.[0-9]*$//')
+          
+          if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
+            echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2
+            if [ -f ".python-version" ]; then
+              PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
+              echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
+            else
+              echo "::error::Arquivo .python-version não encontrado e API falhou!" >&2
+              exit 1
+            fi
+          else
+            echo "✅ Versão estável do Python encontrada via API: $PYTHON_VERSION"
+          fi
+          
+          if ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
+            echo "::error::Versão do Python em formato inválido: '$PYTHON_VERSION'. Deve ser X.Y" >&2
+            exit 1
+          fi
+          
+          echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
+          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ steps.python-version.outputs.version }}
           cache: 'pip'
           cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
 

@@ -282,8 +282,8 @@ alice/
 - Framer Motion, react-i18next
 
 ### Backend
-- Node.js 22 LTS, Express 4.22
-- TypeScript 5.9.3, pnpm 10.24.0
+- Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22
+- TypeScript 5.9.3, pnpm (versão automática via package.json)
 - Drizzle ORM, PostgreSQL 16 + pgvector
 - WebSocket (ws), Pino (logging)
 - Passport.js, openid-client
