@@ -122,7 +122,10 @@ jobs:
           chmod 600 "$SSH_KEY_FILE"
           
           # Ler arquivo de status via SSH
-          STATUS_CONTENT=$(ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${{ secrets.HETZNER_HOST }} "cat /tmp/updates_status.txt 2>/dev/null || echo 'HAS_UPDATES=false|UPDATES_COUNT=0'")
+          # REGRA 6: Enterprise-grade - fallback deve usar mesmo formato do arquivo (newline-separated)
+          # O arquivo /tmp/updates_status.txt usa formato newline-separated (linhas 73-74, 81-82)
+          # Fallback deve usar mesmo formato para que o parsing funcione corretamente
+          STATUS_CONTENT=$(ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${{ secrets.HETZNER_HOST }} "cat /tmp/updates_status.txt 2>/dev/null || echo -e 'HAS_UPDATES=false\nUPDATES_COUNT=0'")
           
           # Parsear valores
           if echo "$STATUS_CONTENT" | grep -q "HAS_UPDATES=true"; then

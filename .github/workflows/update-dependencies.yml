@@ -156,7 +156,9 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "${{ steps.check-updates.outputs.updates_json }}" | jq -r '.[] | "- **\(.name)**: \(.current) → \(.latest) (\(.type))**"' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Total de pacotes desatualizados: $(echo '${{ steps.check-updates.outputs.updates_json }}' | jq 'length')" >> $GITHUB_STEP_SUMMARY
+          # REGRA 6: Enterprise-grade - usar aspas duplas para permitir expansão de variável GitHub Actions
+          # Aspas simples impedem expansão, resultando em texto literal ${{ ... }}
+          echo "Total de pacotes desatualizados: $(echo \"${{ steps.check-updates.outputs.updates_json }}\" | jq 'length')" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # Job 2: Atualizar Dependências e Criar PR
