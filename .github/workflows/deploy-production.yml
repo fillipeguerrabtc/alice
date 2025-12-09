@@ -287,7 +287,9 @@ jobs:
           
           # REGRA 6: Enterprise-grade - validar que todas as versões fallback foram carregadas
           # Fail-fast se algum campo estiver ausente no JSON
-          local missing_fields=()
+          # REGRA 7: Mudanças cirúrgicas - corrigir bug: 'local' só pode ser usado dentro de funções
+          # No escopo do script, usar variável sem 'local'
+          missing_fields=()
           [ -z "$PGBACKREST_FALLBACK" ] && missing_fields+=("pgbackrest")
           [ -z "$TRAEFIK_FALLBACK" ] && missing_fields+=("traefik")
           [ -z "$PROMETHEUS_FALLBACK" ] && missing_fields+=("prometheus")
