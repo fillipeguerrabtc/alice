@@ -59,6 +59,9 @@ scrape_configs:
       - targets: ['alice-cadvisor:8080']
     metrics_path: '/metrics'
 
+  # REGRA 6: node-exporter usa network_mode: host, então está acessível via host.docker.internal
+  # Docker Compose v2+ mapeia host.docker.internal:host-gateway automaticamente no Linux
+  # Se host.docker.internal não funcionar, usar o IP do gateway da rede Docker diretamente
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['host.docker.internal:9100']

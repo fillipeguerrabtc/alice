@@ -1443,12 +1443,10 @@ jobs:
             echo "::error::LANGFUSE_DB_USER/LANGFUSE_DB_PASSWORD/LANGFUSE_DB_NAME são obrigatórios para o langfuse-db. Configure os secrets correspondentes." >&2
             exit 1
           fi
-          LANGFUSE_DB_PASSWORD_ENCODED="$(LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD}" python3 - <<'PY'
-import os, sys, urllib.parse
-pwd = os.environ.get("LANGFUSE_DB_PASSWORD", "")
-sys.stdout.write(urllib.parse.quote(pwd, safe=""))
-PY
-)"
+          # NOTA: NÃO fazer percent-encoding da senha aqui
+          # O driver PostgreSQL (libpq) faz encoding automático ao construir a connection string
+          # Se fizermos encoding manual, a senha encoded nunca vai coincidir com a senha plain
+          # armazenada no PostgreSQL, causando falha de autenticação
           # CORS (origens obrigatórias em produção)
           CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGIN_SECRET:-}" | xargs)"
           CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_SECRET:-}" | xargs)"
@@ -1600,7 +1598,6 @@ PY
             printf 'LANGFUSE_NEXT_AUTH_SECRET=%s\n' "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}"
             printf 'LANGFUSE_DB_USER=%s\n' "${LANGFUSE_DB_USER}"
             printf 'LANGFUSE_DB_PASSWORD=%s\n' "${LANGFUSE_DB_PASSWORD}"
-            printf 'LANGFUSE_DB_PASSWORD_ENCODED=%s\n' "${LANGFUSE_DB_PASSWORD_ENCODED}"
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
           } > .env.prod
           chmod 600 .env.prod
@@ -1874,11 +1871,22 @@ PY
               git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
               cd ..
             fi
-            cd app
             
-            # Mover .env.prod para diretório correto
-            mv /tmp/.env.prod infra/docker/.env.prod
-            chmod 600 infra/docker/.env.prod
+            # REGRA 6: Mover .env.prod para diretório correto IMEDIATAMENTE após clone/update
+            # O arquivo é transferido via SCP para /tmp/.env.prod e DEVE estar disponível
+            # no diretório de trabalho do docker-compose (infra/docker/) para serviços que usam env_file
+            # IMPORTANTE: Mover ANTES de qualquer cd ou uso do docker-compose
+            if [ -f /tmp/.env.prod ]; then
+              mkdir -p app/infra/docker
+              mv /tmp/.env.prod app/infra/docker/.env.prod
+              chmod 600 app/infra/docker/.env.prod
+              echo "✅ .env.prod movido para app/infra/docker/.env.prod"
+            else
+              echo "::error::Arquivo /tmp/.env.prod não encontrado. Verifique o passo de SCP." >&2
+              exit 1
+            fi
+            
+            cd app
             
             # Login no GitHub Container Registry
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
