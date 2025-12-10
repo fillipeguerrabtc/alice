@@ -1679,7 +1679,7 @@ services:
       - no-new-privileges:true
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD obrigatorio}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
     networks:
       - alice-network
     healthcheck:
@@ -1715,7 +1715,7 @@ services:
       - no-new-privileges:true
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD obrigatorio}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD}
       POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
