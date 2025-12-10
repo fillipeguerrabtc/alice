@@ -1351,6 +1351,13 @@ jobs:
           LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
           CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
           CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
+          ALERT_EMAIL_SECRET: ${{ secrets.ALERT_EMAIL }}
+          CRITICAL_EMAIL_SECRET: ${{ secrets.CRITICAL_EMAIL }}
+          ONCALL_EMAIL_SECRET: ${{ secrets.ONCALL_EMAIL }}
+          SMTP_HOST_SECRET: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT_SECRET: ${{ secrets.SMTP_PORT }}
+          SMTP_FROM_SECRET: ${{ secrets.SMTP_FROM }}
+          SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
         run: |
           set -euo pipefail
           # Secrets obrigatórias (fail-fast em produção)
@@ -1446,7 +1453,18 @@ jobs:
           fi
           if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
             CORS_ORIGINS_VALUE="${CORS_ORIGIN_VALUE}"
+          elif [ -n "${CORS_ORIGINS_VALUE}" ]; then
+            # normalizar lista removendo espaços
+            CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | awk 'BEGIN{RS=",";ORS=","}{gsub(/^ +| +$/,""); if(length($0)>0) print $0}' | sed 's/,$//')"
           fi
+          # Alertmanager / SMTP (usar defaults seguros se secrets ausentes)
+          SMTP_HOST_VALUE="${SMTP_HOST_SECRET:-smtp.resend.com}"
+          SMTP_PORT_VALUE="${SMTP_PORT_SECRET:-587}"
+          SMTP_FROM_VALUE="${SMTP_FROM_SECRET:-onboarding@resend.dev}"
+          SMTP_USERNAME_VALUE="${SMTP_USERNAME_SECRET:-resend}"
+          ALERT_EMAIL_VALUE="${ALERT_EMAIL_SECRET:-ops@yesyoudeserve.duckdns.org}"
+          CRITICAL_EMAIL_VALUE="${CRITICAL_EMAIL_SECRET:-critical@yesyoudeserve.duckdns.org}"
+          ONCALL_EMAIL_VALUE="${ONCALL_EMAIL_SECRET:-oncall@yesyoudeserve.duckdns.org}"
           
           # REGRA 14: Criar .env.prod usando printf com escape adequado para proteger secrets
           # Protege contra caracteres especiais ($, backticks, backslashes) sendo interpretados pelo shell
@@ -1511,6 +1529,15 @@ jobs:
             printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
             printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
             printf '\n'
+            printf '# Alertmanager / SMTP (observabilidade)\n'
+            printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
+            printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
+            printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
+            printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
+            printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
+            printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
+            printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
+            printf '\n'
             printf '# Stripe Portugal\n'
             printf 'STRIPE_SECRET_KEY=%s\n' "${{ secrets.STRIPE_SECRET_KEY }}"
             printf 'STRIPE_PUBLISHABLE_KEY=%s\n' "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"
@@ -1568,10 +1595,13 @@ jobs:
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
           } > .env.prod
           chmod 600 .env.prod
+          # Secret file para langfuse-db (POSTGRES_PASSWORD_FILE)
+          printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
+          chmod 600 langfuse_db_password
 
       - name: Transferir arquivos via SCP
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/.env.prod
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
 
       # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16)
       - name: Deploy via SSH
@@ -1623,6 +1653,16 @@ jobs:
           envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST
           script: |
             set -e
+            
+            # Preparar secret do langfuse-db (POSTGRES_PASSWORD_FILE)
+            mkdir -p /opt/alice/secrets
+            if [ -f /tmp/langfuse_db_password ]; then
+              mv /tmp/langfuse_db_password /opt/alice/secrets/langfuse_db_password
+              chmod 600 /opt/alice/secrets/langfuse_db_password
+            else
+              echo "::error::Arquivo /tmp/langfuse_db_password não encontrado. Verifique o passo de SCP." >&2
+              exit 1
+            fi
             
             # Variáveis já injetadas via envs do ssh-action
             export IMAGE_PREFIX="${IMAGE_PREFIX}"

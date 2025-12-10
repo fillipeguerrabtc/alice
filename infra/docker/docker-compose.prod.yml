@@ -1189,6 +1189,12 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/api/method/frappe.health.check"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     command: ["bench", "serve", "--port", "8000"]
     environment:
       DB_HOST: erpnext-mariadb
@@ -1701,17 +1707,18 @@ services:
       - no-new-privileges:true
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD}
+      POSTGRES_PASSWORD_FILE: /run/secrets/langfuse_db_password
       POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
+      - /opt/alice/secrets/langfuse_db_password:/run/secrets/langfuse_db_password:ro
     networks:
       - alice-network
     healthcheck:
       test:
         - CMD-SHELL
         - >
-          PGPASSWORD=${LANGFUSE_DB_PASSWORD} pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
+          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1741,7 +1748,7 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - /opt/alice/data/prometheus:/prometheus
-      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - alice-network
     healthcheck:
@@ -1839,7 +1846,7 @@ services:
       - no-new-privileges:true
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - ../observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      - ../../infra/observability/promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log
     networks:
       - alice-network
@@ -1942,6 +1949,7 @@ services:
       - no-new-privileges:true
     entrypoint: ["/bin/sh", "-c"]
     command: >
+      apk add --no-cache gettext &&
       envsubst < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml &&
       exec /bin/alertmanager
       --config.file=/tmp/alertmanager.yml
@@ -2006,7 +2014,7 @@ services:
       - "8888:8888"
       - "8889:8889"
     volumes:
-      - ../apps/observability-service/config/otel/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+      - ../../apps/observability-service/config/otel/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     networks:
       - alice-network
