@@ -199,7 +199,7 @@ Estes são necessários para o deploy funcionar:
 | Secret | Descrição | Como Obter |
 |--------|-----------|------------|
 | `BACKUP_CIPHER_PASS` | Senha para criptografia AES-256 dos backups | `openssl rand -hex 32` |
-| `PGBACKREST_STANZA` | (Opcional) Override da stanza; default: `alice` (alinhado ao pgbackrest.conf) | Definir somente se for usar stanza diferente |
+| `PGBACKREST_STANZA` | (Opcional) Override da stanza; default: `alice_prod` (alinhado ao pgbackrest.conf) | Definir somente se for usar stanza diferente |
 
 **Uso:** Criptografa backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
 

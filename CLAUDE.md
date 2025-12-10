@@ -46,7 +46,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 35 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 41 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core (5 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache).

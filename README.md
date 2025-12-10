@@ -88,9 +88,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 35 Containers em Produção
+### Arquitetura de Microsserviços - 41 Containers em Produção
 
-A plataforma Alice é composta por **35 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **41 containers** organizados em 6 categorias:
 
 #### Categoria 1: Infraestrutura Core (5 serviços)
 

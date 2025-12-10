@@ -37,7 +37,7 @@ Realizar verificação completa e sistemática de toda a plataforma Alice para g
    - release.yml
 
 4. **Infraestrutura**
-   - docker-compose.prod.yml (35 containers)
+   - docker-compose.prod.yml (41 containers)
    - Scripts Python (update-component-versions.py)
    - Dockerfiles (todos os serviços)
 
@@ -271,7 +271,7 @@ Realizar verificação completa e sistemática de toda a plataforma Alice para g
 - [ ] Todos os 8 microsserviços verificados
 - [ ] Todos os 5 packages verificados
 - [ ] Todos os 3 workflows verificados
-- [ ] Todos os 35 containers verificados
+- [ ] Todos os 41 containers verificados
 - [ ] Toda documentação verificada
 
 ### Correções Aplicadas

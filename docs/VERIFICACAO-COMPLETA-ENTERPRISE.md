@@ -6,7 +6,7 @@
 
 ## 📊 RESUMO EXECUTIVO
 
-Esta verificação completa analisa todos os 35 containers, 8 microsserviços, 5 packages compartilhados, 3 workflows GitHub Actions, e toda a documentação da plataforma Alice para garantir 100% aderência às 17 regras do CLAUDE.md e melhores práticas enterprise.
+Esta verificação completa analisa todos os 41 containers, 8 microsserviços, 5 packages compartilhados, 3 workflows GitHub Actions, e toda a documentação da plataforma Alice para garantir 100% aderência às 17 regras do CLAUDE.md e melhores práticas enterprise.
 
 ---
 
@@ -216,9 +216,9 @@ Os seguintes `Map`/`Set` são estado temporário de runtime, não persistência 
 - ✅ COMPLIANCE com Regra 16
 
 ### 10. Security Hardening (Docker Compose)
-- ✅ **35/35 containers** têm `security_opt: no-new-privileges:true` (100% COMPLETO)
+- ✅ **41/41 containers** têm `security_opt: no-new-privileges:true` (100% COMPLETO)
 - ✅ **21 containers** têm `read_only: true` + tmpfs (containers que não precisam escrever)
-- ✅ **35/35 containers** têm resource limits (100% COMPLETO)
+- ✅ **41/41 containers** têm resource limits (100% COMPLETO)
 - ✅ **26 imagens externas** têm SHA256 digests
 - ✅ **17 containers** têm healthchecks (init containers não precisam)
 - ✅ **CORRIGIDO**: Containers ERPNext workers (9 containers) agora têm `security_opt: no-new-privileges:true` e resource limits
@@ -265,7 +265,7 @@ Os seguintes `Map`/`Set` são estado temporário de runtime, não persistência 
 - ✅ `PLANO-VERIFICACAO-COMPLETA-ENTERPRISE.md` - Plano detalhado da verificação atual (09/12/2025)
 
 #### Documentos de Reviews Anteriores (Consolidar)
-- ⚠️ `REVIEW-COMPLETA-SISTEMATICA-EM-ANDAMENTO.md` (08/12/2025) - Status: COMPLETA (35 containers verificados, 10 bugs corrigidos)
+- ⚠️ `REVIEW-COMPLETA-SISTEMATICA-EM-ANDAMENTO.md` (08/12/2025) - Status: COMPLETA (41 containers verificados, 10 bugs corrigidos)
   - **Informações consolidadas:** Problemas corrigidos já documentados na seção "Problemas Corrigidos em Reviews Anteriores"
   - **Ação:** Marcar como histórico, informações consolidadas neste documento
 - ⚠️ `REVIEW-ENTERPRISE-COMPLETA-FINAL.md` (09/12/2025) - Status: FINALIZADA (100% enterprise-compliant)
@@ -446,7 +446,7 @@ Os seguintes `Map`/`Set` são estado temporário de runtime, não persistência 
 - Todos os microsserviços (8)
 - Todos os packages (5)
 - Todos os workflows (3)
-- Docker Compose (35 containers)
+- Docker Compose (41 containers)
 - Documentação
 
 ---
@@ -482,7 +482,7 @@ Os seguintes `Map`/`Set` são estado temporário de runtime, não persistência 
 - ✅ 8/8 microsserviços Alice verificados
 - ✅ 5/5 packages compartilhados verificados
 - ✅ 3/3 workflows GitHub Actions verificados
-- ✅ 35/35 containers mapeados e verificados
+- ✅ 41/41 containers mapeados e verificados
 - ✅ Security hardening verificado (17 containers com no-new-privileges, 21 com read_only)
 - ✅ Circuit breakers verificados em todos os serviços
 - ✅ Graceful shutdown verificado

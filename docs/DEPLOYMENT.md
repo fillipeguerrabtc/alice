@@ -2,9 +2,9 @@
 
 **Autor:** Fillipe Guerra
 
-## Visão Geral da Arquitetura - 35 Containers em Produção
+## Visão Geral da Arquitetura - 41 Containers em Produção
 
-A plataforma Alice é composta por **35 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **41 containers** organizados em 6 categorias:
 
 ### Categoria 1: Infraestrutura Core (5 serviços)
 
@@ -85,7 +85,7 @@ A plataforma Alice é composta por **35 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 35 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 41 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │

@@ -364,7 +364,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (35 containers)
+## 🐳 INFRAESTRUTURA DOCKER (41 containers)
 
 ### Core Infra (5)
 

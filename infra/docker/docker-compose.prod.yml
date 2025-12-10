@@ -1663,8 +1663,15 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
+    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
+    # para expansão em DATABASE_URL e outras variáveis de environment:
+    env_file:
+      - .env.prod
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
+      # LANGFUSE_DB_PASSWORD_ENCODED é gerado no workflow e incluído no .env.prod
+      # O :? garante fail-fast se a variável não existir (Regra 6 - sem fallbacks falsos)
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD_ENCODED:?missing LANGFUSE_DB_PASSWORD_ENCODED}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
     networks:
       - alice-network

@@ -24,7 +24,7 @@ Este plano documenta **TODOS** os problemas encontrados na verificação enterpr
 - ✅ 8/8 microsserviços Alice verificados
 - ✅ 5/5 packages compartilhados verificados
 - ✅ 3/3 workflows GitHub Actions verificados
-- ✅ 35/35 containers mapeados e verificados
+- ✅ 41/41 containers mapeados e verificados
 - ✅ Security hardening verificado (17 containers com no-new-privileges, 21 com read_only)
 - ⚠️ Security hardening incompleto: 11 containers ERPNext sem hardening completo
 - ✅ Circuit breakers verificados em todos os serviços
@@ -183,7 +183,7 @@ Corrigir todos os problemas identificados na verificação enterprise, garantind
 - Todos os microsserviços (8)
 - Todos os packages (5)
 - Todos os workflows (3)
-- Docker Compose (35 containers)
+- Docker Compose (41 containers)
 - Documentação
 
 **Validação:**
