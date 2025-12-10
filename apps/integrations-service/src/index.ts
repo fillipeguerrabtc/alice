@@ -2088,6 +2088,14 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
     return res.status(500).send('Webhook secret not configured');
   }
 
+  // SEGURANÇA: Validar que body é objeto (urlencoded produz objeto, não Buffer)
+  // NOTA: express.urlencoded() sempre produz objeto Record<string, string>, nunca Buffer
+  // Se alguém adicionar verificação Buffer.isBuffer() aqui, sempre falhará incorretamente
+  if (Buffer.isBuffer(req.body) || typeof req.body !== 'object' || req.body === null) {
+    logger.error('Webhook Twilio: body inválido (deve ser objeto parseado por urlencoded, não Buffer)');
+    return res.status(500).send('Invalid body format');
+  }
+
   // CRÍTICO: Validar assinatura ANTES de responder
   const validation = validateTwilioSignature(
     twilioSignature,
@@ -2417,6 +2425,14 @@ app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Re
   if (!TWILIO_AUTH_TOKEN) {
     logger.error('Webhook Twilio: TWILIO_AUTH_TOKEN não configurado');
     return res.status(500).send('Webhook secret not configured');
+  }
+
+  // SEGURANÇA: Validar que body é objeto (urlencoded produz objeto, não Buffer)
+  // NOTA: express.urlencoded() sempre produz objeto Record<string, string>, nunca Buffer
+  // Se alguém adicionar verificação Buffer.isBuffer() aqui, sempre falhará incorretamente
+  if (Buffer.isBuffer(req.body) || typeof req.body !== 'object' || req.body === null) {
+    logger.error('Webhook Twilio status: body inválido (deve ser objeto parseado por urlencoded, não Buffer)');
+    return res.status(500).send('Invalid body format');
   }
 
   // CRÍTICO: Validar assinatura ANTES de responder
