@@ -24,6 +24,46 @@ scrape_configs:
       - targets: ['alice-vector:8686']
     metrics_path: '/metrics'
 
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['prometheus:9090']
+    metrics_path: '/metrics'
+
+  - job_name: 'alertmanager'
+    static_configs:
+      - targets: ['alice-alertmanager:9093']
+    metrics_path: '/metrics'
+
+  - job_name: 'loki'
+    static_configs:
+      - targets: ['loki:3100']
+    metrics_path: '/metrics'
+
+  - job_name: 'promtail'
+    static_configs:
+      - targets: ['promtail:9080']
+    metrics_path: '/metrics'
+
+  - job_name: 'jaeger'
+    static_configs:
+      - targets: ['jaeger:14269']
+    metrics_path: '/metrics'
+
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['alice-otel-collector:8888']
+    metrics_path: '/metrics'
+
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['alice-cadvisor:8080']
+    metrics_path: '/metrics'
+
+  - job_name: 'langfuse'
+    static_configs:
+      - targets: ['langfuse:3000']
+    metrics_path: '/api/metrics'
+
 remote_write:
   - url: ${GRAFANA_PROMETHEUS_URL}
     basic_auth:

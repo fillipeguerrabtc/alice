@@ -181,6 +181,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
+| `SMTP_PASSWORD` (arquivo) | Senha SMTP para Alertmanager, em arquivo `/opt/alice/secrets/alertmanager/smtp_password` | Escrever o valor plano no arquivo; docker compose monta como secret |
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 
 ### FASE 9: Backup (pgBackRest)
@@ -188,6 +189,7 @@ Estes são necessários para o deploy funcionar:
 | Secret | Descrição | Como Obter |
 |--------|-----------|------------|
 | `BACKUP_CIPHER_PASS` | Senha para criptografia AES-256 dos backups | `openssl rand -hex 32` |
+| `PGBACKREST_STANZA` | (Opcional) Override da stanza; default: `alice` (alinhado ao pgbackrest.conf) | Definir somente se for usar stanza diferente |
 
 **Uso:** Criptografa backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
 
@@ -278,6 +280,7 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `LANGFUSE_SECRET_KEY` | ✅ |
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
+| `SMTP_PASSWORD` (arquivo) | ✅ |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ |
 | `LANGFUSE_DB_NAME` | ✅ |

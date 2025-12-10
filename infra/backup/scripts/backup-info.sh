@@ -13,7 +13,8 @@
 set -e
 
 FORMAT="${1:---json}"
-STANZA="alice"
+# Compat: default "alice" mantém alinhamento com pgbackrest.conf; variável permite override
+STANZA="${PGBACKREST_STANZA:-alice}"
 
 case $FORMAT in
     --json)

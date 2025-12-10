@@ -23,7 +23,7 @@ datasources:
       httpMethod: POST
       manageAlerts: true
       prometheusType: Prometheus
-      prometheusVersion: "3.0.0"
+      prometheusVersion: "3.0.1"
       incrementalQuerying: true
       incrementalQueryOverlapWindow: 10m
       disableRecordingRules: false

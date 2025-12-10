@@ -11,7 +11,8 @@
 
 set -e
 
-STANZA="alice"
+# Compat: default "alice" mantém alinhamento com pgbackrest.conf; variável permite override
+STANZA="${PGBACKREST_STANZA:-alice}"
 REPO="${1:-1}"
 
 echo "=================================================="

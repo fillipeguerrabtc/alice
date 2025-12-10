@@ -102,6 +102,20 @@ try {
         logger.error({ missing }, 'Variáveis obrigatórias ausentes em produção (Regra 6 - fail-fast).');
         process.exit(1);
       }
+      // Produção: materializar valores vindos de env para evitar undefined em config
+      config = {
+        NODE_ENV: config.NODE_ENV,
+        PORT: config.PORT,
+        AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL ?? config.AUTH_SERVICE_URL ?? '',
+        CHAT_SERVICE_URL: process.env.CHAT_SERVICE_URL ?? config.CHAT_SERVICE_URL ?? '',
+        RAG_SERVICE_URL: process.env.RAG_SERVICE_URL ?? config.RAG_SERVICE_URL ?? '',
+        TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL ?? config.TRAINING_SERVICE_URL ?? '',
+        INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL ?? config.INTEGRATIONS_SERVICE_URL ?? '',
+        OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL ?? '',
+        RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
+        RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
+        CORS_ORIGIN: process.env.CORS_ORIGIN ?? config.CORS_ORIGIN ?? '',
+      };
     } else {
       // Defaults apenas para desenvolvimento
       config = {
@@ -156,12 +170,12 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
-const corsOriginsRaw = config.CORS_ORIGIN;
-if (nodeEnv === 'production' && (!corsOriginsRaw || corsOriginsRaw.trim() === '')) {
+const corsOriginsRaw = (config.CORS_ORIGIN ?? '').trim();
+if (nodeEnv === 'production' && corsOriginsRaw === '') {
   logger.error('CORS_ORIGIN é obrigatório em produção e não pode estar vazio (Regra 6 - fail-fast).');
   process.exit(1);
 }
-const corsOrigins = corsOriginsRaw ? corsOriginsRaw.split(',').map(o => o.trim()) : ['http://localhost:5000'];
+const corsOrigins = corsOriginsRaw ? corsOriginsRaw.split(',').map(o => o.trim()).filter(Boolean) : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,

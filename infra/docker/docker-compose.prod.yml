@@ -122,6 +122,21 @@ volumes:
       o: bind
       device: /opt/alice/data/alertmanager
 
+  alertmanager_tmp:
+    name: alice-alertmanager-tmp
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+
+  alertmanager_smtp_password:
+    name: alice-alertmanager-smtp-password
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/secrets/alertmanager
+
   langfuse_db_data:
     name: alice-langfuse-db-data
     driver: local
@@ -1132,12 +1147,6 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "bench --help >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     # REGRA 16: Resource limits para init containers (best practice enterprise)
     deploy:
       resources:
@@ -1177,12 +1186,6 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "bench --help >/dev/null 2>&1 || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
     # REGRA 16: Resource limits para init containers (best practice enterprise)
     deploy:
       resources:
@@ -1909,8 +1912,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=32M
-    environment:
-      - GRAFANA_LOKI_URL=http://loki:3100
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -1945,26 +1946,25 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=16M
     command:
       - '--config.file=/etc/alertmanager/alertmanager.yml'
       - '--storage.path=/alertmanager'
       - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
       - '--cluster.listen-address='
+      - '--config.expand-env=true'
     environment:
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-alertas@alice.yesyoudeserve.duckdns.org}
       SMTP_USERNAME: ${SMTP_USERNAME:-resend}
-      SMTP_PASSWORD: ${SMTP_PASSWORD}
       ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
     volumes:
       - ../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager_data:/alertmanager
+      - alertmanager_data:/alertmanager:rw
+      - alertmanager_tmp:/tmp:rw
+      - alertmanager_smtp_password:/run/secrets:ro
     networks:
       - alice-network
     labels:

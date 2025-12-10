@@ -351,7 +351,7 @@ Proprietário - Todos os direitos reservados.
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
 | **Resource Limits** | 41/41 containers | 100% |
-| **read_only: true** | 24/41 containers | 100% aplicável (somente onde não há escrita) |
+| **read_only: true** | 23/41 containers | 100% aplicável (somente onde não há escrita) |
 | **security_opt: no-new-privileges** | 41/41 containers | 100% |
 | **Healthchecks** | 41/41 containers | 100% |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
@@ -373,7 +373,9 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 41 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (17 containers: workers, init, databases, node-exporter, cadvisor) têm `security_opt: no-new-privileges:true` e resource limits, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
+Todos os 41 containers têm security hardening completo aplicado. Containers que não precisam escrever (23 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (18 containers: bancos de dados, workers/init ERPNext, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
+
+- Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
 ---
 

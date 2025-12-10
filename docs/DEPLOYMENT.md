@@ -877,7 +877,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 |------|--------|-----------|
 | **no-new-privileges** | ✅ | 41/41 containers (100%) |
 | **resource limits** | ✅ | 41/41 containers (100%) |
-| **read_only: true** | ✅ | 24/41 containers (aplicável apenas onde não há escrita) |
+| **read_only: true** | ✅ | 23/41 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 41/41 containers (init incluídos) |
 
@@ -897,6 +897,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 - **Containers com `read_only: true`:** Apenas containers que não precisam escrever em volumes têm `read_only: true` aplicado. Containers que precisam escrever (workers, init, databases) não têm `read_only: true`, mas têm todos os outros aspectos de security hardening aplicados.
 
+- **Alertmanager SMTP:** senha carregada via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets`; não colocar senha inline em variáveis de ambiente.
+
 **Referência:** `docs/VERIFICACAO-COMPLETA-ENTERPRISE.md` - Seção "Security Hardening (Docker Compose)"
 
 ---
@@ -906,7 +908,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Versão: 6.4 - Security Hardening 100% (healthchecks completos)*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 24/41 com read_only (09/12/2025)*
+*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 23/41 com read_only (09/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

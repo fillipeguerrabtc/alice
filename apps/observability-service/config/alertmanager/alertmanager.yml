@@ -3,8 +3,8 @@
 # Configuração de notificações de alertas.
 # Integração com email, Slack, PagerDuty.
 #
-# NOTA: Este arquivo é processado por envsubst no entrypoint do container.
-# As variáveis ${VAR} são substituídas por valores reais antes do Alertmanager iniciar.
+# NOTA: Este arquivo usa expansão de variáveis nativa do Alertmanager (flag --config.expand-env=true).
+# As variáveis ${VAR} são resolvidas pelo próprio Alertmanager no carregamento da config.
 #
 # Documentação PT-BR (Regra 10 CLAUDE.md)
 
@@ -13,7 +13,7 @@ global:
   smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
   smtp_from: '${SMTP_FROM}'
   smtp_auth_username: '${SMTP_USERNAME}'
-  smtp_auth_password: '${SMTP_PASSWORD}'
+  smtp_auth_password_file: /run/secrets/smtp_password
   smtp_require_tls: true
 
 route:

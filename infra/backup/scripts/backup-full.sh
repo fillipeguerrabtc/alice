@@ -16,7 +16,8 @@
 
 set -e
 
-STANZA="alice"
+# Compat: default "alice" mantém alinhamento com pgbackrest.conf; variável permite override
+STANZA="${PGBACKREST_STANZA:-alice}"
 LOG_FILE="/var/log/pgbackrest/backup-full-$(date +%Y%m%d_%H%M%S).log"
 
 echo "=================================================="

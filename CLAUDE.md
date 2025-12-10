@@ -175,13 +175,14 @@ alice/
 
 ## Security Hardening (10 de Dezembro de 2025)
 - **41 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
-- **24 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
+- **23 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
 - **41 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 41/41 containers (init incluídos)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
 - **OWASP API Top 10** = 9/10 mitigados
 - **Nota:** ERPNext workers e init containers (11 containers) não têm `read_only: true` pois precisam escrever em volumes (comportamento correto e enterprise-grade)
+- **Alertmanager SMTP:** senha via arquivo montado (`/opt/alice/secrets/alertmanager/smtp_password` → `/run/secrets`); evitar senha inline em env.
 
 ## Technical Stack
 - **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
@@ -199,5 +200,5 @@ alice/
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
-*Security Hardening: 100% no-new-privileges, 100% resource limits, 24/41 com read_only (aplicável apenas onde não há escrita), healthchecks 41/41*
+*Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 41/41*
 *Última Revisão Completa: 10/12/2025 - healthchecks 41/41, logs centralizados Vector→Loki, sem Slack*

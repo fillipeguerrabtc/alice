@@ -29,7 +29,7 @@
 | Item | Status | Cobertura |
 |------|--------|-----------|
 | `security_opt: no-new-privileges` | ✅ | 41/41 containers (100%) |
-| `read_only: true` | ✅ | 24/41 (aplicável apenas onde não há escrita) |
+| `read_only: true` | ✅ | 23/41 (aplicável apenas onde não há escrita) |
 | Resource limits | ✅ | 41/41 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 41/41 containers (init incluídos) |
@@ -41,6 +41,7 @@
 - Jaeger 1.58: estável; OTLP habilitado.  
 - OTel Collector 0.114.0: config atual compatível; revisar changelog em novos pipelines.  
 - Vector 0.43.1: sink Loki ativo.
+- Alertmanager SMTP: senha via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
 ---
 
@@ -419,13 +420,13 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 35/35 containers (100% COMPLETO) |
-| read_only: true | ✅ | 21/35 containers (containers que não precisam escrever) |
-| resource limits | ✅ | 35/35 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 35/35 containers |
-| **Nota:** ERPNext workers e init containers (11 containers) não têm `read_only: true` pois precisam escrever em volumes (comportamento correto e enterprise-grade) |
-| SHA256 digests | ✅ | 9 imagens externas |
-| healthchecks | ✅ | 33/33 (init excluídos) |
+| no-new-privileges | ✅ | 41/41 containers (100% COMPLETO) |
+| read_only: true | ✅ | 23/41 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 41/41 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 41/41 containers |
+| **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
+| SHA256 digests | ✅ | 26 imagens externas |
+| healthchecks | ✅ | 41/41 (init incluídos) |
 
 ### Segurança Aplicação
 

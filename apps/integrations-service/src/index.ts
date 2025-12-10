@@ -773,8 +773,11 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
     return res.status(503).json({ error: 'Stripe not configured' });
   }
 
-  const contentType = req.headers['content-type'];
-  if (contentType !== 'application/json' && contentType !== 'application/json; charset=utf-8') {
+  const contentTypeHeader = req.headers['content-type'];
+  const contentType = Array.isArray(contentTypeHeader)
+    ? contentTypeHeader[0]?.toLowerCase()
+    : contentTypeHeader?.toLowerCase();
+  if (!contentType || !contentType.startsWith('application/json')) {
     logger.warn({ contentType }, 'Stripe webhook rejeitado: content-type inválido');
     return res.status(400).json({ error: 'Invalid content-type' });
   }
@@ -1585,10 +1588,18 @@ app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('
 // Webhook Wise - Receber notificações de transferências
 // SEGURANÇA: Validar assinatura ANTES de responder (OWASP API4)
 app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) => {
-  const contentType = req.headers['content-type'];
-  if (contentType !== 'application/json' && contentType !== 'application/json; charset=utf-8') {
+  const contentTypeHeader = req.headers['content-type'];
+  const contentType = Array.isArray(contentTypeHeader)
+    ? contentTypeHeader[0]?.toLowerCase()
+    : contentTypeHeader?.toLowerCase();
+  if (!contentType || !contentType.startsWith('application/json')) {
     logger.warn({ contentType }, 'Webhook Wise: content-type inválido');
     return res.status(400).json({ error: 'Invalid content-type' });
+  }
+
+  if (!Buffer.isBuffer(req.body)) {
+    logger.error('Webhook Wise: body não é Buffer (configure express.raw() antes da rota)');
+    return res.status(500).json({ error: 'Invalid body parser for webhook' });
   }
 
   const signature = req.headers['x-signature-sha256'] as string;
@@ -2034,8 +2045,8 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
 
-  const contentType = req.headers['content-type'];
-  if (contentType !== 'application/x-www-form-urlencoded') {
+  const contentType = req.headers['content-type']?.toLowerCase();
+  if (!contentType || !contentType.startsWith('application/x-www-form-urlencoded')) {
     logger.warn({ contentType }, 'Webhook Twilio: content-type inválido');
     return res.status(400).send('Invalid content-type');
   }
@@ -2362,8 +2373,8 @@ app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Re
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
 
-  const contentType = req.headers['content-type'];
-  if (contentType !== 'application/x-www-form-urlencoded') {
+  const contentType = req.headers['content-type']?.toLowerCase();
+  if (!contentType || !contentType.startsWith('application/x-www-form-urlencoded')) {
     logger.warn({ contentType }, 'Webhook Twilio status: content-type inválido');
     return res.status(400).send('Invalid content-type');
   }
