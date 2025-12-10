@@ -2011,9 +2011,18 @@ services:
     command: |
       set -e
       apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
+      # REGRA 6: Validação explícita de variáveis obrigatórias antes de envsubst (fail-fast)
+      # envsubst não falha se variável não estiver definida - deixa literal ${VAR} no arquivo
+      # Validação garante que todas as variáveis estão definidas antes de processar template
+      REQUIRED_VARS="SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USERNAME ALERT_EMAIL CRITICAL_EMAIL ONCALL_EMAIL"
+      for VAR in $REQUIRED_VARS; do
+        if [ -z "${!VAR}" ]; then
+          echo "ERRO: Variável obrigatória $VAR não está definida (Regra 6 - fail-fast)" >&2
+          exit 1
+        fi
+      done
       # REGRA 6: envsubst com lista específica garante que apenas variáveis definidas sejam substituídas
       # Template usa ${VAR} format, então lista deve usar ${VAR} também (não $VAR)
-      # Se alguma variável não estiver definida, envsubst falhará (fail-fast)
       envsubst '${SMTP_HOST} ${SMTP_PORT} ${SMTP_FROM} ${SMTP_USERNAME} ${ALERT_EMAIL} ${CRITICAL_EMAIL} ${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \

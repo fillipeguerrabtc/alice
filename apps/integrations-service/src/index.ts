@@ -307,8 +307,9 @@ app.use(createRateLimiter({
   serviceName: 'integrations-service',
 }));
 
-app.use('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }));
-app.use('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }));
+// REGRA 6: express.raw() aplicado diretamente nas rotas de webhook ANTES de express.json() global
+// Middleware global express.json() converte body em objeto JavaScript, quebrando validação de assinatura
+// Aplicar express.raw() diretamente nas rotas garante que body permaneça como Buffer para validação
 app.use('/api/integrations/twilio/webhook', express.urlencoded({ extended: false }));
 // SEGURANÇA: Limites de payload para prevenir DoS (OWASP API4)
 app.use(express.json({ limit: '10mb' }));
@@ -778,7 +779,10 @@ async function markWebhookProcessed(
     ));
 }
 
-app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response) => {
+// REGRA 6: express.raw() aplicado diretamente na rota ANTES do handler
+// Isso garante que req.body seja Buffer para validação de assinatura Stripe
+// express.json() global não será aplicado porque express.raw() já processou o body
+app.post('/api/integrations/stripe/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   if (!stripe) {
     return res.status(503).json({ error: 'Stripe not configured' });
   }
@@ -799,9 +803,10 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
     return res.status(500).json({ error: 'Webhook secret not configured' });
   }
 
-  // Exigir corpo bruto (Buffer) para validação de assinatura
+  // REGRA 6: Validação de Buffer após express.raw() aplicado diretamente na rota
+  // Se express.raw() não foi aplicado corretamente, req.body será objeto (erro)
   if (!Buffer.isBuffer(req.body)) {
-    logger.error('Stripe webhook rejeitado: body não é Buffer (configure express.raw() antes da rota)');
+    logger.error('Stripe webhook rejeitado: body não é Buffer (express.raw() não aplicado corretamente)');
     return res.status(500).json({ error: 'Invalid body parser for webhook' });
   }
 
@@ -1616,7 +1621,10 @@ app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('
 
 // Webhook Wise - Receber notificações de transferências
 // SEGURANÇA: Validar assinatura ANTES de responder (OWASP API4)
-app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) => {
+// REGRA 6: express.raw() aplicado diretamente na rota ANTES do handler
+// Isso garante que req.body seja Buffer para validação de assinatura Wise
+// express.json() global não será aplicado porque express.raw() já processou o body
+app.post('/api/integrations/wise/webhook', express.raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   const contentTypeHeader = req.headers['content-type'];
   const contentType = Array.isArray(contentTypeHeader)
     ? contentTypeHeader[0]?.toLowerCase()
@@ -1626,8 +1634,10 @@ app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) =
     return res.status(400).json({ error: 'Invalid content-type' });
   }
 
+  // REGRA 6: Validação de Buffer após express.raw() aplicado diretamente na rota
+  // Se express.raw() não foi aplicado corretamente, req.body será objeto (erro)
   if (!Buffer.isBuffer(req.body)) {
-    logger.error('Webhook Wise: body não é Buffer (configure express.raw() antes da rota)');
+    logger.error('Webhook Wise: body não é Buffer (express.raw() não aplicado corretamente)');
     return res.status(500).json({ error: 'Invalid body parser for webhook' });
   }
 
