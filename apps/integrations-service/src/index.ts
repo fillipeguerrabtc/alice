@@ -2045,7 +2045,10 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
 
-  const contentType = req.headers['content-type']?.toLowerCase();
+  const contentTypeHeader = req.headers['content-type'];
+  const contentType = Array.isArray(contentTypeHeader)
+    ? contentTypeHeader[0]?.toLowerCase()
+    : contentTypeHeader?.toLowerCase();
   if (!contentType || !contentType.startsWith('application/x-www-form-urlencoded')) {
     logger.warn({ contentType }, 'Webhook Twilio: content-type inválido');
     return res.status(400).send('Invalid content-type');
@@ -2373,7 +2376,10 @@ app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Re
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
 
-  const contentType = req.headers['content-type']?.toLowerCase();
+  const contentTypeHeader = req.headers['content-type'];
+  const contentType = Array.isArray(contentTypeHeader)
+    ? contentTypeHeader[0]?.toLowerCase()
+    : contentTypeHeader?.toLowerCase();
   if (!contentType || !contentType.startsWith('application/x-www-form-urlencoded')) {
     logger.warn({ contentType }, 'Webhook Twilio status: content-type inválido');
     return res.status(400).send('Invalid content-type');
