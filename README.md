@@ -117,29 +117,48 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
-#### Categoria 3: ERPNext Stack (12 serviços)
+#### Categoria 3: ERPNext Stack (15 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
 | 14 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
 | 15 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
 | 16 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
-| 17 | Configurator | `erpnext-configurator` | Configurador Frappe Bench |
-| 18 | Create Site | `erpnext-create-site` | Criador do site ERPNext |
+| 17 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
+| 18 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
 | 19 | Backend | `erpnext-backend` | Backend Python Frappe |
 | 20 | Frontend | `erpnext-frontend` | Frontend NGINX |
 | 21 | WebSocket | `erpnext-websocket` | Socket.io real-time |
 | 22 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
-| 23 | Worker Short | `erpnext-worker-short` | Jobs rápidos |
-| 24 | Worker Default | `erpnext-worker-default` | Jobs normais |
-| 25 | Worker Long | `erpnext-worker-long` | Jobs longos |
+| 23 | Worker Default | `erpnext-worker-default` | Jobs normais (instância 1) |
+| 24 | Worker Short | `erpnext-worker-short` | Jobs rápidos (instância 1) |
+| 25 | Worker Long | `erpnext-worker-long` | Jobs longos (instância 1) |
+| 26 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
+| 27 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
+| 28 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
 
-#### Categoria 4: Infraestrutura Backup/Logs (2 serviços)
+#### Categoria 4: Observability Stack (12 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 26 | pgBackRest | `pgbackrest` | Backup enterprise PostgreSQL (PITR) |
-| 27 | Vector | `vector` | Agregador de logs (Datadog Vector) |
+| 29 | Langfuse | `langfuse` | LLM observability e analytics |
+| 30 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
+| 31 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
+| 32 | Grafana | `grafana` | Dashboards e visualizações |
+| 33 | Loki | `loki` | Agregação e armazenamento de logs |
+| 34 | Promtail | `promtail` | Coleta de logs do host |
+| 35 | Jaeger | `jaeger` | Distributed tracing |
+| 36 | Vector | `alice-vector` | Agregação de logs → Loki |
+| 37 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
+| 38 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
+| 39 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
+| 40 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+
+#### Categoria 5: Backup (1 serviço)
+
+| # | Serviço | Container | Descrição |
+|---|---------|-----------|-----------|
+| 41 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
 
 ---
 
@@ -384,7 +403,7 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.12.0 - 10 de Dezembro de 2025*
+*Versão 3.13.0 - 10 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*

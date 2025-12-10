@@ -60,7 +60,7 @@ Alice employs a microservices architecture with 41 containerized services orches
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
     - **CLIP Inference**: Multimodal embeddings for images using CLIP ViT-L/14 (Python, PyTorch).
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
-- **Observability Stack (6 serviços)**: Langfuse (LLM observability), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing).
+- **Observability Stack (12 serviços)**: Langfuse (LLM observability), Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
 
 **Shared Packages (`packages/`):**
@@ -79,7 +79,7 @@ Alice employs a microservices architecture with 41 containerized services orches
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
 - **Database**: PostgreSQL with pgvector extension.
-- **Observability**: Prometheus 3.8, Grafana OSS 11.3, Jaeger 1.76, Loki 3.6, Promtail 3.6, OpenTelemetry Collector, Langfuse 2.x.
+- **Observability**: Prometheus 3.0.1, Grafana OSS 11.1.4, Jaeger 1.58, Loki 3.1.0, Promtail 3.1.0, Alertmanager 0.27.0, Vector 0.43.1, OpenTelemetry Collector 0.114.0, Langfuse 2.x, Node Exporter 1.8.2, cAdvisor 0.49.1.
 - **API Gateway**: Traefik v3.6.
 - **CI/CD**: GitHub Actions.
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
@@ -194,7 +194,7 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.25 - 10 de Dezembro de 2025*
+*Versão: 3.26 - 10 de Dezembro de 2025*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
