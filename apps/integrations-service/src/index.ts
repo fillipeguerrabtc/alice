@@ -2090,9 +2090,15 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
 
   // SEGURANÇA: Validar que body é objeto (urlencoded produz objeto, não Buffer)
   // NOTA: express.urlencoded() sempre produz objeto Record<string, string>, nunca Buffer
-  // Se alguém adicionar verificação Buffer.isBuffer() aqui, sempre falhará incorretamente
-  if (Buffer.isBuffer(req.body) || typeof req.body !== 'object' || req.body === null) {
-    logger.error('Webhook Twilio: body inválido (deve ser objeto parseado por urlencoded, não Buffer)');
+  // DIFERENÇA COM STRIPE: Stripe usa express.raw() (Buffer), Twilio usa express.urlencoded() (objeto)
+  // Se body for Buffer, significa que middleware incorreto foi aplicado (deveria ser urlencoded)
+  if (Buffer.isBuffer(req.body)) {
+    logger.error('Webhook Twilio: body é Buffer mas deveria ser objeto (middleware incorreto - use express.urlencoded(), não express.raw())');
+    return res.status(500).send('Invalid middleware configuration');
+  }
+  // Validar que é objeto válido (não null, não primitivo)
+  if (typeof req.body !== 'object' || req.body === null) {
+    logger.error('Webhook Twilio: body inválido (deve ser objeto parseado por urlencoded)');
     return res.status(500).send('Invalid body format');
   }
 

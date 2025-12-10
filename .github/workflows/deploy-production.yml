@@ -1604,6 +1604,16 @@ PY
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
           } > .env.prod
           chmod 600 .env.prod
+          
+          # REGRA 6: Validar que pgbackrest.conf define a stanza alice_prod (default usado pelos scripts)
+          # Esta validação garante que backups não falharão silenciosamente em runtime
+          EXPECTED_STANZA="${PGBACKREST_STANZA:-alice_prod}"
+          if ! grep -q "^\[${EXPECTED_STANZA}\]" infra/backup/pgbackrest.conf; then
+            echo "::error::pgbackrest.conf não define a stanza '${EXPECTED_STANZA}'. Scripts de backup falharão em runtime. Corrija o pgbackrest.conf ou defina PGBACKREST_STANZA no secret." >&2
+            exit 1
+          fi
+          echo "✅ Validação: pgbackrest.conf contém stanza '${EXPECTED_STANZA}'"
+          
           # Secret file para langfuse-db (POSTGRES_PASSWORD_FILE)
           printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
           chmod 600 langfuse_db_password

@@ -879,6 +879,11 @@ services:
       - /app/.cache:mode=1777,size=512M
     profiles:
       - gpu
+    # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
+    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
+    # para uso no código Python (CORS_ORIGINS, CLIP_API_TOKEN, etc.)
+    env_file:
+      - .env.prod
     environment:
       PORT: 8080
       MODEL_NAME: "ViT-L/14"

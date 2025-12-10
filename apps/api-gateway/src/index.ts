@@ -189,7 +189,13 @@ if (nodeEnv === 'production' && corsOriginsRaw === '') {
   logger.error('CORS_ORIGIN é obrigatório em produção e não pode estar vazio (Regra 6 - fail-fast).');
   process.exit(1);
 }
-const corsOrigins = corsOriginsRaw ? corsOriginsRaw.split(',').map(o => o.trim()).filter(Boolean) : ['http://localhost:5000'];
+// REGRA 6: Fallback para localhost APENAS em desenvolvimento, nunca em produção
+// Se chegou aqui em produção, corsOriginsRaw não está vazio (validação acima garante)
+const corsOrigins = corsOriginsRaw 
+  ? corsOriginsRaw.split(',').map(o => o.trim()).filter(Boolean)
+  : nodeEnv === 'development' 
+    ? ['http://localhost:5000'] 
+    : []; // Produção sem CORS_ORIGIN já falhou acima, mas garantir array vazio como fail-safe
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
