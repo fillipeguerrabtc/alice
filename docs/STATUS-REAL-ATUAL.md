@@ -42,6 +42,7 @@
 - OTel Collector 0.114.0: config atual compatível; revisar changelog em novos pipelines.  
 - Vector 0.43.1: sink Loki ativo.
 - Alertmanager SMTP: senha via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
+- Vector: métricas expostas em 8686 para Prometheus; escrita em `/var/lib/vector` (sem read_only).
 
 ---
 

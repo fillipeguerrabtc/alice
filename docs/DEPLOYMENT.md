@@ -899,6 +899,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 - **Alertmanager SMTP:** senha carregada via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets`; não colocar senha inline em variáveis de ambiente.
 
+- **Vector:** porta 8686 exposta para métricas Prometheus; escreve estado em `/var/lib/vector` (sem `read_only: true`).
+
 **Referência:** `docs/VERIFICACAO-COMPLETA-ENTERPRISE.md` - Seção "Security Hardening (Docker Compose)"
 
 ---

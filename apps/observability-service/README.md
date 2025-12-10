@@ -18,7 +18,7 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Langfuse | 3006 | Langfuse 2.x | MIT | Métricas LLM |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
-| Vector | interno | Vector 0.43.1 | MPL 2.0 | Agregação de logs → Loki |
+| Vector | 8686 | Vector 0.43.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
 | Alertmanager | interno | Alertmanager 0.27 | Apache 2.0 | Alertas (Prometheus) |
 | node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
 | cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
