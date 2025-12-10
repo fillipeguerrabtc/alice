@@ -1984,6 +1984,11 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # REGRA 6: env_file carrega variáveis SMTP e emails do .env.prod (obrigatório em produção)
+    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
+    # para expansão em environment: e uso no envsubst do entrypoint
+    env_file:
+      - .env.prod
     entrypoint: ["/bin/sh", "-c"]
     command: |
       set -e

@@ -55,8 +55,9 @@ const gatewayConfigSchema = z.object({
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
-  // CORS
-  CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN é obrigatório'),
+  // CORS: Opcional no schema - validação de negócio permite CORS_ORIGIN ou CORS_ORIGINS
+  // A validação fail-fast em produção (linhas 90-96) garante que pelo menos um está definido
+  CORS_ORIGIN: z.string().optional(),
 });
 
 type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
@@ -128,7 +129,9 @@ try {
         OBSERVABILITY_SERVICE_URL: envConfig.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL!,
         RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
         RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
-        CORS_ORIGIN: envConfig.CORS_ORIGIN ?? config.CORS_ORIGIN!,
+        // CORS_ORIGIN pode ser undefined se apenas CORS_ORIGINS estiver definido - validação acima garante que pelo menos um existe
+        // Se undefined, será derivado de CORS_ORIGINS na linha 118, mas config precisa ter um valor para o schema
+        CORS_ORIGIN: envConfig.CORS_ORIGIN ?? config.CORS_ORIGIN ?? '',
       };
     } else {
       // Defaults apenas para desenvolvimento
@@ -184,9 +187,13 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
-const corsOriginsRaw = (config.CORS_ORIGIN ?? '').trim();
+// REGRA 6: Aceitar CORS_ORIGIN ou CORS_ORIGINS (validação em produção garante que pelo menos um existe)
+// Se CORS_ORIGIN não estiver definido, usar CORS_ORIGINS (primeiro valor se múltiplos)
+const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
+const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
+const corsOriginsRaw = corsOriginEnv ?? (corsOriginsEnv.length > 0 ? corsOriginsEnv.join(',') : '');
 if (nodeEnv === 'production' && corsOriginsRaw === '') {
-  logger.error('CORS_ORIGIN é obrigatório em produção e não pode estar vazio (Regra 6 - fail-fast).');
+  logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast).');
   process.exit(1);
 }
 // REGRA 6: Fallback para localhost APENAS em desenvolvimento, nunca em produção
@@ -195,7 +202,7 @@ const corsOrigins = corsOriginsRaw
   ? corsOriginsRaw.split(',').map(o => o.trim()).filter(Boolean)
   : nodeEnv === 'development' 
     ? ['http://localhost:5000'] 
-    : []; // Produção sem CORS_ORIGIN já falhou acima, mas garantir array vazio como fail-safe
+    : []; // Produção sem CORS_ORIGIN/CORS_ORIGINS já falhou acima, mas garantir array vazio como fail-safe
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
