@@ -1461,6 +1461,11 @@ jobs:
           fi
           if [ -z "${CORS_ORIGIN_VALUE}" ] && [ -n "${CORS_ORIGINS_VALUE}" ]; then
             CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | cut -d',' -f1 | xargs)"
+            # REGRA 6: Fail-fast se CORS_ORIGINS continha apenas delimitadores/espaços
+            if [ -z "${CORS_ORIGIN_VALUE}" ]; then
+              echo "::error::CORS_ORIGINS contém apenas delimitadores ou espaços. Configure um valor válido (ex: https://yesyoudeserve.duckdns.org)." >&2
+              exit 1
+            fi
           fi
           if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
             CORS_ORIGINS_VALUE="${CORS_ORIGIN_VALUE}"
