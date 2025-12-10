@@ -129,9 +129,16 @@ try {
         OBSERVABILITY_SERVICE_URL: envConfig.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL!,
         RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
         RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
-        // CORS_ORIGIN pode ser undefined se apenas CORS_ORIGINS estiver definido - validação acima garante que pelo menos um existe
-        // Se undefined, será derivado de CORS_ORIGINS na linha 118, mas config precisa ter um valor para o schema
-        CORS_ORIGIN: envConfig.CORS_ORIGIN ?? config.CORS_ORIGIN ?? '',
+        // REGRA 6: Fail-fast - validação acima (linhas 94-96) garante que pelo menos CORS_ORIGIN ou CORS_ORIGINS existe
+        // envConfig.CORS_ORIGIN é derivado de CORS_ORIGIN ou primeiro valor de CORS_ORIGINS (linha 119)
+        // Se ainda assim for undefined, falhar explicitamente ao invés de fallback vazio (segurança)
+        CORS_ORIGIN: (() => {
+          if (!envConfig.CORS_ORIGIN) {
+            logger.error('CORS_ORIGIN não pôde ser derivado após validação - abortando (Regra 6 - fail-fast)');
+            process.exit(1);
+          }
+          return envConfig.CORS_ORIGIN;
+        })(),
       };
     } else {
       // Defaults apenas para desenvolvimento

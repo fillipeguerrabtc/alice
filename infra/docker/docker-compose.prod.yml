@@ -1785,7 +1785,9 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - /opt/alice/data/prometheus:/prometheus
-      - ../../infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/infra/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - alice-network
     healthcheck:
@@ -1822,7 +1824,9 @@ services:
       GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
     volumes:
       - /opt/alice/data/grafana:/var/lib/grafana
-      - ../../infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - alice-network
     healthcheck:
@@ -1855,7 +1859,9 @@ services:
       - no-new-privileges:true
     command: ["-config.file=/etc/loki/local-config.yaml"]
     volumes:
-      - ../../infra/observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/infra/observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
       - /opt/alice/data/loki:/loki
     networks:
       - alice-network
@@ -1883,7 +1889,9 @@ services:
       - no-new-privileges:true
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - ../../infra/observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/infra/observability/promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log
     networks:
       - alice-network
@@ -1949,7 +1957,9 @@ services:
     ports:
       - "8686:8686"
     volumes:
-      - ../../infra/docker/vector.toml:/etc/vector/vector.toml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/infra/docker/vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - vector_data:/var/lib/vector
       - /var/log/vector:/var/log/vector
@@ -2009,7 +2019,9 @@ services:
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
     volumes:
-      - ../../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager:rw
       - alertmanager_tmp:/tmp:rw
       - /opt/alice/secrets/alertmanager/smtp_password:/run/secrets/smtp_password:ro
@@ -2058,7 +2070,9 @@ services:
       - "8888:8888"
       - "8889:8889"
     volumes:
-      - ../../apps/observability-service/config/otel/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
+      # REGRA 6: Caminho absoluto baseado em /opt/alice/app/ (onde código é clonado em produção)
+      # Caminhos relativos falhariam se docker-compose fosse executado de diretório diferente
+      - /opt/alice/app/apps/observability-service/config/otel/otel-collector.yml:/etc/otelcol-contrib/config.yaml:ro
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     networks:
       - alice-network
