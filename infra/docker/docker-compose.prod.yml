@@ -1912,7 +1912,7 @@ services:
     ports:
       - "8686:8686"
     volumes:
-      - ./vector.toml:/etc/vector/vector.toml:ro
+      - ../../infra/docker/vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - vector_data:/var/lib/vector
       - /var/log/vector:/var/log/vector

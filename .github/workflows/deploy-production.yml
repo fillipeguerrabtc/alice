@@ -1358,6 +1358,8 @@ jobs:
           SMTP_PORT_SECRET: ${{ secrets.SMTP_PORT }}
           SMTP_FROM_SECRET: ${{ secrets.SMTP_FROM }}
           SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
+          RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
         run: |
           set -euo pipefail
           # Secrets obrigatórias (fail-fast em produção)
@@ -1442,9 +1444,9 @@ jobs:
             exit 1
           fi
           LANGFUSE_DB_PASSWORD_ENCODED="$(LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD}" python3 - <<'PY'
-import os, urllib.parse
+import os, sys, urllib.parse
 pwd = os.environ.get("LANGFUSE_DB_PASSWORD", "")
-print(urllib.parse.quote(pwd, safe=""))
+sys.stdout.write(urllib.parse.quote(pwd, safe=""))
 PY
 )"
           # CORS (origens obrigatórias em produção)
@@ -1605,10 +1607,13 @@ PY
           # Secret file para langfuse-db (POSTGRES_PASSWORD_FILE)
           printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
           chmod 600 langfuse_db_password
+          # Secret file para alertmanager SMTP (usa RESEND_API_KEY como senha SMTP)
+          printf '%s' "${{ secrets.RESEND_API_KEY }}" > alertmanager_smtp_password
+          chmod 600 alertmanager_smtp_password
 
       - name: Transferir arquivos via SCP
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
+          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password alertmanager_smtp_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
 
       # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16)
       - name: Deploy via SSH
@@ -1661,13 +1666,20 @@ PY
           script: |
             set -e
             
-            # Preparar secret do langfuse-db (POSTGRES_PASSWORD_FILE)
-            mkdir -p /opt/alice/secrets
+            # Preparar secrets (langfuse-db e alertmanager SMTP)
+            mkdir -p /opt/alice/secrets/alertmanager
             if [ -f /tmp/langfuse_db_password ]; then
               mv /tmp/langfuse_db_password /opt/alice/secrets/langfuse_db_password
               chmod 600 /opt/alice/secrets/langfuse_db_password
             else
               echo "::error::Arquivo /tmp/langfuse_db_password não encontrado. Verifique o passo de SCP." >&2
+              exit 1
+            fi
+            if [ -f /tmp/alertmanager_smtp_password ]; then
+              mv /tmp/alertmanager_smtp_password /opt/alice/secrets/alertmanager/smtp_password
+              chmod 600 /opt/alice/secrets/alertmanager/smtp_password
+            else
+              echo "::error::Arquivo /tmp/alertmanager_smtp_password não encontrado. Verifique o passo de SCP." >&2
               exit 1
             fi
             

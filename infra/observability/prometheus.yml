@@ -68,9 +68,3 @@ scrape_configs:
     static_configs:
       - targets: ['langfuse:3000']
     metrics_path: '/api/public/metrics'  # Endpoint oficial Langfuse 2.x para Prometheus
-
-remote_write:
-  - url: ${GRAFANA_PROMETHEUS_URL}
-    basic_auth:
-      username: ${GRAFANA_USER}
-      password: ${GRAFANA_API_KEY}

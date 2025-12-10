@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE ENTERPRISE - Vector Log Aggregation
 # =============================================================================
-# Coleta logs de todos os servicos e envia para Grafana Cloud (free tier)
+# Coleta logs de todos os serviços e envia para Loki local (produção)
 
 [sources.docker_logs]
 type = "docker_logs"
