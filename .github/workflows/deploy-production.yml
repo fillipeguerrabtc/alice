@@ -1443,10 +1443,14 @@ jobs:
             echo "::error::LANGFUSE_DB_USER/LANGFUSE_DB_PASSWORD/LANGFUSE_DB_NAME são obrigatórios para o langfuse-db. Configure os secrets correspondentes." >&2
             exit 1
           fi
-          # NOTA: NÃO fazer percent-encoding da senha aqui
-          # O driver PostgreSQL (libpq) faz encoding automático ao construir a connection string
-          # Se fizermos encoding manual, a senha encoded nunca vai coincidir com a senha plain
-          # armazenada no PostgreSQL, causando falha de autenticação
+          # REGRA 6: Validar que senha não contém caracteres especiais de URL (fail-fast)
+          # Caracteres @ : / ? # % [ ] quebram a URL de conexão se não forem encoded
+          # Como não fazemos percent-encoding (libpq não suporta senha pré-encoded em conn string),
+          # a senha DEVE ser configurada sem esses caracteres
+          if echo "${LANGFUSE_DB_PASSWORD}" | grep -qE '[@:/?#%\[\]]'; then
+            echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (@:/?#%[]). Configure uma senha sem esses caracteres para evitar URL malformada." >&2
+            exit 1
+          fi
           # CORS (origens obrigatórias em produção)
           CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGIN_SECRET:-}" | xargs)"
           CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_SECRET:-}" | xargs)"

@@ -472,14 +472,17 @@ app.use(createRateLimiter({
 // NOTA: Helmet já aplicado via createSecurityMiddleware() acima
 
 // CORS configurado para desenvolvimento e produção
-const corsOriginEnv = process.env.CORS_ORIGIN;
-if (!corsOriginEnv && process.env.NODE_ENV === 'production') {
-  logger.error('CORS_ORIGIN é obrigatório em produção (Regra 6 - fail-fast)');
+// REGRA 6: Consistência com api-gateway - aceitar CORS_ORIGIN ou CORS_ORIGINS
+const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
+const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
+if (!corsOriginEnv && corsOriginsEnv.length === 0 && process.env.NODE_ENV === 'production') {
+  logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
+// Combinar ambas as fontes de configuração
 const corsOrigins = corsOriginEnv
-  ? corsOriginEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
-  : ['http://localhost:5000'];
+  ? [...corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean), ...corsOriginsEnv]
+  : corsOriginsEnv.length > 0 ? corsOriginsEnv : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
