@@ -1785,7 +1785,7 @@ services:
       GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
     volumes:
       - /opt/alice/data/grafana:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../../infra/observability/grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - alice-network
     healthcheck:
@@ -1818,7 +1818,7 @@ services:
       - no-new-privileges:true
     command: ["-config.file=/etc/loki/local-config.yaml"]
     volumes:
-      - ./loki/local-config.yaml:/etc/loki/local-config.yaml:ro
+      - ../../infra/observability/loki/local-config.yaml:/etc/loki/local-config.yaml:ro
       - /opt/alice/data/loki:/loki
     networks:
       - alice-network

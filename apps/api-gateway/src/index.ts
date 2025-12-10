@@ -46,17 +46,17 @@ const gatewayConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
   // URLs dos microserviços
-  AUTH_SERVICE_URL: z.string().optional(),
-  CHAT_SERVICE_URL: z.string().optional(),
-  RAG_SERVICE_URL: z.string().optional(),
-  TRAINING_SERVICE_URL: z.string().optional(),
-  INTEGRATIONS_SERVICE_URL: z.string().optional(),
-  OBSERVABILITY_SERVICE_URL: z.string().optional(),
+  AUTH_SERVICE_URL: z.string().min(1, 'AUTH_SERVICE_URL é obrigatório'),
+  CHAT_SERVICE_URL: z.string().min(1, 'CHAT_SERVICE_URL é obrigatório'),
+  RAG_SERVICE_URL: z.string().min(1, 'RAG_SERVICE_URL é obrigatório'),
+  TRAINING_SERVICE_URL: z.string().min(1, 'TRAINING_SERVICE_URL é obrigatório'),
+  INTEGRATIONS_SERVICE_URL: z.string().min(1, 'INTEGRATIONS_SERVICE_URL é obrigatório'),
+  OBSERVABILITY_SERVICE_URL: z.string().min(1, 'OBSERVABILITY_SERVICE_URL é obrigatório'),
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   // CORS
-  CORS_ORIGIN: z.string().optional(),
+  CORS_ORIGIN: z.string().min(1, 'CORS_ORIGIN é obrigatório'),
 });
 
 type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
