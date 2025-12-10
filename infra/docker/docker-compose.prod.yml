@@ -1189,12 +1189,6 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8000/api/method/frappe.health.check"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
     command: ["bench", "serve", "--port", "8000"]
     environment:
       DB_HOST: erpnext-mariadb
@@ -1948,14 +1942,14 @@ services:
     security_opt:
       - no-new-privileges:true
     entrypoint: ["/bin/sh", "-c"]
-    command: >
+    command: |
       apk add --no-cache gettext &&
       envsubst < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml &&
-      exec /bin/alertmanager
-      --config.file=/tmp/alertmanager.yml
-      --storage.path=/alertmanager
-      --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org
-      --cluster.listen-address=
+      exec /bin/alertmanager \
+        --config.file=/tmp/alertmanager.yml \
+        --storage.path=/alertmanager \
+        --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org \
+        --cluster.listen-address=
     environment:
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
