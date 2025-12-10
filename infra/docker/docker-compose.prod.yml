@@ -1665,7 +1665,7 @@ services:
       - no-new-privileges:true
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:-langfuse2025}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
     networks:
       - alice-network
     healthcheck:
@@ -1701,7 +1701,7 @@ services:
       - no-new-privileges:true
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
-      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:-langfuse2025}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD}
       POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
     volumes:
       - langfuse_db_data:/var/lib/postgresql/data
@@ -1711,7 +1711,7 @@ services:
       test:
         - CMD-SHELL
         - >
-          pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}
+          PGPASSWORD=${LANGFUSE_DB_PASSWORD} pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1741,7 +1741,7 @@ services:
       - "--web.enable-lifecycle"
     volumes:
       - /opt/alice/data/prometheus:/prometheus
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - alice-network
     healthcheck:
@@ -1839,7 +1839,7 @@ services:
       - no-new-privileges:true
     command: ["-config.file=/etc/promtail/config.yml"]
     volumes:
-      - ./promtail/config.yml:/etc/promtail/config.yml:ro
+      - ../observability/promtail/config.yml:/etc/promtail/config.yml:ro
       - /var/log:/var/log
     networks:
       - alice-network
@@ -1957,7 +1957,7 @@ services:
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
     volumes:
-      - ../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - ../../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager:rw
       - alertmanager_tmp:/tmp:rw
       - /opt/alice/secrets/alertmanager/smtp_password:/run/secrets/smtp_password:ro

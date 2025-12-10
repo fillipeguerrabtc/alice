@@ -84,7 +84,7 @@ app.set('trust proxy', 1);
 // Referência: https://docs.stripe.com/changelog
 const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
 const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
+const DEFAULT_RESEND_FROM = 'onboarding@resend.dev';
 const isProduction = config.NODE_ENV === 'production';
 
 let stripe: Stripe | null = null;
@@ -1225,12 +1225,12 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
 
 const resendEmailSchema = z.object({
   to: z.union([
-    z.string().email().trim(),
-    z.array(z.string().email().trim()).min(1),
+    z.string().trim().email(),
+    z.array(z.string().trim().email()).min(1),
   ]),
   subject: z.string().min(1).max(200),
   html: z.string().min(1),
-  from: z.string().email().trim().optional(),
+  from: z.string().trim().email().optional(),
 });
 
 app.post('/api/integrations/resend/send', requirePermission('integrations:resend:write'), async (req: Request, res: Response) => {
@@ -1247,7 +1247,7 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
   const to = parsed.data.to;
   const subject = parsed.data.subject;
   const html = parsed.data.html;
-  const fromEmail = parsed.data.from ?? RESEND_FROM_EMAIL ?? 'onboarding@resend.dev';
+  const fromEmail = parsed.data.from ?? DEFAULT_RESEND_FROM;
 
   // RESILIÊNCIA: AbortController com timeout
   const controller = new AbortController();

@@ -88,6 +88,12 @@ try {
   } else {
     config = result.data;
     if (nodeEnv === 'production') {
+      const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
+      const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
+      if (!corsOriginEnv && corsOriginsEnv.length === 0) {
+        logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast).');
+        process.exit(1);
+      }
       const requiredUrls = [
         'AUTH_SERVICE_URL',
         'CHAT_SERVICE_URL',
@@ -95,26 +101,34 @@ try {
         'TRAINING_SERVICE_URL',
         'INTEGRATIONS_SERVICE_URL',
         'OBSERVABILITY_SERVICE_URL',
-        'CORS_ORIGIN',
       ] as const;
       const missing = requiredUrls.filter((key) => !process.env[key] || process.env[key]?.trim() === '');
       if (missing.length > 0) {
         logger.error({ missing }, 'Variáveis obrigatórias ausentes em produção (Regra 6 - fail-fast).');
         process.exit(1);
       }
-      // Produção: materializar valores vindos de env para evitar undefined em config
+      // Produção: materializar valores vindos de env (já validados) e evitar fallbacks vazios
+      const envConfig = {
+        AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL?.trim(),
+        CHAT_SERVICE_URL: process.env.CHAT_SERVICE_URL?.trim(),
+        RAG_SERVICE_URL: process.env.RAG_SERVICE_URL?.trim(),
+        TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL?.trim(),
+        INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL?.trim(),
+        OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL?.trim(),
+        CORS_ORIGIN: corsOriginEnv ?? corsOriginsEnv[0],
+      };
       config = {
         NODE_ENV: config.NODE_ENV,
         PORT: config.PORT,
-        AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL ?? config.AUTH_SERVICE_URL ?? '',
-        CHAT_SERVICE_URL: process.env.CHAT_SERVICE_URL ?? config.CHAT_SERVICE_URL ?? '',
-        RAG_SERVICE_URL: process.env.RAG_SERVICE_URL ?? config.RAG_SERVICE_URL ?? '',
-        TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL ?? config.TRAINING_SERVICE_URL ?? '',
-        INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL ?? config.INTEGRATIONS_SERVICE_URL ?? '',
-        OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL ?? '',
+        AUTH_SERVICE_URL: envConfig.AUTH_SERVICE_URL ?? config.AUTH_SERVICE_URL!,
+        CHAT_SERVICE_URL: envConfig.CHAT_SERVICE_URL ?? config.CHAT_SERVICE_URL!,
+        RAG_SERVICE_URL: envConfig.RAG_SERVICE_URL ?? config.RAG_SERVICE_URL!,
+        TRAINING_SERVICE_URL: envConfig.TRAINING_SERVICE_URL ?? config.TRAINING_SERVICE_URL!,
+        INTEGRATIONS_SERVICE_URL: envConfig.INTEGRATIONS_SERVICE_URL ?? config.INTEGRATIONS_SERVICE_URL!,
+        OBSERVABILITY_SERVICE_URL: envConfig.OBSERVABILITY_SERVICE_URL ?? config.OBSERVABILITY_SERVICE_URL!,
         RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
         RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
-        CORS_ORIGIN: process.env.CORS_ORIGIN ?? config.CORS_ORIGIN ?? '',
+        CORS_ORIGIN: envConfig.CORS_ORIGIN ?? config.CORS_ORIGIN!,
       };
     } else {
       // Defaults apenas para desenvolvimento
