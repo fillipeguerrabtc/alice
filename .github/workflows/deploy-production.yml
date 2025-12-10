@@ -1441,7 +1441,7 @@ jobs:
             echo "::error::LANGFUSE_DB_USER/LANGFUSE_DB_PASSWORD/LANGFUSE_DB_NAME são obrigatórios para o langfuse-db. Configure os secrets correspondentes." >&2
             exit 1
           fi
-          LANGFUSE_DB_PASSWORD_ENCODED="$(python3 - <<'PY'
+          LANGFUSE_DB_PASSWORD_ENCODED="$(LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD}" python3 - <<'PY'
 import os, urllib.parse
 pwd = os.environ.get("LANGFUSE_DB_PASSWORD", "")
 print(urllib.parse.quote(pwd, safe=""))
