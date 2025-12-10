@@ -18,8 +18,8 @@
 
 set -e
 
-# Compat: default "alice" mantém alinhamento com pgbackrest.conf; variável permite override
-STANZA="${PGBACKREST_STANZA:-alice}"
+# Compat: default "alice_prod" mantém alinhamento com pgbackrest.conf; variável permite override
+STANZA="${PGBACKREST_STANZA:-alice_prod}"
 TARGET_TIME=""
 BACKUP_SET=""
 DELTA_MODE=false
