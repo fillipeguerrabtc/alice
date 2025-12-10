@@ -63,6 +63,8 @@ const gatewayConfigSchema = z.object({
 type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
 
 let config: GatewayConfig;
+// REGRA 6: Armazenar origens CORS validadas (combina CORS_ORIGIN e CORS_ORIGINS)
+let validatedCorsOrigins: string[] = [];
 const nodeEnv = process.env.NODE_ENV || 'development';
 
 try {
@@ -86,6 +88,8 @@ try {
       RATE_LIMIT_MAX_REQUESTS: 100,
       CORS_ORIGIN: 'http://localhost:5000',
     };
+    // Desenvolvimento: usar localhost como origem CORS
+    validatedCorsOrigins = ['http://localhost:5000'];
   } else {
     config = result.data;
     if (nodeEnv === 'production') {
@@ -109,6 +113,12 @@ try {
         process.exit(1);
       }
       // Produção: materializar valores vindos de env (já validados) e evitar fallbacks vazios
+      // REGRA 6: Combinar CORS_ORIGIN e CORS_ORIGINS (validados), removendo duplicatas
+      const allCorsOrigins = [
+        ...(corsOriginEnv ? [corsOriginEnv] : []),
+        ...corsOriginsEnv,
+      ].filter((o): o is string => Boolean(o));
+      const uniqueCorsOrigins = [...new Set(allCorsOrigins)];
       const envConfig = {
         AUTH_SERVICE_URL: process.env.AUTH_SERVICE_URL?.trim(),
         CHAT_SERVICE_URL: process.env.CHAT_SERVICE_URL?.trim(),
@@ -116,8 +126,10 @@ try {
         TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL?.trim(),
         INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL?.trim(),
         OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL?.trim(),
-        CORS_ORIGIN: corsOriginEnv ?? (corsOriginsEnv.length > 0 ? corsOriginsEnv[0] : undefined),
+        CORS_ORIGIN: uniqueCorsOrigins[0],
       };
+      // Armazenar origens validadas para uso no middleware CORS
+      validatedCorsOrigins = uniqueCorsOrigins;
       config = {
         NODE_ENV: config.NODE_ENV,
         PORT: config.PORT,
@@ -155,6 +167,8 @@ try {
         RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
         CORS_ORIGIN: config.CORS_ORIGIN || 'http://localhost:5000',
       };
+      // Desenvolvimento: usar localhost como origem CORS
+      validatedCorsOrigins = [config.CORS_ORIGIN || 'http://localhost:5000'];
     }
   }
 } catch (error) {
@@ -176,6 +190,8 @@ try {
     RATE_LIMIT_MAX_REQUESTS: 100,
     CORS_ORIGIN: 'http://localhost:5000',
   };
+  // Desenvolvimento: usar localhost como origem CORS
+  validatedCorsOrigins = ['http://localhost:5000'];
 }
 
 const app: express.Application = express();
@@ -194,20 +210,12 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
-// REGRA 6: Usar config.CORS_ORIGIN validado (não ler novamente de process.env)
-// Em produção, validação em linhas 91-142 já garantiu que CORS_ORIGIN existe
+// REGRA 6: Usar validatedCorsOrigins (já validado e sem duplicatas)
+// Em produção, validação em linhas 91-152 já combinou CORS_ORIGIN e CORS_ORIGINS
 // Em desenvolvimento, fallback para localhost é aplicado
-const corsOrigins = (() => {
-  // config.CORS_ORIGIN já foi validado e derivado de CORS_ORIGIN ou CORS_ORIGINS
-  const origin = config.CORS_ORIGIN;
-  // CORS_ORIGINS adicional (se definido) para permitir múltiplas origens
-  const additionalOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
-  // Combinar origin principal com origens adicionais, removendo duplicatas
-  const allOrigins = [origin, ...additionalOrigins].filter((o): o is string => Boolean(o));
-  return [...new Set(allOrigins)];
-})();
+// NOTA: Não lemos process.env.CORS_ORIGINS novamente para evitar duplicação e bypass de validação
 app.use(cors({
-  origin: corsOrigins,
+  origin: validatedCorsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'Cookie', 'X-Requested-With', 'x-tenant-id', 'x-correlation-id'],
