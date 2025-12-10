@@ -1749,8 +1749,10 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
+        # REGRA 6: Usar POSTGRES_USER e POSTGRES_DB definidos no environment (linhas 1741, 1743)
+        # Docker Compose expande variáveis no healthcheck, mas usar variáveis do container é mais seguro
         - >
-          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
+          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost
       interval: 10s
       timeout: 5s
       retries: 5
@@ -2003,7 +2005,9 @@ services:
     command: |
       set -e
       apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
-      envsubst < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
+      # REGRA 6: envsubst com lista específica garante que apenas variáveis definidas sejam substituídas
+      # Se alguma variável não estiver definida, envsubst falhará (fail-fast)
+      envsubst '$$SMTP_HOST $$SMTP_PORT $$SMTP_FROM $$SMTP_USERNAME $$ALERT_EMAIL $$CRITICAL_EMAIL $$ONCALL_EMAIL' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
@@ -2011,6 +2015,8 @@ services:
       # NOTA: --cluster.listen-address removido - ambiente single-node não requer clustering
       # Se necessário no futuro, usar: --cluster.listen-address=0.0.0.0:9094
     environment:
+      # REGRA 6: envsubst não suporta ${VAR:-default} no template - defaults aqui garantem valores
+      # Template alertmanager.yml usa apenas ${VAR} (sem defaults) - envsubst substitui corretamente
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-onboarding@resend.dev}
