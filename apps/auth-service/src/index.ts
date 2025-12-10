@@ -472,7 +472,12 @@ app.use(createRateLimiter({
 // NOTA: Helmet já aplicado via createSecurityMiddleware() acima
 
 // CORS configurado para desenvolvimento e produção
-const corsOrigins = process.env.CORS_ORIGIN?.split(',') || ['http://localhost:5000'];
+const corsOriginEnv = process.env.CORS_ORIGIN;
+if (!corsOriginEnv && process.env.NODE_ENV === 'production') {
+  logger.error('CORS_ORIGIN é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
+const corsOrigins = corsOriginEnv ? corsOriginEnv.split(',') : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,

@@ -13,7 +13,7 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 35 total (5 infra + 8 Alice + 12 ERPNext + 6 observability + 2 backup/logs + 1 langfuse + 1 pgbackrest)
+# CONTAINERS: 41 total (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 #
 # Autor: Fillipe Guerra
@@ -122,6 +122,14 @@ volumes:
       o: bind
       device: /opt/alice/data/alertmanager
 
+  langfuse_db_data:
+    name: alice-langfuse-db-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/langfuse-db
+
 # =============================================================================
 # SERVICES
 # =============================================================================
@@ -199,6 +207,12 @@ services:
     restart: "no"
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "test -d /acme && ls -ld /acme | grep 'drwx------' && exit 0 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 2
+      start_period: 5s
 
   # ===========================================================================
   # TRAEFIK - API Gateway com SSL Automático
@@ -1118,6 +1132,12 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bench --help >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     # REGRA 16: Resource limits para init containers (best practice enterprise)
     deploy:
       resources:
@@ -1157,6 +1177,12 @@ services:
         condition: service_healthy
       erpnext-redis-queue:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bench --help >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     # REGRA 16: Resource limits para init containers (best practice enterprise)
     deploy:
       resources:
@@ -1240,6 +1266,12 @@ services:
       - "traefik.http.routers.erpnext-frontend.entrypoints=websecure"
       - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   erpnext-websocket:
     image: frappe/frappe-socketio:v15.38.6@sha256:5f8055b3c1e43b67b8aa6fce60077f7b77e58bcbd13913b8a6fac51b07cdbc07
@@ -1270,6 +1302,12 @@ services:
       - "traefik.http.routers.erpnext-ws.entrypoints=websecure"
       - "traefik.http.routers.erpnext-ws.tls.certresolver=letsencrypt"
       - "traefik.http.services.erpnext-ws.loadbalancer.server.port=9000"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/socket.io/?EIO=4&transport=polling || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   erpnext-worker-default:
     image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
@@ -1305,6 +1343,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1350,6 +1394,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1395,6 +1445,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1439,6 +1495,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para scheduler (best practice enterprise)
     deploy:
       resources:
@@ -1484,6 +1546,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1529,6 +1597,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1574,6 +1648,12 @@ services:
         condition: service_healthy
     networks:
       - erpnext-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://erpnext-backend:8000/api/method/ping || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
     # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
@@ -1596,15 +1676,62 @@ services:
       - no-new-privileges:true
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
-      DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD obrigatorio}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.langfuse.rule=Host(`langfuse.yesyoudeserve.duckdns.org`)"
       - "traefik.http.routers.langfuse.entrypoints=websecure"
       - "traefik.http.routers.langfuse.tls.certresolver=letsencrypt"
       - "traefik.http.services.langfuse.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  langfuse-db:
+    image: postgres:16-alpine@sha256:9d5c0f7b3dab1ad927cf8488c946f001d2ed369a43ec7a65f5784586ca978da0
+    platform: linux/amd64
+    container_name: alice-langfuse-db
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
+      POSTGRES_PASSWORD: ${LANGFUSE_DB_PASSWORD:?LANGFUSE_DB_PASSWORD obrigatorio}
+      POSTGRES_DB: ${LANGFUSE_DB_NAME:-langfuse}
+    volumes:
+      - langfuse_db_data:/var/lib/postgresql/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
 
   prometheus:
     image: prom/prometheus:v3.0.1@sha256:ad5624f29c7e2d29e2a57f8e30d24b7fc361c0e7e5f98a5c18f4f4de4dc87914
@@ -1623,12 +1750,26 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.prometheus.rule=Host(`metrics.yesyoudeserve.duckdns.org`)"
       - "traefik.http.routers.prometheus.entrypoints=websecure"
       - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
       - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
 
   grafana:
     image: grafana/grafana:11.1.4@sha256:e730eb7c23ea176c5ba8254286a502b3d8c778e142170a1c0e2d3320171a2d5b
@@ -1646,12 +1787,26 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.grafana.rule=Host(`observability.yesyoudeserve.duckdns.org`)"
       - "traefik.http.routers.grafana.entrypoints=websecure"
       - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
       - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   loki:
     image: grafana/loki:3.1.0@sha256:de41edb2f2c0f908f2a3d5d8fca97a3bc0d2bf262587322c2a0dfbd237d85aed
@@ -1666,6 +1821,20 @@ services:
       - /opt/alice/data/loki:/loki
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
 
   promtail:
     image: grafana/promtail:3.1.0@sha256:ae3863e79fba9d04d13a392fa1430cfd07c25fca053cad3e05447c176278f0da
@@ -1680,6 +1849,20 @@ services:
       - /var/log:/var/log
     networks:
       - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9080/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
 
   jaeger:
     image: jaegertracing/all-in-one:1.58@sha256:1e38787d0ed42e1516289767d04f6c75c5aaf20b611ea343785646533d3a844a
@@ -1698,6 +1881,20 @@ services:
       - "traefik.http.routers.jaeger.entrypoints=websecure"
       - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
       - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.1'
 
   # ===========================================================================
   # VECTOR - Agregador de logs para Loki
@@ -1765,13 +1962,17 @@ services:
       ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
-      SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
-      SLACK_WEBHOOK_TOKEN: ${SLACK_WEBHOOK_TOKEN:-}
     volumes:
       - ../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager
     networks:
       - alice-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.alertmanager.rule=Host(`alertmanager.yesyoudeserve.duckdns.org`)"
+      - "traefik.http.routers.alertmanager.entrypoints=websecure"
+      - "traefik.http.routers.alertmanager.tls.certresolver=letsencrypt"
+      - "traefik.http.services.alertmanager.loadbalancer.server.port=9093"
     depends_on:
       prometheus:
         condition: service_started
@@ -1841,6 +2042,8 @@ services:
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     network_mode: host
     pid: host
     volumes:
@@ -1879,6 +2082,8 @@ services:
     platform: linux/amd64
     container_name: alice-cadvisor
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     privileged: true
     devices:
       - /dev/kmsg

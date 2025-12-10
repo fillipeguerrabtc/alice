@@ -350,10 +350,10 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 35/35 containers | 100% |
-| **read_only: true** | 21/35 containers | 100% aplicável (somente onde não há escrita) |
-| **security_opt: no-new-privileges** | 35/35 containers | 100% |
-| **Healthchecks** | 33/33 containers (init excluídos) | 100% |
+| **Resource Limits** | 41/41 containers | 100% |
+| **read_only: true** | 24/41 containers | 100% aplicável (somente onde não há escrita) |
+| **security_opt: no-new-privileges** | 41/41 containers | 100% |
+| **Healthchecks** | 41/41 containers | 100% |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
 
@@ -373,7 +373,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 35 containers têm security hardening completo aplicado. Containers que não precisam escrever (21 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (14 containers: workers, init, databases) têm `security_opt: no-new-privileges:true` e resource limits, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
+Todos os 41 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (17 containers: workers, init, databases, node-exporter, cadvisor) têm `security_opt: no-new-privileges:true` e resource limits, seguindo as melhores práticas Docker 2025 e OWASP Container Security.
 
 ---
 
@@ -382,13 +382,13 @@ Todos os 35 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.11.0 - 09 de Dezembro de 2025*
+*Versão 3.12.0 - 10 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
+*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*Última Revisão Enterprise: 08/12/2025 - 10 bugs críticos corrigidos*
+*Última Revisão Enterprise: 10/12/2025 - healthchecks 41/41, logs via Vector→Loki; observabilidade pins validados (Prom 3.0.1, Alertmanager 0.27.0, Grafana 11.1.4, Loki/Promtail 3.1.0, Jaeger 1.58, OTel 0.114.0, Vector 0.43.1)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 

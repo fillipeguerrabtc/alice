@@ -35,7 +35,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - Observability: 11 containers (prometheus, grafana, loki, promtail, jaeger, langfuse, vector, alertmanager, otel-collector, node-exporter, cadvisor)
 - Backup: 1 container (pgbackrest)
 
-**Total:** 5 + 8 + 15 + 11 + 1 = **40 containers** ✅
+**Total:** 5 + 8 + 15 + 12 + 1 = **41 containers** ✅
 
 ### Ações Necessárias
 
@@ -194,7 +194,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 
 ## 🔍 FASE 3: VERIFICAÇÃO DE SECURITY HARDENING
 
-### Containers a Verificar (40 total)
+### Containers a Verificar (41 total)
 
 #### Infraestrutura Core (5)
 - [ ] dockerproxy: security_opt, resource limits, healthcheck
@@ -230,7 +230,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - [ ] erpnext-worker-short-2: security_opt, resource limits, healthcheck
 - [ ] erpnext-worker-long-2: security_opt, resource limits, healthcheck
 
-#### Observability (11)
+#### Observability (12)
 - [ ] prometheus: security_opt, resource limits, healthcheck
 - [ ] grafana: security_opt, resource limits, healthcheck
 - [ ] loki: security_opt, resource limits, healthcheck
@@ -242,6 +242,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - [ ] otel-collector: security_opt, resource limits, healthcheck
 - [ ] node-exporter: security_opt, resource limits, healthcheck
 - [ ] cadvisor: security_opt, resource limits, healthcheck
+- [ ] langfuse-db: security_opt, resource limits, healthcheck
 
 #### Backup (1)
 - [ ] pgbackrest: security_opt, read_only, resource limits, healthcheck
@@ -337,7 +338,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 - [ ] Revisar todos os 5 workflows GitHub Actions
 
 ### Prioridade 3: Security Hardening
-- [ ] Verificar todos os 40 containers
+- [ ] Verificar todos os 41 containers
 - [ ] Documentar compliance
 
 ### Prioridade 4: Documentação
@@ -356,7 +357,7 @@ Este plano documenta a verificação completa e rigorosa de toda a plataforma Al
 
 Após execução completa deste plano:
 
-1. ✅ Contagem correta de containers documentada (40 total, 15 ERPNext)
+1. ✅ Contagem correta de containers documentada (41 total, 15 ERPNext)
 2. ✅ Code review completo de todos os componentes
 3. ✅ Security hardening verificado em todos os 40 containers
 4. ✅ Documentação consolidada e atualizada

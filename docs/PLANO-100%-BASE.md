@@ -369,7 +369,7 @@ Fases:
 *Documento atualizado em 09/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.2 - Redis Alice + Variáveis Inter-Service + Volume Hetzner*
-*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
+*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 
 ---
 
@@ -509,7 +509,7 @@ alice-redis:
 
 ### Total de Containers Atualizado:
 - **Antes:** 26 containers (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)
-- **Agora:** 40 containers (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)
+- **Agora:** 41 containers (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 
 ### Aderência:
 - ✅ Regra 6 (SEM WORKAROUNDS): Redis dedicado, não compartilhado

@@ -338,8 +338,13 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
+const corsOriginsEnv = process.env.CORS_ORIGINS;
+if (!corsOriginsEnv && isProduction) {
+  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
 app.use(cors({
-  origin: process.env.CORS_ORIGINS?.split(',') || [],
+  origin: corsOriginsEnv ? corsOriginsEnv.split(',') : [],
   credentials: true,
 }));
 

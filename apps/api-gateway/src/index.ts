@@ -46,17 +46,17 @@ const gatewayConfigSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.coerce.number().default(3000),
   // URLs dos microserviços
-  AUTH_SERVICE_URL: z.string().default('http://localhost:3001'),
-  CHAT_SERVICE_URL: z.string().default('http://localhost:3002'),
-  RAG_SERVICE_URL: z.string().default('http://localhost:3003'),
-  TRAINING_SERVICE_URL: z.string().default('http://localhost:3004'),
-  INTEGRATIONS_SERVICE_URL: z.string().default('http://localhost:3005'),
-  OBSERVABILITY_SERVICE_URL: z.string().default('http://localhost:3007'),
+  AUTH_SERVICE_URL: z.string().optional(),
+  CHAT_SERVICE_URL: z.string().optional(),
+  RAG_SERVICE_URL: z.string().optional(),
+  TRAINING_SERVICE_URL: z.string().optional(),
+  INTEGRATIONS_SERVICE_URL: z.string().optional(),
+  OBSERVABILITY_SERVICE_URL: z.string().optional(),
   // Rate limiting
   RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60000),
   RATE_LIMIT_MAX_REQUESTS: z.coerce.number().default(100),
   // CORS
-  CORS_ORIGIN: z.string().default('http://localhost:5000'),
+  CORS_ORIGIN: z.string().optional(),
 });
 
 type GatewayConfig = z.infer<typeof gatewayConfigSchema>;
@@ -66,15 +66,58 @@ const nodeEnv = process.env.NODE_ENV || 'development';
 
 try {
   const result = gatewayConfigSchema.safeParse(process.env);
-  if (result.success) {
-    config = result.data;
-  } else {
+  if (!result.success) {
     if (nodeEnv === 'production') {
       logger.error({ errors: result.error.format() }, 'Configuração inválida em produção. Abortando (Regra 6 - fail-fast).');
       process.exit(1);
     }
     logger.warn({ errors: result.error.format() }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
-    config = gatewayConfigSchema.parse({});
+    config = {
+      NODE_ENV: 'development',
+      PORT: 3000,
+      AUTH_SERVICE_URL: 'http://localhost:3001',
+      CHAT_SERVICE_URL: 'http://localhost:3002',
+      RAG_SERVICE_URL: 'http://localhost:3003',
+      TRAINING_SERVICE_URL: 'http://localhost:3004',
+      INTEGRATIONS_SERVICE_URL: 'http://localhost:3005',
+      OBSERVABILITY_SERVICE_URL: 'http://localhost:3007',
+      RATE_LIMIT_WINDOW_MS: 60000,
+      RATE_LIMIT_MAX_REQUESTS: 100,
+      CORS_ORIGIN: 'http://localhost:5000',
+    };
+  } else {
+    config = result.data;
+    if (nodeEnv === 'production') {
+      const requiredUrls = [
+        'AUTH_SERVICE_URL',
+        'CHAT_SERVICE_URL',
+        'RAG_SERVICE_URL',
+        'TRAINING_SERVICE_URL',
+        'INTEGRATIONS_SERVICE_URL',
+        'OBSERVABILITY_SERVICE_URL',
+        'CORS_ORIGIN',
+      ] as const;
+      const missing = requiredUrls.filter((key) => !process.env[key] || process.env[key]?.trim() === '');
+      if (missing.length > 0) {
+        logger.error({ missing }, 'Variáveis obrigatórias ausentes em produção (Regra 6 - fail-fast).');
+        process.exit(1);
+      }
+    } else {
+      // Defaults apenas para desenvolvimento
+      config = {
+        NODE_ENV: config.NODE_ENV,
+        PORT: config.PORT,
+        AUTH_SERVICE_URL: config.AUTH_SERVICE_URL || 'http://localhost:3001',
+        CHAT_SERVICE_URL: config.CHAT_SERVICE_URL || 'http://localhost:3002',
+        RAG_SERVICE_URL: config.RAG_SERVICE_URL || 'http://localhost:3003',
+        TRAINING_SERVICE_URL: config.TRAINING_SERVICE_URL || 'http://localhost:3004',
+        INTEGRATIONS_SERVICE_URL: config.INTEGRATIONS_SERVICE_URL || 'http://localhost:3005',
+        OBSERVABILITY_SERVICE_URL: config.OBSERVABILITY_SERVICE_URL || 'http://localhost:3007',
+        RATE_LIMIT_WINDOW_MS: config.RATE_LIMIT_WINDOW_MS ?? 60000,
+        RATE_LIMIT_MAX_REQUESTS: config.RATE_LIMIT_MAX_REQUESTS ?? 100,
+        CORS_ORIGIN: config.CORS_ORIGIN || 'http://localhost:5000',
+      };
+    }
   }
 } catch (error) {
   if (nodeEnv === 'production') {
@@ -82,7 +125,19 @@ try {
     process.exit(1);
   }
   logger.warn({ error }, 'Configuração parcial, usando defaults (apenas desenvolvimento)');
-  config = gatewayConfigSchema.parse({});
+  config = {
+    NODE_ENV: 'development',
+    PORT: 3000,
+    AUTH_SERVICE_URL: 'http://localhost:3001',
+    CHAT_SERVICE_URL: 'http://localhost:3002',
+    RAG_SERVICE_URL: 'http://localhost:3003',
+    TRAINING_SERVICE_URL: 'http://localhost:3004',
+    INTEGRATIONS_SERVICE_URL: 'http://localhost:3005',
+    OBSERVABILITY_SERVICE_URL: 'http://localhost:3007',
+    RATE_LIMIT_WINDOW_MS: 60000,
+    RATE_LIMIT_MAX_REQUESTS: 100,
+    CORS_ORIGIN: 'http://localhost:5000',
+  };
 }
 
 const app: express.Application = express();
@@ -101,7 +156,12 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
-const corsOrigins = config.CORS_ORIGIN.split(',').map(o => o.trim());
+const corsOriginsRaw = config.CORS_ORIGIN;
+if (nodeEnv === 'production' && (!corsOriginsRaw || corsOriginsRaw.trim() === '')) {
+  logger.error('CORS_ORIGIN é obrigatório em produção e não pode estar vazio (Regra 6 - fail-fast).');
+  process.exit(1);
+}
+const corsOrigins = corsOriginsRaw ? corsOriginsRaw.split(',').map(o => o.trim()) : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,

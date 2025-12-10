@@ -33,14 +33,10 @@ type = "console"
 inputs = ["filter_noise"]
 encoding.codec = "json"
 
-# Uncomment to send to Grafana Cloud Loki (free tier: 50GB/month)
-# [sinks.loki]
-# type = "loki"
-# inputs = ["filter_noise"]
-# endpoint = "https://logs-prod-us-central1.grafana.net"
-# auth.strategy = "basic"
-# auth.user = "${GRAFANA_LOKI_USER}"
-# auth.password = "${GRAFANA_LOKI_API_KEY}"
-# labels.service = "{{ service }}"
-# labels.environment = "{{ environment }}"
-# encoding.codec = "json"
+[sinks.loki]
+type = "loki"
+inputs = ["filter_noise"]
+endpoint = "${GRAFANA_LOKI_URL:-http://loki:3100}"
+labels.service = "{{ service }}"
+labels.environment = "{{ environment }}"
+encoding.codec = "json"

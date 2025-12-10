@@ -173,12 +173,12 @@ alice/
 - **ERPNext**: usuário fixo `Administrator` + `ERPNEXT_ADMIN_PASSWORD` (pode usar a mesma senha do admin global).
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
-## Security Hardening (Dezembro 2025)
-- **35 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
-- **21 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **35 containers** = 100% com resource limits ✅ COMPLETO
+## Security Hardening (10 de Dezembro de 2025)
+- **41 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+- **24 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
+- **41 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
-- **17 containers** = 100% com healthchecks (init excluídos)
+- **healthchecks** = ✅ 41/41 containers (init incluídos)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
 - **OWASP API Top 10** = 9/10 mitigados
 - **Nota:** ERPNext workers e init containers (11 containers) não têm `read_only: true` pois precisam escrever em volumes (comportamento correto e enterprise-grade)
@@ -193,11 +193,11 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.23 - 09 de Dezembro de 2025*
-*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
+*Versão: 3.25 - 10 de Dezembro de 2025*
+*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
-*Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (aplicável apenas onde não há escrita)*
-*Última Revisão Completa: 09/12/2025 - Processo de atualização periódica implementado, workflows com SHA pinning, 17/17 regras em 100% compliance*
+*Security Hardening: 100% no-new-privileges, 100% resource limits, 24/41 com read_only (aplicável apenas onde não há escrita), healthchecks 41/41*
+*Última Revisão Completa: 10/12/2025 - healthchecks 41/41, logs centralizados Vector→Loki, sem Slack*

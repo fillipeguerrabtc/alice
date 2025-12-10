@@ -10,10 +10,10 @@
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: 'smtp.resend.com:587'
-  smtp_from: 'alertas@alice.yesyoudeserve.duckdns.org'
-  smtp_auth_username: 'resend'
-  smtp_auth_password_file: /etc/alertmanager/secrets/smtp_password
+  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
+  smtp_from: '${SMTP_FROM}'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
   smtp_require_tls: true
 
 route:
@@ -41,7 +41,7 @@ route:
 receivers:
   - name: 'default-receiver'
     email_configs:
-      - to: 'ops@yesyoudeserve.duckdns.org'
+      - to: '${ALERT_EMAIL}'
         send_resolved: true
         headers:
           subject: '[Alice] {{ .Status | toUpper }}: {{ .CommonLabels.alertname }}'
@@ -58,25 +58,22 @@ receivers:
 
   - name: 'critical-receiver'
     email_configs:
-      - to: 'critical@yesyoudeserve.duckdns.org'
+      - to: '${CRITICAL_EMAIL}'
         send_resolved: true
         headers:
           subject: '[CRITICAL] {{ .CommonLabels.alertname }} - Ação Imediata Necessária'
         require_tls: true
-    webhook_configs:
-      - url_file: /etc/alertmanager/secrets/slack_webhook_url
-        send_resolved: true
 
   - name: 'warning-receiver'
     email_configs:
-      - to: 'ops@yesyoudeserve.duckdns.org'
+      - to: '${ALERT_EMAIL}'
         send_resolved: true
         headers:
           subject: '[WARNING] {{ .CommonLabels.alertname }}'
 
   - name: 'oncall-receiver'
     email_configs:
-      - to: 'oncall@yesyoudeserve.duckdns.org'
+      - to: '${ONCALL_EMAIL}'
         send_resolved: true
         headers:
           subject: '[ONCALL] Circuit Breaker Aberto - {{ .CommonLabels.name }}'

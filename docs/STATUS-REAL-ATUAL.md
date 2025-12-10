@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 09 de Dezembro de 2025  
+> **Data:** 10 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
 > **Versão:** 3.4 - PLATAFORMA 100% ENTERPRISE COMPLETA - SECURITY HARDENING 100% APLICADO
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 35 (produção) |
+| **Total de Containers** | 41 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -24,15 +24,23 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
-### Security Hardening (09/12/2025)
+### Security Hardening (10/12/2025)
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 35/35 containers (100%) |
-| `read_only: true` | ✅ | 21/35 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 35/35 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 41/41 containers (100%) |
+| `read_only: true` | ✅ | 24/41 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 41/41 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
-| Healthchecks | ✅ | 17/17 containers (init excluídos) |
+| Healthchecks | ✅ | 41/41 containers (init incluídos) |
+
+**Compatibilidade Observabilidade (pins atuais)**  
+- Prometheus 3.0.1 / Alertmanager 0.27.0: sem breaking identificado; monitorar métricas deprecated.  
+- Grafana 11.1.4: atualização menor.  
+- Loki/Promtail 3.1.0: pareados, sem mudanças em labels/pipeline.  
+- Jaeger 1.58: estável; OTLP habilitado.  
+- OTel Collector 0.114.0: config atual compatível; revisar changelog em novos pipelines.  
+- Vector 0.43.1: sink Loki ativo.
 
 ---
 
@@ -709,7 +717,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 *Documento consolidado em 09/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.4 - Bulk Import UI Enterprise*
-*Total de Containers: 40 (5 infra + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
+*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*

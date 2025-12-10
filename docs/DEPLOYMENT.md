@@ -869,17 +869,25 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 ---
 
-## 🔐 Security Hardening (100% Enterprise - 09/12/2025)
+## 🔐 Security Hardening (Enterprise - 10/12/2025)
 
 ### Status Completo
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 35/35 containers (100%) |
-| **resource limits** | ✅ | 35/35 containers (100%) |
-| **read_only: true** | ✅ | 21/35 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 41/41 containers (100%) |
+| **resource limits** | ✅ | 41/41 containers (100%) |
+| **read_only: true** | ✅ | 24/41 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
-| **healthchecks** | ✅ | 17/17 containers (init excluídos) |
+| **healthchecks** | ✅ | 41/41 containers (init incluídos) |
+
+### Compatibilidade do Stack de Observabilidade (pins atuais)
+- Prometheus 3.0.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes; manter atenção em mudanças de métricas deprecated (consultar release notes v3.0/v0.27).
+- Grafana 11.1.4: atualização menor; dashboards e datasources preservados.
+- Loki/Promtail 3.1.0: versão alinhada; labels e pipeline existentes compatíveis.
+- Jaeger 1.58: estável; OTLP habilitado.
+- OTel Collector 0.114.0: configurações atuais (receivers/exporters) compatíveis; revisar changelog se adicionar novos pipelines.
+- Vector 0.43.1: sink Loki ativo; sem mudanças de breaking para docker_logs.
 
 ### Notas Importantes
 
@@ -894,11 +902,11 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 09 de Dezembro de 2025*
-*Versão: 6.2 - Security Hardening 100% Completo*
+*Documento atualizado em: 10 de Dezembro de 2025*
+*Versão: 6.4 - Security Hardening 100% (healthchecks completos)*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
-*Security Hardening: 100% completo - 35/35 containers com no-new-privileges, 35/35 com resource limits, 21/35 com read_only (09/12/2025)*
+*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 24/41 com read_only (09/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

@@ -5,7 +5,7 @@
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 40 containers da plataforma Alice Enterprise (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup).
+**Contexto:** Este é o serviço de observabilidade dos 41 containers da plataforma Alice Enterprise (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup).
 
 ## Componentes
 
@@ -18,6 +18,10 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Langfuse | 3006 | Langfuse 2.x | MIT | Métricas LLM |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
+| Vector | interno | Vector 0.43.1 | MPL 2.0 | Agregação de logs → Loki |
+| Alertmanager | interno | Alertmanager 0.27 | Apache 2.0 | Alertas (Prometheus) |
+| node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
+| cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
 
 ## Métricas LLM Específicas
 
@@ -217,4 +221,4 @@ apps/observability-service/
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 2.5.0 - 05 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*
+*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*

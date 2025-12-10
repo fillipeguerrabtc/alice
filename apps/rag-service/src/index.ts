@@ -463,7 +463,12 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
-const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
+const corsOriginsEnv = process.env.CORS_ORIGINS;
+if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
+  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
+const CORS_ORIGINS = corsOriginsEnv ? corsOriginsEnv.split(',') : [];
 
 if (!DATABASE_URL) {
   logger.error('DATABASE_URL não configurada');

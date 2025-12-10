@@ -1,15 +1,15 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 2025-12-08
+**Data:** 10 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 39 (35 pré-deploy + 4 opcionais/pós-deploy)
+**Total de Secrets:** 42 (38 pré-deploy + 4 opcionais/pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 40 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)
+**Total de Containers:** 41 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
@@ -24,7 +24,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
-| **Alice Observability** | alice-observability | GRAFANA_*, LANGFUSE_* |
+| **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
 | **Deploy** | GitHub Actions | HETZNER_*, GH_PAT |
 
@@ -181,7 +181,6 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
-
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 
 ### FASE 9: Backup (pgBackRest)
@@ -202,8 +201,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 2025-12-08  
-> **Resumo:** Secrets obrigatórias de produção ✅ configuradas. Faltam apenas opcionais (`STRIPE_WEBHOOK_BASE_URL`, `WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`).
+> **Status atualizado em:** 10 de Dezembro de 2025  
+> **Resumo:** Secrets obrigatórias de produção ✅ configuradas. Pendentes opcionais: `STRIPE_WEBHOOK_BASE_URL`, `WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`.
 
 ### Infraestrutura
 
@@ -279,6 +278,9 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `LANGFUSE_SECRET_KEY` | ✅ |
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
+| `LANGFUSE_DB_USER` | ✅ |
+| `LANGFUSE_DB_PASSWORD` | ✅ |
+| `LANGFUSE_DB_NAME` | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
 
@@ -363,9 +365,9 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 2025-12-09*  
-*Versão: 6.1*  
-*Total de Secrets: 39 (36 pré-deploy + 3 pós-deploy)*  
-*Total de Containers: 40 (5 infraestrutura + 8 Alice + 15 ERPNext + 11 observability + 1 backup)*  
+*Documento atualizado em: 10 de Dezembro de 2025*  
+*Versão: 6.4*  
+*Total de Secrets: 42 (38 pré-deploy + 4 pós-deploy)*  
+*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*

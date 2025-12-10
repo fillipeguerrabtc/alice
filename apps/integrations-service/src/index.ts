@@ -262,7 +262,12 @@ const featureFlagStorage = createDrizzleFeatureFlagStorage();
 initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
-const CORS_ORIGINS = process.env.CORS_ORIGINS?.split(',') || [];
+const corsOriginsEnv = process.env.CORS_ORIGINS;
+if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
+  logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
+const CORS_ORIGINS = corsOriginsEnv ? corsOriginsEnv.split(',') : [];
 
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
@@ -768,11 +773,23 @@ app.post('/api/integrations/stripe/webhook', async (req: Request, res: Response)
     return res.status(503).json({ error: 'Stripe not configured' });
   }
 
+  const contentType = req.headers['content-type'];
+  if (contentType !== 'application/json' && contentType !== 'application/json; charset=utf-8') {
+    logger.warn({ contentType }, 'Stripe webhook rejeitado: content-type inválido');
+    return res.status(400).json({ error: 'Invalid content-type' });
+  }
+
   const sig = req.headers['stripe-signature'] as string;
 
   if (!STRIPE_WEBHOOK_SECRET) {
     logger.error('Webhook recebido mas STRIPE_WEBHOOK_SECRET não configurado');
     return res.status(500).json({ error: 'Webhook secret not configured' });
+  }
+
+  // Exigir corpo bruto (Buffer) para validação de assinatura
+  if (!Buffer.isBuffer(req.body)) {
+    logger.error('Stripe webhook rejeitado: body não é Buffer (configure express.raw() antes da rota)');
+    return res.status(500).json({ error: 'Invalid body parser for webhook' });
   }
 
   try {
@@ -1568,6 +1585,12 @@ app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('
 // Webhook Wise - Receber notificações de transferências
 // SEGURANÇA: Validar assinatura ANTES de responder (OWASP API4)
 app.post('/api/integrations/wise/webhook', async (req: Request, res: Response) => {
+  const contentType = req.headers['content-type'];
+  if (contentType !== 'application/json' && contentType !== 'application/json; charset=utf-8') {
+    logger.warn({ contentType }, 'Webhook Wise: content-type inválido');
+    return res.status(400).json({ error: 'Invalid content-type' });
+  }
+
   const signature = req.headers['x-signature-sha256'] as string;
   const isTestNotification = req.headers['x-test-notification'] === 'true';
   const deliveryId = req.headers['x-delivery-id'] as string;
@@ -2011,6 +2034,17 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
 
+  const contentType = req.headers['content-type'];
+  if (contentType !== 'application/x-www-form-urlencoded') {
+    logger.warn({ contentType }, 'Webhook Twilio: content-type inválido');
+    return res.status(400).send('Invalid content-type');
+  }
+
+  if (!TWILIO_AUTH_TOKEN) {
+    logger.error('Webhook Twilio: TWILIO_AUTH_TOKEN não configurado');
+    return res.status(500).send('Webhook secret not configured');
+  }
+
   // CRÍTICO: Validar assinatura ANTES de responder
   const validation = validateTwilioSignature(
     twilioSignature,
@@ -2327,6 +2361,17 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
 app.post('/api/integrations/twilio/webhook/status', async (req: Request, res: Response) => {
   const twilioSignature = req.headers['x-twilio-signature'] as string;
   const webhookUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
+
+  const contentType = req.headers['content-type'];
+  if (contentType !== 'application/x-www-form-urlencoded') {
+    logger.warn({ contentType }, 'Webhook Twilio status: content-type inválido');
+    return res.status(400).send('Invalid content-type');
+  }
+
+  if (!TWILIO_AUTH_TOKEN) {
+    logger.error('Webhook Twilio: TWILIO_AUTH_TOKEN não configurado');
+    return res.status(500).send('Webhook secret not configured');
+  }
 
   // CRÍTICO: Validar assinatura ANTES de responder
   const validation = validateTwilioSignature(

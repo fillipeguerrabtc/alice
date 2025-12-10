@@ -61,11 +61,8 @@ REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s d
 # SEGURANÇA: CORS origins (OWASP API Security)
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
 if not CORS_ORIGINS and IS_PRODUCTION:
-    logger.warning("CORS_ORIGINS não configurado - usando allowlist padrão de produção")
-    CORS_ORIGINS = [
-        "https://api.yesyoudeserve.duckdns.org",
-        "https://alice.yesyoudeserve.duckdns.org",
-    ]
+    logger.error("CRITICAL: CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast). Abortando.")
+    sys.exit(1)
 
 if not CLIP_API_TOKEN and IS_PRODUCTION:
     logger.error("CRITICAL: CLIP_API_TOKEN é OBRIGATÓRIO em produção. Abortando.")
