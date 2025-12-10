@@ -2037,8 +2037,11 @@ services:
       # NOTA: --cluster.listen-address removido - ambiente single-node não requer clustering
       # Se necessário no futuro, usar: --cluster.listen-address=0.0.0.0:9094
     environment:
+      # INTEGRAÇÃO RESEND SIMPLIFICADA (API Key como senha SMTP):
+      # - Resend oferece relay SMTP que aceita API Key como senha
+      # - Não requer domínio verificado para usar onboarding@resend.dev
+      # - Senha (API Key) lida de arquivo /run/secrets/smtp_password
       # REGRA 6: envsubst não suporta ${VAR:-default} no template - defaults aqui garantem valores
-      # Template alertmanager.yml usa apenas ${VAR} (sem defaults) - envsubst substitui corretamente
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-onboarding@resend.dev}

@@ -77,7 +77,7 @@ Alice employs a microservices architecture with 41 containerized services orches
 - **CLIP Inference**: CLIP ViT-L/14 on Salad Cloud.
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
-- **Communication**: Twilio (WhatsApp, SMS), Resend (transactional emails).
+- **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
 - **Database**: PostgreSQL with pgvector extension.
 - **Observability**: Prometheus 3.8, Grafana OSS 11.3, Jaeger 1.76, Loki 3.6, Promtail 3.6, OpenTelemetry Collector, Langfuse 2.x.
 - **API Gateway**: Traefik v3.6.

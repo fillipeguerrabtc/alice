@@ -1,7 +1,13 @@
 # Alertmanager Configuration - Alice Enterprise Platform
 #
-# Configuração de notificações de alertas.
-# Integração com email, Slack, PagerDuty.
+# Configuração de notificações de alertas via email.
+# Usa relay SMTP do Resend com integração simplificada (API Key como senha).
+#
+# INTEGRAÇÃO RESEND:
+# - Host SMTP: smtp.resend.com:587
+# - Username: resend (fixo)
+# - Password: API Key do Resend (lida do arquivo /run/secrets/smtp_password)
+# - Sender: onboarding@resend.dev (não requer domínio verificado)
 #
 # NOTA: As variáveis ${VAR} são expandidas no entrypoint via envsubst antes de carregar a config.
 #

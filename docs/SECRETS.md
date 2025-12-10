@@ -146,12 +146,18 @@ Estes são necessários para o deploy funcionar:
 2. When a message comes in: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/whatsapp`
 3. Status callback URL: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/status`
 
-**Resend:**
+**Resend (Integração Simplificada via API Key):**
 
 | Secret | Onde Obter |
 |--------|------------|
 | `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys) |
 | *(sem variável FROM)* | O sender padrão é `onboarding@resend.dev` (permitido sem domínio verificado) |
+
+**Importante - Alertmanager usa relay SMTP do Resend:**
+- O Resend oferece um relay SMTP (`smtp.resend.com:587`) que aceita a **API Key como senha**
+- O arquivo `/opt/alice/secrets/alertmanager/smtp_password` deve conter a `RESEND_API_KEY`
+- Username fixo: `resend`
+- Não é necessário domínio verificado para usar `onboarding@resend.dev` como remetente
 
 ### FASE 6.1: CORS (origens frontend) — OBRIGATÓRIO EM PRODUÇÃO
 
@@ -191,7 +197,14 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
-| `SMTP_PASSWORD` (arquivo) | Senha SMTP para Alertmanager, em arquivo `/opt/alice/secrets/alertmanager/smtp_password` | Escrever o valor plano no arquivo; docker compose monta como secret |
+| `SMTP_PASSWORD` (arquivo) | **API Key do Resend** para relay SMTP do Alertmanager | O workflow escreve a `RESEND_API_KEY` em `/opt/alice/secrets/alertmanager/smtp_password` |
+
+**Observação sobre Alertmanager + Resend:**
+- O Alertmanager usa o relay SMTP do Resend (`smtp.resend.com:587`) para enviar alertas por email
+- A "senha SMTP" é na verdade a **API Key do Resend** (integração simplificada)
+- Username fixo: `resend` | Sender: `onboarding@resend.dev` (não requer domínio verificado)
+- O arquivo de senha é montado em `/run/secrets/smtp_password` no container
+
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 
 ### FASE 9: Backup (pgBackRest)
