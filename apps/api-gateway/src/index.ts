@@ -194,22 +194,18 @@ app.use(createSecurityMiddleware({
 }));
 
 // CORS configurado
-// REGRA 6: Aceitar CORS_ORIGIN ou CORS_ORIGINS (validação em produção garante que pelo menos um existe)
-// Se CORS_ORIGIN não estiver definido, usar CORS_ORIGINS (primeiro valor se múltiplos)
-const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
-const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
-const corsOriginsRaw = corsOriginEnv ?? (corsOriginsEnv.length > 0 ? corsOriginsEnv.join(',') : '');
-if (nodeEnv === 'production' && corsOriginsRaw === '') {
-  logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast).');
-  process.exit(1);
-}
-// REGRA 6: Fallback para localhost APENAS em desenvolvimento, nunca em produção
-// Se chegou aqui em produção, corsOriginsRaw não está vazio (validação acima garante)
-const corsOrigins = corsOriginsRaw 
-  ? corsOriginsRaw.split(',').map(o => o.trim()).filter(Boolean)
-  : nodeEnv === 'development' 
-    ? ['http://localhost:5000'] 
-    : []; // Produção sem CORS_ORIGIN/CORS_ORIGINS já falhou acima, mas garantir array vazio como fail-safe
+// REGRA 6: Usar config.CORS_ORIGIN validado (não ler novamente de process.env)
+// Em produção, validação em linhas 91-142 já garantiu que CORS_ORIGIN existe
+// Em desenvolvimento, fallback para localhost é aplicado
+const corsOrigins = (() => {
+  // config.CORS_ORIGIN já foi validado e derivado de CORS_ORIGIN ou CORS_ORIGINS
+  const origin = config.CORS_ORIGIN;
+  // CORS_ORIGINS adicional (se definido) para permitir múltiplas origens
+  const additionalOrigins = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
+  // Combinar origin principal com origens adicionais, removendo duplicatas
+  const allOrigins = [origin, ...additionalOrigins].filter((o): o is string => Boolean(o));
+  return [...new Set(allOrigins)];
+})();
 app.use(cors({
   origin: corsOrigins,
   credentials: true,

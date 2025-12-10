@@ -1447,7 +1447,8 @@ jobs:
           # Caracteres @ : / ? # % [ ] quebram a URL de conexão se não forem encoded
           # Como não fazemos percent-encoding (libpq não suporta senha pré-encoded em conn string),
           # a senha DEVE ser configurada sem esses caracteres
-          if echo "${LANGFUSE_DB_PASSWORD}" | grep -qE '[@:/?#%\[\]]'; then
+          # POSIX ERE: ] deve ser primeiro caractere na classe para ser literal
+          if echo "${LANGFUSE_DB_PASSWORD}" | grep -qE '[][@:/?#%]'; then
             echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (@:/?#%[]). Configure uma senha sem esses caracteres para evitar URL malformada." >&2
             exit 1
           fi
