@@ -1608,7 +1608,12 @@ PY
           printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
           chmod 600 langfuse_db_password
           # Secret file para alertmanager SMTP (usa RESEND_API_KEY como senha SMTP)
-          printf '%s' "${{ secrets.RESEND_API_KEY }}" > alertmanager_smtp_password
+          RESEND_API_KEY_VALUE="${{ secrets.RESEND_API_KEY }}"
+          if [ -z "${RESEND_API_KEY_VALUE}" ]; then
+            echo "::error::RESEND_API_KEY é obrigatório para alertmanager SMTP. Configure o secret no repositório." >&2
+            exit 1
+          fi
+          printf '%s' "${RESEND_API_KEY_VALUE}" > alertmanager_smtp_password
           chmod 600 alertmanager_smtp_password
 
       - name: Transferir arquivos via SCP

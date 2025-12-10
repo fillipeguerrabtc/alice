@@ -115,7 +115,7 @@ try {
         TRAINING_SERVICE_URL: process.env.TRAINING_SERVICE_URL?.trim(),
         INTEGRATIONS_SERVICE_URL: process.env.INTEGRATIONS_SERVICE_URL?.trim(),
         OBSERVABILITY_SERVICE_URL: process.env.OBSERVABILITY_SERVICE_URL?.trim(),
-        CORS_ORIGIN: corsOriginEnv ?? corsOriginsEnv[0],
+        CORS_ORIGIN: corsOriginEnv ?? (corsOriginsEnv.length > 0 ? corsOriginsEnv[0] : undefined),
       };
       config = {
         NODE_ENV: config.NODE_ENV,

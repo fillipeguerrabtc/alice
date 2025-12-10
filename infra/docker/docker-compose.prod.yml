@@ -1256,7 +1256,7 @@ services:
       - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --timeout=5 --spider http://localhost:8080 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1943,8 +1943,9 @@ services:
       - no-new-privileges:true
     entrypoint: ["/bin/sh", "-c"]
     command: |
-      apk add --no-cache gettext &&
-      envsubst < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml &&
+      set -e
+      apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
+      envsubst < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
