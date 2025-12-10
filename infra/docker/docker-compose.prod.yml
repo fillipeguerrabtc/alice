@@ -1671,7 +1671,7 @@ services:
       - no-new-privileges:true
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD_ENCODED:?missing LANGFUSE_DB_PASSWORD_ENCODED}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
     networks:
       - alice-network
     healthcheck:
@@ -1959,7 +1959,7 @@ services:
     environment:
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_FROM: ${SMTP_FROM:-alertas@alice.yesyoudeserve.duckdns.org}
+      SMTP_FROM: ${SMTP_FROM:-onboarding@resend.dev}
       SMTP_USERNAME: ${SMTP_USERNAME:-resend}
       ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}

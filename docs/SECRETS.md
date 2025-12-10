@@ -294,6 +294,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ |
 | `LANGFUSE_DB_NAME` | ✅ |
+| `LANGFUSE_DB_PASSWORD_ENCODED` | 🚫 Gerado automaticamente no workflow (percent-encode de `LANGFUSE_DB_PASSWORD`) |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
 
