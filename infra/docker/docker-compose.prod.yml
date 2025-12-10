@@ -2014,9 +2014,12 @@ services:
       # REGRA 6: Validação explícita de variáveis obrigatórias antes de envsubst (fail-fast)
       # envsubst não falha se variável não estiver definida - deixa literal ${VAR} no arquivo
       # Validação garante que todas as variáveis estão definidas antes de processar template
+      # NOTA: Usar eval para compatibilidade POSIX shell (Alpine usa /bin/sh, não bash)
+      # ${!VAR} é sintaxe BASH-only e não funciona em POSIX shell
       REQUIRED_VARS="SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USERNAME ALERT_EMAIL CRITICAL_EMAIL ONCALL_EMAIL"
       for VAR in $REQUIRED_VARS; do
-        if [ -z "${!VAR}" ]; then
+        eval "value=\${$VAR}"
+        if [ -z "$value" ]; then
           echo "ERRO: Variável obrigatória $VAR não está definida (Regra 6 - fail-fast)" >&2
           exit 1
         fi
