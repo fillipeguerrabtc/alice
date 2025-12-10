@@ -743,6 +743,11 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=64M
+    # REGRA 6: env_file carrega CORS_ORIGINS do .env.prod (obrigatório em produção)
+    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
+    # para expansão em environment: e uso no código Node.js
+    env_file:
+      - .env.prod
     environment:
       NODE_ENV: production
       PORT: 3005
@@ -1749,10 +1754,11 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        # REGRA 6: Usar POSTGRES_USER e POSTGRES_DB definidos no environment (linhas 1741, 1743)
-        # Docker Compose expande variáveis no healthcheck, mas usar variáveis do container é mais seguro
+        # REGRA 6: Docker Compose expande variáveis do .env.prod em healthchecks, mas não do environment:
+        # Usar variáveis do .env.prod diretamente (${LANGFUSE_DB_USER:-langfuse}) que serão expandidas
+        # Se variáveis não estiverem no .env.prod, usar defaults (langfuse/langfuse)
         - >
-          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB} -h localhost
+          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
       interval: 10s
       timeout: 5s
       retries: 5
@@ -2006,8 +2012,9 @@ services:
       set -e
       apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
       # REGRA 6: envsubst com lista específica garante que apenas variáveis definidas sejam substituídas
+      # Template usa ${VAR} format, então lista deve usar ${VAR} também (não $VAR)
       # Se alguma variável não estiver definida, envsubst falhará (fail-fast)
-      envsubst '$$SMTP_HOST $$SMTP_PORT $$SMTP_FROM $$SMTP_USERNAME $$ALERT_EMAIL $$CRITICAL_EMAIL $$ONCALL_EMAIL' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
+      envsubst '${SMTP_HOST} ${SMTP_PORT} ${SMTP_FROM} ${SMTP_USERNAME} ${ALERT_EMAIL} ${CRITICAL_EMAIL} ${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
