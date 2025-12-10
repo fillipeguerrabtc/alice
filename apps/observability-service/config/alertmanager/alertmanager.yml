@@ -9,9 +9,9 @@
 
 global:
   resolve_timeout: 5m
-  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
-  smtp_from: '${SMTP_FROM}'
-  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_smarthost: '${SMTP_HOST:-smtp.resend.com}:${SMTP_PORT:-587}'
+  smtp_from: '${SMTP_FROM:-onboarding@resend.dev}'
+  smtp_auth_username: '${SMTP_USERNAME:-resend}'
   smtp_auth_password_file: /run/secrets/smtp_password
   smtp_require_tls: true
 

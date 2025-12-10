@@ -83,6 +83,9 @@ app.set('trust proxy', 1);
 // STRIPE API VERSION: Versão estável atual (Novembro 2025)
 // Referência: https://docs.stripe.com/changelog
 const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
+const RESEND_API_KEY = process.env.RESEND_API_KEY;
+const RESEND_FROM_EMAIL = process.env.RESEND_FROM_EMAIL;
+const isProduction = config.NODE_ENV === 'production';
 
 let stripe: Stripe | null = null;
 if (config.STRIPE_SECRET_KEY) {
@@ -90,6 +93,11 @@ if (config.STRIPE_SECRET_KEY) {
     apiVersion: STRIPE_API_VERSION,
   });
   logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
+}
+
+if (isProduction && !RESEND_API_KEY) {
+  logger.error('RESEND_API_KEY é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
 }
 
 // Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
@@ -1215,13 +1223,31 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
   }
 });
 
-app.post('/api/integrations/resend/send', requirePermission('integrations:resend:write'), async (req: Request, res: Response) => {
-  const { to, subject, html, from } = req.body;
+const resendEmailSchema = z.object({
+  to: z.union([
+    z.string().email().trim(),
+    z.array(z.string().email().trim()).min(1),
+  ]),
+  subject: z.string().min(1).max(200),
+  html: z.string().min(1),
+  from: z.string().email().trim().optional(),
+});
 
-  const resendApiKey = process.env.RESEND_API_KEY;
-  if (!resendApiKey) {
-    return res.status(503).json({ error: 'Resend not configured' });
+app.post('/api/integrations/resend/send', requirePermission('integrations:resend:write'), async (req: Request, res: Response) => {
+  const parsed = resendEmailSchema.safeParse(req.body);
+  if (!parsed.success) {
+    logger.warn({ errors: parsed.error.flatten() }, 'Payload inválido para Resend');
+    return res.status(400).json({ error: 'Payload inválido', details: parsed.error.format() });
   }
+
+  if (!RESEND_API_KEY) {
+    return res.status(503).json({ error: 'Resend não configurado' });
+  }
+
+  const to = parsed.data.to;
+  const subject = parsed.data.subject;
+  const html = parsed.data.html;
+  const fromEmail = parsed.data.from ?? RESEND_FROM_EMAIL ?? 'onboarding@resend.dev';
 
   // RESILIÊNCIA: AbortController com timeout
   const controller = new AbortController();
@@ -1231,11 +1257,11 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
     const response = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${resendApiKey}`,
+        'Authorization': `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: from || 'Alice <noreply@alice.app>',
+        from: fromEmail,
         to,
         subject,
         html,
@@ -1244,13 +1270,14 @@ app.post('/api/integrations/resend/send', requirePermission('integrations:resend
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(error);
+      const errorText = await response.text();
+      logger.error({ status: response.status, errorText }, 'Falha no envio via Resend');
+      throw new Error(errorText || 'Resend returned non-200');
     }
 
-    const data = await response.json();
-    logger.info({ to, subject }, 'Email sent');
-    res.json({ success: true, id: (data as { id: string }).id });
+    const data = await response.json() as { id: string };
+    logger.info({ to, subject, from: fromEmail }, 'Email enviado via Resend');
+    res.json({ success: true, id: data.id });
   } catch (error) {
     logger.error({ error }, 'Failed to send email');
     res.status(500).json({ error: 'Failed to send email' });
