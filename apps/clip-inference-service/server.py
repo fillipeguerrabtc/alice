@@ -59,7 +59,8 @@ MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024)) 
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s default
 
 # SEGURANÇA: CORS origins (OWASP API Security)
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",") if os.getenv("CORS_ORIGINS") else []
+raw_cors_origins = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()] if raw_cors_origins else []
 if not CORS_ORIGINS and IS_PRODUCTION:
     logger.error("CRITICAL: CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast). Abortando.")
     sys.exit(1)

@@ -477,7 +477,9 @@ if (!corsOriginEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGIN é obrigatório em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-const corsOrigins = corsOriginEnv ? corsOriginEnv.split(',') : ['http://localhost:5000'];
+const corsOrigins = corsOriginEnv
+  ? corsOriginEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,

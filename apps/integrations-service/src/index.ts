@@ -267,7 +267,9 @@ if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-const CORS_ORIGINS = corsOriginsEnv ? corsOriginsEnv.split(',') : [];
+const CORS_ORIGINS = corsOriginsEnv
+  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : [];
 
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({

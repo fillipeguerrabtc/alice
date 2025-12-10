@@ -60,7 +60,9 @@ if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-const CORS_ORIGINS = corsOriginsEnv ? corsOriginsEnv.split(',') : [];
+const CORS_ORIGINS = corsOriginsEnv
+  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : [];
 
 if (!DATABASE_URL) {
   logger.error('DATABASE_URL não configurada');

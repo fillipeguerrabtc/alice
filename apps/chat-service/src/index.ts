@@ -91,7 +91,9 @@ if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-const CORS_ORIGINS = corsOriginsEnv ? corsOriginsEnv.split(',') : [];
+const CORS_ORIGINS = corsOriginsEnv
+  ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+  : [];
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
 // REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida

@@ -1919,7 +1919,9 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      test: ["CMD", "vector", "--version"]
+      test:
+        - CMD-SHELL
+        - wget --quiet --tries=1 --timeout=5 --spider http://localhost:8686/health || exit 1
       interval: 30s
       timeout: 10s
       retries: 3

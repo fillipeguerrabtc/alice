@@ -344,7 +344,9 @@ if (!corsOriginsEnv && isProduction) {
   process.exit(1);
 }
 app.use(cors({
-  origin: corsOriginsEnv ? corsOriginsEnv.split(',') : [],
+  origin: corsOriginsEnv
+    ? corsOriginsEnv.split(',').map((origin) => origin.trim()).filter(Boolean)
+    : [],
   credentials: true,
 }));
 
