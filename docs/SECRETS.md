@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 42 (38 pré-deploy + 4 opcionais/pós-deploy)
+**Total de Secrets:** 40 configurados no repositório (37 obrigatórios pré-deploy + 3 opcionais pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 41 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -214,7 +214,7 @@ Estes são necessários para o deploy funcionar:
 ## Checklist de Verificação
 
 > **Status atualizado em:** 10 de Dezembro de 2025  
-> **Resumo:** Secrets obrigatórias de produção ✅ configuradas. Pendentes opcionais: `STRIPE_WEBHOOK_BASE_URL`, `WISE_WEBHOOK_SECRET`, `WISE_SANDBOX`, `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`.
+> **Resumo:** Todos os 40 secrets de produção ✅ configurados. `CORS_ORIGINS` adicionado. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -271,6 +271,12 @@ Estes são necessários para o deploy funcionar:
 | `TWILIO_AUTH_TOKEN` | ✅ |
 | `TWILIO_WHATSAPP_NUMBER` | ✅ |
 | `RESEND_API_KEY` | ✅ |
+
+### CORS (Origens Frontend) — OBRIGATÓRIO
+
+| Secret | Status |
+|--------|--------|
+| `CORS_ORIGINS` | ✅ (criado em 10/12/2025) |
 
 ### ERPNext
 
@@ -379,8 +385,9 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 10 de Dezembro de 2025*  
-*Versão: 6.4*  
-*Total de Secrets: 42 (38 pré-deploy + 4 pós-deploy)*  
+*Versão: 6.5*  
+*Total de Secrets: 40 configurados (37 obrigatórios + 3 opcionais pós-deploy)*  
 *Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
-*Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
+*Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
+*CORS_ORIGINS: Adicionado em 10/12/2025 para permitir requisições do frontend*
