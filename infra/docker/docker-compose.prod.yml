@@ -1997,8 +1997,9 @@ services:
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
-        --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org \
-        --cluster.listen-address=
+        --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org
+      # NOTA: --cluster.listen-address removido - ambiente single-node não requer clustering
+      # Se necessário no futuro, usar: --cluster.listen-address=0.0.0.0:9094
     environment:
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
