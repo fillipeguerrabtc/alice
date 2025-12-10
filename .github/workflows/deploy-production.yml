@@ -1968,7 +1968,9 @@ jobs:
             echo "=============================================="
             echo "DEPLOY CONCLUÍDO COM SUCESSO!"
             echo "=============================================="
-            docker compose -f docker-compose.prod.yml ps
+            # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
+            # Sem --env-file, variáveis como ${LANGFUSE_DB_USER} não são expandidas, causando falhas
+            docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 
   # ===========================================================================
   # Job 6: Health Check Pós-Deploy (com trigger de rollback)
@@ -2112,7 +2114,8 @@ jobs:
               echo "[CLEANUP 1/8] Docker Compose down (força)..."
               # Tentar docker compose down se o arquivo existir (não depende de cd funcionar)
               if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
-                docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml down --remove-orphans 2>/dev/null || true
+                # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
+                docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
               fi
               
               echo "[CLEANUP 2/8] Parando containers Alice..."
@@ -2189,7 +2192,8 @@ jobs:
             if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
               cd /opt/alice/app/infra/docker
               echo "=== DOCKER COMPOSE STATUS ===" >> /tmp/rollback-state-before.txt
-              docker compose -f docker-compose.prod.yml ps >> /tmp/rollback-state-before.txt 2>&1 || true
+              # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
+              docker compose -f docker-compose.prod.yml --env-file .env.prod ps >> /tmp/rollback-state-before.txt 2>&1 || true
             fi
             
             echo "Diagnóstico capturado em /tmp/rollback-*.txt"
@@ -2318,7 +2322,8 @@ jobs:
             
             sleep 30
             
-            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" 2>/dev/null | grep -c "running" || echo "0")
+            # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
+            RUNNING=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.State}}" 2>/dev/null | grep -c "running" || echo "0")
             
             if [ "$RUNNING" -lt 3 ]; then
               echo "⚠️ Rollback pode ter falhado - apenas $RUNNING containers rodando"
@@ -2339,7 +2344,8 @@ jobs:
             echo "=============================================="
             echo "Versão restaurada: $PREVIOUS_SHA"
             echo "Containers rodando: $RUNNING"
-            docker compose -f docker-compose.prod.yml ps
+            # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
+            docker compose -f docker-compose.prod.yml --env-file .env.prod ps
             echo "=============================================="
 
       - name: Notificar Rollback (Falha no Deploy)
