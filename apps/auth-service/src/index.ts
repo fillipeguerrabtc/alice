@@ -473,6 +473,7 @@ app.use(createRateLimiter({
 
 // CORS configurado para desenvolvimento e produção
 // REGRA 6: Consistência com api-gateway - aceitar CORS_ORIGIN ou CORS_ORIGINS
+// CORS_ORIGIN = valor ÚNICO (origem principal); CORS_ORIGINS = lista separada por vírgula
 const corsOriginEnv = process.env.CORS_ORIGIN?.trim();
 const corsOriginsEnv = process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()).filter(Boolean) ?? [];
 if (!corsOriginEnv && corsOriginsEnv.length === 0 && process.env.NODE_ENV === 'production') {
@@ -480,11 +481,11 @@ if (!corsOriginEnv && corsOriginsEnv.length === 0 && process.env.NODE_ENV === 'p
   process.exit(1);
 }
 // Combinar ambas as fontes de configuração e deduplicar
-// CORS_ORIGIN pode ter valor único ou lista; CORS_ORIGINS sempre é lista
+// PADRÃO CONSISTENTE COM api-gateway: CORS_ORIGIN é valor único, CORS_ORIGINS é lista
 const allOrigins = [
-  ...(corsOriginEnv ? corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean) : []),
+  ...(corsOriginEnv ? [corsOriginEnv] : []),
   ...corsOriginsEnv,
-];
+].filter((o): o is string => Boolean(o));
 const corsOrigins = allOrigins.length > 0
   ? [...new Set(allOrigins)] // Deduplicar usando Set
   : ['http://localhost:5000'];
