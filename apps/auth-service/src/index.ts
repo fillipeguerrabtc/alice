@@ -479,10 +479,15 @@ if (!corsOriginEnv && corsOriginsEnv.length === 0 && process.env.NODE_ENV === 'p
   logger.error('CORS_ORIGIN ou CORS_ORIGINS são obrigatórios em produção (Regra 6 - fail-fast)');
   process.exit(1);
 }
-// Combinar ambas as fontes de configuração
-const corsOrigins = corsOriginEnv
-  ? [...corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean), ...corsOriginsEnv]
-  : corsOriginsEnv.length > 0 ? corsOriginsEnv : ['http://localhost:5000'];
+// Combinar ambas as fontes de configuração e deduplicar
+// CORS_ORIGIN pode ter valor único ou lista; CORS_ORIGINS sempre é lista
+const allOrigins = [
+  ...(corsOriginEnv ? corsOriginEnv.split(',').map((o) => o.trim()).filter(Boolean) : []),
+  ...corsOriginsEnv,
+];
+const corsOrigins = allOrigins.length > 0
+  ? [...new Set(allOrigins)] // Deduplicar usando Set
+  : ['http://localhost:5000'];
 app.use(cors({
   origin: corsOrigins,
   credentials: true,
