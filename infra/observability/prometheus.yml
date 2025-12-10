@@ -59,6 +59,11 @@ scrape_configs:
       - targets: ['alice-cadvisor:8080']
     metrics_path: '/metrics'
 
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['host.docker.internal:9100']
+    metrics_path: '/metrics'
+
   - job_name: 'langfuse'
     static_configs:
       - targets: ['langfuse:3000']

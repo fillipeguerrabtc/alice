@@ -3,8 +3,7 @@
 # Configuração de notificações de alertas.
 # Integração com email, Slack, PagerDuty.
 #
-# NOTA: Este arquivo usa expansão de variáveis nativa do Alertmanager (flag --config.expand-env=true).
-# As variáveis ${VAR} são resolvidas pelo próprio Alertmanager no carregamento da config.
+# NOTA: As variáveis ${VAR} são expandidas no entrypoint via envsubst antes de carregar a config.
 #
 # Documentação PT-BR (Regra 10 CLAUDE.md)
 

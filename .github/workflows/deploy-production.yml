@@ -1346,6 +1346,9 @@ jobs:
           WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
           ERPNEXT_API_KEY_SECRET: ${{ secrets.ERPNEXT_API_KEY }}
           ERPNEXT_API_SECRET_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
+          LANGFUSE_DB_USER_SECRET: ${{ secrets.LANGFUSE_DB_USER }}
+          LANGFUSE_DB_PASSWORD_SECRET: ${{ secrets.LANGFUSE_DB_PASSWORD }}
+          LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
         run: |
           set -euo pipefail
           # Secrets obrigatórias (fail-fast em produção)
@@ -1420,6 +1423,14 @@ jobs:
             ERPNEXT_API_SECRET=""
           else
             ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET}"
+          fi
+          # Langfuse DB (obrigatório)
+          LANGFUSE_DB_USER="${LANGFUSE_DB_USER_SECRET:-}"
+          LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD_SECRET:-}"
+          LANGFUSE_DB_NAME="${LANGFUSE_DB_NAME_SECRET:-}"
+          if [ -z "${LANGFUSE_DB_USER}" ] || [ -z "${LANGFUSE_DB_PASSWORD}" ] || [ -z "${LANGFUSE_DB_NAME}" ]; then
+            echo "::error::LANGFUSE_DB_USER/LANGFUSE_DB_PASSWORD/LANGFUSE_DB_NAME são obrigatórios para o langfuse-db. Configure os secrets correspondentes." >&2
+            exit 1
           fi
           
           # REGRA 14: Criar .env.prod usando printf com escape adequado para proteger secrets
@@ -1533,6 +1544,9 @@ jobs:
             printf '# Langfuse (Métricas LLM)\n'
             printf 'LANGFUSE_SECRET_KEY=%s\n' "${{ secrets.LANGFUSE_SECRET_KEY }}"
             printf 'LANGFUSE_NEXT_AUTH_SECRET=%s\n' "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}"
+            printf 'LANGFUSE_DB_USER=%s\n' "${LANGFUSE_DB_USER}"
+            printf 'LANGFUSE_DB_PASSWORD=%s\n' "${LANGFUSE_DB_PASSWORD}"
+            printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
           } > .env.prod
           chmod 600 .env.prod
 
