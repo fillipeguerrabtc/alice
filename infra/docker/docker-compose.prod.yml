@@ -1801,6 +1801,8 @@ services:
       - /opt/alice/data/prometheus:/prometheus
       # Config file: caminho relativo ao diretório infra/docker/ onde docker-compose é executado
       - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Regras de alerta: diretório montado para Prometheus carregar via rule_files
+      - ../observability/rules:/etc/prometheus/rules:ro
     networks:
       - alice-network
     healthcheck:

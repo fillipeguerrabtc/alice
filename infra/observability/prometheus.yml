@@ -2,6 +2,18 @@ global:
   scrape_interval: 30s
   evaluation_interval: 30s
 
+# REGRA 6: Configuração de alertas obrigatória para observabilidade enterprise
+# Alertmanager recebe alertas e os roteia para email/Slack/etc conforme configuração
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alice-alertmanager:9093
+
+# Arquivos de regras de alerta (montados via docker-compose)
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
 scrape_configs:
   - job_name: 'alice-services'
     static_configs:

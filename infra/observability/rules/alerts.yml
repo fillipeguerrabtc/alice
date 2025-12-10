@@ -1,0 +1,171 @@
+# =============================================================================
+# ALICE ENTERPRISE - Regras de Alerta Prometheus
+# =============================================================================
+# Autor: Fillipe Guerra
+# Data: 10 de Dezembro de 2025
+#
+# NOTA: Estas regras são carregadas automaticamente pelo Prometheus
+# e enviadas ao Alertmanager quando acionadas.
+
+groups:
+  - name: alice_availability
+    interval: 30s
+    rules:
+      # Serviço completamente indisponível
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Serviço {{ $labels.job }} indisponível"
+          description: "O serviço {{ $labels.job }} ({{ $labels.instance }}) está down há mais de 1 minuto."
+
+      # Prometheus não consegue acessar target
+      - alert: TargetUnreachable
+        expr: up{job!="prometheus"} == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Target {{ $labels.instance }} inacessível"
+          description: "O Prometheus não consegue acessar {{ $labels.instance }} do job {{ $labels.job }} há 2 minutos."
+
+  - name: alice_resources
+    interval: 30s
+    rules:
+      # Uso alto de memória do container (>85%)
+      - alert: HighMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Uso alto de memória: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} está usando {{ $value | printf \"%.1f\" }}% da memória disponível."
+
+      # Uso crítico de memória do container (>95%)
+      - alert: CriticalMemoryUsage
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Memória crítica: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} está usando {{ $value | printf \"%.1f\" }}% da memória. Risco de OOM."
+
+      # Uso alto de CPU do container (>80%)
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Uso alto de CPU: {{ $labels.name }}"
+          description: "Container {{ $labels.name }} está usando {{ $value | printf \"%.1f\" }}% de CPU."
+
+  - name: alice_disk
+    interval: 60s
+    rules:
+      # Disco do host com pouco espaço (<15%)
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes) * 100 < 15
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Espaço em disco baixo: {{ $labels.mountpoint }}"
+          description: "Apenas {{ $value | printf \"%.1f\" }}% de espaço disponível em {{ $labels.mountpoint }}."
+
+      # Disco do host crítico (<5%)
+      - alert: DiskSpaceCritical
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes) * 100 < 5
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Espaço em disco crítico: {{ $labels.mountpoint }}"
+          description: "CRÍTICO: Apenas {{ $value | printf \"%.1f\" }}% de espaço disponível em {{ $labels.mountpoint }}."
+
+  - name: alice_postgres
+    interval: 30s
+    rules:
+      # PostgreSQL com muitas conexões
+      - alert: PostgresHighConnections
+        expr: pg_stat_activity_count > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Muitas conexões PostgreSQL"
+          description: "PostgreSQL tem {{ $value }} conexões ativas (limite padrão: 100)."
+
+  - name: alice_http
+    interval: 30s
+    rules:
+      # Taxa alta de erros HTTP (>5%)
+      - alert: HighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) by (job) / sum(rate(http_requests_total[5m])) by (job) * 100 > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Taxa alta de erros HTTP: {{ $labels.job }}"
+          description: "{{ $value | printf \"%.1f\" }}% das requisições do {{ $labels.job }} estão retornando erros 5xx."
+
+      # Latência alta de resposta (P99 > 2s)
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latência alta: {{ $labels.job }}"
+          description: "P99 latência do {{ $labels.job }} é {{ $value | printf \"%.2f\" }}s (> 2s)."
+
+  - name: alice_circuit_breaker
+    interval: 30s
+    rules:
+      # Circuit breaker aberto
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state == 2
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Circuit Breaker aberto: {{ $labels.name }}"
+          description: "O circuit breaker {{ $labels.name }} está aberto. Serviço dependente pode estar falhando."
+
+  - name: alice_observability
+    interval: 60s
+    rules:
+      # Alertmanager indisponível
+      - alert: AlertmanagerDown
+        expr: up{job="alertmanager"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alertmanager indisponível"
+          description: "O Alertmanager está down. Alertas não serão enviados."
+
+      # Loki indisponível (logs não são coletados)
+      - alert: LokiDown
+        expr: up{job="loki"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Loki indisponível"
+          description: "O Loki está down. Logs não estão sendo armazenados."
+
+      # Langfuse indisponível (métricas LLM não são coletadas)
+      - alert: LangfuseDown
+        expr: up{job="langfuse"} == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Langfuse indisponível"
+          description: "O Langfuse está down. Métricas LLM não estão sendo coletadas."
+
