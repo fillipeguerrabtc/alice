@@ -1760,11 +1760,11 @@ services:
     healthcheck:
       test:
         - CMD-SHELL
-        # REGRA 6: Docker Compose expande variáveis do .env.prod em healthchecks, mas não do environment:
-        # Usar variáveis do .env.prod diretamente (${LANGFUSE_DB_USER:-langfuse}) que serão expandidas
-        # Se variáveis não estiverem no .env.prod, usar defaults (langfuse/langfuse)
+        # REGRA 6: $$ escapa a variável para que Docker Compose escreva ${VAR} literal
+        # O shell do container expande usando variáveis de env_file: .env.prod
+        # Isso é mais robusto que depender de --env-file no comando docker-compose
         - >
-          PGPASSWORD="$(cat /run/secrets/langfuse_db_password)" pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse} -h localhost
+          PGPASSWORD="$$(cat /run/secrets/langfuse_db_password)" pg_isready -U $${LANGFUSE_DB_USER:-langfuse} -d $${LANGFUSE_DB_NAME:-langfuse} -h localhost
       interval: 10s
       timeout: 5s
       retries: 5
