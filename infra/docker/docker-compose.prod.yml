@@ -129,14 +129,6 @@ volumes:
       type: tmpfs
       device: tmpfs
 
-  alertmanager_smtp_password:
-    name: alice-alertmanager-smtp-password
-    driver: local
-    driver_opts:
-      type: none
-      o: bind
-      device: /opt/alice/secrets/alertmanager
-
   langfuse_db_data:
     name: alice-langfuse-db-data
     driver: local
@@ -1967,7 +1959,7 @@ services:
       - ../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager:rw
       - alertmanager_tmp:/tmp:rw
-      - alertmanager_smtp_password:/run/secrets:ro
+      - /opt/alice/secrets/alertmanager/smtp_password:/run/secrets/smtp_password:ro
     networks:
       - alice-network
     labels:
