@@ -1291,7 +1291,8 @@ services:
       - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
     healthcheck:
-      test: ["CMD-SHELL", "wget --quiet --tries=1 --timeout=5 --spider http://localhost:8080 || exit 1"]
+      # frappe/erpnext-nginx NÃO tem wget, mas TEM curl (verificado em runtime 10/12/2025)
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5

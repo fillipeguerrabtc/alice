@@ -32,7 +32,7 @@
 | `read_only: true` | ✅ | 23/41 (aplicável apenas onde não há escrita) |
 | Resource limits | ✅ | 41/41 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
-| Healthchecks | ✅ | 41/41 containers (init incluídos) |
+| Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
 - Prometheus 3.0.1 / Alertmanager 0.27.0: sem breaking identificado; monitorar métricas deprecated.  
@@ -427,7 +427,7 @@ Retenção Arquivo:   30 dias
 | platform: linux/amd64 | ✅ | 41/41 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
-| healthchecks | ✅ | 41/41 (init incluídos) |
+| healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
 
 ### Segurança Aplicação
 

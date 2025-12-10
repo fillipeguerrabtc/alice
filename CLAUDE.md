@@ -90,7 +90,7 @@ Alice employs a microservices architecture with 41 containerized services orches
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
-- **Docker**: 29.0.4, Docker Compose v2.40.3
+- **Docker**: 29.1.2, Docker Compose v5.0.0
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ## URLs de Produção
@@ -178,7 +178,7 @@ alice/
 - **23 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
 - **41 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
-- **healthchecks** = ✅ 41/41 containers (init incluídos)
+- **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
 - **OWASP API Top 10** = 9/10 mitigados
 - **Nota:** ERPNext workers e init containers (11 containers) não têm `read_only: true` pois precisam escrever em volumes (comportamento correto e enterprise-grade)
@@ -200,5 +200,5 @@ alice/
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
-*Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 41/41*
-*Última Revisão Completa: 10/12/2025 - healthchecks 41/41, logs centralizados Vector→Loki, sem Slack*
+*Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
+*Última Revisão Completa: 10/12/2025 - healthchecks 38/38 (3 init usam service_completed_successfully), logs centralizados Vector→Loki, sem Slack*

@@ -353,7 +353,7 @@ Proprietário - Todos os direitos reservados.
 | **Resource Limits** | 41/41 containers | 100% |
 | **read_only: true** | 23/41 containers | 100% aplicável (somente onde não há escrita) |
 | **security_opt: no-new-privileges** | 41/41 containers | 100% |
-| **Healthchecks** | 41/41 containers | 100% |
+| **Healthchecks** | 38/38 containers | 100% (3 init usam service_completed_successfully) |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
 
@@ -390,7 +390,7 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*Última Revisão Enterprise: 10/12/2025 - healthchecks 41/41, logs via Vector→Loki; observabilidade pins validados (Prom 3.0.1, Alertmanager 0.27.0, Grafana 11.1.4, Loki/Promtail 3.1.0, Jaeger 1.58, OTel 0.114.0, Vector 0.43.1)*
+*Última Revisão Enterprise: 10/12/2025 - healthchecks 38/38 (3 init usam service_completed_successfully), logs via Vector→Loki; observabilidade pins validados (Prom 3.0.1, Alertmanager 0.27.0, Grafana 11.1.4, Loki/Promtail 3.1.0, Jaeger 1.58, OTel 0.114.0, Vector 0.43.1)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 

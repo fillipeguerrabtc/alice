@@ -879,7 +879,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 | **resource limits** | ✅ | 41/41 containers (100%) |
 | **read_only: true** | ✅ | 23/41 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
-| **healthchecks** | ✅ | 41/41 containers (init incluídos) |
+| **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
 ### Compatibilidade do Stack de Observabilidade (pins atuais)
 - Prometheus 3.0.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes; manter atenção em mudanças de métricas deprecated (consultar release notes v3.0/v0.27).
