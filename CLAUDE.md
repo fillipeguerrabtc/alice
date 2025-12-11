@@ -194,11 +194,11 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.31 - 11 de Dezembro de 2025*
+*Versão: 3.32 - 12 de Dezembro de 2025*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*Última Verificação Completa: 11/12/2025 - Code review enterprise completo, zero hardcoded/mocks/in-memory em produção, 100% aderência às 17 regras e 12 Fatores App*
+*Última Verificação Completa: 12/12/2025 - Remoção de menções incorretas de Salad+embeddings, embeddings são 100% locais via CPU no Hetzner*

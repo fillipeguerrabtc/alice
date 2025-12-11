@@ -71,7 +71,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  /** CLIP ViT-L/14 embeddings - embeddings multimodais local (CPU/GPU) */
+  /** CLIP ViT-L/14 embeddings - embeddings multimodais 100% local via CPU no Hetzner */
   clipEmbeddings: {
     timeout: 30000,
     errorThresholdPercentage: 50,

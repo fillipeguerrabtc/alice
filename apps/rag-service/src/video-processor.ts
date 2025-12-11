@@ -4,9 +4,13 @@
  * Processamento de vídeos:
  * - Extração de áudio via FFmpeg
  * - Transcrição via Whisper (Salad Cloud)
- * - Extração de frames chave para CLIP embeddings
- * - Text embeddings da transcrição
+ * - Extração de frames chave para CLIP embeddings (100% local via CPU no Hetzner)
+ * - Text embeddings da transcrição (multilingual-e5-base local - 100% local via CPU no Hetzner)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
+ * 
+ * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
+ * - Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 + multilingual-e5-base)
+ * - Não depende de APIs externas para embeddings
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -51,10 +55,10 @@ export interface ProcessedVideo {
   transcriptionLanguage?: string;
   transcriptionConfidence?: number;
   
-  // Embeddings
-  textEmbedding: number[]; // 768 dim - da transcrição (multilingual-e5-base local)
-  frameEmbeddings: number[][]; // Array de CLIP embeddings (768 dim cada) dos frames
-  combinedEmbedding: number[]; // Embedding combinado para busca
+  // Embeddings (100% locais via CPU no Hetzner)
+  textEmbedding: number[]; // 768 dim - da transcrição (multilingual-e5-base local - CPU no Hetzner)
+  frameEmbeddings: number[][]; // Array de CLIP embeddings (768 dim cada) dos frames (CLIP ViT-L/14 local - CPU no Hetzner)
+  combinedEmbedding: number[]; // Embedding combinado para busca (100% local via CPU no Hetzner)
   
   // Metadados
   embeddingModel: string;

@@ -371,14 +371,13 @@ export const RAG_CHUNK_CONFIG = {
 };
 
 /**
- * Configuração Salad Cloud
+ * Configuração Salad Cloud (LLM e Treinamento)
  */
 export const SALAD_CONFIG = {
   apiUrl: process.env.SALAD_API_URL || 'https://api.salad.com/api/public',
   organizationId: process.env.SALAD_ORGANIZATION_ID || '',
   models: {
     chat: 'llama4-maverick',
-    embeddings: 'intfloat/multilingual-e5-base', // Local (CPU no Hetzner)
   },
   defaults: {
     maxTokens: 4096,

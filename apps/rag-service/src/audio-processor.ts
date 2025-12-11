@@ -3,8 +3,12 @@
  * 
  * Processamento de áudio:
  * - Transcrição via Whisper (Salad Cloud)
- * - Text embedding da transcrição
+ * - Text embedding da transcrição (multilingual-e5-base local - 100% local via CPU no Hetzner)
  * - Extração de metadata (duração, formato, bitrate)
+ * 
+ * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
+ * - Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
+ * - Não depende de APIs externas para embeddings
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -207,7 +211,10 @@ class AudioProcessorService {
 
   /**
    * Gera embedding de texto via serviço local (multilingual-e5-base)
-   * REGRA 6: Autonomia Total - embeddings são 100% locais
+   * REGRA 6: Autonomia Total - embeddings são 100% locais via CPU no Hetzner
+   * 
+   * ARQUITETURA: Embeddings são gerados 100% localmente via CPU no servidor Hetzner
+   * Não depende de APIs externas - autonomia total (Regra 6)
    */
   private async generateTextEmbedding(
     text: string
@@ -215,6 +222,7 @@ class AudioProcessorService {
     try {
       // REGRA 6: Serviço local autônomo - não depende de API externa
       // Serviço interno na rede Docker privada - não requer autenticação
+      // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
       const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
       
       const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {

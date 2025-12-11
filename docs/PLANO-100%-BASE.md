@@ -482,7 +482,6 @@ migrations/
 
 ### Problema Identificado:
 - `alice-chat` faltava variáveis de comunicação inter-service
-- `alice-rag` faltava variáveis Salad Cloud para embeddings (HISTÓRICO - embeddings agora são 100% locais via multilingual-e5-base)
 - Não existia Redis dedicado para serviços Alice (segregação do ERPNext)
 
 ### Correções Aplicadas:

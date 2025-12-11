@@ -13,11 +13,10 @@ Endpoints:
 - GET /health - Health check (público para docker healthcheck)
 
 ARQUITETURA AUTÔNOMA:
-- Serviço roda localmente no Hetzner (CPU ou GPU)
+- Serviço roda localmente no Hetzner via CPU (100% local)
 - Acesso controlado pela rede Docker privada (alice-network)
 - Não requer autenticação - serviço confiável na mesma rede
-- GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
-- Embeddings 100% locais (Regra 6 - Autonomia Total)
+- Embeddings são 100% locais via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
 
 Documentação em PT-BR (Regra 10 CLAUDE.md)
 Segurança Enterprise (Regra 16 CLAUDE.md)
@@ -71,7 +70,7 @@ REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s d
 
 # NOTA: Serviço interno na rede Docker privada - não requer autenticação
 # Acesso é controlado pela rede Docker (alice-network) e não é exposto publicamente
-# ARQUITETURA AUTÔNOMA: Serviço local para embeddings CLIP (CPU/GPU no Hetzner)
+# ARQUITETURA AUTÔNOMA: Serviço local para embeddings CLIP (100% local via CPU no Hetzner)
 
 # SEGURANÇA: Rate limiter (FastAPI 2025 + OWASP API4)
 limiter = Limiter(key_func=get_remote_address)

@@ -6,8 +6,13 @@
  * - DOCX: Extração de texto via mammoth
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
- * - Text embeddings do conteúdo extraído (multilingual-e5-base local)
+ * - Text embeddings do conteúdo extraído (multilingual-e5-base local - 100% local via CPU no Hetzner)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
+ * 
+ * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
+ * - Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
+ * - Não depende de APIs externas para embeddings
+ * - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -19,8 +24,9 @@ import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
 
-// Configuração - Embeddings 100% locais (Regra 6 - Autonomia Total)
-// CLIP Service URL para embeddings locais
+// Configuração - Embeddings 100% locais via CPU no Hetzner (Regra 6 - Autonomia Total)
+// CLIP Service URL para embeddings locais (serviço interno na rede Docker)
+// NOTA: Todos os embeddings (texto e CLIP) são gerados 100% localmente via CPU no servidor Hetzner
 const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
@@ -84,6 +90,7 @@ interface EmbeddingParams {
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
   // REGRA 6: Serviço local autônomo - não depende de API externa
   // Serviço interno na rede Docker privada - não requer autenticação
+  // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
   const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
     method: 'POST',
     headers: {

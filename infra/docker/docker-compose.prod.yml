@@ -902,12 +902,10 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (Local - CPU/GPU)
-  # ARQUITETURA AUTÔNOMA: Roda localmente no Hetzner (CPU ou GPU)
-  # GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
-  # NOTA: Este serviço requer GPU NVIDIA e deve ser deployado no Salad Cloud
-  # Para deploy local/Hetzner, usar profiles: ["gpu"] e deployar separadamente
-  # Documentação: docs/DEPLOYMENT.md - Seção "Salad Cloud Integration"
+  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (100% Local - CPU no Hetzner)
+  # ARQUITETURA AUTÔNOMA: Roda localmente no Hetzner via CPU (Regra 6 - Autonomia Total)
+  # Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 + multilingual-e5-base)
+  # NOTA: Serviço roda localmente no Hetzner via CPU (não requer GPU)
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================
   alice-clip-inference:
@@ -921,8 +919,7 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=128M
       - /app/.cache:mode=1777,size=512M
-    # REMOVIDO profiles: gpu - roda sempre (CPU ou GPU se disponível)
-    # O serviço detecta automaticamente se há GPU disponível (server.py linha 152)
+    # Embeddings são 100% locais via CPU no Hetzner (não requer GPU)
     # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
     # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
     # para uso no código Python
@@ -956,10 +953,6 @@ services:
         reservations:
           memory: 4G
           cpus: '2.0'
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
 
   # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial

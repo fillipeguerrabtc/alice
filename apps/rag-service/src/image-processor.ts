@@ -8,9 +8,8 @@
  * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
  * 
  * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - CLIP roda localmente no Hetzner (CPU ou GPU)
- * - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
- * - Embeddings CLIP são gerados localmente para manter autonomia
+ * - CLIP roda localmente no Hetzner via CPU (100% local)
+ * - Embeddings CLIP são gerados 100% localmente via CPU no servidor Hetzner
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -150,6 +149,7 @@ class ImageProcessorService {
         embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
         embeddingModel = 'error-fallback-zero';
       }
+    }
     // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
 
     // Gerar thumbnail
@@ -188,8 +188,8 @@ class ImageProcessorService {
    * Gera embedding CLIP de texto via serviço local (com circuit breaker - Regra 16)
    * Permite buscar imagens por descrição textual
    * 
-   * ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU ou GPU local)
-   * GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+   * ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (100% local via CPU no Hetzner)
+   * Embeddings são gerados 100% localmente via CPU no servidor Hetzner
    * 
    * @param text - Texto descritivo para gerar embedding (ex: "gato laranja dormindo")
    * @returns Embedding CLIP (768 dim) e modelo usado
@@ -334,7 +334,7 @@ class ImageProcessorService {
 
   /**
    * Gera embedding CLIP via serviço local (com circuit breaker - Regra 16)
-   * ARQUITETURA AUTÔNOMA: Serviço local no Hetzner (CPU ou GPU)
+   * ARQUITETURA AUTÔNOMA: Serviço local no Hetzner via CPU (100% local)
    */
   private async generateClipEmbedding(
     imageBuffer: Buffer,
@@ -535,7 +535,7 @@ class ImageProcessorService {
     return {
       configured: this.isConfigured,
       embeddingDim: CLIP_EMBEDDING_DIM,
-      model: this.isConfigured ? 'ViT-L/14 (Local - CPU/GPU)' : 'NÃO CONFIGURADO',
+      model: this.isConfigured ? 'ViT-L/14 (Local - CPU no Hetzner)' : 'NÃO CONFIGURADO',
       serviceUrl: CLIP_SERVICE_URL,
     };
   }

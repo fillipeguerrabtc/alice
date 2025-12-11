@@ -191,7 +191,8 @@ export async function generateImage(
 
 // ============================================================================
 // CLIP EMBEDDINGS (Para RAG Multimodal)
-// ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU ou GPU local)
+// ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU no Hetzner)
+// Embeddings são 100% locais via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
 // GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
 // ============================================================================
 
@@ -200,6 +201,7 @@ const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-infe
 async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
   // REGRA 6: Serviço local autônomo - não depende de API externa
   // Serviço interno na rede Docker privada - não requer autenticação
+  // Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14)
   // NOTA: imageBase64 pode vir com ou sem prefixo data:image/...;base64,
   // O servidor Python trata ambos os formatos, mas padronizamos para incluir prefixo
   // Se já tem prefixo, usar como está; caso contrário, adicionar prefixo genérico

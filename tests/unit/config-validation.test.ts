@@ -725,10 +725,6 @@ describe('Config - Salad Cloud Configuration', () => {
       expect(SALAD_CONFIG.models.chat).toBe('llama4-maverick');
     });
 
-    it('deve ter modelo de embeddings configurado como multilingual-e5-base (local)', () => {
-      expect(SALAD_CONFIG.models.embeddings).toBe('intfloat/multilingual-e5-base');
-    });
-
     it('deve ter maxTokens padrão de 4096', () => {
       expect(SALAD_CONFIG.defaults.maxTokens).toBe(4096);
     });

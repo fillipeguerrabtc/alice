@@ -462,7 +462,6 @@ const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 // CLIP Service URL para embeddings locais (Regra 6 - Autonomia Total)
 const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
@@ -480,7 +479,8 @@ if (!DATABASE_URL) {
 }
 
 // SALAD_API_KEY é necessária APENAS para Whisper (transcrição de áudio) e LLM
-// Embeddings são 100% locais via multilingual-e5-base (Regra 6 - Autonomia Total)
+// Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base + CLIP ViT-L/14)
+// REGRA 6: Autonomia Total - embeddings não dependem de APIs externas
 if (!SALAD_API_KEY) {
   logger.warn('SALAD_API_KEY não configurada - transcrição de áudio e LLM podem estar indisponíveis');
 }
@@ -489,8 +489,15 @@ if (!SALAD_ORGANIZATION_ID) {
   logger.warn('SALAD_ORGANIZATION_ID não configurada - transcrição de áudio e LLM podem estar indisponíveis');
 }
 
-// NOTA: SALAD_API_KEY e SALAD_ORGANIZATION_ID são usadas apenas por audio-processor.ts
-// para transcrição Whisper (Salad Cloud). Embeddings são 100% locais (multilingual-e5-base).
+// NOTA IMPORTANTE: SALAD_API_KEY e SALAD_ORGANIZATION_ID são usadas apenas por:
+// - audio-processor.ts: transcrição Whisper (Salad Cloud)
+// - chat-service: LLM (Salad Cloud)
+// - training-service: fine-tuning (Salad Cloud)
+// 
+// Embeddings são 100% locais via CPU no servidor Hetzner:
+// - Text embeddings: multilingual-e5-base (768 dim) - CPU no Hetzner
+// - CLIP embeddings: CLIP ViT-L/14 (768 dim) - CPU no Hetzner
+// - Não dependem de APIs externas - autonomia total (Regra 6)
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
@@ -841,8 +848,8 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
     status: 'ok', 
     service: 'rag-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'local',
-    model: 'intfloat/multilingual-e5-base',
+    embeddingsProvider: 'local', // 100% local via CPU no servidor Hetzner (multilingual-e5-base + CLIP ViT-L/14)
+    model: 'intfloat/multilingual-e5-base (Local - CPU no Hetzner)',
     circuitBreaker: {
       state: circuitState,
       stats: {
@@ -1157,7 +1164,8 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
+        -- Não depende de APIs externas - autonomia total (Regra 6)
         -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
         -- A migration atualiza as colunas de vector(1536) para vector(768)
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
@@ -1242,7 +1250,8 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
+        -- Não depende de APIs externas - autonomia total (Regra 6)
         -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
         1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
@@ -1475,7 +1484,8 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+          -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
+        -- Não depende de APIs externas - autonomia total (Regra 6)
           -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
           -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
           1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
@@ -1784,7 +1794,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 768 dim (multilingual-e5-base local)
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 768 dim (multilingual-e5-base local - CPU no Hetzner)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -1936,7 +1946,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       },
       audio: {
         message: 'Upload recebido. Transcrição Whisper iniciada.',
-        features: ['Transcrição Whisper', 'text embedding (768 dim - multilingual-e5-base local)', 'metadata extraction'],
+        features: ['Transcrição Whisper', 'text embedding (768 dim - multilingual-e5-base local - CPU no Hetzner)', 'metadata extraction'],
       },
       video: {
         message: 'Upload recebido. Processamento pendente.',
@@ -2539,7 +2549,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
-      // Busca por texto: gerar embedding CLIP do texto via serviço local (autônomo)
+      // Busca por texto: gerar embedding CLIP do texto via serviço local (100% local via CPU no Hetzner)
       // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
       const imageProcessor = getImageProcessor();
       
@@ -2623,7 +2633,8 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         mime_type as "mimeType",
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
-        -- CLIP embeddings são 100% locais via CPU (CLIP ViT-L/14 - 768 dim)
+        -- CLIP embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 - 768 dim)
+        -- Não depende de APIs externas - autonomia total (Regra 6)
         -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
         1 - (clip_embedding <=> $1::vector(768)) / 2 as similarity

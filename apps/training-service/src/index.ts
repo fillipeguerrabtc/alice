@@ -133,6 +133,7 @@ app.set('trust proxy', 1);
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
+// Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
 // Usa serviço local alice-clip-inference com multilingual-e5-base
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
@@ -152,6 +153,7 @@ const EXTERNAL_API_TIMEOUT_MS = 25000;
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
   // REGRA 6: Serviço local autônomo - não depende de API externa
   // Serviço interno na rede Docker privada - não requer autenticação
+  // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   
@@ -278,7 +280,7 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'local',
+    embeddingsProvider: 'local', // 100% local via CPU no servidor Hetzner (multilingual-e5-base)
     model: 'intfloat/multilingual-e5-base',
     saladCloudAvailable: saladAvailable,
     circuitBreakers: {
@@ -1210,7 +1212,7 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: true, // Embeddings são 100% locais (multilingual-e5-base)
+    embeddingsConfigured: true, // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
     circuitBreaker: 'enabled',
   }, 'Training service iniciado com Circuit Breaker');
 });

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 11 de Dezembro de 2025  
+> **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.6 - PLATAFORMA 100% ENTERPRISE COMPLETA - EMBEDDINGS 100% LOCAIS (AUTONOMIA TOTAL)
+> **Versão:** 3.7 - Remoção de menções incorretas Salad+embeddings - EMBEDDINGS 100% LOCAIS (CPU Hetzner)
 
 ---
 
@@ -572,17 +572,17 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 |------------|------------|--------|
 | Chat Conversacional | Llama 4 Maverick (400B) | ✅ |
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
-| Embeddings Multimodais | CLIP ViT-L/14 (local) | ✅ |
-| Embeddings Texto | multilingual-e5-base (local) | ✅ |
+| Embeddings Multimodais | CLIP ViT-L/14 (100% local - CPU no Hetzner) | ✅ |
+| Embeddings Texto | multilingual-e5-base (100% local - CPU no Hetzner) | ✅ |
 
 ### Processamento Multimodal (INPUT)
 
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
-| Imagem | `image-processor.ts` | CLIP ViT-L/14 (local) | 768 dim embedding |
-| Áudio | `audio-processor.ts` | Whisper (Salad Cloud) + embedding (local) | Transcrição + 768 dim (multilingual-e5-base) |
+| Imagem | `image-processor.ts` | CLIP ViT-L/14 (100% local - CPU no Hetzner) | 768 dim embedding |
+| Áudio | `audio-processor.ts` | Whisper + embedding (100% local - CPU no Hetzner) | Transcrição + 768 dim (multilingual-e5-base local) |
 | Vídeo | `video-processor.ts` | FFmpeg + Whisper + CLIP | Combinado 768 dim |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx | 768 dim embedding (multilingual-e5-base local) |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx | 768 dim embedding (multilingual-e5-base - 100% local - CPU no Hetzner) |
 
 ### Auto-Learning
 
