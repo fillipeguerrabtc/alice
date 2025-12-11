@@ -1,6 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
-**Autor:** Fillipe Guerra
+**Autor:** Fillipe Guerra  
+**Data:** 11 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 41 Containers em Produção
 

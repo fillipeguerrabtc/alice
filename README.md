@@ -403,14 +403,14 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.14.0 - 11 de Dezembro de 2025*
+*Versão 3.15.0 - 11 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Embeddings: 100% Locais - multilingual-e5-base (768 dim, 100+ idiomas) + CLIP ViT-L/14 (768 dim, multimodal)*
-*Última Revisão Enterprise: 11/12/2025 - Embeddings migrados para local (autonomia total), healthchecks 38/38, logs via Vector→Loki*
+*Última Verificação Completa: 11/12/2025 - Code review enterprise completo, zero hardcoded/mocks/in-memory em produção, 100% aderência às 17 regras e 12 Fatores App*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 
