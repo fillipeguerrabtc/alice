@@ -19,8 +19,12 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN set -e; \
     ver="$(cat /etc/alpine-release 2>/dev/null | cut -d. -f1,2 || true)"; \
     if [ -z "$ver" ]; then ver="3.20"; fi; \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" > /etc/apk/repositories; \
-    echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" >> /etc/apk/repositories; \
+    { \
+      echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main"; \
+      echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community"; \
+      echo "http://dl-4.alpinelinux.org/alpine/v${ver}/main"; \
+      echo "http://dl-4.alpinelinux.org/alpine/v${ver}/community"; \
+    } > /etc/apk/repositories; \
     success=0; \
     for i in 1 2 3; do \
       if apk update && apk upgrade --no-cache; then success=1; break; fi; \
