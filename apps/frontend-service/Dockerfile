@@ -14,8 +14,8 @@ ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 
 # Atualizar pacotes do sistema e habilitar corepack para pnpm
-# Atualizar pacotes do sistema, atualizar npm para última versão (Regra User) e habilitar corepack
-RUN apk update && apk upgrade --no-cache && npm install -g npm@latest && corepack enable
+# NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
+RUN apk update && apk upgrade --no-cache && corepack enable
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e serviço
