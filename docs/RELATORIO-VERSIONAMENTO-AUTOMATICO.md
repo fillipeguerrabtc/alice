@@ -149,7 +149,7 @@ DIGEST=$(curl -s "https://hub.docker.com/v2/repositories/${image}/tags/${tag}/" 
 - As versões no `.github/component-versions.json` são **fallbacks** (usadas apenas se GitHub API falhar)
 - **Recomendação:** Verificar periodicamente se as versões fallback estão atualizadas
 - **Versões atuais:**
-  - pgbackrest: `2.57.0`
+  - pgbackrest: `2.56.0`
   - traefik: `3.6.4`
   - prometheus: `3.8.0`
   - grafana: `11.3.0`

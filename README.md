@@ -386,7 +386,7 @@ Proprietário - Todos os direitos reservados.
 | Redis | 7.4-alpine | Pinned |
 | ERPNext | v15.91.0 | Pinned |
 | Vector | 0.43.1-alpine | Pinned |
-| pgBackRest | 2.57.0 | Pinned |
+| pgBackRest | 2.56.0 | Pinned |
 | Docker Socket Proxy | latest | Pinned |
 | BusyBox | 1.37 | Pinned |
 

@@ -1,5 +1,5 @@
 {
-  "pgbackrest": "2.57.0",
+  "pgbackrest": "2.56.0",
   "traefik": "3.6.4",
   "prometheus": "3.8.0",
   "grafana": "11.3.0",

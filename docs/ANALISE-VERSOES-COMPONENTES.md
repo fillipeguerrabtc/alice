@@ -16,10 +16,10 @@ Esta análise compara as versões atuais configuradas na plataforma Alice com as
 
 | Item | Valor |
 |------|-------|
-| **Versão Atual (component-versions.json)** | 2.57.0 |
-| **Versão Mais Recente (GitHub)** | release/2.57.0 |
+| **Versão Atual (component-versions.json)** | 2.56.0 |
+| **Versão Mais Recente (GitHub)** | v2.56.0 |
 | **Status** | ✅ **ATUALIZADO** |
-| **Observação** | Versão mais recente disponível |
+| **Observação** | Rollback de 2.57.0 (tag inexistente) para 2.56.0 |
 
 ---
 
