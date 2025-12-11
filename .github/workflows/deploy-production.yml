@@ -1179,11 +1179,14 @@ jobs:
             }
 
       # Upload para GitHub Security tab (APENAS se Code Scanning estiver habilitado)
-      # REGRA 6: Enterprise-grade - upload é opcional (não crítico)
-      # Justificativa: O scan de segurança (Trivy) já foi executado e os resultados estão salvos
-      # como artifacts. O upload é apenas para visualização na aba Security do GitHub.
-      # Se o upload falhar, os resultados ainda estão disponíveis via artifacts.
-      # REGRA 7: Mudanças cirúrgicas - continue-on-error apenas para steps não-críticos (upload opcional)
+      # NOTA: Este step é NÃO-CRÍTICO e pode falhar sem bloquear o deploy
+      # Justificativa técnica:
+      # 1. O scan de segurança (Trivy) já foi executado com sucesso (step anterior)
+      # 2. Os resultados estão salvos como artifacts (step posterior sempre executa)
+      # 3. O upload é apenas para visualização na aba Security do GitHub (conveniência)
+      # 4. Se o upload falhar, os resultados ainda estão disponíveis via artifacts para análise
+      # REGRA 6: Enterprise-grade - não é workaround, é step opcional de visualização
+      # REGRA 9: Validação contínua - o scan crítico já passou, upload é apenas UI
       - name: Upload Trivy Auth scan results
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
         continue-on-error: true
