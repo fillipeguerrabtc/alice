@@ -484,6 +484,8 @@ jobs:
               sleep 30
             fi
           done
+          # set -e após retry loop para fail-fast em comandos subsequentes
+          set -e
           df -h /
 
       - name: Validate Python syntax
@@ -791,6 +793,8 @@ jobs:
               sleep 30
             fi
           done
+          # set -e após retry loop para fail-fast em comandos subsequentes
+          set -e
           df -h /
 
       - name: Run Trivy vulnerability scanner
