@@ -1545,6 +1545,9 @@ jobs:
             printf 'SALAD_API_KEY=%s\n' "${{ secrets.SALAD_API_KEY }}"
             printf 'SALAD_ORGANIZATION_ID=%s\n' "${{ secrets.SALAD_ORGANIZATION_ID }}"
             printf '\n'
+            printf '# CLIP Inference (multimodal embeddings)\n'
+            printf 'CLIP_API_TOKEN=%s\n' "${{ secrets.CLIP_API_TOKEN }}"
+            printf '\n'
             printf '# CORS (origens permitidas)\n'
             printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
             printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
