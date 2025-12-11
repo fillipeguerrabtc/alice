@@ -314,7 +314,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
 | `SMTP_PASSWORD` (arquivo) | ✅ |
 | `LANGFUSE_DB_USER` | ✅ |
-| `LANGFUSE_DB_PASSWORD` | ✅ Usado diretamente no `DATABASE_URL` - o driver PostgreSQL (libpq) faz encoding automático |
+| `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
 | `LANGFUSE_DB_NAME` | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
