@@ -1146,14 +1146,17 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
+        -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
+        -- Apenas o parâmetro $1 precisa de cast explícito para vector(768)
+        1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         AND d.tenant_id = $3
         ${namespaceFilter}
-      ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
+      ORDER BY dc.embedding <=> $1::vector(768)
       LIMIT $2
     `, queryParams);
     
@@ -1225,13 +1228,15 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
+        -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
+        1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         ${namespaceFilter}
-      ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
+      ORDER BY dc.embedding <=> $1::vector(768)
       LIMIT $2
     `, queryParams);
     
@@ -1455,7 +1460,9 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
+          -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+          -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
+          1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
         FROM document_chunks dc
         INNER JOIN documents d ON dc.document_id = d.id
         INNER JOIN namespaces n ON d.namespace_id = n.id
@@ -1463,7 +1470,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.embedding IS NOT NULL
           AND n.tenant_id = $2
           ${namespaceFilter}
-        ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
+        ORDER BY dc.embedding <=> $1::vector(768)
         LIMIT $3
       `, queryParams);
       
@@ -2579,7 +2586,9 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         mime_type as "mimeType",
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
-        1 - (clip_embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
+        -- CLIP embeddings são 100% locais via CPU (CLIP ViT-L/14 - 768 dim)
+        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
+        1 - (clip_embedding <=> $1::vector(768)) / 2 as similarity
       FROM media_uploads
       WHERE 
         tenant_id = $2
@@ -2587,7 +2596,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         AND processing_status = 'completed'
         AND clip_embedding IS NOT NULL
         ${excludeImageFilter}
-      ORDER BY clip_embedding::vector(768) <=> $1::vector(768)
+      ORDER BY clip_embedding <=> $1::vector(768)
       LIMIT $3
     `, queryParams);
 
