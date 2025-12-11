@@ -1041,6 +1041,10 @@ jobs:
   ci-status:
     name: CI Status
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    # Este job apenas agrega outputs de outros jobs, não acessa APIs do GitHub
+    permissions:
+      contents: read  # Apenas para ler outputs de jobs anteriores (via needs.*)
     needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
     if: always()
     outputs:
