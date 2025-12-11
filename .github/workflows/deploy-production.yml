@@ -1179,8 +1179,14 @@ jobs:
             }
 
       # Upload para GitHub Security tab (APENAS se Code Scanning estiver habilitado)
+      # REGRA 6: Enterprise-grade - upload é opcional (não crítico)
+      # Justificativa: O scan de segurança (Trivy) já foi executado e os resultados estão salvos
+      # como artifacts. O upload é apenas para visualização na aba Security do GitHub.
+      # Se o upload falhar, os resultados ainda estão disponíveis via artifacts.
+      # REGRA 7: Mudanças cirúrgicas - continue-on-error apenas para steps não-críticos (upload opcional)
       - name: Upload Trivy Auth scan results
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-auth.sarif'
@@ -1188,6 +1194,7 @@ jobs:
 
       - name: Upload Trivy Chat scan results
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-chat.sarif'
@@ -1195,6 +1202,7 @@ jobs:
 
       - name: Upload Trivy Frontend scan results
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-frontend.sarif'
@@ -1202,6 +1210,7 @@ jobs:
 
       - name: Upload Trivy pgBackRest scan results
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-pgbackrest.sarif'

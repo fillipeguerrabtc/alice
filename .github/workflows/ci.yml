@@ -17,6 +17,12 @@ on:
   pull_request:
     branches: [main]
 
+# Permissões explícitas para segurança e upload de SARIF
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -872,9 +878,15 @@ jobs:
             }
 
       # Upload para GitHub Security tab (APENAS se Code Scanning estiver habilitado)
+      # REGRA 6: Enterprise-grade - upload é opcional (não crítico)
+      # Justificativa: O scan de segurança (Trivy) já foi executado e os resultados estão salvos
+      # como artifacts. O upload é apenas para visualização na aba Security do GitHub.
+      # Se o upload falhar, os resultados ainda estão disponíveis via artifacts.
+      # REGRA 7: Mudanças cirúrgicas - continue-on-error apenas para steps não-críticos (upload opcional)
       - name: Upload Trivy scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
 
