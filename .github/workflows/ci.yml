@@ -17,13 +17,9 @@ on:
   pull_request:
     branches: [main]
 
-# Permissões explícitas para segurança e upload de SARIF
-# REGRA 14: Verificar secrets - GITHUB_TOKEN precisa de permissões explícitas
-# GAP-GHACTIONS-003: Least privilege permissions (apenas o necessário)
-permissions:
-  contents: read          # Ler código para checkout e cálculos de versão
-  security-events: write  # Upload de SARIF para GitHub Security tab
-  actions: write          # Disparar workflow dispatch (release.yml) - REGRA 12: Deploy via GitHub Actions
+# GAP-GHACTIONS-003: Least privilege - permissões definidas por job
+# REGRA 14: Verificar secrets - cada job define apenas as permissões necessárias
+# Isso elimina warnings do GitHub Actions sobre permissões globais excessivas
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -44,6 +40,9 @@ jobs:
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     outputs:
       packages: ${{ steps.filter.outputs.packages }}
       services: ${{ steps.filter.outputs.services }}
@@ -80,6 +79,9 @@ jobs:
   build-and-check:
     name: Build & Typecheck
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     needs: detect-changes
     steps:
       - uses: actions/checkout@v4
@@ -258,6 +260,9 @@ jobs:
   build-services:
     name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     needs: build-and-check
     strategy:
       matrix:
@@ -414,6 +419,9 @@ jobs:
   build-clip-inference:
     name: Build clip-inference-service (Python)
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     needs: build-and-check
     steps:
       - uses: actions/checkout@v4
@@ -511,6 +519,9 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     needs: build-and-check
     steps:
       - uses: actions/checkout@v4
@@ -628,6 +639,10 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - permissões para upload de SARIF
+    permissions:
+      contents: read
+      security-events: write
     needs: build-and-check
     steps:
       - uses: actions/checkout@v4
@@ -908,6 +923,9 @@ jobs:
   compliance-checks:
     name: Enterprise Compliance
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    permissions:
+      contents: read
     needs: build-and-check
     steps:
       - uses: actions/checkout@v4
@@ -1092,6 +1110,10 @@ jobs:
   trigger-release:
     name: Trigger Release
     runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - permissões para disparar workflow dispatch
+    permissions:
+      contents: read
+      actions: write
     needs: ci-status
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.ci-status.outputs.success == 'true'
     steps:
