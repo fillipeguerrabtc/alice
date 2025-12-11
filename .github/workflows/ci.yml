@@ -18,10 +18,12 @@ on:
     branches: [main]
 
 # Permissões explícitas para segurança e upload de SARIF
+# REGRA 14: Verificar secrets - GITHUB_TOKEN precisa de permissões explícitas
+# GAP-GHACTIONS-003: Least privilege permissions (apenas o necessário)
 permissions:
-  contents: read
-  security-events: write
-  actions: read
+  contents: read          # Ler código para checkout e cálculos de versão
+  security-events: write  # Upload de SARIF para GitHub Security tab
+  actions: write          # Disparar workflow dispatch (release.yml) - REGRA 12: Deploy via GitHub Actions
 
 concurrency:
   group: ci-${{ github.ref }}
