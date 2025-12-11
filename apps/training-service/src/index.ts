@@ -1210,7 +1210,7 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: !!SALAD_API_KEY,
+    embeddingsConfigured: true, // Embeddings são 100% locais (multilingual-e5-base)
     circuitBreaker: 'enabled',
   }, 'Training service iniciado com Circuit Breaker');
 });

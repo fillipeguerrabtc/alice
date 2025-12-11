@@ -37,7 +37,7 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados via Salad Cloud
+- Embeddings são gerados localmente (multilingual-e5-base via CLIP Service)
 - Chunks ficam disponíveis IMEDIATAMENTE para busca
 
 ### 3. Dashboard Admin (Manual)

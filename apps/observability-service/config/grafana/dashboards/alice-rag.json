@@ -14,7 +14,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 1,
       "options": {
-        "content": "# RAG - Retrieval Augmented Generation\n**Salad Cloud Embeddings** | **pgvector** | Vector Search | Chunking | Quality Metrics",
+        "content": "# RAG - Retrieval Augmented Generation\n**Embeddings Locais (multilingual-e5-base)** | **pgvector** | Vector Search | Chunking | Quality Metrics",
         "mode": "markdown"
       },
       "transparent": true,
@@ -57,7 +57,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "Embeddings CB",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-embeddings\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"text-embeddings-local\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

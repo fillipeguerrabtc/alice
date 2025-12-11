@@ -115,9 +115,9 @@ class AudioProcessorService {
           embeddingModel = 'error-fallback-zero';
         }
       } else {
-        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
-        // Este bloco não deve ser alcançado pois já lançamos erro acima
-        logger.error('SALAD_API_KEY não configurado - embedding indisponível');
+        // Embeddings sempre disponíveis via serviço local (Regra 6 - Autonomia Total)
+        // Este bloco não deve ser alcançado
+        logger.error('Serviço de embeddings local indisponível');
         embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
         embeddingModel = 'error-not-configured';
       }
@@ -416,7 +416,7 @@ class AudioProcessorService {
     embeddingModel: string;
   } {
     return {
-      configured: this.isConfigured, // Whisper ainda usa Salad Cloud, embeddings são locais
+      configured: this.isConfigured, // Whisper usa Salad Cloud para transcrição
       embeddingDim: TEXT_EMBEDDING_DIM,
       transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'NÃO CONFIGURADO',
       embeddingModel: 'intfloat/multilingual-e5-base (Local)', // Embeddings sempre locais (Regra 6)

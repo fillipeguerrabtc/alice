@@ -57,14 +57,6 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Serviço de Embeddings Salad Cloud - DEPRECADO (embeddings agora são locais) */
-  /** Mantido para compatibilidade com código legado que ainda usa Salad Cloud */
-  saladEmbeddings: {
-    timeout: 30000,
-    errorThresholdPercentage: 50,
-    resetTimeout: 30000,
-    volumeThreshold: 5,
-  },
   /** FLUX.1 Schnell - geração de imagens (1-3s típico, timeout 30s) */
   fluxImageGen: {
     timeout: 30000,

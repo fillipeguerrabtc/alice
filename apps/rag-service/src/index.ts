@@ -479,16 +479,14 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-// SALAD_API_KEY ainda é necessária para Whisper (transcrição de áudio) e LLM
-// Embeddings agora são 100% locais (Regra 6 - Autonomia Total)
+// SALAD_API_KEY é necessária APENAS para Whisper (transcrição de áudio) e LLM
+// Embeddings são 100% locais via multilingual-e5-base (Regra 6 - Autonomia Total)
 if (!SALAD_API_KEY) {
   logger.warn('SALAD_API_KEY não configurada - transcrição de áudio e LLM podem estar indisponíveis');
-  // Não falhar - embeddings são locais, apenas transcrição/LLM precisam de Salad Cloud
 }
 
 if (!SALAD_ORGANIZATION_ID) {
   logger.warn('SALAD_ORGANIZATION_ID não configurada - transcrição de áudio e LLM podem estar indisponíveis');
-  // Não falhar - embeddings são locais, apenas transcrição/LLM precisam de Salad Cloud
 }
 
 const SALAD_KEY: string = SALAD_API_KEY;

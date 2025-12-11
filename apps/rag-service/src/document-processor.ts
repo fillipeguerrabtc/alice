@@ -6,7 +6,7 @@
  * - DOCX: Extração de texto via mammoth
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
- * - Text embeddings do conteúdo extraído (Salad Cloud)
+ * - Text embeddings do conteúdo extraído (multilingual-e5-base local)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
@@ -272,7 +272,7 @@ class DocumentProcessorService {
         }
       }
     } else {
-      // Sem embeddings solicitados - apenas extração de texto (permitido mesmo sem Salad Cloud)
+      // Sem embeddings solicitados - apenas extração de texto
       logger.info({ chunkCount: textChunks.length }, 'Extraindo texto sem embeddings (generateEmbeddings=false)');
       
       for (let i = 0; i < textChunks.length; i++) {
