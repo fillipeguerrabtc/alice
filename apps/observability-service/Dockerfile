@@ -15,12 +15,17 @@ ENV PATH="$PNPM_HOME:$PATH"
 
 # Atualizar pacotes do sistema e habilitar corepack para pnpm
 # NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
-# Suprimir aviso de update do npm (determinismo, Regra 6) e tornar apk resiliente (mirrors + retry)
+# Suprimir aviso de update do npm (determinismo, Regra 6) e tornar apk resiliente (mirrors + retry com fail-fast)
 RUN set -e; \
     ver="$(cat /etc/alpine-release | cut -d. -f1,2)"; \
     echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" > /etc/apk/repositories; \
     echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" >> /etc/apk/repositories; \
-    for i in 1 2 3; do apk update && apk upgrade --no-cache && break; echo "apk retry $i"; sleep $((5*i)); done; \
+    success=0; \
+    for i in 1 2 3; do \
+      if apk update && apk upgrade --no-cache; then success=1; break; fi; \
+      echo "apk retry $i"; sleep $((5*i)); \
+    done; \
+    if [ "$success" -ne 1 ]; then echo "apk update/upgrade failed after retries"; exit 1; fi; \
     npm config set update-notifier false && corepack enable
 
 # ==============================================================================
