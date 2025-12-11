@@ -28,6 +28,7 @@ import {
   timestamp,
   boolean,
   integer,
+  customType,
   jsonb,
   index,
   uniqueIndex,
@@ -35,6 +36,22 @@ import {
   real,
   pgEnum,
 } from "drizzle-orm/pg-core";
+
+// ============================================================================
+// PGVECTOR TYPE (Enterprise-Grade)
+// ============================================================================
+// Tipo customizado para colunas pgvector (768 dimensões para multilingual-e5-base e CLIP)
+// Embeddings são gerados 100% localmente via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
+// Referência: https://github.com/pgvector/pgvector
+// NOTA: A conversão toDriver/fromDriver é feita automaticamente pelo driver pgvector
+// O Drizzle apenas precisa saber que é do tipo vector(768) no PostgreSQL
+const vector = customType<{ data: number[]; driverData: number[] }>({
+  dataType() {
+    return 'vector(768)';
+  },
+  // pgvector driver já faz a conversão automaticamente
+  // toDriver e fromDriver são opcionais - o driver cuida da serialização
+});
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -849,7 +866,7 @@ export const documents = pgTable(
     arquivoUrl: text("arquivo_url"),
     hashConteudo: varchar("hash_conteudo", { length: 64 }),
     semhash: varchar("semhash", { length: 128 }),
-    embedding: real("embedding").array(),
+    embedding: vector("embedding"),
     metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     processado: boolean("processado").default(false),
     criadoEm: timestamp("criado_em").defaultNow(),
@@ -875,7 +892,7 @@ export const documentChunks = pgTable(
       .notNull(),
     conteudo: text("conteudo").notNull(),
     posicao: integer("posicao").notNull(),
-    embedding: real("embedding").array(),
+    embedding: vector("embedding"),
     metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
@@ -1036,7 +1053,7 @@ export const trainingData = pgTable(
     rating: integer("rating"),
     status: trainingDataStatusEnum("status").default("pending"),
     semhash: varchar("semhash", { length: 64 }),
-    embedding: real("embedding").array(),
+    embedding: vector("embedding"),
     isDuplicate: boolean("is_duplicate").default(false),
     duplicateOfId: uuid("duplicate_of_id"),
     similarityScore: real("similarity_score"),
@@ -1425,8 +1442,8 @@ export const generatedImages = pgTable(
     thumbnailPath: text("thumbnail_path"),
     imageUrl: text("image_url"),
     
-    // Embeddings para RAG multimodal (CLIP - 768 dimensões)
-    clipEmbedding: real("clip_embedding").array(),
+    // Embeddings para RAG multimodal (CLIP - 768 dimensões) - gerado localmente via CPU
+    clipEmbedding: vector("clip_embedding"),
     
     // Feedback e aprovação para training
     feedbackScore: integer("feedback_score"), // 1-5 estrelas
@@ -1498,8 +1515,8 @@ export const mediaUploads = pgTable(
     processingTimeMs: integer("processing_time_ms"),
     
     // Embeddings para RAG multimodal
-    clipEmbedding: real("clip_embedding").array(), // CLIP para imagens (768 dim)
-    textEmbedding: real("text_embedding").array(), // Para transcrição de áudio
+    clipEmbedding: vector("clip_embedding"), // CLIP para imagens (768 dim) - gerado localmente via CPU
+    textEmbedding: vector("text_embedding"), // Para transcrição de áudio (768 dim) - gerado localmente via CPU
     
     // Transcrição (para áudio/vídeo)
     transcription: text("transcription"),

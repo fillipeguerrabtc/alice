@@ -24,6 +24,9 @@ ENV MODEL_NAME="ViT-L/14"
 ENV PORT=8080
 ENV HOME=/app
 
+# ARG para PORT (necessário para HEALTHCHECK e EXPOSE)
+ARG PORT=8080
+
 # Instalar dependências do sistema (inclui git para pip instalar pacotes git+https)
 # Docker 2025 Best Practices: Separar instalação de deps do sistema em layer dedicada
 # python3-venv necessário para criar virtual environment (PEP 668 - Ubuntu 24.04)
@@ -80,10 +83,11 @@ COPY --chown=clipservice:clipservice apps/clip-inference-service/server.py .
 USER clipservice
 
 # Health check - usa /ready para verificar dependências (Regra 16 - Kubernetes Best Practices 2025)
+# PORT é definido como ARG acima para funcionar em HEALTHCHECK e EXPOSE
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:${PORT}/ready || exit 1
 
-# Expor porta
+# Expor porta (usa ARG PORT definido acima)
 EXPOSE ${PORT}
 
 # Executar servidor usando Python do venv (caminho explícito para segurança)
