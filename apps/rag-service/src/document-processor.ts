@@ -501,30 +501,30 @@ class DocumentProcessorService {
       : excelModule;
     
     const workbook = new ExcelJSLib.Workbook();
-    // Garantir que buffer é um Buffer do Node.js (não Buffer<ArrayBufferLike> de Web APIs)
-    // exceljs 4.4.0+ requer Buffer do Node.js, não tipos genéricos de Buffer
     // REGRA 6: Enterprise-grade - validação robusta + isolamento TOTAL de buffer
-    // Buffer.from(buffer) cria cópia quando buffer é Buffer ou TypedArray
-    // Buffer.from(arrayBuffer) compartilha memória - converter via Uint8Array para forçar cópia
-    // Isso garante isolamento verdadeiro e evita mutação do buffer original durante load
-    let nodeBuffer: Buffer;
+    // exceljs define seu próprio tipo 'interface Buffer extends ArrayBuffer' (linha 1 do index.d.ts)
+    // que conflita com Buffer<ArrayBufferLike> do @types/node 22+. A solução é converter
+    // para Uint8Array e usar .buffer para obter ArrayBuffer compatível com ambos os tipos.
+    // Isso garante isolamento de memória e compatibilidade de tipos.
+    let arrayBuffer: ArrayBuffer;
     if (Buffer.isBuffer(buffer)) {
-      // Buffer do Node.js - Buffer.from() cria cópia isolada
-      nodeBuffer = Buffer.from(buffer);
+      // Buffer do Node.js: criar cópia isolada via Uint8Array
+      const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+      arrayBuffer = uint8.slice().buffer; // slice() cria cópia isolada
     } else if (ArrayBuffer.isView(buffer)) {
-      // TypedArray (Uint8Array, etc.) - Buffer.from() cria cópia isolada
+      // TypedArray (Uint8Array, DataView, etc.): extrair ArrayBuffer com cópia
       const typedArray = buffer as ArrayBufferView;
-      const { buffer: arrayBuffer, byteOffset, byteLength } = typedArray;
-      nodeBuffer = Buffer.from(new Uint8Array(arrayBuffer, byteOffset, byteLength));
+      const uint8 = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+      arrayBuffer = uint8.slice().buffer;
+    } else if (buffer instanceof ArrayBuffer) {
+      // ArrayBuffer puro: criar cópia isolada
+      arrayBuffer = buffer.slice(0);
     } else {
-      // ArrayBuffer ou Buffer<ArrayBufferLike> - converter via Uint8Array para forçar cópia
-      if (buffer instanceof ArrayBuffer) {
-        nodeBuffer = Buffer.from(new Uint8Array(buffer));
-      } else {
-        throw new Error('Tipo de buffer não suportado para processamento XLSX. Esperado Buffer, TypedArray ou ArrayBuffer.');
-      }
+      throw new Error('Tipo de buffer não suportado para processamento XLSX. Esperado Buffer, TypedArray ou ArrayBuffer.');
     }
-    await workbook.xlsx.load(nodeBuffer);
+    // exceljs aceita ArrayBuffer diretamente pois sua interface Buffer extends ArrayBuffer
+    // Cast via unknown necessário para satisfazer tipagem do método load(buffer: Buffer)
+    await workbook.xlsx.load(arrayBuffer as unknown as import('exceljs').Buffer);
     
     let text = '';
     workbook.eachSheet((worksheet: Worksheet, sheetId: number) => {
