@@ -165,7 +165,7 @@ Estes são necessários para o deploy funcionar:
 | Secret | Valor Esperado | Descrição |
 |--------|----------------|-----------|
 | `CORS_ORIGIN` | `https://yesyoudeserve.duckdns.org` (ou domínio final) | Origin principal usado pelo `auth-service` |
-| `CORS_ORIGINS` | Lista separada por vírgula, sem espaços. Ex: `https://yesyoudeserve.duckdns.org,https://admin.yesyoudeserve.duckdns.org` | Usado por chat, integrations, rag, training, observability, clip-service |
+| `CORS_ORIGINS` | Lista separada por vírgula, sem espaços. Ex: `https://yesyoudeserve.duckdns.org,https://admin.yesyoudeserve.duckdns.org` | Usado por chat, integrations, rag, training, observability |
 
 > Defina pelo menos um dos dois. Se apenas `CORS_ORIGINS` estiver setado, o workflow derivará `CORS_ORIGIN` a partir do primeiro item.
 
@@ -258,7 +258,6 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `SALAD_API_KEY` | ✅ |
 | `SALAD_ORGANIZATION_ID` | ✅ |
-| ~~`CLIP_API_TOKEN`~~ | ❌ **REMOVIDO** - Serviço interno não requer autenticação |
 
 ### Stripe (Pagamentos)
 

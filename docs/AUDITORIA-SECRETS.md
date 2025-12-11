@@ -8,9 +8,9 @@
 
 Este documento apresenta uma auditoria completa comparando os secrets configurados no GitHub Actions com os secrets utilizados no código e documentados na documentação.
 
-**Total de Secrets no Repositório:** 39 (verificado em 11/12/2025)  
-**Total de Secrets no Código/Documentação:** 43 (38 obrigatórios + 5 opcionais)  
-**Discrepâncias Encontradas:** 4 (todas opcionais)
+**Total de Secrets no Repositório:** 38 (verificado em 11/12/2025)  
+**Total de Secrets no Código/Documentação:** 40 (37 obrigatórios + 3 opcionais)  
+**Discrepâncias Encontradas:** 2 (todas opcionais)
 
 ---
 
@@ -63,21 +63,9 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 | `LANGFUSE_DB_NAME` | ✅ | ✅ | ✅ OK |
 | `LANGFUSE_DB_USER` | ✅ | ✅ | ✅ OK |
 | `LANGFUSE_DB_PASSWORD` | ✅ | ✅ | ✅ OK |
-| ~~`CLIP_API_TOKEN`~~ | ❌ | ❌ | ❌ **REMOVIDO** - Serviço interno não requer autenticação |
 
 ---
 
-## 2. ✅ REMOVIDO - CLIP_API_TOKEN
-
-**Status:** ❌ **REMOVIDO** - Não é mais necessário
-
-**Razão:** Serviço CLIP é interno na rede Docker privada (`alice-network`). Acesso é controlado pela rede Docker, não requer autenticação adicional.
-
-**Arquitetura Autônoma:**
-- CLIP embeddings são gerados localmente no Hetzner (CPU ou GPU)
-- Serviço não é exposto publicamente via Traefik
-- Acesso apenas por outros serviços internos (RAG service, Chat service)
-- GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
 - ✅ Atualizar status após verificação
 
 ---
@@ -160,14 +148,12 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 | Secrets Faltando (Obrigatórios) | 0* | - |
 | Secrets Faltando (Opcionais) | 4 | 🟢 |
 
-\* ~~`CLIP_API_TOKEN`~~ **REMOVIDO** - Serviço interno não requer autenticação
 
 ---
 
 ## 5. ✅ Ações Recomendadas (Prioridade)
 
 ### 🔴 PRIORIDADE CRÍTICA
-0. ~~**Verificar `CLIP_API_TOKEN`**~~ — **REMOVIDO** - Não é mais necessário
 
 ### 🟡 PRIORIDADE ALTA
 1. **Adicionar `STRIPE_WEBHOOK_BASE_URL`** — valor recomendado: `https://yesyoudeserve.duckdns.org` (opcional, tem fallback)
