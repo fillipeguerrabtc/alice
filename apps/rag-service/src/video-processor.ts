@@ -13,6 +13,7 @@
 
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { getAudioProcessor, TEXT_EMBEDDING_DIM } from './audio-processor.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM } from './image-processor.js';
 import { spawn } from 'child_process';
@@ -328,6 +329,9 @@ class VideoProcessorService {
                 extractExif: false,
               });
               
+              // Validar dimensão CLIP do frame antes de adicionar (Enterprise-Grade - Regra 6)
+              validateEmbeddingDimension(imageResult.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
+              
               frameEmbeddings.push(imageResult.embedding);
               framesExtracted++;
               
@@ -351,6 +355,14 @@ class VideoProcessorService {
       
       // Gerar embedding combinado
       const combinedEmbedding = this.combineEmbeddings(textEmbedding, frameEmbeddings);
+      
+      // Validar dimensão do embedding combinado antes de retornar (Enterprise-Grade - Regra 6)
+      validateEmbeddingDimension(combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+      
+      // Validar textEmbedding se não estiver vazio
+      if (textEmbedding.length > 0) {
+        validateEmbeddingDimension(textEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+      }
       
       const processingTimeMs = Date.now() - startTime;
       

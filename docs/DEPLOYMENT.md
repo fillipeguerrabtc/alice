@@ -447,6 +447,17 @@ Actions → Deploy to Production → Run workflow → Selecionar versão
 - ✅ Zero intervenção humana no deploy
 - ✅ Feedback rápido (push → produção em minutos)
 - ✅ Security scan obrigatório antes do deploy
+- ✅ Migrations executadas automaticamente na ordem correta (0001 → 0002 → 0003)
+
+### Migrations do Banco de Dados
+
+O workflow de deploy executa automaticamente todas as migrations na ordem correta:
+
+1. **0001_rls_security_enterprise.sql**: Configura RLS (Row Level Security), funções de tenant, índices e grants
+2. **0002_create_feature_flags.sql**: Cria tabela de feature flags enterprise
+3. **0003_update_embedding_dimensions_768.sql**: Atualiza dimensões de embeddings para 768 (multilingual-e5-base + CLIP) - **CRÍTICA**
+
+**⚠️ IMPORTANTE:** A migration 0003 é **OBRIGATÓRIA** e deve ser executada antes do deploy do código que usa `vector(768)`. O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
 

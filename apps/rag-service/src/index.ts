@@ -16,7 +16,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
-import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
 import { 
@@ -603,10 +603,9 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     throw new Error('Serviço de embeddings retornou resultado vazio');
   }
   
-  // Validar dimensão (deve ser 768 para multilingual-e5-base)
-  if (resultEmbedding.length !== 768) {
-    logger.warn(`Embedding com dimensão inesperada: ${resultEmbedding.length} (esperado: 768)`);
-  }
+  // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+  // Lança erro se dimensão estiver incorreta (não apenas warning)
+  validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
   
   return resultEmbedding;
 }
@@ -979,6 +978,9 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     }
 
     const documentEmbedding = await generateEmbedding(body.conteudo.slice(0, 2000));
+    
+    // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
+    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo frontend/API)
@@ -998,6 +1000,9 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
     
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
+      
+      // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
+      validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
       await db.insert(schema.documentChunks).values({
         documentId: document.id,
@@ -1044,6 +1049,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     const hashConteudo = hashContent(content);
 
     const documentEmbedding = await generateEmbedding(content.slice(0, 2000));
+    
+    // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
+    validateEmbeddingDimension(documentEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo middleware)
@@ -1061,6 +1069,9 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
     
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
+      
+      // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
+      validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
       await db.insert(schema.documentChunks).values({
         documentId: document.id,
@@ -1727,6 +1738,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             thumbnailUrl = thumbStored.fileUrl;
           }
 
+          // Validar dimensão CLIP antes de salvar (Enterprise-Grade - Regra 6)
+          validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+          
           // Atualizar registro com embedding CLIP, thumbnail (em metadata) e metadata
           await db.update(schema.mediaUploads)
             .set({
@@ -1758,6 +1772,11 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             req.file!.mimetype
           );
 
+          // Validar dimensão de texto antes de salvar (Enterprise-Grade - Regra 6)
+          if (result.embedding.length > 0) {
+            validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          }
+          
           // Atualizar registro com transcrição, embedding de texto e metadata
           await db.update(schema.mediaUploads)
             .set({
@@ -1796,6 +1815,14 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             { language: 'auto', extractFrames: true, generateTranscription: true }
           );
 
+          // Validar dimensões antes de salvar (Enterprise-Grade - Regra 6)
+          if (result.textEmbedding.length > 0) {
+            validateEmbeddingDimension(result.textEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          }
+          if (result.combinedEmbedding.length > 0) {
+            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+          }
+          
           // Atualizar registro com embeddings combinados e transcrição
           await db.update(schema.mediaUploads)
             .set({
@@ -1837,6 +1864,11 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             { extractMetadata: true, generateEmbeddings: true }
           );
 
+          // Validar dimensão de texto antes de salvar (Enterprise-Grade - Regra 6)
+          if (result.combinedEmbedding.length > 0) {
+            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          }
+          
           // Atualizar registro com embedding combinado e texto extraído
           await db.update(schema.mediaUploads)
             .set({

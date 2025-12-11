@@ -14,6 +14,7 @@
 
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
@@ -109,10 +110,9 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
     throw new Error('Resposta de embedding vazia');
   }
 
-  // Validar dimensão (deve ser 768 para multilingual-e5-base)
-  if (result.embedding.length !== 768) {
-    logger.warn(`Embedding com dimensão inesperada: ${result.embedding.length} (esperado: 768)`);
-  }
+  // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+  // Lança erro se dimensão estiver incorreta (não apenas warning)
+  validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
   return {
     embedding: result.embedding,

@@ -396,12 +396,16 @@ Fases:
 ```
 migrations/
 ├── 0001_rls_security_enterprise.sql    # RLS + Índices + Grants
-└── 0002_create_feature_flags.sql       # Feature Flags Enterprise
+├── 0002_create_feature_flags.sql       # Feature Flags Enterprise
+└── 0003_update_embedding_dimensions_768.sql  # Atualizar dimensões de embeddings para 768 (multilingual-e5-base + CLIP)
 ```
 
-### Ordem de Execução:
+### Ordem de Execução (OBRIGATÓRIA):
 1. **0001**: Cria funções `current_tenant_id()` e `is_super_admin()`, índices, e policies RLS
 2. **0002**: Cria tabela `feature_flags` usando as funções do 0001
+3. **0003**: Atualiza colunas de embedding de `vector(1536)` para `vector(768)` - **CRÍTICA para embeddings locais**
+
+**⚠️ IMPORTANTE:** A migration 0003 DEVE ser executada antes do deploy do código que usa `vector(768)`. Caso contrário, haverá erro de incompatibilidade de dimensões nas queries SQL.
 
 ### Aderência:
 - ✅ Regra 2 (NÃO DUPLICAR): Migrações unificadas em pasta única

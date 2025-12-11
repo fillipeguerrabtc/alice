@@ -1942,17 +1942,53 @@ jobs:
               exit 1
             fi
             
-            # Executar migração RLS
+            # Executar migrações na ordem correta (Enterprise-Grade - Regra 6)
             # Caminho unificado conforme drizzle.config.ts (out: "./migrations")
-            echo "Executando migração RLS..."
+            # ORDEM OBRIGATÓRIA: 0001 → 0002 → 0003
+            # NOTA: Migrations devem ser executadas ANTES do deploy dos serviços
+            # para garantir que o schema esteja atualizado antes do código usar vector(768)
+            
+            echo "Executando migrações do banco de dados..."
+            
+            # Migration 0001: RLS Security Enterprise
             if [ -f "../../migrations/0001_rls_security_enterprise.sql" ]; then
+              echo "Executando migration 0001_rls_security_enterprise.sql..."
               docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres psql -U alice -d alice_prod \
-                -f /dev/stdin < ../../migrations/0001_rls_security_enterprise.sql || echo "Migração RLS já aplicada ou erro ignorável"
+                -f /dev/stdin < ../../migrations/0001_rls_security_enterprise.sql || echo "Migration 0001 já aplicada ou erro ignorável"
+            else
+              echo "AVISO: Migration 0001_rls_security_enterprise.sql não encontrada"
             fi
             
-            echo "Migração concluída!"
+            # Migration 0002: Feature Flags
+            if [ -f "../../migrations/0002_create_feature_flags.sql" ]; then
+              echo "Executando migration 0002_create_feature_flags.sql..."
+              docker compose -f docker-compose.prod.yml \
+                --env-file .env.prod \
+                exec -T postgres psql -U alice -d alice_prod \
+                -f /dev/stdin < ../../migrations/0002_create_feature_flags.sql || echo "Migration 0002 já aplicada ou erro ignorável"
+            else
+              echo "AVISO: Migration 0002_create_feature_flags.sql não encontrada"
+            fi
+            
+            # Migration 0003: Update Embedding Dimensions to 768 (CRÍTICO)
+            # OBRIGATÓRIA: Esta migration DEVE ser executada antes do deploy do código
+            # que usa queries com vector(768). Caso contrário, haverá erro de incompatibilidade
+            # de dimensões nas queries SQL (vector(1536) vs vector(768)).
+            if [ -f "../../migrations/0003_update_embedding_dimensions_768.sql" ]; then
+              echo "Executando migration 0003_update_embedding_dimensions_768.sql (CRÍTICA para embeddings locais)..."
+              docker compose -f docker-compose.prod.yml \
+                --env-file .env.prod \
+                exec -T postgres psql -U alice -d alice_prod \
+                -f /dev/stdin < ../../migrations/0003_update_embedding_dimensions_768.sql || echo "Migration 0003 já aplicada ou erro ignorável"
+            else
+              echo "ERRO CRÍTICO: Migration 0003_update_embedding_dimensions_768.sql não encontrada!"
+              echo "Esta migration é OBRIGATÓRIA para embeddings locais (multilingual-e5-base - 768 dim)"
+              exit 1
+            fi
+            
+            echo "Todas as migrações concluídas com sucesso!"
             
             # Deploy baseado nos serviços selecionados
             case "${DEPLOY_SERVICES}" in

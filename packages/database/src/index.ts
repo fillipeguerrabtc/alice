@@ -374,3 +374,41 @@ export const EMBEDDING_DIMENSIONS = {
   TEXT: 768,    // multilingual-e5-base local (CPU no Hetzner) - 100+ idiomas incluindo PT-BR e EN
   CLIP: 768,    // CLIP ViT-L/14 local (CPU no Hetzner) - embeddings multimodais (texto + imagem)
 } as const;
+
+/**
+ * Valida dimensão de embedding antes de salvar no database
+ * Lança erro se dimensão estiver incorreta (enterprise-grade - Regra 6)
+ * 
+ * @param embedding - Array de números representando o embedding
+ * @param expectedDim - Dimensão esperada (default: 768)
+ * @param type - Tipo de embedding ('TEXT' ou 'CLIP') para mensagem de erro
+ * @throws Error se dimensão estiver incorreta
+ * 
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ */
+export function validateEmbeddingDimension(
+  embedding: number[] | null | undefined,
+  expectedDim: number = EMBEDDING_DIMENSIONS.TEXT,
+  type: 'TEXT' | 'CLIP' = 'TEXT'
+): void {
+  if (!embedding || embedding.length === 0) {
+    throw new Error(`Embedding ${type} vazio ou nulo não pode ser salvo no database`);
+  }
+  
+  if (embedding.length !== expectedDim) {
+    throw new Error(
+      `Embedding ${type} com dimensão incorreta: ${embedding.length} (esperado: ${expectedDim}). ` +
+      `Isso causará erro no PostgreSQL vector(768). Verifique o serviço de embeddings local.`
+    );
+  }
+  
+  // Validar que todos os valores são números válidos
+  for (let i = 0; i < embedding.length; i++) {
+    if (typeof embedding[i] !== 'number' || !isFinite(embedding[i])) {
+      throw new Error(
+        `Embedding ${type} contém valor inválido na posição ${i}: ${embedding[i]}. ` +
+        `Todos os valores devem ser números finitos.`
+      );
+    }
+  }
+}

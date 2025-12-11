@@ -17,6 +17,7 @@
 
 import pino from 'pino';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { validateEmbeddingDimension } from '@alice/database';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -213,13 +214,9 @@ class ImageProcessorService {
         },
       });
 
-      // Validar dimensão do embedding
-      if (result.embedding.length !== CLIP_EMBEDDING_DIM) {
-        logger.warn({
-          expected: CLIP_EMBEDDING_DIM,
-          received: result.embedding.length,
-        }, 'Dimensão do text embedding diferente do esperado - verificar configuração CLIP');
-      }
+      // Validar dimensão do embedding (Enterprise-Grade - Regra 6)
+      // Lança erro se dimensão estiver incorreta (não apenas warning)
+      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
       const processingTimeMs = Date.now() - startTime;
 
@@ -355,13 +352,9 @@ class ImageProcessorService {
         },
       });
       
-      // Validar dimensão do embedding
-      if (result.embedding.length !== CLIP_EMBEDDING_DIM) {
-        logger.warn({
-          expected: CLIP_EMBEDDING_DIM,
-          received: result.embedding.length,
-        }, 'Dimensão do embedding diferente do esperado');
-      }
+      // Validar dimensão do embedding (Enterprise-Grade - Regra 6)
+      // Lança erro se dimensão estiver incorreta (não apenas warning)
+      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
       return {
         embedding: result.embedding,

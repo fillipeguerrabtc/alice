@@ -12,7 +12,7 @@
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import pino from 'pino';
-import { eq } from '@alice/database';
+import { eq, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 
@@ -252,6 +252,9 @@ export async function generateCLIPEmbedding(imageBase64: string): Promise<number
 export async function storeImageEmbedding(imageId: string, imageBase64: string): Promise<void> {
   try {
     const embedding = await generateCLIPEmbedding(imageBase64);
+    
+    // Validar dimensão CLIP antes de salvar (Enterprise-Grade - Regra 6)
+    validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
     
     await db.update(schema.generatedImages)
       .set({ clipEmbedding: embedding })

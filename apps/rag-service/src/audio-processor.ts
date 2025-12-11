@@ -10,6 +10,7 @@
  */
 
 import pino from 'pino';
+import { validateEmbeddingDimension } from '@alice/database';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -242,10 +243,9 @@ class AudioProcessorService {
         throw new Error('Resposta de embedding vazia');
       }
 
-      // Validar dimensão (deve ser 768 para multilingual-e5-base)
-      if (result.embedding.length !== 768) {
-        logger.warn(`Embedding com dimensão inesperada: ${result.embedding.length} (esperado: 768)`);
-      }
+      // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+      // Lança erro se dimensão estiver incorreta (não apenas warning)
+      validateEmbeddingDimension(result.embedding, 768, 'TEXT');
 
       return {
         embedding: result.embedding,
