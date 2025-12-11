@@ -467,14 +467,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          set -e
           cd apps/clip-inference-service
           # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
           # Pacotes grandes (nvidia_cudnn_cu12, torch) podem falhar com "Connection reset by peer"
-          pip install --upgrade pip
           for attempt in 1 2 3; do
             echo "📦 Tentativa $attempt de instalar dependências..."
-            if pip install --retries 5 --timeout 120 -r requirements.txt; then
+            if pip install --upgrade pip && pip install --retries 5 --timeout 120 -r requirements.txt; then
               echo "✅ Dependências instaladas com sucesso!"
               break
             else
@@ -777,13 +775,11 @@ jobs:
 
       - name: Install Python dependencies
         run: |
-          set -e
           echo "Instalando dependências Python para scan de segurança..."
           # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
-          pip install --upgrade pip
           for attempt in 1 2 3; do
             echo "📦 Tentativa $attempt de instalar dependências..."
-            if pip install --retries 5 --timeout 120 -r apps/clip-inference-service/requirements.txt; then
+            if pip install --upgrade pip && pip install --retries 5 --timeout 120 -r apps/clip-inference-service/requirements.txt; then
               echo "✅ Dependências Python instaladas com sucesso!"
               break
             else
