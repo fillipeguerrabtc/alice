@@ -467,7 +467,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          cd apps/clip-inference-service
+          # Fail-fast para cd se diretório não existir
+          cd apps/clip-inference-service || exit 1
+          
           # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
           # Pacotes grandes (nvidia_cudnn_cu12, torch) podem falhar com "Connection reset by peer"
           for attempt in 1 2 3; do
