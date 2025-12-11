@@ -2484,7 +2484,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
-      // Busca por texto: gerar embedding CLIP do texto via Salad Cloud
+      // Busca por texto: gerar embedding CLIP do texto via serviço local (autônomo)
       const imageProcessor = getImageProcessor();
       
       if (!imageProcessor.isReady()) {

@@ -570,6 +570,9 @@ services:
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
+      # CLIP Local (Autônomo - Regra 6)
+      # Serviço interno na rede Docker privada - não requer autenticação
+      CLIP_SERVICE_URL: http://alice-clip-inference:8080
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
@@ -577,6 +580,8 @@ services:
       postgres:
         condition: service_healthy
       alice-redis:
+        condition: service_healthy
+      alice-clip-inference:
         condition: service_healthy
     networks:
       - alice-network
@@ -638,9 +643,9 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
-      # Salad Cloud Embeddings (OBRIGATÓRIO - Regra 6)
-      SALAD_API_KEY: ${SALAD_API_KEY}
-      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+      # CLIP Local (Autônomo - Regra 6)
+      # Serviço interno na rede Docker privada - não requer autenticação
+      CLIP_SERVICE_URL: http://alice-clip-inference:8080
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads
       STORAGE_BASE_URL: /api/media/files
@@ -890,7 +895,9 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (GPU/Salad Cloud)
+  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (Local - CPU/GPU)
+  # ARQUITETURA AUTÔNOMA: Roda localmente no Hetzner (CPU ou GPU)
+  # GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
   # NOTA: Este serviço requer GPU NVIDIA e deve ser deployado no Salad Cloud
   # Para deploy local/Hetzner, usar profiles: ["gpu"] e deployar separadamente
   # Documentação: docs/DEPLOYMENT.md - Seção "Salad Cloud Integration"
@@ -907,11 +914,11 @@ services:
     tmpfs:
       - /tmp:mode=1777,size=128M
       - /app/.cache:mode=1777,size=512M
-    profiles:
-      - gpu
+    # REMOVIDO profiles: gpu - roda sempre (CPU ou GPU se disponível)
+    # O serviço detecta automaticamente se há GPU disponível (server.py linha 152)
     # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
     # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
-    # para uso no código Python (CORS_ORIGINS, CLIP_API_TOKEN, etc.)
+    # para uso no código Python
     env_file:
       - .env.prod
     environment:

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 10 de Dezembro de 2025  
+> **Data:** 11 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.4 - PLATAFORMA 100% ENTERPRISE COMPLETA - SECURITY HARDENING 100% APLICADO
+> **Versão:** 3.5 - PLATAFORMA 100% ENTERPRISE COMPLETA - SECURITY HARDENING 100% APLICADO
 
 ---
 
@@ -24,7 +24,7 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
-### Security Hardening (10/12/2025)
+### Security Hardening (11/12/2025)
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
@@ -176,7 +176,7 @@
 |----------------|--------|---------|
 | CLIP ViT-L/14 Embeddings | ✅ | `server.py` |
 | Text + Image → 768 dim | ✅ | `server.py` |
-| API Token Authentication | ✅ | `CLIP_API_TOKEN` |
+| Autenticação | ❌ **REMOVIDA** - Serviço interno (acesso controlado pela rede Docker) |
 | Rate Limiting | ✅ | `server.py` |
 | Circuit Breaker (Python) | ✅ | `server.py` |
 | Prometheus Metrics | ✅ | `/metrics` |

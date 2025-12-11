@@ -1,22 +1,26 @@
 # Auditoria Completa de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 2025-12-08  
-**Versão:** 1.1
+**Data:** 11 de Dezembro de 2025  
+**Versão:** 1.2
 
 ## Resumo Executivo
 
 Este documento apresenta uma auditoria completa comparando os secrets configurados no GitHub Actions com os secrets utilizados no código e documentados na documentação.
 
-**Total de Secrets no Repositório:** 35  
-**Total de Secrets no Código/Documentação:** 39  
+**Total de Secrets no Repositório:** 39 (verificado em 11/12/2025)  
+**Total de Secrets no Código/Documentação:** 43 (38 obrigatórios + 5 opcionais)  
 **Discrepâncias Encontradas:** 4 (todas opcionais)
 
 ---
 
 ## 1. Secrets Presentes no Repositório GitHub
 
-### ✅ Secrets Corretos e Consistentes (35)
+**Status Atualizado:** 11 de Dezembro de 2025  
+**Total Verificado:** 39 secrets configurados no repositório  
+**Verificação:** Baseada em imagens fornecidas do GitHub Actions Secrets
+
+### ✅ Secrets Corretos e Consistentes (39)
 
 | Secret | Usado no Código | Documentado | Status |
 |--------|----------------|-------------|--------|
@@ -54,12 +58,33 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 | `TWILIO_WHATSAPP_NUMBER` | ✅ | ✅ | ✅ OK |
 | `WISE_API_KEY` | ✅ | ✅ | ✅ OK |
 | `WISE_PROFILE_ID` | ✅ | ✅ | ✅ OK |
+| `CORS_ORIGINS` | ✅ | ✅ | ✅ OK |
+| `GRAFANA_ADMIN_USER` | ✅ | ✅ | ✅ OK |
+| `LANGFUSE_DB_NAME` | ✅ | ✅ | ✅ OK |
+| `LANGFUSE_DB_USER` | ✅ | ✅ | ✅ OK |
+| `LANGFUSE_DB_PASSWORD` | ✅ | ✅ | ✅ OK |
+| ~~`CLIP_API_TOKEN`~~ | ❌ | ❌ | ❌ **REMOVIDO** - Serviço interno não requer autenticação |
 
 ---
 
-## 2. 🔔 PENDÊNCIAS ATUAIS (Todas Opcionais)
+## 2. ✅ REMOVIDO - CLIP_API_TOKEN
 
-#### 2.1. `STRIPE_WEBHOOK_BASE_URL`
+**Status:** ❌ **REMOVIDO** - Não é mais necessário
+
+**Razão:** Serviço CLIP é interno na rede Docker privada (`alice-network`). Acesso é controlado pela rede Docker, não requer autenticação adicional.
+
+**Arquitetura Autônoma:**
+- CLIP embeddings são gerados localmente no Hetzner (CPU ou GPU)
+- Serviço não é exposto publicamente via Traefik
+- Acesso apenas por outros serviços internos (RAG service, Chat service)
+- GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+- ✅ Atualizar status após verificação
+
+---
+
+## 3. 🔔 PENDÊNCIAS ATUAIS (Todas Opcionais)
+
+#### 3.1. `STRIPE_WEBHOOK_BASE_URL`
 
 **Status:** ❌ **FALTANDO no repositório**
 
@@ -74,7 +99,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.2. `WISE_WEBHOOK_SECRET`
+#### 3.2. `WISE_WEBHOOK_SECRET`
 
 **Status:** ❌ **FALTANDO no repositório**
 
@@ -92,7 +117,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.3. `WISE_SANDBOX`
+#### 3.3. `WISE_SANDBOX`
 
 **Status:** ⚠️ **HARDCODED no código**
 
@@ -110,7 +135,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-#### 2.4. `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`
+#### 3.4. `ERPNEXT_API_KEY` e `ERPNEXT_API_SECRET`
 
 **Status:** ⏳ **OPCIONAIS (pós-deploy)**
 
@@ -127,20 +152,25 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-## 3. 📊 Resumo de Discrepâncias
+## 4. 📊 Resumo de Discrepâncias
 
 | Tipo | Quantidade | Severidade |
 |------|------------|------------|
 | Inconsistência de Nome | 0 | - |
-| Secrets Faltando (Obrigatórios) | 0 | - |
+| Secrets Faltando (Obrigatórios) | 0* | - |
 | Secrets Faltando (Opcionais) | 4 | 🟢 |
+
+\* ~~`CLIP_API_TOKEN`~~ **REMOVIDO** - Serviço interno não requer autenticação
 
 ---
 
-## 4. ✅ Ações Recomendadas (Prioridade)
+## 5. ✅ Ações Recomendadas (Prioridade)
+
+### 🔴 PRIORIDADE CRÍTICA
+0. ~~**Verificar `CLIP_API_TOKEN`**~~ — **REMOVIDO** - Não é mais necessário
 
 ### 🟡 PRIORIDADE ALTA
-1. **Adicionar `STRIPE_WEBHOOK_BASE_URL`** — valor recomendado: `https://yesyoudeserve.duckdns.org`
+1. **Adicionar `STRIPE_WEBHOOK_BASE_URL`** — valor recomendado: `https://yesyoudeserve.duckdns.org` (opcional, tem fallback)
 
 ### 🟢 PRIORIDADE BAIXA (Opcionais)
 2. **Adicionar `WISE_WEBHOOK_SECRET`** após configurar webhook no Wise  
@@ -149,7 +179,7 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-## 5. Checklist de Verificação
+## 6. Checklist de Verificação
 
 ### Secrets Obrigatórios para Deploy Funcional
 
@@ -173,7 +203,21 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 
 ---
 
-## 6. Notas Técnicas
+## 7. Notas Técnicas
+
+### Integração Resend (Simplificada)
+
+**Status:** ✅ **CORRETO**
+
+A integração Resend está configurada corretamente:
+- ✅ `RESEND_API_KEY` configurado no repositório
+- ✅ Usa apenas API Key (sem domínio verificado)
+- ✅ Sender padrão: `onboarding@resend.dev` (permitido sem verificação)
+- ✅ Alertmanager usa relay SMTP do Resend (`smtp.resend.com:587`)
+- ✅ API Key é usada como senha SMTP no Alertmanager (montado em `/run/secrets/smtp_password`)
+- ✅ Grafana pode usar `RESEND_API_KEY` como senha SMTP (se configurado)
+
+**Conformidade:** ✅ 100% conforme especificação (integração simplificada, sem configurações SMTP avançadas)
 
 ### Convenção de Nomes
 
@@ -189,6 +233,6 @@ Este documento apresenta uma auditoria completa comparando os secrets configurad
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 2025-12-08*  
-*Versão: 1.1*  
+*Documento atualizado em: 11 de Dezembro de 2025*  
+*Versão: 1.2*  
 *Próxima Revisão: Após inclusão dos opcionais pendentes*

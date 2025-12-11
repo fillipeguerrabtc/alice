@@ -191,21 +191,23 @@ export async function generateImage(
 
 // ============================================================================
 // CLIP EMBEDDINGS (Para RAG Multimodal)
+// ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU ou GPU local)
+// GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
 // ============================================================================
 
-async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
-  if (!SALAD_API_KEY || !SALAD_ORGANIZATION_ID) {
-    throw new Error('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados');
-  }
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
-  const response = await fetch(`${FLUX_ENDPOINT}/organizations/${SALAD_ORGANIZATION_ID}/inference-endpoints/clip-embeddings/embed`, {
+async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
+  // REGRA 6: Serviço local autônomo - não depende de API externa
+  // Serviço interno na rede Docker privada - não requer autenticação
+  const response = await fetch(`${CLIP_SERVICE_URL}/inference/clip`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_API_KEY,
     },
     body: JSON.stringify({
-      image: imageBase64,
+      image: `data:image/png;base64,${imageBase64}`,
+      model: 'ViT-L/14',
     }),
   });
 
@@ -214,7 +216,7 @@ async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPE
     throw new Error(`Erro ao gerar CLIP embedding: ${error}`);
   }
 
-  const data = await response.json() as { embedding: number[] };
+  const data = await response.json() as { embedding: number[]; model: string };
   return { embedding: data.embedding };
 }
 

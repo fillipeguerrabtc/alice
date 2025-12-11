@@ -6,8 +6,14 @@ Modelo: CLIP ViT-L/14 (768 dimensões)
 Licença: MIT (uso comercial permitido)
 
 Endpoints:
-- POST /inference/clip - Gera embedding de texto ou imagem (REQUER AUTH)
+- POST /inference/clip - Gera embedding de texto ou imagem (serviço interno - sem auth)
 - GET /health - Health check (público para docker healthcheck)
+
+ARQUITETURA AUTÔNOMA:
+- Serviço roda localmente no Hetzner (CPU ou GPU)
+- Acesso controlado pela rede Docker privada (alice-network)
+- Não requer autenticação - serviço confiável na mesma rede
+- GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
 
 Documentação em PT-BR (Regra 10 CLAUDE.md)
 Segurança Enterprise (Regra 16 CLAUDE.md)
@@ -27,9 +33,8 @@ from contextlib import asynccontextmanager
 import torch
 import clip
 from PIL import Image
-from fastapi import FastAPI, HTTPException, Header, Depends, Security, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import APIKeyHeader
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT, HTTP_503_SERVICE_UNAVAILABLE
 from pydantic import BaseModel, Field
 import uvicorn
@@ -53,41 +58,16 @@ MODEL_NAME = os.getenv("MODEL_NAME", "ViT-L/14")
 PORT = int(os.getenv("PORT", 8080))
 EMBEDDING_DIM = 768  # ViT-L/14 produz embeddings de 768 dimensões
 
-# Segurança: Token de API (Regra 16 - Autenticação obrigatória em produção)
-CLIP_API_TOKEN = os.getenv("CLIP_API_TOKEN")
+# Configuração de limites
 MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB default
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s default
 
-# SEGURANÇA: CORS origins (OWASP API Security)
-raw_cors_origins = os.getenv("CORS_ORIGINS", "")
-CORS_ORIGINS = [origin.strip() for origin in raw_cors_origins.split(",") if origin.strip()] if raw_cors_origins else []
-if not CORS_ORIGINS and IS_PRODUCTION:
-    logger.error("CRITICAL: CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast). Abortando.")
-    sys.exit(1)
-
-if not CLIP_API_TOKEN and IS_PRODUCTION:
-    logger.error("CRITICAL: CLIP_API_TOKEN é OBRIGATÓRIO em produção. Abortando.")
-    sys.exit(1)
+# NOTA: Serviço interno na rede Docker privada - não requer autenticação
+# Acesso é controlado pela rede Docker (alice-network) e não é exposto publicamente
+# ARQUITETURA AUTÔNOMA: Serviço local para embeddings CLIP (CPU/GPU no Hetzner)
 
 # SEGURANÇA: Rate limiter (FastAPI 2025 + OWASP API4)
 limiter = Limiter(key_func=get_remote_address)
-
-# Header de autenticação
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-def verify_api_key(api_key: str = Security(api_key_header)) -> str:
-    """Verifica token de API para endpoints protegidos."""
-    # Em desenvolvimento sem token, permitir acesso
-    if not CLIP_API_TOKEN and not IS_PRODUCTION:
-        return "dev-mode"
-    
-    if not api_key or api_key != CLIP_API_TOKEN:
-        logger.warning(f"Tentativa de acesso não autorizado")
-        raise HTTPException(
-            status_code=HTTP_401_UNAUTHORIZED,
-            detail="Token de API inválido ou ausente. Use header X-API-Key."
-        )
-    return api_key
 
 # ============================================================================
 # PROMETHEUS METRICS (Regra 16 - Enterprise Observability)
@@ -201,17 +181,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# SEGURANÇA: CORS configurado (não ['*'] em produção) - OWASP API Security
-# Em desenvolvimento permite localhost, em produção usa allowlist
-dev_origins = ["http://localhost:3000", "http://localhost:5000", "http://127.0.0.1:3000", "http://127.0.0.1:5000"]
-allowed_origins = CORS_ORIGINS if IS_PRODUCTION else dev_origins + CORS_ORIGINS
-
+# CORS: Serviço interno na rede Docker privada - permite todas as origens internas
+# Não exposto publicamente via Traefik (apenas acesso interno)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if allowed_origins else ["*"],  # Fallback para dev sem config
+    allow_origins=["*"],  # Serviço interno - acesso controlado pela rede Docker
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["X-API-Key", "Content-Type", "Authorization", "Salad-Api-Key", "Salad-Organization"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
@@ -267,14 +244,12 @@ def decode_base64_image(image_data: str) -> Image.Image:
 async def generate_embedding(
     request_http: Request,  # Necessário para SlowAPI
     request: ClipRequest,
-    api_key: str = Depends(verify_api_key),
-    salad_api_key: Optional[str] = Header(None, alias="Salad-Api-Key"),
-    salad_organization: Optional[str] = Header(None, alias="Salad-Organization"),
 ) -> ClipResponse:
     """
     Gera embedding CLIP para texto ou imagem.
     
-    REQUER AUTENTICAÇÃO: Header X-API-Key com token válido.
+    SERVIÇO INTERNO: Acesso controlado pela rede Docker privada (alice-network).
+    Não requer autenticação - serviço confiável na mesma rede.
     
     Retorna vetor de 768 dimensões no mesmo espaço vetorial,
     permitindo busca cross-modal (texto → imagem, imagem → texto).

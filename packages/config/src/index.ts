@@ -162,7 +162,6 @@ const SECRET_KEYS = new Set([
   'WISE_API_KEY',
   'WISE_WEBHOOK_SECRET',
   'INTERNAL_API_TOKEN',
-  'CLIP_API_TOKEN',
   'SAML_CERT',
 ]);
 

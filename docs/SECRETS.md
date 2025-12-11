@@ -1,13 +1,13 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 10 de Dezembro de 2025
+**Data:** 11 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 41 configurados no repositório (38 obrigatórios pré-deploy + 3 opcionais pós-deploy)
+**Total de Secrets:** 40 configurados no repositório (37 obrigatórios pré-deploy + 3 opcionais pós-deploy)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 41 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -23,7 +23,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
-| **Alice CLIP** | alice-clip-inference | CLIP_API_TOKEN |
+| **Alice CLIP** | alice-clip-inference | Nenhum (serviço interno - acesso controlado pela rede Docker) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
@@ -95,7 +95,6 @@ Estes são necessários para o deploy funcionar:
 |--------|------------|
 | `SALAD_API_KEY` | [portal.salad.com](https://portal.salad.com) → API Keys |
 | `SALAD_ORGANIZATION_ID` | portal.salad.com → Settings |
-| `CLIP_API_TOKEN` | Token gerado internamente para autenticar requests ao CLIP inference (`openssl rand -hex 32`) |
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
@@ -228,8 +227,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 10 de Dezembro de 2025  
-> **Resumo:** Todos os 40 secrets de produção ✅ configurados. `CORS_ORIGINS` adicionado. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 11 de Dezembro de 2025  
+> **Resumo:** 38 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -259,7 +258,7 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `SALAD_API_KEY` | ✅ |
 | `SALAD_ORGANIZATION_ID` | ✅ |
-| `CLIP_API_TOKEN` | ⏳ Pendente (gerar com `openssl rand -hex 32`) |
+| ~~`CLIP_API_TOKEN`~~ | ❌ **REMOVIDO** - Serviço interno não requer autenticação |
 
 ### Stripe (Pagamentos)
 

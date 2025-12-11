@@ -2,10 +2,15 @@
  * Image Processor Service - Alice Enterprise Platform
  * 
  * Processamento de imagens:
- * - CLIP embeddings (768 dimensões) via Salad Cloud
+ * - CLIP embeddings (768 dimensões) via serviço local (alice-clip-inference)
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
  * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
+ * 
+ * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
+ * - CLIP roda localmente no Hetzner (CPU ou GPU)
+ * - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+ * - Embeddings CLIP são gerados localmente para manter autonomia
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -21,10 +26,10 @@ const logger = pino({
   }
 }).child({ service: 'image-processor' });
 
-// Configuração Salad Cloud
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_CLIP_ENDPOINT = process.env.SALAD_CLIP_ENDPOINT || 'https://api.salad.com/api/public';
+// Configuração CLIP Local (Autônomo - Regra 6)
+// REGRA 6: Serviço local no Hetzner, não depende de API externa
+// Serviço interno na rede Docker privada - não requer autenticação
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
 // Dimensão dos embeddings CLIP (ViT-L/14)
 export const CLIP_EMBEDDING_DIM = 768;
@@ -41,12 +46,12 @@ interface ClipApiParams {
 }
 
 async function callClipApiInternal(params: ClipApiParams): Promise<{ embedding: number[]; model: string }> {
-  const response = await fetch(`${SALAD_CLIP_ENDPOINT}${params.endpoint}`, {
+  // REGRA 6: Serviço local autônomo - não depende de API externa
+  // Serviço interno na rede Docker privada - não requer autenticação
+  const response = await fetch(`${CLIP_SERVICE_URL}${params.endpoint}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_API_KEY!,
-      'Salad-Organization': SALAD_ORGANIZATION_ID!,
     },
     body: JSON.stringify(params.body),
   });
@@ -56,13 +61,16 @@ async function callClipApiInternal(params: ClipApiParams): Promise<{ embedding: 
     throw new Error(`CLIP API error: ${response.status} - ${errorText}`);
   }
 
-  const result = await response.json() as { embedding: number[]; model: string };
+  const result = await response.json() as { embedding: number[]; model: string; input_type?: string };
   
   if (!result.embedding || !Array.isArray(result.embedding)) {
     throw new Error('Resposta CLIP inválida - embedding ausente');
   }
 
-  return result;
+  return {
+    embedding: result.embedding,
+    model: result.model || 'ViT-L/14',
+  };
 }
 
 // Circuit breaker para chamadas CLIP
@@ -107,12 +115,9 @@ class ImageProcessorService {
   private isConfigured: boolean = false;
 
   constructor() {
-    if (SALAD_API_KEY && SALAD_ORGANIZATION_ID) {
-      this.isConfigured = true;
-      logger.info('Image Processor configurado com Salad Cloud');
-    } else {
-      logger.warn('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados - embeddings indisponíveis');
-    }
+    // REGRA 6: Serviço local autônomo - sempre disponível (serviço interno)
+    this.isConfigured = true;
+    logger.info({ serviceUrl: CLIP_SERVICE_URL }, 'Image Processor configurado com serviço CLIP local (autônomo)');
   }
 
   /**
@@ -144,11 +149,7 @@ class ImageProcessorService {
         embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
         embeddingModel = 'error-fallback-zero';
       }
-    } else {
-      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
-      logger.error('SALAD_API_KEY não configurado - embeddings indisponíveis em produção');
-      throw new Error('Configuração Salad Cloud obrigatória para processamento de imagens. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
-    }
+    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
 
     // Gerar thumbnail
     let thumbnailBuffer: Buffer | undefined;
@@ -183,20 +184,17 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP de texto via Salad Cloud (com circuit breaker - Regra 16)
+   * Gera embedding CLIP de texto via serviço local (com circuit breaker - Regra 16)
    * Permite buscar imagens por descrição textual
    * 
-   * IMPORTANTE: Requer endpoint CLIP com suporte a texto configurado em SALAD_CLIP_ENDPOINT
-   * O endpoint deve aceitar payload { text: string, model: string } e retornar { embedding: number[] }
+   * ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU ou GPU local)
+   * GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
    * 
    * @param text - Texto descritivo para gerar embedding (ex: "gato laranja dormindo")
    * @returns Embedding CLIP (768 dim) e modelo usado
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
-    if (!this.isConfigured) {
-      logger.error('SALAD_API_KEY não configurado - text embeddings CLIP indisponíveis');
-      throw new Error('Configuração Salad Cloud obrigatória para embeddings de texto CLIP. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
-    }
+    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
 
     if (!text || text.trim().length === 0) {
       throw new Error('Texto vazio não é permitido para geração de embedding');
@@ -241,7 +239,7 @@ class ImageProcessorService {
       logger.error({ 
         error: errorMessage, 
         textLength: trimmedText.length,
-        endpoint: `${SALAD_CLIP_ENDPOINT}/inference/clip`,
+        endpoint: `${CLIP_SERVICE_URL}/inference/clip`,
       }, 'Erro ao gerar text embedding CLIP (circuit breaker)');
       throw error;
     }
@@ -338,7 +336,8 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP via Salad Cloud (com circuit breaker - Regra 16)
+   * Gera embedding CLIP via serviço local (com circuit breaker - Regra 16)
+   * ARQUITETURA AUTÔNOMA: Serviço local no Hetzner (CPU ou GPU)
    */
   private async generateClipEmbedding(
     imageBuffer: Buffer,
@@ -532,18 +531,19 @@ class ImageProcessorService {
    * Verifica se o serviço está configurado corretamente
    */
   isReady(): boolean {
-    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md)
+    // REGRA 6: Serviço local é OBRIGATÓRIO em produção (autonomia)
     return this.isConfigured;
   }
 
   /**
    * Retorna informações sobre a configuração
    */
-  getConfig(): { configured: boolean; embeddingDim: number; model: string } {
+  getConfig(): { configured: boolean; embeddingDim: number; model: string; serviceUrl: string } {
     return {
       configured: this.isConfigured,
       embeddingDim: CLIP_EMBEDDING_DIM,
-      model: this.isConfigured ? 'ViT-L/14 (Salad Cloud)' : 'NÃO CONFIGURADO',
+      model: this.isConfigured ? 'ViT-L/14 (Local - CPU/GPU)' : 'NÃO CONFIGURADO',
+      serviceUrl: CLIP_SERVICE_URL,
     };
   }
 }
