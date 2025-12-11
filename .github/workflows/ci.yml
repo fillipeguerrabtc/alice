@@ -882,8 +882,10 @@ jobs:
       # Justificativa: Se Code Scanning está habilitado, o upload DEVE funcionar.
       # Se falhar, é um problema que precisa ser investigado, não mascarado.
       # Os resultados do scan crítico já estão salvos como artifacts (step posterior).
+      # GAP-GHACTIONS-001: SHA pinning para supply chain security
+      # SHA: github/codeql-action@v3.27.0 (2024-11-05)
       - name: Upload Trivy scan results to Security tab
-        uses: github/codeql-action/upload-sarif@v4
+        uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
         with:
           sarif_file: 'trivy-results.sarif'
