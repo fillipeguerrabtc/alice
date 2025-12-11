@@ -878,18 +878,13 @@ jobs:
             }
 
       # Upload para GitHub Security tab (APENAS se Code Scanning estiver habilitado)
-      # NOTA: Este step é NÃO-CRÍTICO e pode falhar sem bloquear o CI
-      # Justificativa técnica:
-      # 1. O scan de segurança (Trivy) já foi executado com sucesso (step anterior)
-      # 2. Os resultados estão salvos como artifacts (step posterior sempre executa)
-      # 3. O upload é apenas para visualização na aba Security do GitHub (conveniência)
-      # 4. Se o upload falhar, os resultados ainda estão disponíveis via artifacts para análise
-      # REGRA 6: Enterprise-grade - não é workaround, é step opcional de visualização
-      # REGRA 9: Validação contínua - o scan crítico já passou, upload é apenas UI
+      # REGRA 6: Enterprise-grade - fail-fast se upload falhar (não usar continue-on-error)
+      # Justificativa: Se Code Scanning está habilitado, o upload DEVE funcionar.
+      # Se falhar, é um problema que precisa ser investigado, não mascarado.
+      # Os resultados do scan crítico já estão salvos como artifacts (step posterior).
       - name: Upload Trivy scan results to Security tab
         uses: github/codeql-action/upload-sarif@v4
         if: always() && steps.check-code-scanning.outputs.enabled == 'true'
-        continue-on-error: true
         with:
           sarif_file: 'trivy-results.sarif'
 
