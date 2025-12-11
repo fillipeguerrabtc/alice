@@ -1,7 +1,7 @@
 # Relatório de Versionamento Automático - Alice Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Dezembro de 2025  
+**Data:** 11 de Dezembro de 2025  
 **Tipo:** Verificação Honesta e Transparente
 
 ---
@@ -55,19 +55,21 @@ PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
 ### 3. Python
 **Status:** ✅ **100% IMPLEMENTADO** (apenas no CI)
 
-- **Fonte:** API oficial `https://www.python.org/api/v2/downloads/release/`
-- **Fallback:** `.python-version` (atual: `3.11`)
+- **Fonte:** API GitHub Actions `https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json`
+- **Fallback:** `.python-version` (atual: `3.14`)
 - **Onde:**
   - `.github/workflows/ci.yml` (2 jobs: build-clip-inference, security-scan)
-- **Validação:** Formato X.Y (ex: `3.11`)
+- **Validação:** Formato X.Y (ex: `3.14`)
 - **Compliance:** ✅ Regra 6, Regra 11
 - **Nota:** Python não é necessário no `deploy-production.yml` (não é usado no deploy, apenas no CI para build do clip-inference-service)
+- **IMPORTANTE:** Usamos a API do GitHub Actions (não Python.org) porque lista apenas versões **realmente disponíveis** para `setup-python@v5`
 
 **Código:**
 ```yaml
-PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/release/" 2>/dev/null | \
-  jq -r '[.[] | select(.pre_release == false) | .name] | first // empty' 2>/dev/null | \
-  sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
+PYTHON_VERSION=$(curl -s --max-time 10 \
+  "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
+  jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
+  sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
 ```
 
 ---
@@ -187,30 +189,49 @@ DIGEST=$(curl -s "https://hub.docker.com/v2/repositories/${image}/tags/${tag}/" 
 
 ---
 
-## 🔧 CORREÇÕES APLICADAS NESTA SESSÃO
+## 🔧 CORREÇÕES APLICADAS
 
 ### 1. Erro TypeScript Buffer (apps/rag-service/src/document-processor.ts)
-**Status:** ✅ **CORRIGIDO**
+**Status:** ✅ **CORRIGIDO** (11/12/2025)
 
 **Problema:**
-- TypeScript inferia `Buffer<ArrayBufferLike>` de `multer`, incompatível com `exceljs`
-- Checks `instanceof ArrayBuffer` e `ArrayBuffer.isView()` causavam tipo `never`
+- TypeScript @types/node 22+ introduziu `Buffer<ArrayBufferLike>` incompatível com exceljs
+- exceljs define sua própria interface `interface Buffer extends ArrayBuffer` que conflita
 
 **Solução:**
-- Simplificado para `Buffer.from(buffer)` que aceita qualquer tipo de buffer e retorna `Buffer` puro do Node.js
-- Remove complexidade desnecessária e resolve conflitos de tipo
+- Conversão para `ArrayBuffer` nativo via `Uint8Array.slice().buffer`
+- Cast via `unknown` para satisfazer tipagem do exceljs
 
 **Código corrigido:**
 ```typescript
-const workbook = new ExcelJSLib.Workbook();
-// Garantir que buffer é um Buffer do Node.js (não Buffer<ArrayBufferLike> de Web APIs)
-// exceljs 4.4.0+ requer Buffer do Node.js, não tipos genéricos de Buffer
-// REGRA 6: Enterprise-grade - conversão explícita para garantir compatibilidade
-// Buffer.from() aceita Buffer, ArrayBuffer, TypedArray e retorna Buffer puro do Node.js
-// Isso resolve conflitos de tipo quando multer retorna Buffer<ArrayBufferLike>
-const nodeBuffer: Buffer = Buffer.from(buffer);
-await workbook.xlsx.load(nodeBuffer);
+let arrayBuffer: ArrayBuffer;
+if (Buffer.isBuffer(buffer)) {
+  const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+  arrayBuffer = uint8.slice().buffer;
+} else if (ArrayBuffer.isView(buffer)) {
+  const typedArray = buffer as ArrayBufferView;
+  const uint8 = new Uint8Array(typedArray.buffer, typedArray.byteOffset, typedArray.byteLength);
+  arrayBuffer = uint8.slice().buffer;
+} else if (buffer instanceof ArrayBuffer) {
+  arrayBuffer = buffer.slice(0);
+} else {
+  throw new Error('Tipo de buffer não suportado...');
+}
+await workbook.xlsx.load(arrayBuffer as unknown as import('exceljs').Buffer);
 ```
+
+### 2. API Python.org Incorreta (ci.yml)
+**Status:** ✅ **CORRIGIDO** (11/12/2025)
+
+**Problema:**
+- API `https://www.python.org/api/v2/downloads/release/` retorna releases em ordem cronológica
+- Primeiro release não-prerelease pode ser versão antiga (Python 2.0)
+- Resultou em erro "Version 2.0 was not found for Ubuntu 24.04"
+
+**Solução:**
+- Migrado para API do GitHub Actions: `actions/python-versions/main/versions-manifest.json`
+- Esta API lista APENAS versões realmente disponíveis para `setup-python@v5`
+- Filtro adicional para garantir apenas Python 3.x estável
 
 ---
 

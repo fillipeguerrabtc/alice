@@ -422,21 +422,21 @@ jobs:
           df -h /
 
       # REGRA 6: Enterprise-grade - versionamento automático do Python
-      # Buscar versão estável mais recente via API oficial do Python
+      # API correta: actions/python-versions (versões realmente disponíveis no GitHub Actions)
       # Fallback para .python-version se API falhar
-      # REGRA 11: Documentação oficial Python.org API v2: /api/v2/downloads/release/ (singular)
-      # Campo correto: .pre_release (não .is_prerelease)
       - name: Buscar versão do Python
         id: python-version
         run: |
-          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API oficial
-          # API oficial: https://www.python.org/api/v2/downloads/release/ (singular, não plural)
-          # Campo correto: .pre_release (boolean, false = versão estável)
-          echo "🔍 Buscando versão estável mais recente do Python..."
+          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API do GitHub Actions
+          # API: https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
+          # Esta API lista APENAS versões realmente disponíveis para setup-python
+          echo "🔍 Buscando versão estável mais recente do Python (GitHub Actions)..."
           
-          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/release/" 2>/dev/null | \
-            jq -r '[.[] | select(.pre_release == false) | .name] | first // empty' 2>/dev/null | \
-            sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
+          # Buscar versões disponíveis e filtrar: estável (sem alpha/beta/rc), Python 3.x
+          PYTHON_VERSION=$(curl -s --max-time 10 \
+            "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
+            jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
+            sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
           
           # REGRA 6: Enterprise-grade - fallback para .python-version se API falhar
           if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
@@ -724,19 +724,20 @@ jobs:
       # Setup Python para instalar dependências Python (necessário para Trivy escanear)
       # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha
       # REGRA 6: Enterprise-grade - versionamento automático do Python
-      # REGRA 11: Documentação oficial Python.org API v2: /api/v2/downloads/release/ (singular)
-      # Campo correto: .pre_release (não .is_prerelease)
+      # API correta: actions/python-versions (versões realmente disponíveis no GitHub Actions)
       - name: Buscar versão do Python
         id: python-version
         run: |
-          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API oficial
-          # API oficial: https://www.python.org/api/v2/downloads/release/ (singular, não plural)
-          # Campo correto: .pre_release (boolean, false = versão estável)
-          echo "🔍 Buscando versão estável mais recente do Python..."
+          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API do GitHub Actions
+          # API: https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
+          # Esta API lista APENAS versões realmente disponíveis para setup-python
+          echo "🔍 Buscando versão estável mais recente do Python (GitHub Actions)..."
           
-          PYTHON_VERSION=$(curl -s --max-time 10 "https://www.python.org/api/v2/downloads/release/" 2>/dev/null | \
-            jq -r '[.[] | select(.pre_release == false) | .name] | first // empty' 2>/dev/null | \
-            sed 's/^Python //' | sed -E 's/^([0-9]+\.[0-9]+)(\.[0-9]+)?.*$/\1/')
+          # Buscar versões disponíveis e filtrar: estável (sem alpha/beta/rc), Python 3.x
+          PYTHON_VERSION=$(curl -s --max-time 10 \
+            "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
+            jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
+            sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
           
           if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
             echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2

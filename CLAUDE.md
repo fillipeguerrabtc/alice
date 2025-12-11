@@ -188,7 +188,7 @@ alice/
 - **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
 - **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22, pnpm (versão automática via package.json)
 - **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
-- **Python**: Python (versão estável automática via API + fallback .python-version), PyTorch 2.9.1 (CLIP service)
+- **Python**: Python (versão estável automática via GitHub Actions API + fallback .python-version), PyTorch 2.9.1 (CLIP service)
 - **CI/CD**: GitHub Actions (100% automático)
 - **Atualização Periódica**: Workflows automáticos para dependências npm/pnpm (semanal) e pacotes do sistema Hetzner (semanal)
 
@@ -198,7 +198,7 @@ alice/
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), componentes externos (GitHub API + fallback JSON)*
+*Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (GitHub Actions API + .python-version), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *Última Revisão Completa: 11/12/2025 - healthchecks 38/38 (3 init usam service_completed_successfully), logs centralizados Vector→Loki, sem Slack*
