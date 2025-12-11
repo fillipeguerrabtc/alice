@@ -1453,25 +1453,29 @@ jobs:
             exit 1
           fi
           # CORS (origens obrigatórias em produção)
+          # REGRA 6: Normalizar CORS_ORIGINS ANTES de derivar CORS_ORIGIN (corrige caso de vírgula inicial)
           CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGIN_SECRET:-}" | xargs)"
           CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_SECRET:-}" | xargs)"
+          # Normalizar lista ANTES de qualquer derivação (remove vírgulas iniciais/finais e valores vazios)
+          if [ -n "${CORS_ORIGINS_VALUE}" ]; then
+            CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | awk 'BEGIN{RS=",";ORS=","}{gsub(/^ +| +$/,""); if(length($0)>0) print $0}' | sed 's/,$//')"
+          fi
           if [ -z "${CORS_ORIGIN_VALUE}" ] && [ -z "${CORS_ORIGINS_VALUE}" ]; then
             echo "::error::Defina ao menos um dos secrets CORS_ORIGIN ou CORS_ORIGINS para liberar o frontend. Ambos estão vazios." >&2
             exit 1
           fi
+          # Derivar CORS_ORIGIN do primeiro valor de CORS_ORIGINS (já normalizado)
           if [ -z "${CORS_ORIGIN_VALUE}" ] && [ -n "${CORS_ORIGINS_VALUE}" ]; then
             CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | cut -d',' -f1 | xargs)"
-            # REGRA 6: Fail-fast se CORS_ORIGINS continha apenas delimitadores/espaços
+            # REGRA 6: Fail-fast se CORS_ORIGINS continha apenas delimitadores/espaços após normalização
             if [ -z "${CORS_ORIGIN_VALUE}" ]; then
               echo "::error::CORS_ORIGINS contém apenas delimitadores ou espaços. Configure um valor válido (ex: https://yesyoudeserve.duckdns.org)." >&2
               exit 1
             fi
           fi
+          # Derivar CORS_ORIGINS de CORS_ORIGIN se apenas este estiver definido
           if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
             CORS_ORIGINS_VALUE="${CORS_ORIGIN_VALUE}"
-          elif [ -n "${CORS_ORIGINS_VALUE}" ]; then
-            # normalizar lista removendo espaços
-            CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | awk 'BEGIN{RS=",";ORS=","}{gsub(/^ +| +$/,""); if(length($0)>0) print $0}' | sed 's/,$//')"
           fi
           # Alertmanager / SMTP (usar defaults seguros se secrets ausentes)
           SMTP_HOST_VALUE="${SMTP_HOST_SECRET:-smtp.resend.com}"
