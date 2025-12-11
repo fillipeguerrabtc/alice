@@ -995,6 +995,8 @@ jobs:
           context: .
           file: apps/api-gateway/Dockerfile
           push: true
+          build-args: |
+            TRAEFIK_VERSION=${{ env.TRAEFIK_VERSION }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-api-gateway:latest

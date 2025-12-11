@@ -3,7 +3,8 @@
 # Documentação em PT-BR (Regra 10 CLAUDE.md)
 # SEGURANÇA: Traefik v3.3+ com configurações hardened
 # ==============================================================================
-FROM traefik:v3.3
+ARG TRAEFIK_VERSION=3.6.4
+FROM traefik:v${TRAEFIK_VERSION}
 
 # Copiar configurações do Traefik
 COPY apps/api-gateway/config/traefik.yml /etc/traefik/traefik.yml
