@@ -468,9 +468,23 @@ jobs:
         run: |
           set -e
           cd apps/clip-inference-service
-          # Usar cache do pip (gerenciado por actions/setup-python)
-          pip install -r requirements.txt
-          echo "Dependências instaladas com sucesso!"
+          # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
+          # Pacotes grandes (nvidia_cudnn_cu12, torch) podem falhar com "Connection reset by peer"
+          pip install --upgrade pip
+          for attempt in 1 2 3; do
+            echo "📦 Tentativa $attempt de instalar dependências..."
+            if pip install --retries 5 --timeout 120 -r requirements.txt; then
+              echo "✅ Dependências instaladas com sucesso!"
+              break
+            else
+              if [ $attempt -eq 3 ]; then
+                echo "::error::Falha ao instalar dependências após 3 tentativas"
+                exit 1
+              fi
+              echo "⚠️ Tentativa $attempt falhou, aguardando 30s antes de retry..."
+              sleep 30
+            fi
+          done
           df -h /
 
       - name: Validate Python syntax
@@ -763,9 +777,22 @@ jobs:
         run: |
           set -e
           echo "Instalando dependências Python para scan de segurança..."
-          # Usar cache do pip (gerenciado por actions/setup-python)
-          pip install -r apps/clip-inference-service/requirements.txt
-          echo "Dependências Python instaladas com sucesso!"
+          # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
+          pip install --upgrade pip
+          for attempt in 1 2 3; do
+            echo "📦 Tentativa $attempt de instalar dependências..."
+            if pip install --retries 5 --timeout 120 -r apps/clip-inference-service/requirements.txt; then
+              echo "✅ Dependências Python instaladas com sucesso!"
+              break
+            else
+              if [ $attempt -eq 3 ]; then
+                echo "::error::Falha ao instalar dependências após 3 tentativas"
+                exit 1
+              fi
+              echo "⚠️ Tentativa $attempt falhou, aguardando 30s antes de retry..."
+              sleep 30
+            fi
+          done
           df -h /
 
       - name: Run Trivy vulnerability scanner

@@ -65,6 +65,7 @@ PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
 - **IMPORTANTE:** Usamos `.python-version` como fonte PRIMÁRIA (não API automática) para garantir compatibilidade com todas as dependências
 - **RAZÃO:** Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta Python 3.14)
 - **DEPENDÊNCIAS:** Workflow instala `libjpeg-dev zlib1g-dev libpng-dev` para compilação de Pillow quando wheels não estão disponíveis
+- **RESILIÊNCIA:** pip install com retry logic (3 tentativas, --retries 5, timeout 120s) para falhas de rede transientes
 
 **Código:**
 ```yaml
