@@ -16,7 +16,8 @@ ENV PATH="$PNPM_HOME:$PATH"
 # NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
 # Suprimir aviso de update do npm (determinismo, Regra 6) e tornar apk resiliente (mirrors + retry com fail-fast)
 RUN set -e; \
-    ver="$(cat /etc/alpine-release | cut -d. -f1,2)"; \
+    ver="$(cat /etc/alpine-release 2>/dev/null | cut -d. -f1,2 || true)"; \
+    if [ -z "$ver" ]; then ver="3.20"; fi; \
     echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/main" > /etc/apk/repositories; \
     echo "https://dl-cdn.alpinelinux.org/alpine/v${ver}/community" >> /etc/apk/repositories; \
     success=0; \
