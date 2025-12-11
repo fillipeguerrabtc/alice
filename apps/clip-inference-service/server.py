@@ -605,8 +605,10 @@ async def readiness_probe():
     """Readiness probe - verifica se modelos estão carregados e circuit breakers fechados"""
     clip_model_loaded = clip_model is not None
     text_embedding_model_loaded = text_embedding_model is not None
-    clip_circuit_ready = clip_breaker.current_state != "open"
-    text_embedding_circuit_ready = text_embedding_breaker.current_state != "open"
+    # pybreaker.current_state retorna CircuitBreakerState object, não string
+    # Usar .name para comparar com string
+    clip_circuit_ready = clip_breaker.current_state.name != "open"
+    text_embedding_circuit_ready = text_embedding_breaker.current_state.name != "open"
     
     all_ready = clip_model_loaded and text_embedding_model_loaded and clip_circuit_ready and text_embedding_circuit_ready
     
@@ -663,14 +665,14 @@ async def circuit_breaker_status():
     return {
         "clip": {
             "name": "clip-inference",
-            "state": clip_breaker.current_state,
+            "state": clip_breaker.current_state.name,  # CircuitBreakerState tem atributo .name
             "fail_counter": clip_breaker.fail_counter,
             "fail_max": clip_breaker.fail_max,
             "reset_timeout": clip_breaker.reset_timeout,
         },
         "text_embedding": {
             "name": "text-embedding-inference",
-            "state": text_embedding_breaker.current_state,
+            "state": text_embedding_breaker.current_state.name,  # CircuitBreakerState tem atributo .name
             "fail_counter": text_embedding_breaker.fail_counter,
             "fail_max": text_embedding_breaker.fail_max,
             "reset_timeout": text_embedding_breaker.reset_timeout,
