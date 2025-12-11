@@ -261,7 +261,7 @@ describe('Video Processor - Estrutura de Resultado', () => {
     const result: ProcessedVideo = {
       transcription: 'Transcrição do vídeo',
       transcriptionLanguage: 'pt',
-      textEmbedding: new Array(1536).fill(0),
+      textEmbedding: new Array(768).fill(0), // multilingual-e5-base local (768 dim)
       frameEmbeddings: [new Array(768).fill(0), new Array(768).fill(0)],
       combinedEmbedding: new Array(768).fill(0),
       embeddingModel: 'clip-vit-large-patch14',
@@ -272,7 +272,7 @@ describe('Video Processor - Estrutura de Resultado', () => {
     };
 
     expect(result.transcription).toBeDefined();
-    expect(result.textEmbedding.length).toBe(1536);
+    expect(result.textEmbedding.length).toBe(768); // multilingual-e5-base local (768 dim)
     expect(result.frameEmbeddings.length).toBe(2);
     expect(result.framesExtracted).toBe(2);
   });

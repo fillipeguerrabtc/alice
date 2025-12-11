@@ -707,8 +707,13 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+      # CLIP Local (Autônomo - Regra 6)
+      # Serviço interno na rede Docker privada - não requer autenticação
+      CLIP_SERVICE_URL: http://alice-clip-inference:8080
     depends_on:
       postgres:
+        condition: service_healthy
+      alice-clip-inference:
         condition: service_healthy
     networks:
       - alice-network

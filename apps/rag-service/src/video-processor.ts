@@ -156,9 +156,9 @@ class VideoProcessorService {
       
       if (audioProcessor.isReady() && imageProcessor.isReady()) {
         this.isConfigured = true;
-        logger.info('Video Processor configurado com FFmpeg + Salad Cloud');
+        logger.info('Video Processor configurado com FFmpeg + Whisper (Salad Cloud) + Embeddings locais');
       } else {
-        logger.warn('Salad Cloud não configurado - embeddings de vídeo indisponíveis');
+        logger.warn('Dependências não configuradas - processamento de vídeo indisponível');
       }
     } catch (error) {
       logger.warn({ error }, 'FFmpeg não disponível - processamento de vídeo indisponível');

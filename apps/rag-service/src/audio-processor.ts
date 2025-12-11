@@ -205,7 +205,8 @@ class AudioProcessorService {
   }
 
   /**
-   * Gera embedding de texto via Salad Cloud
+   * Gera embedding de texto via serviço local (multilingual-e5-base)
+   * REGRA 6: Autonomia Total - embeddings são 100% locais
    */
   private async generateTextEmbedding(
     text: string
