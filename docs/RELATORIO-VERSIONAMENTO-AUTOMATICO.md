@@ -63,6 +63,7 @@ PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
 - **Compliance:** ✅ Regra 6, Regra 11
 - **Nota:** Python não é necessário no `deploy-production.yml` (não é usado no deploy, apenas no CI para build do clip-inference-service)
 - **IMPORTANTE:** Usamos a API do GitHub Actions (não Python.org) porque lista apenas versões **realmente disponíveis** para `setup-python@v5`
+- **DEPENDÊNCIAS:** Python 3.14+ pode não ter wheels pré-compilados para Pillow; workflow instala `libjpeg-dev zlib1g-dev libpng-dev` antes do pip install
 
 **Código:**
 ```yaml

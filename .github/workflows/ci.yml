@@ -468,6 +468,14 @@ jobs:
           cache: 'pip'
           cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
 
+      # REGRA 6: Enterprise-grade - dependências de sistema para compilar Pillow do source
+      # Python 3.14+ pode não ter wheels pré-compilados, requerendo compilação
+      - name: Install system dependencies for Pillow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
+          echo "✅ Dependências de sistema instaladas para compilação do Pillow"
+
       - name: Install dependencies
         run: |
           set -e
@@ -766,6 +774,14 @@ jobs:
           python-version: ${{ steps.python-version.outputs.version }}
           cache: 'pip'
           cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
+
+      # REGRA 6: Enterprise-grade - dependências de sistema para compilar Pillow do source
+      # Python 3.14+ pode não ter wheels pré-compilados, requerendo compilação
+      - name: Install system dependencies for Pillow
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
+          echo "✅ Dependências de sistema instaladas para compilação do Pillow"
 
       - name: Install Python dependencies
         run: |
