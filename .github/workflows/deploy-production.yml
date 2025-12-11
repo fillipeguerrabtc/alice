@@ -1976,12 +1976,19 @@ jobs:
             # OBRIGATÓRIA: Esta migration DEVE ser executada antes do deploy do código
             # que usa queries com vector(768). Caso contrário, haverá erro de incompatibilidade
             # de dimensões nas queries SQL (vector(1536) vs vector(768)).
+            # ENTERPRISE-GRADE: Esta migration é CRÍTICA e deve falhar hard se houver erro
+            # (não suprime erros como 0001 e 0002 que podem ser idempotentes)
             if [ -f "../../migrations/0003_update_embedding_dimensions_768.sql" ]; then
               echo "Executando migration 0003_update_embedding_dimensions_768.sql (CRÍTICA para embeddings locais)..."
-              docker compose -f docker-compose.prod.yml \
+              if ! docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres psql -U alice -d alice_prod \
-                -f /dev/stdin < ../../migrations/0003_update_embedding_dimensions_768.sql || echo "Migration 0003 já aplicada ou erro ignorável"
+                -f /dev/stdin < ../../migrations/0003_update_embedding_dimensions_768.sql; then
+                echo "ERRO CRÍTICO: Falha na execução da migration 0003_update_embedding_dimensions_768.sql"
+                echo "Esta migration é OBRIGATÓRIA e o deploy NÃO pode continuar sem ela."
+                echo "Verifique os logs do PostgreSQL acima para identificar o problema."
+                exit 1
+              fi
             else
               echo "ERRO CRÍTICO: Migration 0003_update_embedding_dimensions_768.sql não encontrada!"
               echo "Esta migration é OBRIGATÓRIA para embeddings locais (multilingual-e5-base - 768 dim)"

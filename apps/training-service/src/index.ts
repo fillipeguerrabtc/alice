@@ -12,7 +12,7 @@ import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage } from '@alice/database';
+import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
@@ -180,10 +180,9 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error('Serviço de embeddings retornou resultado vazio');
     }
     
-    // Validar dimensão (deve ser 768 para multilingual-e5-base)
-    if (resultEmbedding.length !== 768) {
-      logger.warn(`Embedding com dimensão inesperada: ${resultEmbedding.length} (esperado: 768)`);
-    }
+    // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+    // Lança erro se dimensão estiver incorreta (não apenas warning) - Regra 6
+    validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
     return resultEmbedding;
   } finally {
