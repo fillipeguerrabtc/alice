@@ -200,13 +200,20 @@ const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-infe
 async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
   // REGRA 6: Serviço local autônomo - não depende de API externa
   // Serviço interno na rede Docker privada - não requer autenticação
+  // NOTA: imageBase64 pode vir com ou sem prefixo data:image/...;base64,
+  // O servidor Python trata ambos os formatos, mas padronizamos para incluir prefixo
+  // Se já tem prefixo, usar como está; caso contrário, adicionar prefixo genérico
+  const imageData = imageBase64.startsWith('data:') 
+    ? imageBase64 
+    : `data:image/png;base64,${imageBase64}`;
+  
   const response = await fetch(`${CLIP_SERVICE_URL}/inference/clip`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      image: `data:image/png;base64,${imageBase64}`,
+      image: imageData,
       model: 'ViT-L/14',
     }),
   });
