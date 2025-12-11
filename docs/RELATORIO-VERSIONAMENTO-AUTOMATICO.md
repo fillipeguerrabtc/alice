@@ -55,22 +55,27 @@ PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
 ### 3. Python
 **Status:** ✅ **100% IMPLEMENTADO** (apenas no CI)
 
-- **Fonte:** API GitHub Actions `https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json`
-- **Fallback:** `.python-version` (atual: `3.14`)
+- **Fonte:** Arquivo `.python-version` (fonte PRIMÁRIA - não API)
+- **Valor atual:** `3.13` (estável com suporte garantido para todas as dependências)
 - **Onde:**
   - `.github/workflows/ci.yml` (2 jobs: build-clip-inference, security-scan)
-- **Validação:** Formato X.Y (ex: `3.14`)
+- **Validação:** Formato X.Y (ex: `3.13`)
 - **Compliance:** ✅ Regra 6, Regra 11
 - **Nota:** Python não é necessário no `deploy-production.yml` (não é usado no deploy, apenas no CI para build do clip-inference-service)
-- **IMPORTANTE:** Usamos a API do GitHub Actions (não Python.org) porque lista apenas versões **realmente disponíveis** para `setup-python@v5`
-- **DEPENDÊNCIAS:** Python 3.14+ pode não ter wheels pré-compilados para Pillow; workflow instala `libjpeg-dev zlib1g-dev libpng-dev` antes do pip install
+- **IMPORTANTE:** Usamos `.python-version` como fonte PRIMÁRIA (não API automática) para garantir compatibilidade com todas as dependências
+- **RAZÃO:** Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta Python 3.14)
+- **DEPENDÊNCIAS:** Workflow instala `libjpeg-dev zlib1g-dev libpng-dev` para compilação de Pillow quando wheels não estão disponíveis
 
 **Código:**
 ```yaml
-PYTHON_VERSION=$(curl -s --max-time 10 \
-  "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
-  jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
-  sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
+# Fonte primária: .python-version (não API automática)
+# Garante compatibilidade testada com todas as dependências
+if [ -f ".python-version" ]; then
+  PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
+else
+  echo "::error::Arquivo .python-version não encontrado!" >&2
+  exit 1
+fi
 ```
 
 ---

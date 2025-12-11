@@ -427,29 +427,17 @@ jobs:
       - name: Buscar versão do Python
         id: python-version
         run: |
-          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API do GitHub Actions
-          # API: https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
-          # Esta API lista APENAS versões realmente disponíveis para setup-python
-          echo "🔍 Buscando versão estável mais recente do Python (GitHub Actions)..."
+          # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
+          # Razão: Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta 3.14)
+          # O arquivo .python-version garante compatibilidade testada com todas as dependências
+          echo "🔍 Lendo versão do Python do arquivo .python-version..."
           
-          # Buscar versões disponíveis e filtrar: estável (sem alpha/beta/rc), Python 3.x
-          PYTHON_VERSION=$(curl -s --max-time 10 \
-            "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
-            jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
-            sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
-          
-          # REGRA 6: Enterprise-grade - fallback para .python-version se API falhar
-          if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
-            echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2
-            if [ -f ".python-version" ]; then
-              PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
-              echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
-            else
-              echo "::error::Arquivo .python-version não encontrado e API falhou!" >&2
-              exit 1
-            fi
+          if [ -f ".python-version" ]; then
+            PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
+            echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
           else
-            echo "✅ Versão estável do Python encontrada via API: $PYTHON_VERSION"
+            echo "::error::Arquivo .python-version não encontrado!" >&2
+            exit 1
           fi
           
           # REGRA 6: Enterprise-grade - validar formato da versão (X.Y)
@@ -731,33 +719,21 @@ jobs:
 
       # Setup Python para instalar dependências Python (necessário para Trivy escanear)
       # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha
-      # REGRA 6: Enterprise-grade - versionamento automático do Python
-      # API correta: actions/python-versions (versões realmente disponíveis no GitHub Actions)
+      # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
       - name: Buscar versão do Python
         id: python-version
         run: |
-          # REGRA 6: Enterprise-grade - buscar versão estável mais recente via API do GitHub Actions
-          # API: https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json
-          # Esta API lista APENAS versões realmente disponíveis para setup-python
-          echo "🔍 Buscando versão estável mais recente do Python (GitHub Actions)..."
+          # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
+          # Razão: Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta 3.14)
+          # O arquivo .python-version garante compatibilidade testada com todas as dependências
+          echo "🔍 Lendo versão do Python do arquivo .python-version..."
           
-          # Buscar versões disponíveis e filtrar: estável (sem alpha/beta/rc), Python 3.x
-          PYTHON_VERSION=$(curl -s --max-time 10 \
-            "https://raw.githubusercontent.com/actions/python-versions/main/versions-manifest.json" 2>/dev/null | \
-            jq -r '[.[] | select(.version | test("^3\\.[0-9]+\\.[0-9]+$")) | .version] | first // empty' 2>/dev/null | \
-            sed -E 's/^([0-9]+\.[0-9]+)\.[0-9]+$/\1/')
-          
-          if [ -z "$PYTHON_VERSION" ] || [ "$PYTHON_VERSION" = "null" ]; then
-            echo "⚠️ AVISO: Falha ao buscar versão da API, usando fallback do .python-version" >&2
-            if [ -f ".python-version" ]; then
-              PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
-              echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
-            else
-              echo "::error::Arquivo .python-version não encontrado e API falhou!" >&2
-              exit 1
-            fi
+          if [ -f ".python-version" ]; then
+            PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
+            echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
           else
-            echo "✅ Versão estável do Python encontrada via API: $PYTHON_VERSION"
+            echo "::error::Arquivo .python-version não encontrado!" >&2
+            exit 1
           fi
           
           if ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
