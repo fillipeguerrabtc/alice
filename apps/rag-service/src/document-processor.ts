@@ -90,6 +90,7 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
     },
     body: JSON.stringify({
       text: params.text,
+      context: 'passage', // Documentos sendo indexados usam prefixo "passage: "
     }),
   });
 

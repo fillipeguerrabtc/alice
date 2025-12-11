@@ -223,6 +223,7 @@ class AudioProcessorService {
         },
         body: JSON.stringify({
           text,
+          context: 'passage', // Transcrições de áudio são documentos sendo indexados
         }),
       });
 

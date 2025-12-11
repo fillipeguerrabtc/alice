@@ -278,6 +278,7 @@ class ClipResponse(BaseModel):
 class TextEmbeddingRequest(BaseModel):
     """Request para gerar embedding de texto puro"""
     text: str = Field(..., description="Texto para embedding (suporta 100+ idiomas incluindo PT-BR e EN)")
+    context: str = Field(default="query", description="Contexto: 'query' para queries de busca, 'passage' para documentos sendo indexados")
 
 
 class TextEmbeddingResponse(BaseModel):
@@ -504,8 +505,13 @@ async def generate_text_embedding(
         """Função síncrona de inferência text embedding protegida por circuit breaker."""
         # multilingual-e5-base requer prefixo "query: " ou "passage: " dependendo do uso
         # Para busca semântica, usar "query: " para queries e "passage: " para documentos
-        # Por padrão, assumimos que é uma query (busca semântica)
-        prefixed_text = f"query: {request.text}" if not request.text.startswith(("query:", "passage:")) else request.text
+        # Se o texto já tem prefixo, usar como está; caso contrário, adicionar baseado no contexto
+        if request.text.startswith(("query:", "passage:")):
+            prefixed_text = request.text
+        else:
+            # Usar contexto fornecido (query ou passage)
+            prefix = "query" if request.context == "query" else "passage"
+            prefixed_text = f"{prefix}: {request.text}"
         
         # Gerar embedding
         embedding = text_embedding_model.encode(

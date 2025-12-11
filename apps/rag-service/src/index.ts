@@ -489,8 +489,8 @@ if (!SALAD_ORGANIZATION_ID) {
   logger.warn('SALAD_ORGANIZATION_ID não configurada - transcrição de áudio e LLM podem estar indisponíveis');
 }
 
-const SALAD_KEY: string = SALAD_API_KEY;
-const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
+// NOTA: SALAD_API_KEY e SALAD_ORGANIZATION_ID são usadas apenas por audio-processor.ts
+// para transcrição Whisper (Salad Cloud). Embeddings são 100% locais (multilingual-e5-base).
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
@@ -587,6 +587,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     },
     body: JSON.stringify({
       text,
+      context: 'query', // Queries de busca usam prefixo "query: "
     }),
   });
 

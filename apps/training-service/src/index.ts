@@ -163,6 +163,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       },
       body: JSON.stringify({
         text: text.slice(0, 2000),
+        context: 'passage', // Dados de treinamento são documentos sendo indexados
       }),
       signal: controller.signal,
     });
