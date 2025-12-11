@@ -15,7 +15,8 @@ ENV PATH="$PNPM_HOME:$PATH"
 
 # Atualizar pacotes do sistema e habilitar corepack para pnpm
 # NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
-RUN apk update && apk upgrade --no-cache && corepack enable
+# Suprimir aviso de update do npm (determinismo, Regra 6)
+RUN apk update && apk upgrade --no-cache && npm config set update-notifier false && corepack enable
 
 # ==============================================================================
 # Stage: builder - Compilar pacotes e serviço
