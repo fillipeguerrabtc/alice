@@ -56,6 +56,20 @@ git+https://github.com/openai/CLIP.git@a1d071733d7111c9c014f024669f959182114e33
 Pillow==11.1.0
 
 # =============================================================================
+# Text Embeddings - Sentence Transformers (Multilíngue)
+# =============================================================================
+
+# sentence-transformers 3.3.1 (released Dec 2025)
+# Modelo: multilingual-e5-base (768 dim, 100+ idiomas incluindo PT-BR e EN)
+# Licença: Apache 2.0 (uso comercial permitido)
+# Referência: https://www.sbert.net/docs/installation.html
+sentence-transformers>=3.3.1
+
+# transformers 4.46.0+ (dependência do sentence-transformers)
+# Referência: https://huggingface.co/docs/transformers/index
+transformers>=4.46.0
+
+# =============================================================================
 # Observabilidade e Resiliência
 # =============================================================================
 

@@ -72,9 +72,9 @@ Alice employs a microservices architecture with 41 containerized services orches
 
 ## External Dependencies
 - **LLM**: Llama 4 Maverick (400B params) on Salad Cloud (GPUs próprias).
-- **Embeddings de Texto**: text-embedding-3-small on Salad Cloud (GPUs próprias).
+- **Embeddings de Texto**: multilingual-e5-base local (CPU no Hetzner, 768 dim, 100+ idiomas incluindo PT-BR e EN) - 100% autônomo (Regra 6).
 - **Image Generation**: FLUX.1 Schnell on Salad Cloud (GPUs próprias).
-- **CLIP Inference**: CLIP ViT-L/14 local (CPU no Hetzner, pode migrar para GPU se necessário).
+- **CLIP Inference**: CLIP ViT-L/14 local (CPU no Hetzner, 768 dim, embeddings multimodais texto+imagem) - 100% autônomo (Regra 6).
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -194,7 +194,7 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.29 - 11 de Dezembro de 2025*
+*Versão: 3.30 - 11 de Dezembro de 2025*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*

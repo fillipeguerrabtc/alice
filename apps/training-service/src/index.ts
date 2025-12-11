@@ -132,33 +132,37 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // ============================================================================
-// CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
+// CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
+// Usa serviço local alice-clip-inference com multilingual-e5-base
+// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
+// CLIP Service URL para embeddings locais
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
-interface EmbeddingResponse {
-  data: Array<{ embedding: number[] }>;
+interface TextEmbeddingResponse {
+  embedding: number[];
+  model: string;
+  processing_time_ms: number;
 }
 
 // RESILIÊNCIA: Timeout para chamadas externas (Best Practices 2025)
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // RESILIÊNCIA: AbortController com timeout para evitar chamadas penduradas
+  // REGRA 6: Serviço local autônomo - não depende de API externa
+  // Serviço interno na rede Docker privada - não requer autenticação
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   
   try {
-    const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/text-embedding/embeddings`, {
+    const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Salad-Api-Key': SALAD_KEY,
       },
       body: JSON.stringify({
-        input: text.slice(0, 2000),
-        model: 'text-embedding-3-small',
+        text: text.slice(0, 2000),
       }),
       signal: controller.signal,
     });
@@ -168,11 +172,16 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json() as EmbeddingResponse;
-    const resultEmbedding = data.data[0]?.embedding;
+    const data = await response.json() as TextEmbeddingResponse;
+    const resultEmbedding = data.embedding;
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
-      throw new Error('API de embeddings retornou resultado vazio');
+      throw new Error('Serviço de embeddings retornou resultado vazio');
+    }
+    
+    // Validar dimensão (deve ser 768 para multilingual-e5-base)
+    if (resultEmbedding.length !== 768) {
+      logger.warn(`Embedding com dimensão inesperada: ${resultEmbedding.length} (esperado: 768)`);
     }
     
     return resultEmbedding;
@@ -182,13 +191,13 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
 }
 
 const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
-  name: 'training-embeddings',
-  ...CIRCUIT_BREAKER_PRESETS.saladEmbeddings,
+  name: 'training-embeddings-local',
+  ...CIRCUIT_BREAKER_PRESETS.textEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'salad-embeddings', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
+instrumentCircuitBreaker(metrics, 'training-embeddings-local', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
@@ -269,8 +278,8 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'salad-cloud',
-    model: 'text-embedding-3-small',
+    embeddingsProvider: 'local',
+    model: 'intfloat/multilingual-e5-base',
     saladCloudAvailable: saladAvailable,
     circuitBreakers: {
       embeddings: {

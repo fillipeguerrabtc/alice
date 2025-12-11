@@ -57,7 +57,8 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Serviço de Embeddings Salad Cloud - timeout moderado */
+  /** Serviço de Embeddings Salad Cloud - DEPRECADO (embeddings agora são locais) */
+  /** Mantido para compatibilidade com código legado que ainda usa Salad Cloud */
   saladEmbeddings: {
     timeout: 30000,
     errorThresholdPercentage: 50,
@@ -176,7 +177,8 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
-  /** Text Embeddings genérico - mesmo que saladEmbeddings (aliás para compatibilidade) */
+  /** Text Embeddings local - multilingual-e5-base (CPU no Hetzner) - 100+ idiomas */
+  /** Timeout moderado para serviço local (latência típica: 50-200ms) */
   textEmbeddings: {
     timeout: 30000,
     errorThresholdPercentage: 50,

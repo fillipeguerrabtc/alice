@@ -57,13 +57,20 @@ RUN python3 -m venv /opt/venv \
 # Configurar PATH para usar Python do venv em todas as etapas seguintes
 ENV PATH="/opt/venv/bin:$PATH"
 
-# Baixar modelo CLIP durante build (evita cold start)
+# Baixar modelos durante build (evita cold start)
 # Criar diretório cache com permissões corretas
 RUN mkdir -p /app/.cache && chown -R clipservice:clipservice /app/.cache
 ENV TORCH_HOME=/app/.cache
+ENV SENTENCE_TRANSFORMERS_HOME=/app/.cache
 
-# Baixar modelo como root (permissões de cache)
+# Baixar modelo CLIP como root (permissões de cache)
 RUN python3 -c "import clip; clip.load('ViT-L/14', device='cpu')" \
+    && chown -R clipservice:clipservice /app/.cache
+
+# Baixar modelo de text embeddings como root (permissões de cache)
+# multilingual-e5-base será baixado automaticamente na primeira execução
+# Pré-baixar durante build para evitar cold start
+RUN python3 -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('intfloat/multilingual-e5-base', device='cpu')" \
     && chown -R clipservice:clipservice /app/.cache
 
 # Copiar código da aplicação

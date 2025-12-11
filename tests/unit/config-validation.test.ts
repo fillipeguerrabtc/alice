@@ -696,8 +696,8 @@ describe('Config - RAG Chunk Configuration', () => {
       expect(RAG_CHUNK_CONFIG.chunkOverlap).toBe(200);
     });
 
-    it('deve ter dimensão de embeddings de 384 (text-embedding-3-small)', () => {
-      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(384);
+    it('deve ter dimensão de embeddings de 768 (multilingual-e5-base local)', () => {
+      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(768);
     });
 
     it('deve ter threshold de similaridade de 0.7', () => {
@@ -725,8 +725,8 @@ describe('Config - Salad Cloud Configuration', () => {
       expect(SALAD_CONFIG.models.chat).toBe('llama4-maverick');
     });
 
-    it('deve ter modelo de embeddings configurado como text-embedding-3-small', () => {
-      expect(SALAD_CONFIG.models.embeddings).toBe('text-embedding-3-small');
+    it('deve ter modelo de embeddings configurado como multilingual-e5-base (local)', () => {
+      expect(SALAD_CONFIG.models.embeddings).toBe('intfloat/multilingual-e5-base');
     });
 
     it('deve ter maxTokens padrão de 4096', () => {

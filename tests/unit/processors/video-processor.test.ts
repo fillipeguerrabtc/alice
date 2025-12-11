@@ -171,11 +171,11 @@ describe('Video Processor - Metadata', () => {
 // ============================================================================
 
 describe('Video Processor - Dimensões de Embedding', () => {
-  const TEXT_EMBEDDING_DIM = 1536;  // text-embedding-3-small (transcrição)
+  const TEXT_EMBEDDING_DIM = 768;  // multilingual-e5-base local (transcrição)
   const CLIP_EMBEDDING_DIM = 768;   // CLIP ViT-L/14 (frames)
 
-  it('deve ter text embedding de 1536 dimensões', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(1536);
+  it('deve ter text embedding de 768 dimensões (multilingual-e5-base local)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(768);
   });
 
   it('deve ter CLIP embedding de 768 dimensões por frame', () => {

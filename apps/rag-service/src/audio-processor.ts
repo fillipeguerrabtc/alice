@@ -24,8 +24,8 @@ const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_WHISPER_ENDPOINT = process.env.SALAD_WHISPER_ENDPOINT || 'https://api.salad.com/api/public';
 
-// Dimensão dos embeddings de texto
-export const TEXT_EMBEDDING_DIM = 1536;
+// Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
+export const TEXT_EMBEDDING_DIM = 768;
 
 export interface AudioMetadata {
   duration?: number; // segundos
@@ -211,16 +211,17 @@ class AudioProcessorService {
     text: string
   ): Promise<{ embedding: number[]; model: string }> {
     try {
-      const response = await fetch(`${SALAD_WHISPER_ENDPOINT}/inference/embeddings`, {
+      // REGRA 6: Serviço local autônomo - não depende de API externa
+      // Serviço interno na rede Docker privada - não requer autenticação
+      const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+      
+      const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Salad-Api-Key': SALAD_API_KEY!,
-          'Salad-Organization': SALAD_ORGANIZATION_ID!,
         },
         body: JSON.stringify({
-          input: text,
-          model: 'text-embedding-3-small',
+          text,
         }),
       });
 
@@ -230,17 +231,23 @@ class AudioProcessorService {
       }
 
       const result = await response.json() as { 
-        data: Array<{ embedding: number[] }>; 
+        embedding: number[];
         model: string;
+        processing_time_ms: number;
       };
 
-      if (!result.data || result.data.length === 0) {
+      if (!result.embedding || result.embedding.length === 0) {
         throw new Error('Resposta de embedding vazia');
       }
 
+      // Validar dimensão (deve ser 768 para multilingual-e5-base)
+      if (result.embedding.length !== 768) {
+        logger.warn(`Embedding com dimensão inesperada: ${result.embedding.length} (esperado: 768)`);
+      }
+
       return {
-        embedding: result.data[0].embedding,
-        model: result.model || 'text-embedding-3-small',
+        embedding: result.embedding,
+        model: result.model || 'intfloat/multilingual-e5-base',
       };
     } catch (error) {
       logger.error({ error }, 'Erro na API de Embeddings');
@@ -408,10 +415,10 @@ class AudioProcessorService {
     embeddingModel: string;
   } {
     return {
-      configured: this.isConfigured,
+      configured: this.isConfigured, // Whisper ainda usa Salad Cloud, embeddings são locais
       embeddingDim: TEXT_EMBEDDING_DIM,
       transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'NÃO CONFIGURADO',
-      embeddingModel: this.isConfigured ? 'text-embedding-3-small (Salad Cloud)' : 'NÃO CONFIGURADO',
+      embeddingModel: 'intfloat/multilingual-e5-base (Local)', // Embeddings sempre locais (Regra 6)
     };
   }
 }

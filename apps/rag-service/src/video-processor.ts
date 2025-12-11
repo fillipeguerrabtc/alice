@@ -51,7 +51,7 @@ export interface ProcessedVideo {
   transcriptionConfidence?: number;
   
   // Embeddings
-  textEmbedding: number[]; // 1536 dim - da transcrição
+  textEmbedding: number[]; // 768 dim - da transcrição (multilingual-e5-base local)
   frameEmbeddings: number[][]; // Array de CLIP embeddings (768 dim cada) dos frames
   combinedEmbedding: number[]; // Embedding combinado para busca
   

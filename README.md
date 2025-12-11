@@ -113,7 +113,7 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 | 10 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
 | 11 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
 | 12 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 13 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (Python) |
+| 13 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (CLIP) + text embeddings (multilingual-e5-base) - 100% local |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
@@ -403,13 +403,14 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.13.0 - 10 de Dezembro de 2025*
+*Versão 3.14.0 - 11 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*Última Revisão Enterprise: 10/12/2025 - healthchecks 38/38 (3 init usam service_completed_successfully), logs via Vector→Loki; observabilidade pins validados (Prom 3.0.1, Alertmanager 0.27.0, Grafana 11.1.4, Loki/Promtail 3.1.0, Jaeger 1.58, OTel 0.114.0, Vector 0.43.1)*
+*Embeddings: 100% Locais - multilingual-e5-base (768 dim, 100+ idiomas) + CLIP ViT-L/14 (768 dim, multimodal)*
+*Última Revisão Enterprise: 11/12/2025 - Embeddings migrados para local (autonomia total), healthchecks 38/38, logs via Vector→Loki*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 

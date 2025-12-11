@@ -103,8 +103,8 @@ const chatHealthSchema = baseHealthSchema.extend({
  * Schema para rag-service /api/rag/health
  */
 const ragHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('salad-cloud'),
-  model: z.literal('text-embedding-3-small'),
+  embeddingsProvider: z.literal('local'),
+  model: z.literal('intfloat/multilingual-e5-base'),
   circuitBreaker: z.object({
     state: z.enum(['open', 'closed', 'half-open']),
     stats: circuitBreakerStatsSchema,
@@ -115,8 +115,8 @@ const ragHealthSchema = baseHealthSchema.extend({
  * Schema para training-service /api/training/health
  */
 const trainingHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('salad-cloud'),
-  model: z.literal('text-embedding-3-small'),
+  embeddingsProvider: z.literal('local'),
+  model: z.literal('intfloat/multilingual-e5-base'),
   saladCloudAvailable: z.boolean(),
   circuitBreakers: z.object({
     embeddings: z.object({
@@ -228,8 +228,8 @@ const mockRagHealthResponse = {
   status: 'ok',
   service: 'rag-service',
   timestamp: FIXED_TIMESTAMP,
-  embeddingsProvider: 'salad-cloud',
-  model: 'text-embedding-3-small',
+  embeddingsProvider: 'local',
+  model: 'intfloat/multilingual-e5-base',
   circuitBreaker: {
     state: 'closed',
     stats: { failures: 0, successes: 200, timeouts: 0 },
@@ -240,8 +240,8 @@ const mockTrainingHealthResponse = {
   status: 'ok',
   service: 'training-service',
   timestamp: FIXED_TIMESTAMP,
-  embeddingsProvider: 'salad-cloud',
-  model: 'text-embedding-3-small',
+  embeddingsProvider: 'local',
+  model: 'intfloat/multilingual-e5-base',
   saladCloudAvailable: true,
   circuitBreakers: {
     embeddings: {
@@ -375,12 +375,12 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockRagHealthResponse.service).toBe('rag-service');
     });
 
-    it('deve usar embeddingsProvider "salad-cloud"', () => {
-      expect(mockRagHealthResponse.embeddingsProvider).toBe('salad-cloud');
+    it('deve usar embeddingsProvider "local"', () => {
+      expect(mockRagHealthResponse.embeddingsProvider).toBe('local');
     });
 
-    it('deve usar modelo "text-embedding-3-small"', () => {
-      expect(mockRagHealthResponse.model).toBe('text-embedding-3-small');
+    it('deve usar modelo "intfloat/multilingual-e5-base"', () => {
+      expect(mockRagHealthResponse.model).toBe('intfloat/multilingual-e5-base');
     });
 
     it('deve ter circuit breaker para embeddings', () => {

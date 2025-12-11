@@ -68,11 +68,11 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
 // ============================================================================
 
 describe('RAG Service - Dimensões de Embedding', () => {
-  const TEXT_EMBEDDING_DIM = 1536;  // text-embedding-3-small
-  const CLIP_EMBEDDING_DIM = 768;   // CLIP ViT-L/14
+  const TEXT_EMBEDDING_DIM = 768;   // multilingual-e5-base local
+  const CLIP_EMBEDDING_DIM = 768;   // CLIP ViT-L/14 local
 
-  it('deve ter text embedding de 1536 dimensões', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(1536);
+  it('deve ter text embedding de 768 dimensões (multilingual-e5-base local)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(768);
   });
 
   it('deve ter CLIP embedding de 768 dimensões', () => {
@@ -83,7 +83,7 @@ describe('RAG Service - Dimensões de Embedding', () => {
     const textEmb = new Array(TEXT_EMBEDDING_DIM).fill(0);
     const clipEmb = new Array(CLIP_EMBEDDING_DIM).fill(0);
     
-    expect(textEmb.length).toBe(1536);
+    expect(textEmb.length).toBe(768);
     expect(clipEmb.length).toBe(768);
   });
 });
@@ -273,8 +273,8 @@ describe('RAG Service - Health Check', () => {
       status: 'ok',
       service: 'rag-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'salad-cloud',
-      model: 'text-embedding-3-small',
+      embeddingsProvider: 'local',
+      model: 'intfloat/multilingual-e5-base',
       circuitBreaker: {
         state: 'closed',
         stats: { failures: 0, successes: 100, timeouts: 0 },
@@ -282,8 +282,8 @@ describe('RAG Service - Health Check', () => {
     };
 
     expect(health.status).toBe('ok');
-    expect(health.embeddingsProvider).toBe('salad-cloud');
-    expect(health.model).toBe('text-embedding-3-small');
+    expect(health.embeddingsProvider).toBe('local');
+    expect(health.model).toBe('intfloat/multilingual-e5-base');
   });
 });
 

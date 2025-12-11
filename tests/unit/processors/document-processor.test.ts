@@ -571,15 +571,15 @@ describe('Document Processor - Metadados', () => {
 // ============================================================================
 
 describe('Document Processor - Estrutura de Embeddings', () => {
-  const TEXT_EMBEDDING_DIM = 1536;
+  const TEXT_EMBEDDING_DIM = 768; // multilingual-e5-base local
 
-  it('deve ter dimensão de embedding de 1536 (text-embedding-3-small)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(1536);
+  it('deve ter dimensão de embedding de 768 (multilingual-e5-base local)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(768);
   });
 
   it('deve criar array de embedding com dimensão correta', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(1536);
+    expect(embedding.length).toBe(768);
   });
 
   it('deve calcular média de embeddings corretamente', () => {

@@ -88,7 +88,7 @@ describe('Training Service - Estados de Job', () => {
 describe('Training Service - Deduplicação Semântica', () => {
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
-    embeddingDim: 1536,
+    embeddingDim: 768, // multilingual-e5-base local
     batchSize: 100,
   };
 
@@ -299,8 +299,8 @@ describe('Training Service - Health Check', () => {
       status: 'ok',
       service: 'training-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'salad-cloud',
-      model: 'text-embedding-3-small',
+      embeddingsProvider: 'local',
+      model: 'intfloat/multilingual-e5-base',
       saladCloudAvailable: true,
       circuitBreakers: {
         embeddings: { state: 'closed', stats: {} },

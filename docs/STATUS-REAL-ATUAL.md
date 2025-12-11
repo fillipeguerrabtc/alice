@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 11 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.5 - PLATAFORMA 100% ENTERPRISE COMPLETA - SECURITY HARDENING 100% APLICADO
+> **Versão:** 3.6 - PLATAFORMA 100% ENTERPRISE COMPLETA - EMBEDDINGS 100% LOCAIS (AUTONOMIA TOTAL)
 
 ---
 
@@ -174,11 +174,14 @@
 
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
-| CLIP ViT-L/14 Embeddings | ✅ | `server.py` |
-| Text + Image → 768 dim | ✅ | `server.py` |
+| CLIP ViT-L/14 Embeddings (multimodais) | ✅ | `server.py` |
+| Text Embeddings (multilingual-e5-base) | ✅ | `server.py` |
+| Text + Image → 768 dim (CLIP) | ✅ | `server.py` |
+| Text → 768 dim (multilingual-e5-base) | ✅ | `server.py` |
+| Suporte Multilíngue (100+ idiomas) | ✅ | multilingual-e5-base |
 | Autenticação | ❌ **REMOVIDA** - Serviço interno (acesso controlado pela rede Docker) |
 | Rate Limiting | ✅ | `server.py` |
-| Circuit Breaker (Python) | ✅ | `server.py` |
+| Circuit Breaker (Python) | ✅ | `server.py` (CLIP + Text Embeddings) |
 | Prometheus Metrics | ✅ | `/metrics` |
 
 ### 8. frontend-service (Porta 5000)
@@ -569,17 +572,17 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 |------------|------------|--------|
 | Chat Conversacional | Llama 4 Maverick (400B) | ✅ |
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
-| Embeddings Multimodais | CLIP ViT-L/14 | ✅ |
-| Embeddings Texto | text-embedding-3-small | ✅ |
+| Embeddings Multimodais | CLIP ViT-L/14 (local) | ✅ |
+| Embeddings Texto | multilingual-e5-base (local) | ✅ |
 
 ### Processamento Multimodal (INPUT)
 
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
-| Imagem | `image-processor.ts` | CLIP ViT-L/14 | 768 dim embedding |
-| Áudio | `audio-processor.ts` | Whisper + embedding | Transcrição + 1536 dim |
+| Imagem | `image-processor.ts` | CLIP ViT-L/14 (local) | 768 dim embedding |
+| Áudio | `audio-processor.ts` | Whisper (Salad Cloud) + embedding (local) | Transcrição + 768 dim (multilingual-e5-base) |
 | Vídeo | `video-processor.ts` | FFmpeg + Whisper + CLIP | Combinado 768 dim |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx | 1536 dim embedding |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx | 768 dim embedding (multilingual-e5-base local) |
 
 ### Auto-Learning
 

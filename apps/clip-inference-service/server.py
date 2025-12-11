@@ -1,12 +1,15 @@
 """
 CLIP Inference Server - Alice Enterprise Platform
 
-Servidor de inferência para embeddings multimodais (texto + imagem).
-Modelo: CLIP ViT-L/14 (768 dimensões)
-Licença: MIT (uso comercial permitido)
+Servidor de inferência para embeddings multimodais (texto + imagem) e embeddings de texto puro.
+Modelos:
+- CLIP ViT-L/14 (768 dimensões) - embeddings multimodais (texto + imagem)
+- multilingual-e5-base (768 dimensões) - embeddings de texto puro (100+ idiomas)
+Licenças: MIT (CLIP) e Apache 2.0 (multilingual-e5-base) - uso comercial permitido
 
 Endpoints:
-- POST /inference/clip - Gera embedding de texto ou imagem (serviço interno - sem auth)
+- POST /inference/clip - Gera embedding CLIP de texto ou imagem (serviço interno - sem auth)
+- POST /inference/text-embedding - Gera embedding de texto puro multilíngue (serviço interno - sem auth)
 - GET /health - Health check (público para docker healthcheck)
 
 ARQUITETURA AUTÔNOMA:
@@ -14,6 +17,7 @@ ARQUITETURA AUTÔNOMA:
 - Acesso controlado pela rede Docker privada (alice-network)
 - Não requer autenticação - serviço confiável na mesma rede
 - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+- Embeddings 100% locais (Regra 6 - Autonomia Total)
 
 Documentação em PT-BR (Regra 10 CLAUDE.md)
 Segurança Enterprise (Regra 16 CLAUDE.md)
@@ -33,6 +37,7 @@ from contextlib import asynccontextmanager
 import torch
 import clip
 from PIL import Image
+from sentence_transformers import SentenceTransformer
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT, HTTP_503_SERVICE_UNAVAILABLE
@@ -55,8 +60,10 @@ logger = logging.getLogger(__name__)
 
 # Configuração
 MODEL_NAME = os.getenv("MODEL_NAME", "ViT-L/14")
+TEXT_EMBEDDING_MODEL = os.getenv("TEXT_EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
 PORT = int(os.getenv("PORT", 8080))
-EMBEDDING_DIM = 768  # ViT-L/14 produz embeddings de 768 dimensões
+EMBEDDING_DIM = 768  # CLIP ViT-L/14 e multilingual-e5-base produzem embeddings de 768 dimensões
+TEXT_EMBEDDING_DIM = 768  # multilingual-e5-base produz embeddings de 768 dimensões
 
 # Configuração de limites
 MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB default
@@ -83,13 +90,31 @@ REQUEST_LATENCY = Histogram(
     ['input_type'],
     buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
 )
+TEXT_EMBEDDING_REQUESTS_TOTAL = Counter(
+    'text_embedding_requests_total',
+    'Total de requisições de embedding de texto puro',
+    ['status']
+)
+TEXT_EMBEDDING_LATENCY = Histogram(
+    'text_embedding_latency_seconds',
+    'Latência de requisições de embedding de texto puro em segundos',
+    buckets=[0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+)
 CIRCUIT_BREAKER_STATE = Gauge(
     'clip_circuit_breaker_state',
-    'Estado do circuit breaker (0=closed, 1=open, 0.5=half-open)'
+    'Estado do circuit breaker CLIP (0=closed, 1=open, 0.5=half-open)'
 )
 CIRCUIT_BREAKER_FAILURES = Counter(
     'clip_circuit_breaker_failures_total',
-    'Total de falhas registradas pelo circuit breaker'
+    'Total de falhas registradas pelo circuit breaker CLIP'
+)
+TEXT_EMBEDDING_CIRCUIT_BREAKER_STATE = Gauge(
+    'text_embedding_circuit_breaker_state',
+    'Estado do circuit breaker text embeddings (0=closed, 1=open, 0.5=half-open)'
+)
+TEXT_EMBEDDING_CIRCUIT_BREAKER_FAILURES = Counter(
+    'text_embedding_circuit_breaker_failures_total',
+    'Total de falhas registradas pelo circuit breaker text embeddings'
 )
 
 # ============================================================================
@@ -98,7 +123,7 @@ CIRCUIT_BREAKER_FAILURES = Counter(
 # ============================================================================
 
 class ClipBreakerListener(pybreaker.CircuitBreakerListener):
-    """Listener para métricas e logging do circuit breaker."""
+    """Listener para métricas e logging do circuit breaker CLIP."""
     
     def state_change(self, cb: pybreaker.CircuitBreaker, old_state: pybreaker.CircuitBreakerState, new_state: pybreaker.CircuitBreakerState) -> None:
         state_value = 0.0  # closed
@@ -111,9 +136,9 @@ class ClipBreakerListener(pybreaker.CircuitBreakerListener):
     
     def failure(self, cb: pybreaker.CircuitBreaker, exc: Exception) -> None:
         CIRCUIT_BREAKER_FAILURES.inc()
-        logger.error(f"Circuit breaker registrou falha: {exc}")
+        logger.error(f"Circuit breaker CLIP registrou falha: {exc}")
 
-# Configuração do circuit breaker (Enterprise-Grade)
+# Configuração do circuit breaker CLIP (Enterprise-Grade)
 # - fail_max: 5 falhas consecutivas abrem o circuito
 # - reset_timeout: 30s no estado "open" antes de tentar half-open
 # - exclude: HTTPException não conta como falha (são erros de validação/negócio)
@@ -125,8 +150,41 @@ clip_breaker = pybreaker.CircuitBreaker(
     name='clip-inference'
 )
 
-# Inicializar estado do circuit breaker
+# Inicializar estado do circuit breaker CLIP
 CIRCUIT_BREAKER_STATE.set(0)
+
+# ============================================================================
+# CIRCUIT BREAKER PARA TEXT EMBEDDINGS (Regra 16 - Best Practices 2025)
+# Protege contra falhas em cascata do modelo sentence-transformers
+# ============================================================================
+
+class TextEmbeddingBreakerListener(pybreaker.CircuitBreakerListener):
+    """Listener para métricas e logging do circuit breaker text embeddings."""
+    
+    def state_change(self, cb: pybreaker.CircuitBreaker, old_state: pybreaker.CircuitBreakerState, new_state: pybreaker.CircuitBreakerState) -> None:
+        state_value = 0.0  # closed
+        if new_state.name == 'open':
+            state_value = 1.0
+        elif new_state.name == 'half-open':
+            state_value = 0.5
+        TEXT_EMBEDDING_CIRCUIT_BREAKER_STATE.set(state_value)
+        logger.warning(f"Circuit breaker text embeddings: {old_state.name} -> {new_state.name}")
+    
+    def failure(self, cb: pybreaker.CircuitBreaker, exc: Exception) -> None:
+        TEXT_EMBEDDING_CIRCUIT_BREAKER_FAILURES.inc()
+        logger.error(f"Circuit breaker text embeddings registrou falha: {exc}")
+
+# Configuração do circuit breaker text embeddings (Enterprise-Grade)
+text_embedding_breaker = pybreaker.CircuitBreaker(
+    fail_max=5,
+    reset_timeout=30,
+    exclude=[HTTPException],
+    listeners=[TextEmbeddingBreakerListener()],
+    name='text-embedding-inference'
+)
+
+# Inicializar estado do circuit breaker text embeddings
+TEXT_EMBEDDING_CIRCUIT_BREAKER_STATE.set(0)
 
 # Dispositivo (GPU se disponível)
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -135,10 +193,17 @@ logger.info(f"Dispositivo de inferência: {device}")
 # Carregar modelo CLIP
 logger.info(f"Carregando modelo CLIP {MODEL_NAME}...")
 start_time = time.time()
-model, preprocess = clip.load(MODEL_NAME, device=device)
-model.eval()  # Modo de inferência
-load_time = time.time() - start_time
-logger.info(f"Modelo CLIP carregado em {load_time:.2f}s")
+clip_model, preprocess = clip.load(MODEL_NAME, device=device)
+clip_model.eval()  # Modo de inferência
+clip_load_time = time.time() - start_time
+logger.info(f"Modelo CLIP carregado em {clip_load_time:.2f}s")
+
+# Carregar modelo de text embeddings (multilingual-e5-base)
+logger.info(f"Carregando modelo de text embeddings {TEXT_EMBEDDING_MODEL}...")
+start_time = time.time()
+text_embedding_model = SentenceTransformer(TEXT_EMBEDDING_MODEL, device=device)
+text_embedding_load_time = time.time() - start_time
+logger.info(f"Modelo de text embeddings carregado em {text_embedding_load_time:.2f}s")
 
 
 # =============================================================================
@@ -163,17 +228,19 @@ async def lifespan(app):
     logger.info("Iniciando graceful shutdown do CLIP Inference Service...")
     # Aguardar um pouco para requisições em andamento terminarem
     await asyncio.sleep(2)
-    # Liberar recursos do modelo (se necessário)
-    if model is not None:
+    # Liberar recursos dos modelos (se necessário)
+    if clip_model is not None:
         logger.info("Liberando recursos do modelo CLIP...")
+    if text_embedding_model is not None:
+        logger.info("Liberando recursos do modelo de text embeddings...")
     logger.info("CLIP Inference Service encerrado com sucesso")
 
 
 # FastAPI app com lifespan
 app = FastAPI(
     title="CLIP Inference Service",
-    description="Embeddings multimodais (texto + imagem) via CLIP ViT-L/14",
-    version="1.0.0",
+    description="Embeddings multimodais (texto + imagem) via CLIP ViT-L/14 e embeddings de texto puro via multilingual-e5-base",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -208,10 +275,23 @@ class ClipResponse(BaseModel):
     processing_time_ms: int = Field(..., description="Tempo de processamento em ms")
 
 
+class TextEmbeddingRequest(BaseModel):
+    """Request para gerar embedding de texto puro"""
+    text: str = Field(..., description="Texto para embedding (suporta 100+ idiomas incluindo PT-BR e EN)")
+
+
+class TextEmbeddingResponse(BaseModel):
+    """Response com embedding de texto puro"""
+    embedding: List[float] = Field(..., description="Vetor de embedding (768 dimensões)")
+    model: str = Field(..., description="Modelo usado (multilingual-e5-base)")
+    processing_time_ms: int = Field(..., description="Tempo de processamento em ms")
+
+
 class HealthResponse(BaseModel):
     """Response do health check"""
     status: str
-    model: str
+    clip_model: str
+    text_embedding_model: str
     device: str
     embedding_dim: int
 
@@ -301,9 +381,9 @@ async def generate_embedding(
         """Função síncrona de inferência CLIP protegida por circuit breaker."""
         with torch.no_grad():
             if request.text:
-                # Embedding de texto
+                # Embedding de texto via CLIP (para busca cross-modal com imagens)
                 text_tokens = clip.tokenize([request.text]).to(device)
-                text_features = model.encode_text(text_tokens)
+                text_features = clip_model.encode_text(text_tokens)
                 
                 # Normalizar (L2 norm) - padrão CLIP
                 text_features = text_features / text_features.norm(dim=-1, keepdim=True)
@@ -311,14 +391,14 @@ async def generate_embedding(
                 embedding = text_features[0].cpu().numpy().tolist()
                 result_type = "text"
                 
-                logger.info(f"Text embedding gerado: {len(request.text)} chars")
+                logger.info(f"CLIP text embedding gerado: {len(request.text)} chars")
                 
             else:
                 # Embedding de imagem
                 image = decode_base64_image(request.image)
                 image_input = preprocess(image).unsqueeze(0).to(device)
                 
-                image_features = model.encode_image(image_input)
+                image_features = clip_model.encode_image(image_input)
                 
                 # Normalizar (L2 norm) - padrão CLIP
                 image_features = image_features / image_features.norm(dim=-1, keepdim=True)
@@ -326,7 +406,7 @@ async def generate_embedding(
                 embedding = image_features[0].cpu().numpy().tolist()
                 result_type = "image"
                 
-                logger.info(f"Image embedding gerado: {image.size}")
+                logger.info(f"CLIP image embedding gerado: {image.size}")
         
         return embedding, result_type
     
@@ -379,12 +459,120 @@ async def generate_embedding(
         )
 
 
+@app.post("/inference/text-embedding", response_model=TextEmbeddingResponse)
+@limiter.limit("60/minute")  # SEGURANÇA: Rate limit 60 req/min (OWASP API4)
+async def generate_text_embedding(
+    request_http: Request,  # Necessário para SlowAPI
+    request: TextEmbeddingRequest,
+) -> TextEmbeddingResponse:
+    """
+    Gera embedding de texto puro usando multilingual-e5-base.
+    
+    SERVIÇO INTERNO: Acesso controlado pela rede Docker privada (alice-network).
+    Não requer autenticação - serviço confiável na mesma rede.
+    
+    Retorna vetor de 768 dimensões otimizado para busca semântica de texto.
+    Suporta 100+ idiomas incluindo PT-BR e EN (Regra 13 - Internacionalização).
+    
+    Rate limit: 60 requisições/minuto por IP.
+    Timeout: 30 segundos por requisição.
+    """
+    start_time = time.time()
+    
+    # Validar input
+    if not request.text or not request.text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Texto não pode estar vazio"
+        )
+    
+    # Limitar tamanho do texto (prevenir DoS)
+    MAX_TEXT_LENGTH = 8192  # 8k caracteres (configurável via env se necessário)
+    if len(request.text) > MAX_TEXT_LENGTH:
+        logger.warning(f"Texto muito longo: {len(request.text)} chars > {MAX_TEXT_LENGTH} chars")
+        raise HTTPException(
+            status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Texto muito longo. Máximo: {MAX_TEXT_LENGTH} caracteres"
+        )
+    
+    # ============================================================================
+    # INFERÊNCIA COM CIRCUIT BREAKER (Regra 16 - Best Practices 2025)
+    # Protege contra falhas em cascata do modelo sentence-transformers
+    # ============================================================================
+    
+    def process_text_embedding_sync() -> list[float]:
+        """Função síncrona de inferência text embedding protegida por circuit breaker."""
+        # multilingual-e5-base requer prefixo "query: " ou "passage: " dependendo do uso
+        # Para busca semântica, usar "query: " para queries e "passage: " para documentos
+        # Por padrão, assumimos que é uma query (busca semântica)
+        prefixed_text = f"query: {request.text}" if not request.text.startswith(("query:", "passage:")) else request.text
+        
+        # Gerar embedding
+        embedding = text_embedding_model.encode(
+            prefixed_text,
+            normalize_embeddings=True,  # Normalizar (L2 norm) para busca semântica
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+        
+        logger.info(f"Text embedding gerado: {len(request.text)} chars, {len(embedding)} dim")
+        return embedding.tolist()
+    
+    try:
+        # Aplicar circuit breaker + timeout (Enterprise-Grade)
+        embedding = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: text_embedding_breaker.call(process_text_embedding_sync)
+            ),
+            timeout=REQUEST_TIMEOUT_SECONDS
+        )
+        
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Métricas de sucesso
+        TEXT_EMBEDDING_REQUESTS_TOTAL.labels(status='success').inc()
+        TEXT_EMBEDDING_LATENCY.observe(processing_time_ms / 1000)
+        
+        return TextEmbeddingResponse(
+            embedding=embedding,
+            model=TEXT_EMBEDDING_MODEL,
+            processing_time_ms=processing_time_ms,
+        )
+        
+    except pybreaker.CircuitBreakerError:
+        # Circuit breaker aberto - serviço temporariamente indisponível
+        TEXT_EMBEDDING_REQUESTS_TOTAL.labels(status='circuit_open').inc()
+        logger.error("Circuit breaker text embeddings aberto - serviço temporariamente indisponível")
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de text embeddings temporariamente indisponível. Tente novamente em 30 segundos."
+        )
+        
+    except asyncio.TimeoutError:
+        TEXT_EMBEDDING_REQUESTS_TOTAL.labels(status='timeout').inc()
+        logger.warning(f"Timeout ao processar text embedding após {REQUEST_TIMEOUT_SECONDS}s")
+        raise HTTPException(
+            status_code=HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Timeout: processamento excedeu {REQUEST_TIMEOUT_SECONDS} segundos"
+        )
+        
+    except Exception as e:
+        TEXT_EMBEDDING_REQUESTS_TOTAL.labels(status='error').inc()
+        logger.error(f"Erro ao gerar text embedding: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao processar texto: {str(e)}"
+        )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check do serviço"""
     return HealthResponse(
         status="ok",
-        model=MODEL_NAME,
+        clip_model=MODEL_NAME,
+        text_embedding_model=TEXT_EMBEDDING_MODEL,
         device=device,
         embedding_dim=EMBEDDING_DIM,
     )
@@ -408,11 +596,13 @@ async def liveness_probe():
 
 @app.get("/ready")
 async def readiness_probe():
-    """Readiness probe - verifica se modelo CLIP está carregado e circuit breaker fechado"""
-    model_loaded = model is not None
-    circuit_ready = clip_breaker.current_state != "open"
+    """Readiness probe - verifica se modelos estão carregados e circuit breakers fechados"""
+    clip_model_loaded = clip_model is not None
+    text_embedding_model_loaded = text_embedding_model is not None
+    clip_circuit_ready = clip_breaker.current_state != "open"
+    text_embedding_circuit_ready = text_embedding_breaker.current_state != "open"
     
-    all_ready = model_loaded and circuit_ready
+    all_ready = clip_model_loaded and text_embedding_model_loaded and clip_circuit_ready and text_embedding_circuit_ready
     
     if all_ready:
         return {
@@ -421,21 +611,35 @@ async def readiness_probe():
             "timestamp": datetime.utcnow().isoformat() + "Z",
             "dependencies": {
                 "clip_model": "ready",
-                "circuit_breaker": "closed" if circuit_ready else "open",
+                "text_embedding_model": "ready",
+                "clip_circuit_breaker": "closed",
+                "text_embedding_circuit_breaker": "closed",
             },
         }
     else:
         from fastapi.responses import JSONResponse
+        reasons = []
+        if not clip_model_loaded:
+            reasons.append("Modelo CLIP não carregado")
+        if not text_embedding_model_loaded:
+            reasons.append("Modelo text embeddings não carregado")
+        if not clip_circuit_ready:
+            reasons.append("Circuit breaker CLIP aberto")
+        if not text_embedding_circuit_ready:
+            reasons.append("Circuit breaker text embeddings aberto")
+        
         return JSONResponse(
             status_code=503,
             content={
                 "status": "not_ready",
                 "service": "clip-inference-service",
-                "reason": "Modelo CLIP não carregado" if not model_loaded else "Circuit breaker aberto",
+                "reason": "; ".join(reasons),
                 "timestamp": datetime.utcnow().isoformat() + "Z",
                 "dependencies": {
-                    "clip_model": "ready" if model_loaded else "not_ready",
-                    "circuit_breaker": "closed" if circuit_ready else "open",
+                    "clip_model": "ready" if clip_model_loaded else "not_ready",
+                    "text_embedding_model": "ready" if text_embedding_model_loaded else "not_ready",
+                    "clip_circuit_breaker": "closed" if clip_circuit_ready else "open",
+                    "text_embedding_circuit_breaker": "closed" if text_embedding_circuit_ready else "open",
                 },
             }
         )
@@ -449,14 +653,22 @@ async def metrics():
 
 @app.get("/api/circuit-breaker/status")
 async def circuit_breaker_status():
-    """Status do circuit breaker CLIP (Regra 16 - Best Practices 2025)"""
-    state = clip_breaker.current_state
+    """Status dos circuit breakers (Regra 16 - Best Practices 2025)"""
     return {
-        "name": "clip-inference",
-        "state": state,
-        "fail_counter": clip_breaker.fail_counter,
-        "fail_max": clip_breaker.fail_max,
-        "reset_timeout": clip_breaker.reset_timeout,
+        "clip": {
+            "name": "clip-inference",
+            "state": clip_breaker.current_state,
+            "fail_counter": clip_breaker.fail_counter,
+            "fail_max": clip_breaker.fail_max,
+            "reset_timeout": clip_breaker.reset_timeout,
+        },
+        "text_embedding": {
+            "name": "text-embedding-inference",
+            "state": text_embedding_breaker.current_state,
+            "fail_counter": text_embedding_breaker.fail_counter,
+            "fail_max": text_embedding_breaker.fail_max,
+            "reset_timeout": text_embedding_breaker.reset_timeout,
+        },
     }
 
 
@@ -465,12 +677,16 @@ async def root():
     """Endpoint raiz com informações do serviço"""
     return {
         "service": "CLIP Inference Service",
-        "version": "1.0.0",
-        "model": MODEL_NAME,
+        "version": "1.1.0",
+        "models": {
+            "clip": MODEL_NAME,
+            "text_embedding": TEXT_EMBEDDING_MODEL,
+        },
         "embedding_dim": EMBEDDING_DIM,
         "device": device,
         "endpoints": {
-            "inference": "POST /inference/clip",
+            "clip_inference": "POST /inference/clip",
+            "text_embedding": "POST /inference/text-embedding",
             "health": "GET /health",
         },
     }

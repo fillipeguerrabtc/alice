@@ -18,13 +18,12 @@ import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
 
-// Configuração Salad Cloud
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_EMBEDDINGS_ENDPOINT = process.env.SALAD_EMBEDDINGS_ENDPOINT || 'https://api.salad.com/api/public';
+// Configuração - Embeddings 100% locais (Regra 6 - Autonomia Total)
+// CLIP Service URL para embeddings locais
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
-// Dimensão dos embeddings de texto
-export const TEXT_EMBEDDING_DIM = 1536;
+// Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
+export const TEXT_EMBEDDING_DIM = 768;
 
 // Limites de processamento
 const MAX_DOCUMENT_SIZE_MB = parseInt(process.env.MAX_DOCUMENT_SIZE_MB || '50', 10);
@@ -82,16 +81,15 @@ interface EmbeddingParams {
 }
 
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
-  const response = await fetch(`${SALAD_EMBEDDINGS_ENDPOINT}/inference/embeddings`, {
+  // REGRA 6: Serviço local autônomo - não depende de API externa
+  // Serviço interno na rede Docker privada - não requer autenticação
+  const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_API_KEY!,
-      'Salad-Organization': SALAD_ORGANIZATION_ID!,
     },
     body: JSON.stringify({
-      input: params.text,
-      model: 'text-embedding-3-small',
+      text: params.text,
     }),
   });
 
@@ -101,17 +99,23 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
   }
 
   const result = await response.json() as {
-    data: Array<{ embedding: number[] }>;
+    embedding: number[];
     model: string;
+    processing_time_ms: number;
   };
 
-  if (!result.data || result.data.length === 0) {
+  if (!result.embedding || result.embedding.length === 0) {
     throw new Error('Resposta de embedding vazia');
   }
 
+  // Validar dimensão (deve ser 768 para multilingual-e5-base)
+  if (result.embedding.length !== 768) {
+    logger.warn(`Embedding com dimensão inesperada: ${result.embedding.length} (esperado: 768)`);
+  }
+
   return {
-    embedding: result.data[0].embedding,
-    model: result.model || 'text-embedding-3-small',
+    embedding: result.embedding,
+    model: result.model || 'intfloat/multilingual-e5-base',
   };
 }
 
@@ -129,15 +133,12 @@ async function generateEmbedding(text: string): Promise<{ embedding: number[]; m
 // ============================================================================
 
 class DocumentProcessorService {
-  private isConfigured: boolean = false;
+  private isConfigured: boolean = true; // Serviço local sempre disponível (Regra 6 - Autonomia Total)
 
   constructor() {
-    if (SALAD_API_KEY && SALAD_ORGANIZATION_ID) {
-      this.isConfigured = true;
-      logger.info('Document Processor configurado com Salad Cloud');
-    } else {
-      logger.warn('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados - embeddings indisponíveis');
-    }
+    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
+    // Não depende de configuração externa (Salad Cloud)
+    logger.info('Document Processor configurado com serviço local de embeddings (multilingual-e5-base)');
   }
 
   /**
@@ -229,14 +230,9 @@ class DocumentProcessorService {
     let embeddingModel = 'none';
 
     if (generateEmbeddings) {
-      // Embeddings solicitados - verificar se está configurado
-      if (!this.isConfigured) {
-        // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO quando embeddings são solicitados (Regra 6 CLAUDE.md)
-        logger.error('SALAD_API_KEY não configurado - embeddings solicitados mas indisponíveis');
-        throw new Error('Configuração Salad Cloud obrigatória para gerar embeddings. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
-      }
-      
-      logger.info({ chunkCount: textChunks.length }, 'Gerando embeddings para chunks do documento');
+      // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
+      // Não requer verificação de configuração externa
+      logger.info({ chunkCount: textChunks.length }, 'Gerando embeddings para chunks do documento (serviço local)');
 
       for (let i = 0; i < textChunks.length; i++) {
         const chunkText = textChunks[i];

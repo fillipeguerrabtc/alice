@@ -652,6 +652,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      alice-clip-inference:
+        condition: service_healthy
     networks:
       - alice-network
     labels:

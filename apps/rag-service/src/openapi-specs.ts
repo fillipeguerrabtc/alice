@@ -43,7 +43,7 @@ export const ragServicePaths = {
   '/api/rag/chunks': { get: { summary: 'Listar chunks', tags: ['Chunks'], parameters: [{ name: 'documentId', in: 'query', schema: { type: 'string' } }], responses: { 200: { description: 'Lista de chunks' } } } },
   '/api/rag/chunks/{id}': { get: { summary: 'Buscar chunk', tags: ['Chunks'], parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }], responses: { 200: { description: 'Chunk' } } } },
   '/api/rag/embeddings': {
-    post: { summary: 'Gerar embedding', tags: ['Embeddings'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } } } }, responses: { 200: { description: 'Embedding (1536 dim)', content: { 'application/json': { schema: { type: 'object', properties: { embedding: { type: 'array', items: { type: 'number' } }, dimensions: { type: 'integer' } } } } } } } },
+    post: { summary: 'Gerar embedding', tags: ['Embeddings'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['text'], properties: { text: { type: 'string' } } } } } } }, responses: { 200: { description: 'Embedding (768 dim - multilingual-e5-base local)', content: { 'application/json': { schema: { type: 'object', properties: { embedding: { type: 'array', items: { type: 'number' } }, dimensions: { type: 'integer' } } } } } } } },
   },
   '/api/rag/embeddings/image': {
     post: { summary: 'CLIP embedding para imagem', tags: ['Embeddings'], requestBody: { content: { 'multipart/form-data': { schema: { type: 'object', required: ['image'], properties: { image: { type: 'string', format: 'binary' } } } } } }, responses: { 200: { description: 'CLIP embedding (768 dim)' } } },

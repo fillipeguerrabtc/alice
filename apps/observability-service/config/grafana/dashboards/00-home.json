@@ -290,9 +290,9 @@
       "gridPos": { "h": 3, "w": 4, "x": 4, "y": 25 },
       "id": 32,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Salad Embeddings",
+      "title": "Text Embeddings (Local)",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-embeddings\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"text-embeddings-local\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

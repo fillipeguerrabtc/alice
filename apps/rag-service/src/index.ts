@@ -463,6 +463,8 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
+// CLIP Service URL para embeddings locais (Regra 6 - Autonomia Total)
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -477,14 +479,16 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
+// SALAD_API_KEY ainda é necessária para Whisper (transcrição de áudio) e LLM
+// Embeddings agora são 100% locais (Regra 6 - Autonomia Total)
 if (!SALAD_API_KEY) {
-  logger.error('SALAD_API_KEY não configurada - serviço requer API key para embeddings');
-  process.exit(1);
+  logger.warn('SALAD_API_KEY não configurada - transcrição de áudio e LLM podem estar indisponíveis');
+  // Não falhar - embeddings são locais, apenas transcrição/LLM precisam de Salad Cloud
 }
 
 if (!SALAD_ORGANIZATION_ID) {
-  logger.error('SALAD_ORGANIZATION_ID não configurada');
-  process.exit(1);
+  logger.warn('SALAD_ORGANIZATION_ID não configurada - transcrição de áudio e LLM podem estar indisponíveis');
+  // Não falhar - embeddings são locais, apenas transcrição/LLM precisam de Salad Cloud
 }
 
 const SALAD_KEY: string = SALAD_API_KEY;
@@ -564,24 +568,27 @@ const mediaUpload = multer({
 });
 
 // ============================================================================
-// CIRCUIT BREAKER - Salad Cloud Embeddings API (Regra 16 - Best Practices 2025)
+// CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
+// Usa serviço local alice-clip-inference com multilingual-e5-base
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-interface EmbeddingResponse {
-  data: Array<{ embedding: number[] }>;
+interface TextEmbeddingResponse {
+  embedding: number[];
+  model: string;
+  processing_time_ms: number;
 }
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/text-embedding/embeddings`, {
+  // REGRA 6: Serviço local autônomo - não depende de API externa
+  // Serviço interno na rede Docker privada - não requer autenticação
+  const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_KEY,
     },
     body: JSON.stringify({
-      input: text,
-      model: 'text-embedding-3-small',
+      text,
     }),
   });
 
@@ -590,24 +597,29 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
   }
 
-  const data = await response.json() as EmbeddingResponse;
-  const resultEmbedding = data.data[0]?.embedding;
+  const data = await response.json() as TextEmbeddingResponse;
+  const resultEmbedding = data.embedding;
   
   if (!resultEmbedding || resultEmbedding.length === 0) {
-    throw new Error('API de embeddings retornou resultado vazio');
+    throw new Error('Serviço de embeddings retornou resultado vazio');
+  }
+  
+  // Validar dimensão (deve ser 768 para multilingual-e5-base)
+  if (resultEmbedding.length !== 768) {
+    logger.warn(`Embedding com dimensão inesperada: ${resultEmbedding.length} (esperado: 768)`);
   }
   
   return resultEmbedding;
 }
 
 const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
-  name: 'salad-embeddings',
-  ...CIRCUIT_BREAKER_PRESETS.saladEmbeddings,
+  name: 'text-embeddings-local',
+  ...CIRCUIT_BREAKER_PRESETS.textEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'salad-embeddings', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
+instrumentCircuitBreaker(metrics, 'text-embeddings-local', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
@@ -831,8 +843,8 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
     status: 'ok', 
     service: 'rag-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'salad-cloud',
-    model: 'text-embedding-3-small',
+    embeddingsProvider: 'local',
+    model: 'intfloat/multilingual-e5-base',
     circuitBreaker: {
       state: circuitState,
       stats: {
@@ -1135,14 +1147,14 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
+        1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         AND d.tenant_id = $3
         ${namespaceFilter}
-      ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+      ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
       LIMIT $2
     `, queryParams);
     
@@ -1214,13 +1226,13 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
+        1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         ${namespaceFilter}
-      ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+      ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
       LIMIT $2
     `, queryParams);
     
@@ -1444,7 +1456,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          1 - (dc.embedding::vector(1536) <=> $1::vector(1536)) / 2 as similarity
+          1 - (dc.embedding::vector(768) <=> $1::vector(768)) / 2 as similarity
         FROM document_chunks dc
         INNER JOIN documents d ON dc.document_id = d.id
         INNER JOIN namespaces n ON d.namespace_id = n.id
@@ -1452,7 +1464,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.embedding IS NOT NULL
           AND n.tenant_id = $2
           ${namespaceFilter}
-        ORDER BY dc.embedding::vector(1536) <=> $1::vector(1536)
+        ORDER BY dc.embedding::vector(768) <=> $1::vector(768)
         LIMIT $3
       `, queryParams);
       
@@ -1742,7 +1754,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 1536 dim
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 768 dim (multilingual-e5-base local)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -1881,7 +1893,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       },
       audio: {
         message: 'Upload recebido. Transcrição Whisper iniciada.',
-        features: ['Transcrição Whisper', 'text embedding (1536 dim)', 'metadata extraction'],
+        features: ['Transcrição Whisper', 'text embedding (768 dim - multilingual-e5-base local)', 'metadata extraction'],
       },
       video: {
         message: 'Upload recebido. Processamento pendente.',
@@ -2485,15 +2497,9 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
       // Busca por texto: gerar embedding CLIP do texto via serviço local (autônomo)
+      // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
       const imageProcessor = getImageProcessor();
       
-      if (!imageProcessor.isReady()) {
-        return res.status(503).json({
-          error: 'Serviço de embeddings não configurado',
-          hint: 'Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID para habilitar busca por texto',
-        });
-      }
-
       try {
         const textResult = await imageProcessor.generateTextEmbedding(query);
         queryEmbedding = textResult.embedding;
@@ -2685,9 +2691,10 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: !!SALAD_API_KEY,
+    embeddingsConfigured: true, // Embeddings sempre locais (Regra 6 - Autonomia Total)
+    clipServiceUrl: CLIP_SERVICE_URL,
     circuitBreaker: 'enabled',
-  }, 'RAG service iniciado com Circuit Breaker');
+  }, 'RAG service iniciado com Circuit Breaker e embeddings locais');
 });
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)

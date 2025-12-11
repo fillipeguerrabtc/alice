@@ -371,6 +371,6 @@ export const toSql = pgvector.toSql;
 
 // Dimensões dos embeddings (conforme CLAUDE.md)
 export const EMBEDDING_DIMENSIONS = {
-  TEXT: 1536,   // text-embedding-3-small via Salad Cloud
-  CLIP: 768,    // CLIP ViT-L/14 local (CPU no Hetzner)
+  TEXT: 768,    // multilingual-e5-base local (CPU no Hetzner) - 100+ idiomas incluindo PT-BR e EN
+  CLIP: 768,    // CLIP ViT-L/14 local (CPU no Hetzner) - embeddings multimodais (texto + imagem)
 } as const;

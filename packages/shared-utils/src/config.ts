@@ -364,8 +364,8 @@ export const RAG_CHUNK_CONFIG = {
   chunkSize: 1000,
   /** Sobreposição entre chunks */
   chunkOverlap: 200,
-  /** Dimensão dos embeddings (text-embedding-3-small) */
-  embeddingDimensions: 384,
+  /** Dimensão dos embeddings (multilingual-e5-base local - 768 dim) */
+  embeddingDimensions: 768,
   /** Threshold de similaridade para busca */
   similarityThreshold: 0.7,
 };
@@ -378,7 +378,7 @@ export const SALAD_CONFIG = {
   organizationId: process.env.SALAD_ORGANIZATION_ID || '',
   models: {
     chat: 'llama4-maverick',
-    embeddings: 'text-embedding-3-small',
+    embeddings: 'intfloat/multilingual-e5-base', // Local (CPU no Hetzner)
   },
   defaults: {
     maxTokens: 4096,
