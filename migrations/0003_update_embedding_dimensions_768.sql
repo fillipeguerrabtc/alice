@@ -11,6 +11,12 @@
 -- ============================================================================
 -- NOTA IMPORTANTE: Esta migration assume que NÃO há dados em produção
 -- Se houver dados, será necessário regenerar embeddings antes de executar
+-- 
+-- OBRIGATÓRIO: Esta migration DEVE ser executada ANTES do deploy do código
+-- que usa queries com vector(768). Caso contrário, haverá erro de incompatibilidade
+-- de dimensões nas queries SQL (vector(1536) vs vector(768)).
+-- 
+-- Como ainda não há deploy em produção, não há dados com os quais se preocupar.
 -- ============================================================================
 
 -- ============================================================================

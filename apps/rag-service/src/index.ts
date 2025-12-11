@@ -1147,8 +1147,11 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
         -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
+        -- A migration atualiza as colunas de vector(1536) para vector(768)
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
         -- Apenas o parâmetro $1 precisa de cast explícito para vector(768)
+        -- Se a migration não for executada, haverá erro de incompatibilidade de dimensões
         1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
@@ -1229,6 +1232,7 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.conteudo,
         d.titulo as "doc_titulo",
         -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
         1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
       FROM document_chunks dc
@@ -1461,6 +1465,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           d.titulo,
           dc.conteudo,
           -- Embeddings são 100% locais via CPU (multilingual-e5-base - 768 dim)
+          -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
           -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
           1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
         FROM document_chunks dc
@@ -2587,6 +2592,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
         -- CLIP embeddings são 100% locais via CPU (CLIP ViT-L/14 - 768 dim)
+        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
         -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
         1 - (clip_embedding <=> $1::vector(768)) / 2 as similarity
       FROM media_uploads
