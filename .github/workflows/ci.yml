@@ -1070,45 +1070,56 @@ jobs:
           # CRÍTICO: Verificar TODOS os jobs obrigatórios (deve ser 'success', não apenas 'não failure')
           # Jobs podem ter status: success, failure, cancelled, skipped
           # Apenas 'success' é aceitável para disparar Release
+          # 
+          # NOTA: Este job NUNCA deve usar 'exit 1' - ele é um agregador de status
+          # O job trigger-release usa o output 'success' para decidir se executa
+          # Se ci-status falhar com exit 1, o output não é propagado corretamente
+          
+          ALL_SUCCESS=true
           
           if [[ "${{ needs.build-and-check.result }}" != "success" ]]; then
-            echo "ERRO: Build & Check não passou! Status: ${{ needs.build-and-check.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Build & Check não passou! Status: ${{ needs.build-and-check.result }}"
+            ALL_SUCCESS=false
           fi
           
           if [[ "${{ needs.build-services.result }}" != "success" ]]; then
-            echo "ERRO: Build Services não passou! Status: ${{ needs.build-services.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Build Services não passou! Status: ${{ needs.build-services.result }}"
+            ALL_SUCCESS=false
           fi
           
           if [[ "${{ needs.build-clip-inference.result }}" != "success" ]]; then
-            echo "ERRO: Build CLIP Inference não passou! Status: ${{ needs.build-clip-inference.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Build CLIP Inference não passou! Status: ${{ needs.build-clip-inference.result }}"
+            ALL_SUCCESS=false
           fi
           
           if [[ "${{ needs.build-frontend.result }}" != "success" ]]; then
-            echo "ERRO: Build Frontend não passou! Status: ${{ needs.build-frontend.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Build Frontend não passou! Status: ${{ needs.build-frontend.result }}"
+            ALL_SUCCESS=false
           fi
           
           if [[ "${{ needs.security-scan.result }}" != "success" ]]; then
-            echo "ERRO: Security Scan não passou! Status: ${{ needs.security-scan.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Security Scan não passou! Status: ${{ needs.security-scan.result }}"
+            ALL_SUCCESS=false
           fi
           
           if [[ "${{ needs.compliance-checks.result }}" != "success" ]]; then
-            echo "ERRO: Compliance Checks não passou! Status: ${{ needs.compliance-checks.result }}"
-            echo "success=false" >> $GITHUB_OUTPUT
-            exit 1
+            echo "❌ ERRO: Compliance Checks não passou! Status: ${{ needs.compliance-checks.result }}"
+            ALL_SUCCESS=false
           fi
           
-          echo "success=true" >> $GITHUB_OUTPUT
-          echo "CI passou com sucesso! Todos os jobs com status 'success'."
+          # Definir output para uso pelo trigger-release
+          echo "success=$ALL_SUCCESS" >> $GITHUB_OUTPUT
+          
+          if [[ "$ALL_SUCCESS" == "true" ]]; then
+            echo "=============================================="
+            echo "✅ CI passou com sucesso! Todos os jobs com status 'success'."
+            echo "=============================================="
+          else
+            echo "=============================================="
+            echo "❌ CI falhou! Verifique os jobs acima para detalhes."
+            echo "   O job trigger-release NÃO será executado."
+            echo "=============================================="
+          fi
 
   # ===========================================================================
   # Job 9: Trigger Release Automatico (apenas em push para main)
@@ -1132,15 +1143,35 @@ jobs:
       - name: Calcular proxima versao
         id: version
         run: |
-          # Buscar ultima tag
+          # Buscar ultima tag (fallback para v0.0.0 se não existir)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Ultima tag: $LAST_TAG"
           
-          # Extrair numeros da versao
+          # Extrair numeros da versao (remover prefixo 'v')
           VERSION=${LAST_TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
+          
+          # Extrair componentes (cut retorna string vazia se campo não existir)
+          MAJOR_RAW=$(echo $VERSION | cut -d. -f1)
+          MINOR_RAW=$(echo $VERSION | cut -d. -f2)
+          PATCH_RAW=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
+          
+          # Enterprise-grade: valores default para componentes ausentes (Regra 6)
+          # Se a tag for 'v1' → MAJOR=1, MINOR=0, PATCH=0
+          # Se a tag for 'v1.2' → MAJOR=1, MINOR=2, PATCH=0
+          # Se a tag for 'v1.2.3' → MAJOR=1, MINOR=2, PATCH=3
+          MAJOR=${MAJOR_RAW:-0}
+          MINOR=${MINOR_RAW:-0}
+          PATCH=${PATCH_RAW:-0}
+          
+          # Validar que todos os componentes são números
+          if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
+            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico. Usando v0.0.1"
+            MAJOR=0
+            MINOR=0
+            PATCH=0
+          fi
+          
+          echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
           
           # Incrementar patch
           NEW_PATCH=$((PATCH + 1))

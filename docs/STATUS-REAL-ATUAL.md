@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.8 - Processamento Multimodal 100% LOCAL (embeddings + transcrição via CPU Hetzner)
+> **Versão:** 3.10 - Correção bug ci-status (exit 1 → output pattern)
 
 ---
 
@@ -538,6 +538,17 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | pnpm audit | ✅ |
 | Rollback automático | ✅ |
 
+### Arquitetura do CI (ci-status → trigger-release)
+
+O workflow CI usa um padrão de agregação de status onde o job `ci-status`:
+- **Sempre completa com sucesso** (nunca usa `exit 1`)
+- Define output `success=true|false` baseado no status de todos os jobs upstream
+- O job `trigger-release` condiciona sua execução ao output `success == 'true'`
+
+> **NOTA (12/12/2025):** Corrigido bug onde `ci-status` falhava com `exit 1`, impedindo que o output fosse propagado corretamente para `trigger-release`. O padrão correto é que jobs agregadores de status NUNCA devem usar `exit 1` - apenas definir outputs e deixar jobs downstream decidirem baseado nesses outputs.
+
+> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora valida formato de tags não-semânticas (ex: `v1`, `v1.2`) usando valores default para componentes ausentes (MINOR=0, PATCH=0). Também valida que componentes são numéricos, com fallback para `v0.0.1` em formatos inválidos.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -766,7 +777,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.9 - Processamento Multimodal 100% LOCAL + 18 Regras + Dead Code Removido*
+*Versão: 3.10 - Correção bug ci-status (exit 1 → output pattern) + Documentação CI/CD*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
