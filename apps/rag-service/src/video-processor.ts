@@ -124,17 +124,28 @@ export function combineVideoEmbeddingsForSearch(
 
   // Enterprise-grade: validar que normalizedText tem o comprimento esperado antes de acessar índices.
   // Isso previne NaN se o slice retornar um array menor que o esperado (edge case de corrupção de dados).
-  if (normalizedText.length !== CLIP_EMBEDDING_DIM) {
+  if (normalizedText.length !== TEXT_EMBEDDING_DIM) {
     logger.warn(
-      { normalizedTextLength: normalizedText.length, expectedDim: CLIP_EMBEDDING_DIM, textEmbeddingLength: textEmbedding.length },
+      { normalizedTextLength: normalizedText.length, expectedDim: TEXT_EMBEDDING_DIM, textEmbeddingLength: textEmbedding.length },
       'normalizedText tem dimensão incorreta após slice; retornando embedding baseado apenas em frames (evita NaN)'
+    );
+    return avgFrameEmbedding;
+  }
+
+  // Defesa extra: só é possível combinar embeddings se ambos estiverem no mesmo espaço dimensional.
+  // Se no futuro TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM divergirem, essa checagem evita acesso fora do array (NaN) e
+  // preserva a qualidade da busca retornando apenas CLIP (frames).
+  if (normalizedText.length !== avgFrameEmbedding.length) {
+    logger.warn(
+      { normalizedTextLength: normalizedText.length, frameEmbeddingDim: avgFrameEmbedding.length },
+      'Dimensões incompatíveis entre textEmbedding e frame embeddings; retornando embedding baseado apenas em frames'
     );
     return avgFrameEmbedding;
   }
 
   // Enterprise-grade: validar integridade de normalizedText ANTES de combinar (Regra 6 - Fail-fast)
   // Regra 6: PROIBIDO mascarar problemas com fallback para 0. Invalid embeddings devem rejeitar cedo.
-  for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+  for (let i = 0; i < normalizedText.length; i++) {
     if (!Number.isFinite(normalizedText[i])) {
       const errorMsg = `normalizedText[${i}] é não-finito (${normalizedText[i]}). Embedding de texto corrompido. Rejeitando combinação.`;
       logger.error(
