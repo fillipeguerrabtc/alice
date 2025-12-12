@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.10 - Correção bug ci-status (exit 1 → output pattern)
+> **Versão:** 3.12 - Correção cálculo de versão para tags não-semânticas
 
 ---
 
@@ -538,20 +538,20 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | pnpm audit | ✅ |
 | Rollback automático | ✅ |
 
-### Arquitetura do CI (ci-status → trigger-release)
+### Arquitetura do CI (trigger-release)
 
-O workflow CI usa um padrão de agregação de status onde o job `ci-status`:
-- **Sempre completa com sucesso** (nunca usa `exit 1`)
-- Define output `success=true|false` baseado no status de todos os jobs upstream
-- O job `trigger-release` condiciona sua execução ao output `success == 'true'`
+O workflow CI usa dependência direta do GitHub Actions:
+- **trigger-release** depende de: `build-and-check`, `build-services`, `build-clip-inference`, `build-frontend`, `security-scan`, `compliance-checks`
+- GitHub Actions **só executa** se TODOS os jobs em `needs` tiverem status `success`
+- Não há job intermediário - semântica nativa do GitHub Actions garante comportamento correto
 
-> **NOTA (12/12/2025):** Corrigido bug onde `ci-status` falhava com `exit 1`, impedindo que o output fosse propagado corretamente para `trigger-release`. O padrão correto é que jobs agregadores de status NUNCA devem usar `exit 1` - apenas definir outputs e deixar jobs downstream decidirem baseado nesses outputs.
+> **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A semântica padrão do GitHub Actions com `needs` é suficiente e mais confiável.
 
-> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora valida formato semântico completo:
+> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora trata tags não-semânticas corretamente:
 > - Valores default para componentes ausentes (`v1` → `v1.0.1`, `v1.2` → `v1.2.1`)
-> - Rejeita zeros à esquerda (semver 2.0 spec) para evitar erros de octal em bash (`08` seria interpretado como octal inválido)
-> - Regex: `^(0|[1-9][0-9]*)$` - aceita `0`, `1`, `123` | rejeita `01`, `08`, `007`
-> - Fallback para `v0.0.1` em formatos inválidos
+> - Rejeita zeros à esquerda (semver 2.0) para evitar erros de octal em bash
+> - Usa `10#$PATCH` para forçar interpretação decimal na aritmética
+> - Fallback seguro para `v0.0.1` em formatos inválidos
 
 ---
 
@@ -781,7 +781,7 @@ O workflow CI usa um padrão de agregação de status onde o job `ci-status`:
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.10 - Correção bug ci-status (exit 1 → output pattern) + Documentação CI/CD*
+*Versão: 3.12 - Correção cálculo de versão para tags não-semânticas (v1, v1.2)*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

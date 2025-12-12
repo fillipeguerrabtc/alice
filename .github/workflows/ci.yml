@@ -1064,18 +1064,39 @@ jobs:
       - name: Calcular proxima versao
         id: version
         run: |
-          # Buscar ultima tag
+          # Buscar ultima tag (fallback para v0.0.0 se não existir)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Ultima tag: $LAST_TAG"
           
-          # Extrair numeros da versao
+          # Extrair numeros da versao (remover prefixo 'v')
           VERSION=${LAST_TAG#v}
-          MAJOR=$(echo $VERSION | cut -d. -f1)
-          MINOR=$(echo $VERSION | cut -d. -f2)
-          PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
           
-          # Incrementar patch
-          NEW_PATCH=$((PATCH + 1))
+          # Extrair componentes (cut retorna string vazia se campo não existir)
+          MAJOR_RAW=$(echo $VERSION | cut -d. -f1)
+          MINOR_RAW=$(echo $VERSION | cut -d. -f2)
+          PATCH_RAW=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
+          
+          # Enterprise-grade: valores default para componentes ausentes (Regra 6)
+          # Se a tag for 'v1' → MAJOR=1, MINOR=0, PATCH=0
+          # Se a tag for 'v1.2' → MAJOR=1, MINOR=2, PATCH=0
+          # Se a tag for 'v1.2.3' → MAJOR=1, MINOR=2, PATCH=3
+          MAJOR=${MAJOR_RAW:-0}
+          MINOR=${MINOR_RAW:-0}
+          PATCH=${PATCH_RAW:-0}
+          
+          # Validar que todos os componentes são números válidos
+          # Rejeitar zeros à esquerda (semver 2.0) e caracteres não-numéricos
+          if ! [[ "$MAJOR" =~ ^(0|[1-9][0-9]*)$ ]] || ! [[ "$MINOR" =~ ^(0|[1-9][0-9]*)$ ]] || ! [[ "$PATCH" =~ ^(0|[1-9][0-9]*)$ ]]; then
+            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato inválido. Usando v0.0.1"
+            MAJOR=0
+            MINOR=0
+            PATCH=0
+          fi
+          
+          echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
+          
+          # Incrementar patch (usando 10# para forçar base decimal - segurança adicional)
+          NEW_PATCH=$((10#$PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
           
           echo "Nova versao: $NEW_VERSION"
