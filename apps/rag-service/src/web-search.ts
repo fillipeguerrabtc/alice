@@ -89,14 +89,14 @@ export function createWebSearchClient({
       const results = data.results || [];
 
       return results
+        .filter((r) => Boolean(r.url))
         .slice(0, normalizedCount)
         .map((r) => ({
           title: r.title || 'Sem título',
-          url: r.url || '',
+          url: r.url as string,
           description: r.content || r.snippet || '',
           snippet: r.snippet || r.content || '',
-        }))
-        .filter((r) => r.url);
+        }));
     } finally {
       clearTimeout(timeout);
     }
