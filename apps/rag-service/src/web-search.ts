@@ -70,7 +70,8 @@ export function createWebSearchClient({
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(`${baseUrl}/search?${params.toString()}`, {
+      // baseUrl já vem normalizado com uma barra final; evitar dupla barra
+      const response = await fetch(`${baseUrl}search?${params.toString()}`, {
         method: 'GET',
         headers: {
           Accept: 'application/json',
