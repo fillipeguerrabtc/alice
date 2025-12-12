@@ -32,6 +32,9 @@ env:
   # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
   # durante TypeScript compilation de monorepos grandes (8GB)
   NODE_OPTIONS: '--max-old-space-size=8192'
+  # pnpm v10+: permitir execução automática de scripts de build de dependências
+  # APENAS em CI (não aplicar localmente via .npmrc).
+  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
 jobs:
   # ===========================================================================

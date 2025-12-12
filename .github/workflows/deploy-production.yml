@@ -55,6 +55,9 @@ permissions:
 env:
   # REGRA 6: Enterprise-grade - versionamento automático (não hardcoded)
   # NODE_VERSION será lido automaticamente do .nvmrc ou API do Node.js
+  # pnpm v10+: permitir execução automática de scripts de build de dependências
+  # APENAS em CI/deploy (não aplicar localmente via .npmrc).
+  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
   DOMAIN: yesyoudeserve.duckdns.org
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice

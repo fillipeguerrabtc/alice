@@ -296,7 +296,7 @@ git commit -a -m "test: adiciona testes unitários"
 - **Python**: Python 3.13 (via .python-version - fonte primária para garantir compatibilidade), PyTorch 2.9.1 (CLIP service)
 - **CI/CD**: GitHub Actions (100% automático)
 - **Atualização Periódica**: Workflows automáticos para dependências npm/pnpm (semanal) e pacotes do sistema Hetzner (semanal)
-- **pnpm (build scripts)**: `.npmrc` com `dangerously-allow-all-builds=true` para permitir execução automática de scripts (sem `approve-builds`) no CI/deploy.
+- **pnpm (build scripts)**: Em **CI/deploy**, os workflows definem `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true` para permitir execução automática de scripts (sem `approve-builds`). Em desenvolvimento local, a proteção padrão permanece.
 
 ---
 *Autor: Fillipe Guerra*

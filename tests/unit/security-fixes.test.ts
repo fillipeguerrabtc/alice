@@ -166,7 +166,7 @@ describe('FIX 2 - WebSocket SESSION_SECRET', () => {
       expect(result.error).toContain('obrigatório em produção');
     });
 
-    it('deve permitir fallback em desenvolvimento com warning', () => {
+    it('deve permitir fallback em desenvolvimento com aviso', () => {
       const result = validateSessionSecret(undefined, false);
       expect(result.valid).toBe(true);
       expect(result.warning).toBeDefined();

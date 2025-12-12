@@ -37,6 +37,11 @@ permissions:
   pull-requests: write
   issues: write
 
+env:
+  # pnpm v10+: permitir execução automática de scripts de build de dependências
+  # APENAS em CI (não aplicar localmente via .npmrc).
+  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+
 jobs:
   # ===========================================================================
   # Job 1: Verificar Atualizações Disponíveis
