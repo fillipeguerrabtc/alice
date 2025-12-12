@@ -12,6 +12,10 @@
 FROM node:22-alpine AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
+# pnpm v10+: permitir execução automática de scripts de build de dependências
+# DURANTE o build da imagem (evita warning de `approve-builds` no Docker build).
+# Não afeta o desenvolvimento local (fora do container).
+ENV NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true
 
 # Atualizar pacotes do sistema e habilitar corepack para pnpm
 # NOTA: Não atualizamos npm global pois usamos APENAS pnpm via corepack
