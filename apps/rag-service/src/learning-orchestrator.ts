@@ -49,7 +49,7 @@ export async function createLearningTask(db: Database, logger: Logger, input: Cr
       prioridade: input.prioridade ?? DEFAULT_PRIORITY,
       agentId: input.agentId ?? null,
       namespaceId: input.namespaceId ?? null,
-      parametros: (input.parametros as any) ?? {},
+      parametros: input.parametros ?? {},
       maxTentativas: input.maxTentativas ?? DEFAULT_MAX_TENTATIVAS,
       agendadoPara: input.agendadoPara ?? null,
       criadoPor: input.criadoPor ?? null,
@@ -135,7 +135,7 @@ export async function updateLearningTaskStatus(db: Database, logger: Logger, inp
       status: input.status,
       progresso: input.progresso ?? null,
       erro: input.erro ?? null,
-      resultado: (input.resultado as any) ?? null,
+      resultado: input.resultado ?? null,
       finalizadoEm: ['completed', 'failed', 'cancelled'].includes(input.status) ? sql`NOW()` : null,
     })
     .where(eq(learningTasks.id, input.taskId));

@@ -37,26 +37,51 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
   const limit = pLimit(config.concurrency);
   const saladClient = createSaladMediaClient(logger, metrics);
 
-  async function fetchNextJob() {
-    const [row] = await db
-      .select()
-      .from(mediaJobs)
-      .where(
-        and(
-          eq(mediaJobs.tenantId, config.tenantId),
-          eq(mediaJobs.status, 'pending'),
-          sql`(${mediaJobs.agendadoPara} IS NULL OR ${mediaJobs.agendadoPara} <= NOW())`
-        )
-      )
-      .orderBy(
-        asc(mediaJobs.prioridade),
-        sql`${mediaJobs.agendadoPara} NULLS FIRST`,
-        asc(mediaJobs.criadoEm)
-      )
-      .limit(1)
-      .for('update', { skipLocked: true });
+  async function fetchAndMarkNextJob() {
+    let selected: typeof mediaJobs.$inferSelect | null = null;
 
-    return row || null;
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(mediaJobs)
+        .where(
+          and(
+            eq(mediaJobs.tenantId, config.tenantId),
+            eq(mediaJobs.status, 'pending'),
+            sql`(${mediaJobs.agendadoPara} IS NULL OR ${mediaJobs.agendadoPara} <= NOW())`
+          )
+        )
+        .orderBy(
+          asc(mediaJobs.prioridade),
+          sql`${mediaJobs.agendadoPara} NULLS FIRST`,
+          asc(mediaJobs.criadoEm)
+        )
+        .limit(1)
+        .for('update', { skipLocked: true });
+
+      if (!row) {
+        selected = null;
+        return;
+      }
+
+      await tx
+        .update(mediaJobs)
+        .set({
+          status: 'processing',
+          tentativas: sql`${mediaJobs.tentativas} + 1`,
+          iniciadoEm: sql`NOW()`,
+        })
+        .where(eq(mediaJobs.id, row.id));
+
+      selected = {
+        ...row,
+        status: 'processing',
+        tentativas: (row.tentativas ?? 0) + 1,
+        iniciadoEm: new Date(),
+      };
+    });
+
+    return selected;
   }
 
   async function markStatus(
@@ -93,11 +118,10 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
 
   async function processLoop() {
     try {
-      const job = await fetchNextJob();
+      const job = await fetchAndMarkNextJob();
       if (!job) return;
 
       await limit(async () => {
-        await markStatus(job.id, 'processing');
         try {
           const deps = { db, saladClient, storageService, markStatus, config };
           await handleJob(deps, job);
@@ -108,6 +132,9 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
             .from(mediaJobs)
             .where(eq(mediaJobs.id, job.id))
             .limit(1);
+          if (!fresh[0]) {
+            logger.warn({ jobId: job.id }, 'Tentativas não encontradas após falha; usando cache local');
+          }
           const attempts = fresh[0]?.tentativas ?? job.tentativas ?? 0;
           const maxAttempts = fresh[0]?.maxTentativas ?? config.maxAttempts;
           const status = attempts >= maxAttempts ? 'failed' : 'pending';
@@ -131,7 +158,12 @@ type WorkerDeps = {
   db: Database;
   saladClient: ReturnType<typeof createSaladMediaClient>;
   storageService: ReturnType<typeof getStorageService>;
-  markStatus: (id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null, attemptsOverride?: number) => Promise<void>;
+  markStatus: (
+    id: string,
+    status: 'processing' | 'completed' | 'failed' | 'pending',
+    erro?: string | null,
+    attemptsOverride?: number
+  ) => Promise<void>;
   config: MediaWorkerConfig;
 };
 
@@ -184,39 +216,46 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
 }
 
 async function downloadAndStoreYoutube(deps: WorkerDeps, url: string, tenantId: string) {
+  let tmpDir: string | null = null;
   const info = await ytdl.getInfo(url);
   const title = info.videoDetails.title || 'youtube-video';
   const safeTitle = title.replace(/[^\w\d-_]+/g, '_').slice(0, 80);
   const filename = `${safeTitle}.mp4`;
-  const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'alice-yt-'));
+  tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'alice-yt-'));
   const tmpFile = path.join(tmpDir, filename);
 
-  const videoStream = ytdl.downloadFromInfo(info, { quality: 'highestvideo' });
-  await pipeline(videoStream, fs.createWriteStream(tmpFile));
+  try {
+    const videoStream = ytdl.downloadFromInfo(info, { quality: 'highestvideo' });
+    await pipeline(videoStream, fs.createWriteStream(tmpFile));
 
-  const metadata = await probeVideo(tmpFile);
-  const buffer = await fs.promises.readFile(tmpFile);
-  const stored = await deps.storageService.saveFile(buffer, {
-    tenantId,
-    mediaType: 'video',
-    originalFilename: filename,
-    mimeType: metadata.mimeType,
-  });
+    const metadata = await probeVideo(tmpFile);
+    const buffer = await fs.promises.readFile(tmpFile);
+    const stored = await deps.storageService.saveFile(buffer, {
+      tenantId,
+      mediaType: 'video',
+      originalFilename: filename,
+      mimeType: metadata.mimeType,
+    });
 
-  await fs.promises.rm(tmpDir, { recursive: true, force: true });
-
-  return {
-    storagePath: stored.filePath,
-    storageUrl: stored.fileUrl,
-    sizeBytes: stored.fileSize,
-    sourceUrl: url,
-    durationSeconds: metadata.durationSeconds,
-    format: metadata.format,
-    videoCodec: metadata.videoCodec,
-    audioCodec: metadata.audioCodec,
-    width: metadata.width,
-    height: metadata.height,
-  };
+    return {
+      storagePath: stored.filePath,
+      storageUrl: stored.fileUrl,
+      sizeBytes: stored.fileSize,
+      sourceUrl: url,
+      durationSeconds: metadata.durationSeconds,
+      format: metadata.formatName,
+      videoCodec: metadata.videoCodec,
+      audioCodec: metadata.audioCodec,
+      width: metadata.width,
+      height: metadata.height,
+    };
+  } finally {
+    if (tmpDir) {
+      await fs.promises.rm(tmpDir, { recursive: true, force: true }).catch((err) => {
+        logger.warn({ err, tmpDir }, 'Falha ao limpar diretório temporário do YouTube');
+      });
+    }
+  }
 }
 
 async function probeVideo(filePath: string) {

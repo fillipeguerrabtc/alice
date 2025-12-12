@@ -65,15 +65,25 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
   }
 
   function normalizeHtml(html: string) {
-    const $ = cheerio.load(html);
-    const title = ($('title').first().text() || '').trim();
-    const desc = ($('meta[name="description"]').attr('content') || '').trim();
-    const text = $('body').text().replace(/\s+/g, ' ').trim();
-    return {
-      title: title || 'Sem título',
-      description: desc || text.slice(0, 400),
-      content: text.slice(0, 10000),
-    };
+    try {
+      const $ = cheerio.load(html);
+      const title = ($('title').first().text() || '').trim();
+      const desc = ($('meta[name="description"]').attr('content') || '').trim();
+      const text = $('body').text().replace(/\s+/g, ' ').trim();
+      return {
+        title: title || 'Sem título',
+        description: desc || text.slice(0, 400),
+        content: text.slice(0, 10000),
+      };
+    } catch (error) {
+      logger.warn({ error }, 'Falha ao parsear HTML com cheerio; usando fallback bruto');
+      const truncated = html.slice(0, 10000);
+      return {
+        title: 'Sem título',
+        description: truncated.slice(0, 400),
+        content: truncated,
+      };
+    }
   }
 
   async function fetchPage(url: string, bytesMax: number, timeoutMs: number) {

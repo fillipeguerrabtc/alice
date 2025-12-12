@@ -57,6 +57,13 @@ interface MulterRequest extends Request {
   file?: Express.Multer.File;
 }
 
+type AuthUser = { id?: string; role?: 'super_admin' | string; tenantId?: string };
+
+function getAuthUser(req: Request): AuthUser {
+  const typed = req as Request & { user?: AuthUser };
+  return typed.user ?? {};
+}
+
 // ============================================================================
 // MULTIMODAL - Tipos de mídia suportados (Fase 9)
 // ============================================================================
@@ -1578,7 +1585,10 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
           timeouts: embeddingsBreaker.stats.timeouts,
         },
       },
-      webSearch: webSearchState,
+      webSearch: {
+        state: webSearchState.state,
+        stats: webSearchState.stats,
+      },
     },
     classificationKeywords: {
       web: WEB_SEARCH_KEYWORDS.length,
@@ -1612,7 +1622,8 @@ app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFrom
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
 
-  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+  const user = getAuthUser(req);
+  const isSuperAdmin = user.role === 'super_admin';
 
   try {
     const body = learningTaskCreateSchema.parse(req.body);
@@ -1627,7 +1638,7 @@ app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFrom
         parametros: body.parametros,
         maxTentativas: body.maxTentativas,
         agendadoPara: body.agendadoPara ? new Date(body.agendadoPara) : null,
-        criadoPor: (req.user as any)?.id ?? null,
+        criadoPor: user.id ?? null,
       })
     );
 
@@ -1642,7 +1653,8 @@ app.post('/api/learning/tasks/dequeue', requireAuth(), requireSameTenant(getTena
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
 
-  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+  const user = getAuthUser(req);
+  const isSuperAdmin = user.role === 'super_admin';
 
   try {
     const task = await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
@@ -1660,7 +1672,8 @@ app.post('/api/learning/tasks/:id/status', requireAuth(), requireSameTenant(getT
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
 
-  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+  const user = getAuthUser(req);
+  const isSuperAdmin = user.role === 'super_admin';
 
   try {
     const body = learningTaskStatusSchema.parse(req.body);
