@@ -1056,15 +1056,7 @@ jobs:
     # CRÍTICO: Verificar explicitamente que TODOS os jobs upstream tiveram sucesso
     # needs apenas cria ordem de execução, mas não impede execução se algum job falhar
     # Padrão usado em release.yml e deploy-production.yml: needs.{job}.result == 'success'
-    if: |
-      github.ref == 'refs/heads/main' &&
-      github.event_name == 'push' &&
-      needs.build-and-check.result == 'success' &&
-      needs.build-services.result == 'success' &&
-      needs.build-clip-inference.result == 'success' &&
-      needs.build-frontend.result == 'success' &&
-      needs.security-scan.result == 'success' &&
-      needs.compliance-checks.result == 'success'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-services.result == 'success' && needs.build-clip-inference.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4

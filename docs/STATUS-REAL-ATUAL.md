@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.12 - Correção cálculo de versão para tags não-semânticas
+> **Versão:** 3.13 - Correção sintaxe YAML condição if trigger-release
 
 ---
 
@@ -782,7 +782,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.12 - Correção cálculo de versão para tags não-semânticas (v1, v1.2)*
+*Versão: 3.13 - Correção sintaxe YAML condição if trigger-release (multilinha → linha única)*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
