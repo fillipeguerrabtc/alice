@@ -502,7 +502,7 @@ if (!DATABASE_URL) {
 //
 // SALAD_API_KEY NÃO é usada no rag-service (tudo é local)
 
-const SEARXNG_URL = process.env.SEARXNG_URL || 'http://alice-searxng:8080';
+const SEARXNG_URL = process.env.SEARXNG_URL || 'http://alice-searxng:8080/';
 const SEARXNG_SECRET_KEY = process.env.SEARXNG_SECRET_KEY;
 
 // Workers (defaults seguros e configuráveis)

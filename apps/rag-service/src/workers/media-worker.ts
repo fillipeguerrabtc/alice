@@ -169,7 +169,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     environmentVariables: envVars,
   });
 
-  await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
+  await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null);
   await deps.db
     .update(mediaJobs)
     .set({
@@ -274,7 +274,7 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
           MEDIA_PARAMS: JSON.stringify(job.parametros ?? {}),
         },
       });
-      await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
+      await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null);
       await deps.db
         .update(mediaJobs)
         .set({
@@ -284,7 +284,7 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
       return;
     }
     // Sem Salad configurado, mas download feito: marcar como failed para evitar pendência silenciosa
-    await deps.markStatus(job.id, 'failed', 'SALAD_LONG_VIDEO_IMAGE não configurada', job.tentativas);
+    await deps.markStatus(job.id, 'failed', 'SALAD_LONG_VIDEO_IMAGE não configurada');
     await deps.db
       .update(mediaJobs)
       .set({

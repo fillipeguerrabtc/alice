@@ -32,7 +32,7 @@ export function startLearningWorker(db: Database, config: LearningWorkerConfig) 
           });
         } catch (error) {
           const attempts = task.tentativas ?? 0; // já incrementado no dequeue
-          const status = attempts >= (task.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
+          const status = attempts > (task.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
           await updateLearningTaskStatus(db, logger, {
             taskId: task.id,
             tenantId: config.tenantId,
