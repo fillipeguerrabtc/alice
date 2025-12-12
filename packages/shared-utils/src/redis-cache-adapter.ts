@@ -20,7 +20,10 @@ const logger = createLogger('redis-cache-adapter');
 
 // Cliente Redis singleton
 let redisClient: RedisClientType | null = null;
-const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+function isProductionEnv(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
 
 /**
  * Interface do Cache Adapter (Strategy Pattern)
@@ -42,7 +45,7 @@ export async function initializeRedisCache(): Promise<boolean> {
   const redisUrl = process.env.REDIS_URL;
   
   if (!redisUrl) {
-    if (IS_PRODUCTION) {
+    if (isProductionEnv()) {
       logger.fatal('REDIS_URL não configurado em produção (Regra 6 - fail-fast)');
       throw new Error('REDIS_URL é obrigatório em produção para cache distribuído');
     }
@@ -58,7 +61,7 @@ export async function initializeRedisCache(): Promise<boolean> {
         connectTimeout: 5000,
         reconnectStrategy: (retries) => {
           if (retries > 3) {
-            if (IS_PRODUCTION) {
+            if (isProductionEnv()) {
               logger.fatal('CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
               throw new Error('Redis obrigatório em produção para cache distribuído');
             }
@@ -72,7 +75,7 @@ export async function initializeRedisCache(): Promise<boolean> {
     
     client.on('error', (err) => {
       logger.error({ error: err.message }, 'Erro Redis');
-      if (IS_PRODUCTION) {
+      if (isProductionEnv()) {
         logger.fatal({ error: err.message }, 'CRÍTICO: Erro Redis em produção');
       }
     });
@@ -85,7 +88,7 @@ export async function initializeRedisCache(): Promise<boolean> {
     redisClient = client as RedisClientType;
     return true;
   } catch (error) {
-    if (IS_PRODUCTION) {
+    if (isProductionEnv()) {
       logger.fatal({ error: (error as Error).message }, 'CRÍTICO: Falha ao conectar Redis em produção');
       throw new Error(`Redis obrigatório em produção: ${(error as Error).message}`);
     }
@@ -127,7 +130,7 @@ export class RedisCacheAdapter<T> implements CacheAdapter<T> {
   async get(key: string): Promise<T | undefined> {
     const client = getRedisClient();
     if (!client) {
-      if (IS_PRODUCTION) {
+      if (isProductionEnv()) {
         logger.error({ key }, 'Redis não disponível para leitura de cache em produção');
       } else {
         logger.debug({ key }, 'Redis não disponível para leitura de cache (dev/test)');
@@ -148,7 +151,7 @@ export class RedisCacheAdapter<T> implements CacheAdapter<T> {
   async set(key: string, value: T, ttlMs?: number): Promise<void> {
     const client = getRedisClient();
     if (!client) {
-      if (IS_PRODUCTION) {
+      if (isProductionEnv()) {
         logger.error({ key }, 'Redis não disponível em produção para escrita');
         throw new Error('Redis obrigatório em produção');
       }
@@ -164,7 +167,7 @@ export class RedisCacheAdapter<T> implements CacheAdapter<T> {
       );
     } catch (error) {
       logger.error({ key, error: (error as Error).message }, 'Erro ao salvar no cache Redis');
-      if (IS_PRODUCTION) {
+      if (isProductionEnv()) {
         throw error;
       }
     }
@@ -315,7 +318,7 @@ export function createCacheAdapter<T>(
     return new RedisCacheAdapter<T>(prefix, ttlMs);
   }
   
-  if (IS_PRODUCTION) {
+  if (isProductionEnv()) {
     logger.fatal({ prefix }, 'Redis não disponível em produção - fail-fast (Regra 6)');
     throw new Error('Redis obrigatório em produção para cache distribuído');
   }
