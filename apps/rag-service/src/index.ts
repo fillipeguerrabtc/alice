@@ -16,7 +16,7 @@ import multer from 'multer';
 import crypto from 'crypto';
 import path from 'path';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
-import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
 import {
@@ -48,6 +48,7 @@ import { getAudioProcessor } from './audio-processor.js';
 import { getVideoProcessor } from './video-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
 import { createWebSearchClient, WebSearchResult } from './web-search.js';
+import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -1534,6 +1535,109 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
       internal: INTERNAL_KEYWORDS.length,
     },
   });
+});
+
+// ============================================================================
+// LEARNING ORCHESTRATOR - Fila priorizada com RLS
+// ============================================================================
+
+const learningTaskCreateSchema = z.object({
+  tipo: z.string().min(1),
+  prioridade: z.number().int().min(1).max(10).optional(),
+  agentId: z.string().uuid().optional().nullable(),
+  namespaceId: z.string().uuid().optional().nullable(),
+  parametros: z.record(z.string(), z.unknown()).optional(),
+  maxTentativas: z.number().int().min(1).max(10).optional(),
+  agendadoPara: z.string().datetime().optional(),
+});
+
+const learningTaskStatusSchema = z.object({
+  status: z.enum(['pending', 'processing', 'completed', 'failed', 'cancelled']),
+  progresso: z.number().int().min(0).max(100).optional(),
+  erro: z.string().optional().nullable(),
+  resultado: z.record(z.string(), z.unknown()).optional().nullable(),
+});
+
+app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
+
+  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+
+  try {
+    const body = learningTaskCreateSchema.parse(req.body);
+
+    const task = await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
+      createLearningTask(tenantDb, logger, {
+        tenantId,
+        tipo: body.tipo,
+        prioridade: body.prioridade,
+        agentId: body.agentId ?? null,
+        namespaceId: body.namespaceId ?? null,
+        parametros: body.parametros,
+        maxTentativas: body.maxTentativas,
+        agendadoPara: body.agendadoPara ? new Date(body.agendadoPara) : null,
+        criadoPor: (req.user as any)?.id ?? null,
+      })
+    );
+
+    res.status(201).json({ task });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao criar learning task');
+    res.status(400).json({ error: (error as Error).message });
+  }
+});
+
+app.post('/api/learning/tasks/dequeue', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
+
+  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+
+  try {
+    const task = await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
+      dequeueNextLearningTask(tenantDb, logger, tenantId)
+    );
+
+    res.json({ task });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao dequeuer learning task');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+app.post('/api/learning/tasks/:id/status', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
+
+  const isSuperAdmin = (req.user as any)?.role === 'super_admin';
+
+  try {
+    const body = learningTaskStatusSchema.parse(req.body);
+    const taskId = req.params.id;
+
+    await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
+      updateLearningTaskStatus(tenantDb, logger, {
+        taskId,
+        tenantId,
+        status: body.status,
+        progresso: body.progresso,
+        erro: body.erro ?? null,
+        resultado: body.resultado ?? null,
+      })
+    );
+
+    if (body.status === 'completed') {
+      metrics.training.completedJobsTotal.inc();
+    } else if (body.status === 'failed') {
+      metrics.training.failedJobsTotal.inc();
+    }
+
+    res.json({ ok: true });
+  } catch (error) {
+    logger.error({ error }, 'Falha ao atualizar status de learning task');
+    res.status(400).json({ error: (error as Error).message });
+  }
 });
 
 // ============================================================================
