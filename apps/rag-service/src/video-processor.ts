@@ -120,10 +120,11 @@ export function combineVideoEmbeddingsForSearch(
   for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
     // Enterprise-grade: garantir que normalizedText[i] é finito antes de usar (evita NaN).
     // Se algum valor for undefined/null/NaN, usar 0 como fallback seguro (mas logar warning).
-    const textValue = Number.isFinite(normalizedText[i]) ? normalizedText[i] : 0;
+    // IMPORTANTE: verificar ANTES da atribuição para que o warning possa ser executado.
     if (!Number.isFinite(normalizedText[i])) {
       logger.warn({ index: i, value: normalizedText[i] }, 'Valor não-finito detectado em normalizedText (usando 0 como fallback)');
     }
+    const textValue = Number.isFinite(normalizedText[i]) ? normalizedText[i] : 0;
     combined[i] = (textValue * 0.6) + (avgFrameEmbedding[i] * 0.4);
   }
 
