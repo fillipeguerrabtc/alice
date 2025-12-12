@@ -51,6 +51,7 @@ export function createWebSearchClient({
   timeoutMs = 8000,
 }: CreateClientParams): WebSearchClient {
   async function webSearchInternal(query: string, count: number = defaultCount): Promise<WebSearchResult[]> {
+    const normalizedCount = count ?? defaultCount;
     if (!apiKey) {
       logger.warn('SEARXNG_SECRET_KEY não configurada - busca web desabilitada');
       return [];
@@ -62,7 +63,7 @@ export function createWebSearchClient({
       language: 'pt-BR',
       safesearch: '1',
       categories: 'general',
-      results: count.toString(),
+      results: normalizedCount.toString(),
     });
 
     const controller = new AbortController();
@@ -88,7 +89,7 @@ export function createWebSearchClient({
       const results = data.results || [];
 
       return results
-        .slice(0, count)
+        .slice(0, normalizedCount)
         .map((r) => ({
           title: r.title || 'Sem título',
           url: r.url || '',
@@ -113,7 +114,8 @@ export function createWebSearchClient({
     async search(query: string, count?: number): Promise<WebSearchResult[]> {
       if (!apiKey) return [];
       try {
-        return (await breaker.fire(query, count)) as WebSearchResult[];
+        const normalizedCount = count ?? defaultCount;
+        return (await breaker.fire(query, normalizedCount)) as WebSearchResult[];
       } catch (error) {
         if (error instanceof Error && error.message.includes('Breaker is open')) {
           logger.warn('Circuit breaker aberto - Busca web temporariamente indisponível');
