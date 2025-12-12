@@ -24,26 +24,49 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
   const limit = pLimit(config.concurrency);
   // Nota: crawl é feito via HTTP direto; SearXNG não é usado como proxy aqui.
 
-  async function fetchNextRequest() {
-    const [row] = await db
-      .select()
-      .from(webCrawlRequests)
-      .where(
-        and(
-          eq(webCrawlRequests.tenantId, config.tenantId),
-          eq(webCrawlRequests.status, 'pending'),
-          sql`(${webCrawlRequests.agendadoPara} IS NULL OR ${webCrawlRequests.agendadoPara} <= NOW())`
-        )
-      )
-      .orderBy(
-        asc(webCrawlRequests.prioridade),
-        sql`${webCrawlRequests.agendadoPara} NULLS FIRST`,
-        asc(webCrawlRequests.criadoEm)
-      )
-      .limit(1)
-      .for('update', { skipLocked: true });
+  async function fetchAndMarkNextRequest() {
+    let selected: typeof webCrawlRequests.$inferSelect | null = null;
 
-    return row || null;
+    await db.transaction(async (tx) => {
+      const [row] = await tx
+        .select()
+        .from(webCrawlRequests)
+        .where(
+          and(
+            eq(webCrawlRequests.tenantId, config.tenantId),
+            eq(webCrawlRequests.status, 'pending'),
+            sql`(${webCrawlRequests.agendadoPara} IS NULL OR ${webCrawlRequests.agendadoPara} <= NOW())`
+          )
+        )
+        .orderBy(
+          asc(webCrawlRequests.prioridade),
+          sql`${webCrawlRequests.agendadoPara} NULLS FIRST`,
+          asc(webCrawlRequests.criadoEm)
+        )
+        .limit(1)
+        .for('update', { skipLocked: true });
+
+      if (!row) {
+        selected = null;
+        return;
+      }
+
+      await tx
+        .update(webCrawlRequests)
+        .set({
+          status: 'running',
+          iniciadoEm: sql`NOW()`,
+        })
+        .where(eq(webCrawlRequests.id, row.id));
+
+      selected = {
+        ...row,
+        status: 'running',
+        iniciadoEm: new Date(),
+      };
+    });
+
+    return selected;
   }
 
   async function updateRequestStatus(id: string, status: 'running' | 'completed' | 'failed', erro?: string | null) {
@@ -121,11 +144,10 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
 
   async function processLoop() {
     try {
-      const req = await fetchNextRequest();
+      const req = await fetchAndMarkNextRequest();
       if (!req) return;
 
       await limit(async () => {
-        await updateRequestStatus(req.id, 'running');
         try {
           // Crawl direto da URL solicitada (não mandar URL como query de busca)
           const page = await fetchPage(req.url, req.bytesMax, req.timeoutMs);

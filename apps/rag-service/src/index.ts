@@ -1618,6 +1618,10 @@ const learningTaskStatusSchema = z.object({
   resultado: z.record(z.string(), z.unknown()).optional().nullable(),
 });
 
+const learningTaskParamsSchema = z.object({
+  id: z.string().uuid(),
+});
+
 app.post('/api/learning/tasks', requireAuth(), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   if (!tenantId) return res.status(401).json({ error: 'Autenticação necessária' });
@@ -1677,7 +1681,7 @@ app.post('/api/learning/tasks/:id/status', requireAuth(), requireSameTenant(getT
 
   try {
     const body = learningTaskStatusSchema.parse(req.body);
-    const taskId = req.params.id;
+    const { id: taskId } = learningTaskParamsSchema.parse(req.params);
 
     await withTenantContext(tenantId, isSuperAdmin, (tenantDb) =>
       updateLearningTaskStatus(tenantDb, logger, {
