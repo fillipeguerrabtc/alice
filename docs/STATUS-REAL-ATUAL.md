@@ -540,12 +540,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ### Arquitetura do CI (trigger-release)
 
-O workflow CI usa dependência direta do GitHub Actions:
+O workflow CI usa dependência direta do GitHub Actions com validação explícita:
 - **trigger-release** depende de: `build-and-check`, `build-services`, `build-clip-inference`, `build-frontend`, `security-scan`, `compliance-checks`
-- GitHub Actions **só executa** se TODOS os jobs em `needs` tiverem status `success`
-- Não há job intermediário - semântica nativa do GitHub Actions garante comportamento correto
+- **CRÍTICO**: `needs` apenas cria ordem de execução, mas **não impede execução** se jobs upstream falharem
+- A condição `if` **verifica explicitamente** que todos os jobs upstream tiveram `result == 'success'`
+- Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `deploy-production.yml`)
 
-> **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A semântica padrão do GitHub Actions com `needs` é suficiente e mais confiável.
+> **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A validação explícita na condição `if` é mais confiável e segue o padrão usado em outros workflows do projeto.
 
 > **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` trata tags não-semânticas e zeros à esquerda corretamente:
 > - **Valores default para componentes ausentes** (`v1` → `MAJOR=1, MINOR=0, PATCH=0` → `v1.0.1`)

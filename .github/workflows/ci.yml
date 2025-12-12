@@ -1041,8 +1041,8 @@ jobs:
   # ===========================================================================
   # Job 8: Trigger Release Automático (apenas em push para main)
   # Best Practices 2025: CI passa -> Release automático -> Deploy manual
-  # NOTA: Removido job ci-status intermediário - needs já garante que todos
-  # os jobs passaram (semântica padrão do GitHub Actions)
+  # NOTA: CRÍTICO - needs apenas cria ordem de execução, não impede execução se falhar
+  # A condição if DEVE verificar explicitamente que todos os jobs upstream tiveram sucesso
   # ===========================================================================
   trigger-release:
     name: Trigger Release
@@ -1052,9 +1052,19 @@ jobs:
       contents: read
       actions: write
     # Depende diretamente de todos os jobs críticos (sem job intermediário)
-    # GitHub Actions só executa se TODOS os needs tiverem status 'success'
     needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # CRÍTICO: Verificar explicitamente que TODOS os jobs upstream tiveram sucesso
+    # needs apenas cria ordem de execução, mas não impede execução se algum job falhar
+    # Padrão usado em release.yml e deploy-production.yml: needs.{job}.result == 'success'
+    if: |
+      github.ref == 'refs/heads/main' &&
+      github.event_name == 'push' &&
+      needs.build-and-check.result == 'success' &&
+      needs.build-services.result == 'success' &&
+      needs.build-clip-inference.result == 'success' &&
+      needs.build-frontend.result == 'success' &&
+      needs.security-scan.result == 'success' &&
+      needs.compliance-checks.result == 'success'
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
