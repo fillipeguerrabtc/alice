@@ -16,6 +16,10 @@ __pycache__/
 assets/c__Users_*
 .cursor/
 attached_assets/
+.cursor-*.log
+
+# Arquivos temporários de debug CI/CD (NUNCA versionar)
+ci-jobs*.json
 
 # Ambiente local
 .env
