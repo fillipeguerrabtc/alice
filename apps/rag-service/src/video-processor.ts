@@ -68,10 +68,14 @@ export function combineVideoEmbeddingsForSearch(
   // evitando NaN no vetor final (compatível com pgvector).
   const isUsableClipEmbedding = (vec: number[]): boolean => {
     if (vec.length !== CLIP_EMBEDDING_DIM) return false;
+    // Alinhar semântica com embeddings de texto: rejeitar vetor todo-zero (sentinela comum de falha).
+    // Regra 6: não propagar embeddings "falsos" que degradam busca silenciosamente.
+    let hasNonZero = false;
     for (const v of vec) {
       if (!Number.isFinite(v)) return false;
+      if (v !== 0) hasNonZero = true;
     }
-    return true;
+    return hasNonZero;
   };
 
   const validFrames = frameEmbeddings.filter(isUsableClipEmbedding);

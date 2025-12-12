@@ -2756,16 +2756,6 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
     // IMPORTANTE: Express < 5 pode não capturar rejeições de async handlers automaticamente,
     // então este endpoint deve SEMPRE tratar erros e responder.
     // ============================================================================
-    const parseBooleanEnv = (value: string | undefined, defaultValue: boolean): boolean => {
-      if (typeof value !== 'string') return defaultValue;
-      const normalized = value.trim().toLowerCase();
-      if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
-      if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
-      return defaultValue;
-    };
-
-    const whisperRequired = parseBooleanEnv(process.env.WHISPER_REQUIRED, true);
-
     const readinessResults = await Promise.allSettled([
       imageProcessor.isReadyAsync(),
       audioProcessor.isReadyAsync(),
@@ -2800,16 +2790,9 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
     }
 
     // Semântica de saúde enterprise:
-    // - image + document são core (sempre requeridos)
-    // - audio + video dependem de Whisper; se WHISPER_REQUIRED=false, ficam opcionais e não derrubam o status global
-    const audioRequired = whisperRequired;
-    const videoRequired = whisperRequired;
-
-    const allReady =
-      imageReady &&
-      documentReady &&
-      (!audioRequired || audioReady) &&
-      (!videoRequired || videoReady);
+    // - refletir APENAS as probes/capabilities (isReadyAsync), sem duplicar lógica de WHISPER_REQUIRED localmente.
+    // - se Whisper estiver indisponível, audio/video ficarão not_ready e o status global será degraded (sinal explícito).
+    const allReady = imageReady && documentReady && audioReady && videoReady;
 
     res.json({
       status: allReady ? 'ok' : 'degraded',
@@ -2817,7 +2800,6 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
       timestamp: new Date().toISOString(),
       supportedTypes: SUPPORTED_MEDIA_TYPES,
       maxFileSizeMb: 100,
-      whisperRequired,
       processing: {
         image: {
           configured: imageConfig.configured,
@@ -2828,7 +2810,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
         },
         audio: {
           configured: audioConfig.configured,
-          required: audioRequired,
+          required: true,
           ready: audioReady,
           embeddingDim: audioConfig.embeddingDim,
           transcriptionModel: audioConfig.transcriptionModel,
@@ -2836,7 +2818,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
         },
         video: {
           configured: videoConfig.configured,
-          required: videoRequired,
+          required: true,
           ready: videoReady,
           textEmbeddingDim: videoConfig.textEmbeddingDim,
           frameEmbeddingDim: videoConfig.frameEmbeddingDim,
