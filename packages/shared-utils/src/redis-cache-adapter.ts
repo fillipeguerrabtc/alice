@@ -47,7 +47,8 @@ export async function initializeRedisCache(): Promise<boolean> {
       logger.fatal('REDIS_URL não configurado em produção (Regra 6 - fail-fast)');
       throw new Error('REDIS_URL é obrigatório em produção para cache distribuído');
     }
-    logger.warn('REDIS_URL não configurado - usando cache in-memory (apenas desenvolvimento)');
+    // Em dev/test, a ausência de Redis pode ser intencional. Não tratar como warning.
+    logger.info('REDIS_URL não configurado - cache distribuído desabilitado (dev/test)');
     return false;
   }
   
@@ -62,7 +63,7 @@ export async function initializeRedisCache(): Promise<boolean> {
               logger.fatal('CRÍTICO: Redis indisponível em produção - fail-fast (Regra 6)');
               throw new Error('Redis obrigatório em produção para cache distribuído');
             }
-            logger.warn('Redis: máximo de tentativas atingido (desenvolvimento)');
+            logger.info('Redis: máximo de tentativas atingido (dev/test)');
             return new Error('Max retries reached');
           }
           return Math.min(retries * 100, 2000);
@@ -89,7 +90,7 @@ export async function initializeRedisCache(): Promise<boolean> {
       logger.fatal({ error: (error as Error).message }, 'CRÍTICO: Falha ao conectar Redis em produção');
       throw new Error(`Redis obrigatório em produção: ${(error as Error).message}`);
     }
-    logger.warn({ error: (error as Error).message }, 'Falha ao conectar Redis (desenvolvimento)');
+    logger.info({ error: (error as Error).message }, 'Falha ao conectar Redis (dev/test)');
     return false;
   }
 }
@@ -127,7 +128,11 @@ export class RedisCacheAdapter<T> implements CacheAdapter<T> {
   async get(key: string): Promise<T | undefined> {
     const client = getRedisClient();
     if (!client) {
-      logger.warn({ key }, 'Redis não disponível para leitura de cache');
+      if (isProduction) {
+        logger.error({ key }, 'Redis não disponível para leitura de cache em produção');
+      } else {
+        logger.debug({ key }, 'Redis não disponível para leitura de cache (dev/test)');
+      }
       return undefined;
     }
     
@@ -316,7 +321,9 @@ export function createCacheAdapter<T>(
     throw new Error('Redis obrigatório em produção para cache distribuído');
   }
   
-  logger.warn({ prefix }, 'Usando cache adapter in-memory (apenas desenvolvimento)');
+  // Cache in-memory é permitido apenas fora de produção (Regra 6).
+  // Não tratar como warning: em dev/test isso pode ser intencional.
+  logger.info({ prefix }, 'Usando cache adapter in-memory (dev/test)');
   return new MemoryCacheAdapter<T>(prefix, ttlMs);
 }
 
@@ -329,7 +336,7 @@ export async function closeRedisCacheClient(): Promise<void> {
       await redisClient.quit();
       logger.info('Cliente Redis de cache encerrado');
     } catch (error) {
-      logger.warn({ error }, 'Erro ao encerrar Redis cache');
+      logger.error({ error }, 'Erro ao encerrar Redis cache');
     }
   }
   redisClient = null;

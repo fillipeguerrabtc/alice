@@ -255,7 +255,7 @@ describe('Document Processor - Extração de Células ExcelJS', () => {
       expect(extractCellText(error)).toBe('#DIV/0!');
     });
 
-    it('deve retornar #ERROR para erro sem mensagem', () => {
+    it('deve retornar marcador de erro padrão quando não há mensagem', () => {
       const error = {
         error: {},
       };

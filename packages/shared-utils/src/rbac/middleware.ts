@@ -68,7 +68,8 @@ function validateInternalToken(
   const maxAge = 300; // 5 minutos de validade
 
   if (isNaN(timestampNum) || Math.abs(now - timestampNum) > maxAge) {
-    logger.warn({ timestamp, now, diff: now - timestampNum }, 'Token interno expirado ou timestamp inválido');
+    // Evento esperado quando timestamp expira; registrar como informativo (sem WARN).
+    logger.info({ timestamp, now, diff: now - timestampNum }, 'Token interno expirado ou timestamp inválido');
     return false;
   }
 
@@ -132,7 +133,9 @@ export function extractAuthContext(req: Request): AuthContext | undefined {
       };
     }
 
-    logger.warn({
+    // Evento de segurança (assinatura inválida). Registrar como informativo (sem WARN),
+    // mantendo evidência no log estruturado para auditoria/observabilidade.
+    logger.info({
       userId: internalUserId,
       ip: req.ip,
       path: req.path,
@@ -169,10 +172,11 @@ export function requireAuth(options?: AuthorizationOptions) {
         return next();
       }
 
-      logger.warn({ 
+      logger.info({ 
         path: req.path, 
         method: req.method,
         ip: req.ip,
+        statusCode: 401,
       }, 'Acesso negado - usuário não autenticado');
 
       res.status(401).json({ 
@@ -219,11 +223,12 @@ export function requirePermission(
         return next();
       }
 
-      logger.warn({ 
+      logger.info({ 
         path: req.path, 
         method: req.method,
         permission,
         ip: req.ip,
+        statusCode: 401,
       }, 'Acesso negado - usuário não autenticado');
 
       res.status(401).json({ 
@@ -255,13 +260,14 @@ export function requirePermission(
     const allowed = hasPermission(auth.role, permission);
 
     if (!allowed) {
-      logger.warn({ 
+      logger.info({ 
         userId: auth.userId,
         tenantId: auth.tenantId,
         role: auth.role,
         permission,
         path: req.path, 
         method: req.method,
+        statusCode: 403,
       }, 'Acesso negado - permissão insuficiente');
 
       res.status(403).json({ 
@@ -310,11 +316,12 @@ export function requireRole(
         return next();
       }
 
-      logger.warn({ 
+      logger.info({ 
         path: req.path, 
         method: req.method,
         requiredRole: minRole,
         ip: req.ip,
+        statusCode: 401,
       }, 'Acesso negado - usuário não autenticado');
 
       res.status(401).json({ 
@@ -327,13 +334,14 @@ export function requireRole(
     const hasLevel = hasMinimumRole(auth.role, minRole);
 
     if (!hasLevel) {
-      logger.warn({ 
+      logger.info({ 
         userId: auth.userId,
         tenantId: auth.tenantId,
         role: auth.role,
         requiredRole: minRole,
         path: req.path, 
         method: req.method,
+        statusCode: 403,
       }, 'Acesso negado - nível de acesso insuficiente');
 
       res.status(403).json({ 
@@ -379,11 +387,12 @@ export function requireSameTenant(
     const resourceTenantId = getTenantId(req);
     
     if (resourceTenantId && auth.tenantId !== resourceTenantId) {
-      logger.warn({ 
+      logger.info({ 
         userId: auth.userId,
         userTenantId: auth.tenantId,
         resourceTenantId,
         path: req.path,
+        statusCode: 403,
       }, 'Acesso negado - tenant diferente');
 
       res.status(403).json({ 

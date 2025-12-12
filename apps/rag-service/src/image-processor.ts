@@ -325,11 +325,12 @@ class ImageProcessorService {
         };
       }
 
-      logger.warn({ 
-        width, 
-        height, 
-        size: imageBuffer.length 
-      }, 'Thumbnail não gerado - imagem muito grande e sharp não disponível');
+      // Thumbnail é um recurso auxiliar. Se sharp não estiver disponível e a imagem for grande,
+      // seguir sem thumbnail é comportamento esperado (não é warning operacional).
+      logger.info(
+        { width, height, size: imageBuffer.length },
+        'Thumbnail não gerado (imagem grande e sharp indisponível)'
+      );
       
       return null;
     } catch (error) {

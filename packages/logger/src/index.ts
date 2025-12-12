@@ -1,7 +1,21 @@
 import pino, { Logger, LoggerOptions } from 'pino';
 import { AsyncLocalStorage } from 'async_hooks';
 
-const isDevelopment = process.env.NODE_ENV !== 'production';
+function isProductionEnv(): boolean {
+  return process.env.NODE_ENV === 'production';
+}
+
+function resolveLogLevel(): string {
+  // Ordem de precedência:
+  // 1) PINO_LOG_LEVEL: usado principalmente em testes para silenciar output
+  // 2) LOG_LEVEL: padrão do monorepo
+  // 3) default: debug fora de produção, info em produção
+  return (
+    process.env.PINO_LOG_LEVEL ||
+    process.env.LOG_LEVEL ||
+    (isProductionEnv() ? 'info' : 'debug')
+  );
+}
 
 export interface LogContext {
   correlationId?: string;
@@ -27,48 +41,53 @@ export function setLogContext(context: LogContext): void {
   }
 }
 
-const baseOptions: LoggerOptions = {
-  level: process.env.LOG_LEVEL || (isDevelopment ? 'debug' : 'info'),
-  formatters: {
-    level: (label) => ({ level: label }),
-    bindings: (bindings) => ({
-      pid: bindings.pid,
-      host: bindings.hostname,
-    }),
-  },
-  timestamp: pino.stdTimeFunctions.isoTime,
-  mixin: () => {
-    const context = logContextStorage.getStore();
-    if (context) {
-      return {
-        correlationId: context.correlationId,
-        requestId: context.requestId,
-        tenantId: context.tenantId,
-        userId: context.userId,
-      };
-    }
-    return {};
-  },
-};
-
-const devOptions: LoggerOptions = {
-  ...baseOptions,
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      translateTime: 'SYS:standard',
-      ignore: 'pid,hostname',
+function buildBaseOptions(): LoggerOptions {
+  return {
+    level: resolveLogLevel(),
+    formatters: {
+      level: (label) => ({ level: label }),
+      bindings: (bindings) => ({
+        pid: bindings.pid,
+        host: bindings.hostname,
+      }),
     },
-  },
-  mixin: baseOptions.mixin,
-};
+    timestamp: pino.stdTimeFunctions.isoTime,
+    mixin: () => {
+      const context = logContextStorage.getStore();
+      if (context) {
+        return {
+          correlationId: context.correlationId,
+          requestId: context.requestId,
+          tenantId: context.tenantId,
+          userId: context.userId,
+        };
+      }
+      return {};
+    },
+  };
+}
+
+function buildDevOptions(): LoggerOptions {
+  const base = buildBaseOptions();
+  return {
+    ...base,
+    transport: {
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+        ignore: 'pid,hostname',
+      },
+    },
+    mixin: base.mixin,
+  };
+}
 
 let baseSingletonLogger: Logger | null = null;
 
 function getBaseLogger(): Logger {
   if (!baseSingletonLogger) {
-    const finalOptions = isDevelopment ? devOptions : baseOptions;
+    const finalOptions = isProductionEnv() ? buildBaseOptions() : buildDevOptions();
     baseSingletonLogger = pino({
       ...finalOptions,
       name: 'alice-platform',
@@ -89,7 +108,32 @@ export function createChildLogger(
   return parent.child(bindings);
 }
 
-export const logger = createLogger(process.env.SERVICE_NAME || 'alice');
+// =============================================================================
+// Logger default (lazy) - evita side-effect no import
+// Motivo: em testes (Vitest), `setupFiles` define LOG_LEVEL/PINO_LOG_LEVEL.
+// Se criarmos logger no import, ele pode nascer com level errado e gerar WARNs.
+// =============================================================================
+
+let defaultLoggerInstance: Logger | null = null;
+
+function getDefaultLogger(): Logger {
+  if (!defaultLoggerInstance) {
+    defaultLoggerInstance = createLogger(process.env.SERVICE_NAME || 'alice');
+  }
+  return defaultLoggerInstance;
+}
+
+// Export compatível com API existente (logger como objeto), mas lazy via Proxy.
+export const logger: Logger = new Proxy({} as Logger, {
+  get(_target, prop) {
+    const real = getDefaultLogger() as unknown as Record<PropertyKey, unknown>;
+    const value = real[prop];
+    if (typeof value === 'function') {
+      return (value as (...args: unknown[]) => unknown).bind(real);
+    }
+    return value;
+  },
+}) as unknown as Logger;
 
 export type { Logger };
 

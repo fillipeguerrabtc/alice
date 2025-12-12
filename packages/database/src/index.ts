@@ -108,7 +108,8 @@ export function getPoolMetrics(): PoolMetrics {
  */
 export async function isPoolHealthy(timeoutMs = 2000): Promise<boolean> {
   if (!poolInstance || isShuttingDown) {
-    logger.warn('isPoolHealthy: pool não inicializado ou em shutdown');
+    // Estado esperado em testes e durante startup/shutdown. Não é warning operacional.
+    logger.debug({ hasPool: !!poolInstance, isShuttingDown }, 'isPoolHealthy: pool não inicializado ou em shutdown');
     return false;
   }
   
@@ -130,14 +131,16 @@ export async function isPoolHealthy(timeoutMs = 2000): Promise<boolean> {
         clearTimeout(timeoutId);
       }
       const errorMessage = error instanceof Error ? error.message : String(error);
-      logger.warn({ error: errorMessage }, 'Query de health check falhou');
+      // Healthcheck falhou: sinalizar via retorno false e log informativo (sem WARN).
+      logger.info({ healthy: false, error: errorMessage }, 'Query de health check falhou');
       return false;
     });
   
   // Promise de timeout
   const timeoutPromise = new Promise<false>((resolve) => {
     timeoutId = setTimeout(() => {
-      logger.warn({ timeoutMs }, 'Timeout na verificação de saúde do pool');
+      // Timeout de healthcheck: registrar como informativo (sem WARN) e retornar false.
+      logger.info({ healthy: false, timeoutMs }, 'Timeout na verificação de saúde do pool');
       resolve(false);
     }, timeoutMs);
   });
