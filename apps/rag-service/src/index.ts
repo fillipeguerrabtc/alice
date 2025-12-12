@@ -1515,7 +1515,7 @@ function buildAgenticContext(
 
 app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Response) => {
   const embeddingsState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  const webSearchState = webSearchBreaker.opened ? 'open' : (webSearchBreaker.halfOpen ? 'half-open' : 'closed');
+  const webSearchState = webSearchClient.breakerState();
 
   res.json({
     webSearchEnabled: webSearchClient.isEnabled(),
@@ -1528,7 +1528,7 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
           timeouts: embeddingsBreaker.stats.timeouts,
         },
       },
-      webSearch: webSearchClient.breakerState(),
+      webSearch: webSearchState,
     },
     classificationKeywords: {
       web: WEB_SEARCH_KEYWORDS.length,
