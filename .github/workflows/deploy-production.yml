@@ -175,7 +175,7 @@ jobs:
 
       # Cache pnpm store em caminho fixo para evitar falhas 400 do cache service
       - name: Definir diretório de cache do pnpm
-        id: pnpm-store-path
+        id: pnpm_store_path
         run: |
           STORE_DIR="$HOME/.pnpm-store"
           echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
@@ -185,7 +185,7 @@ jobs:
       - name: Restaurar cache do pnpm
         uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
-          path: ${{ steps.pnpm-store-path.outputs.store-dir }}
+          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.36 - Alinhado com CLAUDE.md (versão principal)
+> **Versão:** 3.37 - IDs GitHub Actions com underscore (deploy-prod)
 
 ---
 
@@ -554,6 +554,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 > **NOTA (12/12/2025):** Artefatos temporários de scanner adicionados ao `.gitignore` (`tmp-trivy/*.sarif`) e removidos do repositório. Relatórios de Trivy devem permanecer apenas como artefatos de CI, nunca versionados.
 >
 > **NOTA (12/12/2025):** Cache pnpm no deploy-prod: removida flag `cache: pnpm` do `actions/setup-node` (erro 400 intermitente) e adicionado cache explícito com `actions/cache@v4.2.0` pinado por SHA (`1bd1e32a3bdc45362d1e726936510720a7c30a57`) usando store-dir fixo (`$HOME/.pnpm-store`) e chave baseada em OS + versão do pnpm + hash do `pnpm-lock.yaml`.
+>
+> **NOTA (12/12/2025):** `deploy-production.yml`: corrigido ID do step do cache do pnpm para usar underscore (`pnpm_store_path`) e evitar quebra do parser do GitHub Actions ao referenciar `steps.{id}.outputs`.
 
 ### Arquitetura do CI (trigger-release)
 
