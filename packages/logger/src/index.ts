@@ -124,14 +124,81 @@ function getDefaultLogger(): Logger {
 }
 
 // Export compatível com API existente (logger como objeto), mas lazy via Proxy.
+//
+// Requisitos enterprise:
+// - Evitar alocação de novas funções a cada acesso (ex.: logger.error === logger.error)
+// - Encaminhar operações de reflexão/enumeração para evitar comportamento "surpreendente"
+//   (ex.: 'error' in logger, Reflect.ownKeys(logger), etc.)
+const boundMethodCache = new Map<PropertyKey, unknown>();
+
+function getRealLoggerRecord(): Record<PropertyKey, unknown> {
+  return getDefaultLogger() as unknown as Record<PropertyKey, unknown>;
+}
+
+function getPropertyDescriptorDeep(
+  obj: Record<PropertyKey, unknown>,
+  prop: PropertyKey
+): PropertyDescriptor | undefined {
+  let current: object | null = obj;
+  while (current) {
+    const desc = Reflect.getOwnPropertyDescriptor(current, prop);
+    if (desc) return desc;
+    current = Reflect.getPrototypeOf(current);
+  }
+  return undefined;
+}
+
 export const logger: Logger = new Proxy({} as Logger, {
   get(_target, prop) {
-    const real = getDefaultLogger() as unknown as Record<PropertyKey, unknown>;
-    const value = real[prop];
-    if (typeof value === 'function') {
-      return (value as (...args: unknown[]) => unknown).bind(real);
+    const cached = boundMethodCache.get(prop);
+    if (cached !== undefined) {
+      return cached;
     }
+
+    const real = getRealLoggerRecord();
+    const value = Reflect.get(real, prop, real);
+
+    if (typeof value === 'function') {
+      const bound = (value as (...args: unknown[]) => unknown).bind(real);
+      boundMethodCache.set(prop, bound);
+      return bound;
+    }
+
     return value;
+  },
+
+  set(_target, prop, value) {
+    // Se alguém sobrescrever um método/propriedade, invalidar cache para manter consistência.
+    boundMethodCache.delete(prop);
+    const real = getRealLoggerRecord();
+    return Reflect.set(real, prop, value, real);
+  },
+
+  deleteProperty(_target, prop) {
+    boundMethodCache.delete(prop);
+    const real = getRealLoggerRecord();
+    return Reflect.deleteProperty(real, prop);
+  },
+
+  has(_target, prop) {
+    const real = getRealLoggerRecord();
+    return Reflect.has(real, prop);
+  },
+
+  ownKeys() {
+    const real = getRealLoggerRecord();
+    return Reflect.ownKeys(real);
+  },
+
+  getOwnPropertyDescriptor(_target, prop) {
+    const real = getRealLoggerRecord();
+    return getPropertyDescriptorDeep(real, prop);
+  },
+
+  defineProperty(_target, prop, attributes) {
+    boundMethodCache.delete(prop);
+    const real = getRealLoggerRecord();
+    return Reflect.defineProperty(real, prop, attributes);
   },
 }) as unknown as Logger;
 
