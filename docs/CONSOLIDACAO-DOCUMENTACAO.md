@@ -80,4 +80,4 @@
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 12 de Dezembro de 2025*  
 *Versão: 1.6 - Atualizado para 18 regras (Regra 18: Commits Consolidados)*  
-*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*

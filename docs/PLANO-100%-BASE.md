@@ -370,7 +370,7 @@ Fases:
 *Documento atualizado em 09/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.2 - Redis Alice + Variáveis Inter-Service + Volume Hetzner*
-*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 
 ---
 

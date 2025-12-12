@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 41 (produção) |
+| **Total de Containers** | 42 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -28,9 +28,9 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 41/41 containers (100%) |
-| `read_only: true` | ✅ | 23/41 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 41/41 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 42/42 containers (100%) |
+| `read_only: true` | ✅ | 24/42 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 42/42 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -407,9 +407,9 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (41 containers)
+## 🐳 INFRAESTRUTURA DOCKER (42 containers)
 
-### Core Infra (5)
+### Core Infra (6)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
@@ -418,43 +418,44 @@ Retenção Arquivo:   30 dias
 | 3 | traefik | traefik:v3.3 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
 | 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
+| 6 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
 
 ### Alice Microservices (8)
 
 | # | Container | Imagem Base | Função |
 |---|-----------|-------------|--------|
-| 6 | alice-frontend | nginx:1.27-alpine | React/Nginx |
-| 7 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
-| 8 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
-| 9 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (precisa FFmpeg) |
-| 10 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
-| 11 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
-| 12 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
-| 13 | alice-clip-inference | python:3.11-slim | CLIP ViT-L/14 |
+| 7 | alice-frontend | nginx:1.27-alpine | React/Nginx |
+| 8 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
+| 9 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
+| 10 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (precisa FFmpeg) |
+| 11 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
+| 12 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
+| 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
+| 14 | alice-clip-inference | python:3.11-slim | CLIP ViT-L/14 |
 
 ### ERPNext Stack (12)
 
 | # | Container | Função |
 |---|-----------|--------|
-| 14 | erpnext-mariadb | Banco ERPNext |
-| 15 | erpnext-redis-cache | Cache |
-| 16 | erpnext-redis-queue | Filas |
-| 17 | erpnext-configurator | Configuração inicial |
-| 18 | erpnext-create-site | Criação site |
-| 19 | erpnext-backend | Frappe/Python |
-| 20 | erpnext-frontend | Nginx |
-| 21 | erpnext-websocket | Socket.io |
-| 22 | erpnext-scheduler | Tarefas agendadas |
-| 23 | erpnext-worker-short | Jobs curtos |
-| 24 | erpnext-worker-default | Jobs padrão |
-| 25 | erpnext-worker-long | Jobs longos |
+| 15 | erpnext-mariadb | Banco ERPNext |
+| 16 | erpnext-redis-cache | Cache |
+| 17 | erpnext-redis-queue | Filas |
+| 18 | erpnext-configurator | Configuração inicial |
+| 19 | erpnext-create-site | Criação site |
+| 20 | erpnext-backend | Frappe/Python |
+| 21 | erpnext-frontend | Nginx |
+| 22 | erpnext-websocket | Socket.io |
+| 23 | erpnext-scheduler | Tarefas agendadas |
+| 24 | erpnext-worker-short | Jobs curtos |
+| 25 | erpnext-worker-default | Jobs padrão |
+| 26 | erpnext-worker-long | Jobs longos |
 
 ### Backup & Logs (2)
 
 | # | Container | Função |
 |---|-----------|--------|
-| 26 | pgbackrest | Backup PostgreSQL (PITR, AES-256) |
-| 27 | vector | Log aggregation |
+| 27 | pgbackrest | Backup PostgreSQL (PITR, AES-256) |
+| 28 | vector | Log aggregation |
 
 ---
 
@@ -464,10 +465,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 41/41 containers (100% COMPLETO) |
-| read_only: true | ✅ | 23/41 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 41/41 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 41/41 containers |
+| no-new-privileges | ✅ | 42/42 containers (100% COMPLETO) |
+| read_only: true | ✅ | 24/42 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 42/42 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 42/42 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
@@ -802,7 +803,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
 *Versão: 3.36 - Alinhado com CLAUDE.md (versão principal)*
-*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*

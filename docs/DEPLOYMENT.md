@@ -3,11 +3,11 @@
 **Autor:** Fillipe Guerra  
 **Data:** 12 de Dezembro de 2025
 
-## Visão Geral da Arquitetura - 41 Containers em Produção
+## Visão Geral da Arquitetura - 42 Containers em Produção
 
-A plataforma Alice é composta por **41 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **42 containers** organizados em 6 categorias:
 
-### Categoria 1: Infraestrutura Core (5 serviços)
+### Categoria 1: Infraestrutura Core (6 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
@@ -16,6 +16,7 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 | 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.6 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
 | 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4 Alpine |
+| 6 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
 ### Categoria 2: Microsserviços Alice (8 serviços)
 
@@ -921,7 +922,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Documento atualizado em: 12 de Dezembro de 2025*
 *Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 23/41 com read_only (12/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*

@@ -13,8 +13,9 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 41 total (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
+# CONTAINERS: 42 total (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
+# - alice-searxng: Metabusca interna (SearXNG) para Web Search
 #
 # Autor: Fillipe Guerra
 # Data: 05 de Dezembro de 2025
@@ -64,6 +65,14 @@ volumes:
       type: none
       o: bind
       device: /opt/alice/data/traefik-acme
+  
+  searxng_config:
+    name: alice-searxng-config
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/searxng-config
   
   # ERPNext
   erpnext_sites:
@@ -141,6 +150,43 @@ volumes:
 # SERVICES
 # =============================================================================
 services:
+
+  # ===========================================================================
+  # SEARXNG - Metabusca self-hosted para Web Search (fase multimodal)
+  # Nota: rota interna (não exposta publicamente). Traefik não configurado aqui.
+  # ===========================================================================
+  alice-searxng:
+    image: searxng/searxng:latest
+    platform: linux/amd64
+    container_name: alice-searxng
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=32M
+    environment:
+      - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:?SEARXNG_SECRET_KEY é obrigatório}
+      # Bind default 8080; acesso interno via alice-network
+      - SEARXNG_BASE_URL=http://alice-searxng:8080/
+    volumes:
+      - searxng_config:/etc/searxng
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://127.0.0.1:8080/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
 
   # ===========================================================================
   # DOCKER SOCKET PROXY - Proxy seguro para Docker API

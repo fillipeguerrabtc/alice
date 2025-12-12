@@ -1,15 +1,15 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 11 de Dezembro de 2025
+**Data:** 12 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 40 configurados no repositório (37 obrigatórios pré-deploy + 3 opcionais pós-deploy)
+**Total de Secrets:** 41 configurados no repositório (37 obrigatórios pré-deploy + 4 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 41 em produção (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
+**Total de Containers:** 42 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
@@ -26,6 +26,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Multimodal Inference** | alice-clip-inference | Nenhum (serviço interno - processamento 100% LOCAL, acesso controlado pela rede Docker) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
+| **Web Search (SearXNG)** | alice-searxng | SEARXNG_SECRET_KEY |
 | **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
 | **Deploy** | GitHub Actions | HETZNER_*, GH_PAT |
 
@@ -217,6 +218,11 @@ Estes são necessários para o deploy funcionar:
 
 **Uso:** Criptografa backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
 
+### FASE 10: Web Search (SearXNG)
+| Secret | Descrição | Como Obter |
+|--------|-----------|------------|
+| `SEARXNG_SECRET_KEY` | Chave secreta da instância SearXNG (protege endpoints internos) | `openssl rand -hex 64` e adicionar no GitHub Secrets |
+
 ### Domínio e SSL
 
 | Secret | Descrição |
@@ -227,8 +233,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 11 de Dezembro de 2025  
-> **Resumo:** 38 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 12 de Dezembro de 2025  
+> **Resumo:** 41 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -398,10 +404,10 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 10 de Dezembro de 2025*  
-*Versão: 6.5*  
-*Total de Secrets: 40 configurados (37 obrigatórios + 3 opcionais pós-deploy)*  
-*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
+*Documento atualizado em: 12 de Dezembro de 2025*  
+*Versão: 6.6*  
+*Total de Secrets: 41 configurados (37 obrigatórios + 4 opcionais/novos)*  
+*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *CORS_ORIGINS: Adicionado em 10/12/2025 para permitir requisições do frontend*

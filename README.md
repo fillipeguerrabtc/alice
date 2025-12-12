@@ -405,7 +405,7 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 *Autor: Fillipe Guerra*
 *Versão 3.16.0 - 12 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

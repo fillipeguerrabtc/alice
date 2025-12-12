@@ -2,8 +2,13 @@
 ## Alice - IA Autônoma Multimodal Universal
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Dezembro de 2025  
-**Versão:** 3.2 (Final)
+**Data:** 12 de Dezembro de 2025  
+**Versão:** 3.3 (Final)  
+**Princípio de arquitetura (multimodal):**  
+- **Embeddings e transcrições** (texto, imagem, áudio, vídeo) são sempre gerados **localmente em CPU no servidor Hetzner** (multilingual-e5-base, CLIP ViT-L/14, faster-whisper).  
+- **Inferência/geração** pesada (LLM, TTS, talking head, lip-sync, vídeo longo, imagem FLUX.1) usa **GPUs da Salad Cloud**.  
+- Não há dependência externa para embeddings ou transcrição (Regra 6).  
+- Ainda não foi feito deploy em produção; este plano é o blueprint para implementação.
 
 ---
 
@@ -468,7 +473,7 @@ Após todas as fases, Alice será capaz de:
 *Autor: Fillipe Guerra*
 *Documento em Português Brasileiro*
 *Atualizado: 09 de Dezembro de 2025*
-*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) para uploads multimodais e backups*
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*
 

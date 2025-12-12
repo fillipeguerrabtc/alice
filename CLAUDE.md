@@ -50,7 +50,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 Alice employs a microservices architecture with 41 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
-- **Infrastructure Core (5 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache).
+- **Infrastructure Core (6 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**.
 - **Alice Microservices (8 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
@@ -300,8 +300,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.36 - 12 de Dezembro de 2025*
-*Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Versão: 3.37 - 12 de Dezembro de 2025*
+*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
