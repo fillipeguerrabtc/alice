@@ -208,7 +208,8 @@ jobs:
       # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security (Regra 11)
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
-        with: node-version: ${{ steps.node-version.outputs.version }}
+        with:
+          node-version: ${{ steps.node-version.outputs.version }}
 
       - name: Ler versão do pnpm do package.json
         id: pnpm-version
@@ -228,7 +229,8 @@ jobs:
       # Best Practices 2025: pnpm/action-setup@v4 (Node.js 20, November 2025)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with: version: ${{ steps.pnpm-version.outputs.version }}
+        with:
+          version: ${{ steps.pnpm-version.outputs.version }}
 
       # REGRA 4: Aprovação obrigatória - criar branch para PR
       # REGRA 6: Enterprise-grade - nome único para evitar colisões (timestamp + SHA curto)
