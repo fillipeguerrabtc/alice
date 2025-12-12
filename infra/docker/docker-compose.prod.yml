@@ -708,6 +708,8 @@ services:
         condition: service_healthy
       alice-clip-inference:
         condition: service_healthy
+      alice-searxng:
+        condition: service_healthy
     networks:
       - alice-network
     labels:

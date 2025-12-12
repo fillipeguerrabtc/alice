@@ -18,6 +18,7 @@ const pipeline = promisify(require('stream').pipeline);
 ffmpeg.setFfprobePath(ffprobePath.path);
 
 const logger = createLogger('media-worker');
+const storageService = getStorageService();
 
 interface MediaWorkerConfig {
   tenantId: string;
@@ -35,7 +36,6 @@ const SALAD_GPU_CLASS = (process.env.SALAD_GPU_CLASS || 'premium-gpu').split(','
 export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
   const limit = pLimit(config.concurrency);
   const saladClient = createSaladMediaClient(logger, metrics);
-  const storageService = getStorageService();
 
   async function fetchNextJob() {
     const [row] = await db
@@ -80,7 +80,8 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
       await limit(async () => {
         await markStatus(job.id, 'processing');
         try {
-          await handleJob(job);
+          const deps = { db, saladClient, storageService, markStatus, config };
+          await handleJob(deps, job);
         } catch (error) {
           const attempts = job.tentativas ?? 0; // já incrementado no status processing
           const status = attempts >= (job.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
@@ -100,26 +101,34 @@ function isYoutubeUrl(url: string) {
   return url.includes('youtube.com') || url.includes('youtu.be');
 }
 
-async function handleJob(job: any) {
+type WorkerDeps = {
+  db: Database;
+  saladClient: ReturnType<typeof createSaladMediaClient>;
+  storageService: ReturnType<typeof getStorageService>;
+  markStatus: (id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null, attemptsOverride?: number) => Promise<void>;
+  config: MediaWorkerConfig;
+};
+
+async function handleJob(deps: WorkerDeps, job: any) {
   switch (job.jobType) {
     case 'tts':
-      await dispatchSalad(job, SALAD_TTS_IMAGE, { text: job.parametros?.text, voice: job.parametros?.voice });
+      await dispatchSalad(deps, job, SALAD_TTS_IMAGE, { text: job.parametros?.text, voice: job.parametros?.voice });
       return;
     case 'talking_head':
-      await dispatchSalad(job, SALAD_TALKING_HEAD_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
+      await dispatchSalad(deps, job, SALAD_TALKING_HEAD_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
       return;
     case 'lip_sync':
-      await dispatchSalad(job, SALAD_LIP_SYNC_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
+      await dispatchSalad(deps, job, SALAD_LIP_SYNC_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
       return;
     case 'long_video':
-      await handleLongVideo(job);
+      await handleLongVideo(deps, job);
       return;
     default:
       throw new Error(`Tipo de job não suportado: ${job.jobType}`);
   }
 }
 
-async function dispatchSalad(job: any, image?: string, payload?: Record<string, unknown>) {
+async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload?: Record<string, unknown>) {
   if (!image) {
     throw new Error('Imagem Salad não configurada para o tipo de job');
   }
@@ -130,7 +139,7 @@ async function dispatchSalad(job: any, image?: string, payload?: Record<string, 
     MEDIA_PARAMS: JSON.stringify(payload ?? {}),
   };
 
-  const result = await createSaladMediaClient(logger, metrics).createAndWait({
+  const result = await deps.saladClient.createAndWait({
     name: containerName,
     image,
     cpu: 2,
@@ -139,8 +148,8 @@ async function dispatchSalad(job: any, image?: string, payload?: Record<string, 
     environmentVariables: envVars,
   });
 
-  await markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
-  await db
+  await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
+  await deps.db
     .update(mediaJobs)
     .set({
       resultado: { saladResult: result },
@@ -148,7 +157,7 @@ async function dispatchSalad(job: any, image?: string, payload?: Record<string, 
     .where(eq(mediaJobs.id, job.id));
 }
 
-async function downloadAndStoreYoutube(url: string, tenantId: string) {
+async function downloadAndStoreYoutube(deps: WorkerDeps, url: string, tenantId: string) {
   const info = await ytdl.getInfo(url);
   const title = info.videoDetails.title || 'youtube-video';
   const safeTitle = title.replace(/[^\w\d-_]+/g, '_').slice(0, 80);
@@ -161,12 +170,11 @@ async function downloadAndStoreYoutube(url: string, tenantId: string) {
 
   const metadata = await probeVideo(tmpFile);
   const buffer = await fs.promises.readFile(tmpFile);
-  const storageService = getStorageService();
-  const stored = await storageService.saveFile(buffer, {
+  const stored = await deps.storageService.saveFile(buffer, {
     tenantId,
     mediaType: 'video',
     originalFilename: filename,
-    mimeType: metadata.format,
+    mimeType: metadata.mimeType,
   });
 
   await fs.promises.rm(tmpDir, { recursive: true, force: true });
@@ -188,7 +196,8 @@ async function downloadAndStoreYoutube(url: string, tenantId: string) {
 async function probeVideo(filePath: string) {
   return new Promise<{
     durationSeconds: number | null;
-    format: string | undefined;
+    formatName: string | undefined;
+    mimeType: string;
     videoCodec: string | undefined;
     audioCodec: string | undefined;
     width: number | undefined;
@@ -196,13 +205,15 @@ async function probeVideo(filePath: string) {
   }>((resolve, reject) => {
     ffmpeg.ffprobe(filePath, (err, data) => {
       if (err) return reject(err);
-      const format = data.format.format_name;
+      const formatName = data.format.format_name;
+      const mimeType = guessMime(formatName);
       const durationSeconds = data.format.duration ? Number(data.format.duration) : null;
       const videoStream = data.streams.find((s) => s.codec_type === 'video');
       const audioStream = data.streams.find((s) => s.codec_type === 'audio');
       resolve({
         durationSeconds,
-        format,
+        formatName,
+        mimeType,
         videoCodec: videoStream?.codec_name,
         audioCodec: audioStream?.codec_name,
         width: videoStream?.width,
@@ -212,12 +223,23 @@ async function probeVideo(filePath: string) {
   });
 }
 
-async function handleLongVideo(job: any) {
+function guessMime(formatName?: string): string {
+  if (!formatName) return 'application/octet-stream';
+  const f = formatName.toLowerCase();
+  if (f.includes('mp4')) return 'video/mp4';
+  if (f.includes('matroska') || f.includes('mkv')) return 'video/x-matroska';
+  if (f.includes('webm')) return 'video/webm';
+  if (f.includes('mov')) return 'video/quicktime';
+  if (f.includes('mpegts') || f.includes('ts')) return 'video/MP2T';
+  return 'application/octet-stream';
+}
+
+async function handleLongVideo(deps: WorkerDeps, job: any) {
   if (job.inputUrl && isYoutubeUrl(job.inputUrl)) {
-    const download = await downloadAndStoreYoutube(job.inputUrl, job.tenantId);
+    const download = await downloadAndStoreYoutube(deps, job.inputUrl, job.tenantId);
     // Envia para Salad (long_video) se configurado, passando caminho armazenado
     if (SALAD_LONG_VIDEO_IMAGE) {
-      const result = await createSaladMediaClient(logger, metrics).createAndWait({
+      const result = await deps.saladClient.createAndWait({
         name: `media-long-video-${job.id}`,
         image: SALAD_LONG_VIDEO_IMAGE,
         cpu: 4,
@@ -231,8 +253,8 @@ async function handleLongVideo(job: any) {
           MEDIA_PARAMS: JSON.stringify(job.parametros ?? {}),
         },
       });
-      await markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
-      await db
+      await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null, job.tentativas);
+      await deps.db
         .update(mediaJobs)
         .set({
           resultado: { download, saladResult: result },
@@ -241,8 +263,8 @@ async function handleLongVideo(job: any) {
       return;
     }
     // Sem Salad configurado, mas download feito: marcar como failed para evitar pendência silenciosa
-    await markStatus(job.id, 'failed', 'SALAD_LONG_VIDEO_IMAGE não configurada', job.tentativas);
-    await db
+    await deps.markStatus(job.id, 'failed', 'SALAD_LONG_VIDEO_IMAGE não configurada', job.tentativas);
+    await deps.db
       .update(mediaJobs)
       .set({
         resultado: { download, error: 'SALAD_LONG_VIDEO_IMAGE não configurada' },
@@ -252,4 +274,4 @@ async function handleLongVideo(job: any) {
   }
 
   throw new Error('Job long_video requer inputUrl YouTube válido');
-}습니다. Continue com as proximas etapas. Vou aproveitar que voce nao quis criar staging e pode recriar o banco para te ajudar agora que sei onde esta no Hetzner hehe. A SEguir: Vou rodar e criar staging em produçao e alterar os secrets do github e habilitar pino de debug nos containers. Aceita?** No/Yes?.`|`
+}

@@ -50,12 +50,15 @@ ALTER TABLE learning_tasks
 ALTER TABLE learning_tasks
   ADD CONSTRAINT learning_tasks_tenant_fk FOREIGN KEY (tenant_id) REFERENCES tenants(id);
 
--- Índices priorizados por tenant/status
-CREATE INDEX IF NOT EXISTS idx_learning_tasks_priority
+DROP INDEX IF EXISTS idx_learning_tasks_priority;
+DROP INDEX IF EXISTS idx_learning_tasks_status;
+DROP INDEX IF EXISTS idx_learning_tasks_agent;
+
+CREATE INDEX idx_learning_tasks_priority
   ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
-CREATE INDEX IF NOT EXISTS idx_learning_tasks_status
+CREATE INDEX idx_learning_tasks_status
   ON learning_tasks(tenant_id, status);
-CREATE INDEX IF NOT EXISTS idx_learning_tasks_agent
+CREATE INDEX idx_learning_tasks_agent
   ON learning_tasks(tenant_id, agent_id);
 
 -- RLS alinhado ao modelo multi-tenant (usa funções current_tenant_id/is_super_admin)
