@@ -83,8 +83,15 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
           const deps = { db, saladClient, storageService, markStatus, config };
           await handleJob(deps, job);
         } catch (error) {
-          const attempts = job.tentativas ?? 0; // já incrementado no status processing
-          const status = attempts >= (job.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
+          // Recupera tentativas atualizadas após o incremento em 'processing'
+          const fresh = await db
+            .select({ tentativas: mediaJobs.tentativas, maxTentativas: mediaJobs.maxTentativas })
+            .from(mediaJobs)
+            .where(eq(mediaJobs.id, job.id))
+            .limit(1);
+          const attempts = fresh[0]?.tentativas ?? job.tentativas ?? 0;
+          const maxAttempts = fresh[0]?.maxTentativas ?? config.maxAttempts;
+          const status = attempts >= maxAttempts ? 'failed' : 'pending';
           await markStatus(job.id, status, (error as Error).message, attempts);
         }
       });
