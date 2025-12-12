@@ -1,4 +1,4 @@
-import { eq, sql, type Database, learningTasks, learningTaskEvents, type LearningTask } from '@alice/database';
+import { eq, and, sql, asc, type Database, learningTasks, learningTaskEvents, type LearningTask } from '@alice/database';
 import type { Logger } from 'pino';
 
 // =============================================================================
@@ -74,18 +74,24 @@ export async function dequeueNextLearningTask(db: Database, logger: Logger, tena
   let selected: LearningTask | null = null;
 
   await db.transaction(async (tx) => {
-    const result = await tx.execute<LearningTask>(sql`
-      SELECT *
-      FROM learning_tasks
-      WHERE tenant_id = ${tenantId}
-        AND status = 'pending'
-        AND (agendado_para IS NULL OR agendado_para <= NOW())
-      ORDER BY prioridade ASC, agendado_para NULLS FIRST, criado_em ASC
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1
-    `);
+    const [row] = await tx
+      .select()
+      .from(learningTasks)
+      .where(
+        and(
+          eq(learningTasks.tenantId, tenantId),
+          eq(learningTasks.status, 'pending'),
+          sql`(${learningTasks.agendadoPara} IS NULL OR ${learningTasks.agendadoPara} <= NOW())`
+        )
+      )
+      .orderBy(
+        asc(learningTasks.prioridade),
+        sql`${learningTasks.agendadoPara} NULLS FIRST`,
+        asc(learningTasks.criadoEm)
+      )
+      .limit(1)
+      .for('update', { skipLocked: true });
 
-    const row = result.rows[0];
     if (!row) {
       selected = null;
       return;
