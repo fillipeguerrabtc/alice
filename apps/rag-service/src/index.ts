@@ -41,6 +41,7 @@ import {
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
+import { resolveClipServiceUrl } from './clip-service-url.js';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
 import { getAudioProcessor } from './audio-processor.js';
@@ -462,49 +463,7 @@ const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;
 // CLIP Service URL para processamento multimodal LOCAL (Regra 6 - Autonomia Total)
 // Inclui: embeddings (texto + imagem) + transcrição de áudio
-function resolveClipServiceUrl(): string {
-  const raw = process.env.CLIP_SERVICE_URL;
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  const defaultUrl = 'http://alice-clip-inference:8080';
-
-  if (!trimmed) return defaultUrl;
-
-  const normalize = (value: string): string => value.replace(/\/+$/, '');
-
-  const tryParse = (value: string): URL | null => {
-    try {
-      const url = new URL(value);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      if (!url.hostname) return null;
-      return url;
-    } catch {
-      return null;
-    }
-  };
-
-  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
-
-  if (!parsed) {
-    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
-      process.exit(1);
-    }
-    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
-    return defaultUrl;
-  }
-
-  if (!trimmed.includes('://')) {
-    logger.warn(
-      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
-      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
-    );
-  }
-
-  return normalize(parsed.toString());
-}
-
-const CLIP_SERVICE_URL = resolveClipServiceUrl();
+const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');

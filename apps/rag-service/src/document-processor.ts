@@ -23,6 +23,7 @@
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
+import { resolveClipServiceUrl } from './clip-service-url.js';
 import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
@@ -30,49 +31,7 @@ const logger = createLogger('document-processor');
 // Configuração - Embeddings 100% locais via CPU no Hetzner (Regra 6 - Autonomia Total)
 // CLIP Service URL para embeddings locais (serviço interno na rede Docker)
 // NOTA: Todos os embeddings (texto e CLIP) são gerados 100% localmente via CPU no servidor Hetzner
-function resolveClipServiceUrl(): string {
-  const raw = process.env.CLIP_SERVICE_URL;
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  const defaultUrl = 'http://alice-clip-inference:8080';
-
-  if (!trimmed) return defaultUrl;
-
-  const normalize = (value: string): string => value.replace(/\/+$/, '');
-
-  const tryParse = (value: string): URL | null => {
-    try {
-      const url = new URL(value);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      if (!url.hostname) return null;
-      return url;
-    } catch {
-      return null;
-    }
-  };
-
-  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
-
-  if (!parsed) {
-    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
-      throw new Error(msg);
-    }
-    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
-    return defaultUrl;
-  }
-
-  if (!trimmed.includes('://')) {
-    logger.warn(
-      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
-      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
-    );
-  }
-
-  return normalize(parsed.toString());
-}
-
-const CLIP_SERVICE_URL = resolveClipServiceUrl();
+const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;

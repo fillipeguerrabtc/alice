@@ -115,8 +115,17 @@ export function combineVideoEmbeddingsForSearch(
   }
 
   // Combinar: 60% texto, 40% frames (texto geralmente mais relevante para busca)
-  // Primeiro, normalizar textEmbedding para 768 dim (sem padding com zeros)
-  const normalizedText = textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
+  // Primeiro, normalizar textEmbedding para TEXT_EMBEDDING_DIM (sem padding com zeros)
+  // Defesa em profundidade: checar ANTES do slice para evitar estado intermediário frágil caso a lógica mude no futuro.
+  if (textEmbedding.length < TEXT_EMBEDDING_DIM) {
+    logger.warn(
+      { textEmbeddingLength: textEmbedding.length, expectedDim: TEXT_EMBEDDING_DIM },
+      'textEmbedding menor que o esperado; retornando embedding baseado apenas em frames (evita undefined/NaN)'
+    );
+    return avgFrameEmbedding;
+  }
+  const normalizedText =
+    textEmbedding.length === TEXT_EMBEDDING_DIM ? textEmbedding : textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
 
   // NOTA ARQUITETURAL: TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM são ambas 768 (multilingual-e5-base e CLIP ViT-L/14).
   // Se no futuro essas dimensões divergirem, o código precisará ser atualizado para lidar com a incompatibilidade.
@@ -163,8 +172,8 @@ export function combineVideoEmbeddingsForSearch(
   }
 
   // Após validação completa, combinar embeddings
-  const combined = new Array(CLIP_EMBEDDING_DIM).fill(0);
-  for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+  const combined = new Array(avgFrameEmbedding.length).fill(0);
+  for (let i = 0; i < combined.length; i++) {
     combined[i] = (normalizedText[i] * 0.6) + (avgFrameEmbedding[i] * 0.4);
   }
 

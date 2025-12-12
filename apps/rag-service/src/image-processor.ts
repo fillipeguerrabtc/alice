@@ -17,6 +17,7 @@
 import pino from 'pino';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { validateEmbeddingDimension } from '@alice/database';
+import { resolveClipServiceUrl } from './clip-service-url.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -29,49 +30,7 @@ const logger = pino({
 // Configuração CLIP Local (Autônomo - Regra 6)
 // REGRA 6: Serviço local no Hetzner, não depende de API externa
 // Serviço interno na rede Docker privada - não requer autenticação
-function resolveClipServiceUrl(): string {
-  const raw = process.env.CLIP_SERVICE_URL;
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  const defaultUrl = 'http://alice-clip-inference:8080';
-
-  if (!trimmed) return defaultUrl;
-
-  const normalize = (value: string): string => value.replace(/\/+$/, '');
-
-  const tryParse = (value: string): URL | null => {
-    try {
-      const url = new URL(value);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      if (!url.hostname) return null;
-      return url;
-    } catch {
-      return null;
-    }
-  };
-
-  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
-
-  if (!parsed) {
-    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
-    if (process.env.NODE_ENV === 'production') {
-      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
-      throw new Error(msg);
-    }
-    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
-    return defaultUrl;
-  }
-
-  if (!trimmed.includes('://')) {
-    logger.warn(
-      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
-      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
-    );
-  }
-
-  return normalize(parsed.toString());
-}
-
-const CLIP_SERVICE_URL = resolveClipServiceUrl();
+const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
 
 // Dimensão dos embeddings CLIP (ViT-L/14)
 export const CLIP_EMBEDDING_DIM = 768;
