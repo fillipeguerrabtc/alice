@@ -1039,10 +1039,80 @@ jobs:
           done
 
   # ===========================================================================
-  # Job 8: Trigger Release Automático (apenas em push para main)
-  # Best Practices 2025: CI passa -> Release automático -> Deploy manual
-  # NOTA: Removido job ci-status intermediário - needs já garante que todos
-  # os jobs passaram (semântica padrão do GitHub Actions)
+  # Job 8: CI Final Status - VERIFICA TODOS OS JOBS
+  # ===========================================================================
+  ci-status:
+    name: CI Status
+    runs-on: ubuntu-latest
+    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
+    # Este job apenas agrega outputs de outros jobs, não acessa APIs do GitHub
+    permissions:
+      contents: read  # Apenas para ler outputs de jobs anteriores (via needs.*)
+    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
+    if: always()
+    outputs:
+      success: ${{ steps.check.outputs.success }}
+    steps:
+      - name: Check all jobs status
+        id: check
+        run: |
+          echo "=============================================="
+          echo "Resumo do CI - Alice Enterprise Platform"
+          echo "=============================================="
+          echo "Build & Check:      ${{ needs.build-and-check.result }}"
+          echo "Build Services:     ${{ needs.build-services.result }}"
+          echo "Build CLIP (Python):${{ needs.build-clip-inference.result }}"
+          echo "Build Frontend:     ${{ needs.build-frontend.result }}"
+          echo "Security Scan:      ${{ needs.security-scan.result }}"
+          echo "Compliance:         ${{ needs.compliance-checks.result }}"
+          echo "=============================================="
+          
+          # CRÍTICO: Verificar TODOS os jobs obrigatórios (deve ser 'success', não apenas 'não failure')
+          # Jobs podem ter status: success, failure, cancelled, skipped
+          # Apenas 'success' é aceitável para disparar Release
+          
+          if [[ "${{ needs.build-and-check.result }}" != "success" ]]; then
+            echo "ERRO: Build & Check não passou! Status: ${{ needs.build-and-check.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [[ "${{ needs.build-services.result }}" != "success" ]]; then
+            echo "ERRO: Build Services não passou! Status: ${{ needs.build-services.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [[ "${{ needs.build-clip-inference.result }}" != "success" ]]; then
+            echo "ERRO: Build CLIP Inference não passou! Status: ${{ needs.build-clip-inference.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [[ "${{ needs.build-frontend.result }}" != "success" ]]; then
+            echo "ERRO: Build Frontend não passou! Status: ${{ needs.build-frontend.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [[ "${{ needs.security-scan.result }}" != "success" ]]; then
+            echo "ERRO: Security Scan não passou! Status: ${{ needs.security-scan.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          if [[ "${{ needs.compliance-checks.result }}" != "success" ]]; then
+            echo "ERRO: Compliance Checks não passou! Status: ${{ needs.compliance-checks.result }}"
+            echo "success=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          echo "success=true" >> $GITHUB_OUTPUT
+          echo "CI passou com sucesso! Todos os jobs com status 'success'."
+
+  # ===========================================================================
+  # Job 9: Trigger Release Automatico (apenas em push para main)
+  # Best Practices 2025: CI passa -> Release automatico -> Deploy manual
   # ===========================================================================
   trigger-release:
     name: Trigger Release
@@ -1051,10 +1121,8 @@ jobs:
     permissions:
       contents: read
       actions: write
-    # Depende diretamente de todos os jobs críticos (sem job intermediário)
-    # GitHub Actions só executa se TODOS os needs tiverem status 'success'
-    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: ci-status
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.ci-status.outputs.success == 'true'
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
