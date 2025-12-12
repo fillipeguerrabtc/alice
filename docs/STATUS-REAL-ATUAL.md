@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.13 - Correção sintaxe YAML condição if trigger-release
+> **Versão:** 3.14 - Correção workflow inválido (update-dependencies)
 
 ---
 
@@ -538,6 +538,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | pnpm audit | ✅ |
 | Rollback automático | ✅ |
 
+### Atualização Periódica (Dependências e Pacotes do Sistema)
+
+- **`update-dependencies.yml`**: atualiza dependências Node.js (pnpm) de forma **automatizada**, criando **branch + PR** (não faz deploy).
+- **`update-system-packages.yml`**: atualiza pacotes do sistema/infra (Hetzner) via fluxo automatizado e controlado.
+
+> **NOTA (12/12/2025):** Corrigido erro que invalidava o workflow `update-dependencies.yml`. A causa raiz foi o uso de IDs com hífen (ex.: `check-updates`) referenciados em expressões (`steps.check-updates...` / `needs.check-updates...`), o que quebra o parser de expressões do GitHub Actions. O padrão adotado é usar IDs com underscore (ex.: `check_updates`) para garantir compatibilidade.
+
 ### Arquitetura do CI (trigger-release)
 
 O workflow CI usa dependência direta do GitHub Actions com validação explícita:
@@ -782,7 +789,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.13 - Correção sintaxe YAML condição if trigger-release (multilinha → linha única)*
+*Versão: 3.14 - Correção workflow inválido (update-dependencies) + alinhamento CI/CD*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

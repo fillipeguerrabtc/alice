@@ -46,12 +46,12 @@ jobs:
   # ===========================================================================
   # Job 1: Verificar Atualizações Disponíveis
   # ===========================================================================
-  check-updates:
+  check_updates:
     name: Verificar Atualizações
     runs-on: ubuntu-latest
     outputs:
-      has_updates: ${{ steps.check-updates.outputs.has_updates }}
-      updates_json: ${{ steps.check-updates.outputs.updates_json }}
+      has_updates: ${{ steps.check_updates.outputs.has_updates }}
+      updates_json: ${{ steps.check_updates.outputs.updates_json }}
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
@@ -132,7 +132,7 @@ jobs:
 
       # REGRA 6: Enterprise-grade - verificar atualizações usando pnpm outdated
       - name: Verificar atualizações disponíveis
-        id: check-updates
+        id: check_updates
         run: |
           echo "🔍 Verificando atualizações disponíveis..."
           
@@ -155,23 +155,23 @@ jobs:
 
       # REGRA 6: Enterprise-grade - criar resumo das atualizações
       - name: Criar resumo das atualizações
-        if: steps.check-updates.outputs.has_updates == 'true'
+        if: steps.check_updates.outputs.has_updates == 'true'
         run: |
           echo "## 📦 Resumo de Atualizações Disponíveis" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.check-updates.outputs.updates_json }}" | jq -r '.[] | "- **\(.name)**: \(.current) → \(.latest) (\(.type))**"' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.check_updates.outputs.updates_json }}" | jq -r '.[] | "- **\(.name)**: \(.current) → \(.latest) (\(.type))**"' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           # REGRA 6: Enterprise-grade - usar aspas duplas para permitir expansão de variável GitHub Actions
           # Aspas simples impedem expansão, resultando em texto literal ${{ ... }}
-          echo "Total de pacotes desatualizados: $(echo \"${{ steps.check-updates.outputs.updates_json }}\" | jq 'length')" >> $GITHUB_STEP_SUMMARY
+          echo "Total de pacotes desatualizados: $(echo \"${{ steps.check_updates.outputs.updates_json }}\" | jq 'length')" >> $GITHUB_STEP_SUMMARY
 
   # ===========================================================================
   # Job 2: Atualizar Dependências e Criar PR
   # ===========================================================================
   update-and-pr:
     name: Atualizar Dependências e Criar PR
-    needs: check-updates
-    if: needs.check-updates.outputs.has_updates == 'true'
+    needs: check_updates
+    if: needs.check_updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     
     steps:
