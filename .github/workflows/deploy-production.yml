@@ -181,9 +181,9 @@ jobs:
           echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
           pnpm config set store-dir "$STORE_DIR"
 
-      # SHA: actions/cache@e222b9c4c715e046ea0eb6019ea110a72f21c1de (v4.1.2)
+      # SHA: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 (v4.2.0)
       - name: Restaurar cache do pnpm
-        uses: actions/cache@e222b9c4c715e046ea0eb6019ea110a72f21c1de
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
         with:
           path: ${{ steps.pnpm-store-path.outputs.store-dir }}
           key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
