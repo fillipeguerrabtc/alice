@@ -1084,10 +1084,14 @@ jobs:
           MINOR=${MINOR_RAW:-0}
           PATCH=${PATCH_RAW:-0}
           
-          # Validar que todos os componentes são números válidos
-          # Rejeitar zeros à esquerda (semver 2.0) e caracteres não-numéricos
-          if ! [[ "$MAJOR" =~ ^(0|[1-9][0-9]*)$ ]] || ! [[ "$MINOR" =~ ^(0|[1-9][0-9]*)$ ]] || ! [[ "$PATCH" =~ ^(0|[1-9][0-9]*)$ ]]; then
-            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato inválido. Usando v0.0.1"
+          # CRÍTICO: Validar que todos os componentes são números válidos para semver
+          # Semver 2.0 spec: "A normal version number MUST NOT contain leading zeroes"
+          # Regex: ^(0|[1-9][0-9]*)$ aceita: 0, 1, 10, 123 | rejeita: 01, 08, 007
+          # Isso previne erros de octal em bash: $((08 + 1)) falha porque 8 não é válido em octal
+          SEMVER_REGEX='^(0|[1-9][0-9]*)$'
+          
+          if ! [[ "$MAJOR" =~ $SEMVER_REGEX ]] || ! [[ "$MINOR" =~ $SEMVER_REGEX ]] || ! [[ "$PATCH" =~ $SEMVER_REGEX ]]; then
+            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico (zeros à esquerda ou caracteres inválidos). Usando v0.0.1"
             MAJOR=0
             MINOR=0
             PATCH=0
@@ -1096,6 +1100,8 @@ jobs:
           echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
           
           # Incrementar patch (usando 10# para forçar base decimal - segurança adicional)
+          # CRÍTICO: Mesmo com validação regex, usar 10# garante que bash sempre interprete como decimal
+          # Isso previne edge cases onde validação pode falhar silenciosamente
           NEW_PATCH=$((10#$PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
           

@@ -547,11 +547,11 @@ O workflow CI usa dependência direta do GitHub Actions:
 
 > **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A semântica padrão do GitHub Actions com `needs` é suficiente e mais confiável.
 
-> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora trata tags não-semânticas corretamente:
-> - Valores default para componentes ausentes (`v1` → `v1.0.1`, `v1.2` → `v1.2.1`)
-> - Rejeita zeros à esquerda (semver 2.0) para evitar erros de octal em bash
-> - Usa `10#$PATCH` para forçar interpretação decimal na aritmética
-> - Fallback seguro para `v0.0.1` em formatos inválidos
+> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` trata tags não-semânticas e zeros à esquerda corretamente:
+> - **Valores default para componentes ausentes** (`v1` → `MAJOR=1, MINOR=0, PATCH=0` → `v1.0.1`)
+> - **Validação semver 2.0**: Regex `^(0|[1-9][0-9]*)$` rejeita zeros à esquerda (ex: `08`, `007`)
+> - **Segurança adicional**: Usa `10#$PATCH` na aritmética para forçar interpretação decimal (previne erros de octal como `$((08 + 1))`)
+> - **Fallback seguro**: `v0.0.1` para formatos completamente inválidos
 
 ---
 
