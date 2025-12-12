@@ -69,7 +69,11 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
     return selected;
   }
 
-  async function updateRequestStatus(id: string, status: 'running' | 'completed' | 'failed', erro?: string | null) {
+  async function updateRequestStatus(
+    id: string,
+    status: 'pending' | 'running' | 'completed' | 'failed',
+    erro?: string | null
+  ) {
     const setData: Record<string, unknown> = {
       status,
       erro: erro ?? null,
@@ -79,6 +83,10 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
       setData.iniciadoEm = sql`NOW()`;
     } else if (status === 'completed' || status === 'failed') {
       setData.finalizadoEm = sql`NOW()`;
+    } else if (status === 'pending') {
+      // Para retries: limpa timestamps de execução
+      setData.iniciadoEm = null;
+      setData.finalizadoEm = null;
     }
 
     await db
