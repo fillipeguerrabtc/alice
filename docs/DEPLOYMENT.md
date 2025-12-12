@@ -22,14 +22,14 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
 
 | # | Serviço | Container | Diretório | Descrição | Tecnologia |
 |---|---------|-----------|-----------|-----------|------------|
-| 6 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
-| 7 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
-| 8 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
-| 9 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings 100% locais via CPU no Hetzner (multilingual-e5-base + CLIP ViT-L/14), busca semântica pgvector, processamento de documentos. | Node.js, pgvector, CLIP Service local (CPU no Hetzner) |
-| 10 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
-| 11 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
-| 12 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
-| 13 | **Multimodal Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Processamento multimodal 100% LOCAL (CPU Hetzner): embeddings de texto (multilingual-e5-base, 768 dim), embeddings de imagem (CLIP ViT-L/14, 768 dim), transcrição de áudio (faster-whisper medium). | Python, PyTorch 2.9.1, FastAPI |
+| 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
+| 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
+| 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
+| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings 100% locais via CPU no Hetzner (multilingual-e5-base + CLIP ViT-L/14), busca semântica pgvector, processamento de documentos. | Node.js, pgvector, CLIP Service local (CPU no Hetzner) |
+| 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
+| 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
+| 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
+| 14 | **Multimodal Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Processamento multimodal 100% LOCAL (CPU Hetzner): embeddings de texto (multilingual-e5-base, 768 dim), embeddings de imagem (CLIP ViT-L/14, 768 dim), transcrição de áudio (faster-whisper medium). | Python, PyTorch 2.9.1, FastAPI |
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -37,25 +37,25 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 14 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.11.15 |
-| 15 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
-| 16 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
-| 17 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
-| 18 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
-| 19 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
-| 20 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
-| 21 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
-| 22 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
-| 23 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
-| 24 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
-| 25 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
+| 15 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.11.15 |
+| 16 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
+| 17 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
+| 18 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
+| 19 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
+| 20 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
+| 21 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
+| 22 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
+| 23 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
+| 24 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
+| 25 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
+| 26 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
 
 ### Categoria 4: Backup e Logs (2 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 26 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest (versão automática via GitHub API) |
-| 27 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
+| 27 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest (versão automática via GitHub API) |
+| 28 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
 
 ### Diagrama de Arquitetura
 

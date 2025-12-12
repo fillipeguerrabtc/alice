@@ -156,7 +156,7 @@ services:
   # Nota: rota interna (não exposta publicamente). Traefik não configurado aqui.
   # ===========================================================================
   alice-searxng:
-    image: searxng/searxng:latest
+    image: searxng/searxng:latest@sha256:1cc8efcc2a40f79249d5fe0033a9a9ec079c171cb65d35bacee22be37c794aea
     platform: linux/amd64
     container_name: alice-searxng
     restart: unless-stopped
