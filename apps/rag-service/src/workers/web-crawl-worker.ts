@@ -22,12 +22,7 @@ const DEFAULT_USER_AGENT = 'AliceCrawler/1.0 (+https://yesyoudeserve.duckdns.org
 
 export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) {
   const limit = pLimit(config.concurrency);
-  const webClient = createWebSearchClient({
-    baseUrl: config.searxngUrl,
-    apiKey: config.searxngKey,
-    logger,
-    metrics: { registry: {} as any } as any, // TODO: ligar métricas reais
-  });
+  // Nota: crawl é feito via HTTP direto; SearXNG não é usado como proxy aqui.
 
   async function fetchNextRequest() {
     const [row] = await db
@@ -116,45 +111,20 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
       await limit(async () => {
         await updateRequestStatus(req.id, 'running');
         try {
-          const results = await webClient.search(req.url, req.paginasMax ?? 5);
-          if (results.length === 0) {
-            // fallback: tenta crawlear a própria URL solicitada
-            const page = await fetchPage(req.url, req.bytesMax, req.timeoutMs);
-            await db.insert(webCrawlResults).values({
-              tenantId: config.tenantId,
-              requestId: req.id,
-              url: req.url,
-              titulo: page.titulo,
-              conteudo: page.conteudo,
-              statusCode: page.statusCode,
-              mimeType: page.mimeType,
-              tamanhoBytes: page.tamanhoBytes,
-              hashConteudo: page.hashConteudo,
-              metadata: { description: page.description },
-            });
-            await updateRequestStatus(req.id, 'completed');
-            return;
-          }
-
-          for (const r of results) {
-            try {
-              const page = await fetchPage(r.url, req.bytesMax, req.timeoutMs);
-              await db.insert(webCrawlResults).values({
-                tenantId: config.tenantId,
-                requestId: req.id,
-                url: r.url,
-                titulo: page.titulo || r.title,
-                conteudo: page.conteudo || r.description,
-                statusCode: page.statusCode,
-                mimeType: page.mimeType,
-                tamanhoBytes: page.tamanhoBytes,
-                hashConteudo: page.hashConteudo,
-                metadata: { snippet: r.snippet, description: page.description },
-              });
-            } catch (innerError) {
-              logger.warn({ error: innerError, url: r.url, requestId: req.id }, 'Falha ao extrair página da busca');
-            }
-          }
+          // Crawl direto da URL solicitada (não mandar URL como query de busca)
+          const page = await fetchPage(req.url, req.bytesMax, req.timeoutMs);
+          await db.insert(webCrawlResults).values({
+            tenantId: config.tenantId,
+            requestId: req.id,
+            url: req.url,
+            titulo: page.titulo,
+            conteudo: page.conteudo,
+            statusCode: page.statusCode,
+            mimeType: page.mimeType,
+            tamanhoBytes: page.tamanhoBytes,
+            hashConteudo: page.hashConteudo,
+            metadata: { description: page.description },
+          });
 
           await updateRequestStatus(req.id, 'completed');
         } catch (error) {

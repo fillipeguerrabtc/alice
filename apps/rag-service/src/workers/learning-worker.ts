@@ -31,7 +31,7 @@ export function startLearningWorker(db: Database, config: LearningWorkerConfig) 
             resultado: { message: 'Processado pelo worker stub' },
           });
         } catch (error) {
-          const attempts = (task.tentativas ?? 0) + 1;
+          const attempts = task.tentativas ?? 0; // já incrementado no dequeue
           const status = attempts >= (task.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
           await updateLearningTaskStatus(db, logger, {
             taskId: task.id,
