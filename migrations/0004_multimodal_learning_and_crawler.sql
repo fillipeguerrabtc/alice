@@ -54,6 +54,10 @@ DROP INDEX IF EXISTS idx_learning_tasks_priority;
 DROP INDEX IF EXISTS idx_learning_tasks_status;
 DROP INDEX IF EXISTS idx_learning_tasks_agent;
 
+-- Garantir status NOT NULL com default pending (integridade da fila)
+ALTER TABLE learning_tasks
+  ALTER COLUMN status SET NOT NULL;
+
 CREATE INDEX idx_learning_tasks_priority
   ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
 CREATE INDEX idx_learning_tasks_status
