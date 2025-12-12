@@ -1,0 +1,62 @@
+# ==============================================================================
+# Alice Enterprise Platform - .dockerignore (Best Practices 2025)
+# ==============================================================================
+# Objetivo:
+# - Reduzir build context (mais rápido, menos I/O)
+# - Evitar invalidação de cache por arquivos fora do runtime
+# - Manter builds determinísticos e seguros (supply chain)
+#
+# IMPORTANTE:
+# - NÃO ignorar arquivos necessários para build (ex.: package.json, pnpm-lock.yaml, packages/, apps/)
+# - Ignorar apenas artefatos, docs, caches e assets temporários
+#
+# Autor: Fillipe Guerra
+# Data: 12 de Dezembro de 2025
+# ==============================================================================
+
+# VCS / tooling
+.git
+.gitignore
+.gitattributes
+.github
+.cursor
+
+# Documentação e assets temporários do editor (não vão para produção)
+docs
+attached_assets
+agent-transcripts
+
+# Testes (não necessários dentro das imagens de produção)
+tests
+**/*.test.*
+**/__tests__/
+
+# Logs / artifacts
+**/*.log
+**/*.sarif
+**/*.zip
+
+# Node.js
+node_modules
+**/node_modules
+.pnpm-store
+**/.pnpm-store
+**/.turbo
+**/.cache
+**/dist
+**/.next
+**/.vite
+**/coverage
+**/*.tsbuildinfo
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+.venv
+venv
+
+# OS
+.DS_Store
+Thumbs.db
+

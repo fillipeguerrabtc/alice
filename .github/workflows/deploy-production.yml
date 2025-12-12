@@ -242,6 +242,53 @@ jobs:
             echo "✅ SARIF existe: trivy-results.sarif"
           fi
           
+      # Verificar se Code Scanning (Advanced Security) está habilitado para este repo
+      # GitHub Advanced Security requer plano Enterprise ou repo público
+      - name: Check if Code Scanning is enabled
+        id: check-code-scanning
+        if: always()
+        # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security (Regra 11)
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            try {
+              // Tentar obter informações do repositório
+              const res = await github.request('GET /repos/{owner}/{repo}', {
+                owner: context.repo.owner,
+                repo: context.repo.repo
+              });
+              
+              // Repos públicos sempre suportam Code Scanning gratuito
+              const isPublic = res.data.visibility === 'public';
+              
+              // Para repos privados, verificar se Advanced Security está habilitado
+              let advancedSecurityEnabled = false;
+              if (!isPublic) {
+                try {
+                  await github.request('GET /repos/{owner}/{repo}/code-scanning/alerts', {
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    per_page: 1
+                  });
+                  // Se a chamada não der erro, Code Scanning está habilitado
+                  advancedSecurityEnabled = true;
+                } catch (e) {
+                  // 403 ou 404 significa que Code Scanning não está disponível
+                  core.info('Code Scanning não disponível: ' + e.message);
+                  advancedSecurityEnabled = false;
+                }
+              }
+              
+              const enabled = isPublic || advancedSecurityEnabled;
+              core.info('Repository visibility: ' + res.data.visibility);
+              core.info('Code Scanning enabled: ' + enabled);
+              core.setOutput('enabled', enabled ? 'true' : 'false');
+            } catch (e) {
+              core.warning('Erro ao verificar Code Scanning: ' + e.message);
+              core.setOutput('enabled', 'false');
+            }
+
       # Upload SARIF como artifact para download e análise
       # SHA: actions/upload-artifact@v4.6.0 (2024-12-18)
       - name: Upload Trivy SARIF as artifact
@@ -256,11 +303,17 @@ jobs:
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
 
       - name: Upload Trivy scan results
-        if: always()
+        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-results.sarif'
-        continue-on-error: true
+
+      - name: Skip SARIF upload (Code Scanning disabled)
+        if: always() && steps.check-code-scanning.outputs.enabled != 'true'
+        run: |
+          echo "ℹ️ Upload SARIF para aba Security/Code scanning foi pulado."
+          echo "Motivo: Code Scanning indisponível neste repositório (ex.: repo privado sem GitHub Advanced Security)."
+          echo "Os resultados do Trivy foram salvos como artifact (trivy-filesystem-sarif)."
 
   # ===========================================================================
   # Job 3: Build Imagens Docker
@@ -1137,9 +1190,10 @@ jobs:
       - name: Check if Code Scanning is enabled
         id: check-code-scanning
         if: always()
-        uses: actions/github-script@v7
+        # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security (Regra 11)
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ github.token }}
           script: |
             try {
               // Tentar obter configurações de security & analysis
