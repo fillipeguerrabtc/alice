@@ -485,10 +485,12 @@ Retenção Arquivo:   30 dias
 | CSRF Protection (auth-service) | ✅ |
 | Webhook Signatures (Stripe/Wise/Twilio) | ✅ |
 | Magic Bytes Validation (uploads) | ✅ |
-| PostgreSQL RLS (11 policies) | ✅ |
+| PostgreSQL RLS (22 policies) | ✅ |
 | Redis ACL | ✅ |
 | Secrets sanitizados em logs | ✅ |
 | Google Distroless (0 CVEs) | ✅ |
+
+Novas tabelas multimodais criadas com RLS ativo: `learning_task_events`, `web_crawl_requests`, `web_crawl_results` e `media_jobs` (fila priorizada + logs estruturados).
 
 ### OWASP API Top 10
 

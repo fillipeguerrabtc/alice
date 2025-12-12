@@ -341,6 +341,8 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ Regra 17: Review antes de cada commit consolidado
 - ✅ Regra 18: Commits consolidados enterprise, push manual apenas
 
+**Persistência pronta (multimodal/learning):** tabelas `learning_tasks` (prioridade + retries + RLS), `learning_task_events`, `web_crawl_requests/results` e `media_jobs` criadas para orquestração e auditoria.
+
 ---
 
 *Autor: Fillipe Guerra*

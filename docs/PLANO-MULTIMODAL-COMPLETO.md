@@ -9,6 +9,7 @@
 - **Inferência/geração** pesada (LLM, TTS, talking head, lip-sync, vídeo longo, imagem FLUX.1) usa **GPUs da Salad Cloud**.  
 - Não há dependência externa para embeddings ou transcrição (Regra 6).  
 - Ainda não foi feito deploy em produção; este plano é o blueprint para implementação.
+- Persistência multimodal iniciada: tabelas enterprise `learning_tasks` (prioridade/RLS), `learning_task_events`, `web_crawl_requests/results` e `media_jobs` criadas para orquestração e auditoria.
 
 ---
 

@@ -396,6 +396,23 @@ export const backupJobStatusEnum = pgEnum("backup_job_status", [
   "cancelled",
 ]);
 
+export const webCrawlStatusEnum = pgEnum("web_crawl_status", [
+  "pending",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+
+export const mediaJobTypeEnum = pgEnum("media_job_type", [
+  "tts",
+  "talking_head",
+  "lip_sync",
+  "long_video",
+  "image_enhance",
+  "audio_clean",
+]);
+
 export const backupTypeEnum = pgEnum("backup_type", [
   "full",
   "incremental",
@@ -910,21 +927,139 @@ export const learningTasks = pgTable(
   "learning_tasks",
   {
     id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     tipo: varchar("tipo", { length: 50 }).notNull(),
     status: taskStatusEnum("status").default("pending"),
+    prioridade: integer("prioridade").notNull().default(5), // 1 (alta) a 10 (baixa)
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     parametros: jsonb("parametros").$type<LearningTaskParametros>().default({}),
     resultado: jsonb("resultado").$type<LearningTaskResultado>(),
     erro: text("erro"),
     progresso: integer("progresso").default(0),
+    tentativas: integer("tentativas").notNull().default(0),
+    maxTentativas: integer("max_tentativas").notNull().default(3),
+    agendadoPara: timestamp("agendado_para"),
     iniciadoEm: timestamp("iniciado_em"),
     finalizadoEm: timestamp("finalizado_em"),
     criadoEm: timestamp("criado_em").defaultNow(),
+    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
   },
   (table) => ({
-    idxLearningTasksStatus: index("idx_learning_tasks_status").on(table.status),
-    idxLearningTasksAgent: index("idx_learning_tasks_agent").on(table.agentId),
+    idxLearningTasksStatus: index("idx_learning_tasks_status").on(table.tenantId, table.status),
+    idxLearningTasksAgent: index("idx_learning_tasks_agent").on(table.tenantId, table.agentId),
+    idxLearningTasksPriority: index("idx_learning_tasks_priority").on(table.tenantId, table.status, table.prioridade, table.agendadoPara, table.criadoEm),
+  })
+);
+
+// ============================================================================
+// EVENTOS DE TAREFAS DE APRENDIZADO (Log estruturado)
+// ============================================================================
+
+export const learningTaskEvents = pgTable(
+  "learning_task_events",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    learningTaskId: uuid("learning_task_id")
+      .references(() => learningTasks.id, { onDelete: "cascade" })
+      .notNull(),
+    status: taskStatusEnum("status").notNull(),
+    mensagem: text("mensagem"),
+    payload: jsonb("payload").$type<GenericMetadata>().default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxLearningTaskEventsTask: index("idx_learning_task_events_task").on(table.learningTaskId),
+    idxLearningTaskEventsTenantStatus: index("idx_learning_task_events_tenant_status").on(table.tenantId, table.status, table.criadoEm),
+  })
+);
+
+// ============================================================================
+// WEB CRAWLER REQUESTS (Fila priorizada de crawling)
+// ============================================================================
+
+export const webCrawlRequests = pgTable(
+  "web_crawl_requests",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    url: text("url").notNull(),
+    status: webCrawlStatusEnum("status").notNull().default("pending"),
+    profundidadeMax: integer("profundidade_max").notNull().default(1),
+    paginasMax: integer("paginas_max").notNull().default(5),
+    bytesMax: integer("bytes_max").notNull().default(5_000_000),
+    timeoutMs: integer("timeout_ms").notNull().default(15000),
+    prioridade: integer("prioridade").notNull().default(5),
+    agendadoPara: timestamp("agendado_para"),
+    iniciadoEm: timestamp("iniciado_em"),
+    finalizadoEm: timestamp("finalizado_em"),
+    erro: text("erro"),
+    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxWebCrawlTenantStatus: index("idx_web_crawl_tenant_status").on(table.tenantId, table.status, table.prioridade, table.agendadoPara, table.criadoEm),
+    idxWebCrawlUrl: index("idx_web_crawl_url").on(table.url),
+  })
+);
+
+// ============================================================================
+// WEB CRAWLER RESULTS (Resultados normalizados)
+// ============================================================================
+
+export const webCrawlResults = pgTable(
+  "web_crawl_results",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    requestId: uuid("request_id")
+      .references(() => webCrawlRequests.id, { onDelete: "cascade" })
+      .notNull(),
+    url: text("url").notNull(),
+    titulo: text("titulo"),
+    conteudo: text("conteudo"),
+    statusCode: integer("status_code"),
+    mimeType: varchar("mime_type", { length: 200 }),
+    tamanhoBytes: integer("tamanho_bytes"),
+    hashConteudo: varchar("hash_conteudo", { length: 128 }),
+    metadata: jsonb("metadata").$type<GenericMetadata>().default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxWebCrawlResultsTenant: index("idx_web_crawl_results_tenant").on(table.tenantId, table.requestId),
+    idxWebCrawlResultsUrl: index("idx_web_crawl_results_url").on(table.url),
+  })
+);
+
+// ============================================================================
+// MEDIA JOBS (Pipeline multimodal pesado - GPU Salad / CPU local)
+// ============================================================================
+
+export const mediaJobs = pgTable(
+  "media_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
+    jobType: mediaJobTypeEnum("job_type").notNull(),
+    status: taskStatusEnum("status").default("pending"),
+    prioridade: integer("prioridade").notNull().default(5),
+    inputUrl: text("input_url"),
+    inputPath: text("input_path"),
+    parametros: jsonb("parametros").$type<GenericMetadata>().default({}),
+    resultado: jsonb("resultado").$type<GenericMetadata>(),
+    erro: text("erro"),
+    tentativas: integer("tentativas").notNull().default(0),
+    maxTentativas: integer("max_tentativas").notNull().default(3),
+    agendadoPara: timestamp("agendado_para"),
+    iniciadoEm: timestamp("iniciado_em"),
+    finalizadoEm: timestamp("finalizado_em"),
+    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxMediaJobsTenantStatus: index("idx_media_jobs_tenant_status").on(table.tenantId, table.status, table.prioridade, table.agendadoPara, table.criadoEm),
+    idxMediaJobsType: index("idx_media_jobs_type").on(table.jobType),
   })
 );
 
@@ -1752,6 +1887,59 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   }),
 }));
 
+export const learningTasksRelations = relations(learningTasks, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [learningTasks.tenantId],
+    references: [tenants.id],
+  }),
+  agent: one(agents, {
+    fields: [learningTasks.agentId],
+    references: [agents.id],
+  }),
+  namespace: one(namespaces, {
+    fields: [learningTasks.namespaceId],
+    references: [namespaces.id],
+  }),
+  eventos: many(learningTaskEvents),
+}));
+
+export const learningTaskEventsRelations = relations(learningTaskEvents, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [learningTaskEvents.tenantId],
+    references: [tenants.id],
+  }),
+  task: one(learningTasks, {
+    fields: [learningTaskEvents.learningTaskId],
+    references: [learningTasks.id],
+  }),
+}));
+
+export const webCrawlRequestsRelations = relations(webCrawlRequests, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [webCrawlRequests.tenantId],
+    references: [tenants.id],
+  }),
+  resultados: many(webCrawlResults),
+}));
+
+export const webCrawlResultsRelations = relations(webCrawlResults, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [webCrawlResults.tenantId],
+    references: [tenants.id],
+  }),
+  request: one(webCrawlRequests, {
+    fields: [webCrawlResults.requestId],
+    references: [webCrawlRequests.id],
+  }),
+}));
+
+export const mediaJobsRelations = relations(mediaJobs, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [mediaJobs.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
 export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
   tenant: one(tenants, {
     fields: [auditLogs.tenantId],
@@ -1962,6 +2150,10 @@ export type InsertDocument = z.infer<typeof insertDocumentSchema>;
 export type DocumentChunk = typeof documentChunks.$inferSelect;
 
 export type LearningTask = typeof learningTasks.$inferSelect;
+export type LearningTaskEvent = typeof learningTaskEvents.$inferSelect;
+export type WebCrawlRequest = typeof webCrawlRequests.$inferSelect;
+export type WebCrawlResult = typeof webCrawlResults.$inferSelect;
+export type MediaJob = typeof mediaJobs.$inferSelect;
 
 export type Integration = typeof integrations.$inferSelect;
 export type InsertIntegration = z.infer<typeof insertIntegrationSchema>;
