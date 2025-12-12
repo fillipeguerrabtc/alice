@@ -124,7 +124,10 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
       await limit(async () => {
         try {
           const deps = { db, saladClient, storageService, markStatus, config };
-          await handleJob(deps, job);
+          const statusSet = await handleJob(deps, job);
+          if (!statusSet) {
+            await markStatus(job.id, 'completed', null, job.tentativas ?? undefined);
+          }
         } catch (error) {
           // Recupera tentativas atualizadas após o incremento em 'processing'
           const fresh = await db
@@ -167,20 +170,20 @@ type WorkerDeps = {
   config: MediaWorkerConfig;
 };
 
-async function handleJob(deps: WorkerDeps, job: any) {
+async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
   switch (job.jobType) {
     case 'tts':
       await dispatchSalad(deps, job, SALAD_TTS_IMAGE, { text: job.parametros?.text, voice: job.parametros?.voice });
-      return;
+      return true;
     case 'talking_head':
       await dispatchSalad(deps, job, SALAD_TALKING_HEAD_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
-      return;
+      return true;
     case 'lip_sync':
       await dispatchSalad(deps, job, SALAD_LIP_SYNC_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
-      return;
+      return true;
     case 'long_video':
       await handleLongVideo(deps, job);
-      return;
+      return true;
     default:
       throw new Error(`Tipo de job não suportado: ${job.jobType}`);
   }
