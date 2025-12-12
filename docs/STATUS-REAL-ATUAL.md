@@ -547,7 +547,11 @@ O workflow CI usa um padrão de agregação de status onde o job `ci-status`:
 
 > **NOTA (12/12/2025):** Corrigido bug onde `ci-status` falhava com `exit 1`, impedindo que o output fosse propagado corretamente para `trigger-release`. O padrão correto é que jobs agregadores de status NUNCA devem usar `exit 1` - apenas definir outputs e deixar jobs downstream decidirem baseado nesses outputs.
 
-> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora valida formato de tags não-semânticas (ex: `v1`, `v1.2`) usando valores default para componentes ausentes (MINOR=0, PATCH=0). Também valida que componentes são numéricos, com fallback para `v0.0.1` em formatos inválidos.
+> **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` agora valida formato semântico completo:
+> - Valores default para componentes ausentes (`v1` → `v1.0.1`, `v1.2` → `v1.2.1`)
+> - Rejeita zeros à esquerda (semver 2.0 spec) para evitar erros de octal em bash (`08` seria interpretado como octal inválido)
+> - Regex: `^(0|[1-9][0-9]*)$` - aceita `0`, `1`, `123` | rejeita `01`, `08`, `007`
+> - Fallback para `v0.0.1` em formatos inválidos
 
 ---
 

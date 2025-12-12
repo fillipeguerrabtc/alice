@@ -1163,9 +1163,15 @@ jobs:
           MINOR=${MINOR_RAW:-0}
           PATCH=${PATCH_RAW:-0}
           
-          # Validar que todos os componentes são números
-          if ! [[ "$MAJOR" =~ ^[0-9]+$ ]] || ! [[ "$MINOR" =~ ^[0-9]+$ ]] || ! [[ "$PATCH" =~ ^[0-9]+$ ]]; then
-            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico. Usando v0.0.1"
+          # Validar que todos os componentes são números válidos para semver
+          # CRÍTICO: Regex rejeita zeros à esquerda (ex: 08, 09) exceto '0' sozinho
+          # Bash interpreta zeros à esquerda como octal, causando erros em $((08 + 1))
+          # Semver 2.0 spec: "A normal version number MUST NOT contain leading zeroes"
+          # Regex: ^(0|[1-9][0-9]*)$ aceita: 0, 1, 10, 123 | rejeita: 01, 08, 007
+          SEMVER_REGEX='^(0|[1-9][0-9]*)$'
+          
+          if ! [[ "$MAJOR" =~ $SEMVER_REGEX ]] || ! [[ "$MINOR" =~ $SEMVER_REGEX ]] || ! [[ "$PATCH" =~ $SEMVER_REGEX ]]; then
+            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico (zeros à esquerda ou caracteres inválidos). Usando v0.0.1"
             MAJOR=0
             MINOR=0
             PATCH=0
@@ -1173,8 +1179,8 @@ jobs:
           
           echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
           
-          # Incrementar patch
-          NEW_PATCH=$((PATCH + 1))
+          # Incrementar patch (usando 10# para forçar base decimal - segurança adicional)
+          NEW_PATCH=$((10#$PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
           
           echo "Nova versao: $NEW_VERSION"
