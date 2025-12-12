@@ -15,7 +15,7 @@
  * - NENHUMA dependência de APIs externas
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Dezembro de 2025
+ * Data: 12 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -89,6 +89,18 @@ export function combineVideoEmbeddingsForSearch(
   for (const frame of validFrames) {
     for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
       avgFrameEmbedding[i] += frame[i] / validFrames.length;
+    }
+  }
+
+  // Enterprise-grade: validar avgFrameEmbedding antes de qualquer retorno/fallback.
+  // Defesa em profundidade: evita propagar NaN/Infinity para o banco mesmo se algum frame inválido passar por engano.
+  for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+    if (!Number.isFinite(avgFrameEmbedding[i])) {
+      logger.error(
+        { index: i, value: avgFrameEmbedding[i], validFrames: validFrames.length },
+        'avgFrameEmbedding contém valor não-finito. Rejeitando processamento (Regra 6 - Fail-fast).'
+      );
+      throw new Error('Falha ao calcular embedding de frames: valores não-finitos detectados');
     }
   }
 
@@ -272,16 +284,22 @@ class VideoProcessorService {
     // Função utilitária inline para evitar dependência externa
     const parseRetryMs = (): number => {
       const rawValue = process.env.VIDEO_PROCESSOR_CONFIG_RETRY_MS || '5000';
-      const parsed = parseInt(rawValue, 10);
-      // #region agent log (debug)
-      typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/video-processor.ts:ensureConfigured:parseRetryMs',message:'Parse retry ms (pre-validation)',data:{rawValue,parsed,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H4'})}).catch(()=>{});
-      // #endregion agent log (debug)
+      const normalized = rawValue.trim();
+      // Regra 6 / Enterprise: rejeitar valores parciais como "5000ms" (parseInt aceitaria).
+      if (!/^\d+$/.test(normalized)) {
+        const errorMsg = `VIDEO_PROCESSOR_CONFIG_RETRY_MS inválido: "${rawValue}". Deve ser um número inteiro >= 100ms`;
+        if (process.env.NODE_ENV === 'production') {
+          logger.error({ rawValue }, errorMsg);
+          throw new Error(errorMsg);
+        }
+        logger.warn({ rawValue, defaultValue: 5000 }, `${errorMsg}. Usando padrão: 5000ms`);
+        return 5000;
+      }
+
+      const parsed = Number(normalized);
       
-      if (!Number.isFinite(parsed) || parsed < 100) {
+      if (!Number.isSafeInteger(parsed) || parsed < 100) {
         const errorMsg = `VIDEO_PROCESSOR_CONFIG_RETRY_MS inválido: "${rawValue}". Deve ser um número >= 100ms`;
-        // #region agent log (debug)
-        typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/video-processor.ts:ensureConfigured:parseRetryMs',message:'Retry ms invalid (branch)',data:{rawValue,parsed,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H4'})}).catch(()=>{});
-        // #endregion agent log (debug)
         
         if (process.env.NODE_ENV === 'production') {
           logger.error({ rawValue, parsed }, errorMsg);

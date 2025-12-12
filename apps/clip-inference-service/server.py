@@ -850,15 +850,22 @@ async def transcribe_audio(
                     if needs_space(full_text, seg_text):
                         full_text += " "
                     full_text += seg_text
-                if hasattr(segment, 'avg_logprob'):
+                # `avg_logprob` pode não existir (varia por versão/build do faster-whisper) ou pode vir inválido.
+                # Enterprise-grade: nunca quebrar o endpoint por ausência/valor inesperado; apenas omitir confiança.
+                avg_logprob = getattr(segment, "avg_logprob", None)
+                if avg_logprob is not None:
                     # Converter log prob para confiança aproximada
                     # avg_logprob deve ser negativo (log de probabilidade), validar antes de exp()
                     import math
-                    if segment.avg_logprob < 0:
-                        conf = math.exp(segment.avg_logprob)
-                        # Clampar para [0, 1] por segurança
-                        conf = max(0.0, min(1.0, conf))
-                        confidences.append(conf)
+                    try:
+                        if isinstance(avg_logprob, (int, float)) and math.isfinite(avg_logprob) and avg_logprob < 0:
+                            conf = math.exp(avg_logprob)
+                            # Clampar para [0, 1] por segurança
+                            conf = max(0.0, min(1.0, conf))
+                            confidences.append(conf)
+                    except Exception:
+                        # Não propagar erro de cálculo de confiança
+                        pass
             
             # Calcular confiança média
             avg_confidence = sum(confidences) / len(confidences) if confidences else None

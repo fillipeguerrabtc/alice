@@ -15,6 +15,9 @@
  * - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ *
+ * Autor: Fillipe Guerra
+ * Data: 12 de Dezembro de 2025
  */
 
 import { createLogger } from '@alice/logger';
@@ -27,11 +30,49 @@ const logger = createLogger('document-processor');
 // Configuração - Embeddings 100% locais via CPU no Hetzner (Regra 6 - Autonomia Total)
 // CLIP Service URL para embeddings locais (serviço interno na rede Docker)
 // NOTA: Todos os embeddings (texto e CLIP) são gerados 100% localmente via CPU no servidor Hetzner
-const CLIP_SERVICE_URL = (() => {
+function resolveClipServiceUrl(): string {
   const raw = process.env.CLIP_SERVICE_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  return trimmed.length > 0 ? trimmed : 'http://alice-clip-inference:8080';
-})();
+  const defaultUrl = 'http://alice-clip-inference:8080';
+
+  if (!trimmed) return defaultUrl;
+
+  const normalize = (value: string): string => value.replace(/\/+$/, '');
+
+  const tryParse = (value: string): URL | null => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      if (!url.hostname) return null;
+      return url;
+    } catch {
+      return null;
+    }
+  };
+
+  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
+
+  if (!parsed) {
+    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
+      throw new Error(msg);
+    }
+    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
+    return defaultUrl;
+  }
+
+  if (!trimmed.includes('://')) {
+    logger.warn(
+      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
+      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
+    );
+  }
+
+  return normalize(parsed.toString());
+}
+
+const CLIP_SERVICE_URL = resolveClipServiceUrl();
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;
@@ -243,6 +284,17 @@ class DocumentProcessorService {
     let embeddingModel = 'none';
 
     if (generateEmbeddings) {
+      // Regra 6 (Fail-fast): se embeddings foram solicitados mas não há chunks,
+      // o documento não tem texto extraível útil (ou está vazio/apenas whitespace).
+      // Não retornar "sucesso" com embeddings vazios.
+      if (textChunks.length === 0) {
+        logger.error(
+          { format: metadata.format, characterCount: metadata.characterCount, wordCount: metadata.wordCount },
+          'Nenhum chunk de texto gerado para embeddings. Rejeitando processamento (Regra 6 - Fail-fast).'
+        );
+        throw new Error('Documento sem texto extraível para gerar embeddings');
+      }
+
       // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
       // Não requer verificação de configuração externa
       logger.info({ chunkCount: textChunks.length }, 'Gerando embeddings para chunks do documento (serviço local)');
@@ -305,19 +357,20 @@ class DocumentProcessorService {
       } else {
         // Regra 6: Se nenhum chunk teve sucesso, falhar explicitamente ao invés de retornar array vazio
         if (hadEmbeddingError) {
-          // #region agent log (debug)
-          typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/document-processor.ts:processDocument',message:'All chunk embeddings failed (fail-fast)',data:{totalChunks:textChunks.length,successfulEmbeddings,hadEmbeddingError},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H5'})}).catch(()=>{});
-          // #endregion agent log (debug)
           logger.error(
             { totalChunks: textChunks.length },
             'Falha ao gerar embeddings para TODOS os chunks do documento. Rejeitando processamento (Regra 6 - Fail-fast).'
           );
           throw new Error('Falha ao gerar embeddings: nenhum chunk foi processado com sucesso');
         }
-        
-        // Caso edge: generateEmbeddings=true mas nenhum chunk foi processado (não deveria acontecer)
-        combinedEmbedding = [];
-        embeddingModel = 'unavailable';
+
+        // Regra 6 (Fail-fast): se chegamos aqui, algo está inconsistente (ex.: chunks > 0, mas nenhum embedding).
+        // Não mascarar como "sucesso" com embedding vazio.
+        logger.error(
+          { totalChunks: textChunks.length, successfulEmbeddings, hadEmbeddingError },
+          'Nenhum embedding gerado sem erro explícito. Rejeitando processamento (Regra 6 - Fail-fast).'
+        );
+        throw new Error('Falha ao gerar embeddings: nenhum chunk foi processado com sucesso');
       }
     } else {
       // Sem embeddings solicitados - apenas extração de texto

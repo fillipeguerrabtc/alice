@@ -13,7 +13,7 @@
  * - Serviço interno na rede Docker privada (alice-network)
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Dezembro de 2025
+ * Data: 12 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -23,11 +23,51 @@ import { validateEmbeddingDimension } from '@alice/database';
 const logger = createLogger('audio-processor');
 
 // URL do serviço multimodal LOCAL (CPU Hetzner) - embeddings + transcrição
-const CLIP_SERVICE_URL = (() => {
+function resolveClipServiceUrl(): string {
   const raw = process.env.CLIP_SERVICE_URL;
   const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  return trimmed.length > 0 ? trimmed : 'http://alice-clip-inference:8080';
-})();
+  const defaultUrl = 'http://alice-clip-inference:8080';
+
+  if (!trimmed) return defaultUrl;
+
+  const normalize = (value: string): string => value.replace(/\/+$/, '');
+
+  const tryParse = (value: string): URL | null => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      if (!url.hostname) return null;
+      return url;
+    } catch {
+      return null;
+    }
+  };
+
+  // Aceitar URL completa. Se vier sem esquema (ex: alice-clip-inference:8080), normalizar para http://...
+  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
+
+  if (!parsed) {
+    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
+      throw new Error(msg);
+    }
+    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
+    return defaultUrl;
+  }
+
+  // Se normalizamos por falta de esquema, registrar aviso (sem bloquear).
+  if (!trimmed.includes('://')) {
+    logger.warn(
+      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
+      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
+    );
+  }
+
+  return normalize(parsed.toString());
+}
+
+const CLIP_SERVICE_URL = resolveClipServiceUrl();
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;
@@ -48,17 +88,24 @@ function parsePositiveIntEnv(envVar: string, defaultValue: number, minValue: num
     return defaultValue;
   }
 
-  const parsed = parseInt(rawValue, 10);
-  // #region agent log (debug)
-  typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:parsePositiveIntEnv',message:'Parse env int (pre-validation)',data:{envVar,rawValue,parsed,defaultValue,minValue,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
-  // #endregion agent log (debug)
+  const normalized = rawValue.trim();
+  // Regra 6 / Enterprise: rejeitar valores parciais como "123abc" (parseInt aceitaria).
+  // Aceitar apenas dígitos (inteiro decimal positivo).
+  if (!/^\d+$/.test(normalized)) {
+    const errorMsg = `Variável de ambiente ${envVar} inválida: "${rawValue}". Deve ser um número inteiro >= ${minValue}`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ envVar, rawValue }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ envVar, rawValue, defaultValue }, `${errorMsg}. Usando valor padrão: ${defaultValue}`);
+    return defaultValue;
+  }
+
+  const parsed = Number(normalized);
   
   // Enterprise-grade: validar que é um número finito positivo
-  if (!Number.isFinite(parsed) || parsed < minValue) {
+  if (!Number.isSafeInteger(parsed) || parsed < minValue) {
     const errorMsg = `Variável de ambiente ${envVar} inválida: "${rawValue}". Deve ser um número inteiro >= ${minValue}`;
-    // #region agent log (debug)
-    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:parsePositiveIntEnv',message:'Env int invalid (branch)',data:{envVar,rawValue,parsed,defaultValue,minValue,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion agent log (debug)
     
     // Regra 6: Fail-fast em produção
     if (process.env.NODE_ENV === 'production') {
@@ -119,28 +166,8 @@ class AudioProcessorService {
   private clipServiceUrl: string;
 
   constructor() {
-    // Enterprise-grade: validar CLIP_SERVICE_URL no construtor (fail-fast - Regra 6)
-    // Segue padrão de ImageProcessorService para consistência
-    if (typeof CLIP_SERVICE_URL !== 'string' || CLIP_SERVICE_URL.length === 0) {
-      const errorMsg = 'CLIP_SERVICE_URL não configurado ou inválido. Audio Processor requer serviço local de embeddings.';
-      // #region agent log (debug)
-      typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:AudioProcessorService:constructor',message:'CLIP_SERVICE_URL invalid in constructor',data:{clipServiceUrl:CLIP_SERVICE_URL ?? null,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H2'})}).catch(()=>{});
-      // #endregion agent log (debug)
-      
-      // Regra 6: Fail-fast em produção
-      if (process.env.NODE_ENV === 'production') {
-        logger.error({ clipServiceUrl: CLIP_SERVICE_URL }, errorMsg);
-        throw new Error(errorMsg);
-      }
-      
-      // Desenvolvimento: warning mas permite continuar (pode ser configurado depois)
-      logger.warn({ clipServiceUrl: CLIP_SERVICE_URL }, `${errorMsg} Continuando em modo desenvolvimento.`);
-    }
-    
+    // CLIP_SERVICE_URL já é validada/normalizada no módulo (fail-fast em produção - Regra 6).
     this.clipServiceUrl = CLIP_SERVICE_URL;
-    // #region agent log (debug)
-    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:AudioProcessorService:constructor',message:'Audio processor constructed',data:{clipServiceUrl:this.clipServiceUrl,timeoutMs:TRANSCRIPTION_TIMEOUT_MS,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H2'})}).catch(()=>{});
-    // #endregion agent log (debug)
     logger.info({ 
       clipServiceUrl: this.clipServiceUrl,
       transcriptionTimeout: TRANSCRIPTION_TIMEOUT_MS,
@@ -240,9 +267,6 @@ class AudioProcessorService {
     const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
 
     const controller = new AbortController();
-    // #region agent log (debug)
-    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:transcribeLocal',message:'Transcribe timeout configured',data:{timeoutMs:TRANSCRIPTION_TIMEOUT_MS,isFinite:Number.isFinite(TRANSCRIPTION_TIMEOUT_MS),mimeType,language:language ?? null},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
-    // #endregion agent log (debug)
     const timeoutId = setTimeout(() => controller.abort(), TRANSCRIPTION_TIMEOUT_MS);
 
     try {

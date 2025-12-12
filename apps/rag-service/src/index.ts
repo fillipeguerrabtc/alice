@@ -462,7 +462,49 @@ const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;
 // CLIP Service URL para processamento multimodal LOCAL (Regra 6 - Autonomia Total)
 // Inclui: embeddings (texto + imagem) + transcrição de áudio
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+function resolveClipServiceUrl(): string {
+  const raw = process.env.CLIP_SERVICE_URL;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  const defaultUrl = 'http://alice-clip-inference:8080';
+
+  if (!trimmed) return defaultUrl;
+
+  const normalize = (value: string): string => value.replace(/\/+$/, '');
+
+  const tryParse = (value: string): URL | null => {
+    try {
+      const url = new URL(value);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+      if (!url.hostname) return null;
+      return url;
+    } catch {
+      return null;
+    }
+  };
+
+  const parsed = tryParse(trimmed) ?? (!trimmed.includes('://') ? tryParse(`http://${trimmed}`) : null);
+
+  if (!parsed) {
+    const msg = `CLIP_SERVICE_URL inválida: "${trimmed}". Esperado URL http(s) válida (ex: ${defaultUrl}).`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, msg);
+      process.exit(1);
+    }
+    logger.warn({ envVar: 'CLIP_SERVICE_URL', value: trimmed }, `${msg} Usando padrão: ${defaultUrl}`);
+    return defaultUrl;
+  }
+
+  if (!trimmed.includes('://')) {
+    logger.warn(
+      { envVar: 'CLIP_SERVICE_URL', value: trimmed, normalized: normalize(parsed.toString()) },
+      'CLIP_SERVICE_URL sem esquema (http/https). Normalizando para http://...'
+    );
+  }
+
+  return normalize(parsed.toString());
+}
+
+const CLIP_SERVICE_URL = resolveClipServiceUrl();
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -1886,12 +1928,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           if (result.combinedEmbedding.length > 0) {
             validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
           } else {
-            // Regra 6: Não persistir embeddings vazios. Se combinedEmbedding está vazio,
-            // o document-processor deveria ter falhado (fail-fast), mas garantimos aqui também.
-            logger.warn(
-              { uploadId: mediaUploadRecord.id },
-              'combinedEmbedding vazio recebido do document-processor. Persistindo como NULL (Regra 6 - não persistir embeddings falsos).'
-            );
+            // Regra 6 (Fail-fast): isso não é um estado válido para "sucesso" quando generateEmbeddings=true.
+            // Rejeitar para que o upload seja marcado como failed e não gere dados inconsistentes.
+            throw new Error('combinedEmbedding vazio recebido do document-processor (estado inválido)');
           }
           
           // Atualizar registro com embedding combinado e texto extraído
