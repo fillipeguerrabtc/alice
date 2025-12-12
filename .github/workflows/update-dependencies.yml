@@ -39,8 +39,8 @@ permissions:
 
 env:
   # pnpm v10+: permitir execução automática de scripts de build de dependências
-  # APENAS em CI (não aplicar localmente via .npmrc).
-  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+  # NOTA (enterprise): NÃO definir NPM_CONFIG_* globalmente para evitar warnings do npm/npx.
+  # Esta env é aplicada apenas nos steps que executam `pnpm install`.
 
 jobs:
   # ===========================================================================
@@ -129,6 +129,10 @@ jobs:
 
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       # REGRA 6: Enterprise-grade - verificar atualizações usando pnpm outdated
       - name: Verificar atualizações disponíveis
@@ -345,6 +349,10 @@ jobs:
       # REGRA 9: Validação contínua - testar após atualização
       - name: Instalar dependências atualizadas
         run: pnpm install
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       - name: TypeScript Check
         run: pnpm run typecheck

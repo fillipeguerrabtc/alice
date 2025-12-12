@@ -32,9 +32,8 @@ env:
   # Aumentar memória do Node.js para evitar "JavaScript heap out of memory"
   # durante TypeScript compilation de monorepos grandes (8GB)
   NODE_OPTIONS: '--max-old-space-size=8192'
-  # pnpm v10+: permitir execução automática de scripts de build de dependências
-  # APENAS em CI (não aplicar localmente via .npmrc).
-  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+  # NOTA (enterprise): NÃO definir NPM_CONFIG_* globalmente para evitar warnings do npm/npx.
+  # Esta env é aplicada apenas nos steps que executam `pnpm install`.
 
 jobs:
   # ===========================================================================
@@ -185,6 +184,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       # Limpar artefatos de build antigos para evitar conflitos de tipos
       # CRÍTICO: Arquivos .d.ts compilados contra versões antigas do drizzle-orm
@@ -370,6 +373,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       # Download packages compilados do job anterior
       # NOTA: upload-artifact@v4 remove o prefixo comum (packages/) então baixamos em packages/
@@ -617,6 +624,10 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       # Build frontend - DEVE falhar se houver erros
       - name: Build frontend
@@ -759,6 +770,10 @@ jobs:
 
       - name: Install Node.js dependencies
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       # Setup Python para instalar dependências Python (necessário para Trivy escanear)
       # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha

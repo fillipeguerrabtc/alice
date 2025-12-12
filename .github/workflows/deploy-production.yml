@@ -55,9 +55,8 @@ permissions:
 env:
   # REGRA 6: Enterprise-grade - versionamento automático (não hardcoded)
   # NODE_VERSION será lido automaticamente do .nvmrc ou API do Node.js
-  # pnpm v10+: permitir execução automática de scripts de build de dependências
-  # APENAS em CI/deploy (não aplicar localmente via .npmrc).
-  NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+  # NOTA (enterprise): NÃO definir NPM_CONFIG_* globalmente para evitar warnings do npm/npx.
+  # Esta env é aplicada apenas nos steps que executam `pnpm install`.
   DOMAIN: yesyoudeserve.duckdns.org
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
@@ -177,6 +176,10 @@ jobs:
 
       - name: Instalar dependências
         run: pnpm install --frozen-lockfile
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante `pnpm install` em CI/deploy (não aplicar localmente via .npmrc).
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
       - name: ESLint
         run: pnpm run lint
