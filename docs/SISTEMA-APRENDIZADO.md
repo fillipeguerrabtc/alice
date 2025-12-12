@@ -345,6 +345,8 @@ Acessíveis em `/dashboard/analytics`:
 
 **Workers em background (opcional):** habilite com `WORKER_TENANT_ID` e configure `WORKER_POLL_MS`, `WORKER_CONCURRENCY`, `WORKER_MAX_ATTEMPTS` para processar learning, web_crawl e media_jobs em modo seguro (fila priorizada + retries).
 
+**Crawler enterprise:** web-crawl-worker usa lock `FOR UPDATE SKIP LOCKED`, fetch com timeout/respeito a limites de bytes, parsing cheerio e fallback para a URL original quando a busca retorna vazia.
+
 ---
 
 *Autor: Fillipe Guerra*

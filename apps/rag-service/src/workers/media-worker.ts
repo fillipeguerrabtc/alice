@@ -2,7 +2,7 @@ import pLimit from 'p-limit';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
 import { mediaJobs } from '@alice/database';
-import { sql, eq } from '@alice/database';
+import { eq, and, asc, sql } from '@alice/database';
 
 const logger = createLogger('media-worker');
 
@@ -17,25 +17,34 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
   const limit = pLimit(config.concurrency);
 
   async function fetchNextJob() {
-    const result = await db.execute<any>(sql`
-      SELECT * FROM media_jobs
-      WHERE tenant_id = ${config.tenantId}
-        AND status = 'pending'
-        AND (agendado_para IS NULL OR agendado_para <= NOW())
-      ORDER BY prioridade ASC, agendado_para NULLS FIRST, criado_em ASC
-      FOR UPDATE SKIP LOCKED
-      LIMIT 1
-    `);
-    return result.rows[0] || null;
+    const [row] = await db
+      .select()
+      .from(mediaJobs)
+      .where(
+        and(
+          eq(mediaJobs.tenantId, config.tenantId),
+          eq(mediaJobs.status, 'pending'),
+          sql`(${mediaJobs.agendadoPara} IS NULL OR ${mediaJobs.agendadoPara} <= NOW())`
+        )
+      )
+      .orderBy(
+        asc(mediaJobs.prioridade),
+        sql`${mediaJobs.agendadoPara} NULLS FIRST`,
+        asc(mediaJobs.criadoEm)
+      )
+      .limit(1)
+      .for('update', { skipLocked: true });
+
+    return row || null;
   }
 
-  async function markStatus(id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null) {
+  async function markStatus(id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null, attemptsOverride?: number) {
     await db
       .update(mediaJobs)
       .set({
         status,
         erro: erro ?? null,
-        tentativas: status === 'processing' ? sql`${mediaJobs.tentativas} + 1` : mediaJobs.tentativas,
+        tentativas: status === 'processing' ? sql`${mediaJobs.tentativas} + 1` : attemptsOverride ?? mediaJobs.tentativas,
         iniciadoEm: status === 'processing' ? sql`NOW()` : mediaJobs.iniciadoEm,
         finalizadoEm: status === 'completed' || status === 'failed' ? sql`NOW()` : mediaJobs.finalizadoEm,
       })
@@ -50,19 +59,12 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
       await limit(async () => {
         await markStatus(job.id, 'processing');
         try {
-          // Placeholder: integração Salad/TTS/talking-head/lip-sync/long-video
+          // TODO: integrar pipelines Salad (tts/talking-head/lip-sync/long-video)
           await markStatus(job.id, 'completed');
         } catch (error) {
           const attempts = (job.tentativas ?? 0) + 1;
           const status = attempts >= (job.maxTentativas ?? config.maxAttempts) ? 'failed' : 'pending';
-          await db
-            .update(mediaJobs)
-            .set({
-              status,
-              erro: (error as Error).message,
-              tentativas: attempts,
-            })
-            .where(eq(mediaJobs.id, job.id));
+          await markStatus(job.id, status, (error as Error).message, attempts);
         }
       });
     } catch (error) {
