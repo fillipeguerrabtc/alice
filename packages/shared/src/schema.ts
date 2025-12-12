@@ -929,7 +929,7 @@ export const learningTasks = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id).notNull(),
     tipo: varchar("tipo", { length: 50 }).notNull(),
-    status: taskStatusEnum("status").default("pending"),
+    status: taskStatusEnum("status").notNull().default("pending"),
     prioridade: integer("prioridade").notNull().default(5), // 1 (alta) a 10 (baixa)
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
