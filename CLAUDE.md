@@ -296,10 +296,11 @@ git commit -a -m "test: adiciona testes unitários"
 - **Python**: Python 3.13 (via .python-version - fonte primária para garantir compatibilidade), PyTorch 2.9.1 (CLIP service)
 - **CI/CD**: GitHub Actions (100% automático)
 - **Atualização Periódica**: Workflows automáticos para dependências npm/pnpm (semanal) e pacotes do sistema Hetzner (semanal)
+- **pnpm (build scripts)**: `dangerouslyAllowAllBuilds: true` em `pnpm-workspace.yaml` para permitir execução automática de scripts (sem `approve-builds`) no CI/deploy.
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.35 - 12 de Dezembro de 2025*
+*Versão: 3.36 - 12 de Dezembro de 2025*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
