@@ -25,7 +25,7 @@ ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
 - NENHUMA dependência externa para processamento multimodal
 
 Autor: Fillipe Guerra
-Data: 11 de Dezembro de 2025
+Data: 12 de Dezembro de 2025
 Documentação em PT-BR (Regra 10 CLAUDE.md)
 Segurança Enterprise (Regra 16 CLAUDE.md)
 """
@@ -37,6 +37,8 @@ import base64
 import logging
 import time
 import asyncio
+import tempfile
+import wave
 from datetime import datetime
 from typing import Optional, Union, List
 from contextlib import asynccontextmanager
@@ -65,6 +67,89 @@ logging.basicConfig(
     format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "service": "clip-inference", "message": "%(message)s"}'
 )
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# WHISPER FUNCTIONAL SELF-TEST (Enterprise / Best Practices 2025)
+# - Evita falso-positivo de "modelo funcional" baseado apenas em hasattr(...)
+# - Executa UM auto-teste leve no startup (silêncio curto em WAV) e depois usa:
+#   - flag global do auto-teste + circuit breaker + validação de runtime do device
+# - Sem dados hardcoded persistidos; amostra é gerada em memória e removida do disco
+# =============================================================================
+
+def _build_silence_wav_bytes(duration_ms: int = 250, sample_rate: int = 16000) -> bytes:
+    """Gera um WAV PCM mono com silêncio (curto) para auto-teste do Whisper."""
+    if duration_ms <= 0:
+        raise ValueError("duration_ms deve ser > 0")
+    if sample_rate <= 0:
+        raise ValueError("sample_rate deve ser > 0")
+
+    frames = int(sample_rate * (duration_ms / 1000.0))
+    pcm_s16le = b"\x00\x00" * frames  # 16-bit PCM mono
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 16-bit
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm_s16le)
+    return buf.getvalue()
+
+
+def _whisper_device_runtime_ok(inference_device: str) -> bool:
+    """
+    Validação leve do runtime do device.
+    - CPU: assume ok (se processo está vivo).
+    - CUDA: valida disponibilidade + alocação mínima para detectar falhas de device pós-startup.
+    """
+    if inference_device != "cuda":
+        return True
+    try:
+        if not torch.cuda.is_available() or torch.cuda.device_count() < 1:
+            return False
+        _ = torch.empty((1,), device="cuda")
+        torch.cuda.synchronize()
+        return True
+    except Exception as e:
+        logger.warning(f"Falha ao validar runtime CUDA no Whisper: {e}")
+        return False
+
+
+def _whisper_selftest(model: WhisperModel, inference_device: str) -> bool:
+    """
+    Auto-teste funcional leve do Whisper no startup.
+    Objetivo: garantir que o pipeline de transcrição não quebra imediatamente.
+    """
+    if not _whisper_device_runtime_ok(inference_device):
+        return False
+
+    tmp_path: Optional[str] = None
+    try:
+        wav_bytes = _build_silence_wav_bytes()
+        with tempfile.NamedTemporaryFile(prefix="alice-whisper-selftest-", suffix=".wav", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            tmp_file.write(wav_bytes)
+            tmp_file.flush()
+
+        # Chamada leve: silêncio tende a retornar 0 segmentos (ok). Sucesso = não lançar exceção.
+        segments, _info = model.transcribe(
+            tmp_path,
+            beam_size=1,
+            vad_filter=False,
+        )
+        for _ in segments:
+            break
+        return True
+    except Exception as e:
+        logger.warning(f"Auto-teste do Whisper falhou no startup: {e}")
+        return False
+    finally:
+        if tmp_path is not None:
+            try:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+            except Exception as cleanup_err:
+                logger.warning(f"Falha ao remover arquivo temporário do auto-teste Whisper: {cleanup_err}")
+
 
 # Configuração
 MODEL_NAME = os.getenv("MODEL_NAME", "ViT-L/14")
@@ -285,6 +370,7 @@ start_time = time.time()
 whisper_compute_type = "float16" if device == "cuda" else "int8"
 whisper_model = None  # Inicializar como None para evitar NameError no shutdown
 WHISPER_REQUIRED = os.getenv("WHISPER_REQUIRED", "true").lower() in ("1", "true", "yes", "y", "on")
+WHISPER_SELFTEST_OK = False
 try:
     whisper_model = WhisperModel(
         WHISPER_MODEL_SIZE,
@@ -294,6 +380,20 @@ try:
     )
     whisper_load_time = time.time() - start_time
     logger.info(f"Modelo Whisper carregado em {whisper_load_time:.2f}s (compute_type={whisper_compute_type})")
+
+    # Validação funcional leve (evita "ready" falso-positivo por checagem de atributos).
+    WHISPER_SELFTEST_OK = _whisper_selftest(whisper_model, device)
+    if not WHISPER_SELFTEST_OK:
+        if WHISPER_REQUIRED:
+            raise RuntimeError(
+                "Whisper carregou, mas falhou no auto-teste funcional. "
+                "Abortando startup (WHISPER_REQUIRED=true)."
+            )
+        logger.warning(
+            "Whisper carregou, mas falhou no auto-teste funcional e WHISPER_REQUIRED=false: "
+            "serviço iniciará sem transcrição (Whisper será tratado como indisponível)."
+        )
+        whisper_model = None
 except Exception as e:
     logger.error(f"ERRO CRÍTICO ao carregar modelo Whisper: {e}")
     # Fail-fast enterprise: Whisper é componente crítico do serviço multimodal (Regra 6 - Autonomia Total).
@@ -988,15 +1088,11 @@ async def health_check() -> HealthResponse:
     clip_model_loaded = clip_model is not None
     text_embedding_model_loaded = text_embedding_model is not None
     whisper_model_loaded = whisper_model is not None
-
-    whisper_functional = False
-    if whisper_model_loaded:
-        try:
-            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
-                whisper_functional = True
-        except Exception as e:
-            logger.warning(f"Whisper model não funcional no health check: {e}")
-            whisper_functional = False
+    whisper_functional = (
+        whisper_model_loaded
+        and WHISPER_SELFTEST_OK
+        and _whisper_device_runtime_ok(device)
+    )
 
     clip_circuit_ready = clip_breaker.current_state.name != "open"
     text_embedding_circuit_ready = text_embedding_breaker.current_state.name != "open"
@@ -1055,18 +1151,11 @@ async def readiness_probe():
     text_embedding_model_loaded = text_embedding_model is not None
     whisper_model_loaded = whisper_model is not None
     whisper_required = WHISPER_REQUIRED
-    
-    # Validação funcional adicional para Whisper (Bug Fix: verificar funcionalidade, não só existência)
-    whisper_functional = False
-    if whisper_model_loaded:
-        try:
-            # Validar que modelo tem atributos essenciais e está acessível
-            # Não executar transcrição real (caro), apenas verificar acesso ao modelo
-            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
-                whisper_functional = True
-        except Exception as e:
-            logger.warning(f"Whisper model não funcional no readiness probe: {e}")
-            whisper_functional = False
+    whisper_functional = (
+        whisper_model_loaded
+        and WHISPER_SELFTEST_OK
+        and _whisper_device_runtime_ok(device)
+    )
     
     # pybreaker.current_state retorna CircuitBreakerState object, não string
     # Usar .name para comparar com string
@@ -1233,15 +1322,11 @@ async def readiness_whisper_probe():
 
     whisper_model_loaded = whisper_model is not None
     whisper_circuit_ready = whisper_breaker.current_state.name != "open"
-
-    whisper_functional = False
-    if whisper_model_loaded:
-        try:
-            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
-                whisper_functional = True
-        except Exception as e:
-            logger.warning(f"Whisper model não funcional no readiness whisper probe: {e}")
-            whisper_functional = False
+    whisper_functional = (
+        whisper_model_loaded
+        and WHISPER_SELFTEST_OK
+        and _whisper_device_runtime_ok(device)
+    )
 
     ready = whisper_model_loaded and whisper_functional and whisper_circuit_ready
 
