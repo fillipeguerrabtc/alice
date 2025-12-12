@@ -23,13 +23,60 @@ import { validateEmbeddingDimension } from '@alice/database';
 const logger = createLogger('audio-processor');
 
 // URL do serviço multimodal LOCAL (CPU Hetzner) - embeddings + transcrição
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+const CLIP_SERVICE_URL = (() => {
+  const raw = process.env.CLIP_SERVICE_URL;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed.length > 0 ? trimmed : 'http://alice-clip-inference:8080';
+})();
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;
 
+/**
+ * Valida e parseia variável de ambiente como número inteiro positivo.
+ * Fail-fast (Regra 6): aborta se valor inválido em produção.
+ * 
+ * @param envVar Nome da variável de ambiente
+ * @param defaultValue Valor padrão se variável não estiver definida
+ * @param minValue Valor mínimo permitido (default: 1)
+ * @returns Número inteiro positivo validado
+ * @throws Error se valor inválido em produção
+ */
+function parsePositiveIntEnv(envVar: string, defaultValue: number, minValue: number = 1): number {
+  const rawValue = process.env[envVar];
+  if (!rawValue) {
+    return defaultValue;
+  }
+
+  const parsed = parseInt(rawValue, 10);
+  // #region agent log (debug)
+  typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:parsePositiveIntEnv',message:'Parse env int (pre-validation)',data:{envVar,rawValue,parsed,defaultValue,minValue,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
+  // #endregion agent log (debug)
+  
+  // Enterprise-grade: validar que é um número finito positivo
+  if (!Number.isFinite(parsed) || parsed < minValue) {
+    const errorMsg = `Variável de ambiente ${envVar} inválida: "${rawValue}". Deve ser um número inteiro >= ${minValue}`;
+    // #region agent log (debug)
+    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:parsePositiveIntEnv',message:'Env int invalid (branch)',data:{envVar,rawValue,parsed,defaultValue,minValue,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion agent log (debug)
+    
+    // Regra 6: Fail-fast em produção
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ envVar, rawValue, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    
+    // Desenvolvimento: usar default com warning
+    logger.warn({ envVar, rawValue, parsed, defaultValue }, `${errorMsg}. Usando valor padrão: ${defaultValue}`);
+    return defaultValue;
+  }
+
+  return parsed;
+}
+
 // Timeout para transcrição (áudios longos podem demorar)
-const TRANSCRIPTION_TIMEOUT_MS = parseInt(process.env.TRANSCRIPTION_TIMEOUT_MS || '300000', 10); // 5 min default
+// Enterprise-grade: validação fail-fast (Regra 6)
+const TRANSCRIPTION_TIMEOUT_MS = parsePositiveIntEnv('TRANSCRIPTION_TIMEOUT_MS', 300000, 1000); // 5 min default, mínimo 1s
 
 export interface AudioMetadata {
   duration?: number; // segundos
@@ -72,7 +119,28 @@ class AudioProcessorService {
   private clipServiceUrl: string;
 
   constructor() {
+    // Enterprise-grade: validar CLIP_SERVICE_URL no construtor (fail-fast - Regra 6)
+    // Segue padrão de ImageProcessorService para consistência
+    if (typeof CLIP_SERVICE_URL !== 'string' || CLIP_SERVICE_URL.length === 0) {
+      const errorMsg = 'CLIP_SERVICE_URL não configurado ou inválido. Audio Processor requer serviço local de embeddings.';
+      // #region agent log (debug)
+      typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:AudioProcessorService:constructor',message:'CLIP_SERVICE_URL invalid in constructor',data:{clipServiceUrl:CLIP_SERVICE_URL ?? null,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H2'})}).catch(()=>{});
+      // #endregion agent log (debug)
+      
+      // Regra 6: Fail-fast em produção
+      if (process.env.NODE_ENV === 'production') {
+        logger.error({ clipServiceUrl: CLIP_SERVICE_URL }, errorMsg);
+        throw new Error(errorMsg);
+      }
+      
+      // Desenvolvimento: warning mas permite continuar (pode ser configurado depois)
+      logger.warn({ clipServiceUrl: CLIP_SERVICE_URL }, `${errorMsg} Continuando em modo desenvolvimento.`);
+    }
+    
     this.clipServiceUrl = CLIP_SERVICE_URL;
+    // #region agent log (debug)
+    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:AudioProcessorService:constructor',message:'Audio processor constructed',data:{clipServiceUrl:this.clipServiceUrl,timeoutMs:TRANSCRIPTION_TIMEOUT_MS,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H2'})}).catch(()=>{});
+    // #endregion agent log (debug)
     logger.info({ 
       clipServiceUrl: this.clipServiceUrl,
       transcriptionTimeout: TRANSCRIPTION_TIMEOUT_MS,
@@ -172,6 +240,9 @@ class AudioProcessorService {
     const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
 
     const controller = new AbortController();
+    // #region agent log (debug)
+    typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/audio-processor.ts:transcribeLocal',message:'Transcribe timeout configured',data:{timeoutMs:TRANSCRIPTION_TIMEOUT_MS,isFinite:Number.isFinite(TRANSCRIPTION_TIMEOUT_MS),mimeType,language:language ?? null},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H1'})}).catch(()=>{});
+    // #endregion agent log (debug)
     const timeoutId = setTimeout(() => controller.abort(), TRANSCRIPTION_TIMEOUT_MS);
 
     try {

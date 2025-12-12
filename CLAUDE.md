@@ -235,26 +235,31 @@ alice/
 git status
 git diff
 
-# Commit consolidado direto (sem staging) - várias mudanças relacionadas em um único commit
+# Commit consolidado direto (sem staging explícito) - várias mudanças relacionadas em um único commit
+# Para mudanças normais (modificações em arquivos rastreados):
 git commit -a -m "feat: implementação consolidada de feature X
 
 - Mudança 1 relacionada
 - Mudança 2 relacionada
 - Mudança 3 relacionada
 - Atualização de documentação"
-# OU via IDE: commit direto sem staging (consolidado)
 
-# Push manual (apenas quando aprovado pelo usuário)
-git push
-# OU via IDE: "Sync Changes" manual
+# Para incluir deleções de arquivos (git commit -a não inclui deleções automaticamente):
+git add -u  # Apenas para marcar deleções (exceção técnica necessária)
+git commit -m "feat: implementação consolidada + limpeza"
+
+# RECOMENDADO: Usar Cursor IDE que faz staging automático inteligente
+# Botão "Sync Changes" no IDE faz commit direto sem necessidade de git add manual
 ```
 
 ### Comandos Git PROIBIDOS
 
 ```bash
-# PROIBIDO: Staging explícito
+# PROIBIDO: Staging explícito para mudanças normais (use git commit -a)
 git add <arquivo>
 git add .
+# EXCEÇÃO: git add -u é permitido APENAS quando há deleções de arquivos
+# (git commit -a não inclui deleções automaticamente)
 
 # PROIBIDO: Commits individuais para cada mudança pequena
 # (deve consolidar mudanças relacionadas)

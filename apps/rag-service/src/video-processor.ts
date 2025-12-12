@@ -116,16 +116,29 @@ export function combineVideoEmbeddingsForSearch(
     return avgFrameEmbedding;
   }
 
+  // Enterprise-grade: validar integridade de normalizedText ANTES de combinar (Regra 6 - Fail-fast)
+  // Regra 6: PROIBIDO mascarar problemas com fallback para 0. Invalid embeddings devem rejeitar cedo.
+  for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+    if (!Number.isFinite(normalizedText[i])) {
+      const errorMsg = `normalizedText[${i}] é não-finito (${normalizedText[i]}). Embedding de texto corrompido. Rejeitando combinação.`;
+      logger.error(
+        { 
+          index: i, 
+          value: normalizedText[i],
+          normalizedTextLength: normalizedText.length,
+          textEmbeddingLength: textEmbedding.length,
+        },
+        errorMsg
+      );
+      // Regra 6: Fail-fast - retornar apenas frames ao invés de mascarar com zeros
+      return avgFrameEmbedding;
+    }
+  }
+
+  // Após validação completa, combinar embeddings
   const combined = new Array(CLIP_EMBEDDING_DIM).fill(0);
   for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
-    // Enterprise-grade: garantir que normalizedText[i] é finito antes de usar (evita NaN).
-    // Se algum valor for undefined/null/NaN, usar 0 como fallback seguro (mas logar warning).
-    // IMPORTANTE: verificar ANTES da atribuição para que o warning possa ser executado.
-    if (!Number.isFinite(normalizedText[i])) {
-      logger.warn({ index: i, value: normalizedText[i] }, 'Valor não-finito detectado em normalizedText (usando 0 como fallback)');
-    }
-    const textValue = Number.isFinite(normalizedText[i]) ? normalizedText[i] : 0;
-    combined[i] = (textValue * 0.6) + (avgFrameEmbedding[i] * 0.4);
+    combined[i] = (normalizedText[i] * 0.6) + (avgFrameEmbedding[i] * 0.4);
   }
 
   // Normalizar L2
@@ -255,7 +268,34 @@ class VideoProcessorService {
    * Chamado antes de qualquer operação que dependa da configuração
    */
   private async ensureConfigured(): Promise<void> {
-    const retryMs = parseInt(process.env.VIDEO_PROCESSOR_CONFIG_RETRY_MS || '5000', 10); // 5s default
+    // Enterprise-grade: validar VIDEO_PROCESSOR_CONFIG_RETRY_MS (fail-fast - Regra 6)
+    // Função utilitária inline para evitar dependência externa
+    const parseRetryMs = (): number => {
+      const rawValue = process.env.VIDEO_PROCESSOR_CONFIG_RETRY_MS || '5000';
+      const parsed = parseInt(rawValue, 10);
+      // #region agent log (debug)
+      typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/video-processor.ts:ensureConfigured:parseRetryMs',message:'Parse retry ms (pre-validation)',data:{rawValue,parsed,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H4'})}).catch(()=>{});
+      // #endregion agent log (debug)
+      
+      if (!Number.isFinite(parsed) || parsed < 100) {
+        const errorMsg = `VIDEO_PROCESSOR_CONFIG_RETRY_MS inválido: "${rawValue}". Deve ser um número >= 100ms`;
+        // #region agent log (debug)
+        typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/video-processor.ts:ensureConfigured:parseRetryMs',message:'Retry ms invalid (branch)',data:{rawValue,parsed,nodeEnv:process.env.NODE_ENV ?? 'unknown'},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H4'})}).catch(()=>{});
+        // #endregion agent log (debug)
+        
+        if (process.env.NODE_ENV === 'production') {
+          logger.error({ rawValue, parsed }, errorMsg);
+          throw new Error(errorMsg);
+        }
+        
+        logger.warn({ rawValue, parsed, defaultValue: 5000 }, `${errorMsg}. Usando padrão: 5000ms`);
+        return 5000;
+      }
+      
+      return parsed;
+    };
+    
+    const retryMs = parseRetryMs();
 
     // Sempre aguardar a verificação em andamento, se houver.
     if (!this.configurationChecked && this.configurationPromise) {

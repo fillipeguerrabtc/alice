@@ -1880,11 +1880,22 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
           // (multilingual-e5-base, 768 dim). Portanto, a validação correta aqui é `TEXT` (não CLIP).
           // (Enterprise-Grade - Regra 6)
+          // 
+          // Regra 6: Validar que combinedEmbedding não está vazio antes de persistir.
+          // Se estiver vazio, persistir como NULL (não como array vazio).
           if (result.combinedEmbedding.length > 0) {
             validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          } else {
+            // Regra 6: Não persistir embeddings vazios. Se combinedEmbedding está vazio,
+            // o document-processor deveria ter falhado (fail-fast), mas garantimos aqui também.
+            logger.warn(
+              { uploadId: mediaUploadRecord.id },
+              'combinedEmbedding vazio recebido do document-processor. Persistindo como NULL (Regra 6 - não persistir embeddings falsos).'
+            );
           }
           
           // Atualizar registro com embedding combinado e texto extraído
+          // Regra 6: Sempre persistir NULL se combinedEmbedding estiver vazio (não array vazio)
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',

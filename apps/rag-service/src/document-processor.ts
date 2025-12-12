@@ -27,7 +27,11 @@ const logger = createLogger('document-processor');
 // Configuração - Embeddings 100% locais via CPU no Hetzner (Regra 6 - Autonomia Total)
 // CLIP Service URL para embeddings locais (serviço interno na rede Docker)
 // NOTA: Todos os embeddings (texto e CLIP) são gerados 100% localmente via CPU no servidor Hetzner
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+const CLIP_SERVICE_URL = (() => {
+  const raw = process.env.CLIP_SERVICE_URL;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed.length > 0 ? trimmed : 'http://alice-clip-inference:8080';
+})();
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;
@@ -271,27 +275,49 @@ class DocumentProcessorService {
           }
           successfulEmbeddings++;
         } catch (error) {
-          logger.warn({ error, chunkIndex: i }, 'Erro ao gerar embedding para chunk');
+          logger.error({ error, chunkIndex: i, totalChunks: textChunks.length }, 'Erro ao gerar embedding para chunk');
           hadEmbeddingError = true;
           
-          chunks.push({
-            text: chunkText,
-            chunkIndex: i,
-            // Regra 6 (CLAUDE.md): PROIBIDO retornar embedding "falso" (vetor de zeros).
-            // Em falha de geração, marcamos como "sem embedding" para o call site persistir como NULL/ignorar.
-            embedding: [],
-          });
+          // Regra 6: Não incluir chunks com embedding vazio no resultado (evita inconsistência de dados).
+          // Apenas chunks bem-sucedidos serão incluídos. Se TODOS falharem, o processamento falhará (fail-fast).
+          // O texto do chunk que falhou não será incluído no resultado, mas será logado para análise.
         }
       }
 
       // Calcular média dos embeddings (apenas dos chunks com embedding real)
+      // Regra 6: Se TODOS os chunks falharam, não retornar combinedEmbedding vazio (fail-fast)
       if (successfulEmbeddings > 0) {
         combinedEmbedding = sumEmbedding.map((v) => v / successfulEmbeddings);
-      } else {
-        combinedEmbedding = [];
-        if (hadEmbeddingError) {
-          embeddingModel = 'unavailable';
+        
+        // Enterprise-grade: validar que combinedEmbedding resultante é válido (não contém NaN/Infinity)
+        const hasInvalidValues = combinedEmbedding.some(v => !Number.isFinite(v));
+        if (hasInvalidValues) {
+          logger.error(
+            { 
+              successfulEmbeddings,
+              totalChunks: textChunks.length,
+              combinedEmbeddingLength: combinedEmbedding.length,
+            },
+            'combinedEmbedding contém valores não-finitos após cálculo da média. Rejeitando processamento (Regra 6 - Fail-fast).'
+          );
+          throw new Error('Falha ao gerar embedding combinado: valores não-finitos detectados na média dos chunks');
         }
+      } else {
+        // Regra 6: Se nenhum chunk teve sucesso, falhar explicitamente ao invés de retornar array vazio
+        if (hadEmbeddingError) {
+          // #region agent log (debug)
+          typeof fetch === 'function' && fetch('http://127.0.0.1:7242/ingest/6d7f1213-e45f-42d8-962f-5affaf2cc480',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'apps/rag-service/src/document-processor.ts:processDocument',message:'All chunk embeddings failed (fail-fast)',data:{totalChunks:textChunks.length,successfulEmbeddings,hadEmbeddingError},timestamp:Date.now(),sessionId:'debug-session',runId:'verify-1',hypothesisId:'H5'})}).catch(()=>{});
+          // #endregion agent log (debug)
+          logger.error(
+            { totalChunks: textChunks.length },
+            'Falha ao gerar embeddings para TODOS os chunks do documento. Rejeitando processamento (Regra 6 - Fail-fast).'
+          );
+          throw new Error('Falha ao gerar embeddings: nenhum chunk foi processado com sucesso');
+        }
+        
+        // Caso edge: generateEmbeddings=true mas nenhum chunk foi processado (não deveria acontecer)
+        combinedEmbedding = [];
+        embeddingModel = 'unavailable';
       }
     } else {
       // Sem embeddings solicitados - apenas extração de texto

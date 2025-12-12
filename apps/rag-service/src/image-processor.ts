@@ -29,7 +29,11 @@ const logger = pino({
 // Configuração CLIP Local (Autônomo - Regra 6)
 // REGRA 6: Serviço local no Hetzner, não depende de API externa
 // Serviço interno na rede Docker privada - não requer autenticação
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+const CLIP_SERVICE_URL = (() => {
+  const raw = process.env.CLIP_SERVICE_URL;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed.length > 0 ? trimmed : 'http://alice-clip-inference:8080';
+})();
 
 // Dimensão dos embeddings CLIP (ViT-L/14)
 export const CLIP_EMBEDDING_DIM = 768;
