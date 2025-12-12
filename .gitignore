@@ -12,6 +12,19 @@ __pycache__/
 *.so
 .Python
 
-# Cursor IDE - imagens temporárias de chat (preserva assets/branding/)
+# Cursor IDE - arquivos temporários (NUNCA versionar)
 assets/c__Users_*
 .cursor/
+attached_assets/
+
+# Ambiente local
+.env
+#
+# IMPORTANTE (Git ignore rules):
+# - `.env.*` ignora todos os arquivos de environment locais (secrets).
+# - A regra de exceção (`!`) precisa vir **DEPOIS** da regra que ignora para re-incluir o arquivo.
+.env.*
+!.env.prod.example
+
+# TypeScript incremental build info (não versionar)
+*.tsbuildinfo

@@ -617,7 +617,11 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # ALICE RAG SERVICE - Knowledge Base + Embeddings + Storage Local
+  # ALICE RAG SERVICE - Knowledge Base + Multimodal Processing + Storage Local
+  # Processamento 100% LOCAL via clip-inference-service:
+  # - Embeddings de texto: multilingual-e5-base (768 dim)
+  # - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
+  # - Transcrição de áudio: faster-whisper medium
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
@@ -643,7 +647,8 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
-      # CLIP Local (Autônomo - Regra 6)
+      # Serviço Multimodal LOCAL (Regra 6 - Autonomia Total)
+      # Inclui: embeddings (texto + imagem) + transcrição de áudio (faster-whisper)
       # Serviço interno na rede Docker privada - não requer autenticação
       CLIP_SERVICE_URL: http://alice-clip-inference:8080
       # Storage local (SEM S3)
@@ -705,9 +710,10 @@ services:
       SERVICE_NAME: training-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      # Salad Cloud GPUs para FINE-TUNING (treinamento de modelos) - NÃO para embeddings!
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
-      # CLIP Local (Autônomo - Regra 6)
+      # Embeddings são 100% LOCAIS via CPU no servidor Hetzner (multilingual-e5-base) - Regra 6
       # Serviço interno na rede Docker privada - não requer autenticação
       CLIP_SERVICE_URL: http://alice-clip-inference:8080
     depends_on:
@@ -902,9 +908,11 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # ALICE CLIP INFERENCE SERVICE - Embeddings Multimodais (100% Local - CPU no Hetzner)
-  # ARQUITETURA AUTÔNOMA: Roda localmente no Hetzner via CPU (Regra 6 - Autonomia Total)
-  # Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 + multilingual-e5-base)
+  # ALICE MULTIMODAL INFERENCE SERVICE - 100% LOCAL (CPU Hetzner)
+  # ARQUITETURA AUTÔNOMA (Regra 6 - Autonomia Total):
+  # - Embeddings de texto: multilingual-e5-base (768 dim)
+  # - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
+  # - Transcrição de áudio: faster-whisper medium
   # NOTA: Serviço roda localmente no Hetzner via CPU (não requer GPU)
   # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
   # ===========================================================================

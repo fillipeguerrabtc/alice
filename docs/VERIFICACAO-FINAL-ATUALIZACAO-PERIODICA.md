@@ -49,7 +49,7 @@
 - **Autor:** ✅ Fillipe Guerra
 - **Data:** ✅ 09 de Dezembro de 2025
 - **Idioma:** ✅ PT-BR (exceto termos técnicos)
-- **Compliance:** ✅ Seção completa de compliance com 17 regras e 12 Fatores App
+- **Compliance:** ✅ Seção completa de compliance com 18 regras e 12 Fatores App
 - **Conteúdo:** ✅ Completo e atualizado
 
 #### ✅ `CLAUDE.md`
@@ -70,7 +70,7 @@
 - ✅ Sem `continue-on-error` em steps críticos
 - ✅ Sem `allow-failure` em jobs críticos
 
-### 5. Compliance com 17 Regras do CLAUDE.md
+### 5. Compliance com 18 Regras do CLAUDE.md
 
 | Regra | Status | Observações |
 |-------|--------|-------------|
@@ -154,7 +154,7 @@
 
 **Status:** ✅ **COMPLETO E VERIFICADO**
 
-A implementação do processo de atualização periódica está **100% enterprise-grade**, **sem sujeiras**, e **100% aderente** às 17 regras do CLAUDE.md e aos 12 Fatores App.
+A implementação do processo de atualização periódica está **100% enterprise-grade**, **sem sujeiras**, e **100% aderente** às 18 regras do CLAUDE.md e aos 12 Fatores App.
 
 **Próximos Passos:**
 1. Workflows ativos e funcionando
@@ -193,5 +193,5 @@ A implementação do processo de atualização periódica está **100% enterpris
 
 ---
 
-*Verificação realizada de forma honesta e transparente, seguindo todas as 17 regras do CLAUDE.md.*
+*Verificação realizada de forma honesta e transparente, seguindo todas as 18 regras do CLAUDE.md.*
 

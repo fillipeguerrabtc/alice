@@ -141,11 +141,12 @@ async function generateEmbedding(text: string): Promise<{ embedding: number[]; m
 // ============================================================================
 
 class DocumentProcessorService {
-  private isConfigured: boolean = true; // Serviço local sempre disponível (Regra 6 - Autonomia Total)
+  private isConfigured: boolean;
 
   constructor() {
     // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
     // Não depende de configuração externa (Salad Cloud)
+    this.isConfigured = typeof CLIP_SERVICE_URL === 'string' && CLIP_SERVICE_URL.length > 0;
     logger.info('Document Processor configurado com serviço local de embeddings (multilingual-e5-base)');
   }
 
@@ -234,13 +235,18 @@ class DocumentProcessorService {
 
     // Gerar embeddings para cada chunk
     const chunks: DocumentChunk[] = [];
-    const combinedEmbedding: number[] = new Array(TEXT_EMBEDDING_DIM).fill(0);
+    let combinedEmbedding: number[] = [];
     let embeddingModel = 'none';
 
     if (generateEmbeddings) {
       // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
       // Não requer verificação de configuração externa
       logger.info({ chunkCount: textChunks.length }, 'Gerando embeddings para chunks do documento (serviço local)');
+
+      // Acumuladores (zeros aqui são apenas estado inicial matemático; NÃO é fallback retornado ao cliente).
+      const sumEmbedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
+      let successfulEmbeddings = 0;
+      let hadEmbeddingError = false;
 
       for (let i = 0; i < textChunks.length; i++) {
         const chunkText = textChunks[i];
@@ -249,6 +255,10 @@ class DocumentProcessorService {
           const result = await generateEmbedding(chunkText);
           embeddingModel = result.model;
 
+          // Enterprise-grade: garantir dimensão esperada (768) antes de acumular.
+          // Isso evita "corrupção silenciosa" do embedding médio caso a dependência retorne dimensão inesperada.
+          validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+
           chunks.push({
             text: chunkText,
             chunkIndex: i,
@@ -256,27 +266,31 @@ class DocumentProcessorService {
           });
 
           // Acumular para média
-          for (let j = 0; j < result.embedding.length; j++) {
-            combinedEmbedding[j] += result.embedding[j];
+          for (let j = 0; j < TEXT_EMBEDDING_DIM; j++) {
+            sumEmbedding[j] += result.embedding[j];
           }
+          successfulEmbeddings++;
         } catch (error) {
           logger.warn({ error, chunkIndex: i }, 'Erro ao gerar embedding para chunk');
+          hadEmbeddingError = true;
           
           chunks.push({
             text: chunkText,
             chunkIndex: i,
-            embedding: new Array(TEXT_EMBEDDING_DIM).fill(0),
+            // Regra 6 (CLAUDE.md): PROIBIDO retornar embedding "falso" (vetor de zeros).
+            // Em falha de geração, marcamos como "sem embedding" para o call site persistir como NULL/ignorar.
+            embedding: [],
           });
         }
       }
 
-      // Calcular média dos embeddings
-      if (chunks.length > 0) {
-        const validChunks = chunks.filter(c => c.embedding.some(v => v !== 0)).length;
-        if (validChunks > 0) {
-          for (let i = 0; i < combinedEmbedding.length; i++) {
-            combinedEmbedding[i] /= validChunks;
-          }
+      // Calcular média dos embeddings (apenas dos chunks com embedding real)
+      if (successfulEmbeddings > 0) {
+        combinedEmbedding = sumEmbedding.map((v) => v / successfulEmbeddings);
+      } else {
+        combinedEmbedding = [];
+        if (hadEmbeddingError) {
+          embeddingModel = 'unavailable';
         }
       }
     } else {
@@ -630,6 +644,41 @@ class DocumentProcessorService {
    */
   isReady(): boolean {
     return this.isConfigured;
+  }
+
+  /**
+   * Readiness real (assíncrono): valida conectividade com o serviço local de embeddings
+   * (alice-clip-inference) e evita falso-positivo quando a dependência está fora do ar.
+   */
+  async isReadyAsync(): Promise<boolean> {
+    // "configured" aqui significa que há URL configurada; prontidão real depende do health check.
+    if (!this.isConfigured) return false;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout para readiness check
+
+    try {
+      // Document embeddings dependem somente de text embeddings (multilingual-e5-base)
+      const response = await fetch(`${CLIP_SERVICE_URL}/ready/text-embedding`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        logger.warn(
+          { status: response.status, serviceUrl: CLIP_SERVICE_URL },
+          'Serviço de text embeddings não está pronto para document-processor'
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.error({ error, serviceUrl: CLIP_SERVICE_URL }, 'Erro ao verificar readiness do serviço de text embeddings');
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
 
   /**

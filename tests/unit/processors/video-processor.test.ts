@@ -3,12 +3,14 @@
  * 
  * Testes unitários para processamento de vídeos:
  * - Extração de áudio via FFmpeg
- * - Transcrição via Whisper (Salad Cloud)
- * - Extração de frames para CLIP embeddings
+ * - Transcrição via faster-whisper LOCAL (CPU Hetzner)
+ * - Extração de frames para CLIP embeddings LOCAL
  * - Circuit Breaker para FFmpeg
  * 
+ * ARQUITETURA AUTÔNOMA (Regra 6): Todos os processamentos 100% locais
+ * 
  * Author: Fillipe Guerra
- * Data: 05/12/2025
+ * Data: 11/12/2025
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */

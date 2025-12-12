@@ -4,6 +4,12 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
+ * ARQUITETURA:
+ * - Embeddings de texto: multilingual-e5-base (100% LOCAL via CPU Hetzner)
+ * - Fine-tuning: Salad Cloud (GPUs externas) - SALAD_API_KEY obrigatória
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 11 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -52,9 +58,6 @@ const logger = createLogger('training-service');
 
 const PORT = parseInt(process.env.PORT || '3004', 10);
 const DATABASE_URL = process.env.DATABASE_URL;
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -69,18 +72,25 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
+// ==============================================================================
+// VALIDAÇÃO OBRIGATÓRIA: Salad Cloud Credentials (Regra 6 - Fail-Fast)
+// Training-service usa Salad Cloud para fine-tuning (GPUs externas)
+// SALAD_API_KEY e SALAD_ORGANIZATION_ID são OBRIGATÓRIAS para este serviço
+// ==============================================================================
+const SALAD_API_KEY = process.env.SALAD_API_KEY;
+const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
+
 if (!SALAD_API_KEY) {
-  logger.error('SALAD_API_KEY não configurada - serviço requer API key para funcionar');
+  logger.error('SALAD_API_KEY não configurada - obrigatória para fine-tuning na Salad Cloud');
   process.exit(1);
 }
 
 if (!SALAD_ORGANIZATION_ID) {
-  logger.error('SALAD_ORGANIZATION_ID não configurada');
+  logger.error('SALAD_ORGANIZATION_ID não configurada - obrigatória para fine-tuning na Salad Cloud');
   process.exit(1);
 }
 
-const SALAD_KEY: string = SALAD_API_KEY;
-const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
+logger.info('Credenciais Salad Cloud validadas - fine-tuning habilitado');
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();

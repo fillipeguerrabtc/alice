@@ -1,17 +1,21 @@
 /**
  * Video Processor Service - Alice Enterprise Platform
  * 
- * Processamento de vídeos:
+ * Processamento de vídeos 100% LOCAL (Regra 6 CLAUDE.md - Autonomia Total):
  * - Extração de áudio via FFmpeg
- * - Transcrição via Whisper (Salad Cloud)
- * - Extração de frames chave para CLIP embeddings (100% local via CPU no Hetzner)
- * - Text embeddings da transcrição (multilingual-e5-base local - 100% local via CPU no Hetzner)
+ * - Transcrição via faster-whisper (CPU Hetzner - 100% LOCAL)
+ * - Extração de frames chave para CLIP embeddings (CPU Hetzner - 100% LOCAL)
+ * - Text embeddings da transcrição via multilingual-e5-base (CPU Hetzner - 100% LOCAL)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
  * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 + multilingual-e5-base)
- * - Não depende de APIs externas para embeddings
+ * - TODOS os processamentos são 100% locais via CPU no servidor Hetzner
+ * - Embeddings: CLIP ViT-L/14 (imagens) + multilingual-e5-base (texto)
+ * - Transcrição: faster-whisper medium
+ * - NENHUMA dependência de APIs externas
  * 
+ * Autor: Fillipe Guerra
+ * Data: 11 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -28,6 +32,111 @@ import os from 'os';
 import crypto from 'crypto';
 
 const logger = createLogger('video-processor');
+
+/**
+ * Combina embeddings para busca de VÍDEO.
+ *
+ * Contrato enterprise:
+ * - Retorna SEMPRE embedding no espaço **CLIP** (para persistir em `clipEmbedding`).
+ * - `textEmbedding` (multilingual-e5-base) é persistido separadamente em `textEmbedding` e NÃO pode ser armazenado como CLIP.
+ * - Se não houver frames, retorna `[]` (não há CLIP embedding de vídeo).
+ */
+export function combineVideoEmbeddingsForSearch(
+  textEmbedding: number[],
+  frameEmbeddings: number[][]
+): number[] {
+  // Enterprise-grade: validação do embedding de texto (evita combinar vetor inválido/zero/NaN).
+  // Regra 6: nunca "inventar" embedding; se não for confiável, ignorar texto e usar apenas frames (ou vazio).
+  const isUsableTextEmbedding = (vec: number[]): boolean => {
+    if (vec.length !== TEXT_EMBEDDING_DIM) return false;
+    let hasNonZero = false;
+    for (const v of vec) {
+      if (!Number.isFinite(v)) return false;
+      if (v !== 0) hasNonZero = true;
+    }
+    return hasNonZero;
+  };
+
+  // Sem frames: NÃO retornar embedding de texto aqui.
+  // `combinedEmbedding` é CLIP-only; `textEmbedding` é persistido separadamente.
+  if (frameEmbeddings.length === 0) {
+    return [];
+  }
+
+  // Calcular média dos embeddings de frames (CLIP).
+  // Enterprise-grade: proteger contra embeddings inválidos (dimensão incorreta, holes, NaN/Infinity),
+  // evitando NaN no vetor final (compatível com pgvector).
+  const isUsableClipEmbedding = (vec: number[]): boolean => {
+    if (vec.length !== CLIP_EMBEDDING_DIM) return false;
+    for (const v of vec) {
+      if (!Number.isFinite(v)) return false;
+    }
+    return true;
+  };
+
+  const validFrames = frameEmbeddings.filter(isUsableClipEmbedding);
+  if (validFrames.length === 0) {
+    logger.warn(
+      { receivedFrames: frameEmbeddings.length },
+      'Nenhum frame embedding CLIP válido disponível; retornando combinedEmbedding vazio'
+    );
+    return [];
+  }
+
+  // Média CLIP por dimensão:
+  // Somar `frame[i] / N` para cada frame é matematicamente equivalente a `sum(frame[i]) / N`.
+  const avgFrameEmbedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
+  for (const frame of validFrames) {
+    for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+      avgFrameEmbedding[i] += frame[i] / validFrames.length;
+    }
+  }
+
+  // Se não há texto válido, retorna apenas média dos frames (CLIP)
+  const hasValidText = isUsableTextEmbedding(textEmbedding);
+  if (!hasValidText) {
+    return avgFrameEmbedding;
+  }
+
+  // Combinar: 60% texto, 40% frames (texto geralmente mais relevante para busca)
+  // Primeiro, normalizar textEmbedding para 768 dim (sem padding com zeros)
+  const normalizedText = textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
+
+  // NOTA ARQUITETURAL: TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM são ambas 768 (multilingual-e5-base e CLIP ViT-L/14).
+  // Se no futuro essas dimensões divergirem, o código precisará ser atualizado para lidar com a incompatibilidade.
+  // A validação abaixo (normalizedText.length) já protege contra edge cases de corrupção de dados.
+
+  // Enterprise-grade: validar que normalizedText tem o comprimento esperado antes de acessar índices.
+  // Isso previne NaN se o slice retornar um array menor que o esperado (edge case de corrupção de dados).
+  if (normalizedText.length !== CLIP_EMBEDDING_DIM) {
+    logger.warn(
+      { normalizedTextLength: normalizedText.length, expectedDim: CLIP_EMBEDDING_DIM, textEmbeddingLength: textEmbedding.length },
+      'normalizedText tem dimensão incorreta após slice; retornando embedding baseado apenas em frames (evita NaN)'
+    );
+    return avgFrameEmbedding;
+  }
+
+  const combined = new Array(CLIP_EMBEDDING_DIM).fill(0);
+  for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
+    // Enterprise-grade: garantir que normalizedText[i] é finito antes de usar (evita NaN).
+    // Se algum valor for undefined/null/NaN, usar 0 como fallback seguro (mas logar warning).
+    const textValue = Number.isFinite(normalizedText[i]) ? normalizedText[i] : 0;
+    if (!Number.isFinite(normalizedText[i])) {
+      logger.warn({ index: i, value: normalizedText[i] }, 'Valor não-finito detectado em normalizedText (usando 0 como fallback)');
+    }
+    combined[i] = (textValue * 0.6) + (avgFrameEmbedding[i] * 0.4);
+  }
+
+  // Normalizar L2
+  const magnitude = Math.sqrt(combined.reduce((sum, v) => sum + v * v, 0));
+  if (magnitude > 0) {
+    for (let i = 0; i < combined.length; i++) {
+      combined[i] /= magnitude;
+    }
+  }
+
+  return combined;
+}
 
 // Configuração
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
@@ -58,7 +167,7 @@ export interface ProcessedVideo {
   // Embeddings (100% locais via CPU no Hetzner)
   textEmbedding: number[]; // 768 dim - da transcrição (multilingual-e5-base local - CPU no Hetzner)
   frameEmbeddings: number[][]; // Array de CLIP embeddings (768 dim cada) dos frames (CLIP ViT-L/14 local - CPU no Hetzner)
-  combinedEmbedding: number[]; // Embedding combinado para busca (100% local via CPU no Hetzner)
+  combinedEmbedding: number[]; // Embedding CLIP combinado para busca (frames ± sinal de texto). Se não houver frames, retorna [].
   
   // Metadados
   embeddingModel: string;
@@ -131,6 +240,7 @@ class VideoProcessorService {
   private isConfigured: boolean = false;
   private configurationChecked: boolean = false;
   private configurationPromise: Promise<void> | null = null;
+  private lastConfigCheckAtMs: number = 0;
   private tempDir: string;
   
   constructor() {
@@ -144,26 +254,64 @@ class VideoProcessorService {
    * Chamado antes de qualquer operação que dependa da configuração
    */
   private async ensureConfigured(): Promise<void> {
+    const retryMs = parseInt(process.env.VIDEO_PROCESSOR_CONFIG_RETRY_MS || '5000', 10); // 5s default
+
+    // Sempre aguardar a verificação em andamento, se houver.
     if (!this.configurationChecked && this.configurationPromise) {
       await this.configurationPromise;
+    }
+
+    // Se não está configurado, permitir retry controlado (evita ficar preso em "false" para sempre).
+    if (this.configurationChecked && !this.isConfigured) {
+      const now = Date.now();
+      const elapsed = now - this.lastConfigCheckAtMs;
+      if (elapsed >= retryMs) {
+        logger.info(
+          { retryMs, elapsedMs: elapsed },
+          'Retry de verificação de configuração do video-processor (dependências podem ter ficado prontas)'
+        );
+        this.configurationChecked = false;
+        this.configurationPromise = this.checkConfiguration();
+        await this.configurationPromise;
+      }
     }
   }
   
   private async checkConfiguration(): Promise<void> {
+    this.lastConfigCheckAtMs = Date.now();
     try {
       // Verificar se FFmpeg está disponível
       await this.runCommand(FFMPEG_PATH, ['-version']);
       await this.runCommand(FFPROBE_PATH, ['-version']);
       
-      // Verificar se Salad Cloud está configurado
+      // Verificar se processadores de áudio e imagem estão prontos (100% LOCAL)
       const audioProcessor = getAudioProcessor();
       const imageProcessor = getImageProcessor();
       
-      if (audioProcessor.isReady() && imageProcessor.isReady()) {
+      // Contrato padronizado: usar sempre isReadyAsync() para readiness (Promise<boolean>)
+      // IMPORTANTE: readiness pode falhar por indisponibilidade da dependência (ex: alice-clip-inference fora do ar).
+      // Nunca propagar exceção: em falha, marcar como não pronto e manter serviço íntegro.
+      let audioReady = false;
+      let imageReady = false;
+      try {
+        audioReady = await audioProcessor.isReadyAsync();
+      } catch (error) {
+        logger.warn({ error }, 'Falha ao verificar readiness do audio-processor (tratando como not_ready)');
+        audioReady = false;
+      }
+      try {
+        imageReady = await imageProcessor.isReadyAsync();
+      } catch (error) {
+        logger.warn({ error }, 'Falha ao verificar readiness do image-processor (tratando como not_ready)');
+        imageReady = false;
+      }
+      
+      if (audioReady && imageReady) {
         this.isConfigured = true;
-        logger.info('Video Processor configurado com FFmpeg + Whisper (transcrição) + Embeddings locais (multilingual-e5-base)');
+        logger.info('Video Processor configurado com FFmpeg + Whisper (transcrição LOCAL) + Embeddings locais (multilingual-e5-base)');
       } else {
-        logger.warn('Dependências não configuradas - processamento de vídeo indisponível');
+        logger.warn({ audioReady, imageReady }, 'Dependências não configuradas - processamento de vídeo indisponível');
+        this.isConfigured = false;
       }
     } catch (error) {
       logger.warn({ error }, 'FFmpeg não disponível - processamento de vídeo indisponível');
@@ -214,7 +362,9 @@ class VideoProcessorService {
     await this.ensureConfigured();
     
     if (!this.isConfigured) {
-      throw new Error('Video Processor não configurado. Verifique FFmpeg e Salad Cloud.');
+      throw new Error(
+        'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com o serviço local de inferência (alice-clip-inference).'
+      );
     }
     
     // Criar diretório temporário se não existir
@@ -275,14 +425,16 @@ class VideoProcessorService {
         } catch (error) {
           logger.error({ error, processId }, 'Erro na transcrição do áudio do vídeo');
           transcription = '[Transcrição não disponível]';
-          textEmbedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-          audioEmbeddingModel = 'error';
+          // Regra 6 (CLAUDE.md): PROIBIDO retornar embedding "falso" (vetor de zeros).
+          // Em falha, marcamos como "sem embedding" e o call site deve persistir como NULL/ignorar.
+          textEmbedding = [];
+          audioEmbeddingModel = 'unavailable';
         }
         
         // Limpar arquivo de áudio
         await unlink(audioPath).catch(() => {});
       } else {
-        textEmbedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
+        textEmbedding = [];
         if (!metadata.hasAudio) {
           logger.info({ processId }, 'Vídeo sem áudio - pulando transcrição');
           audioEmbeddingModel = 'skipped-no-audio';
@@ -361,7 +513,10 @@ class VideoProcessorService {
       const combinedEmbedding = this.combineEmbeddings(textEmbedding, frameEmbeddings);
       
       // Validar dimensão do embedding combinado antes de retornar (Enterprise-Grade - Regra 6)
-      validateEmbeddingDimension(combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+      // Se não há embedding (ex: sem áudio + frames não extraídos), não inventar vetor: retornar vazio e persistir como NULL.
+      if (combinedEmbedding.length > 0) {
+        validateEmbeddingDimension(combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+      }
       
       // Validar textEmbedding se não estiver vazio
       if (textEmbedding.length > 0) {
@@ -489,51 +644,7 @@ class VideoProcessorService {
     textEmbedding: number[],
     frameEmbeddings: number[][]
   ): number[] {
-    // Se não há frames, retorna embedding de texto expandido para 768 dim
-    if (frameEmbeddings.length === 0) {
-      // Truncar ou expandir para CLIP dim (768)
-      if (textEmbedding.length >= CLIP_EMBEDDING_DIM) {
-        return textEmbedding.slice(0, CLIP_EMBEDDING_DIM);
-      } else {
-        return [...textEmbedding, ...new Array(CLIP_EMBEDDING_DIM - textEmbedding.length).fill(0)];
-      }
-    }
-    
-    // Calcular média dos embeddings de frames
-    const avgFrameEmbedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
-    for (const frame of frameEmbeddings) {
-      for (let i = 0; i < frame.length; i++) {
-        avgFrameEmbedding[i] += frame[i] / frameEmbeddings.length;
-      }
-    }
-    
-    // Se não há texto válido, retorna apenas média dos frames
-    const hasValidText = textEmbedding.some(v => v !== 0);
-    if (!hasValidText) {
-      return avgFrameEmbedding;
-    }
-    
-    // Combinar: 60% texto, 40% frames (texto geralmente mais relevante para busca)
-    // Primeiro, normalizar textEmbedding para 768 dim
-    const normalizedText = textEmbedding.slice(0, CLIP_EMBEDDING_DIM);
-    while (normalizedText.length < CLIP_EMBEDDING_DIM) {
-      normalizedText.push(0);
-    }
-    
-    const combined = new Array(CLIP_EMBEDDING_DIM).fill(0);
-    for (let i = 0; i < CLIP_EMBEDDING_DIM; i++) {
-      combined[i] = (normalizedText[i] * 0.6) + (avgFrameEmbedding[i] * 0.4);
-    }
-    
-    // Normalizar L2
-    const magnitude = Math.sqrt(combined.reduce((sum, v) => sum + v * v, 0));
-    if (magnitude > 0) {
-      for (let i = 0; i < combined.length; i++) {
-        combined[i] /= magnitude;
-      }
-    }
-    
-    return combined;
+    return combineVideoEmbeddingsForSearch(textEmbedding, frameEmbeddings);
   }
   
   /**
@@ -555,6 +666,10 @@ class VideoProcessorService {
   
   /**
    * Retorna informações sobre a configuração
+   * 
+   * IMPORTANTE (API estável): Este método é **síncrono** para não quebrar call sites.
+   * Para obter um snapshot consistente após a verificação de configuração completar,
+   * use `getConfigAsync()` (que aguarda `ensureConfigured()`).
    */
   getConfig(): {
     configured: boolean;
@@ -570,6 +685,21 @@ class VideoProcessorService {
       maxDurationSeconds: MAX_VIDEO_DURATION_SECONDS,
       framesPerMinute: FRAMES_PER_MINUTE,
     };
+  }
+
+  /**
+   * Retorna informações sobre a configuração (assíncrono - aguarda inicialização).
+   * Use este método quando o call site precisar de consistência após o bootstrap.
+   */
+  async getConfigAsync(): Promise<{
+    configured: boolean;
+    textEmbeddingDim: number;
+    frameEmbeddingDim: number;
+    maxDurationSeconds: number;
+    framesPerMinute: number;
+  }> {
+    await this.ensureConfigured();
+    return this.getConfig();
   }
 }
 

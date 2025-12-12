@@ -1,9 +1,9 @@
 # Consolidação de Documentação - Alice Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Dezembro de 2025  
-**Versão:** 1.5  
-**Atualizado:** 11 de Dezembro de 2025 (consolidação de documentos de review e verificação)
+**Data:** 12 de Dezembro de 2025  
+**Versão:** 1.6  
+**Atualizado:** 12 de Dezembro de 2025 (consolidação de documentos de review e verificação, atualização para 18 regras)
 
 ## Análise de Documentação
 
@@ -11,16 +11,16 @@
 
 | Documento | Propósito | Status | Data |
 |-----------|-----------|--------|------|
-| `CLAUDE.md` | Regras e visão geral | ✅ Atualizado | 11/12/2025 |
-| `README.md` | Documentação principal | ✅ Atualizado | 11/12/2025 |
+| `CLAUDE.md` | Regras e visão geral (18 regras) | ✅ Atualizado | 12/12/2025 |
+| `README.md` | Documentação principal | ✅ Atualizado | 12/12/2025 |
 | `docs/SECRETS.md` | Guia de secrets | ✅ Atualizado | 11/12/2025 |
-| `docs/DEPLOYMENT.md` | Guia de deploy | ✅ Atualizado | 11/12/2025 |
-| `docs/STATUS-REAL-ATUAL.md` | Status detalhado por serviço | ✅ Atualizado | 11/12/2025 |
-| `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado | ✅ Atualizado | 11/12/2025 |
-| `docs/FRAPPE-PATCHING.md` | Guia de patching ERPNext | ✅ Atualizado | 11/12/2025 |
+| `docs/DEPLOYMENT.md` | Guia de deploy | ✅ Atualizado | 12/12/2025 |
+| `docs/STATUS-REAL-ATUAL.md` | Status detalhado por serviço | ✅ Atualizado | 12/12/2025 |
+| `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado | ✅ Atualizado | 12/12/2025 |
+| `docs/FRAPPE-PATCHING.md` | Guia de patching ERPNext | ✅ Atualizado | 09/12/2025 |
 | `docs/AUDITORIA-SECRETS.md` | Auditoria completa de secrets (consolidado) | ✅ Atualizado | 11/12/2025 |
-| `docs/GAPS-CRITICOS-ENCONTRADOS.md` | Histórico de gaps e correções | ✅ Final | 09/12/2025 |
-| `docs/VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` | **Verificação completa enterprise (consolidado)** | ✅ Atualizado | 11/12/2025 |
+| `docs/GAPS-CRITICOS-ENCONTRADOS.md` | Histórico de gaps e correções | ✅ Final (histórico) | 09/12/2025 |
+| `docs/VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` | **Verificação completa enterprise (consolidado)** | ✅ Atualizado | 12/12/2025 |
 
 ### Documentos com Escopos Específicos (Manter - Escopos Diferentes)
 
@@ -40,7 +40,7 @@
 
 | Documento | Status | Ação |
 |-----------|--------|------|
-| `docs/VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` | ✅ **DOCUMENTO PRINCIPAL** | Verificação completa enterprise consolidada (11/12/2025) |
+| `docs/VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` | ✅ **DOCUMENTO PRINCIPAL** | Verificação completa enterprise consolidada (12/12/2025 - atualizado para 18 regras) |
 | `docs/VERIFICACAO-FINAL-ATUALIZACAO-PERIODICA.md` | ✅ Mantido | Verificação específica sobre atualização periódica (escopo diferente) |
 | `docs/CODE-REVIEW-COMPLETA.md` | ❌ Removido (histórico) | Consolidado em `VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` |
 | `docs/PLANO-REVIEW-COMPLETA-ENTERPRISE.md` | ❌ Removido (histórico) | Consolidado em `VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md` |
@@ -78,6 +78,6 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 11 de Dezembro de 2025*  
-*Versão: 1.5*  
+*Documento atualizado em: 12 de Dezembro de 2025*  
+*Versão: 1.6 - Atualizado para 18 regras (Regra 18: Commits Consolidados)*  
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*

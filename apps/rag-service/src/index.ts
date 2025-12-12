@@ -460,9 +460,8 @@ const logger = createLogger('rag-service');
 
 const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-// CLIP Service URL para embeddings locais (Regra 6 - Autonomia Total)
+// CLIP Service URL para processamento multimodal LOCAL (Regra 6 - Autonomia Total)
+// Inclui: embeddings (texto + imagem) + transcrição de áudio
 const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
@@ -478,26 +477,24 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-// SALAD_API_KEY é necessária APENAS para Whisper (transcrição de áudio) e LLM
-// Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base + CLIP ViT-L/14)
-// REGRA 6: Autonomia Total - embeddings não dependem de APIs externas
-if (!SALAD_API_KEY) {
-  logger.warn('SALAD_API_KEY não configurada - transcrição de áudio e LLM podem estar indisponíveis');
-}
-
-if (!SALAD_ORGANIZATION_ID) {
-  logger.warn('SALAD_ORGANIZATION_ID não configurada - transcrição de áudio e LLM podem estar indisponíveis');
-}
-
-// NOTA IMPORTANTE: SALAD_API_KEY e SALAD_ORGANIZATION_ID são usadas apenas por:
-// - audio-processor.ts: transcrição Whisper (Salad Cloud)
-// - chat-service: LLM (Salad Cloud)
-// - training-service: fine-tuning (Salad Cloud)
+// ==============================================================================
+// ARQUITETURA MULTIMODAL 100% LOCAL (Regra 6 CLAUDE.md - Autonomia Total)
+// ==============================================================================
+// TODOS os processamentos multimodais são 100% LOCAIS via CPU no servidor Hetzner:
+// - Text embeddings: multilingual-e5-base (768 dim)
+// - Image embeddings: CLIP ViT-L/14 (768 dim)
+// - Transcrição de áudio: faster-whisper medium
 // 
-// Embeddings são 100% locais via CPU no servidor Hetzner:
-// - Text embeddings: multilingual-e5-base (768 dim) - CPU no Hetzner
-// - CLIP embeddings: CLIP ViT-L/14 (768 dim) - CPU no Hetzner
-// - Não dependem de APIs externas - autonomia total (Regra 6)
+// NÃO dependem de APIs externas - autonomia total
+// Serviço: clip-inference-service (Python FastAPI no Hetzner)
+// ==============================================================================
+//
+// SALAD CLOUD é usado APENAS para:
+// - chat-service: LLM inference (Llama 4 Maverick 400B)
+// - training-service: fine-tuning de modelos
+// - image-generation: FLUX.1 Schnell
+//
+// SALAD_API_KEY NÃO é usada no rag-service (tudo é local)
 
 const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
 const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
@@ -1816,7 +1813,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           
           // Usar versão async para aguardar inicialização completa (evita race condition)
           if (!(await videoProcessor.isReadyAsync())) {
-            throw new Error('Video Processor não configurado. Verifique FFmpeg e Salad Cloud.');
+            throw new Error(
+              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com o serviço local de inferência (alice-clip-inference).'
+            );
           }
           
           const result = await videoProcessor.processVideo(
@@ -1864,8 +1863,12 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Processar documento: extrai texto e gera embeddings
           const documentProcessor = getDocumentProcessor();
           
-          if (!documentProcessor.isReady()) {
-            throw new Error('Document Processor não configurado. Verifique Salad Cloud.');
+          // Prontidão REAL: document depende de text embeddings locais (alice-clip-inference)
+          // Evita falso-positivo de "ready" quando a dependência está indisponível.
+          if (!(await documentProcessor.isReadyAsync())) {
+            throw new Error(
+              'Document Processor não está pronto. Verifique conectividade com o serviço local de embeddings (alice-clip-inference).'
+            );
           }
           
           const result = await documentProcessor.processDocument(
@@ -1874,7 +1877,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             { extractMetadata: true, generateEmbeddings: true }
           );
 
-          // Validar dimensão de texto antes de salvar (Enterprise-Grade - Regra 6)
+          // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
+          // (multilingual-e5-base, 768 dim). Portanto, a validação correta aqui é `TEXT` (não CLIP).
+          // (Enterprise-Grade - Regra 6)
           if (result.combinedEmbedding.length > 0) {
             validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
           }
@@ -2683,41 +2688,131 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 // Busca vetorial otimizada com pgvector nativo (enterprise-grade)
 
 // Health check específico para multimodal
-app.get('/api/media/health', (_req: Request, res: Response) => {
-  const imageProcessor = getImageProcessor();
-  const imageConfig = imageProcessor.getConfig();
-  
-  const audioProcessor = getAudioProcessor();
-  const audioConfig = audioProcessor.getConfig();
-  
-  res.json({ 
-    status: 'ok', 
-    service: 'media-upload',
-    timestamp: new Date().toISOString(),
-    supportedTypes: SUPPORTED_MEDIA_TYPES,
-    maxFileSizeMb: 100,
-    processing: {
-      image: {
-        configured: imageConfig.configured,
-        embeddingDim: imageConfig.embeddingDim,
-        model: imageConfig.model,
+app.get('/api/media/health', async (_req: Request, res: Response) => {
+  try {
+    const imageProcessor = getImageProcessor();
+    const imageConfig = imageProcessor.getConfig();
+    
+    const audioProcessor = getAudioProcessor();
+    const audioConfig = audioProcessor.getConfig();
+
+    const videoProcessor = getVideoProcessor();
+
+    const documentProcessor = getDocumentProcessor();
+    const documentConfig = documentProcessor.getConfig();
+
+    // ============================================================================
+    // Prontidão REAL (sem hardcoded/mocks): valida conectividade e dependências locais.
+    // IMPORTANTE: Express < 5 pode não capturar rejeições de async handlers automaticamente,
+    // então este endpoint deve SEMPRE tratar erros e responder.
+    // ============================================================================
+    const parseBooleanEnv = (value: string | undefined, defaultValue: boolean): boolean => {
+      if (typeof value !== 'string') return defaultValue;
+      const normalized = value.trim().toLowerCase();
+      if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+      if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+      return defaultValue;
+    };
+
+    const whisperRequired = parseBooleanEnv(process.env.WHISPER_REQUIRED, true);
+
+    const readinessResults = await Promise.allSettled([
+      imageProcessor.isReadyAsync(),
+      audioProcessor.isReadyAsync(),
+      videoProcessor.isReadyAsync(),
+      documentProcessor.isReadyAsync(),
+    ]);
+
+    const [imageResult, audioResult, videoResult, documentResult] = readinessResults;
+
+    const imageReady = imageResult.status === 'fulfilled' ? imageResult.value : false;
+    const audioReady = audioResult.status === 'fulfilled' ? audioResult.value : false;
+    const videoReady = videoResult.status === 'fulfilled' ? videoResult.value : false;
+    const documentReady = documentResult.status === 'fulfilled' ? documentResult.value : false;
+
+    // Logar falhas de forma segura para observabilidade (sem derrubar o endpoint)
+    const rejected = readinessResults.filter((r) => r.status === 'rejected') as Array<PromiseRejectedResult>;
+    if (rejected.length > 0) {
+      logger.warn(
+        { rejectedCount: rejected.length, errors: rejected.map((r) => String(r.reason)) },
+        'Falha ao executar readiness checks (tratando como not_ready)'
+      );
+    }
+
+    // Garantir consistência: obter config APÓS inicialização assíncrona.
+    // `getConfig()` é usado APENAS como fallback para manter o endpoint responsivo em erro inesperado.
+    let videoConfig: ReturnType<typeof videoProcessor.getConfig>;
+    try {
+      videoConfig = await videoProcessor.getConfigAsync();
+    } catch (error) {
+      logger.warn({ error }, 'Falha ao obter config assíncrona do video-processor (fallback para getConfig() síncrono)');
+      videoConfig = videoProcessor.getConfig();
+    }
+
+    // Semântica de saúde enterprise:
+    // - image + document são core (sempre requeridos)
+    // - audio + video dependem de Whisper; se WHISPER_REQUIRED=false, ficam opcionais e não derrubam o status global
+    const audioRequired = whisperRequired;
+    const videoRequired = whisperRequired;
+
+    const allReady =
+      imageReady &&
+      documentReady &&
+      (!audioRequired || audioReady) &&
+      (!videoRequired || videoReady);
+
+    res.json({
+      status: allReady ? 'ok' : 'degraded',
+      service: 'media-upload',
+      timestamp: new Date().toISOString(),
+      supportedTypes: SUPPORTED_MEDIA_TYPES,
+      maxFileSizeMb: 100,
+      whisperRequired,
+      processing: {
+        image: {
+          configured: imageConfig.configured,
+          required: true,
+          ready: imageReady,
+          embeddingDim: imageConfig.embeddingDim,
+          model: imageConfig.model,
+        },
+        audio: {
+          configured: audioConfig.configured,
+          required: audioRequired,
+          ready: audioReady,
+          embeddingDim: audioConfig.embeddingDim,
+          transcriptionModel: audioConfig.transcriptionModel,
+          embeddingModel: audioConfig.embeddingModel,
+        },
+        video: {
+          configured: videoConfig.configured,
+          required: videoRequired,
+          ready: videoReady,
+          textEmbeddingDim: videoConfig.textEmbeddingDim,
+          frameEmbeddingDim: videoConfig.frameEmbeddingDim,
+          maxDurationSeconds: videoConfig.maxDurationSeconds,
+          framesPerMinute: videoConfig.framesPerMinute,
+        },
+        document: {
+          configured: documentConfig.configured,
+          required: true,
+          ready: documentReady,
+          embeddingDim: documentConfig.embeddingDim,
+          maxDocumentSizeMB: documentConfig.maxDocumentSizeMB,
+          chunkSize: documentConfig.chunkSize,
+          supportedFormats: documentConfig.supportedFormats,
+        },
       },
-      audio: {
-        configured: audioConfig.configured,
-        embeddingDim: audioConfig.embeddingDim,
-        transcriptionModel: audioConfig.transcriptionModel,
-        embeddingModel: audioConfig.embeddingModel,
-      },
-      video: {
-        configured: false,
-        status: 'pendente',
-      },
-      document: {
-        configured: false,
-        status: 'pendente',
-      },
-    },
-  });
+    });
+  } catch (error) {
+    logger.error({ error }, 'Erro ao calcular health multimodal');
+    res.status(500).json({
+      status: 'error',
+      service: 'media-upload',
+      timestamp: new Date().toISOString(),
+      error: 'Erro interno ao calcular health multimodal',
+    });
+  }
 });
 
 // Status do circuit breaker CLIP (Regra 16 - Observability)

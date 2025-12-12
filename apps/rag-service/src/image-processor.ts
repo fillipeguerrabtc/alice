@@ -115,9 +115,13 @@ class ImageProcessorService {
   private isConfigured: boolean = false;
 
   constructor() {
-    // REGRA 6: Serviço local autônomo - sempre disponível (serviço interno)
-    this.isConfigured = true;
-    logger.info({ serviceUrl: CLIP_SERVICE_URL }, 'Image Processor configurado com serviço CLIP local (autônomo)');
+    // "Configured" aqui significa: existe URL configurada; prontidão real depende do health check.
+    // (Regra 6: sem hardcoded/false positives)
+    this.isConfigured = typeof CLIP_SERVICE_URL === 'string' && CLIP_SERVICE_URL.length > 0;
+    logger.info(
+      { serviceUrl: CLIP_SERVICE_URL, configured: this.isConfigured },
+      'Image Processor configurado com serviço CLIP local (autônomo)'
+    );
   }
 
   /**
@@ -145,9 +149,10 @@ class ImageProcessorService {
         embeddingModel = result.model;
       } catch (error) {
         logger.error({ error }, 'Erro ao gerar CLIP embedding');
-        // Usar embedding zero se falhar - marcado como erro
-        embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
-        embeddingModel = 'error-fallback-zero';
+        // Regra 6 (CLAUDE.md): PROIBIDO retornar embeddings "falsos" (ex: vetor de zeros).
+        // Em caso de falha, retornamos "sem embedding" e deixamos o call site persistir como NULL (ou ignorar).
+        embedding = [];
+        embeddingModel = 'unavailable';
       }
     }
     // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
@@ -523,9 +528,58 @@ class ImageProcessorService {
   /**
    * Verifica se o serviço está configurado corretamente
    */
+  /**
+   * @deprecated Use `isReadyAsync()` para readiness real (com checagem de rede).
+   *
+   * Mantido por compatibilidade: `isReady()` é **síncrono** e indica apenas se o processor
+   * está "configurado" localmente. NÃO garante disponibilidade do `alice-clip-inference`.
+   */
   isReady(): boolean {
-    // REGRA 6: Serviço local é OBRIGATÓRIO em produção (autonomia)
     return this.isConfigured;
+  }
+
+  /**
+   * Readiness real: valida conectividade com o `alice-clip-inference` (capability CLIP).
+   */
+  private async checkReadyAsync(): Promise<boolean> {
+    // REGRA 6: Serviço local é OBRIGATÓRIO em produção (autonomia)
+    // IMPORTANTE: Apesar de ser 100% LOCAL (CPU Hetzner), dependemos do alice-clip-inference estar acessível.
+    // Isso evita falso-positivo de readiness quando o container de inferência multimodal está fora do ar.
+    if (!this.isConfigured) return false;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout para readiness check
+
+    try {
+      // /ready/clip valida SOMENTE a capacidade CLIP (evita falso-negativo quando o serviço está "degraded" por Whisper)
+      const response = await fetch(`${CLIP_SERVICE_URL}/ready/clip`, {
+        method: 'GET',
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        logger.warn(
+          { status: response.status, serviceUrl: CLIP_SERVICE_URL },
+          'CLIP inference service não está pronto'
+        );
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      logger.error({ error, serviceUrl: CLIP_SERVICE_URL }, 'Erro ao verificar readiness do CLIP inference service');
+      return false;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * Alias explícito para padronização com outros processors.
+   * Contrato: SEMPRE assíncrono e retorna `Promise<boolean>`.
+   */
+  async isReadyAsync(): Promise<boolean> {
+    return await this.checkReadyAsync();
   }
 
   /**

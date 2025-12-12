@@ -4,7 +4,7 @@
 Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate external API dependencies, mitigate privacy concerns, and offer an alternative to unpredictable token-based pricing. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend, image generation, aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
 
 ## User Preferences
-### 17 Regras Fundamentais
+### 18 Regras Fundamentais
 
 | # | Regra | Descrição |
 |---|-------|-----------|
@@ -24,7 +24,8 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
 | 16 | **MELHORES PRÁTICAS** | API Gateway, health checks, circuit breakers |
-| 17 | **REVIEW ANTES DO PUSH** | Consolidar mudanças em commit único, aguardar Review automática do Cursor, e só fazer push após aprovação do usuário |
+| 17 | **REVIEW ANTES DO COMMIT** | Todas as mudanças DEVEM passar por review antes de serem commitadas. Após review e aprovação, fazer commit direto (sem staging). Commits vão acumulando localmente. |
+| 18 | **COMMITS CONSOLIDADOS E PUSH MANUAL** | **OBRIGATÓRIO**: Fazer commits consolidados com várias mudanças relacionadas em modo enterprise, ao invés de commitar cada mudança individualmente. Isso otimiza a review automática do Cursor (habilitada após cada commit) e segue melhores práticas enterprise. **PROIBIDO** push automático. Push manual com "Sync Changes" SOMENTE quando todas as implementações estiverem revisadas, commitadas e aprovadas. O usuário decide quando fazer push. |
 
 ### Preferências de Idioma
 
@@ -58,7 +59,10 @@ Alice employs a microservices architecture with 41 containerized services orches
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **CLIP Inference**: Multimodal embeddings for images using CLIP ViT-L/14 (Python, PyTorch).
+    - **Multimodal Inference**: Processamento multimodal 100% LOCAL (Python, PyTorch, FastAPI):
+        - Embeddings de texto: multilingual-e5-base (768 dim)
+        - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
+        - Transcrição de áudio: faster-whisper medium
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (12 serviços)**: Langfuse (LLM observability), Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -71,10 +75,16 @@ Alice employs a microservices architecture with 41 containerized services orches
 - `shared-utils`: Utilities like shutdown manager, circuit breaker, cache adapter.
 
 ## External Dependencies
-- **LLM**: Llama 4 Maverick (400B params) on Salad Cloud (GPUs próprias).
-- **Embeddings de Texto**: multilingual-e5-base local (CPU no Hetzner, 768 dim, 100+ idiomas incluindo PT-BR e EN) - 100% autônomo (Regra 6).
-- **Image Generation**: FLUX.1 Schnell on Salad Cloud (GPUs próprias).
-- **CLIP Inference**: CLIP ViT-L/14 local (CPU no Hetzner, 768 dim, embeddings multimodais texto+imagem) - 100% autônomo (Regra 6).
+
+### Salad Cloud (GPUs Externas)
+- **LLM Inference**: Llama 4 Maverick (400B params) - chat e geração de texto
+- **Image Generation**: FLUX.1 Schnell - geração de imagens
+- **Fine-tuning**: Treinamento de modelos customizados
+
+### Processamento Multimodal LOCAL (100% Autônomo - Regra 6)
+- **Embeddings de Texto**: multilingual-e5-base (CPU Hetzner, 768 dim, 100+ idiomas) - 100% LOCAL
+- **Embeddings de Imagem**: CLIP ViT-L/14 (CPU Hetzner, 768 dim) - 100% LOCAL
+- **Transcrição de Áudio**: faster-whisper medium (CPU Hetzner, 100+ idiomas) - 100% LOCAL
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -124,7 +134,7 @@ alice/
 │   ├── training-service/           # Fine-tuning
 │   ├── integrations-service/       # Stripe, ERPNext, Twilio
 │   ├── observability-service/      # Prometheus, Grafana, Jaeger
-│   └── clip-inference-service/     # Python/PyTorch CLIP
+│   └── clip-inference-service/     # Python/PyTorch - Embeddings + Transcrição (100% LOCAL)
 ├── packages/                       # Código compartilhado (5)
 │   ├── shared/                     # Schema Drizzle ORM
 │   ├── database/                   # PostgreSQL + pgvector
@@ -184,6 +194,96 @@ alice/
 - **Nota:** ERPNext workers e init containers (11 containers) não têm `read_only: true` pois precisam escrever em volumes (comportamento correto e enterprise-grade)
 - **Alertmanager SMTP:** senha via arquivo montado (`/opt/alice/secrets/alertmanager/smtp_password` → `/run/secrets`); evitar senha inline em env.
 
+## Git Workflow (Regras 17 e 18)
+
+**IMPORTANTE**: Este projeto usa um workflow Git específico que **NÃO utiliza staging** (área de preparação) e prioriza **commits consolidados** em modo enterprise.
+
+### Fluxo de Trabalho
+
+1. **Desenvolvimento**: Código é modificado no working directory
+2. **Acumulação de Mudanças**: Múltiplas mudanças relacionadas são desenvolvidas e mantidas no working directory
+3. **Review Consolidado**: Todas as mudanças relacionadas DEVEM passar por review conjunto antes de commit
+4. **Commit Consolidado**: Após review e aprovação, fazer commit consolidado **SEM staging** (`git commit -a` ou commit direto via IDE) com várias mudanças relacionadas em um único commit
+5. **Acumulação Local**: Commits consolidados vão acumulando localmente (múltiplos commits consolidados são permitidos)
+6. **Push Manual**: Push manual com "Sync Changes" **SOMENTE** quando:
+   - Todas as implementações estiverem completas
+   - Todas as mudanças estiverem revisadas
+   - Todos os commits estiverem aprovados
+   - O usuário decidir explicitamente fazer push
+
+### Regras Importantes
+
+- **OBRIGATÓRIO**: Commits consolidados com várias mudanças relacionadas (modo enterprise)
+- **PROIBIDO**: Commitar cada mudança individualmente (ineficiente e sobrecarrega review automática)
+- **PROIBIDO**: Usar `git add` ou staging automático
+- **PROIBIDO**: Push automático (via hooks, CI/CD local, ou qualquer automação)
+- **OBRIGATÓRIO**: Review antes de cada commit consolidado
+- **OBRIGATÓRIO**: Aprovação do usuário antes de push
+- **PERMITIDO**: Múltiplos commits consolidados locais acumulados antes do push
+
+### Benefícios dos Commits Consolidados
+
+- **Otimização da Review Automática**: A review automática do Cursor inicia após cada commit. Commits consolidados reduzem o número de reviews e tornam o processo mais eficiente
+- **Melhores Práticas Enterprise**: Commits atômicos e bem organizados facilitam rastreabilidade e rollback
+- **Eficiência**: Menos overhead de processamento e análise por commit
+- **Contexto Completo**: Mudanças relacionadas ficam juntas, facilitando compreensão do histórico
+
+### Comandos Git Permitidos
+
+```bash
+# Review das mudanças (unstaged) - acumular várias mudanças antes de commit
+git status
+git diff
+
+# Commit consolidado direto (sem staging) - várias mudanças relacionadas em um único commit
+git commit -a -m "feat: implementação consolidada de feature X
+
+- Mudança 1 relacionada
+- Mudança 2 relacionada
+- Mudança 3 relacionada
+- Atualização de documentação"
+# OU via IDE: commit direto sem staging (consolidado)
+
+# Push manual (apenas quando aprovado pelo usuário)
+git push
+# OU via IDE: "Sync Changes" manual
+```
+
+### Comandos Git PROIBIDOS
+
+```bash
+# PROIBIDO: Staging explícito
+git add <arquivo>
+git add .
+
+# PROIBIDO: Commits individuais para cada mudança pequena
+# (deve consolidar mudanças relacionadas)
+
+# PROIBIDO: Push automático
+# (não configurar hooks de push automático)
+```
+
+### Exemplo de Commit Consolidado (Enterprise)
+
+**✅ CORRETO** - Commit consolidado:
+```bash
+git commit -a -m "fix: correção de bugs em video-processor e validação de embeddings
+
+- Corrige NaN propagation em combineVideoEmbeddingsForSearch
+- Adiciona validação de dimensão para normalizedText
+- Atualiza documentação em STATUS-REAL-ATUAL.md
+- Adiciona testes unitários para edge cases"
+```
+
+**❌ INCORRETO** - Commits individuais:
+```bash
+# NÃO fazer isso - commits separados para cada mudança pequena
+git commit -a -m "fix: corrige NaN em video-processor"
+git commit -a -m "fix: adiciona validação de dimensão"
+git commit -a -m "docs: atualiza STATUS-REAL-ATUAL.md"
+git commit -a -m "test: adiciona testes unitários"
+```
+
 ## Technical Stack
 - **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
 - **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22, pnpm (versão automática via package.json)
@@ -194,11 +294,12 @@ alice/
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.32 - 12 de Dezembro de 2025*
+*Versão: 3.35 - 12 de Dezembro de 2025*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*Última Verificação Completa: 12/12/2025 - Remoção de menções incorretas de Salad+embeddings, embeddings são 100% locais via CPU no Hetzner*
+*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
+*Salad Cloud: APENAS para LLM inference, image generation e fine-tuning (GPUs)*

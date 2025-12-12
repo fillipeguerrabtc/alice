@@ -70,6 +70,17 @@ sentence-transformers>=3.3.1
 transformers>=4.46.0
 
 # =============================================================================
+# Speech-to-Text - Whisper (Transcrição de Áudio - 100% LOCAL)
+# =============================================================================
+
+# faster-whisper 1.1.0 (CTranslate2 - 4x mais rápido que Whisper original)
+# Modelo: medium (equilíbrio qualidade/velocidade em CPU)
+# Licença: MIT (uso comercial permitido)
+# Referência: https://github.com/SYSTRAN/faster-whisper
+# ARQUITETURA AUTÔNOMA: Transcrição 100% local via CPU no Hetzner (Regra 6)
+faster-whisper==1.1.0
+
+# =============================================================================
 # Observabilidade e Resiliência
 # =============================================================================
 

@@ -404,13 +404,13 @@ Todos os 41 containers têm security hardening completo aplicado. Containers que
 
 *Autor: Fillipe Guerra*
 *Versão 3.16.0 - 12 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3, Google Distroless*
+*Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v2.40+*
+*Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*Embeddings: 100% Locais - multilingual-e5-base (768 dim, 100+ idiomas) + CLIP ViT-L/14 (768 dim, multimodal)*
-*Última Verificação Completa: 12/12/2025 - Remoção de menções incorretas de Salad+embeddings, embeddings são 100% locais via CPU no Hetzner*
+*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio (faster-whisper)*
+*Salad Cloud: APENAS para LLM inference, image generation e fine-tuning (GPUs)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 

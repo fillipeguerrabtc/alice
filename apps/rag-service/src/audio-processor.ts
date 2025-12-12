@@ -1,36 +1,35 @@
 /**
  * Audio Processor Service - Alice Enterprise Platform
  * 
- * Processamento de áudio:
- * - Transcrição via Whisper (Salad Cloud)
- * - Text embedding da transcrição (multilingual-e5-base local - 100% local via CPU no Hetzner)
+ * Processamento de áudio 100% LOCAL (Regra 6 CLAUDE.md - Autonomia Total):
+ * - Transcrição via faster-whisper (CPU Hetzner - 100% LOCAL)
+ * - Text embedding da transcrição via multilingual-e5-base (CPU Hetzner - 100% LOCAL)
  * - Extração de metadata (duração, formato, bitrate)
  * 
  * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
- * - Não depende de APIs externas para embeddings
+ * - Transcrição: faster-whisper medium (100% LOCAL via CPU no Hetzner)
+ * - Embeddings: multilingual-e5-base (100% LOCAL via CPU no Hetzner)
+ * - NENHUMA dependência externa para processamento de áudio
+ * - Serviço interno na rede Docker privada (alice-network)
  * 
+ * Autor: Fillipe Guerra
+ * Data: 11 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { validateEmbeddingDimension } from '@alice/database';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'audio-processor' });
+const logger = createLogger('audio-processor');
 
-// Configuração Salad Cloud
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_WHISPER_ENDPOINT = process.env.SALAD_WHISPER_ENDPOINT || 'https://api.salad.com/api/public';
+// URL do serviço multimodal LOCAL (CPU Hetzner) - embeddings + transcrição
+const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
 
 // Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
 export const TEXT_EMBEDDING_DIM = 768;
+
+// Timeout para transcrição (áudios longos podem demorar)
+const TRANSCRIPTION_TIMEOUT_MS = parseInt(process.env.TRANSCRIPTION_TIMEOUT_MS || '300000', 10); // 5 min default
 
 export interface AudioMetadata {
   duration?: number; // segundos
@@ -45,6 +44,11 @@ export interface ProcessedAudio {
   transcription: string;
   transcriptionLanguage?: string;
   transcriptionConfidence?: number;
+  /**
+   * Duração do áudio em segundos (observabilidade).
+   * `null` significa "desconhecido" (ex: falha na transcrição), evitando reportar `0` (que pode significar áudio vazio).
+   */
+  durationSeconds: number | null;
   embedding: number[];
   embeddingModel: string;
   metadata: AudioMetadata;
@@ -53,24 +57,31 @@ export interface ProcessedAudio {
 }
 
 export interface AudioProcessorOptions {
-  language?: string; // 'pt', 'en', etc. ou 'auto' para detecção
+  language?: string; // 'pt', 'en', etc. ou undefined para detecção automática
   generateEmbedding?: boolean;
 }
 
+/**
+ * Audio Processor Service - 100% LOCAL
+ * 
+ * Processa áudio usando serviços locais no Hetzner:
+ * - Transcrição: faster-whisper via clip-inference-service
+ * - Embeddings: multilingual-e5-base via clip-inference-service
+ */
 class AudioProcessorService {
-  private isConfigured: boolean = false;
+  private clipServiceUrl: string;
 
   constructor() {
-    if (SALAD_API_KEY && SALAD_ORGANIZATION_ID) {
-      this.isConfigured = true;
-      logger.info('Audio Processor configurado com Salad Cloud (Whisper)');
-    } else {
-      logger.warn('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados - transcrição indisponível');
-    }
+    this.clipServiceUrl = CLIP_SERVICE_URL;
+    logger.info({ 
+      clipServiceUrl: this.clipServiceUrl,
+      transcriptionTimeout: TRANSCRIPTION_TIMEOUT_MS,
+    }, 'Audio Processor inicializado - 100% LOCAL (CPU Hetzner)');
   }
 
   /**
    * Processa um arquivo de áudio: transcreve e gera embedding
+   * TUDO LOCAL via clip-inference-service (CPU Hetzner)
    */
   async processAudio(
     audioBuffer: Buffer,
@@ -78,53 +89,47 @@ class AudioProcessorService {
     options: AudioProcessorOptions = {}
   ): Promise<ProcessedAudio> {
     const startTime = Date.now();
-    const { language = 'auto', generateEmbedding = true } = options;
+    const { language, generateEmbedding = true } = options;
 
     // Extrair metadata básica
     const metadata = await this.extractMetadata(audioBuffer, mimeType);
 
-    // Transcrever via Whisper
+    // Transcrever via Whisper LOCAL (faster-whisper no clip-inference-service)
     let transcription = '';
     let transcriptionLanguage: string | undefined;
     let transcriptionConfidence: number | undefined;
+    // Preferir duração por metadata (quando disponível) para reduzir `null` em cenários de falha na transcrição.
+    // Sem hardcoded: usa extração real do header (mp3/wav) quando possível.
+    let durationSeconds: number | null =
+      typeof metadata.duration === 'number' && Number.isFinite(metadata.duration) ? metadata.duration : null;
 
-    if (this.isConfigured) {
-      try {
-        const result = await this.transcribeWithWhisper(audioBuffer, mimeType, language);
-        transcription = result.text;
-        transcriptionLanguage = result.language;
-        transcriptionConfidence = result.confidence;
-      } catch (error) {
-        logger.error({ error }, 'Erro na transcrição Whisper');
-        transcription = '[Transcrição não disponível - erro no processamento]';
-      }
-    } else {
-      // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md - PROIBIDO mocks)
-      logger.error('SALAD_API_KEY não configurado - transcrição indisponível em produção');
-      throw new Error('Configuração Salad Cloud obrigatória para processamento de áudio. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.');
+    try {
+      const result = await this.transcribeLocal(audioBuffer, mimeType, language);
+      transcription = result.text;
+      transcriptionLanguage = result.language;
+      transcriptionConfidence = result.confidence;
+      durationSeconds = result.duration_seconds; // Capturar duração retornada pelo Whisper
+    } catch (error) {
+      logger.error({ error }, 'Erro na transcrição local (faster-whisper)');
+      transcription = '[Transcrição não disponível - erro no processamento]';
+      // durationSeconds mantém fallback por metadata (se disponível) em caso de erro.
     }
 
-    // Gerar embedding do texto transcrito
+    // Gerar embedding do texto transcrito (100% LOCAL)
     let embedding: number[] = [];
     let embeddingModel = 'none';
 
     if (generateEmbedding && transcription && !transcription.startsWith('[')) {
-      if (this.isConfigured) {
-        try {
-          const result = await this.generateTextEmbedding(transcription);
-          embedding = result.embedding;
-          embeddingModel = result.model;
-        } catch (error) {
-          logger.error({ error }, 'Erro ao gerar embedding do texto');
-          embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-          embeddingModel = 'error-fallback-zero';
-        }
-      } else {
-        // Embeddings sempre disponíveis via serviço local (Regra 6 - Autonomia Total)
-        // Este bloco não deve ser alcançado
-        logger.error('Serviço de embeddings local indisponível');
-        embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-        embeddingModel = 'error-not-configured';
+      try {
+        const result = await this.generateTextEmbedding(transcription);
+        embedding = result.embedding;
+        embeddingModel = result.model;
+      } catch (error) {
+        logger.error({ error }, 'Erro ao gerar embedding do texto (serviço local)');
+        // Regra 6 (CLAUDE.md): PROIBIDO retornar embeddings "falsos" (ex: vetor de zeros).
+        // Em caso de falha, retornamos "sem embedding" e deixamos o call site persistir como NULL (ou ignorar).
+        embedding = [];
+        embeddingModel = 'unavailable';
       }
     }
 
@@ -133,15 +138,17 @@ class AudioProcessorService {
     logger.info({
       transcriptionLength: transcription.length,
       language: transcriptionLanguage,
+      durationSeconds, // Incluir duração no log para observabilidade
       embeddingDim: embedding.length,
       embeddingModel,
       processingTimeMs,
-    }, 'Áudio processado');
+    }, 'Áudio processado (100% LOCAL)');
 
     return {
       transcription,
       transcriptionLanguage,
       transcriptionConfidence,
+      durationSeconds, // Propagar duração para observabilidade e analytics
       embedding,
       embeddingModel,
       metadata,
@@ -151,81 +158,87 @@ class AudioProcessorService {
   }
 
   /**
-   * Transcreve áudio usando Whisper via Salad Cloud
+   * Transcreve áudio usando faster-whisper LOCAL (clip-inference-service)
+   * 
+   * REGRA 6: Autonomia Total - transcrição 100% local via CPU no Hetzner
+   * Serviço interno na rede Docker privada - não requer autenticação
    */
-  private async transcribeWithWhisper(
+  private async transcribeLocal(
     audioBuffer: Buffer,
     mimeType: string,
-    language: string
-  ): Promise<{ text: string; language: string; confidence?: number }> {
+    language?: string
+  ): Promise<{ text: string; language: string; confidence?: number; duration_seconds: number }> {
     const base64Audio = audioBuffer.toString('base64');
-    
+    const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TRANSCRIPTION_TIMEOUT_MS);
+
     try {
-      const response = await fetch(`${SALAD_WHISPER_ENDPOINT}/inference/whisper`, {
+      const response = await fetch(`${this.clipServiceUrl}/inference/transcribe`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Salad-Api-Key': SALAD_API_KEY!,
-          'Salad-Organization': SALAD_ORGANIZATION_ID!,
         },
         body: JSON.stringify({
-          audio: `data:${mimeType};base64,${base64Audio}`,
-          model: 'whisper-large-v3',
-          language: language === 'auto' ? undefined : language,
-          task: 'transcribe',
+          audio: audioDataUri,
+          // 'auto' ou undefined = detecção automática (envia null para faster-whisper)
+          language: (!language || language === 'auto') ? null : language,
         }),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Whisper API error: ${response.status} - ${errorText}`);
+        throw new Error(`Transcription API error: ${response.status} - ${errorText}`);
       }
 
-      const result = await response.json() as { 
-        text: string; 
-        language: string; 
-        segments?: Array<{ confidence?: number }>;
+      const result = await response.json() as {
+        text: string;
+        language: string;  // Idioma DETECTADO pelo modelo
+        requested_language?: string | null;  // Idioma SOLICITADO (pode ser null = auto)
+        confidence?: number;
+        duration_seconds: number;
+        processing_time_ms: number;
+        model: string;
       };
 
-      // Calcular confiança média dos segmentos
-      let avgConfidence: number | undefined;
-      if (result.segments && result.segments.length > 0) {
-        const confidences = result.segments
-          .filter(s => s.confidence !== undefined)
-          .map(s => s.confidence!);
-        if (confidences.length > 0) {
-          avgConfidence = confidences.reduce((a, b) => a + b, 0) / confidences.length;
-        }
-      }
+      logger.debug({
+        detectedLanguage: result.language,
+        requestedLanguage: result.requested_language,
+        durationSeconds: result.duration_seconds,
+        processingTimeMs: result.processing_time_ms,
+        model: result.model,
+      }, 'Transcrição local concluída');
 
       return {
         text: result.text.trim(),
-        language: result.language,
-        confidence: avgConfidence,
+        language: result.language,  // Retorna idioma DETECTADO (compatível com contrato atual)
+        confidence: result.confidence,
+        duration_seconds: result.duration_seconds,
       };
     } catch (error) {
-      logger.error({ error }, 'Erro na API Whisper');
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error(`Timeout na transcrição após ${TRANSCRIPTION_TIMEOUT_MS}ms`);
+      }
+      logger.error({ error }, 'Erro na transcrição local');
       throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   /**
    * Gera embedding de texto via serviço local (multilingual-e5-base)
-   * REGRA 6: Autonomia Total - embeddings são 100% locais via CPU no Hetzner
    * 
-   * ARQUITETURA: Embeddings são gerados 100% localmente via CPU no servidor Hetzner
-   * Não depende de APIs externas - autonomia total (Regra 6)
+   * REGRA 6: Autonomia Total - embeddings são 100% locais via CPU no Hetzner
+   * Serviço interno na rede Docker privada - não requer autenticação
    */
   private async generateTextEmbedding(
     text: string
   ): Promise<{ embedding: number[]; model: string }> {
     try {
-      // REGRA 6: Serviço local autônomo - não depende de API externa
-      // Serviço interno na rede Docker privada - não requer autenticação
-      // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
-      const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
-      
-      const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
+      const response = await fetch(`${this.clipServiceUrl}/inference/text-embedding`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -241,7 +254,7 @@ class AudioProcessorService {
         throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
       }
 
-      const result = await response.json() as { 
+      const result = await response.json() as {
         embedding: number[];
         model: string;
         processing_time_ms: number;
@@ -252,7 +265,6 @@ class AudioProcessorService {
       }
 
       // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
-      // Lança erro se dimensão estiver incorreta (não apenas warning)
       validateEmbeddingDimension(result.embedding, 768, 'TEXT');
 
       return {
@@ -260,7 +272,7 @@ class AudioProcessorService {
         model: result.model || 'intfloat/multilingual-e5-base',
       };
     } catch (error) {
-      logger.error({ error }, 'Erro na API de Embeddings');
+      logger.error({ error }, 'Erro na API de Embeddings local');
       throw error;
     }
   }
@@ -334,7 +346,7 @@ class AudioProcessorService {
 
           // Versão MPEG
           const version = (byte1 >> 3) & 0x03;
-          
+
           // Tabela de bitrates (Layer III, MPEG1)
           const bitrateIndex = (byte2 >> 4) & 0x0F;
           const bitrateTable = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
@@ -408,27 +420,90 @@ class AudioProcessorService {
   }
 
   /**
-   * Verifica se o serviço está configurado
+   * Verifica se o serviço está configurado (síncrono).
+   * 
+   * IMPORTANTE (contrato estável):
+   * - `isReady()` é **síncrono** e indica apenas se o processor está "configurado" localmente.
+   * - Para prontidão REAL (com checagem de rede/capabilities), use `isReadyAsync()`.
    */
   isReady(): boolean {
-    // PRODUÇÃO: Salad Cloud é OBRIGATÓRIO (Regra 6 CLAUDE.md)
-    return this.isConfigured;
+    return typeof this.clipServiceUrl === 'string' && this.clipServiceUrl.length > 0;
+  }
+
+  /**
+   * Readiness real (assíncrono): valida conectividade com o `alice-clip-inference`
+   * (capabilities Whisper + text-embedding).
+   *
+   * Regra 16: Best Practices 2025 - health checks robustos para observabilidade
+   */
+  private async checkReadyAsync(): Promise<boolean> {
+    // Audio processor depende APENAS das capacidades: whisper + text-embedding.
+    // Não deve depender do status global do serviço (/health), pois pode estar "degraded" por outras capacidades.
+    if (!this.isReady()) return false;
+
+    const checkCapabilityReady = async (capabilityPath: string): Promise<boolean> => {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 3000);
+      try {
+        const response = await fetch(`${this.clipServiceUrl}${capabilityPath}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          logger.warn(
+            { status: response.status, capabilityPath, serviceUrl: this.clipServiceUrl },
+            'Readiness de capability falhou'
+          );
+          return false;
+        }
+
+        return true;
+      } catch (error) {
+        logger.error(
+          { error, capabilityPath, serviceUrl: this.clipServiceUrl },
+          'Erro ao verificar readiness de capability'
+        );
+        return false;
+      } finally {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    const [whisperReady, textEmbeddingReady] = await Promise.all([
+      checkCapabilityReady('/ready/whisper'),
+      checkCapabilityReady('/ready/text-embedding'),
+    ]);
+
+    return whisperReady && textEmbeddingReady;
+  }
+
+  /**
+   * Alias explícito para padronização com outros processors.
+   * Contrato: SEMPRE assíncrono e retorna `Promise<boolean>`.
+   */
+  async isReadyAsync(): Promise<boolean> {
+    return await this.checkReadyAsync();
   }
 
   /**
    * Retorna informações sobre a configuração
    */
-  getConfig(): { 
-    configured: boolean; 
-    embeddingDim: number; 
+  getConfig(): {
+    configured: boolean;
+    embeddingDim: number;
     transcriptionModel: string;
     embeddingModel: string;
+    serviceUrl: string;
   } {
+    // "configured" aqui significa que o serviço possui URL configurada.
+    // O estado de prontidão real deve ser avaliado via `await isReadyAsync()` (health check com timeout).
     return {
-      configured: this.isConfigured, // Whisper usa Salad Cloud para transcrição
+      configured: typeof this.clipServiceUrl === 'string' && this.clipServiceUrl.length > 0,
       embeddingDim: TEXT_EMBEDDING_DIM,
-      transcriptionModel: this.isConfigured ? 'whisper-large-v3 (Salad Cloud)' : 'NÃO CONFIGURADO',
-      embeddingModel: 'intfloat/multilingual-e5-base (Local)', // Embeddings sempre locais (Regra 6)
+      transcriptionModel: 'faster-whisper medium (LOCAL - CPU Hetzner)',
+      embeddingModel: 'intfloat/multilingual-e5-base (LOCAL - CPU Hetzner)',
+      serviceUrl: this.clipServiceUrl,
     };
   }
 }

@@ -1,23 +1,31 @@
 """
 CLIP Inference Server - Alice Enterprise Platform
 
-Servidor de inferência para embeddings multimodais (texto + imagem) e embeddings de texto puro.
+Servidor de inferência multimodal 100% LOCAL (CPU Hetzner - Regra 6 Autonomia Total).
+
 Modelos:
 - CLIP ViT-L/14 (768 dimensões) - embeddings multimodais (texto + imagem)
 - multilingual-e5-base (768 dimensões) - embeddings de texto puro (100+ idiomas)
-Licenças: MIT (CLIP) e Apache 2.0 (multilingual-e5-base) - uso comercial permitido
+- faster-whisper medium - transcrição de áudio (Speech-to-Text)
+Licenças: MIT (CLIP, faster-whisper) e Apache 2.0 (multilingual-e5-base) - uso comercial permitido
 
 Endpoints:
 - POST /inference/clip - Gera embedding CLIP de texto ou imagem (serviço interno - sem auth)
 - POST /inference/text-embedding - Gera embedding de texto puro multilíngue (serviço interno - sem auth)
+- POST /inference/transcribe - Transcrição de áudio via Whisper (serviço interno - sem auth)
 - GET /health - Health check (público para docker healthcheck)
 
-ARQUITETURA AUTÔNOMA:
+ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
 - Serviço roda localmente no Hetzner via CPU (100% local)
+- Embeddings de texto: multilingual-e5-base (768 dim)
+- Embeddings de imagem: CLIP ViT-L/14 (768 dim)
+- Transcrição de áudio: faster-whisper medium (100+ idiomas)
 - Acesso controlado pela rede Docker privada (alice-network)
 - Não requer autenticação - serviço confiável na mesma rede
-- Embeddings são 100% locais via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
+- NENHUMA dependência externa para processamento multimodal
 
+Autor: Fillipe Guerra
+Data: 11 de Dezembro de 2025
 Documentação em PT-BR (Regra 10 CLAUDE.md)
 Segurança Enterprise (Regra 16 CLAUDE.md)
 """
@@ -37,7 +45,8 @@ import torch
 import clip
 from PIL import Image
 from sentence_transformers import SentenceTransformer
-from fastapi import FastAPI, HTTPException, Request
+from faster_whisper import WhisperModel
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.status import HTTP_401_UNAUTHORIZED, HTTP_413_REQUEST_ENTITY_TOO_LARGE, HTTP_429_TOO_MANY_REQUESTS, HTTP_504_GATEWAY_TIMEOUT, HTTP_503_SERVICE_UNAVAILABLE
 from pydantic import BaseModel, Field
@@ -60,13 +69,18 @@ logger = logging.getLogger(__name__)
 # Configuração
 MODEL_NAME = os.getenv("MODEL_NAME", "ViT-L/14")
 TEXT_EMBEDDING_MODEL = os.getenv("TEXT_EMBEDDING_MODEL", "intfloat/multilingual-e5-base")
+# Whisper: medium oferece melhor equilíbrio qualidade/velocidade em CPU
+# Opções: tiny, base, small, medium, large-v2, large-v3
+WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
 PORT = int(os.getenv("PORT", 8080))
 EMBEDDING_DIM = 768  # CLIP ViT-L/14 e multilingual-e5-base produzem embeddings de 768 dimensões
 TEXT_EMBEDDING_DIM = 768  # multilingual-e5-base produz embeddings de 768 dimensões
 
 # Configuração de limites
 MAX_IMAGE_SIZE_BYTES = int(os.getenv("MAX_IMAGE_SIZE_BYTES", 10 * 1024 * 1024))  # 10MB default
+MAX_AUDIO_SIZE_BYTES = int(os.getenv("MAX_AUDIO_SIZE_BYTES", 50 * 1024 * 1024))  # 50MB default para áudio
 REQUEST_TIMEOUT_SECONDS = int(os.getenv("REQUEST_TIMEOUT_SECONDS", 30))  # 30s default
+WHISPER_TIMEOUT_SECONDS = int(os.getenv("WHISPER_TIMEOUT_SECONDS", 300))  # 5min para transcrição (áudios longos)
 
 # NOTA: Serviço interno na rede Docker privada - não requer autenticação
 # Acesso é controlado pela rede Docker (alice-network) e não é exposto publicamente
@@ -114,6 +128,31 @@ TEXT_EMBEDDING_CIRCUIT_BREAKER_STATE = Gauge(
 TEXT_EMBEDDING_CIRCUIT_BREAKER_FAILURES = Counter(
     'text_embedding_circuit_breaker_failures_total',
     'Total de falhas registradas pelo circuit breaker text embeddings'
+)
+
+# Métricas Whisper (Transcrição de Áudio)
+WHISPER_REQUESTS_TOTAL = Counter(
+    'whisper_requests_total',
+    'Total de requisições de transcrição Whisper',
+    ['status']
+)
+WHISPER_LATENCY = Histogram(
+    'whisper_latency_seconds',
+    'Latência de requisições Whisper em segundos',
+    buckets=[1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0]  # Buckets maiores para áudio
+)
+WHISPER_AUDIO_DURATION = Histogram(
+    'whisper_audio_duration_seconds',
+    'Duração do áudio processado em segundos',
+    buckets=[5.0, 15.0, 30.0, 60.0, 120.0, 300.0, 600.0]
+)
+WHISPER_CIRCUIT_BREAKER_STATE = Gauge(
+    'whisper_circuit_breaker_state',
+    'Estado do circuit breaker Whisper (0=closed, 1=open, 0.5=half-open)'
+)
+WHISPER_CIRCUIT_BREAKER_FAILURES = Counter(
+    'whisper_circuit_breaker_failures_total',
+    'Total de falhas registradas pelo circuit breaker Whisper'
 )
 
 # ============================================================================
@@ -185,6 +224,41 @@ text_embedding_breaker = pybreaker.CircuitBreaker(
 # Inicializar estado do circuit breaker text embeddings
 TEXT_EMBEDDING_CIRCUIT_BREAKER_STATE.set(0)
 
+# ============================================================================
+# CIRCUIT BREAKER PARA WHISPER (Regra 16 - Best Practices 2025)
+# Protege contra falhas em cascata do modelo faster-whisper
+# ============================================================================
+
+class WhisperBreakerListener(pybreaker.CircuitBreakerListener):
+    """Listener para métricas e logging do circuit breaker Whisper."""
+    
+    def state_change(self, cb: pybreaker.CircuitBreaker, old_state: pybreaker.CircuitBreakerState, new_state: pybreaker.CircuitBreakerState) -> None:
+        state_value = 0.0  # closed
+        if new_state.name == 'open':
+            state_value = 1.0
+        elif new_state.name == 'half-open':
+            state_value = 0.5
+        WHISPER_CIRCUIT_BREAKER_STATE.set(state_value)
+        logger.warning(f"Circuit breaker Whisper: {old_state.name} -> {new_state.name}")
+    
+    def failure(self, cb: pybreaker.CircuitBreaker, exc: Exception) -> None:
+        WHISPER_CIRCUIT_BREAKER_FAILURES.inc()
+        logger.error(f"Circuit breaker Whisper registrou falha: {exc}")
+
+# Configuração do circuit breaker Whisper (Enterprise-Grade)
+# - fail_max: 3 (Whisper pode falhar por OOM em áudios grandes)
+# - reset_timeout: 60s (tempo maior para recuperação de memória)
+whisper_breaker = pybreaker.CircuitBreaker(
+    fail_max=3,
+    reset_timeout=60,
+    exclude=[HTTPException],
+    listeners=[WhisperBreakerListener()],
+    name='whisper-inference'
+)
+
+# Inicializar estado do circuit breaker Whisper
+WHISPER_CIRCUIT_BREAKER_STATE.set(0)
+
 # Dispositivo (GPU se disponível)
 device = "cuda" if torch.cuda.is_available() else "cpu"
 logger.info(f"Dispositivo de inferência: {device}")
@@ -203,6 +277,36 @@ start_time = time.time()
 text_embedding_model = SentenceTransformer(TEXT_EMBEDDING_MODEL, device=device)
 text_embedding_load_time = time.time() - start_time
 logger.info(f"Modelo de text embeddings carregado em {text_embedding_load_time:.2f}s")
+
+# Carregar modelo Whisper (faster-whisper - transcrição de áudio)
+# compute_type: int8 para CPU (menor uso de memória), float16 para GPU
+logger.info(f"Carregando modelo Whisper {WHISPER_MODEL_SIZE}...")
+start_time = time.time()
+whisper_compute_type = "float16" if device == "cuda" else "int8"
+whisper_model = None  # Inicializar como None para evitar NameError no shutdown
+WHISPER_REQUIRED = os.getenv("WHISPER_REQUIRED", "true").lower() in ("1", "true", "yes", "y", "on")
+try:
+    whisper_model = WhisperModel(
+        WHISPER_MODEL_SIZE,
+        device=device,
+        compute_type=whisper_compute_type,
+        cpu_threads=4,  # Usar 4 threads em CPU (metade dos 8 vCPUs do Hetzner CX43)
+    )
+    whisper_load_time = time.time() - start_time
+    logger.info(f"Modelo Whisper carregado em {whisper_load_time:.2f}s (compute_type={whisper_compute_type})")
+except Exception as e:
+    logger.error(f"ERRO CRÍTICO ao carregar modelo Whisper: {e}")
+    # Fail-fast enterprise: Whisper é componente crítico do serviço multimodal (Regra 6 - Autonomia Total).
+    # Se não carregar, o container NÃO deve iniciar para evitar degradação silenciosa em produção.
+    if WHISPER_REQUIRED:
+        raise RuntimeError(
+            "Falha crítica ao carregar Whisper (faster-whisper). "
+            "Abortando startup (WHISPER_REQUIRED=true)."
+        ) from e
+    logger.warning(
+        "Whisper não carregou, mas WHISPER_REQUIRED=false: serviço iniciará sem transcrição "
+        "(o endpoint /ready/whisper retornará 503; /ready global pode ficar ready)."
+    )
 
 
 # =============================================================================
@@ -224,7 +328,7 @@ async def lifespan(app):
     logger.info("CLIP Inference Service iniciado - pronto para requisições")
     yield
     # Shutdown graceful
-    logger.info("Iniciando graceful shutdown do CLIP Inference Service...")
+    logger.info("Iniciando graceful shutdown do Multimodal Inference Service...")
     # Aguardar um pouco para requisições em andamento terminarem
     await asyncio.sleep(2)
     # Liberar recursos dos modelos (se necessário)
@@ -232,7 +336,9 @@ async def lifespan(app):
         logger.info("Liberando recursos do modelo CLIP...")
     if text_embedding_model is not None:
         logger.info("Liberando recursos do modelo de text embeddings...")
-    logger.info("CLIP Inference Service encerrado com sucesso")
+    if whisper_model is not None:
+        logger.info("Liberando recursos do modelo Whisper...")
+    logger.info("Multimodal Inference Service encerrado com sucesso")
 
 
 # FastAPI app com lifespan
@@ -287,11 +393,29 @@ class TextEmbeddingResponse(BaseModel):
     processing_time_ms: int = Field(..., description="Tempo de processamento em ms")
 
 
+class TranscribeRequest(BaseModel):
+    """Request para transcrição de áudio"""
+    audio: str = Field(..., description="Áudio em base64 (data:audio/...;base64,...) ou base64 puro")
+    language: Optional[str] = Field(None, description="Código do idioma (ex: 'pt', 'en'). Se None, detecta automaticamente.")
+
+
+class TranscribeResponse(BaseModel):
+    """Response com transcrição de áudio"""
+    text: str = Field(..., description="Texto transcrito")
+    language: str = Field(..., description="Idioma DETECTADO pelo modelo (ex: 'pt', 'en')")
+    requested_language: Optional[str] = Field(None, description="Idioma SOLICITADO pelo cliente (None = auto-detect)")
+    confidence: Optional[float] = Field(None, description="Confiança média da transcrição (0-1)")
+    duration_seconds: float = Field(..., description="Duração do áudio em segundos")
+    processing_time_ms: int = Field(..., description="Tempo de processamento em ms")
+    model: str = Field(..., description="Modelo Whisper usado")
+
+
 class HealthResponse(BaseModel):
     """Response do health check"""
     status: str
     clip_model: str
     text_embedding_model: str
+    whisper_model: str
     device: str
     embedding_dim: int
 
@@ -571,13 +695,326 @@ async def generate_text_embedding(
         )
 
 
+# ============================================================================
+# ENDPOINT DE TRANSCRIÇÃO DE ÁUDIO (Regra 6 - Autonomia Total)
+# Transcrição 100% LOCAL via faster-whisper (CPU Hetzner)
+# ============================================================================
+
+@app.post("/inference/transcribe", response_model=TranscribeResponse)
+@limiter.limit("30/minute")  # SEGURANÇA: Rate limit menor para transcrição (processamento intensivo)
+async def transcribe_audio(
+    request_http: Request,  # Necessário para SlowAPI
+    request: TranscribeRequest,
+) -> TranscribeResponse:
+    """
+    Transcreve áudio usando faster-whisper (100% LOCAL - CPU Hetzner).
+    
+    SERVIÇO INTERNO: Acesso controlado pela rede Docker privada (alice-network).
+    Não requer autenticação - serviço confiável na mesma rede.
+    
+    ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
+    - Transcrição 100% local via CPU no servidor Hetzner
+    - Modelo: faster-whisper medium (equilíbrio qualidade/velocidade)
+    - Suporta 100+ idiomas incluindo PT-BR e EN
+    - Detecção automática de idioma se não especificado
+    
+    Rate limit: 30 requisições/minuto por IP (processamento intensivo).
+    Timeout: 5 minutos por requisição (áudios longos).
+    """
+    start_time = time.time()
+    
+    # Validar input
+    if not request.audio or not request.audio.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Áudio não pode estar vazio"
+        )
+    
+    # Decodificar áudio base64
+    try:
+        audio_data = request.audio
+        # Remover prefixo data:audio/...;base64, se presente
+        if audio_data.startswith("data:"):
+            # Formato: data:audio/mp3;base64,XXXXXX
+            comma_idx = audio_data.find(",")
+            if comma_idx != -1:
+                audio_data = audio_data[comma_idx + 1:]
+        
+        audio_bytes = base64.b64decode(audio_data)
+            
+    except Exception as e:
+        logger.error(f"Erro ao decodificar áudio base64: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="Formato de áudio inválido. Use base64 válido."
+        )
+    
+    # Validar tamanho APÓS decodificação (fora do try/catch para propagar HTTPException corretamente)
+    if len(audio_bytes) > MAX_AUDIO_SIZE_BYTES:
+        raise HTTPException(
+            status_code=HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"Áudio muito grande. Máximo: {MAX_AUDIO_SIZE_BYTES // (1024 * 1024)}MB"
+        )
+    
+    # ============================================================================
+    # VALIDAÇÃO DE DISPONIBILIDADE DO MODELO (Regra 6 - Fail-Fast)
+    # - Se WHISPER_REQUIRED=true, ausência do modelo é erro (503) e indica falha crítica.
+    # - Se WHISPER_REQUIRED=false, transcrição está DESABILITADA (501) e o serviço pode operar
+    #   apenas com CLIP + text embeddings (uso por outros consumidores internos).
+    # ============================================================================
+    if whisper_model is None:
+        if WHISPER_REQUIRED:
+            logger.error("Tentativa de transcrição com modelo Whisper não disponível (WHISPER_REQUIRED=true)")
+            raise HTTPException(
+                status_code=HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Modelo Whisper não disponível. Serviço em degradação - verifique logs de inicialização."
+            )
+
+        logger.warning("Transcrição solicitada, mas WHISPER_REQUIRED=false e Whisper não está carregado (transcrição desabilitada)")
+        raise HTTPException(
+            status_code=HTTP_501_NOT_IMPLEMENTED,
+            detail="Transcrição desabilitada neste deployment (WHISPER_REQUIRED=false)."
+        )
+    
+    # ============================================================================
+    # INFERÊNCIA COM CIRCUIT BREAKER (Regra 16 - Best Practices 2025)
+    # Protege contra falhas em cascata do modelo faster-whisper
+    # ============================================================================
+    
+    def process_transcription_sync() -> dict:
+        """Função síncrona de transcrição protegida por circuit breaker."""
+        import tempfile
+        import os as temp_os
+        
+        # Inicializar tmp_path antes do bloco try/finally para evitar NameError (Enterprise-Grade)
+        tmp_path = None
+        
+        # Salvar áudio em arquivo temporário (faster-whisper precisa de arquivo).
+        # IMPORTANTE: atribuir `tmp_path` ANTES do write() para garantir cleanup em caso de exceção
+        # (NamedTemporaryFile com delete=False pode deixar arquivo órfão).
+        with tempfile.NamedTemporaryFile(suffix=".audio", delete=False) as tmp_file:
+            tmp_path = tmp_file.name
+            tmp_file.write(audio_bytes)
+        
+        try:
+            # Transcrever com faster-whisper (já validamos que whisper_model is not None)
+            requested_lang = request.language  # Preservar idioma solicitado
+            segments, info = whisper_model.transcribe(
+                tmp_path,
+                language=requested_lang,  # None = detecção automática
+                beam_size=5,
+                vad_filter=True,  # Filtrar silêncio
+                vad_parameters=dict(min_silence_duration_ms=500),
+            )
+            
+            # Concatenar segmentos preservando separação de palavras.
+            # Alguns builds do faster-whisper podem retornar `segment.text` sem espaços de fronteira.
+            #
+            # Regras (enterprise-grade):
+            # - Nunca duplica whitespace (se já existe em qualquer lado, não adiciona).
+            # - Não adiciona espaço após pontuação de abertura (ex.: "(") nem antes de pontuação de fechamento (ex.: ",", ".", ")").
+            # - Mantém contrações com apóstrofo (ex.: "I" + "'m" => "I'm").
+            # - Caso padrão: adiciona espaço para evitar junção indevida ("hello." + "world" => "hello. world").
+            def needs_space(prev: str, nxt: str) -> bool:
+                if not prev or not nxt:
+                    return False
+                if prev[-1].isspace() or nxt[0].isspace():
+                    return False
+
+                prev_last = prev[-1]
+                nxt_first = nxt[0]
+
+                # Não adicionar espaço após pontuação de abertura (ex.: "(")
+                if prev_last in "([{<«“":
+                    return False
+
+                # Não adicionar espaço antes de pontuação de fechamento ou sinais colados ao token anterior
+                if nxt_first in ".,;:!?)]}>»”":
+                    return False
+
+                # Evitar adicionar espaço em contrações (ex.: I'm, don't) quando o próximo segmento inicia com apóstrofo
+                if nxt_first == "'" and prev_last.isalnum():
+                    return False
+
+                # Evitar adicionar espaço ao redor de hífens/barras que costumam formar tokens compostos
+                if prev_last in "-/" or nxt_first in "-/":
+                    return False
+
+                return True
+
+            full_text = ""
+            confidences = []
+            for segment in segments:
+                seg_text = getattr(segment, "text", "")
+                if isinstance(seg_text, str) and seg_text:
+                    if needs_space(full_text, seg_text):
+                        full_text += " "
+                    full_text += seg_text
+                if hasattr(segment, 'avg_logprob'):
+                    # Converter log prob para confiança aproximada
+                    # avg_logprob deve ser negativo (log de probabilidade), validar antes de exp()
+                    import math
+                    if segment.avg_logprob < 0:
+                        conf = math.exp(segment.avg_logprob)
+                        # Clampar para [0, 1] por segurança
+                        conf = max(0.0, min(1.0, conf))
+                        confidences.append(conf)
+            
+            # Calcular confiança média
+            avg_confidence = sum(confidences) / len(confidences) if confidences else None
+            
+            # Validar texto vazio (áudio silencioso ou muito curto)
+            full_text_stripped = full_text.strip()
+            if not full_text_stripped:
+                logger.warning(f"Transcrição vazia detectada: {info.duration:.1f}s áudio, idioma={info.language}")
+                # IMPORTANTE: esta função roda em thread pool (run_in_executor).
+                # Para evitar dependência do transporte/exceções entre threads, retornamos erro estruturado
+                # e deixamos o handler async levantar o HTTPException com métricas corretas.
+                return {
+                    "_error": {
+                        "status_code": 422,
+                        "detail": "Áudio contém apenas silêncio ou é muito curto para transcrição. Nenhum texto detectado.",
+                    },
+                    "duration_seconds": info.duration,
+                    "language": info.language,
+                    "requested_language": requested_lang,
+                }
+            
+            logger.info(f"Transcrição concluída: {info.duration:.1f}s áudio, {len(full_text_stripped)} chars, idioma detectado={info.language}, solicitado={requested_lang}")
+            
+            return {
+                "text": full_text_stripped,
+                "language": info.language,  # Idioma DETECTADO
+                "requested_language": requested_lang,  # Idioma SOLICITADO (pode ser None)
+                "confidence": avg_confidence,
+                "duration_seconds": info.duration,
+            }
+            
+        finally:
+            # Limpar arquivo temporário (apenas se foi criado com sucesso)
+            if tmp_path is not None:
+                try:
+                    temp_os.unlink(tmp_path)
+                except Exception as cleanup_error:
+                    # Log mas não propagar erro de cleanup
+                    logger.warning(f"Erro ao limpar arquivo temporário {tmp_path}: {cleanup_error}")
+                    pass
+    
+    try:
+        # Aplicar circuit breaker + timeout (Enterprise-Grade)
+        result = await asyncio.wait_for(
+            asyncio.get_event_loop().run_in_executor(
+                None, 
+                lambda: whisper_breaker.call(process_transcription_sync)
+            ),
+            timeout=WHISPER_TIMEOUT_SECONDS
+        )
+
+        # Se o worker síncrono retornou erro estruturado, levantar HTTPException aqui (fora do executor).
+        if isinstance(result, dict) and "_error" in result and isinstance(result.get("_error"), dict):
+            err = result["_error"]
+            status_code = err.get("status_code", 500)
+            detail = err.get("detail", "Erro ao transcrever áudio")
+            raise HTTPException(status_code=int(status_code), detail=str(detail))
+        
+        processing_time_ms = int((time.time() - start_time) * 1000)
+        
+        # Métricas de sucesso
+        WHISPER_REQUESTS_TOTAL.labels(status='success').inc()
+        WHISPER_LATENCY.observe(processing_time_ms / 1000)
+        WHISPER_AUDIO_DURATION.observe(result["duration_seconds"])
+        
+        return TranscribeResponse(
+            text=result["text"],
+            language=result["language"],
+            requested_language=result["requested_language"],
+            confidence=result["confidence"],
+            duration_seconds=result["duration_seconds"],
+            processing_time_ms=processing_time_ms,
+            model=f"faster-whisper-{WHISPER_MODEL_SIZE}",
+        )
+        
+    except pybreaker.CircuitBreakerError:
+        # Circuit breaker aberto - serviço temporariamente indisponível
+        WHISPER_REQUESTS_TOTAL.labels(status='circuit_open').inc()
+        logger.error("Circuit breaker Whisper aberto - serviço temporariamente indisponível")
+        raise HTTPException(
+            status_code=HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Serviço de transcrição temporariamente indisponível. Tente novamente em 60 segundos."
+        )
+        
+    except asyncio.TimeoutError:
+        WHISPER_REQUESTS_TOTAL.labels(status='timeout').inc()
+        logger.warning(f"Timeout ao transcrever áudio após {WHISPER_TIMEOUT_SECONDS}s")
+        raise HTTPException(
+            status_code=HTTP_504_GATEWAY_TIMEOUT,
+            detail=f"Timeout: transcrição excedeu {WHISPER_TIMEOUT_SECONDS} segundos"
+        )
+        
+    except HTTPException as e:
+        # Preservar status code e detail originais (ex: 422 quando transcrição é vazia)
+        # Evita converter erros de validação em HTTP 500 (Best Practices 2025 + Regra 5 - Não Mentir)
+        WHISPER_REQUESTS_TOTAL.labels(status='client_error').inc()
+        raise e
+        
+    except Exception as e:
+        WHISPER_REQUESTS_TOTAL.labels(status='error').inc()
+        logger.error(f"Erro ao transcrever áudio: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro ao transcrever áudio: {str(e)}"
+        )
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
-    """Health check do serviço"""
+    """
+    Health check do serviço - inclui todos os modelos multimodais.
+    
+    IMPORTANTE: Retorna status REAL dos modelos, não valores hardcoded.
+    Se whisper_model falhou ao carregar (is None), reporta como string vazia
+    para que consumers possam detectar falhas de inicialização.
+    """
+    # Consistência com /ready:
+    # - /ready é o sinal canônico de prontidão (pode retornar 503 quando não pronto)
+    # - /health deve refletir o mesmo estado de disponibilidade (sem sinais contraditórios)
+    clip_model_loaded = clip_model is not None
+    text_embedding_model_loaded = text_embedding_model is not None
+    whisper_model_loaded = whisper_model is not None
+
+    whisper_functional = False
+    if whisper_model_loaded:
+        try:
+            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
+                whisper_functional = True
+        except Exception as e:
+            logger.warning(f"Whisper model não funcional no health check: {e}")
+            whisper_functional = False
+
+    clip_circuit_ready = clip_breaker.current_state.name != "open"
+    text_embedding_circuit_ready = text_embedding_breaker.current_state.name != "open"
+    whisper_circuit_ready = whisper_breaker.current_state.name != "open"
+
+    # Health deve refletir disponibilidade real do serviço sem sinais contraditórios:
+    # - Sempre exige CLIP + text embeddings
+    # - Exige Whisper SOMENTE quando WHISPER_REQUIRED=true
+    all_ready = (
+        clip_model_loaded
+        and text_embedding_model_loaded
+        and clip_circuit_ready
+        and text_embedding_circuit_ready
+        and (
+            (not WHISPER_REQUIRED)
+            or (whisper_model_loaded and whisper_functional and whisper_circuit_ready)
+        )
+    )
+
     return HealthResponse(
-        status="ok",
+        status="ok" if all_ready else "degraded",
         clip_model=MODEL_NAME,
         text_embedding_model=TEXT_EMBEDDING_MODEL,
+        # Retornar nome do modelo SOMENTE se carregou com sucesso (Regra 5 - Não Mentir)
+        whisper_model=f"faster-whisper-{WHISPER_MODEL_SIZE}" if whisper_model is not None else "",
         device=device,
         embedding_dim=EMBEDDING_DIM,
     )
@@ -601,26 +1038,68 @@ async def liveness_probe():
 
 @app.get("/ready")
 async def readiness_probe():
-    """Readiness probe - verifica se modelos estão carregados e circuit breakers fechados"""
+    """
+    Readiness probe - verifica se TODOS os modelos multimodais estão carregados E FUNCIONAIS.
+    
+    IMPORTANTE: Não verifica apenas se variáveis existem, mas se modelos podem ser usados.
+    Se dispositivo (GPU/CPU) falhar após startup, readiness deve detectar e reportar falha.
+    """
     clip_model_loaded = clip_model is not None
     text_embedding_model_loaded = text_embedding_model is not None
+    whisper_model_loaded = whisper_model is not None
+    whisper_required = WHISPER_REQUIRED
+    
+    # Validação funcional adicional para Whisper (Bug Fix: verificar funcionalidade, não só existência)
+    whisper_functional = False
+    if whisper_model_loaded:
+        try:
+            # Validar que modelo tem atributos essenciais e está acessível
+            # Não executar transcrição real (caro), apenas verificar acesso ao modelo
+            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
+                whisper_functional = True
+        except Exception as e:
+            logger.warning(f"Whisper model não funcional no readiness probe: {e}")
+            whisper_functional = False
+    
     # pybreaker.current_state retorna CircuitBreakerState object, não string
     # Usar .name para comparar com string
     clip_circuit_ready = clip_breaker.current_state.name != "open"
     text_embedding_circuit_ready = text_embedding_breaker.current_state.name != "open"
+    whisper_circuit_ready = whisper_breaker.current_state.name != "open"
     
-    all_ready = clip_model_loaded and text_embedding_model_loaded and clip_circuit_ready and text_embedding_circuit_ready
+    # Readiness global do serviço:
+    # - Sempre exige CLIP + text embeddings (componentes core multimodais)
+    # - Exige Whisper SOMENTE quando WHISPER_REQUIRED=true
+    all_ready = (
+        clip_model_loaded
+        and text_embedding_model_loaded
+        and clip_circuit_ready
+        and text_embedding_circuit_ready
+        and (
+            (not whisper_required)
+            or (whisper_model_loaded and whisper_functional and whisper_circuit_ready)
+        )
+    )
     
     if all_ready:
+        whisper_dependency_status = (
+            "ready"
+            if (whisper_model_loaded and whisper_functional and whisper_circuit_ready)
+            else ("not_ready" if whisper_required else "optional")
+        )
         return {
             "status": "ready",
             "service": "clip-inference-service",
             "timestamp": datetime.utcnow().isoformat() + "Z",
+            "whisper_required": whisper_required,
             "dependencies": {
                 "clip_model": "ready",
                 "text_embedding_model": "ready",
+                # "ready" deve refletir carregado + funcional (evita falso-positivo quando modelo está carregado mas não funcional)
+                "whisper_model": whisper_dependency_status,
                 "clip_circuit_breaker": "closed",
                 "text_embedding_circuit_breaker": "closed",
+                "whisper_circuit_breaker": ("closed" if whisper_circuit_ready else "open") if whisper_required else "optional",
             },
         }
     else:
@@ -630,10 +1109,17 @@ async def readiness_probe():
             reasons.append("Modelo CLIP não carregado")
         if not text_embedding_model_loaded:
             reasons.append("Modelo text embeddings não carregado")
+        if whisper_required:
+            if not whisper_model_loaded:
+                reasons.append("Modelo Whisper não carregado")
+            elif whisper_model_loaded and not whisper_functional:
+                reasons.append("Modelo Whisper carregado mas não funcional (dispositivo indisponível ou modelo corrompido)")
         if not clip_circuit_ready:
             reasons.append("Circuit breaker CLIP aberto")
         if not text_embedding_circuit_ready:
             reasons.append("Circuit breaker text embeddings aberto")
+        if whisper_required and not whisper_circuit_ready:
+            reasons.append("Circuit breaker Whisper aberto")
         
         return JSONResponse(
             status_code=503,
@@ -642,14 +1128,140 @@ async def readiness_probe():
                 "service": "clip-inference-service",
                 "reason": "; ".join(reasons),
                 "timestamp": datetime.utcnow().isoformat() + "Z",
+                "whisper_required": whisper_required,
                 "dependencies": {
                     "clip_model": "ready" if clip_model_loaded else "not_ready",
                     "text_embedding_model": "ready" if text_embedding_model_loaded else "not_ready",
+                    "whisper_model": (
+                        "ready"
+                        if (whisper_model_loaded and whisper_functional and whisper_circuit_ready)
+                        else ("not_ready" if whisper_required else "optional")
+                    ),
                     "clip_circuit_breaker": "closed" if clip_circuit_ready else "open",
                     "text_embedding_circuit_breaker": "closed" if text_embedding_circuit_ready else "open",
+                    "whisper_circuit_breaker": (
+                        ("closed" if whisper_circuit_ready else "open") if whisper_required else "optional"
+                    ),
                 },
             }
         )
+
+
+# ============================================================================
+# PROBES POR CAPACIDADE (Enterprise-Grade)
+# Permite que serviços consumidores validem somente as dependências necessárias.
+# Ex: image-processor depende de CLIP; audio-processor depende de Whisper + text embeddings.
+# ============================================================================
+
+@app.get("/ready/clip")
+async def readiness_clip_probe():
+    """Readiness do CLIP: modelo carregado + circuit breaker fechado."""
+    from fastapi.responses import JSONResponse
+
+    clip_model_loaded = clip_model is not None
+    clip_circuit_ready = clip_breaker.current_state.name != "open"
+    ready = clip_model_loaded and clip_circuit_ready
+
+    if ready:
+        return {
+            "status": "ready",
+            "capability": "clip",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    reasons = []
+    if not clip_model_loaded:
+        reasons.append("Modelo CLIP não carregado")
+    if not clip_circuit_ready:
+        reasons.append("Circuit breaker CLIP aberto")
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "not_ready",
+            "capability": "clip",
+            "reason": "; ".join(reasons),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
+
+@app.get("/ready/text-embedding")
+async def readiness_text_embedding_probe():
+    """Readiness de text embeddings: modelo carregado + circuit breaker fechado."""
+    from fastapi.responses import JSONResponse
+
+    text_embedding_model_loaded = text_embedding_model is not None
+    text_embedding_circuit_ready = text_embedding_breaker.current_state.name != "open"
+    ready = text_embedding_model_loaded and text_embedding_circuit_ready
+
+    if ready:
+        return {
+            "status": "ready",
+            "capability": "text-embedding",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    reasons = []
+    if not text_embedding_model_loaded:
+        reasons.append("Modelo text embeddings não carregado")
+    if not text_embedding_circuit_ready:
+        reasons.append("Circuit breaker text embeddings aberto")
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "not_ready",
+            "capability": "text-embedding",
+            "reason": "; ".join(reasons),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        },
+    )
+
+
+@app.get("/ready/whisper")
+async def readiness_whisper_probe():
+    """Readiness do Whisper: modelo carregado + funcional + circuit breaker fechado."""
+    from fastapi.responses import JSONResponse
+
+    whisper_model_loaded = whisper_model is not None
+    whisper_circuit_ready = whisper_breaker.current_state.name != "open"
+
+    whisper_functional = False
+    if whisper_model_loaded:
+        try:
+            if hasattr(whisper_model, 'model') and hasattr(whisper_model, 'device'):
+                whisper_functional = True
+        except Exception as e:
+            logger.warning(f"Whisper model não funcional no readiness whisper probe: {e}")
+            whisper_functional = False
+
+    ready = whisper_model_loaded and whisper_functional and whisper_circuit_ready
+
+    if ready:
+        return {
+            "status": "ready",
+            "capability": "whisper",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        }
+
+    reasons = []
+    if not whisper_model_loaded:
+        reasons.append("Modelo Whisper não carregado")
+    elif whisper_model_loaded and not whisper_functional:
+        reasons.append("Modelo Whisper carregado mas não funcional")
+    if not whisper_circuit_ready:
+        reasons.append("Circuit breaker Whisper aberto")
+
+    return JSONResponse(
+        status_code=503,
+        content={
+            "status": "not_ready",
+            "capability": "whisper",
+            "reason": "; ".join(reasons),
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+        },
+    )
 
 
 @app.get("/metrics")
@@ -660,7 +1272,7 @@ async def metrics():
 
 @app.get("/api/circuit-breaker/status")
 async def circuit_breaker_status():
-    """Status dos circuit breakers (Regra 16 - Best Practices 2025)"""
+    """Status dos circuit breakers - inclui TODOS os modelos multimodais (Regra 16 - Best Practices 2025)"""
     return {
         "clip": {
             "name": "clip-inference",
@@ -676,25 +1288,36 @@ async def circuit_breaker_status():
             "fail_max": text_embedding_breaker.fail_max,
             "reset_timeout": text_embedding_breaker.reset_timeout,
         },
+        "whisper": {
+            "name": "whisper-transcription",
+            "state": whisper_breaker.current_state.name,
+            "fail_counter": whisper_breaker.fail_counter,
+            "fail_max": whisper_breaker.fail_max,
+            "reset_timeout": whisper_breaker.reset_timeout,
+        },
     }
 
 
 @app.get("/")
 async def root():
-    """Endpoint raiz com informações do serviço"""
+    """Endpoint raiz com informações do serviço multimodal"""
     return {
-        "service": "CLIP Inference Service",
-        "version": "1.1.0",
+        "service": "Multimodal Inference Service (100% LOCAL)",
+        "version": "1.2.0",
         "models": {
             "clip": MODEL_NAME,
             "text_embedding": TEXT_EMBEDDING_MODEL,
+            "whisper": f"faster-whisper-{WHISPER_MODEL_SIZE}",
         },
         "embedding_dim": EMBEDDING_DIM,
         "device": device,
         "endpoints": {
             "clip_inference": "POST /inference/clip",
             "text_embedding": "POST /inference/text-embedding",
+            "audio_transcription": "POST /inference/transcribe",
             "health": "GET /health",
+            "readiness": "GET /ready",
+            "circuit_breaker_status": "GET /api/circuit-breaker/status",
         },
     }
 

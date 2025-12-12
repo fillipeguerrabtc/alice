@@ -8,7 +8,7 @@
 
 ## 📊 RESUMO EXECUTIVO
 
-Este relatório verifica de forma **honesta e transparente** se o versionamento automático está **realmente implementado** para todos os softwares da plataforma Alice, seguindo as 17 regras do CLAUDE.md e melhores práticas enterprise.
+Este relatório verifica de forma **honesta e transparente** se o versionamento automático está **realmente implementado** para todos os softwares da plataforma Alice, seguindo as 18 regras do CLAUDE.md e melhores práticas enterprise.
 
 ---
 

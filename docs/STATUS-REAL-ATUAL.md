@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.7 - Remoção de menções incorretas Salad+embeddings - EMBEDDINGS 100% LOCAIS (CPU Hetzner)
+> **Versão:** 3.8 - Processamento Multimodal 100% LOCAL (embeddings + transcrição via CPU Hetzner)
 
 ---
 
@@ -16,7 +16,7 @@
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
-| **Docker** | 29.0.4 + Compose v2.40.3 |
+| **Docker** | 29.1.2 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 46.224.46.93 |
 | **LLM** | Llama 4 Maverick (400B params) via Salad Cloud |
@@ -24,7 +24,7 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
-### Security Hardening (11/12/2025)
+### Security Hardening (12/12/2025)
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
@@ -59,7 +59,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 8 | CLIP Inference | `apps/clip-inference-service` | alice-clip-inference | 8000 | Python, PyTorch, CLIP ViT-L/14 |
+| 8 | Multimodal Inference | `apps/clip-inference-service` | alice-clip-inference | 8000 | Python, PyTorch, FastAPI - Embeddings (texto + imagem) + Transcrição 100% LOCAL |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.3 atua como API Gateway.
@@ -110,14 +110,51 @@
 |----------------|--------|---------|
 | pgvector (busca semântica) | ✅ | `index.ts` |
 | Image Processing (CLIP) | ✅ | `image-processor.ts` |
-| Audio Processing (Whisper) | ✅ | `audio-processor.ts` |
-| Video Processing (FFmpeg+Whisper+CLIP) | ✅ | `video-processor.ts` |
+| Audio Processing (faster-whisper LOCAL) | ✅ | `audio-processor.ts` |
+| Video Processing (FFmpeg+faster-whisper+CLIP) | ✅ | `video-processor.ts` |
 | Document Processing (PDF/DOCX/XLSX) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
 | Multer Upload | ✅ | `index.ts` |
-| Circuit Breakers | ✅ | CLIP + Whisper + FFmpeg |
+| Circuit Breakers | ✅ | Multimodal Inference (clip-inference-service) |
 | Prometheus Metrics | ✅ | `/metrics` |
+
+> **Nota (Readiness enterprise):** O `video-processor` valida prontidão real dos processadores (`audio-processor` e `image-processor`) usando `isReadyAsync()` (contrato explícito `Promise<boolean>`) e evita falso-positivo ao nunca tratar `Promise<boolean>` como boolean. Para compatibilidade, `image-processor.isReady()` voltou a ser **síncrono** (apenas “configurado”), e o readiness real fica em `isReadyAsync()`. Além disso, cada processor valida **apenas** as capabilities necessárias no `clip-inference-service`:
+> - `image-processor` → `GET /ready/clip`
+> - `audio-processor` → `GET /ready/whisper` + `GET /ready/text-embedding`
+>
+> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/video/document** (sem “pendente” hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com o `alice-clip-inference` via `GET /ready/text-embedding` (evita falso-positivo). Para **video**, o endpoint usa `await video-processor.getConfigAsync()` após `isReadyAsync()` para não reportar `configured=false` com `ready=true`.
+>
+> **Capacidades opcionais:** quando `WHISPER_REQUIRED=false`, **audio** e **video** são marcados como `required: false` no payload e não derrubam o `status` global (permite operar apenas com **image + document/text embeddings**).
+
+> **Nota (Observability):** no `audio-processor`, `durationSeconds` usa preferencialmente a duração extraída do header (`metadata.duration`) como fallback quando a transcrição falha; quando não for possível determinar a duração (ex: formato sem parser), `durationSeconds` permanece `null` (estado **desconhecido**), evitando reportar `0` (que pode significar “áudio vazio/silencioso”).
+
+> **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor`, `document-processor` e `video-processor` **não** retornam mais embeddings “falsos” (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando “hardcoded”, “mock” ou “default falso”).
+
+> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (768)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (CLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente).
+>
+> **Nota (Robustez CLIP frames):** o `combinedEmbedding` nunca contém `NaN`: frames CLIP com dimensão incorreta ou valores não-finitos são ignorados antes do cálculo da média; se nenhum frame válido existir, `combinedEmbedding` é `[]` (persistido como `NULL`).
+>
+> **Nota (Robustez normalizedText - enterprise):** no `combineVideoEmbeddingsForSearch`, após o slice de `textEmbedding`, há validação adicional para garantir que `normalizedText.length === CLIP_EMBEDDING_DIM` antes de acessar índices no loop de combinação. Isso previne `NaN` em edge cases de corrupção de dados. Além disso, cada valor de `normalizedText[i]` é validado como finito antes de ser usado na combinação (fallback seguro para 0 com log de warning).
+
+> **Nota (Fail-fast multimodal):** o `clip-inference-service` **não inicia** em produção se o Whisper falhar ao carregar (comportamento fail-fast). Para cenários excepcionais (ex: dev/diagnóstico), é possível iniciar com `WHISPER_REQUIRED=false` (serviço sobe sem transcrição).
+>
+> **Importante:** quando `WHISPER_REQUIRED=false`, o `GET /ready` **não exige** Whisper (para não ficar permanentemente `not_ready`), mas o `GET /ready/whisper` continua falhando — e por consequência `audio-processor.isReadyAsync()` ficará `false` (comportamento correto: áudio requer Whisper).
+>
+> **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
+>
+> **Importante (consistência de configuração):** `WHISPER_REQUIRED` é lido **uma única vez** no startup do `clip-inference-service` e reutilizado em todos os handlers, evitando divergência de comportamento.
+
+> **Nota (Readiness por capability):** além do `GET /ready` (prontidão do serviço como um todo), o `clip-inference-service` expõe probes por capacidade:
+> - `GET /ready/clip` (somente CLIP)
+> - `GET /ready/text-embedding` (somente embeddings de texto)
+> - `GET /ready/whisper` (somente transcrição)
+>
+> Isso evita falso-negativo quando o serviço está `status: "degraded"` por uma capacidade não usada pelo consumer (ex: `image-processor` não depende de Whisper).
+
+> **Nota (Robustez enterprise):**
+> - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (768) antes de acumular/médias, evitando corrupção silenciosa se a dependência retornar payload inconsistente.
+> - `clip-inference-service`: garante cleanup de arquivo temporário mesmo se ocorrer exceção ao escrever o áudio (atribui `tmp_path` antes do `write()`).
 
 ### 4. training-service (Porta 3004)
 
@@ -170,19 +207,22 @@
 | Circuit Breakers Status | ✅ | `/api/observability/circuit-breakers` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-### 7. clip-inference-service (Porta 8000)
+### 7. clip-inference-service - Multimodal Inference (Porta 8080)
 
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
-| CLIP ViT-L/14 Embeddings (multimodais) | ✅ | `server.py` |
-| Text Embeddings (multilingual-e5-base) | ✅ | `server.py` |
-| Text + Image → 768 dim (CLIP) | ✅ | `server.py` |
-| Text → 768 dim (multilingual-e5-base) | ✅ | `server.py` |
-| Suporte Multilíngue (100+ idiomas) | ✅ | multilingual-e5-base |
-| Autenticação | ❌ **REMOVIDA** - Serviço interno (acesso controlado pela rede Docker) |
+| **Embeddings de Imagem** (CLIP ViT-L/14 - 768 dim) | ✅ | `server.py` |
+| **Embeddings de Texto** (multilingual-e5-base - 768 dim) | ✅ | `server.py` |
+| **Transcrição de Áudio** (faster-whisper medium) | ✅ | `server.py` |
+| Suporte Multilíngue (100+ idiomas) | ✅ | multilingual-e5-base + faster-whisper |
+| 100% LOCAL (CPU Hetzner) | ✅ | Nenhuma dependência externa |
 | Rate Limiting | ✅ | `server.py` |
-| Circuit Breaker (Python) | ✅ | `server.py` (CLIP + Text Embeddings) |
+| Circuit Breaker (Python) | ✅ | `server.py` (CLIP + Text + Whisper) |
 | Prometheus Metrics | ✅ | `/metrics` |
+
+> **ARQUITETURA AUTÔNOMA (Regra 6):** Todos os processamentos multimodais são 100% locais via CPU no servidor Hetzner. Nenhuma dependência de APIs externas para embeddings ou transcrição.
+
+> **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio/vídeo).
 
 ### 8. frontend-service (Porta 5000)
 
@@ -575,14 +615,18 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Embeddings Multimodais | CLIP ViT-L/14 (100% local - CPU no Hetzner) | ✅ |
 | Embeddings Texto | multilingual-e5-base (100% local - CPU no Hetzner) | ✅ |
 
-### Processamento Multimodal (INPUT)
+### Processamento Multimodal (INPUT) - 100% LOCAL
 
-| Tipo | Processador | Tecnologia | Output |
-|------|-------------|------------|--------|
-| Imagem | `image-processor.ts` | CLIP ViT-L/14 (100% local - CPU no Hetzner) | 768 dim embedding |
-| Áudio | `audio-processor.ts` | Whisper + embedding (100% local - CPU no Hetzner) | Transcrição + 768 dim (multilingual-e5-base local) |
-| Vídeo | `video-processor.ts` | FFmpeg + Whisper + CLIP | Combinado 768 dim |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx | 768 dim embedding (multilingual-e5-base - 100% local - CPU no Hetzner) |
+> **ARQUITETURA AUTÔNOMA (Regra 6):** Todos os processamentos são realizados localmente via CPU no servidor Hetzner. Nenhuma dependência de APIs externas.
+
+| Tipo | Processador | Tecnologia LOCAL | Output |
+|------|-------------|------------------|--------|
+| Imagem | `image-processor.ts` | CLIP ViT-L/14 | 768 dim embedding |
+| Áudio | `audio-processor.ts` | faster-whisper medium + multilingual-e5-base | Transcrição + 768 dim embedding |
+| Vídeo | `video-processor.ts` | FFmpeg + faster-whisper + CLIP | Combinado 768 dim |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + multilingual-e5-base | 768 dim embedding |
+
+**Serviço de Inferência:** `clip-inference-service` (Python FastAPI)
 
 ### Auto-Learning
 
@@ -595,7 +639,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ---
 
-## ✅ CONFORMIDADE COM 17 REGRAS (CLAUDE.md)
+## ✅ CONFORMIDADE COM 18 REGRAS (CLAUDE.md)
 
 | # | Regra | Status | Evidência |
 |---|-------|--------|-----------|
@@ -615,7 +659,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | 14 | VERIFICAR SECRETS | ✅ | 27 no GitHub |
 | 15 | MICROSSERVIÇOS | ✅ | 9 em apps/, 5 packages/ |
 | 16 | MELHORES PRÁTICAS | ✅ | Circuit breakers, health checks |
-| 17 | REVIEW ANTES DO PUSH | ✅ | Pipeline 100% automático |
+| 17 | REVIEW ANTES DO COMMIT | ✅ | Review antes de cada commit consolidado |
+| 18 | COMMITS CONSOLIDADOS E PUSH MANUAL | ✅ | Commits consolidados enterprise, push manual apenas |
 
 ---
 
@@ -710,7 +755,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 - Limite de 1000 entradas
 - Rating entre 1 e 5 (opcional)
 
-**Aderência às 17 Regras:**
+**Aderência às 18 Regras:**
 - ✅ Regra 6: API real, zero workarounds
 - ✅ Regra 8: TypeScript strict, zero `any`
 - ✅ Regra 10: Documentação PT-BR
@@ -719,9 +764,9 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ---
 
-*Documento consolidado em 09/12/2025*  
+*Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.4 - Bulk Import UI Enterprise*
+*Versão: 3.9 - Processamento Multimodal 100% LOCAL + 18 Regras + Dead Code Removido*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -750,6 +795,6 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Processor | Testes | Funcionalidades |
 |-----------|--------|-----------------|
 | document-processor | ✅ | ExcelJS, chunking, MIME types |
-| audio-processor | ✅ | Whisper, metadata, transcrição |
+| audio-processor | ✅ | faster-whisper LOCAL, metadata, transcrição |
 | image-processor | ✅ | CLIP, magic bytes, thumbnails |
 | video-processor | ✅ | FFmpeg, frames, metadata |

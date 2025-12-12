@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 11 de Dezembro de 2025
+**Data:** 12 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 41 Containers em Produção
 
@@ -28,7 +28,7 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 | 10 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
 | 11 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
 | 12 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
-| 13 | **CLIP Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Embeddings multimodais para imagens usando CLIP ViT-L/14. Processamento de imagens para RAG. | Python, PyTorch 2.9.1, CLIP |
+| 13 | **Multimodal Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Processamento multimodal 100% LOCAL (CPU Hetzner): embeddings de texto (multilingual-e5-base, 768 dim), embeddings de imagem (CLIP ViT-L/14, 768 dim), transcrição de áudio (faster-whisper medium). | Python, PyTorch 2.9.1, FastAPI |
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -305,8 +305,8 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 | Recurso | Valor |
 |---------|-------|
 | **SO** | Ubuntu 24.04.3 LTS (Noble Numbat) |
-| **Docker** | 29.0.4 |
-| **Docker Compose** | v2.40.3 |
+| **Docker** | 29.1.2 |
+| **Docker Compose** | v5.0.0 |
 | **CPU** | 8 vCPUs (AMD EPYC) |
 | **RAM** | 16GB |
 | **Disco** | 160GB NVMe SSD |
@@ -918,12 +918,13 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 10 de Dezembro de 2025*
-*Versão: 6.4 - Security Hardening 100% (healthchecks completos)*
+*Documento atualizado em: 12 de Dezembro de 2025*
+*Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 23/41 com read_only (09/12/2025)*
-*Servidor: Ubuntu 24.04.3 LTS, Docker 29.0.4, Docker Compose v2.40.3*
+*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 23/41 com read_only (12/12/2025)*
+*Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
+*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

@@ -332,18 +332,20 @@ Acessíveis em `/dashboard/analytics`:
 - `apps/frontend-service/src/components/ui/alert.tsx` (shadcn/ui)
 - Tab "Import em Massa" em `apps/frontend-service/src/pages/Training.tsx`
 
-**Aderência às 17 Regras:**
+**Aderência às 18 Regras:**
 - ✅ Regra 6: Zero workarounds, API real `/api/training/bulk-import`
 - ✅ Regra 8: TypeScript strict, validação Zod, zero `any`
 - ✅ Regra 10: Comentários em PT-BR
 - ✅ Regra 13: Internacionalização PT-BR primário, EN secundário
 - ✅ Regra 16: Best practices UX 2025 (drag & drop, validação client-side)
+- ✅ Regra 17: Review antes de cada commit consolidado
+- ✅ Regra 18: Commits consolidados enterprise, push manual apenas
 
 ---
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 1.8 - 10 de Dezembro de 2025*
+*Versão 1.9 - 12 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3*
 *Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*

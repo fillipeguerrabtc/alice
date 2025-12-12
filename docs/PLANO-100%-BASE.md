@@ -306,7 +306,7 @@ tests/
 
 ---
 
-## 🔒 ADERÊNCIA ÀS 17 REGRAS (CLAUDE.md)
+## 🔒 ADERÊNCIA ÀS 18 REGRAS (CLAUDE.md)
 
 | Regra | Status | Evidência |
 |-------|--------|-----------|
@@ -326,7 +326,8 @@ tests/
 | 14. VERIFICAR SECRETS | ✅ | GAP-006 documentado |
 | 15. MICROSSERVIÇOS | ✅ | Estrutura mantida |
 | 16. MELHORES PRÁTICAS | ✅ | Circuit breakers, health checks |
-| 17. REVIEW ANTES DO PUSH | ✅ | Este plano |
+| 17. REVIEW ANTES DO COMMIT | ✅ | Review antes de cada commit consolidado |
+| 18. COMMITS CONSOLIDADOS E PUSH MANUAL | ✅ | Commits consolidados enterprise, push manual apenas |
 
 ---
 

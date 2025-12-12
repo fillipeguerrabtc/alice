@@ -417,7 +417,7 @@ infra/docker/
 
 ---
 
-## ✅ CONFORMIDADE COM AS 17 REGRAS
+## ✅ CONFORMIDADE COM AS 18 REGRAS
 
 | Regra | Status | Como |
 |-------|--------|------|
@@ -437,7 +437,8 @@ infra/docker/
 | 14 - SECRETS | ✅ | Chaves Salad Cloud já configuradas |
 | 15 - MICROSSERVIÇOS | ✅ | Código em apps/ |
 | 16 - BEST PRACTICES | ✅ | Circuit breaker, health checks |
-| 17 - REVIEW | ✅ | Aguardar review antes de push |
+| 17 - REVIEW ANTES DO COMMIT | ✅ | Review antes de cada commit consolidado |
+| 18 - COMMITS CONSOLIDADOS | ✅ | Commits consolidados enterprise, push manual apenas |
 
 ---
 
