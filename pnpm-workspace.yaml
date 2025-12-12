@@ -1,9 +1,3 @@
 packages:
   - "apps/*"
   - "packages/*"
-
-# pnpm v10+: por segurança, scripts de build de dependências podem ser bloqueados e exigir `pnpm approve-builds`.
-# Decisão do projeto (deploy/CI): permitir execução automática de TODOS os scripts necessários.
-# ATENÇÃO: isso reduz a proteção contra supply-chain em dependências transitivas.
-# Referência (docs oficiais pnpm): setting `dangerouslyAllowAllBuilds`.
-dangerouslyAllowAllBuilds: true
