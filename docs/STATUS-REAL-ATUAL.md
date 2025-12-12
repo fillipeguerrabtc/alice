@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.18 - Atualizações de segurança (nginx Alpine 3.20 + apk upgrade pgBackRest)
+> **Versão:** 3.19 - Limpeza de artefatos Trivy e ajuste .gitignore
 
 ---
 
@@ -550,6 +550,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 > **NOTA (12/12/2025):** pgBackRest: removido `COPY` da man page `pgbackrest.1` no runtime (build upstream nem sempre gera o arquivo no caminho padrão). O binário continua copiado do stage builder; sem impacto no runtime.
 >
 > **NOTA (12/12/2025):** Segurança: nginx do frontend atualizado para `nginx:1.27.3-alpine3.20` (libpng >= 1.6.53) e imagem pgBackRest agora roda `apk update && apk upgrade --no-cache` no stage de runtime para mitigar CVEs (zlib/libretls/busybox). Rebuild/push necessários para refletir as correções.
+>
+> **NOTA (12/12/2025):** Artefatos temporários de scanner adicionados ao `.gitignore` (`tmp-trivy/*.sarif`) e removidos do repositório. Relatórios de Trivy devem permanecer apenas como artefatos de CI, nunca versionados.
 
 ### Arquitetura do CI (trigger-release)
 
@@ -795,7 +797,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.18 - Atualizações de segurança (nginx Alpine 3.20 + apk upgrade pgBackRest)*
+*Versão: 3.19 - Limpeza de artefatos Trivy e ajuste .gitignore*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

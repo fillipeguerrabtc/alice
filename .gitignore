@@ -20,6 +20,7 @@ attached_assets/
 
 # Arquivos temporários de debug CI/CD (NUNCA versionar)
 ci-jobs*.json
+tmp-trivy/
 
 # Ambiente local
 .env
