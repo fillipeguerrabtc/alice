@@ -343,6 +343,8 @@ Acessíveis em `/dashboard/analytics`:
 
 **Persistência pronta (multimodal/learning):** tabelas `learning_tasks` (prioridade + retries + RLS), `learning_task_events`, `web_crawl_requests/results` e `media_jobs` criadas para orquestração e auditoria.
 
+**Workers em background (opcional):** habilite com `WORKER_TENANT_ID` e configure `WORKER_POLL_MS`, `WORKER_CONCURRENCY`, `WORKER_MAX_ATTEMPTS` para processar learning, web_crawl e media_jobs em modo seguro (fila priorizada + retries).
+
 ---
 
 *Autor: Fillipe Guerra*

@@ -49,6 +49,9 @@ import { getVideoProcessor } from './video-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
 import { createWebSearchClient, WebSearchResult } from './web-search.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
+import { startLearningWorker } from './workers/learning-worker.js';
+import { startMediaWorker } from './workers/media-worker.js';
+import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -502,6 +505,11 @@ if (!DATABASE_URL) {
 const SEARXNG_URL = process.env.SEARXNG_URL || 'http://alice-searxng:8080';
 const SEARXNG_SECRET_KEY = process.env.SEARXNG_SECRET_KEY;
 
+// Workers (defaults seguros e configuráveis)
+const WORKER_POLL_MS = Number(process.env.WORKER_POLL_MS || 3000);
+const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY || 2);
+const WORKER_MAX_ATTEMPTS = Number(process.env.WORKER_MAX_ATTEMPTS || 3);
+
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
 
@@ -650,6 +658,41 @@ const webSearchClient = createWebSearchClient({
 });
 
 const webSearch = (query: string, count?: number) => webSearchClient.search(query, count);
+
+// ============================================================================
+// WORKERS (opcionais) - ativados se WORKER_TENANT_ID estiver definido
+// ============================================================================
+
+const WORKER_TENANT_ID = process.env.WORKER_TENANT_ID;
+
+if (WORKER_TENANT_ID) {
+  startLearningWorker(db, {
+    tenantId: WORKER_TENANT_ID,
+    concurrency: WORKER_CONCURRENCY,
+    pollIntervalMs: WORKER_POLL_MS,
+    maxAttempts: WORKER_MAX_ATTEMPTS,
+  });
+
+  startMediaWorker(db, {
+    tenantId: WORKER_TENANT_ID,
+    concurrency: WORKER_CONCURRENCY,
+    pollIntervalMs: WORKER_POLL_MS,
+    maxAttempts: WORKER_MAX_ATTEMPTS,
+  });
+
+  startWebCrawlWorker(db, {
+    tenantId: WORKER_TENANT_ID,
+    concurrency: WORKER_CONCURRENCY,
+    pollIntervalMs: WORKER_POLL_MS,
+    maxAttempts: WORKER_MAX_ATTEMPTS,
+    searxngUrl: SEARXNG_URL,
+    searxngKey: SEARXNG_SECRET_KEY,
+  });
+
+  logger.info({ tenantId: WORKER_TENANT_ID }, 'Workers multimodais iniciados');
+} else {
+  logger.info('Workers desativados: defina WORKER_TENANT_ID para habilitar processamento em background');
+}
 
 // ============================================================================
 // QUERY CLASSIFIER - Decidir entre RAG interno vs Web Search
