@@ -264,6 +264,11 @@ jobs:
       # REGRA 6: Enterprise-grade - atualizar dependências baseado no tipo
       # REGRA 5: NÃO MENTIR - cada tipo deve ter comportamento distinto e bem documentado
       - name: Atualizar dependências
+        env:
+          # pnpm v10+: permitir execução automática de scripts de build de dependências
+          # APENAS durante operações de resolução/atualização de dependências (pnpm update/install).
+          # Necessário aqui porque este step executa `pnpm update` e `pnpm install --lockfile-only`.
+          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
         run: |
           UPDATE_TYPE="${{ github.event.inputs.update_type || 'patch' }}"
           
