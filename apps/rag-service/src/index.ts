@@ -19,8 +19,8 @@ import path from 'path';
 import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
 import { z } from 'zod';
-import { 
-  requirePermission, 
+import {
+  requirePermission,
   requireAuth,
   requireSameTenant,
   createSecurityMiddleware,
@@ -47,6 +47,7 @@ import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } fr
 import { getAudioProcessor } from './audio-processor.js';
 import { getVideoProcessor } from './video-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
+import { createWebSearchClient, WebSearchResult } from './web-search.js';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -497,8 +498,8 @@ if (!DATABASE_URL) {
 //
 // SALAD_API_KEY NÃO é usada no rag-service (tudo é local)
 
-const BRAVE_API_KEY = process.env.BRAVE_API_KEY;
-const BRAVE_SEARCH_URL = 'https://api.search.brave.com/res/v1/web/search';
+const SEARXNG_URL = process.env.SEARXNG_URL || 'http://alice-searxng:8080';
+const SEARXNG_SECRET_KEY = process.env.SEARXNG_SECRET_KEY;
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -640,78 +641,14 @@ async function generateEmbedding(text: string): Promise<number[]> {
 // AGENTIC RAG - Web Search Integration (Regra 16 - Best Practices 2025)
 // ============================================================================
 
-interface WebSearchResult {
-  title: string;
-  url: string;
-  description: string;
-  snippet?: string;
-}
-
-interface BraveSearchResponse {
-  web?: {
-    results: Array<{
-      title: string;
-      url: string;
-      description: string;
-    }>;
-  };
-}
-
-async function webSearchInternal(query: string, count: number = 5): Promise<WebSearchResult[]> {
-  if (!BRAVE_API_KEY) {
-    logger.warn('BRAVE_API_KEY não configurada - busca web desabilitada');
-    return [];
-  }
-
-  const params = new URLSearchParams({
-    q: query,
-    count: count.toString(),
-    safesearch: 'moderate',
-    country: 'BR',
-    text_decorations: 'false',
-  });
-
-  const response = await fetch(`${BRAVE_SEARCH_URL}?${params}`, {
-    method: 'GET',
-    headers: {
-      'Accept': 'application/json',
-      'Accept-Encoding': 'gzip',
-      'X-Subscription-Token': BRAVE_API_KEY,
-    },
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Falha na busca web: ${response.status} - ${errorText}`);
-  }
-
-  const data = await response.json() as BraveSearchResponse;
-  
-  return (data.web?.results || []).map(r => ({
-    title: r.title,
-    url: r.url,
-    description: r.description,
-    snippet: r.description,
-  }));
-}
-
-const webSearchBreaker = createCircuitBreaker(webSearchInternal, {
-  name: 'brave-web-search',
-  ...CIRCUIT_BREAKER_PRESETS.webSearch,
+const webSearchClient = createWebSearchClient({
+  baseUrl: SEARXNG_URL,
+  apiKey: SEARXNG_SECRET_KEY,
+  logger,
+  metrics,
 });
 
-async function webSearch(query: string, count?: number): Promise<WebSearchResult[]> {
-  try {
-    return await webSearchBreaker.fire(query, count) as WebSearchResult[];
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Breaker is open')) {
-      logger.warn('Circuit breaker aberto - Busca web temporariamente indisponível');
-      return [];
-    }
-    logger.error({ error, query }, 'Erro na busca web');
-    return [];
-  }
-}
+const webSearch = (query: string, count?: number) => webSearchClient.search(query, count);
 
 // ============================================================================
 // QUERY CLASSIFIER - Decidir entre RAG interno vs Web Search
@@ -1379,17 +1316,17 @@ app.post('/api/rag/web-search', requireAuth(), async (req: Request, res: Respons
       return res.status(400).json({ error: 'Query é obrigatória' });
     }
 
-    if (!BRAVE_API_KEY) {
+    if (!webSearchClient.isEnabled()) {
       return res.status(503).json({ 
         error: 'Busca web não configurada', 
-        message: 'BRAVE_API_KEY não está configurada',
+        message: 'SEARXNG_SECRET_KEY não está configurada',
       });
     }
 
     const results = await webSearch(query, limit);
     
     logger.info({ query, results: results.length }, 'Busca web concluída');
-    res.json({ results, source: 'brave-search' });
+    res.json({ results, source: 'searxng' });
   } catch (error) {
     logger.error({ error }, 'Falha na busca web');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -1409,7 +1346,7 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
     res.json({ 
       query, 
       classification,
-      webSearchAvailable: !!BRAVE_API_KEY,
+      webSearchAvailable: webSearchClient.isEnabled(),
     });
   } catch (error) {
     logger.error({ error }, 'Falha na classificação');
@@ -1512,7 +1449,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
       results.internal = internalResults;
     }
 
-    if ((classification.type === 'web' || classification.type === 'hybrid') && BRAVE_API_KEY) {
+    if ((classification.type === 'web' || classification.type === 'hybrid') && webSearchClient.isEnabled()) {
       results.web = await webSearch(body.query, body.limit);
     }
 
@@ -1580,7 +1517,7 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
   const webSearchState = webSearchBreaker.opened ? 'open' : (webSearchBreaker.halfOpen ? 'half-open' : 'closed');
 
   res.json({
-    webSearchEnabled: !!BRAVE_API_KEY,
+    webSearchEnabled: webSearchClient.isEnabled(),
     circuitBreakers: {
       embeddings: {
         state: embeddingsState,
@@ -1590,14 +1527,7 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
           timeouts: embeddingsBreaker.stats.timeouts,
         },
       },
-      webSearch: {
-        state: webSearchState,
-        stats: {
-          failures: webSearchBreaker.stats.failures,
-          successes: webSearchBreaker.stats.successes,
-          timeouts: webSearchBreaker.stats.timeouts,
-        },
-      },
+      webSearch: webSearchClient.breakerState(),
     },
     classificationKeywords: {
       web: WEB_SEARCH_KEYWORDS.length,

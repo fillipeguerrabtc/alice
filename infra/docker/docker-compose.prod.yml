@@ -697,6 +697,9 @@ services:
       # Inclui: embeddings (texto + imagem) + transcrição de áudio (faster-whisper)
       # Serviço interno na rede Docker privada - não requer autenticação
       CLIP_SERVICE_URL: http://alice-clip-inference:8080
+      # Web Search interno (SearXNG self-hosted) - sem dependências externas
+      SEARXNG_URL: http://alice-searxng:8080
+      SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY}
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads
       STORAGE_BASE_URL: /api/media/files
