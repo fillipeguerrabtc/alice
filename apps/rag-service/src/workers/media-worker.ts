@@ -59,7 +59,12 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
     return row || null;
   }
 
-  async function markStatus(id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null, attemptsOverride?: number) {
+  async function markStatus(
+    id: string,
+    status: 'processing' | 'completed' | 'failed' | 'pending',
+    erro?: string | null,
+    attemptsOverride?: number
+  ) {
     const setData: Record<string, unknown> = {
       status,
       erro: erro ?? null,
