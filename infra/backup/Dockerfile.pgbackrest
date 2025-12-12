@@ -62,8 +62,10 @@ LABEL maintainer="Alice Enterprise Platform"
 LABEL description="pgBackRest enterprise backup with PITR, encryption, S3 offsite"
 
 # Copiar binário compilado do stage builder
+# NOTA: Removido copy do man page (pgbackrest.1) para evitar falha quando o build
+# upstream não gera/manifesta o arquivo no caminho padrão. Man page não é usada
+# no runtime do container (apenas binário).
 COPY --from=builder /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
-COPY --from=builder /usr/local/share/man/man1/pgbackrest.1 /usr/local/share/man/man1/pgbackrest.1
 
 # Instalar apenas dependências de runtime (sem build tools)
 USER root
