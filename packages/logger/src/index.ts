@@ -181,12 +181,7 @@ export const logger: Logger = new Proxy({} as Logger, {
     const real = getRealLoggerRecord();
     // Invariants do Proxy: este trap deve reportar apenas propriedades *próprias*.
     // Não caminhar no prototype chain evita inconsistência com `ownKeys()` e reflexão.
-    const desc = Reflect.getOwnPropertyDescriptor(real, prop);
-    // Por segurança, não expor descritores não-configuráveis através do Proxy.
-    if (desc && desc.configurable === false) {
-      return undefined;
-    }
-    return desc;
+    return Reflect.getOwnPropertyDescriptor(real, prop);
   },
 
   defineProperty(_target, prop, attributes) {
