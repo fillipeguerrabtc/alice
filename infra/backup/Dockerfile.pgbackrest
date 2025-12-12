@@ -69,7 +69,9 @@ COPY --from=builder /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
 
 # Instalar apenas dependências de runtime (sem build tools)
 USER root
-RUN apk add --no-cache \
+# Atualizar índice e pacotes para versões mais recentes (mitiga CVEs em zlib/libretls/busybox)
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache \
     bash \
     curl \
     ca-certificates \

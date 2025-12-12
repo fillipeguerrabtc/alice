@@ -1,0 +1,279 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "fullName": "Trivy Vulnerability Scanner",
+          "informationUri": "https://github.com/aquasecurity/trivy",
+          "name": "Trivy",
+          "rules": [
+            {
+              "id": "CVE-2022-28391",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "busybox: remote attackers may execute arbitrary code if netstat is used"
+              },
+              "fullDescription": {
+                "text": "BusyBox through 1.35.0 allows remote attackers to execute arbitrary code if netstat is used to print a DNS PTR record\u0026#39;s value to a VT compatible terminal. Alternatively, the attacker could choose to change the terminal\u0026#39;s colors."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2022-28391",
+              "help": {
+                "text": "Vulnerability CVE-2022-28391\nSeverity: HIGH\nPackage: ssl_client\nFixed Version: 1.34.1-r5\nLink: [CVE-2022-28391](https://avd.aquasec.com/nvd/cve-2022-28391)\nBusyBox through 1.35.0 allows remote attackers to execute arbitrary code if netstat is used to print a DNS PTR record's value to a VT compatible terminal. Alternatively, the attacker could choose to change the terminal's colors.",
+                "markdown": "**Vulnerability CVE-2022-28391**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|HIGH|ssl_client|1.34.1-r5|[CVE-2022-28391](https://avd.aquasec.com/nvd/cve-2022-28391)|\n\nBusyBox through 1.35.0 allows remote attackers to execute arbitrary code if netstat is used to print a DNS PTR record's value to a VT compatible terminal. Alternatively, the attacker could choose to change the terminal's colors."
+              },
+              "properties": {
+                "precision": "very-high",
+                "security-severity": "8.8",
+                "tags": [
+                  "vulnerability",
+                  "security",
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2022-0778",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "openssl: Infinite loop in BN_mod_sqrt() reachable when parsing certificates"
+              },
+              "fullDescription": {
+                "text": "The BN_mod_sqrt() function, which computes a modular square root, contains a bug that can cause it to loop forever for non-prime moduli. Internally this function is used when parsing certificates that contain elliptic curve public keys in compressed form or explicit elliptic curve parameters with a base point encoded in compressed form. It is possible to trigger the infinite loop by crafting a certificate that has invalid explicit curve parameters. Since certificate parsing happens prior to verification of the certificate signature, any process that parses an externally supplied certificate may thus be subject to a denial of service attack. The infinite loop can also be reached when parsing crafted private keys as they can contain explicit elliptic curve parameters. Thus vulnerable situations include: - TLS clients consuming server certificates - TLS servers consuming client certificates - Hosting providers taking certificates or private keys from customers - Certificate authorities parsing certification requests from subscribers - Anything else which parses ASN.1 elliptic curve parameters Also any other applications that use the BN_mod_sqrt() where the attacker can control the parameter values are vulnerable to this DoS issue. In the OpenSSL 1.0.2 version the public key is not parsed during initial parsing of the certificate which makes it slightly harder to trigger the infinite loop. However any operation which requires the public key from the certificate will trigger the infinite loop. In particular the attacker can use a self-signed certificate to trigger the loop during verification of the certificate signature. This issue affects OpenSSL versions 1.0.2, 1.1.1 and 3.0. It was addressed in the releases of 1.1.1n and 3.0.2 on the 15th March 2022. Fixed in OpenSSL 3.0.2 (Affected 3.0.0,3.0.1). Fixed in OpenSSL 1.1.1n (Affected 1.1.1-1.1.1m). Fixed in OpenSSL 1.0.2zd (Affected 1.0.2-1.0.2zc)."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2022-0778",
+              "help": {
+                "text": "Vulnerability CVE-2022-0778\nSeverity: HIGH\nPackage: libretls\nFixed Version: 3.3.4-r3\nLink: [CVE-2022-0778](https://avd.aquasec.com/nvd/cve-2022-0778)\nThe BN_mod_sqrt() function, which computes a modular square root, contains a bug that can cause it to loop forever for non-prime moduli. Internally this function is used when parsing certificates that contain elliptic curve public keys in compressed form or explicit elliptic curve parameters with a base point encoded in compressed form. It is possible to trigger the infinite loop by crafting a certificate that has invalid explicit curve parameters. Since certificate parsing happens prior to verification of the certificate signature, any process that parses an externally supplied certificate may thus be subject to a denial of service attack. The infinite loop can also be reached when parsing crafted private keys as they can contain explicit elliptic curve parameters. Thus vulnerable situations include: - TLS clients consuming server certificates - TLS servers consuming client certificates - Hosting providers taking certificates or private keys from customers - Certificate authorities parsing certification requests from subscribers - Anything else which parses ASN.1 elliptic curve parameters Also any other applications that use the BN_mod_sqrt() where the attacker can control the parameter values are vulnerable to this DoS issue. In the OpenSSL 1.0.2 version the public key is not parsed during initial parsing of the certificate which makes it slightly harder to trigger the infinite loop. However any operation which requires the public key from the certificate will trigger the infinite loop. In particular the attacker can use a self-signed certificate to trigger the loop during verification of the certificate signature. This issue affects OpenSSL versions 1.0.2, 1.1.1 and 3.0. It was addressed in the releases of 1.1.1n and 3.0.2 on the 15th March 2022. Fixed in OpenSSL 3.0.2 (Affected 3.0.0,3.0.1). Fixed in OpenSSL 1.1.1n (Affected 1.1.1-1.1.1m). Fixed in OpenSSL 1.0.2zd (Affected 1.0.2-1.0.2zc).",
+                "markdown": "**Vulnerability CVE-2022-0778**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|HIGH|libretls|3.3.4-r3|[CVE-2022-0778](https://avd.aquasec.com/nvd/cve-2022-0778)|\n\nThe BN_mod_sqrt() function, which computes a modular square root, contains a bug that can cause it to loop forever for non-prime moduli. Internally this function is used when parsing certificates that contain elliptic curve public keys in compressed form or explicit elliptic curve parameters with a base point encoded in compressed form. It is possible to trigger the infinite loop by crafting a certificate that has invalid explicit curve parameters. Since certificate parsing happens prior to verification of the certificate signature, any process that parses an externally supplied certificate may thus be subject to a denial of service attack. The infinite loop can also be reached when parsing crafted private keys as they can contain explicit elliptic curve parameters. Thus vulnerable situations include: - TLS clients consuming server certificates - TLS servers consuming client certificates - Hosting providers taking certificates or private keys from customers - Certificate authorities parsing certification requests from subscribers - Anything else which parses ASN.1 elliptic curve parameters Also any other applications that use the BN_mod_sqrt() where the attacker can control the parameter values are vulnerable to this DoS issue. In the OpenSSL 1.0.2 version the public key is not parsed during initial parsing of the certificate which makes it slightly harder to trigger the infinite loop. However any operation which requires the public key from the certificate will trigger the infinite loop. In particular the attacker can use a self-signed certificate to trigger the loop during verification of the certificate signature. This issue affects OpenSSL versions 1.0.2, 1.1.1 and 3.0. It was addressed in the releases of 1.1.1n and 3.0.2 on the 15th March 2022. Fixed in OpenSSL 3.0.2 (Affected 3.0.0,3.0.1). Fixed in OpenSSL 1.1.1n (Affected 1.1.1-1.1.1m). Fixed in OpenSSL 1.0.2zd (Affected 1.0.2-1.0.2zc)."
+              },
+              "properties": {
+                "precision": "very-high",
+                "security-severity": "7.5",
+                "tags": [
+                  "vulnerability",
+                  "security",
+                  "HIGH"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2022-37434",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "zlib: heap-based buffer over-read and overflow in inflate() in inflate.c via a large gzip header extra field"
+              },
+              "fullDescription": {
+                "text": "zlib through 1.2.12 has a heap-based buffer over-read or buffer overflow in inflate in inflate.c via a large gzip header extra field. NOTE: only applications that call inflateGetHeader are affected. Some common applications bundle the affected zlib source code but may be unable to call inflateGetHeader (e.g., see the nodejs/node reference)."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2022-37434",
+              "help": {
+                "text": "Vulnerability CVE-2022-37434\nSeverity: CRITICAL\nPackage: zlib\nFixed Version: 1.2.12-r2\nLink: [CVE-2022-37434](https://avd.aquasec.com/nvd/cve-2022-37434)\nzlib through 1.2.12 has a heap-based buffer over-read or buffer overflow in inflate in inflate.c via a large gzip header extra field. NOTE: only applications that call inflateGetHeader are affected. Some common applications bundle the affected zlib source code but may be unable to call inflateGetHeader (e.g., see the nodejs/node reference).",
+                "markdown": "**Vulnerability CVE-2022-37434**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|CRITICAL|zlib|1.2.12-r2|[CVE-2022-37434](https://avd.aquasec.com/nvd/cve-2022-37434)|\n\nzlib through 1.2.12 has a heap-based buffer over-read or buffer overflow in inflate in inflate.c via a large gzip header extra field. NOTE: only applications that call inflateGetHeader are affected. Some common applications bundle the affected zlib source code but may be unable to call inflateGetHeader (e.g., see the nodejs/node reference)."
+              },
+              "properties": {
+                "precision": "very-high",
+                "security-severity": "9.8",
+                "tags": [
+                  "vulnerability",
+                  "security",
+                  "CRITICAL"
+                ]
+              }
+            },
+            {
+              "id": "CVE-2018-25032",
+              "name": "OsPackageVulnerability",
+              "shortDescription": {
+                "text": "zlib: A flaw found in zlib when compressing (not decompressing) certain inputs"
+              },
+              "fullDescription": {
+                "text": "zlib before 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches."
+              },
+              "defaultConfiguration": {
+                "level": "error"
+              },
+              "helpUri": "https://avd.aquasec.com/nvd/cve-2018-25032",
+              "help": {
+                "text": "Vulnerability CVE-2018-25032\nSeverity: HIGH\nPackage: zlib\nFixed Version: 1.2.12-r0\nLink: [CVE-2018-25032](https://avd.aquasec.com/nvd/cve-2018-25032)\nzlib before 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches.",
+                "markdown": "**Vulnerability CVE-2018-25032**\n| Severity | Package | Fixed Version | Link |\n| --- | --- | --- | --- |\n|HIGH|zlib|1.2.12-r0|[CVE-2018-25032](https://avd.aquasec.com/nvd/cve-2018-25032)|\n\nzlib before 1.2.12 allows memory corruption when deflating (i.e., when compressing) if the input has many distant matches."
+              },
+              "properties": {
+                "precision": "very-high",
+                "security-severity": "7.5",
+                "tags": [
+                  "vulnerability",
+                  "security",
+                  "HIGH"
+                ]
+              }
+            }
+          ],
+          "version": "0.57.1"
+        }
+      },
+      "results": [
+        {
+          "ruleId": "CVE-2022-28391",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Package: busybox\nInstalled Version: 1.34.1-r3\nVulnerability CVE-2022-28391\nSeverity: HIGH\nFixed Version: 1.34.1-r5\nLink: [CVE-2022-28391](https://avd.aquasec.com/nvd/cve-2022-28391)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fillipeguerrabtc/alice-pgbackrest",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "fillipeguerrabtc/alice-pgbackrest: busybox@1.34.1-r3"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2022-0778",
+          "ruleIndex": 1,
+          "level": "error",
+          "message": {
+            "text": "Package: libretls\nInstalled Version: 3.3.4-r2\nVulnerability CVE-2022-0778\nSeverity: HIGH\nFixed Version: 3.3.4-r3\nLink: [CVE-2022-0778](https://avd.aquasec.com/nvd/cve-2022-0778)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fillipeguerrabtc/alice-pgbackrest",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "fillipeguerrabtc/alice-pgbackrest: libretls@3.3.4-r2"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2022-28391",
+          "ruleIndex": 0,
+          "level": "error",
+          "message": {
+            "text": "Package: ssl_client\nInstalled Version: 1.34.1-r3\nVulnerability CVE-2022-28391\nSeverity: HIGH\nFixed Version: 1.34.1-r5\nLink: [CVE-2022-28391](https://avd.aquasec.com/nvd/cve-2022-28391)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fillipeguerrabtc/alice-pgbackrest",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "fillipeguerrabtc/alice-pgbackrest: ssl_client@1.34.1-r3"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2022-37434",
+          "ruleIndex": 2,
+          "level": "error",
+          "message": {
+            "text": "Package: zlib\nInstalled Version: 1.2.11-r3\nVulnerability CVE-2022-37434\nSeverity: CRITICAL\nFixed Version: 1.2.12-r2\nLink: [CVE-2022-37434](https://avd.aquasec.com/nvd/cve-2022-37434)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fillipeguerrabtc/alice-pgbackrest",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "fillipeguerrabtc/alice-pgbackrest: zlib@1.2.11-r3"
+              }
+            }
+          ]
+        },
+        {
+          "ruleId": "CVE-2018-25032",
+          "ruleIndex": 3,
+          "level": "error",
+          "message": {
+            "text": "Package: zlib\nInstalled Version: 1.2.11-r3\nVulnerability CVE-2018-25032\nSeverity: HIGH\nFixed Version: 1.2.12-r0\nLink: [CVE-2018-25032](https://avd.aquasec.com/nvd/cve-2018-25032)"
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "fillipeguerrabtc/alice-pgbackrest",
+                  "uriBaseId": "ROOTPATH"
+                },
+                "region": {
+                  "startLine": 1,
+                  "startColumn": 1,
+                  "endLine": 1,
+                  "endColumn": 1
+                }
+              },
+              "message": {
+                "text": "fillipeguerrabtc/alice-pgbackrest: zlib@1.2.11-r3"
+              }
+            }
+          ]
+        }
+      ],
+      "columnKind": "utf16CodeUnits",
+      "originalUriBaseIds": {
+        "ROOTPATH": {
+          "uri": "file:///"
+        }
+      },
+      "properties": {
+        "imageID": "sha256:6098c38823ce2174ef34cfcf45fd16b4fa200039d37f63522bdc10731feb16e8",
+        "imageName": "ghcr.io/fillipeguerrabtc/alice-pgbackrest:6c295b25d549526866be2175d07a696429590269",
+        "repoDigests": [
+          "ghcr.io/fillipeguerrabtc/alice-pgbackrest@sha256:78ef5f55755e62c53dc6ac92944c2a612c39e57e11bb07e3f68e247754a3ee23"
+        ],
+        "repoTags": [
+          "ghcr.io/fillipeguerrabtc/alice-pgbackrest:6c295b25d549526866be2175d07a696429590269"
+        ]
+      }
+    }
+  ]
+}

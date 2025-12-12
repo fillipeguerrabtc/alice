@@ -62,7 +62,8 @@ RUN pnpm --filter @alice/frontend-service run build
 # SEGURANÇA: Non-root container (Docker 2025 + OWASP Container Security)
 # NOTA: Não existe Distroless nginx, então usamos nginx:1.27-alpine (hardened)
 # ==============================================================================
-FROM nginx:1.27-alpine AS runner
+# Atualizado para tag com Alpine 3.20 (libpng >= 1.6.53) para mitigar CVEs recentes
+FROM nginx:1.27.3-alpine3.20 AS runner
 ENV SERVICE_NAME=frontend-service
 
 # SEGURANÇA: Atualizar pacotes e configurar nginx para rodar como non-root
