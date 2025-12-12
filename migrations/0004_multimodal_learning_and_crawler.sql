@@ -14,12 +14,41 @@
 -- ============================================================================
 
 ALTER TABLE learning_tasks
-  ADD COLUMN IF NOT EXISTS tenant_id UUID REFERENCES tenants(id) NOT NULL,
+  ADD COLUMN IF NOT EXISTS tenant_id UUID,
   ADD COLUMN IF NOT EXISTS prioridade INTEGER NOT NULL DEFAULT 5,
   ADD COLUMN IF NOT EXISTS tentativas INTEGER NOT NULL DEFAULT 0,
   ADD COLUMN IF NOT EXISTS max_tentativas INTEGER NOT NULL DEFAULT 3,
   ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMP NULL,
   ADD COLUMN IF NOT EXISTS criado_por VARCHAR(255) REFERENCES users(id);
+
+-- Backfill seguro de tenant_id (usa relacionamentos existentes)
+DO $$
+BEGIN
+  -- Se existir namespace associado, herda tenant do namespace
+  UPDATE learning_tasks lt
+  SET tenant_id = n.tenant_id
+  FROM namespaces n
+  WHERE lt.namespace_id = n.id
+    AND lt.tenant_id IS NULL;
+
+  -- Se existir agent associado, herda tenant do agent
+  UPDATE learning_tasks lt
+  SET tenant_id = a.tenant_id
+  FROM agents a
+  WHERE lt.agent_id = a.id
+    AND lt.tenant_id IS NULL;
+
+  -- Caso ainda reste null, falha explicitamente para evitar dados órfãos
+  IF EXISTS (SELECT 1 FROM learning_tasks WHERE tenant_id IS NULL) THEN
+    RAISE EXCEPTION 'learning_tasks.tenant_id não pode ser nulo; revise dados legados antes do deploy.';
+  END IF;
+END$$;
+
+-- Agora aplicar NOT NULL e FK
+ALTER TABLE learning_tasks
+  ALTER COLUMN tenant_id SET NOT NULL;
+ALTER TABLE learning_tasks
+  ADD CONSTRAINT learning_tasks_tenant_fk FOREIGN KEY (tenant_id) REFERENCES tenants(id);
 
 -- Índices priorizados por tenant/status
 CREATE INDEX IF NOT EXISTS idx_learning_tasks_priority
