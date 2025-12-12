@@ -47,14 +47,20 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
   }
 
   async function updateRequestStatus(id: string, status: 'running' | 'completed' | 'failed', erro?: string | null) {
+    const setData: Record<string, unknown> = {
+      status,
+      erro: erro ?? null,
+    };
+
+    if (status === 'running') {
+      setData.iniciadoEm = sql`NOW()`;
+    } else if (status === 'completed' || status === 'failed') {
+      setData.finalizadoEm = sql`NOW()`;
+    }
+
     await db
       .update(webCrawlRequests)
-      .set({
-        status,
-        erro: erro ?? null,
-        iniciadoEm: status === 'running' ? sql`NOW()` : webCrawlRequests.iniciadoEm,
-        finalizadoEm: status === 'completed' || status === 'failed' ? sql`NOW()` : webCrawlRequests.finalizadoEm,
-      })
+      .set(setData)
       .where(eq(webCrawlRequests.id, id));
   }
 

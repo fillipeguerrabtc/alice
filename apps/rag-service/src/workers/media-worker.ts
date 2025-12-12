@@ -60,15 +60,29 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
   }
 
   async function markStatus(id: string, status: 'processing' | 'completed' | 'failed', erro?: string | null, attemptsOverride?: number) {
+    const setData: Record<string, unknown> = {
+      status,
+      erro: erro ?? null,
+    };
+
+    if (status === 'processing') {
+      setData.tentativas = sql`${mediaJobs.tentativas} + 1`;
+      setData.iniciadoEm = sql`NOW()`;
+    } else if (status === 'completed' || status === 'failed') {
+      if (attemptsOverride !== undefined) {
+        setData.tentativas = attemptsOverride;
+      }
+      setData.finalizadoEm = sql`NOW()`;
+    } else {
+      // pending ou outros: preserva tentativas/iniciadoEm/finalizadoEm
+      if (attemptsOverride !== undefined) {
+        setData.tentativas = attemptsOverride;
+      }
+    }
+
     await db
       .update(mediaJobs)
-      .set({
-        status,
-        erro: erro ?? null,
-        tentativas: status === 'processing' ? sql`${mediaJobs.tentativas} + 1` : attemptsOverride ?? mediaJobs.tentativas,
-        iniciadoEm: status === 'processing' ? sql`NOW()` : mediaJobs.iniciadoEm,
-        finalizadoEm: status === 'completed' || status === 'failed' ? sql`NOW()` : mediaJobs.finalizadoEm,
-      })
+      .set(setData)
       .where(eq(mediaJobs.id, id));
   }
 
