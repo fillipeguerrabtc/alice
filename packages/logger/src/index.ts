@@ -135,19 +135,6 @@ function getRealLoggerRecord(): Record<PropertyKey, unknown> {
   return getDefaultLogger() as unknown as Record<PropertyKey, unknown>;
 }
 
-function getPropertyDescriptorDeep(
-  obj: Record<PropertyKey, unknown>,
-  prop: PropertyKey
-): PropertyDescriptor | undefined {
-  let current: object | null = obj;
-  while (current) {
-    const desc = Reflect.getOwnPropertyDescriptor(current, prop);
-    if (desc) return desc;
-    current = Reflect.getPrototypeOf(current);
-  }
-  return undefined;
-}
-
 export const logger: Logger = new Proxy({} as Logger, {
   get(_target, prop) {
     const cached = boundMethodCache.get(prop);
@@ -192,7 +179,14 @@ export const logger: Logger = new Proxy({} as Logger, {
 
   getOwnPropertyDescriptor(_target, prop) {
     const real = getRealLoggerRecord();
-    return getPropertyDescriptorDeep(real, prop);
+    // Invariants do Proxy: este trap deve reportar apenas propriedades *próprias*.
+    // Não caminhar no prototype chain evita inconsistência com `ownKeys()` e reflexão.
+    const desc = Reflect.getOwnPropertyDescriptor(real, prop);
+    // Por segurança, não expor descritores não-configuráveis através do Proxy.
+    if (desc && desc.configurable === false) {
+      return undefined;
+    }
+    return desc;
   },
 
   defineProperty(_target, prop, attributes) {
