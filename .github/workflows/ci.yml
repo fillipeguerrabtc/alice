@@ -1039,91 +1039,10 @@ jobs:
           done
 
   # ===========================================================================
-  # Job 8: CI Final Status - VERIFICA TODOS OS JOBS
-  # ===========================================================================
-  ci-status:
-    name: CI Status
-    runs-on: ubuntu-latest
-    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
-    # Este job apenas agrega outputs de outros jobs, não acessa APIs do GitHub
-    permissions:
-      contents: read  # Apenas para ler outputs de jobs anteriores (via needs.*)
-    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
-    if: always()
-    outputs:
-      success: ${{ steps.check.outputs.success }}
-    steps:
-      - name: Check all jobs status
-        id: check
-        run: |
-          echo "=============================================="
-          echo "Resumo do CI - Alice Enterprise Platform"
-          echo "=============================================="
-          echo "Build & Check:      ${{ needs.build-and-check.result }}"
-          echo "Build Services:     ${{ needs.build-services.result }}"
-          echo "Build CLIP (Python):${{ needs.build-clip-inference.result }}"
-          echo "Build Frontend:     ${{ needs.build-frontend.result }}"
-          echo "Security Scan:      ${{ needs.security-scan.result }}"
-          echo "Compliance:         ${{ needs.compliance-checks.result }}"
-          echo "=============================================="
-          
-          # CRÍTICO: Verificar TODOS os jobs obrigatórios (deve ser 'success', não apenas 'não failure')
-          # Jobs podem ter status: success, failure, cancelled, skipped
-          # Apenas 'success' é aceitável para disparar Release
-          # 
-          # NOTA: Este job NUNCA deve usar 'exit 1' - ele é um agregador de status
-          # O job trigger-release usa o output 'success' para decidir se executa
-          # Se ci-status falhar com exit 1, o output não é propagado corretamente
-          
-          ALL_SUCCESS=true
-          
-          if [[ "${{ needs.build-and-check.result }}" != "success" ]]; then
-            echo "❌ ERRO: Build & Check não passou! Status: ${{ needs.build-and-check.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          if [[ "${{ needs.build-services.result }}" != "success" ]]; then
-            echo "❌ ERRO: Build Services não passou! Status: ${{ needs.build-services.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          if [[ "${{ needs.build-clip-inference.result }}" != "success" ]]; then
-            echo "❌ ERRO: Build CLIP Inference não passou! Status: ${{ needs.build-clip-inference.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          if [[ "${{ needs.build-frontend.result }}" != "success" ]]; then
-            echo "❌ ERRO: Build Frontend não passou! Status: ${{ needs.build-frontend.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          if [[ "${{ needs.security-scan.result }}" != "success" ]]; then
-            echo "❌ ERRO: Security Scan não passou! Status: ${{ needs.security-scan.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          if [[ "${{ needs.compliance-checks.result }}" != "success" ]]; then
-            echo "❌ ERRO: Compliance Checks não passou! Status: ${{ needs.compliance-checks.result }}"
-            ALL_SUCCESS=false
-          fi
-          
-          # Definir output para uso pelo trigger-release
-          echo "success=$ALL_SUCCESS" >> $GITHUB_OUTPUT
-          
-          if [[ "$ALL_SUCCESS" == "true" ]]; then
-            echo "=============================================="
-            echo "✅ CI passou com sucesso! Todos os jobs com status 'success'."
-            echo "=============================================="
-          else
-            echo "=============================================="
-            echo "❌ CI falhou! Verifique os jobs acima para detalhes."
-            echo "   O job trigger-release NÃO será executado."
-            echo "=============================================="
-          fi
-
-  # ===========================================================================
-  # Job 9: Trigger Release Automatico (apenas em push para main)
-  # Best Practices 2025: CI passa -> Release automatico -> Deploy manual
+  # Job 8: Trigger Release Automático (apenas em push para main)
+  # Best Practices 2025: CI passa -> Release automático -> Deploy manual
+  # NOTA: Removido job ci-status intermediário - needs já garante que todos
+  # os jobs passaram (semântica padrão do GitHub Actions)
   # ===========================================================================
   trigger-release:
     name: Trigger Release
@@ -1132,8 +1051,10 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: ci-status
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.ci-status.outputs.success == 'true'
+    # Depende diretamente de todos os jobs críticos (sem job intermediário)
+    # GitHub Actions só executa se TODOS os needs tiverem status 'success'
+    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     steps:
       - name: Checkout codigo
         uses: actions/checkout@v4
@@ -1143,44 +1064,18 @@ jobs:
       - name: Calcular proxima versao
         id: version
         run: |
-          # Buscar ultima tag (fallback para v0.0.0 se não existir)
+          # Buscar ultima tag
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           echo "Ultima tag: $LAST_TAG"
           
-          # Extrair numeros da versao (remover prefixo 'v')
+          # Extrair numeros da versao
           VERSION=${LAST_TAG#v}
+          MAJOR=$(echo $VERSION | cut -d. -f1)
+          MINOR=$(echo $VERSION | cut -d. -f2)
+          PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
           
-          # Extrair componentes (cut retorna string vazia se campo não existir)
-          MAJOR_RAW=$(echo $VERSION | cut -d. -f1)
-          MINOR_RAW=$(echo $VERSION | cut -d. -f2)
-          PATCH_RAW=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
-          
-          # Enterprise-grade: valores default para componentes ausentes (Regra 6)
-          # Se a tag for 'v1' → MAJOR=1, MINOR=0, PATCH=0
-          # Se a tag for 'v1.2' → MAJOR=1, MINOR=2, PATCH=0
-          # Se a tag for 'v1.2.3' → MAJOR=1, MINOR=2, PATCH=3
-          MAJOR=${MAJOR_RAW:-0}
-          MINOR=${MINOR_RAW:-0}
-          PATCH=${PATCH_RAW:-0}
-          
-          # Validar que todos os componentes são números válidos para semver
-          # CRÍTICO: Regex rejeita zeros à esquerda (ex: 08, 09) exceto '0' sozinho
-          # Bash interpreta zeros à esquerda como octal, causando erros em $((08 + 1))
-          # Semver 2.0 spec: "A normal version number MUST NOT contain leading zeroes"
-          # Regex: ^(0|[1-9][0-9]*)$ aceita: 0, 1, 10, 123 | rejeita: 01, 08, 007
-          SEMVER_REGEX='^(0|[1-9][0-9]*)$'
-          
-          if ! [[ "$MAJOR" =~ $SEMVER_REGEX ]] || ! [[ "$MINOR" =~ $SEMVER_REGEX ]] || ! [[ "$PATCH" =~ $SEMVER_REGEX ]]; then
-            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico (zeros à esquerda ou caracteres inválidos). Usando v0.0.1"
-            MAJOR=0
-            MINOR=0
-            PATCH=0
-          fi
-          
-          echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
-          
-          # Incrementar patch (usando 10# para forçar base decimal - segurança adicional)
-          NEW_PATCH=$((10#$PATCH + 1))
+          # Incrementar patch
+          NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
           
           echo "Nova versao: $NEW_VERSION"
