@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 12 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.22 - Cache pnpm fix v4.1.0
+> **Versão:** 3.23 - Cache pnpm fix v4.1.2
 
 ---
 
@@ -553,7 +553,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 >
 > **NOTA (12/12/2025):** Artefatos temporários de scanner adicionados ao `.gitignore` (`tmp-trivy/*.sarif`) e removidos do repositório. Relatórios de Trivy devem permanecer apenas como artefatos de CI, nunca versionados.
 >
-> **NOTA (12/12/2025):** Cache pnpm no deploy-prod: removida flag `cache: pnpm` do `actions/setup-node` (erro 400 intermitente) e adicionado cache explícito com `actions/cache@v4.1.0` pinado por SHA (`3624ceb22c1c5a301c8db4169662070a689d9ea8`) usando store-dir fixo (`$HOME/.pnpm-store`) e chave baseada em OS + versão do pnpm + hash do `pnpm-lock.yaml`.
+> **NOTA (12/12/2025):** Cache pnpm no deploy-prod: removida flag `cache: pnpm` do `actions/setup-node` (erro 400 intermitente) e adicionado cache explícito com `actions/cache@v4.1.2` pinado por SHA (`e222b9c4c715e046ea0eb6019ea110a72f21c1de`) usando store-dir fixo (`$HOME/.pnpm-store`) e chave baseada em OS + versão do pnpm + hash do `pnpm-lock.yaml`.
 
 ### Arquitetura do CI (trigger-release)
 
@@ -799,7 +799,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
-*Versão: 3.22 - Cache pnpm fix v4.1.0*
+*Versão: 3.23 - Cache pnpm fix v4.1.2*
 *Total de Containers: 41 (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
