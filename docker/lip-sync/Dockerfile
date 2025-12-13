@@ -36,7 +36,12 @@ RUN set -euo pipefail; \
     else \
       echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
       echo "::error::Branches disponíveis:"; \
-      git branch -r 2>/dev/null | head -n 5 || git branch -r 2>/dev/null | sed -n '1,5p' || echo "  (não disponível)"; \
+      BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
+      if [ -n "$$BRANCHES_OUTPUT" ]; then \
+        echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
+      else \
+        echo "  (não disponível)"; \
+      fi; \
       echo "::error::Último commit do master:"; \
       git rev-parse origin/master 2>/dev/null || echo "  (não disponível)"; \
       echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
@@ -115,7 +120,9 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::wav2lip_gan.pth vazio ou ausente após download"; \
       exit 1; \
     fi; \
-    WAV2LIP_SIZE=$$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
+    # Command substitution: no nível do RUN (fora de funções), usar $( ao invés de $$(
+    # NOTA: Dentro de funções shell, usar $$( para escapar. No nível RUN, $( funciona diretamente
+    WAV2LIP_SIZE=$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
     if [ "$$WAV2LIP_SIZE" -lt 400000000 ]; then \
       echo "::error::wav2lip_gan.pth corrompido (tamanho: $${WAV2LIP_SIZE} bytes, esperado: ~400MB)"; \
       exit 1; \
@@ -196,7 +203,9 @@ RUN --mount=type=secret,id=huggingface_token \
       exit 1; \
     fi; \
     # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
-    S3FD_SIZE=$$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
+    # Command substitution: no nível do RUN (fora de funções), usar $( ao invés de $$(
+    # NOTA: Dentro de funções shell, usar $$( para escapar. No nível RUN, $( funciona diretamente
+    S3FD_SIZE=$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
     if [ "$$S3FD_SIZE" -lt 89128960 ]; then \
       echo "::error::s3fd.pth corrompido (tamanho: $${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"; \
       exit 1; \
