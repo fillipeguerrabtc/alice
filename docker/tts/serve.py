@@ -3,6 +3,8 @@ import os
 import pathlib
 import sys
 
+import soundfile as sf
+
 # Configurações do TTS ANTES do import (obrigatório para inicialização correta)
 # TTS_HOME: diretório de modelos pré-baixados no build
 # COQUI_TOS_AGREED: aceite automático de licença (necessário para execução não-interativa)
@@ -84,15 +86,22 @@ def main() -> None:
     }
     
     if speaker_wav:
-        # Voice cloning: usar áudio de referência
-        tts_kwargs["speaker_wav"] = speaker_wav
+        # Voice cloning (XTTS v2): extrair latents e inferir manualmente
+        conditioning = tts.get_conditioning_latents(audio_path=speaker_wav)
+        audio = tts.inference(
+            text=text,
+            language=lang,
+            speaker_latents=conditioning["speaker_latents"],
+            gpt_cond_latent=conditioning["gpt_cond_latent"],
+        )
+        sf.write(output_path, audio, 24000)
         print(f"Usando voice cloning com referência: {speaker_wav}")
     else:
-        # Speaker pré-definido do modelo
+        # Speaker pré-definido do modelo (caminho padrão)
         tts_kwargs["speaker"] = voice
         print(f"Usando speaker: {voice}")
-    
-    tts.tts_to_file(**tts_kwargs)
+        tts.tts_to_file(**tts_kwargs)
+
     print(f"Áudio gerado em {output_path}")
 
 
