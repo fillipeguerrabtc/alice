@@ -42,7 +42,11 @@ def parse_media_params() -> dict:
 
 
 def ensure_parent(path: str) -> None:
-    pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
+    """Cria diretório pai com permissões enterprise (750)."""
+    parent = pathlib.Path(path).parent
+    parent.mkdir(parents=True, exist_ok=True)
+    # Aplicar permissões enterprise: 750 (rwxr-x---)
+    os.chmod(parent, 0o750)
 
 
 def normalize_str(value: object | None) -> str | None:

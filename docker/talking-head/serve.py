@@ -15,7 +15,10 @@ def require_env(name: str) -> str:
 
 
 def ensure_dir(path: str) -> None:
-    pathlib.Path(path).mkdir(parents=True, exist_ok=True)
+    """Cria diretório com permissões enterprise (750)."""
+    dir_path = pathlib.Path(path)
+    dir_path.mkdir(parents=True, exist_ok=True)
+    os.chmod(dir_path, 0o750)
 
 
 def find_latest_video(folder: pathlib.Path) -> Optional[pathlib.Path]:
@@ -59,7 +62,10 @@ def main() -> None:
         print("Nenhum vídeo gerado pelo SadTalker.", file=sys.stderr)
         sys.exit(1)
 
-    pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    # Criar diretório pai com permissões enterprise (750)
+    parent_dir = pathlib.Path(output_path).parent
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(parent_dir, 0o750)
     final_path = latest.replace(output_path)
     print(f"Talking-head gerado em {final_path}")
 

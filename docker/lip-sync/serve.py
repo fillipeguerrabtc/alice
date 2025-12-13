@@ -18,7 +18,10 @@ def main() -> None:
     audio_path = pathlib.Path(require_env("AUDIO_PATH")).resolve()
     output_path = pathlib.Path(require_env("OUTPUT_PATH")).resolve()
 
-    pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    # Criar diretório pai com permissões enterprise (750)
+    parent_dir = pathlib.Path(output_path).parent
+    parent_dir.mkdir(parents=True, exist_ok=True)
+    os.chmod(parent_dir, 0o750)
 
     # Execução direta do script oficial, com cwd em /opt/wav2lip
     wav2lip_script = "/opt/wav2lip/inference.py"
