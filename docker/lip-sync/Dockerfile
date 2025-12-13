@@ -21,9 +21,9 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 # NOTA: Clone completo (sem --depth) para garantir que commit específico esteja disponível
 RUN set -euo pipefail && \
-    # Enterprise-grade: clone completo (sem --depth) para garantir que commit específico esteja disponível
-    # NOTA: git clone completo inclui todo o histórico, garantindo que commit fixo esteja disponível
-    git clone --no-single-branch https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
+    # Enterprise-grade: clone completo do master para garantir que commit específico esteja disponível
+    # NOTA: git clone com branch master explícito garante que commit fixo esteja no histórico local
+    git clone --branch master --no-single-branch https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
     cd /opt/wav2lip && \
     git lfs install --local && \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
@@ -31,8 +31,7 @@ RUN set -euo pipefail && \
     # Enterprise-grade: commit fixo é OBRIGATÓRIO - sem fallback para garantir reprodutibilidade
     # Regra 6: PROIBIDO workarounds - build DEVE falhar se commit não existe
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322" && \
-    # Verificar se commit existe localmente (deve existir após clone completo)
-    # NOTA: git clone completo sem --depth garante que commit esteja no histórico local
+    # Verificar se commit existe localmente (deve existir após clone completo do master)
     if git cat-file -e "$${WAV2LIP_COMMIT}^{commit}" 2>/dev/null; then \
       echo "Usando commit fixo: $${WAV2LIP_COMMIT}" && \
       git checkout "$${WAV2LIP_COMMIT}"; \
