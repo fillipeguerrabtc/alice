@@ -692,7 +692,7 @@ services:
       PORT: 3003
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
-      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
+      INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
       # Serviço Multimodal LOCAL (Regra 6 - Autonomia Total)
       # Inclui: embeddings (texto + imagem) + transcrição de áudio (faster-whisper)
       # Serviço interno na rede Docker privada - não requer autenticação
