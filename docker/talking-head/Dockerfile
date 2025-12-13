@@ -17,57 +17,57 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Clona SadTalker (sem setup.py); instala deps do projeto e exporta PYTHONPATH
 # Enterprise-grade: timeout e tratamento de erro robusto para evitar loops infinitos
-RUN set -euo pipefail; \
-    git clone https://github.com/OpenTalker/SadTalker.git /opt/sadtalker; \
-    cd /opt/sadtalker; \
-    python3 -m pip install --no-cache-dir -r requirements.txt; \
+RUN set -euo pipefail && \
+    git clone https://github.com/OpenTalker/SadTalker.git /opt/sadtalker && \
+    cd /opt/sadtalker && \
+    python3 -m pip install --no-cache-dir -r requirements.txt && \
     if [ -f scripts/download_models.sh ]; then \
-      chmod +x scripts/download_models.sh; \
+      chmod +x scripts/download_models.sh && \
       # Enterprise-grade: modificar temporariamente o script para adicionar timeout aos wget
       # O script original pode ter wget sem timeout, causando loops infinitos
       # Solução simplificada: usar múltiplos comandos sed separados para evitar problemas de parsing
       # NOTA: Separar em múltiplos comandos sed é mais seguro que um único comando complexo
-      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc|\1wget\2--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
-      sed -i -E 's|(&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
-      sed -i -E 's|([[:space:]]&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
-      sed -i -E 's|(\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
-      sed -i -E 's|([[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
-      sed -i -E 's|([;&|])([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      (sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc|\1wget\2--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
+      (sed -i -E 's|(&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
+      (sed -i -E 's|([[:space:]]&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
+      (sed -i -E 's|(\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
+      (sed -i -E 's|([[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
+      (sed -i -E 's|([;&|])([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true) && \
       # Timeout de 45 minutos (2700s) para evitar loops infinitos - downloads podem ser grandes (~1GB+)
       # coreutils garante que timeout está disponível
       timeout 2700 bash scripts/download_models.sh || { \
-        EXIT_CODE=$$?; \
-        if [ $$EXIT_CODE -eq 124 ]; then \
-          echo "::error::Download de modelos SadTalker excedeu timeout de 45 minutos"; \
+        EXIT_CODE=$$? && \
+        if [ $${EXIT_CODE} -eq 124 ]; then \
+          echo "::error::Download de modelos SadTalker excedeu timeout de 45 minutos" && \
           echo "::error::Possível loop infinito ou download muito lento - verifique logs acima"; \
         else \
-          echo "::error::Download de modelos SadTalker falhou (código: $$EXIT_CODE)"; \
+          echo "::error::Download de modelos SadTalker falhou (código: $${EXIT_CODE})" && \
           echo "::error::Verifique logs acima para identificar qual download falhou"; \
-        fi; \
+        fi && \
         exit 1; \
-      }; \
+      } && \
       # Validação enterprise: verificar se checkpoints foram baixados corretamente
       if [ ! -d checkpoints ] || [ -z "$$(ls -A checkpoints 2>/dev/null)" ]; then \
-        echo "::error::Diretório checkpoints vazio ou ausente após download"; \
+        echo "::error::Diretório checkpoints vazio ou ausente após download" && \
         exit 1; \
-      fi; \
+      fi && \
       # Validação adicional: verificar se arquivos principais existem (safetensors ou pth.tar)
       # Enterprise-grade: usar múltiplos finds separados e somar resultados para evitar problemas com parênteses
       # IMPORTANTE: excluir .pth.tar do padrão *.pth para evitar contagem dupla
       # NOTA: No nível RUN, usar $$ para escapar $ e passar literal ao shell (variáveis de shell definidas no mesmo RUN)
-      SAFETENSORS_COUNT=$$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l); \
-      PTHTAR_COUNT=$$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l); \
+      SAFETENSORS_COUNT=$$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l) && \
+      PTHTAR_COUNT=$$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l) && \
       # Excluir arquivos .pth.tar do padrão *.pth para evitar contagem dupla
-      PTH_COUNT=$$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l); \
-      CHECKPOINT_FILES=$$(expr $$SAFETENSORS_COUNT + $$PTHTAR_COUNT + $$PTH_COUNT); \
-      if [ "$$CHECKPOINT_FILES" -eq 0 ]; then \
-        echo "::error::Nenhum arquivo de checkpoint encontrado em checkpoints/ após download"; \
-        echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth"; \
+      PTH_COUNT=$$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l) && \
+      CHECKPOINT_FILES=$$(expr $${SAFETENSORS_COUNT} + $${PTHTAR_COUNT} + $${PTH_COUNT}) && \
+      if [ "$${CHECKPOINT_FILES}" -eq 0 ]; then \
+        echo "::error::Nenhum arquivo de checkpoint encontrado em checkpoints/ após download" && \
+        echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth" && \
         exit 1; \
-      fi; \
-      echo "✅ Modelos SadTalker baixados com sucesso ($$CHECKPOINT_FILES arquivos encontrados)"; \
+      fi && \
+      echo "✅ Modelos SadTalker baixados com sucesso ($${CHECKPOINT_FILES} arquivos encontrados)"; \
     else \
-      echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker"; \
+      echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker" && \
       exit 1; \
     fi
 
