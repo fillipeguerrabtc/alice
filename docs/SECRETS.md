@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 41 configurados no repositório (37 obrigatórios pré-deploy + 4 opcionais/novos)
+**Total de Secrets:** 46 configurados no repositório (42 obrigatórios pré-deploy + 4 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 42 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -23,6 +23,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
+| **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
 | **Alice Multimodal Inference** | alice-clip-inference | Nenhum (serviço interno - processamento 100% LOCAL, acesso controlado pela rede Docker) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
@@ -96,6 +97,13 @@ Estes são necessários para o deploy funcionar:
 |--------|------------|
 | `SALAD_API_KEY` | [portal.salad.com](https://portal.salad.com) → API Keys |
 | `SALAD_ORGANIZATION_ID` | portal.salad.com → Settings |
+| `SALAD_API_URL` | Use o default `https://api.salad.com/api/public` (defina em `Repository Variables` como var, não secret) |
+| `SALAD_MEDIA_PROJECT` | Nome do projeto de media jobs no Salad (ex.: `alice-media`) — configure como var |
+| `SALAD_TTS_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
+| `SALAD_TALKING_HEAD_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
+| `SALAD_LIP_SYNC_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
+| `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
+| `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
