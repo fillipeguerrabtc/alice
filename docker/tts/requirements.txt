@@ -4,4 +4,8 @@ soundfile==0.12.1
 # TTS 0.22.0 requer numpy==1.22.0 para Python <= 3.10 (Ubuntu 22.04 padrão)
 # numpy 1.22.0 é compatível com torch 2.1.2
 numpy==1.22.0
+# Fixar transformers para versão compatível com torch 2.1.2
+# Versões mais recentes do transformers usam register_pytree_node que foi removido/renomeado no PyTorch 2.1.2
+# transformers 4.35.2 é compatível com torch 2.1.2 e TTS 0.22.0
+transformers==4.35.2
 requests==2.32.3

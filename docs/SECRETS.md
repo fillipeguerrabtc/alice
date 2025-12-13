@@ -1,13 +1,13 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 12 de Dezembro de 2025
+**Data:** 13 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 46 configurados no repositório (42 obrigatórios pré-deploy + 4 opcionais/novos)
+**Total de Secrets:** 47 configurados no repositório (42 obrigatórios pré-deploy + 5 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 42 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -104,8 +104,9 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_LIP_SYNC_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
+| `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 
-> **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). Não é necessário configurar secrets para checksums.
+> **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). O token `HUGGINGFACE_TOKEN` é usado para garantir downloads confiáveis dos modelos ML (evita rate limits e permite acesso a repositórios gated/privados).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
@@ -243,8 +244,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 12 de Dezembro de 2025  
-> **Resumo:** 41 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 13 de Dezembro de 2025  
+> **Resumo:** 47 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -274,6 +275,7 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `SALAD_API_KEY` | ✅ |
 | `SALAD_ORGANIZATION_ID` | ✅ |
+| `HUGGINGFACE_TOKEN` | ✅ (opcional mas recomendado para downloads confiáveis) |
 
 ### Stripe (Pagamentos)
 
@@ -414,10 +416,11 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 12 de Dezembro de 2025*  
-*Versão: 6.6*  
-*Total de Secrets: 41 configurados (37 obrigatórios + 4 opcionais/novos)*  
+*Documento atualizado em: 13 de Dezembro de 2025*  
+*Versão: 6.7*  
+*Total de Secrets: 47 configurados (42 obrigatórios + 5 opcionais/novos)*  
 *Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
-*CORS_ORIGINS: Adicionado em 10/12/2025 para permitir requisições do frontend*
+*CORS_ORIGINS: Adicionado em 10/12/2025 para permitir requisições do frontend*  
+*HUGGINGFACE_TOKEN: Adicionado em 13/12/2025 para downloads confiáveis de modelos ML (evita rate limits e permite acesso a repositórios gated)*

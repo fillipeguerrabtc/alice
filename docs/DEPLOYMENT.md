@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 12 de Dezembro de 2025
+**Data:** 13 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 42 Containers em Produção
 
@@ -9,7 +9,7 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
 
 ### Notas Multimodais (13/12/2025)
 - Pré-requisito: `git-lfs` instalado no runner (Dockerfile lip-sync).
-- **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, **checksums SHA256 calculados automaticamente** no workflow). Runtime: `python3 inference.py`, `PYTHONPATH` preservado, `cwd=/opt/wav2lip`, caminhos absolutos + checkpoint explícito. Saída: `/opt/alice/uploads/lip-sync/output-<job>.mp4` (volume extra).
+- **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, **checksums SHA256 calculados automaticamente** no workflow usando token `HUGGINGFACE_TOKEN` para acesso confiável). Runtime: `python3 inference.py`, `PYTHONPATH` preservado, `cwd=/opt/wav2lip`, caminhos absolutos + checkpoint explícito. Saída: `/opt/alice/uploads/lip-sync/output-<job>.mp4` (volume extra).
 - **SadTalker**: modelos **obrigatórios**; build falha se `scripts/download_models.sh` não existir. Runtime: `PYTHONPATH` preservado, `cwd=/opt/sadtalker`, caminhos absolutos, rename final controlado. Saída: `/opt/alice/uploads/talking-head/output-<job>.mp4` (volume extra).
 - **TTS (XTTS v2)**: pré-download **obrigatório** do modelo durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`. Saída: `/opt/alice/uploads/tts/output-<job>.wav` (volume extra).
 - **Ambiente Salad**: containers `lip_sync` e `talking_head` exigem `VIDEO_PATH`/`IMAGE_PATH` + `AUDIO_PATH` como variáveis de ambiente diretas (não JSON) e **somente caminhos locais** (URLs são rejeitadas). TTS aceita `speaker_wav` apenas como caminho local. `OUTPUT_PATH` passa a respeitar a extensão correta (.mp4 para vídeo, .wav para TTS) no volume extra.
@@ -942,7 +942,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 12 de Dezembro de 2025*
+*Documento atualizado em: 13 de Dezembro de 2025*
 *Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*

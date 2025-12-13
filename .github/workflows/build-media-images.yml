@@ -72,19 +72,70 @@ jobs:
 
       # Calcular checksums SHA256 dos modelos ML diretamente das fontes originais
       # Enterprise-grade: usa as mesmas URLs que o Dockerfile usa (HuggingFace + Adrian Bulat)
+      # Token HuggingFace: usado em todos os downloads para garantir acesso confiável (rate limits, repositórios privados/gated)
       - name: Calcular checksums dos modelos ML (fontes originais)
         id: checksums
+        env:
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
         run: |
           set -euo pipefail
           echo "🔐 Calculando checksums SHA256 dos modelos (fontes originais)..."
+          
+          # Função helper para download com token (obrigatório se configurado)
+          download_with_token() {
+            local URL="$1"
+            local OUTPUT="$2"
+            local TOKEN="${HUGGINGFACE_TOKEN:-}"
+            
+            if [ -n "$TOKEN" ]; then
+              # Token configurado: usar OBRIGATORIAMENTE (sem fallback sem token)
+              echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."
+              HTTP_CODE=$(curl -fSL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer ${TOKEN}" -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTPUT" ]; then
+                return 0
+              elif [ "$HTTP_CODE" = "401" ]; then
+                echo "::error::401 Unauthorized - Token HuggingFace pode estar inválido ou expirado"
+                return 1
+              elif [ "$HTTP_CODE" = "403" ]; then
+                echo "::error::403 Forbidden - Token HuggingFace não tem permissão para acessar este repositório"
+                return 1
+              else
+                echo "::error::Download falhou com token (HTTP $HTTP_CODE)"
+                return 1
+              fi
+            else
+              # Token não configurado: tentar sem autenticação (repositórios públicos)
+              echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)"
+              HTTP_CODE=$(curl -fSL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
+              if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTPUT" ]; then
+                return 0
+              elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
+                echo "::error::Download requer autenticação (HTTP $HTTP_CODE) - configure HUGGINGFACE_TOKEN no GitHub Secrets"
+                return 1
+              else
+                echo "::error::Download falhou (HTTP $HTTP_CODE)"
+                return 1
+              fi
+            fi
+          }
+          
+          if [ -n "${HUGGINGFACE_TOKEN:-}" ]; then
+            echo "✅ Token HuggingFace configurado - será usado OBRIGATORIAMENTE em todos os downloads"
+          else
+            echo "⚠️ Token HuggingFace NÃO configurado - downloads podem falhar com 401/403"
+            echo "⚠️ Configure HUGGINGFACE_TOKEN no GitHub Secrets para acesso confiável"
+          fi
           
           # Wav2Lip GAN checkpoint (~400MB) - mesma URL do Dockerfile
           WAV2LIP_URL="https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth"
           echo "📦 Baixando wav2lip_gan.pth da HuggingFace..."
           WAV2LIP_FILE=$(mktemp)
-          curl -fSL --retry 3 --retry-delay 5 -o "$WAV2LIP_FILE" "$WAV2LIP_URL"
+          if ! download_with_token "$WAV2LIP_URL" "$WAV2LIP_FILE"; then
+            echo "::error::Download de wav2lip_gan.pth falhou"
+            exit 1
+          fi
           if [ ! -s "$WAV2LIP_FILE" ]; then
-            echo "::error::Download de wav2lip_gan.pth falhou ou arquivo vazio"
+            echo "::error::wav2lip_gan.pth está vazio"
             exit 1
           fi
           WAV2LIP_SHA=$(sha256sum "$WAV2LIP_FILE" | cut -d' ' -f1)
@@ -92,13 +143,43 @@ jobs:
           echo "wav2lip_sha256=${WAV2LIP_SHA}" >> $GITHUB_OUTPUT
           echo "✅ WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_SHA}"
           
-          # S3FD face detection (~85MB) - mesma URL do Dockerfile
-          S3FD_URL="https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth"
-          echo "📦 Baixando s3fd.pth do site do Adrian Bulat..."
+          # S3FD face detection (~85MB) - Enterprise-grade: múltiplas fontes com fallback + token
+          # URL original do Adrian Bulat retorna 401 Unauthorized, então usamos mirrors públicos do HuggingFace
           S3FD_FILE=$(mktemp)
-          curl -fSL --retry 3 --retry-delay 5 -o "$S3FD_FILE" "$S3FD_URL"
-          if [ ! -s "$S3FD_FILE" ]; then
-            echo "::error::Download de s3fd.pth falhou ou arquivo vazio"
+          S3FD_DOWNLOADED=false
+          
+          # Lista de fontes (ordem de prioridade)
+          S3FD_SOURCES=(
+            "https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth|gmk123/wav2lip"
+            "https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth|manavisrani07/gradio-lipsync-wav2lip"
+            "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/s3fd-619a316812.pth|camenduru/Wav2Lip"
+          )
+          
+          for SOURCE_INFO in "${S3FD_SOURCES[@]}"; do
+            IFS='|' read -r S3FD_URL SOURCE_NAME <<< "$SOURCE_INFO"
+            echo "📦 Tentando baixar s3fd.pth de ${SOURCE_NAME}..."
+            
+            if download_with_token "$S3FD_URL" "$S3FD_FILE"; then
+              echo "✅ Download bem-sucedido de ${SOURCE_NAME}"
+              S3FD_DOWNLOADED=true
+              break
+            else
+              echo "⚠️ Falha ao baixar de ${SOURCE_NAME}"
+              rm -f "$S3FD_FILE"
+              S3FD_FILE=$(mktemp)
+            fi
+          done
+          
+          if [ "$S3FD_DOWNLOADED" != "true" ]; then
+            echo "::error::Download de s3fd.pth falhou de todas as fontes"
+            echo "::error::Configure HUGGINGFACE_TOKEN no GitHub Secrets (read-only token do HuggingFace) para acesso confiável"
+            exit 1
+          fi
+          
+          # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
+          S3FD_SIZE=$(stat -f%z "$S3FD_FILE" 2>/dev/null || stat -c%s "$S3FD_FILE" 2>/dev/null || echo "0")
+          if [ "$S3FD_SIZE" -lt 80000000 ]; then
+            echo "::error::s3fd.pth parece estar corrompido (tamanho: ${S3FD_SIZE} bytes, esperado: ~85MB)"
             exit 1
           fi
           S3FD_SHA=$(sha256sum "$S3FD_FILE" | cut -d' ' -f1)

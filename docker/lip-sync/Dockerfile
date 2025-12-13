@@ -36,12 +36,20 @@ RUN set -euo pipefail; \
     echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
 # Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
-ARG S3FD_URL=https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth
+# Enterprise-grade: múltiplas fontes com fallback (URL original do Adrian Bulat retorna 401)
+# Tentativa 1: gmk123/wav2lip (repositório público, arquivo na raiz)
+ARG S3FD_URL=https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth
 ARG S3FD_SHA256
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/face_detection/detection/sfd; \
-    wget --tries=3 --timeout=60 -O /opt/wav2lip/face_detection/detection/sfd/s3fd.pth "$S3FD_URL"; \
+    if ! wget --tries=3 --timeout=300 --progress=dot:giga -O /opt/wav2lip/face_detection/detection/sfd/s3fd.pth "$S3FD_URL" 2>/dev/null || [ ! -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then \
+      echo "⚠️ Fallback: tentando alternativa (manavisrani07/gradio-lipsync-wav2lip)..."; \
+      S3FD_URL_FALLBACK="https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth"; \
+      wget --tries=3 --timeout=300 --progress=dot:giga -O /opt/wav2lip/face_detection/detection/sfd/s3fd.pth "$S3FD_URL_FALLBACK"; \
+    fi; \
     if [ ! -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then echo "s3fd.pth vazio ou ausente"; exit 1; fi; \
+    S3FD_SIZE=$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
+    if [ "$S3FD_SIZE" -lt 80000000 ]; then echo "s3fd.pth corrompido (tamanho: ${S3FD_SIZE} bytes, esperado: ~85MB)"; exit 1; fi; \
     if [ -z "${S3FD_SHA256:-}" ]; then echo "S3FD_SHA256 é obrigatório"; exit 1; fi; \
     echo "${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
 
