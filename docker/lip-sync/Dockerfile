@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv git git-lfs ffmpeg libgl1 wget unzip ca-certificates && \
+      python3 python3-pip python3-venv git git-lfs ffmpeg libgl1 wget curl unzip ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -26,29 +26,109 @@ RUN set -euo pipefail; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Baixa checkpoint oficial (Wav2Lip GAN) em path esperado + valida checksum
+# Enterprise-grade: usa token HuggingFace se fornecido (mesma lógica do workflow)
 ARG WAV2LIP_CHECKPOINT_URL=https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth
 ARG WAV2LIP_CHECKPOINT_SHA256
+ARG HUGGINGFACE_TOKEN
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/checkpoints; \
-    wget --tries=3 --timeout=30 -O /opt/wav2lip/checkpoints/wav2lip_gan.pth "$WAV2LIP_CHECKPOINT_URL"; \
-    if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then echo "checkpoint vazio ou ausente"; exit 1; fi; \
-    if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then echo "WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; exit 1; fi; \
+    # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
+    download_with_token() { \
+      local URL="$$1"; \
+      local OUTPUT="$$2"; \
+      local TOKEN="${HUGGINGFACE_TOKEN:-}"; \
+      if [ -n "$$TOKEN" ]; then \
+        echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."; \
+        HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
+        if [ "$$HTTP_CODE" = "200" ] && [ -s "$$OUTPUT" ]; then \
+          return 0; \
+        elif [ "$$HTTP_CODE" = "401" ]; then \
+          echo "::error::401 Unauthorized - Token HuggingFace pode estar inválido ou expirado"; \
+          return 1; \
+        elif [ "$$HTTP_CODE" = "403" ]; then \
+          echo "::error::403 Forbidden - Token HuggingFace não tem permissão para acessar este repositório"; \
+          return 1; \
+        else \
+          echo "::error::Download falhou com token (HTTP $${HTTP_CODE})"; \
+          return 1; \
+        fi; \
+      else \
+        echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)"; \
+        HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
+        if [ "$$HTTP_CODE" = "200" ] && [ -s "$$OUTPUT" ]; then \
+          return 0; \
+        elif [ "$$HTTP_CODE" = "401" ] || [ "$$HTTP_CODE" = "403" ]; then \
+          echo "::error::Download requer autenticação (HTTP $${HTTP_CODE}) - configure HUGGINGFACE_TOKEN no GitHub Secrets"; \
+          return 1; \
+        else \
+          echo "::error::Download falhou (HTTP $${HTTP_CODE})"; \
+          return 1; \
+        fi; \
+      fi; \
+    }; \
+    if ! download_with_token "$WAV2LIP_CHECKPOINT_URL" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
+      echo "::error::Download de wav2lip_gan.pth falhou"; \
+      exit 1; \
+    fi; \
+    if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then \
+      echo "::error::wav2lip_gan.pth está vazio"; \
+      exit 1; \
+    fi; \
+    if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then \
+      echo "::error::WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; \
+      exit 1; \
+    fi; \
     echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
 # Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
-# Enterprise-grade: múltiplas fontes com fallback sequencial (URL original do Adrian Bulat retorna 401)
-# Mesma lógica robusta do workflow: tenta todas as fontes antes de falhar
+# Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
+# URL original do Adrian Bulat retorna 401 Unauthorized, então usamos mirrors públicos do HuggingFace
 ARG S3FD_SHA256
+ARG HUGGINGFACE_TOKEN
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/face_detection/detection/sfd; \
+    # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
+    download_with_token() { \
+      local URL="$$1"; \
+      local OUTPUT="$$2"; \
+      local TOKEN="${HUGGINGFACE_TOKEN:-}"; \
+      if [ -n "$$TOKEN" ]; then \
+        echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."; \
+        HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
+        if [ "$$HTTP_CODE" = "200" ] && [ -s "$$OUTPUT" ]; then \
+          return 0; \
+        elif [ "$$HTTP_CODE" = "401" ]; then \
+          echo "::error::401 Unauthorized - Token HuggingFace pode estar inválido ou expirado"; \
+          return 1; \
+        elif [ "$$HTTP_CODE" = "403" ]; then \
+          echo "::error::403 Forbidden - Token HuggingFace não tem permissão para acessar este repositório"; \
+          return 1; \
+        else \
+          echo "::error::Download falhou com token (HTTP $${HTTP_CODE})"; \
+          return 1; \
+        fi; \
+      else \
+        echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)"; \
+        HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
+        if [ "$$HTTP_CODE" = "200" ] && [ -s "$$OUTPUT" ]; then \
+          return 0; \
+        elif [ "$$HTTP_CODE" = "401" ] || [ "$$HTTP_CODE" = "403" ]; then \
+          echo "::error::Download requer autenticação (HTTP $${HTTP_CODE}) - configure HUGGINGFACE_TOKEN no GitHub Secrets"; \
+          return 1; \
+        else \
+          echo "::error::Download falhou (HTTP $${HTTP_CODE})"; \
+          return 1; \
+        fi; \
+      fi; \
+    }; \
     S3FD_DOWNLOADED=false; \
     S3FD_SOURCES=("https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth|gmk123/wav2lip" \
                   "https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth|manavisrani07/gradio-lipsync-wav2lip" \
                   "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/s3fd-619a316812.pth|camenduru/Wav2Lip"); \
-    for SOURCE_INFO in "${S3FD_SOURCES[@]}"; do \
+    for SOURCE_INFO in $${S3FD_SOURCES[@]}; do \
       IFS='|' read -r S3FD_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
       echo "📦 Tentando baixar s3fd.pth de $${SOURCE_NAME}..."; \
-      if wget --tries=3 --timeout=300 --progress=dot:giga -O /opt/wav2lip/face_detection/detection/sfd/s3fd.pth "$$S3FD_URL" 2>/dev/null && [ -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then \
+      if download_with_token "$$S3FD_URL" /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; then \
         echo "✅ Download bem-sucedido de $${SOURCE_NAME}"; \
         S3FD_DOWNLOADED=true; \
         break; \
@@ -59,6 +139,7 @@ RUN set -euo pipefail; \
     done; \
     if [ "$$S3FD_DOWNLOADED" != "true" ]; then \
       echo "::error::Download de s3fd.pth falhou de todas as fontes"; \
+      echo "::error::Configure HUGGINGFACE_TOKEN no GitHub Secrets (read-only token do HuggingFace) para acesso confiável"; \
       exit 1; \
     fi; \
     if [ ! -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then \
