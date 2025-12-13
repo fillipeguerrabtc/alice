@@ -861,7 +861,28 @@ async function ensureUploadDir(dirPath: string): Promise<void> {
   }
 }
 
+/**
+ * Valida se uma string é um UUID válido (v4)
+ * Segurança: previne path traversal attacks ao validar formato UUID antes de usar em paths
+ */
+function isValidUUID(uuid: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(uuid);
+}
+
+/**
+ * Valida se o jobType é um dos tipos permitidos
+ * Segurança: previne uso de tipos inválidos que poderiam causar problemas de path
+ */
+function isValidJobType(jobType: string): jobType is 'tts' | 'lip_sync' | 'talking_head' | 'long_video' {
+  return ['tts', 'lip_sync', 'talking_head', 'long_video'].includes(jobType);
+}
+
 function getSaladUploadPath(jobType: string, jobId: string): string {
+  // Validação de segurança: garantir que jobId é UUID válido antes de usar em path
+  if (!isValidUUID(jobId)) {
+    throw new Error('jobId inválido: deve ser UUID v4 válido');
+  }
   const base = UPLOAD_JOB_DIRS[jobType] || UPLOAD_JOB_DIRS.media;
   return path.join(base, `output-${jobId}${jobType === 'tts' ? '.wav' : '.mp4'}`);
 }
@@ -1470,6 +1491,25 @@ app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (re
 
     if (!token || Array.isArray(token)) return res.status(401).json({ error: 'Token ausente' });
     if (!jobId || !jobType || !buffer) return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes' });
+    
+    // Validação de segurança: jobId deve ser UUID válido (previne path traversal)
+    if (!isValidUUID(jobId)) {
+      logger.warn({ jobId }, 'Tentativa de upload com jobId inválido (possível path traversal)');
+      return res.status(400).json({ error: 'jobId inválido: deve ser UUID v4 válido' });
+    }
+    
+    // Validação de segurança: jobType deve ser um dos tipos permitidos
+    if (!isValidJobType(jobType)) {
+      logger.warn({ jobType }, 'Tentativa de upload com jobType inválido');
+      return res.status(400).json({ error: 'jobType inválido: deve ser um dos tipos permitidos (tts, lip_sync, talking_head, long_video)' });
+    }
+    
+    // Validação de segurança: tenantId deve ser UUID válido se fornecido (previne path traversal)
+    if (tenantId !== null && tenantId !== undefined && typeof tenantId === 'string' && !isValidUUID(tenantId)) {
+      logger.warn({ tenantId }, 'Tentativa de upload com tenantId inválido (possível path traversal)');
+      return res.status(400).json({ error: 'tenantId inválido: deve ser UUID v4 válido ou null' });
+    }
+    
     if (!validateUploadToken(token as string, jobId, jobType, tenantId)) return res.status(401).json({ error: 'Token inválido' });
 
     const targetPath = getSaladUploadPath(jobType, jobId);
