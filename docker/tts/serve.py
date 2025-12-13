@@ -41,13 +41,20 @@ def ensure_parent(path: str) -> None:
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
+def normalize_str(value: object | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    trimmed = value.strip()
+    return trimmed if trimmed else None
+
+
 def main() -> None:
     # Parâmetros podem vir de MEDIA_PARAMS (JSON) ou variáveis de ambiente individuais
     params = parse_media_params()
     
     # text: obrigatório (MEDIA_PARAMS.text ou TEXT env) — não tratar string vazia como ausente
-    text_param = params.get("text")
-    text_env = os.getenv("TEXT")
+    text_param = normalize_str(params.get("text"))
+    text_env = normalize_str(os.getenv("TEXT"))
     text = text_param if text_param is not None else text_env
     if text is None:
         print("Variável obrigatória ausente: TEXT (ou MEDIA_PARAMS.text)", file=sys.stderr)
@@ -57,7 +64,7 @@ def main() -> None:
     
     # voice/speaker: MEDIA_PARAMS.voice > VOICE env > DEFAULT_SPEAKER
     # XTTS v2 requer speaker válido (não aceita None)
-    voice = params.get("voice") or os.getenv("VOICE") or DEFAULT_SPEAKER
+    voice = normalize_str(params.get("voice")) or normalize_str(os.getenv("VOICE")) or DEFAULT_SPEAKER
     
     # speaker_wav: áudio de referência para voice cloning (opcional, deve ser caminho local)
     speaker_wav = params.get("speaker_wav") or os.getenv("SPEAKER_WAV")
@@ -67,7 +74,7 @@ def main() -> None:
     
     # lang: prioridade MEDIA_PARAMS.lang > TTS_LANG env > default "pt"
     # Código ISO 639-1: pt, en, es, fr, de, etc.
-    lang = params.get("lang") or os.getenv("TTS_LANG") or DEFAULT_LANG
+    lang = normalize_str(params.get("lang")) or normalize_str(os.getenv("TTS_LANG")) or DEFAULT_LANG
     
     model_name = os.getenv("MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
 
