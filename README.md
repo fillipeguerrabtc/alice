@@ -37,7 +37,7 @@
 - Imagens multimodais (lip-sync, talking-head, tts) usam `git-lfs`, `wget`, `unzip`, `ca-certificates` e shell hardening (`pipefail`).
 - **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios, ambos com **checksum SHA256 obrigatório**). Execução via `python3 inference.py` com `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip` e caminhos absolutos.
 - **SadTalker**: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos.
-- **TTS (XTTS v2)**: pré-download do modelo durante build para autonomia 100% (sem download em runtime); `TTS_HOME=/opt/tts-models`.
+- **TTS (XTTS v2)**: pré-download **obrigatório** do modelo durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`.
 
 ### Diferenciais
 

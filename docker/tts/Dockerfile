@@ -16,11 +16,12 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Pré-baixa modelo XTTS v2 durante build para autonomia 100% (sem download em runtime)
-# O TTS baixa automaticamente para ~/.local/share/tts/ na primeira chamada
+# O TTS baixa para $TTS_HOME na inicialização do modelo
 ENV TTS_HOME=/opt/tts-models
 RUN set -euo pipefail; \
     mkdir -p "$TTS_HOME"; \
-    python3 -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')" || true
+    python3 -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"; \
+    if [ ! -d "$TTS_HOME/tts_models--multilingual--multi-dataset--xtts_v2" ]; then echo "Modelo XTTS v2 não foi baixado corretamente"; exit 1; fi
 
 COPY serve.py .
 
