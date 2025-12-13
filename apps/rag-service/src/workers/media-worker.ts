@@ -206,6 +206,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     JOB_ID: job.id,
     TENANT_ID: job.tenantId,
     MEDIA_PARAMS: JSON.stringify(payload ?? {}),
+    // Caminho de saída obrigatório para o container TTS (evita falha por OUTPUT_PATH ausente)
+    OUTPUT_PATH: `/tmp/output-${job.id}.wav`,
   };
 
   const result = await deps.saladClient.createAndWait({
