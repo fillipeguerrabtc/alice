@@ -12,16 +12,25 @@
  * - Produção: Volume Docker persistente em /opt/alice/uploads
  * - Desenvolvimento: ./uploads (local)
  * 
- * Estrutura de diretórios:
+ * Estrutura de diretórios (Enterprise - 13/12/2025):
  * /opt/alice/uploads/
- * ├── {tenantId}/
- * │   ├── image/
- * │   ├── audio/
- * │   ├── video/
- * │   └── document/
+ * ├── {tenantId}/                    # Uploads gerais de usuários (isolamento por tenant)
+ * │   ├── image/                     # Imagens enviadas via /api/media/upload
+ * │   ├── audio/                     # Áudios enviados via /api/media/upload
+ * │   ├── video/                     # Vídeos enviados via /api/media/upload
+ * │   └── document/                  # Documentos enviados via /api/media/upload
+ * ├── tts/                           # Outputs de jobs TTS (Salad) - output-{jobId}.wav
+ * ├── lip-sync/                      # Outputs de jobs lip-sync (Salad) - output-{jobId}.mp4
+ * ├── talking-head/                  # Outputs de jobs talking-head (Salad) - output-{jobId}.mp4
+ * ├── long-video/                    # Outputs de jobs long-video (Salad) - output-{jobId}.mp4
+ * └── media/                         # Outros arquivos multimodais (reservado)
+ * 
+ * Permissões Enterprise:
+ * - Diretórios: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
+ * - Arquivos: 640 (rw-r-----) - owner rw, group r, outros sem acesso
  * 
  * Autor: Fillipe Guerra
- * Data: 05 de Dezembro de 2025
+ * Data: 13 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -218,6 +227,9 @@ class LocalStorageService implements StorageService {
 
   /**
    * Obter estatísticas de uso de disco
+   * Considera AMBAS as estruturas:
+   * 1. Uploads gerais: /uploads/{tenantId}/{mediaType}/{filename}
+   * 2. Outputs de jobs Salad: /uploads/{tts,lip-sync,talking-head,long-video}/output-{jobId}.{ext}
    */
   async getDiskUsage(): Promise<DiskUsageStats> {
     const stats: DiskUsageStats = {
@@ -228,37 +240,65 @@ class LocalStorageService implements StorageService {
     };
 
     try {
-      const tenantDirs = await fs.readdir(this.baseDir);
+      const entries = await fs.readdir(this.baseDir);
       
-      for (const tenantId of tenantDirs) {
-        const tenantPath = path.join(this.baseDir, tenantId);
-        const tenantStat = await fs.stat(tenantPath);
+      for (const entry of entries) {
+        const entryPath = path.join(this.baseDir, entry);
+        const entryStat = await fs.stat(entryPath);
         
-        if (!tenantStat.isDirectory()) continue;
+        if (!entryStat.isDirectory()) continue;
         
-        const mediaTypes = await fs.readdir(tenantPath);
+        // Estrutura 1: Uploads gerais por tenant (/uploads/{tenantId}/{mediaType}/...)
+        // Detecta se é UUID (tenantId) ou nome de diretório de job Salad
+        const isJobOutputDir = ['tts', 'lip-sync', 'talking-head', 'long-video', 'media'].includes(entry);
         
-        for (const mediaType of mediaTypes) {
-          const mediaPath = path.join(tenantPath, mediaType);
-          const mediaStat = await fs.stat(mediaPath);
+        if (isJobOutputDir) {
+          // Estrutura 2: Outputs de jobs Salad (/uploads/{jobType}/output-{jobId}.{ext})
+          const jobType = entry === 'lip-sync' ? 'video' : entry === 'talking-head' ? 'video' : entry === 'long-video' ? 'video' : entry === 'tts' ? 'audio' : 'media';
           
-          if (!mediaStat.isDirectory()) continue;
-          
-          if (!stats.byMediaType[mediaType]) {
-            stats.byMediaType[mediaType] = { files: 0, size: '0 B', sizeBytes: 0 };
+          if (!stats.byMediaType[jobType]) {
+            stats.byMediaType[jobType] = { files: 0, size: '0 B', sizeBytes: 0 };
           }
           
-          const files = await fs.readdir(mediaPath);
-          
+          const files = await fs.readdir(entryPath);
           for (const file of files) {
-            const filePath = path.join(mediaPath, file);
+            const filePath = path.join(entryPath, file);
             const fileStat = await fs.stat(filePath);
             
             if (fileStat.isFile()) {
               stats.totalFiles++;
               stats.totalSizeBytes += fileStat.size;
-              stats.byMediaType[mediaType].files++;
-              stats.byMediaType[mediaType].sizeBytes += fileStat.size;
+              stats.byMediaType[jobType].files++;
+              stats.byMediaType[jobType].sizeBytes += fileStat.size;
+            }
+          }
+        } else {
+          // Estrutura 1: Uploads gerais por tenant
+          const tenantPath = entryPath;
+          const mediaTypes = await fs.readdir(tenantPath);
+          
+          for (const mediaType of mediaTypes) {
+            const mediaPath = path.join(tenantPath, mediaType);
+            const mediaStat = await fs.stat(mediaPath);
+            
+            if (!mediaStat.isDirectory()) continue;
+            
+            if (!stats.byMediaType[mediaType]) {
+              stats.byMediaType[mediaType] = { files: 0, size: '0 B', sizeBytes: 0 };
+            }
+            
+            const files = await fs.readdir(mediaPath);
+            
+            for (const file of files) {
+              const filePath = path.join(mediaPath, file);
+              const fileStat = await fs.stat(filePath);
+              
+              if (fileStat.isFile()) {
+                stats.totalFiles++;
+                stats.totalSizeBytes += fileStat.size;
+                stats.byMediaType[mediaType].files++;
+                stats.byMediaType[mediaType].sizeBytes += fileStat.size;
+              }
             }
           }
         }

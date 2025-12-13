@@ -162,12 +162,17 @@ Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice
 | Diretório | Propósito | Permissões | Uso Estimado |
 |-----------|-----------|------------|--------------|
 | `/opt/alice/data/` | Dados de DBs e serviços | 750 | ~20-50GB |
-| `/opt/alice/uploads/` | Uploads multimodais (subpastas por tipo) | 750 | ~10-30GB |
-| ├── `tts/` | Áudios gerados (TTS) | 750 | |
-| ├── `lip-sync/` | Vídeos lip-sync | 750 | |
-| ├── `talking-head/` | Vídeos talking-head | 750 | |
-| ├── `long-video/` | Vídeos longos concatenados | 750 | |
-| └── `media/` | Outros arquivos multimodais | 750 | |
+| `/opt/alice/uploads/` | Uploads multimodais (DUAS estruturas) | 750 | ~10-30GB |
+| ├── `{tenantId}/` | Uploads gerais de usuários (isolamento por tenant) | 750 | |
+| │   ├── `image/` | Imagens enviadas via /api/media/upload | 750 | |
+| │   ├── `audio/` | Áudios enviados via /api/media/upload | 750 | |
+| │   ├── `video/` | Vídeos enviados via /api/media/upload | 750 | |
+| │   └── `document/` | Documentos enviados via /api/media/upload | 750 | |
+| ├── `tts/` | Outputs de jobs TTS (Salad) - output-{jobId}.wav | 750 | |
+| ├── `lip-sync/` | Outputs de jobs lip-sync (Salad) - output-{jobId}.mp4 | 750 | |
+| ├── `talking-head/` | Outputs de jobs talking-head (Salad) - output-{jobId}.mp4 | 750 | |
+| ├── `long-video/` | Outputs de jobs long-video (Salad) - output-{jobId}.mp4 | 750 | |
+| └── `media/` | Outros arquivos multimodais (reservado) | 750 | |
 | `/opt/alice/backups/` | Backups enterprise | 750 | ~20-40GB |
 | ├── `postgresql/` | Backups PostgreSQL (pgBackRest) | 750 | |
 | ├── `mariadb/` | Backups MariaDB | 750 | |
