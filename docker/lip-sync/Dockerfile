@@ -21,22 +21,18 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 # NOTA: Clone completo (sem --depth) para garantir que commit específico esteja disponível
 RUN set -euo pipefail && \
-    # Enterprise-grade: clone completo (sem --depth) + fetch explícito do master para garantir commit disponível
-    git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
+    # Enterprise-grade: clone completo (sem --depth) para garantir que commit específico esteja disponível
+    # NOTA: git clone completo inclui todo o histórico, garantindo que commit fixo esteja disponível
+    git clone --no-single-branch https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
     cd /opt/wav2lip && \
     git lfs install --local && \
-    # Fetch explícito do master para garantir que commit esteja disponível
-    # NOTA: git fetch origin master garante que o commit do master esteja no histórico local
-    # Enterprise-grade: usar || para fallback sequencial sem subshell (melhores práticas Docker)
-    git fetch origin master:refs/remotes/origin/master || \
-    git fetch origin +refs/heads/master:refs/remotes/origin/master || \
-    git fetch origin && \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
     # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
     # Enterprise-grade: commit fixo é OBRIGATÓRIO - sem fallback para garantir reprodutibilidade
     # Regra 6: PROIBIDO workarounds - build DEVE falhar se commit não existe
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322" && \
-    # Verificar se commit existe localmente (deve existir após clone completo + fetch)
+    # Verificar se commit existe localmente (deve existir após clone completo)
+    # NOTA: git clone completo sem --depth garante que commit esteja no histórico local
     if git cat-file -e "$${WAV2LIP_COMMIT}^{commit}" 2>/dev/null; then \
       echo "Usando commit fixo: $${WAV2LIP_COMMIT}" && \
       git checkout "$${WAV2LIP_COMMIT}"; \
@@ -50,7 +46,7 @@ RUN set -euo pipefail && \
         echo "  (não disponível)"; \
       fi && \
       echo "::error::Último commit do master:" && \
-      (git rev-parse origin/master 2>/dev/null || echo "  (não disponível)") && \
+      (git rev-parse origin/master 2>/dev/null || git rev-parse HEAD 2>/dev/null || echo "  (não disponível)") && \
       echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master" && \
       echo "::error::Build falhou - commit fixo é obrigatório para reprodutibilidade enterprise (Regra 6)" && \
       exit 1; \
