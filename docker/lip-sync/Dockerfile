@@ -112,7 +112,7 @@ RUN --mount=type=secret,id=huggingface_token \
       SOURCE_NAME=$$(echo "$${SOURCE}" | cut -d'|' -f2) && \
       echo "Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..." && \
       if download_with_token "$${WAV2LIP_URL}" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
-        echo "Download bem-sucedido de $${SOURCE_NAME}" && \
+        echo "✅ Download bem-sucedido de $${SOURCE_NAME}" && \
         WAV2LIP_DOWNLOADED=true && \
         break; \
       else \
@@ -197,7 +197,7 @@ RUN --mount=type=secret,id=huggingface_token \
       SOURCE_NAME=$$(echo "$${SOURCE}" | cut -d'|' -f2) && \
       echo "Tentando baixar s3fd.pth de $${SOURCE_NAME}..." && \
       if download_with_token "$${S3FD_URL}" /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; then \
-        echo "✅ Download bem-sucedido de $${SOURCE_NAME}" && \
+        echo "Download bem-sucedido de $${SOURCE_NAME}" && \
         S3FD_DOWNLOADED=true && \
         break; \
       else \
