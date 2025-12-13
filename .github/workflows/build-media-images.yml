@@ -112,4 +112,6 @@ jobs:
       - name: Show digest ${{ matrix.image }}
         run: |
           echo "📋 Digest para ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1:"
-          docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1" | grep -m1 digest
+          if ! docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1" | grep -m1 digest; then
+            echo "::warning::Não foi possível capturar o digest (inspect/grep falhou). Build/push podem ter concluído; verifique manualmente o registry."
+          fi
