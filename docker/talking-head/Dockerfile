@@ -16,7 +16,8 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Clona SadTalker (sem setup.py); instala deps do projeto e exporta PYTHONPATH
 RUN git clone --depth 1 https://github.com/OpenTalker/SadTalker.git /opt/sadtalker && \
-    python3 -m pip install --no-cache-dir -r /opt/sadtalker/requirements.txt
+    python3 -m pip install --no-cache-dir -r /opt/sadtalker/requirements.txt && \
+    bash /opt/sadtalker/scripts/download_models.sh
 
 ENV PYTHONPATH="/opt/sadtalker:${PYTHONPATH}"
 

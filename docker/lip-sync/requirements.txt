@@ -5,5 +5,3 @@ numpy==1.26.4
 scipy==1.11.4
 opencv-python-headless==4.8.1.78
 ffmpeg-python==0.2.0
-# Wav2Lip upstream remove setup.py/pyproject; pin to commit with setup.py
-git+https://github.com/Rudrabha/Wav2Lip.git@665e0fa19f3135d1ed952b47bff59c6028e545a3#egg=Wav2Lip
