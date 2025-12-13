@@ -233,7 +233,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   const envVars: Record<string, string> = {
     JOB_ID: job.id,
     TENANT_ID: job.tenantId,
-    MEDIA_PARAMS: JSON.stringify(payload ?? {}),
+    MEDIA_PARAMS: JSON.stringify(paramsMerged ?? {}),
   };
 
   if (job.jobType === 'tts') {
