@@ -15,13 +15,14 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Clona Wav2Lip em commit fixo (reprodutibilidade) e instala deps locais
+# Clona Wav2Lip em branch master (reprodutibilidade) e instala deps locais
+# Enterprise-grade: usar branch master estável ao invés de commit específico que pode não existir
 RUN set -euo pipefail; \
     git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
     git fetch origin; \
-    git checkout d83d7e5ab24f535494cfc2e7a286fe9899bfa710; \
+    git checkout master; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
