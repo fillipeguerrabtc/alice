@@ -851,8 +851,14 @@ function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
 }
 
-function ensureUploadDir(dirPath: string) {
-  return fsPromises.mkdir(dirPath, { recursive: true, mode: 0o750 }).catch(() => {});
+async function ensureUploadDir(dirPath: string): Promise<void> {
+  try {
+    await fsPromises.mkdir(dirPath, { recursive: true, mode: 0o750 });
+  } catch (error) {
+    // Log erro crítico de criação de diretório (permissões, filesystem, etc.)
+    logger.error({ error, dirPath }, 'Falha ao criar diretório de upload - verifique permissões e filesystem');
+    throw error; // Re-lançar para que writeFile falhe com erro claro
+  }
 }
 
 function getSaladUploadPath(jobType: string, jobId: string): string {
@@ -1446,6 +1452,10 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
 });
 
 // Upload interno Salad -> RAG para outputs multimodais
+// NOTA DE SEGURANÇA: Endpoint interno para containers Salad Cloud (externos à rede Docker).
+// Não usa requireAuth() porque containers Salad não têm JWT de usuário.
+// Segurança baseada em HMAC token (INTERNAL_API_SECRET) + validação estrita de parâmetros.
+// Rate limiting aplicado via middleware global (createRateLimiter).
 app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (req: Request, res: Response) => {
   try {
     const token = req.headers['x-upload-token'];
@@ -1466,12 +1476,19 @@ app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (re
     await ensureUploadDir(path.dirname(targetPath));
     await fsPromises.writeFile(targetPath, buffer, { mode: 0o640 });
 
-    await db
+    // Verificar se o update afetou pelo menos uma linha (job deve existir)
+    const updated = await db
       .update(mediaJobs)
       .set({
         resultado: sql`jsonb_set(COALESCE(resultado,'{}'::jsonb), '{upload}', jsonb_build_object('path', ${targetPath}, 'size', ${buffer.length}, 'original', ${originalName}, 'uploadedAt', NOW()))`,
       })
-      .where(eq(mediaJobs.id, jobId));
+      .where(eq(mediaJobs.id, jobId))
+      .returning({ id: mediaJobs.id });
+
+    if (updated.length === 0) {
+      logger.warn({ jobId, jobType }, 'Upload recebido para job inexistente - possível race condition ou job deletado');
+      return res.status(404).json({ error: 'Job não encontrado' });
+    }
 
     res.json({ ok: true, path: targetPath, size: buffer.length });
   } catch (error) {
