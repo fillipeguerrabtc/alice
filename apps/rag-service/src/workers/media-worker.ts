@@ -42,7 +42,7 @@ const UPLOAD_PATHS = {
   'lip_sync': `${UPLOAD_BASE_DIR}/lip-sync`,
   'talking_head': `${UPLOAD_BASE_DIR}/talking-head`,
   'long_video': `${UPLOAD_BASE_DIR}/long-video`,
-  media: `${UPLOAD_BASE_DIR}/media`,
+  // Nota: 'media' não é um jobType válido - diretório /uploads/media é usado para outros uploads via /api/media/upload
 } as const;
 
 function isUrl(candidate: string) {
@@ -248,7 +248,12 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     ...payloadTopLevel,
   };
   const inputUrl = payloadObj.inputUrl ?? job.inputUrl;
-  const outputBaseDir = UPLOAD_PATHS[job.jobType as keyof typeof UPLOAD_PATHS] || UPLOAD_PATHS.media;
+  // Validação explícita: jobType já foi validado no switch acima, mas garantimos fail-fast aqui
+  // Sem fallback inacessível - se jobType não estiver em UPLOAD_PATHS, é erro de programação
+  const outputBaseDir = UPLOAD_PATHS[job.jobType as keyof typeof UPLOAD_PATHS];
+  if (!outputBaseDir) {
+    throw new Error(`jobType inválido: ${job.jobType} não está em UPLOAD_PATHS`);
+  }
 
   const envVars: Record<string, string> = {
     JOB_ID: job.id,
@@ -311,9 +316,9 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   } else if (job.jobType === 'long_video') {
     envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else {
-    // Segurança para futuros tipos de job
-    // outputBaseDir já é UPLOAD_PATHS.media quando jobType não corresponde a nenhum tipo conhecido (linha 251)
-    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}`;
+    // Este else nunca deve ser alcançado porque o switch acima (linha 208) já rejeita tipos inválidos
+    // Mantido apenas como segurança defensiva - se alcançado, é erro de programação
+    throw new Error(`Tipo de job não tratado no dispatchSalad: ${job.jobType}`);
   }
 
   if (!RAG_PUBLIC_BASE_URL) {

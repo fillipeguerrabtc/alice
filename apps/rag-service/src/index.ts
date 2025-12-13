@@ -541,7 +541,7 @@ const UPLOAD_JOB_DIRS: Record<string, string> = {
   lip_sync: path.join(UPLOAD_BASE_DIR, 'lip-sync'),
   talking_head: path.join(UPLOAD_BASE_DIR, 'talking-head'),
   long_video: path.join(UPLOAD_BASE_DIR, 'long-video'),
-  media: path.join(UPLOAD_BASE_DIR, 'media'),
+  // Nota: 'media' não é um jobType válido - diretório /uploads/media é usado para outros uploads via /api/media/upload
 };
 
 // ============================================================================
@@ -883,7 +883,12 @@ function getSaladUploadPath(jobType: string, jobId: string): string {
   if (!isValidUUID(jobId)) {
     throw new Error('jobId inválido: deve ser UUID v4 válido');
   }
-  const base = UPLOAD_JOB_DIRS[jobType] || UPLOAD_JOB_DIRS.media;
+  // Validação de segurança: jobType deve ser validado antes de chamar esta função
+  // Fail-fast se jobType não estiver em UPLOAD_JOB_DIRS (sem fallback inacessível)
+  const base = UPLOAD_JOB_DIRS[jobType];
+  if (!base) {
+    throw new Error(`jobType inválido: ${jobType} não está em UPLOAD_JOB_DIRS`);
+  }
   return path.join(base, `output-${jobId}${jobType === 'tts' ? '.wav' : '.mp4'}`);
 }
 
