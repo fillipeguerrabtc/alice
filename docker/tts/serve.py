@@ -3,6 +3,9 @@ import os
 import pathlib
 import sys
 
+import numpy as np
+import soundfile as sf
+
 # Configurações do TTS ANTES do import (obrigatório para inicialização correta)
 # TTS_HOME: diretório de modelos pré-baixados no build
 # COQUI_TOS_AGREED: aceite automático de licença (necessário para execução não-interativa)
@@ -88,20 +91,34 @@ def main() -> None:
 
     ensure_parent(output_path)
     
-    # Uso do caminho suportado pelo TTS API para voice cloning:
-    # tts_to_file com speaker_wav quando disponível; caso contrário, speaker fixo.
-    tts_kwargs = {
-        "text": text,
-        "language": lang,
-        "file_path": output_path,
-    }
+    # Voice cloning: se speaker_wav presente, gera latentes e escreve manualmente.
     if speaker_wav:
-        tts_kwargs["speaker_wav"] = speaker_wav
         print(f"Usando voice cloning com referência: {speaker_wav}")
+        gpt_cond_latent, speaker_embedding = tts.get_conditioning_latents(audio_path=speaker_wav, language=lang)
+        result = tts.inference(
+            text=text,
+            language=lang,
+            gpt_cond_latent=gpt_cond_latent,
+            speaker_embedding=speaker_embedding,
+        )
+        wav = result.get("wav")
+        sample_rate = result.get("sample_rate", 24000)
+        if wav is None:
+            print("Falha ao gerar áudio (wav ausente)", file=sys.stderr)
+            sys.exit(1)
+        if hasattr(wav, "cpu"):
+            wav_arr = wav.cpu().numpy()
+        else:
+            wav_arr = np.asarray(wav)
+        sf.write(output_path, np.squeeze(wav_arr), sample_rate)
     else:
-        tts_kwargs["speaker"] = voice
         print(f"Usando speaker: {voice}")
-    tts.tts_to_file(**tts_kwargs)
+        tts.tts_to_file(
+            text=text,
+            speaker=voice,
+            language=lang,
+            file_path=output_path,
+        )
 
     print(f"Áudio gerado em {output_path}")
 
