@@ -203,7 +203,10 @@ jobs:
           build-args: |
             WAV2LIP_CHECKPOINT_SHA256=${{ steps.checksums.outputs.wav2lip_sha256 }}
             S3FD_SHA256=${{ steps.checksums.outputs.s3fd_sha256 }}
-            HUGGINGFACE_TOKEN=${{ secrets.HUGGINGFACE_TOKEN }}
+          # Enterprise-grade: usar secrets ao invés de build-args para evitar exposição do token nos metadados da imagem
+          # Secrets são montados via --mount=type=secret no Dockerfile e não aparecem no histórico/build
+          secrets: |
+            huggingface_token=${{ secrets.HUGGINGFACE_TOKEN }}
 
       - name: Show digest lip-sync
         run: |

@@ -25,18 +25,20 @@ RUN set -euo pipefail; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Baixa checkpoint oficial (Wav2Lip GAN) em path esperado + valida checksum
-# Enterprise-grade: usa token HuggingFace se fornecido (mesma lógica do workflow)
+# Build args: apenas checksums (não secrets)
+# Enterprise-grade: token HuggingFace via Docker BuildKit secrets (--mount=type=secret)
+# Secrets não aparecem nos metadados da imagem, histórico de build ou layers
 ARG WAV2LIP_CHECKPOINT_URL=https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth
 ARG WAV2LIP_CHECKPOINT_SHA256
-ARG HUGGINGFACE_TOKEN
-RUN set -euo pipefail; \
+RUN --mount=type=secret,id=huggingface_token \
+    set -euo pipefail; \
     mkdir -p /opt/wav2lip/checkpoints; \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
+    # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \
       local URL="$$1"; \
       local OUTPUT="$$2"; \
-      local TOKEN="${HUGGINGFACE_TOKEN:-}"; \
+      local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')"; \
       if [ -n "$$TOKEN" ]; then \
         echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."; \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
@@ -83,15 +85,17 @@ RUN set -euo pipefail; \
 # Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
 # Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
 # URL original do Adrian Bulat retorna 401 Unauthorized, então usamos mirrors públicos do HuggingFace
+# Token via Docker BuildKit secret mount (mesmo secret do download anterior)
 ARG S3FD_SHA256
-ARG HUGGINGFACE_TOKEN
-RUN set -euo pipefail; \
+RUN --mount=type=secret,id=huggingface_token \
+    set -euo pipefail; \
     mkdir -p /opt/wav2lip/face_detection/detection/sfd; \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
+    # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \
       local URL="$$1"; \
       local OUTPUT="$$2"; \
-      local TOKEN="${HUGGINGFACE_TOKEN:-}"; \
+      local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')"; \
       if [ -n "$$TOKEN" ]; then \
         echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."; \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$$OUTPUT" "$$URL" 2>/dev/null || echo "000"); \
