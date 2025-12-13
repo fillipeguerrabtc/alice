@@ -37,11 +37,6 @@ permissions:
   pull-requests: write
   issues: write
 
-env:
-  # pnpm v10+: permitir execução automática de scripts de build de dependências
-  # NOTA (enterprise): NÃO definir NPM_CONFIG_* globalmente para evitar warnings do npm/npx.
-  # Esta env é aplicada apenas nos steps que executam `pnpm install`.
-
 jobs:
   # ===========================================================================
   # Job 1: Verificar Atualizações Disponíveis
