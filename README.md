@@ -33,11 +33,12 @@
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | Progressive LoRA a cada 4 dias com dados aprovados |
 
-### Multimodal (Wav2Lip / SadTalker / TTS) — 12/12/2025
+### Multimodal (Wav2Lip / SadTalker / TTS) — 13/12/2025
 - Imagens multimodais (lip-sync, talking-head, tts) usam `git-lfs`, `wget`, `unzip`, `ca-certificates` e shell hardening (`pipefail`).
-- **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios, ambos com **checksum SHA256 obrigatório**). Execução via `python3 inference.py` com `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip` e caminhos absolutos.
-- **SadTalker**: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos.
-- **TTS (XTTS v2)**: pré-download **obrigatório** do modelo durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`.
+- **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios, ambos com **checksum SHA256 obrigatório**). Execução via `python3 inference.py` com `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip` e caminhos absolutos. Saída em `/opt/alice/uploads/lip-sync/output-<job>.mp4` (volume extra).
+- **SadTalker**: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos. Saída em `/opt/alice/uploads/talking-head/output-<job>.mp4` (volume extra).
+- **TTS (XTTS v2)**: pré-download **obrigatório** do modelo durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`. Saída em `/opt/alice/uploads/tts/output-<job>.wav` (volume extra).
+- **Ambiente Salad**: `lip_sync` e `talking_head` recebem `VIDEO_PATH`/`IMAGE_PATH` e `AUDIO_PATH` como variáveis de ambiente diretas (não via JSON), garantindo compatibilidade com `require_env()` dos containers.
 
 ### Diferenciais
 
