@@ -1442,6 +1442,9 @@ jobs:
           SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
+          SALAD_API_URL_VAR: ${{ vars.SALAD_API_URL }}
+          SALAD_MEDIA_PROJECT_VAR: ${{ vars.SALAD_MEDIA_PROJECT }}
+          SALAD_GPU_CLASS_VAR: ${{ vars.SALAD_GPU_CLASS }}
         run: |
           set -euo pipefail
           # Secrets obrigatórias (fail-fast em produção)
@@ -1626,13 +1629,13 @@ jobs:
             printf '# Salad Cloud (LLM)\n'
             printf 'SALAD_API_KEY=%s\n' "${{ secrets.SALAD_API_KEY }}"
             printf 'SALAD_ORGANIZATION_ID=%s\n' "${{ secrets.SALAD_ORGANIZATION_ID }}"
-            printf 'SALAD_API_URL=%s\n' "${{ vars.SALAD_API_URL }}"
-            printf 'SALAD_MEDIA_PROJECT=%s\n' "${{ vars.SALAD_MEDIA_PROJECT }}"
+            printf 'SALAD_API_URL=%s\n' "${SALAD_API_URL_VAR}"
+            printf 'SALAD_MEDIA_PROJECT=%s\n' "${SALAD_MEDIA_PROJECT_VAR}"
             printf 'SALAD_TTS_IMAGE=%s\n' "${{ secrets.SALAD_TTS_IMAGE }}"
             printf 'SALAD_TALKING_HEAD_IMAGE=%s\n' "${{ secrets.SALAD_TALKING_HEAD_IMAGE }}"
             printf 'SALAD_LIP_SYNC_IMAGE=%s\n' "${{ secrets.SALAD_LIP_SYNC_IMAGE }}"
             printf 'SALAD_LONG_VIDEO_IMAGE=%s\n' "${{ secrets.SALAD_LONG_VIDEO_IMAGE }}"
-            printf 'SALAD_GPU_CLASS=%s\n' "${{ vars.SALAD_GPU_CLASS }}"
+            printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
             printf '\n'
             printf '# CLIP Inference (multimodal embeddings)\n'
             printf 'CLIP_API_TOKEN=%s\n' "${{ secrets.CLIP_API_TOKEN }}"
