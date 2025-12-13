@@ -24,7 +24,8 @@ def main() -> None:
     text = require_env("TEXT")
     output_path = require_env("OUTPUT_PATH")
     voice = os.getenv("VOICE")
-    lang = os.getenv("LANG", "en")
+    # TTS_LANG: código de idioma (en, pt, es, etc.) - NÃO usar LANG que é locale do sistema (en_US.UTF-8)
+    lang = os.getenv("TTS_LANG", "pt")
     model_name = os.getenv("MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
 
     device = "cuda" if os.getenv("FORCE_CPU", "false").lower() not in ("1", "true", "yes") else "cpu"

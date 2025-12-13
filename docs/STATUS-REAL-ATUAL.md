@@ -771,7 +771,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Wav2Lip runtime | Execução via script `python3 /opt/wav2lip/inference.py`, `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip`, caminhos absolutos para face/audio/output e checkpoint explícito | `docker/lip-sync/serve.py` |
 | SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
 | SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path` | `docker/talking-head/serve.py` |
-| TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`, `COQUI_TOS_AGREED=1` (aceite automático de licença) | `docker/tts/Dockerfile`, `docker/tts/serve.py` |
+| TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`, `COQUI_TOS_AGREED=1` (aceite automático de licença), `TTS_LANG` para idioma (default: `pt`) | `docker/tts/Dockerfile`, `docker/tts/serve.py` |
 | Cache enterprise | Workflow `build-media-images` usa **cache de registry** (`cache-from/cache-to: type=registry`) igual ao `deploy-production.yml` para builds rápidos | `.github/workflows/build-media-images.yml` |
 | Checksums automáticos | SHA256 dos modelos calculados **automaticamente** durante o workflow (sem secrets manuais) — padrão enterprise igual ao cálculo de digests em `deploy-production.yml` | `.github/workflows/build-media-images.yml` |
 
