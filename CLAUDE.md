@@ -47,7 +47,7 @@ Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (4
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 41 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 42 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core (6 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**.
@@ -190,9 +190,9 @@ Permissões Enterprise (13/12/2025):
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
 ## Security Hardening (10 de Dezembro de 2025)
-- **41 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
-- **23 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **41 containers** = 100% com resource limits ✅ COMPLETO
+- **42 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+- **24 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
+- **42 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)

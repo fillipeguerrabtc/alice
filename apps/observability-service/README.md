@@ -5,7 +5,7 @@
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 41 containers da plataforma Alice Enterprise (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup).
+**Contexto:** Este é o serviço de observabilidade dos 42 containers da plataforma Alice Enterprise (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup).
 
 ## Componentes
 

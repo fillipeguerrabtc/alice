@@ -513,7 +513,7 @@ alice-redis:
 
 ### Total de Containers Atualizado:
 - **Antes:** 26 containers (4 infra + 8 Alice + 12 ERPNext + 2 backup/logs)
-- **Agora:** 41 containers (5 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
+- **Agora:** 42 containers (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
 
 ### Aderência:
 - ✅ Regra 6 (SEM WORKAROUNDS): Redis dedicado, não compartilhado

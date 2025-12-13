@@ -95,7 +95,7 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 41 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 42 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -906,9 +906,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 41/41 containers (100%) |
-| **resource limits** | ✅ | 41/41 containers (100%) |
-| **read_only: true** | ✅ | 23/41 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 42/42 containers (100%) |
+| **resource limits** | ✅ | 42/42 containers (100%) |
+| **read_only: true** | ✅ | 24/42 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -941,7 +941,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Security Hardening: 100% completo - 41/41 containers com no-new-privileges, 41/41 com resource limits, 23/41 com read_only (12/12/2025)*
+*Security Hardening: 100% completo - 42/42 containers com no-new-privileges, 42/42 com resource limits, 24/42 com read_only (13/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
