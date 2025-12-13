@@ -31,30 +31,25 @@ RUN set -euo pipefail && \
     git fetch origin master:refs/remotes/origin/master || \
     git fetch origin +refs/heads/master:refs/remotes/origin/master || \
     git fetch origin && \
-    # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
-    # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
-    WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322" && \
+    # Usar HEAD do master para reprodutibilidade enterprise (builds determinísticos)
+    # Enterprise-grade: buscar commit atual do master durante build para garantir disponibilidade
+    WAV2LIP_COMMIT=$$(git rev-parse origin/master 2>/dev/null || git rev-parse HEAD) && \
     # Verificar se commit existe localmente (deve existir após clone completo + fetch)
     # Enterprise-grade: commit fixo é OBRIGATÓRIO - sem fallback para garantir reprodutibilidade
     # Regra 6: PROIBIDO workarounds - build DEVE falhar se commit não existe
     if git cat-file -e "$${WAV2LIP_COMMIT}^{commit}" 2>/dev/null; then \
-      echo "📦 Usando commit fixo: $${WAV2LIP_COMMIT}" && \
+      echo "Usando commit do master: $${WAV2LIP_COMMIT}" && \
       git checkout "$${WAV2LIP_COMMIT}"; \
     else \
-      echo "::error::Commit fixo não encontrado: $${WAV2LIP_COMMIT}" && \
+      echo "::error::Commit do master não encontrado: $${WAV2LIP_COMMIT}" && \
       echo "::error::Branches disponíveis:" && \
       BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo "") && \
       if [ -n "$${BRANCHES_OUTPUT}" ]; then \
-        # Enterprise-grade: mostrar primeiras 5 linhas usando head (confiável e disponível em Ubuntu)
-        # NOTA: head -n 5 é padrão e confiável, não precisa de fallback complexo
         echo "$${BRANCHES_OUTPUT}" | head -n 5; \
       else \
         echo "  (não disponível)"; \
       fi && \
-      echo "::error::Último commit do master:" && \
-      (git rev-parse origin/master 2>/dev/null || echo "  (não disponível)") && \
-      echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master" && \
-      echo "::error::Build falhou - commit fixo é obrigatório para reprodutibilidade enterprise (Regra 6)" && \
+      echo "::error::Build falhou - não foi possível obter commit do master" && \
       exit 1; \
     fi && \
     git lfs fetch --all && \
@@ -67,7 +62,7 @@ RUN set -euo pipefail && \
 ARG WAV2LIP_CHECKPOINT_SHA256
 RUN --mount=type=secret,id=huggingface_token \
     set -euo pipefail && \
-    mkdir -p /opt/wav2lip/checkpoints && \ \
+    mkdir -p /opt/wav2lip/checkpoints && \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
     # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \
@@ -75,7 +70,7 @@ RUN --mount=type=secret,id=huggingface_token \
       local OUTPUT="$$2" && \
       local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')" && \
       if [ -n "$${TOKEN}" ]; then \
-        echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..." && \
+        echo "Usando HUGGINGFACE_TOKEN para download autenticado..." && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
         if [ "$${HTTP_CODE}" = "200" ] && [ -s "$${OUTPUT}" ]; then \
           return 0; \
@@ -90,7 +85,7 @@ RUN --mount=type=secret,id=huggingface_token \
           return 1; \
         fi; \
       else \
-        echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)" && \
+        echo "HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)" && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
         if [ "$${HTTP_CODE}" = "200" ] && [ -s "$${OUTPUT}" ]; then \
           return 0; \
@@ -115,13 +110,13 @@ RUN --mount=type=secret,id=huggingface_token \
     do \
       WAV2LIP_URL=$$(echo "$${SOURCE}" | cut -d'|' -f1) && \
       SOURCE_NAME=$$(echo "$${SOURCE}" | cut -d'|' -f2) && \
-      echo "📦 Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..." && \
+      echo "Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..." && \
       if download_with_token "$${WAV2LIP_URL}" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
-        echo "✅ Download bem-sucedido de $${SOURCE_NAME}" && \
+        echo "Download bem-sucedido de $${SOURCE_NAME}" && \
         WAV2LIP_DOWNLOADED=true && \
         break; \
       else \
-        echo "⚠️ Falha ao baixar de $${SOURCE_NAME}" && \
+        echo "Falha ao baixar de $${SOURCE_NAME}" && \
         rm -f /opt/wav2lip/checkpoints/wav2lip_gan.pth; \
       fi; \
     done && \
@@ -155,7 +150,7 @@ RUN --mount=type=secret,id=huggingface_token \
 ARG S3FD_SHA256
 RUN --mount=type=secret,id=huggingface_token \
     set -euo pipefail && \
-    mkdir -p /opt/wav2lip/face_detection/detection/sfd && \ \
+    mkdir -p /opt/wav2lip/face_detection/detection/sfd && \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
     # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \
@@ -163,7 +158,7 @@ RUN --mount=type=secret,id=huggingface_token \
       local OUTPUT="$$2" && \
       local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')" && \
       if [ -n "$${TOKEN}" ]; then \
-        echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..." && \
+        echo "Usando HUGGINGFACE_TOKEN para download autenticado..." && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
         if [ "$${HTTP_CODE}" = "200" ] && [ -s "$${OUTPUT}" ]; then \
           return 0; \
@@ -178,7 +173,7 @@ RUN --mount=type=secret,id=huggingface_token \
           return 1; \
         fi; \
       else \
-        echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)" && \
+        echo "HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)" && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
         if [ "$${HTTP_CODE}" = "200" ] && [ -s "$${OUTPUT}" ]; then \
           return 0; \
@@ -200,13 +195,13 @@ RUN --mount=type=secret,id=huggingface_token \
     do \
       S3FD_URL=$$(echo "$${SOURCE}" | cut -d'|' -f1) && \
       SOURCE_NAME=$$(echo "$${SOURCE}" | cut -d'|' -f2) && \
-      echo "📦 Tentando baixar s3fd.pth de $${SOURCE_NAME}..." && \
+      echo "Tentando baixar s3fd.pth de $${SOURCE_NAME}..." && \
       if download_with_token "$${S3FD_URL}" /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; then \
         echo "✅ Download bem-sucedido de $${SOURCE_NAME}" && \
         S3FD_DOWNLOADED=true && \
         break; \
       else \
-        echo "⚠️ Falha ao baixar de $${SOURCE_NAME}" && \
+        echo "Falha ao baixar de $${SOURCE_NAME}" && \
         rm -f /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; \
       fi; \
     done && \

@@ -66,7 +66,7 @@ RUN set -euo pipefail && \
         echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth" && \
         exit 1; \
       fi && \
-      echo "✅ Modelos SadTalker baixados com sucesso ($${CHECKPOINT_FILES} arquivos encontrados)" && \
+      echo "Modelos SadTalker baixados com sucesso ($${CHECKPOINT_FILES} arquivos encontrados)" && \
     else \
       echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker" && \
       exit 1; \
