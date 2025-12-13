@@ -6,7 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv git ffmpeg libgl1 wget unzip && \
+      python3 python3-pip python3-venv git git-lfs ffmpeg libgl1 wget unzip ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -15,11 +15,16 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Clona Wav2Lip em commit fixo (reprodutibilidade) e instala deps locais
-RUN git clone --depth 1 https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
+RUN git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
     cd /opt/wav2lip && \
-    git fetch --depth 1 origin d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
+    git fetch origin d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
     git checkout d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
+    git lfs install --local && git lfs fetch --all && git lfs pull && \
     python3 -m pip install --no-cache-dir -r requirements.txt
+
+# Baixa checkpoint oficial (Wav2Lip GAN) em path esperado
+RUN mkdir -p /opt/wav2lip/checkpoints && \
+    wget -O /opt/wav2lip/checkpoints/wav2lip_gan.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v0.1/wav2lip_gan.pth
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
