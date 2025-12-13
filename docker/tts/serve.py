@@ -2,8 +2,11 @@ import os
 import pathlib
 import sys
 
-# Garante que TTS use o diretório de modelos pré-baixados no build
+# Configurações do TTS ANTES do import (obrigatório para inicialização correta)
+# TTS_HOME: diretório de modelos pré-baixados no build
+# COQUI_TOS_AGREED: aceite automático de licença (necessário para execução não-interativa)
 os.environ.setdefault("TTS_HOME", "/opt/tts-models")
+os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 from TTS.api import TTS
 
