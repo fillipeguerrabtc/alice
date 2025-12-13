@@ -17,7 +17,7 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Clona Wav2Lip em commit fixo (reprodutibilidade enterprise)
 # Enterprise-grade: commit fixo garante builds determinísticos e reprodutíveis
-# Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (master, 12/12/2025)
+# Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 # NOTA: Clone completo (sem --depth) para garantir que commit específico esteja disponível
 RUN set -euo pipefail && \
@@ -31,17 +31,17 @@ RUN set -euo pipefail && \
     git fetch origin master:refs/remotes/origin/master || \
     git fetch origin +refs/heads/master:refs/remotes/origin/master || \
     git fetch origin && \
-    # Usar HEAD do master para reprodutibilidade enterprise (builds determinísticos)
-    # Enterprise-grade: buscar commit atual do master durante build para garantir disponibilidade
-    WAV2LIP_COMMIT=$$(git rev-parse origin/master 2>/dev/null || git rev-parse HEAD) && \
-    # Verificar se commit existe localmente (deve existir após clone completo + fetch)
+    # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
+    # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
     # Enterprise-grade: commit fixo é OBRIGATÓRIO - sem fallback para garantir reprodutibilidade
     # Regra 6: PROIBIDO workarounds - build DEVE falhar se commit não existe
+    WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322" && \
+    # Verificar se commit existe localmente (deve existir após clone completo + fetch)
     if git cat-file -e "$${WAV2LIP_COMMIT}^{commit}" 2>/dev/null; then \
-      echo "Usando commit do master: $${WAV2LIP_COMMIT}" && \
+      echo "Usando commit fixo: $${WAV2LIP_COMMIT}" && \
       git checkout "$${WAV2LIP_COMMIT}"; \
     else \
-      echo "::error::Commit do master não encontrado: $${WAV2LIP_COMMIT}" && \
+      echo "::error::Commit fixo não encontrado: $${WAV2LIP_COMMIT}" && \
       echo "::error::Branches disponíveis:" && \
       BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo "") && \
       if [ -n "$${BRANCHES_OUTPUT}" ]; then \
@@ -49,7 +49,10 @@ RUN set -euo pipefail && \
       else \
         echo "  (não disponível)"; \
       fi && \
-      echo "::error::Build falhou - não foi possível obter commit do master" && \
+      echo "::error::Último commit do master:" && \
+      (git rev-parse origin/master 2>/dev/null || echo "  (não disponível)") && \
+      echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master" && \
+      echo "::error::Build falhou - commit fixo é obrigatório para reprodutibilidade enterprise (Regra 6)" && \
       exit 1; \
     fi && \
     git lfs fetch --all && \
@@ -112,7 +115,7 @@ RUN --mount=type=secret,id=huggingface_token \
       SOURCE_NAME=$$(echo "$${SOURCE}" | cut -d'|' -f2) && \
       echo "Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..." && \
       if download_with_token "$${WAV2LIP_URL}" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
-        echo "✅ Download bem-sucedido de $${SOURCE_NAME}" && \
+        echo "Download bem-sucedido de $${SOURCE_NAME}" && \
         WAV2LIP_DOWNLOADED=true && \
         break; \
       else \
