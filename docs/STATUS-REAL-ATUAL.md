@@ -774,6 +774,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
 
+> Nota (limpeza de documentação legada): removidos relatórios históricos (`ANALISE-DOCUMENTACAO-2025-12-12.md`, `ANALISE-VERSOES-COMPONENTES.md`, `ATUALIZACAO-PERIODICA-PACOTES.md`, `RELATORIO-VERSIONAMENTO-AUTOMATICO.md`, `VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md`, `VERIFICACAO-FINAL-ATUALIZACAO-PERIODICA.md`) por estarem obsoletos/consolidados neste documento, `README.md` e `DEPLOYMENT.md`.
+
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
 
