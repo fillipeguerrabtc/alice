@@ -312,7 +312,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else {
     // Segurança para futuros tipos de job
-    envVars.OUTPUT_PATH = `${outputBaseDir}/media/output-${job.id}`;
+    // outputBaseDir já é UPLOAD_PATHS.media quando jobType não corresponde a nenhum tipo conhecido (linha 251)
+    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}`;
   }
 
   if (!RAG_PUBLIC_BASE_URL) {

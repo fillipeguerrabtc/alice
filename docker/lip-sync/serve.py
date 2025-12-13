@@ -46,8 +46,8 @@ def main() -> None:
     upload_url = os.getenv("UPLOAD_URL")
     upload_token = os.getenv("UPLOAD_TOKEN")
     if not upload_url or not upload_token:
-        print("Aviso: UPLOAD_URL ou UPLOAD_TOKEN ausentes; saída permanece somente no container Salad", file=sys.stderr)
-        return
+        print("ERRO: UPLOAD_URL ou UPLOAD_TOKEN ausentes - arquivo gerado será perdido no container efêmero", file=sys.stderr)
+        sys.exit(1)  # Falhar com exit code não-zero para evitar sucesso silencioso
 
     with open(output_path, "rb") as f:
         resp = requests.post(
