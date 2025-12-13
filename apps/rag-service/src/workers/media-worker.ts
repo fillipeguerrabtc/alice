@@ -401,6 +401,7 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
     const download = await downloadAndStoreYoutube(deps, job.inputUrl, job.tenantId);
     // Envia para Salad (long_video) se configurado, passando caminho armazenado
     if (SALAD_LONG_VIDEO_IMAGE) {
+      const outputPath = `/opt/alice/uploads/long-video/output-${job.id}.mp4`;
       const result = await deps.saladClient.createAndWait({
         name: `media-long-video-${job.id}`,
         image: SALAD_LONG_VIDEO_IMAGE,
@@ -410,6 +411,7 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
         environmentVariables: {
           INPUT_URL: download.storageUrl,
           INPUT_PATH: download.storagePath,
+          OUTPUT_PATH: outputPath,
           JOB_ID: job.id,
           TENANT_ID: job.tenantId,
           MEDIA_PARAMS: JSON.stringify(job.parametros ?? {}),
