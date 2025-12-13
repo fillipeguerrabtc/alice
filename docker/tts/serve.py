@@ -48,9 +48,11 @@ def main() -> None:
     # Parâmetros podem vir de MEDIA_PARAMS (JSON) ou variáveis de ambiente individuais
     params = parse_media_params()
     
-    # text: obrigatório (MEDIA_PARAMS.text ou TEXT env)
-    text = params.get("text") or os.getenv("TEXT")
-    if not text:
+    # text: obrigatório (MEDIA_PARAMS.text ou TEXT env) — não tratar string vazia como ausente
+    text_param = params.get("text")
+    text_env = os.getenv("TEXT")
+    text = text_param if text_param is not None else text_env
+    if text is None:
         print("Variável obrigatória ausente: TEXT (ou MEDIA_PARAMS.text)", file=sys.stderr)
         sys.exit(1)
     
