@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 12 de Dezembro de 2025  
+> **Data:** 13 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.37 - IDs GitHub Actions com underscore (deploy-prod)
+> **Versão:** 3.38 - Hardening de permissões enterprise e estrutura de pastas organizada
 
 ---
 
@@ -777,6 +777,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Salad params flatten | `talking_head` e `lip_sync` agora achatam `parametros` no nível raiz antes de resolver paths (evita perda de VIDEO_PATH/IMAGE_PATH/AUDIO_PATH) | `apps/rag-service/src/workers/media-worker.ts` |
 | Cache enterprise | Workflow `build-media-images` usa **cache de registry** (`cache-from/cache-to: type=registry`) igual ao `deploy-production.yml` para builds rápidos | `.github/workflows/build-media-images.yml` |
 | Checksums automáticos | SHA256 dos modelos calculados **automaticamente** durante o workflow (sem secrets manuais) — padrão enterprise igual ao cálculo de digests em `deploy-production.yml` | `.github/workflows/build-media-images.yml` |
+| **Permissões enterprise** | **Hardening de permissões aplicado em todo o código:** diretórios criados com `mode: 0o750` (rwxr-x---), arquivos com `mode: 0o640` (rw-r-----), secrets com `mode: 0o600` (rw-------). Implementado em `storage.ts`, `video-processor.ts`, `index.ts` (upload endpoint), e `setup-hetzner.sh` | `apps/rag-service/src/storage.ts`, `apps/rag-service/src/video-processor.ts`, `apps/rag-service/src/index.ts`, `infra/scripts/setup-hetzner.sh` |
+| **Estrutura de pastas** | **Organização enterprise do volume extra:** `/opt/alice/uploads/{tts,lip-sync,talking-head,long-video,media}` para outputs multimodais, `/opt/alice/backups/{postgresql,mariadb,redis,manifests}` para backups, `/opt/alice/logs` para logs. Todas as subpastas criadas automaticamente com permissões corretas | `apps/rag-service/src/index.ts`, `apps/rag-service/src/workers/media-worker.ts`, `infra/scripts/setup-hetzner.sh` |
+| **Upload Salad->RAG** | **Endpoint interno `/api/rag/internal/media/upload`** com validação HMAC (`INTERNAL_API_SECRET`), salvamento em subpastas corretas do volume extra, e atualização do DB com metadados do upload. Todos os containers Salad (TTS, lip-sync, talking-head, long-video) fazem upload automático após gerar artefatos | `apps/rag-service/src/index.ts`, `docker/*/serve.py` |
 
 > Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
 

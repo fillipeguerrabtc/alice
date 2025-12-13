@@ -2,6 +2,7 @@ import json
 import os
 import pathlib
 import sys
+import requests
 
 import numpy as np
 import soundfile as sf
@@ -119,6 +120,29 @@ def main() -> None:
             language=lang,
             file_path=output_path,
         )
+
+    upload_url = os.getenv("UPLOAD_URL")
+    upload_token = os.getenv("UPLOAD_TOKEN")
+    if not upload_url or not upload_token:
+        print("Aviso: UPLOAD_URL ou UPLOAD_TOKEN ausentes; saída permanece somente no container Salad", file=sys.stderr)
+        return
+
+    with open(output_path, "rb") as f:
+        resp = requests.post(
+            upload_url,
+            headers={"X-Upload-Token": upload_token},
+            data={
+                "jobId": os.getenv("UPLOAD_JOB_ID"),
+                "jobType": os.getenv("UPLOAD_JOB_TYPE"),
+                "tenantId": os.getenv("UPLOAD_TENANT_ID"),
+            },
+            files={"file": (pathlib.Path(output_path).name, f, "audio/wav")},
+            timeout=120,
+        )
+        if resp.status_code >= 400:
+            print(f"Falha no upload para RAG: {resp.status_code} - {resp.text}", file=sys.stderr)
+            sys.exit(1)
+        print("Upload concluído para RAG")
 
     print(f"Áudio gerado em {output_path}")
 

@@ -149,23 +149,29 @@ alice/
 ## Estrutura do Volume Hetzner (Produção)
 ```
 /mnt/alice-data/                    # Volume Hetzner 100GB (expansível até 10TB)
-├── data/                           # Dados persistentes dos bancos
+├── data/                           # Dados persistentes dos bancos (750)
 │   ├── postgresql/                 # Dados PostgreSQL + pgvector
 │   ├── mariadb/                    # Dados MariaDB (ERPNext)
 │   └── redis/                      # Dados Redis (persistência)
-├── uploads/                        # Uploads de mídia (RAG multimodal)
-│   └── {tenantId}/                 # Isolamento por tenant
-│       ├── image/                  # Imagens processadas
-│       ├── audio/                  # Áudios processados
-│       ├── video/                  # Vídeos processados
-│       └── document/               # Documentos (PDF, DOCX, etc.)
-└── backups/                        # Backups locais
-    ├── postgresql/                 # pgBackRest (full + incremental + WAL)
-    ├── mariadb/                    # Mariabackup dumps
-    ├── redis/                      # RDB snapshots
-    └── manifests/                  # Manifestos JSON de cada backup
+├── uploads/                        # Uploads multimodais (750) - subpastas por tipo
+│   ├── tts/                        # Áudios gerados (TTS)
+│   ├── lip-sync/                   # Vídeos lip-sync
+│   ├── talking-head/               # Vídeos talking-head
+│   ├── long-video/                 # Vídeos longos concatenados
+│   └── media/                      # Outros arquivos multimodais
+├── backups/                        # Backups enterprise (750)
+│   ├── postgresql/                 # pgBackRest (full + incremental + WAL)
+│   ├── mariadb/                    # Mariabackup dumps
+│   ├── redis/                      # RDB snapshots
+│   └── manifests/                  # Manifestos JSON de cada backup
+└── logs/                           # Logs de serviços (750)
 
 /opt/alice -> /mnt/alice-data       # Symlink para acesso padrão
+
+Permissões Enterprise (13/12/2025):
+- Diretórios: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
+- Arquivos: 640 (rw-r-----) - owner rw, group r, outros sem acesso
+- Secrets: 600 (rw-------) - apenas owner
 ```
 
 ## Documentação Principal

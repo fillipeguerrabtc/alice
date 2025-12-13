@@ -132,17 +132,25 @@ ufw status verbose
 log_info "Firewall configurado com sucesso!"
 
 # =============================================================================
-# 8. Criar Estrutura de Diretórios
+# 8. Criar Estrutura de Diretórios (Enterprise-Grade)
 # =============================================================================
-log_info "Criando estrutura de diretórios..."
+log_info "Criando estrutura de diretórios enterprise..."
 
-mkdir -p /opt/alice/{data,logs,ssl,backups}
+# Estrutura base
+mkdir -p /opt/alice/data
+mkdir -p /opt/alice/uploads/{tts,lip-sync,talking-head,long-video,media}
+mkdir -p /opt/alice/backups/{postgresql,mariadb,redis,manifests}
+mkdir -p /opt/alice/backups/postgresql/logs
+mkdir -p /opt/alice/logs
 mkdir -p /opt/alice/data/postgres
 mkdir -p /var/log/alice
 
-chmod -R 755 /opt/alice
+# Permissões enterprise (750 para diretórios, 640 para arquivos)
+chmod 750 /opt/alice
+find /opt/alice -type d -exec chmod 750 {} \;
+find /opt/alice -type f -exec chmod 640 {} \;
 
-log_info "Diretórios criados!"
+log_info "Diretórios criados com permissões enterprise!"
 
 # =============================================================================
 # 9. Configurar PostgreSQL via Docker

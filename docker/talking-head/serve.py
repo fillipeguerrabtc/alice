@@ -2,6 +2,7 @@ import os
 import pathlib
 import subprocess
 import sys
+import requests
 from typing import Optional
 
 
@@ -61,6 +62,29 @@ def main() -> None:
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     final_path = latest.replace(output_path)
     print(f"Talking-head gerado em {final_path}")
+
+    upload_url = os.getenv("UPLOAD_URL")
+    upload_token = os.getenv("UPLOAD_TOKEN")
+    if not upload_url or not upload_token:
+        print("Aviso: UPLOAD_URL ou UPLOAD_TOKEN ausentes; saída permanece somente no container Salad", file=sys.stderr)
+        return
+
+    with open(final_path, "rb") as f:
+        resp = requests.post(
+            upload_url,
+            headers={"X-Upload-Token": upload_token},
+            data={
+                "jobId": os.getenv("UPLOAD_JOB_ID"),
+                "jobType": os.getenv("UPLOAD_JOB_TYPE"),
+                "tenantId": os.getenv("UPLOAD_TENANT_ID"),
+            },
+            files={"file": (final_path.name, f, "video/mp4")},
+            timeout=300,
+        )
+        if resp.status_code >= 400:
+            print(f"Falha no upload para RAG: {resp.status_code} - {resp.text}", file=sys.stderr)
+            sys.exit(1)
+        print("Upload concluído para RAG")
 
 
 if __name__ == "__main__":

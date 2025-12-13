@@ -13,6 +13,8 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffprobePath from 'ffprobe-static';
 import { createSaladMediaClient } from '../salad-media-client.js';
 import { metrics } from '@alice/shared-utils';
+import { createHmac } from 'crypto';
+import { URL } from 'url';
 
 const pipeline = promisify(require('stream').pipeline);
 ffmpeg.setFfprobePath(ffprobePath.path);
@@ -32,6 +34,15 @@ const SALAD_TALKING_HEAD_IMAGE = process.env.SALAD_TALKING_HEAD_IMAGE;
 const SALAD_LIP_SYNC_IMAGE = process.env.SALAD_LIP_SYNC_IMAGE;
 const SALAD_LONG_VIDEO_IMAGE = process.env.SALAD_LONG_VIDEO_IMAGE;
 const SALAD_GPU_CLASS = (process.env.SALAD_GPU_CLASS || 'premium-gpu').split(',').map((c) => c.trim()).filter(Boolean);
+const RAG_PUBLIC_BASE_URL = process.env.RAG_PUBLIC_BASE_URL || '';
+const UPLOAD_BASE_DIR = '/opt/alice/uploads';
+const UPLOAD_PATHS = {
+  tts: `${UPLOAD_BASE_DIR}/tts`,
+  'lip_sync': `${UPLOAD_BASE_DIR}/lip-sync`,
+  'talking_head': `${UPLOAD_BASE_DIR}/talking-head`,
+  'long_video': `${UPLOAD_BASE_DIR}/long-video`,
+  media: `${UPLOAD_BASE_DIR}/media`,
+} as const;
 
 function isUrl(candidate: string) {
   // Rejeita qualquer URI com esquema (http, https, file, etc.)
@@ -45,6 +56,14 @@ function resolveLocalPath(...candidates: Array<string | null | undefined>) {
     }
   }
   return null;
+}
+
+function createHmacToken(payload: string) {
+  const secret = process.env.INTERNAL_API_SECRET;
+  if (!secret) {
+    throw new Error('INTERNAL_API_SECRET é obrigatório para gerar tokens de upload do Salad');
+  }
+  return createHmac('sha256', secret).update(payload).digest('hex');
 }
 
 export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
@@ -228,7 +247,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     ...payloadTopLevel,
   };
   const inputUrl = payloadObj.inputUrl ?? job.inputUrl;
-  const outputBaseDir = '/opt/alice/uploads';
+  const outputBaseDir = UPLOAD_PATHS[job.jobType as keyof typeof UPLOAD_PATHS] || UPLOAD_PATHS.media;
 
   const envVars: Record<string, string> = {
     JOB_ID: job.id,
@@ -263,7 +282,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
       paramsMerged.speakerWav = speakerWav;
     }
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
-    envVars.OUTPUT_PATH = `${outputBaseDir}/tts/output-${job.id}.wav`;
+    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.wav`;
   } else if (job.jobType === 'lip_sync') {
     const videoPath = resolveLocalPath(paramsMerged?.videoPath, paramsMerged?.video_path);
     const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
@@ -275,7 +294,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     }
     envVars.VIDEO_PATH = videoPath;
     envVars.AUDIO_PATH = audioPath;
-    envVars.OUTPUT_PATH = `${outputBaseDir}/lip-sync/output-${job.id}.mp4`;
+    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else if (job.jobType === 'talking_head') {
     const imagePath = resolveLocalPath(paramsMerged?.imagePath, paramsMerged?.image_path);
     const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
@@ -287,13 +306,28 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     }
     envVars.IMAGE_PATH = imagePath;
     envVars.AUDIO_PATH = audioPath;
-    envVars.OUTPUT_PATH = `${outputBaseDir}/talking-head/output-${job.id}.mp4`;
+    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else if (job.jobType === 'long_video') {
-    envVars.OUTPUT_PATH = `${outputBaseDir}/long-video/output-${job.id}.mp4`;
+    envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else {
     // Segurança para futuros tipos de job
     envVars.OUTPUT_PATH = `${outputBaseDir}/media/output-${job.id}`;
   }
+
+  if (!RAG_PUBLIC_BASE_URL) {
+    throw new Error('RAG_PUBLIC_BASE_URL é obrigatório para upload dos artefatos Salad');
+  }
+  const uploadBase = RAG_PUBLIC_BASE_URL.replace(/\/+$/, '');
+  const uploadUrl = `${uploadBase}/api/rag/internal/media/upload`;
+  const rawToken = `${job.id}:${job.jobType}:${job.tenantId ?? ''}`;
+  const uploadToken = createHmacToken(rawToken);
+
+  envVars.UPLOAD_URL = uploadUrl;
+  envVars.UPLOAD_TOKEN = uploadToken;
+  envVars.UPLOAD_JOB_ID = String(job.id);
+  envVars.UPLOAD_JOB_TYPE = job.jobType;
+  envVars.UPLOAD_TENANT_ID = job.tenantId ?? '';
+  envVars.UPLOAD_OUTPUT_PATH = envVars.OUTPUT_PATH;
 
   // MEDIA_PARAMS deve refletir os valores já validados/normalizados
   envVars.MEDIA_PARAMS = JSON.stringify(paramsMerged ?? {});

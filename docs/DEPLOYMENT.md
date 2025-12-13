@@ -157,13 +157,23 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
 
 Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice`:
 
-| Diretório | Propósito | Uso Estimado |
-|-----------|-----------|--------------|
-| `/opt/alice/data/postgresql` | Dados PostgreSQL + pgvector | ~20-50GB |
-| `/opt/alice/data/mariadb` | Dados MariaDB (ERPNext) | ~5-20GB |
-| `/opt/alice/data/redis` | Persistência Redis | ~1GB |
-| `/opt/alice/uploads` | Uploads RAG (imagens, áudios, vídeos, docs) | ~10-30GB |
-| `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) | ~20-40GB |
+**Estrutura Enterprise (13/12/2025):**
+
+| Diretório | Propósito | Permissões | Uso Estimado |
+|-----------|-----------|------------|--------------|
+| `/opt/alice/data/` | Dados de DBs e serviços | 750 | ~20-50GB |
+| `/opt/alice/uploads/` | Uploads multimodais (subpastas por tipo) | 750 | ~10-30GB |
+| ├── `tts/` | Áudios gerados (TTS) | 750 | |
+| ├── `lip-sync/` | Vídeos lip-sync | 750 | |
+| ├── `talking-head/` | Vídeos talking-head | 750 | |
+| ├── `long-video/` | Vídeos longos concatenados | 750 | |
+| └── `media/` | Outros arquivos multimodais | 750 | |
+| `/opt/alice/backups/` | Backups enterprise | 750 | ~20-40GB |
+| ├── `postgresql/` | Backups PostgreSQL (pgBackRest) | 750 | |
+| ├── `mariadb/` | Backups MariaDB | 750 | |
+| ├── `redis/` | Snapshots Redis | 750 | |
+| └── `manifests/` | Manifestos JSON de backups | 750 | |
+| `/opt/alice/logs/` | Logs de serviços | 750 | ~1-5GB |
 
 > **NOTA:** Volume expansível até 10TB a qualquer momento via Console Hetzner.
 

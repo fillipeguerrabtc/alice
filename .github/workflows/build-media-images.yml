@@ -17,41 +17,48 @@ jobs:
       wav2lip_sha256: ${{ steps.checksums.outputs.wav2lip_sha256 }}
       s3fd_sha256: ${{ steps.checksums.outputs.s3fd_sha256 }}
     steps:
-      - name: Calcular checksums dos modelos ML
+      - name: Calcular checksums dos modelos ML (assets Release)
         id: checksums
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          OWNER: fillipeguerrabtc
+          REPO: alice
+          WAV2LIP_ASSET: wav2lip_gan.pth
+          S3FD_ASSET: s3fd.pth
         run: |
           set -euo pipefail
-          echo "🔐 Calculando checksums SHA256 dos modelos (supply chain security)..."
+          echo "🔐 Calculando checksums SHA256 dos modelos (assets Release)..."
+          
+          download_asset() {
+            local asset_name="$1"
+            local out="$2"
+            local api_url="https://api.github.com/repos/${OWNER}/${REPO}/releases/latest"
+            local asset_url
+            asset_url=$(curl -fSL -H "Authorization: Bearer ${GH_PAT}" "$api_url" | jq -r ".assets[] | select(.name==\"${asset_name}\") | .browser_download_url")
+            if [ -z "$asset_url" ] || [ "$asset_url" = "null" ]; then
+              echo "::error::Asset ${asset_name} não encontrado no release mais recente."
+              exit 1
+            fi
+            curl -fSL -H "Authorization: Bearer ${GH_PAT}" --retry 3 --retry-delay 5 -o "$out" "$asset_url"
+            if [ ! -s "$out" ]; then
+              echo "::error::Download de ${asset_name} falhou ou arquivo vazio"
+              exit 1
+            fi
+          }
           
           # Wav2Lip GAN checkpoint (~400MB)
-          echo "📦 Baixando wav2lip_gan.pth para calcular checksum..."
+          echo "📦 Baixando ${WAV2LIP_ASSET} do GitHub Release..."
           WAV2LIP_FILE=$(mktemp)
-          curl -fSL --retry 3 --retry-delay 5 -o "$WAV2LIP_FILE" \
-            "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth"
-          
-          # Validar que o arquivo não está vazio
-          if [ ! -s "$WAV2LIP_FILE" ]; then
-            echo "::error::Download do wav2lip_gan.pth falhou ou arquivo vazio"
-            exit 1
-          fi
-          
+          download_asset "$WAV2LIP_ASSET" "$WAV2LIP_FILE"
           WAV2LIP_SHA=$(sha256sum "$WAV2LIP_FILE" | cut -d' ' -f1)
           rm -f "$WAV2LIP_FILE"
           echo "wav2lip_sha256=${WAV2LIP_SHA}" >> $GITHUB_OUTPUT
           echo "✅ WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_SHA}"
           
           # S3FD face detection (~85MB)
-          echo "📦 Baixando s3fd.pth para calcular checksum..."
+          echo "📦 Baixando ${S3FD_ASSET} do GitHub Release..."
           S3FD_FILE=$(mktemp)
-          curl -fSL --retry 3 --retry-delay 5 -o "$S3FD_FILE" \
-            "https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth"
-          
-          # Validar que o arquivo não está vazio
-          if [ ! -s "$S3FD_FILE" ]; then
-            echo "::error::Download do s3fd.pth falhou ou arquivo vazio"
-            exit 1
-          fi
-          
+          download_asset "$S3FD_ASSET" "$S3FD_FILE"
           S3FD_SHA=$(sha256sum "$S3FD_FILE" | cut -d' ' -f1)
           rm -f "$S3FD_FILE"
           echo "s3fd_sha256=${S3FD_SHA}" >> $GITHUB_OUTPUT

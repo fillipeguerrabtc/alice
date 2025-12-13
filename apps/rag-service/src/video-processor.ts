@@ -451,8 +451,9 @@ class VideoProcessorService {
     }
     
     // Criar diretório temporário se não existir
+    // Permissões enterprise: 750 (rwxr-x---)
     if (!existsSync(this.tempDir)) {
-      await mkdir(this.tempDir, { recursive: true });
+      await mkdir(this.tempDir, { recursive: true, mode: 0o750 });
     }
     
     // Gerar ID único para este processamento
@@ -532,7 +533,8 @@ class VideoProcessorService {
       if (extractFrames && metadata.duration) {
         logger.info({ processId, duration: metadata.duration }, 'Extraindo frames do vídeo...');
         
-        await mkdir(framesDir, { recursive: true });
+        // Permissões enterprise: 750 (rwxr-x---)
+        await mkdir(framesDir, { recursive: true, mode: 0o750 });
         
         // Calcular intervalo entre frames
         const totalFrames = Math.min(

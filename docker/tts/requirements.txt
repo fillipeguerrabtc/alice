@@ -3,3 +3,4 @@ TTS==0.22.0
 soundfile==0.12.1
 # numpy 1.25.x é a linha testada/compatível com torch 2.1.2
 numpy==1.25.2
+requests==2.32.3

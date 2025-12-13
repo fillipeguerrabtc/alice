@@ -1,3 +1,4 @@
 ffmpeg-python==0.2.0
 # numpy 1.25.x para consistência com demais serviços multimodais
 numpy==1.25.2
+requests==2.32.3

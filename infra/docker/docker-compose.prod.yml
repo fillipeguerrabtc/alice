@@ -713,6 +713,8 @@ services:
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads
       STORAGE_BASE_URL: /api/media/files
+      # URL pública do RAG para upload dos artefatos Salad (HTTPS Traefik)
+      RAG_PUBLIC_BASE_URL: ${RAG_PUBLIC_BASE_URL:?RAG_PUBLIC_BASE_URL é obrigatório}
     depends_on:
       postgres:
         condition: service_healthy

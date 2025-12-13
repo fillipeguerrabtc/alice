@@ -13,6 +13,8 @@ import cors from 'cors';
 import compression from 'compression';
 // rateLimit via createRateLimiter de @alice/shared-utils
 import multer from 'multer';
+import fsPromises from 'fs/promises';
+import path from 'path';
 import crypto from 'crypto';
 import path from 'path';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
@@ -533,6 +535,14 @@ initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
 const app = express();
+const UPLOAD_BASE_DIR = '/opt/alice/uploads';
+const UPLOAD_JOB_DIRS: Record<string, string> = {
+  tts: path.join(UPLOAD_BASE_DIR, 'tts'),
+  lip_sync: path.join(UPLOAD_BASE_DIR, 'lip-sync'),
+  talking_head: path.join(UPLOAD_BASE_DIR, 'talking-head'),
+  long_video: path.join(UPLOAD_BASE_DIR, 'long-video'),
+  media: path.join(UPLOAD_BASE_DIR, 'media'),
+};
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
@@ -591,6 +601,13 @@ const mediaUpload = multer({
     } else {
       cb(new Error(`Tipo de arquivo não suportado: ${file.mimetype}`));
     }
+  },
+});
+
+const saladUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 200 * 1024 * 1024,
   },
 });
 
@@ -832,6 +849,22 @@ function chunkText(text: string): string[] {
 
 function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function ensureUploadDir(dirPath: string) {
+  return fsPromises.mkdir(dirPath, { recursive: true, mode: 0o750 }).catch(() => {});
+}
+
+function getSaladUploadPath(jobType: string, jobId: string): string {
+  const base = UPLOAD_JOB_DIRS[jobType] || UPLOAD_JOB_DIRS.media;
+  return path.join(base, `output-${jobId}${jobType === 'tts' ? '.wav' : '.mp4'}`);
+}
+
+function validateUploadToken(token: string, jobId: string, jobType: string, tenantId: string | null | undefined) {
+  const secret = INTERNAL_API_SECRET;
+  if (!secret) throw new Error('INTERNAL_API_SECRET ausente');
+  const expected = crypto.createHmac('sha256', secret).update(`${jobId}:${jobType}:${tenantId ?? ''}`).digest('hex');
+  return token === expected;
 }
 
 app.get('/api/rag/health', (_req: Request, res: Response) => {
@@ -1409,6 +1442,38 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
   } catch (error) {
     logger.error({ error }, 'Falha na classificação');
     res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// Upload interno Salad -> RAG para outputs multimodais
+app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (req: Request, res: Response) => {
+  try {
+    const token = req.headers['x-upload-token'];
+    const jobId = String(req.body.jobId ?? req.body.job_id ?? '');
+    const jobType = String(req.body.jobType ?? req.body.job_type ?? '');
+    const tenantId = req.body.tenantId ?? req.body.tenant_id ?? null;
+    const originalName = req.file?.originalname || '';
+    const buffer = req.file?.buffer;
+
+    if (!token || Array.isArray(token)) return res.status(401).json({ error: 'Token ausente' });
+    if (!jobId || !jobType || !buffer) return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes' });
+    if (!validateUploadToken(token as string, jobId, jobType, tenantId)) return res.status(401).json({ error: 'Token inválido' });
+
+    const targetPath = getSaladUploadPath(jobType, jobId);
+    await ensureUploadDir(path.dirname(targetPath));
+    await fsPromises.writeFile(targetPath, buffer, { mode: 0o640 });
+
+    await db
+      .update(mediaJobs)
+      .set({
+        resultado: sql`jsonb_set(COALESCE(resultado,'{}'::jsonb), '{upload}', jsonb_build_object('path', ${targetPath}, 'size', ${buffer.length}, 'original', ${originalName}, 'uploadedAt', NOW()))`,
+      })
+      .where(eq(mediaJobs.id, jobId));
+
+    res.json({ ok: true, path: targetPath, size: buffer.length });
+  } catch (error) {
+    logger.error({ error }, 'Erro no upload Salad -> RAG');
+    res.status(500).json({ error: 'Falha ao processar upload' });
   }
 });
 

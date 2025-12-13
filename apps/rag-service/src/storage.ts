@@ -114,13 +114,14 @@ class LocalStorageService implements StorageService {
 
   /**
    * Garantir que um diretório existe, criando se necessário
+   * Permissões enterprise: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
    */
   async ensureDirectoryExists(dirPath: string): Promise<void> {
     try {
       await fs.access(dirPath);
     } catch {
-      await fs.mkdir(dirPath, { recursive: true });
-      logger.debug({ dirPath }, 'Diretório criado');
+      await fs.mkdir(dirPath, { recursive: true, mode: 0o750 });
+      logger.debug({ dirPath }, 'Diretório criado com permissões enterprise (750)');
     }
   }
 
@@ -143,8 +144,8 @@ class LocalStorageService implements StorageService {
     // Garantir que o diretório existe
     await this.ensureDirectoryExists(path.dirname(absolutePath));
     
-    // Salvar arquivo
-    await fs.writeFile(absolutePath, buffer);
+    // Salvar arquivo com permissões enterprise: 640 (rw-r-----) - owner rw, group r, outros sem acesso
+    await fs.writeFile(absolutePath, buffer, { mode: 0o640 });
     
     logger.info({ 
       tenantId, 
