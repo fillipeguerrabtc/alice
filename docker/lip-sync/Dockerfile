@@ -27,7 +27,10 @@ RUN set -euo pipefail && \
     git lfs install --local && \
     # Fetch explícito do master para garantir que commit esteja disponível
     # NOTA: git fetch origin master garante que o commit do master esteja no histórico local
-    (git fetch origin master:refs/remotes/origin/master || git fetch origin +refs/heads/master:refs/remotes/origin/master || git fetch origin) && \
+    # Enterprise-grade: usar || para fallback sequencial sem subshell (melhores práticas Docker)
+    git fetch origin master:refs/remotes/origin/master || \
+    git fetch origin +refs/heads/master:refs/remotes/origin/master || \
+    git fetch origin && \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
     # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322" && \
@@ -63,8 +66,8 @@ RUN set -euo pipefail && \
 # Secrets não aparecem nos metadados da imagem, histórico de build ou layers
 ARG WAV2LIP_CHECKPOINT_SHA256
 RUN --mount=type=secret,id=huggingface_token \
-    set -euo pipefail; \
-    mkdir -p /opt/wav2lip/checkpoints; \
+    set -euo pipefail && \
+    mkdir -p /opt/wav2lip/checkpoints && \ \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
     # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \
@@ -151,8 +154,8 @@ RUN --mount=type=secret,id=huggingface_token \
 # Token via Docker BuildKit secret mount (mesmo secret do download anterior)
 ARG S3FD_SHA256
 RUN --mount=type=secret,id=huggingface_token \
-    set -euo pipefail; \
-    mkdir -p /opt/wav2lip/face_detection/detection/sfd; \
+    set -euo pipefail && \
+    mkdir -p /opt/wav2lip/face_detection/detection/sfd && \ \
     # Função helper para download com token (obrigatório se configurado) - mesma lógica do workflow
     # Token lido de /run/secrets/huggingface_token (Docker BuildKit secret mount)
     download_with_token() { \

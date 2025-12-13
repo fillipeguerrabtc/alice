@@ -39,12 +39,13 @@ RUN set -euo pipefail && \
         EXIT_CODE=$$? && \
         if [ $${EXIT_CODE} -eq 124 ]; then \
           echo "::error::Download de modelos SadTalker excedeu timeout de 45 minutos" && \
-          echo "::error::Possível loop infinito ou download muito lento - verifique logs acima"; \
+          echo "::error::Possível loop infinito ou download muito lento - verifique logs acima" && \
+          exit 1; \
         else \
           echo "::error::Download de modelos SadTalker falhou (código: $${EXIT_CODE})" && \
-          echo "::error::Verifique logs acima para identificar qual download falhou"; \
-        fi && \
-        exit 1; \
+          echo "::error::Verifique logs acima para identificar qual download falhou" && \
+          exit 1; \
+        fi; \
       } && \
       # Validação enterprise: verificar se checkpoints foram baixados corretamente
       if [ ! -d checkpoints ] || [ -z "$$(ls -A checkpoints 2>/dev/null)" ]; then \
@@ -65,7 +66,7 @@ RUN set -euo pipefail && \
         echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth" && \
         exit 1; \
       fi && \
-      echo "✅ Modelos SadTalker baixados com sucesso ($${CHECKPOINT_FILES} arquivos encontrados)"; \
+      echo "✅ Modelos SadTalker baixados com sucesso ($${CHECKPOINT_FILES} arquivos encontrados)" && \
     else \
       echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker" && \
       exit 1; \
