@@ -174,9 +174,10 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::s3fd.pth vazio ou ausente após download"; \
       exit 1; \
     fi; \
+    # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
     S3FD_SIZE=$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
-    if [ "$$S3FD_SIZE" -lt 80000000 ]; then \
-      echo "::error::s3fd.pth corrompido (tamanho: $${S3FD_SIZE} bytes, esperado: ~85MB)"; \
+    if [ "$$S3FD_SIZE" -lt 89128960 ]; then \
+      echo "::error::s3fd.pth corrompido (tamanho: $${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"; \
       exit 1; \
     fi; \
     if [ -z "${S3FD_SHA256:-}" ]; then \

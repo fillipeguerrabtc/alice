@@ -210,8 +210,8 @@ jobs:
           
           # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
           S3FD_SIZE=$(stat -f%z "$S3FD_FILE" 2>/dev/null || stat -c%s "$S3FD_FILE" 2>/dev/null || echo "0")
-          if [ "$S3FD_SIZE" -lt 80000000 ]; then
-            echo "::error::s3fd.pth parece estar corrompido (tamanho: ${S3FD_SIZE} bytes, esperado: ~85MB)"
+          if [ "$S3FD_SIZE" -lt 89128960 ]; then
+            echo "::error::s3fd.pth parece estar corrompido (tamanho: ${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"
             exit 1
           fi
           S3FD_SHA=$(sha256sum "$S3FD_FILE" | cut -d' ' -f1)
