@@ -32,16 +32,16 @@ def main() -> None:
     workdir = pathlib.Path("/app/run")
     ensure_dir(workdir.as_posix())
 
-    # SadTalker CLI padrão
+    # SadTalker não possui pacote instalável com setup.py; usamos o script de inferência direto do repo clonado
+    sadtalker_script = "/opt/sadtalker/inference.py"
     cmd = [
         "python3",
-        "-m",
-        "sadtalker.cli",
+        sadtalker_script,
         "--source_image",
         image_path,
         "--driven_audio",
         audio_path,
-        "--output",
+        "--result_dir",
         workdir.as_posix(),
         "--preprocess",
         "full",
