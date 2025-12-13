@@ -55,9 +55,11 @@ RUN set -euo pipefail; \
       fi; \
       # Validação adicional: verificar se arquivos principais existem (safetensors ou pth.tar)
       # Enterprise-grade: usar múltiplos finds separados e somar resultados para evitar problemas com parênteses
+      # IMPORTANTE: excluir .pth.tar do padrão *.pth para evitar contagem dupla
       SAFETENSORS_COUNT=$$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l); \
       PTHTAR_COUNT=$$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l); \
-      PTH_COUNT=$$(find checkpoints -type f -name "*.pth" 2>/dev/null | wc -l); \
+      # Excluir arquivos .pth.tar do padrão *.pth para evitar contagem dupla
+      PTH_COUNT=$$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l); \
       CHECKPOINT_FILES=$$((SAFETENSORS_COUNT + PTHTAR_COUNT + PTH_COUNT)); \
       if [ "$$CHECKPOINT_FILES" -eq 0 ]; then \
         echo "::error::Nenhum arquivo de checkpoint encontrado em checkpoints/ após download"; \

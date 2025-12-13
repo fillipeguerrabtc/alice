@@ -15,28 +15,25 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Clona Wav2Lip e detecta branch padrão automaticamente (main ou master)
-# Enterprise-grade: detecta automaticamente branch padrão para compatibilidade com repositórios modernos
+# Clona Wav2Lip em commit fixo (reprodutibilidade enterprise)
+# Enterprise-grade: commit fixo garante builds determinísticos e reprodutíveis
+# Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (master, 12/12/2025)
+# NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 RUN set -euo pipefail; \
     git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
     git fetch origin; \
-    # Detectar branch padrão automaticamente (main ou master)
-    DEFAULT_BRANCH=$$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo ""); \
-    if [ -z "$$DEFAULT_BRANCH" ]; then \
-      # Fallback: tentar main primeiro, depois master
-      if git show-ref --verify --quiet refs/remotes/origin/main; then \
-        DEFAULT_BRANCH="main"; \
-      elif git show-ref --verify --quiet refs/remotes/origin/master; then \
-        DEFAULT_BRANCH="master"; \
-      else \
-        echo "::error::Nenhuma branch padrão encontrada (main ou master)"; \
-        exit 1; \
-      fi; \
+    # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
+    WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
+    if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
+      echo "📦 Usando commit fixo: $$WAV2LIP_COMMIT"; \
+      git checkout $$WAV2LIP_COMMIT; \
+    else \
+      echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
+      echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
+      exit 1; \
     fi; \
-    echo "📦 Usando branch padrão: $$DEFAULT_BRANCH"; \
-    git checkout $$DEFAULT_BRANCH; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
