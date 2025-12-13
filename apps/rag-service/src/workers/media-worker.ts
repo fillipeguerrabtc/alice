@@ -34,7 +34,8 @@ const SALAD_TALKING_HEAD_IMAGE = process.env.SALAD_TALKING_HEAD_IMAGE;
 const SALAD_LIP_SYNC_IMAGE = process.env.SALAD_LIP_SYNC_IMAGE;
 const SALAD_LONG_VIDEO_IMAGE = process.env.SALAD_LONG_VIDEO_IMAGE;
 const SALAD_GPU_CLASS = (process.env.SALAD_GPU_CLASS || 'premium-gpu').split(',').map((c) => c.trim()).filter(Boolean);
-const RAG_PUBLIC_BASE_URL = process.env.RAG_PUBLIC_BASE_URL || '';
+// RAG_PUBLIC_BASE_URL é obrigatório - sem fallback para garantir erro claro se ausente
+const RAG_PUBLIC_BASE_URL = process.env.RAG_PUBLIC_BASE_URL;
 const UPLOAD_BASE_DIR = '/opt/alice/uploads';
 const UPLOAD_PATHS = {
   tts: `${UPLOAD_BASE_DIR}/tts`,
