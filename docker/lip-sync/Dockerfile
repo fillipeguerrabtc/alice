@@ -19,20 +19,19 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # Enterprise-grade: commit fixo garante builds determinísticos e reprodutíveis
 # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (master, 12/12/2025)
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
+# NOTA: Clone completo (sem --depth) para garantir que commit específico esteja disponível
 RUN set -euo pipefail; \
-    git clone --depth 1 https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
+    git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
-    # Fetch completo para garantir que o commit esteja disponível
-    git fetch --unshallow origin || git fetch origin; \
+    # Fetch todas as refs para garantir que commit esteja disponível
+    # Enterprise-grade: fetch de todas as branches/tags garante acesso a qualquer commit
+    git fetch origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* || git fetch origin; \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
-    # Verificar se commit existe localmente ou buscar do remoto
+    # Verificar se commit existe localmente (deve existir após clone completo + fetch)
     if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
       echo "📦 Usando commit fixo: $$WAV2LIP_COMMIT"; \
-      git checkout $$WAV2LIP_COMMIT; \
-    elif git fetch origin $$WAV2LIP_COMMIT 2>/dev/null && git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
-      echo "📦 Commit encontrado após fetch específico: $$WAV2LIP_COMMIT"; \
       git checkout $$WAV2LIP_COMMIT; \
     else \
       echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
