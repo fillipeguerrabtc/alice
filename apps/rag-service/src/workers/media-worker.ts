@@ -197,10 +197,10 @@ async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
       });
       return true;
     case 'talking_head':
-      await dispatchSalad(deps, job, SALAD_TALKING_HEAD_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
+      await dispatchSalad(deps, job, SALAD_TALKING_HEAD_IMAGE, { parametros: job.parametros });
       return true;
     case 'lip_sync':
-      await dispatchSalad(deps, job, SALAD_LIP_SYNC_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });
+      await dispatchSalad(deps, job, SALAD_LIP_SYNC_IMAGE, { parametros: job.parametros });
       return true;
     case 'long_video':
       await handleLongVideo(deps, job);
@@ -216,6 +216,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   }
   const containerName = `media-${job.jobType}-${job.id}`;
   const payloadParams = (payload as any)?.parametros ?? job.parametros ?? {};
+  const inputUrl = (payload as any)?.inputUrl ?? job.inputUrl;
   const outputBaseDir = '/opt/alice/uploads';
 
   const envVars: Record<string, string> = {
@@ -238,6 +239,9 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     const videoPath = resolveLocalPath(payloadParams?.videoPath, payloadParams?.video_path);
     const audioPath = resolveLocalPath(payloadParams?.audioPath, payloadParams?.audio_path);
     if (!videoPath || !audioPath) {
+      if (inputUrl) {
+        throw new Error('VIDEO_PATH e AUDIO_PATH são obrigatórios para lip_sync (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
+      }
       throw new Error('VIDEO_PATH e AUDIO_PATH são obrigatórios para lip_sync (arquivo local esperado no container Salad)');
     }
     envVars.VIDEO_PATH = videoPath;
@@ -247,6 +251,9 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     const imagePath = resolveLocalPath(payloadParams?.imagePath, payloadParams?.image_path);
     const audioPath = resolveLocalPath(payloadParams?.audioPath, payloadParams?.audio_path);
     if (!imagePath || !audioPath) {
+      if (inputUrl) {
+        throw new Error('IMAGE_PATH e AUDIO_PATH são obrigatórios para talking_head (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
+      }
       throw new Error('IMAGE_PATH e AUDIO_PATH são obrigatórios para talking_head (arquivo local esperado no container Salad)');
     }
     envVars.IMAGE_PATH = imagePath;

@@ -96,11 +96,11 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 41 Containers em Produção
+### Arquitetura de Microsserviços - 42 Containers em Produção
 
-A plataforma Alice é composta por **41 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **42 containers** organizados em 6 categorias:
 
-#### Categoria 1: Infraestrutura Core (5 serviços)
+#### Categoria 1: Infraestrutura Core (6 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
@@ -109,19 +109,20 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 | 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
 | 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
 | 5 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
+| 6 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
 
 #### Categoria 2: Microsserviços Alice (8 serviços)
 
 | # | Serviço | Container | Porta | Descrição |
 |---|---------|-----------|-------|-----------|
-| 6 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
-| 7 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
-| 8 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
-| 9 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
-| 10 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
-| 11 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
-| 12 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 13 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (CLIP) + text embeddings (multilingual-e5-base) - 100% local |
+| 7 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
+| 8 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
+| 9 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
+| 10 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
+| 11 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
+| 12 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
+| 13 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
+| 14 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (CLIP) + text embeddings (multilingual-e5-base) - 100% local |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
@@ -129,44 +130,44 @@ A plataforma Alice é composta por **41 containers** organizados em 6 categorias
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 14 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
-| 15 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
-| 16 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
-| 17 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
-| 18 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
-| 19 | Backend | `erpnext-backend` | Backend Python Frappe |
-| 20 | Frontend | `erpnext-frontend` | Frontend NGINX |
-| 21 | WebSocket | `erpnext-websocket` | Socket.io real-time |
-| 22 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
-| 23 | Worker Default | `erpnext-worker-default` | Jobs normais (instância 1) |
-| 24 | Worker Short | `erpnext-worker-short` | Jobs rápidos (instância 1) |
-| 25 | Worker Long | `erpnext-worker-long` | Jobs longos (instância 1) |
-| 26 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
-| 27 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
-| 28 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
+| 15 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
+| 16 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
+| 17 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
+| 18 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
+| 19 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
+| 20 | Backend | `erpnext-backend` | Backend Python Frappe |
+| 21 | Frontend | `erpnext-frontend` | Frontend NGINX |
+| 22 | WebSocket | `erpnext-websocket` | Socket.io real-time |
+| 23 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
+| 24 | Worker Default | `erpnext-worker-default` | Jobs normais (instância 1) |
+| 25 | Worker Short | `erpnext-worker-short` | Jobs rápidos (instância 1) |
+| 26 | Worker Long | `erpnext-worker-long` | Jobs longos (instância 1) |
+| 27 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
+| 28 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
+| 29 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
 
 #### Categoria 4: Observability Stack (12 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 29 | Langfuse | `langfuse` | LLM observability e analytics |
-| 30 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
-| 31 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
-| 32 | Grafana | `grafana` | Dashboards e visualizações |
-| 33 | Loki | `loki` | Agregação e armazenamento de logs |
-| 34 | Promtail | `promtail` | Coleta de logs do host |
-| 35 | Jaeger | `jaeger` | Distributed tracing |
-| 36 | Vector | `alice-vector` | Agregação de logs → Loki |
-| 37 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
-| 38 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
-| 39 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
-| 40 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+| 30 | Langfuse | `langfuse` | LLM observability e analytics |
+| 31 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
+| 32 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
+| 33 | Grafana | `grafana` | Dashboards e visualizações |
+| 34 | Loki | `loki` | Agregação e armazenamento de logs |
+| 35 | Promtail | `promtail` | Coleta de logs do host |
+| 36 | Jaeger | `jaeger` | Distributed tracing |
+| 37 | Vector | `alice-vector` | Agregação de logs → Loki |
+| 38 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
+| 39 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
+| 40 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
+| 41 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
 
 #### Categoria 5: Backup (1 serviço)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 41 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
+| 42 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
 
 ---
 
@@ -378,9 +379,9 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 41/41 containers | 100% |
-| **read_only: true** | 23/41 containers | 100% aplicável (somente onde não há escrita) |
-| **security_opt: no-new-privileges** | 41/41 containers | 100% |
+| **Resource Limits** | 42/42 containers | 100% |
+| **read_only: true** | 24/42 containers | 100% aplicável (somente onde não há escrita) |
+| **security_opt: no-new-privileges** | 42/42 containers | 100% |
 | **Healthchecks** | 38/38 containers | 100% (3 init usam service_completed_successfully) |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
@@ -401,7 +402,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 41 containers têm security hardening completo aplicado. Containers que não precisam escrever (23 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (18 containers: bancos de dados, workers/init ERPNext, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
+Todos os 42 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (18 containers: bancos de dados, workers/init ERPNext, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
 
 - Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
