@@ -67,7 +67,7 @@ def main() -> None:
     voice = normalize_str(params.get("voice")) or normalize_str(os.getenv("VOICE")) or DEFAULT_SPEAKER
     
     # speaker_wav: áudio de referência para voice cloning (opcional, deve ser caminho local)
-    speaker_wav = params.get("speaker_wav") or os.getenv("SPEAKER_WAV")
+    speaker_wav = normalize_str(params.get("speaker_wav")) or normalize_str(os.getenv("SPEAKER_WAV"))
     if speaker_wav and speaker_wav.startswith(("http://", "https://")):
         print("speaker_wav deve ser caminho local montado no container (URLs não são suportadas)", file=sys.stderr)
         sys.exit(1)
