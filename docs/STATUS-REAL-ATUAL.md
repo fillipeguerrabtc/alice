@@ -761,6 +761,22 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
+## 🛠️ ATUALIZAÇÃO 12/12/2025 - Multimodal (Wav2Lip/SadTalker)
+
+| Tópico | Detalhe | Arquivo |
+|--------|---------|---------|
+| Shell hardening | `SHELL ["/bin/bash","-o","pipefail","-c"]` + `set -euo pipefail` em imagens multimodais | `docker/lip-sync/Dockerfile`, `docker/talking-head/Dockerfile` |
+| Dependências | Inclusão de `git-lfs`, `wget`, `unzip`, `ca-certificates` | Dockerfiles multimodais |
+| Wav2Lip build | Clone com commit fixo `d83d7e5ab24f535494cfc2e7a286fe9899bfa710`, `git lfs install` antes de fetch/checkout, download do checkpoint `wav2lip_gan.pth` com retry/timeout e validação de tamanho | `docker/lip-sync/Dockerfile` |
+| Wav2Lip runtime | Execução via módulo `python3 -m Wav2Lip.inference`, `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip`, caminhos absolutos para face/audio/output e checkpoint explícito | `docker/lip-sync/serve.py` |
+| SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
+| SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path` | `docker/talking-head/serve.py` |
+
+*Documento atualizado em: 12/12/2025*  
+*Autor: Fillipe Guerra*  
+
+---
+
 ---
 
 ## 📝 ATUALIZAÇÃO 09/12/2025 - BULK IMPORT ENTERPRISE UI
