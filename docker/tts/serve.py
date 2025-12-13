@@ -4,6 +4,7 @@ import pathlib
 import sys
 
 import soundfile as sf
+import numpy as np
 
 # Configurações do TTS ANTES do import (obrigatório para inicialização correta)
 # TTS_HOME: diretório de modelos pré-baixados no build
@@ -89,13 +90,19 @@ def main() -> None:
         # Voice cloning (XTTS v2): extrair latents (tuple) e inferir manualmente
         # get_conditioning_latents retorna (gpt_cond_latent, speaker_embedding)
         gpt_cond_latent, speaker_embedding = tts.get_conditioning_latents(audio_path=speaker_wav)
-        audio = tts.inference(
+        result = tts.inference(
             text=text,
             language=lang,
             gpt_cond_latent=gpt_cond_latent,
             speaker_embedding=speaker_embedding,
         )
-        sf.write(output_path, audio["wav"], 24000)
+        wav = result["wav"]
+        sr = result.get("sample_rate", 24000)
+        # Garantir formato compatível (numpy 1D) antes de salvar
+        if hasattr(wav, "cpu"):
+            wav = wav.cpu().numpy()
+        wav = np.asarray(wav).squeeze()
+        sf.write(str(output_path), wav, int(sr))
         print(f"Usando voice cloning com referência: {speaker_wav}")
     else:
         # Speaker pré-definido do modelo (caminho padrão)
