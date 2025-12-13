@@ -215,8 +215,17 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     throw new Error('Imagem Salad não configurada para o tipo de job');
   }
   const containerName = `media-${job.jobType}-${job.id}`;
-  const payloadParams = (payload as any)?.parametros ?? job.parametros ?? {};
-  const inputUrl = (payload as any)?.inputUrl ?? job.inputUrl;
+  const payloadObj = (payload as any) ?? {};
+  const payloadParams =
+    (typeof payloadObj.parametros === 'object' && payloadObj.parametros !== null ? payloadObj.parametros : {}) ||
+    {};
+  // Prioridade: campos top-level do payload (TTS), depois parametros aninhados, depois job.parametros
+  const paramsMerged = {
+    ...(job.parametros ?? {}),
+    ...payloadParams,
+    ...payloadObj,
+  };
+  const inputUrl = payloadObj.inputUrl ?? job.inputUrl;
   const outputBaseDir = '/opt/alice/uploads';
 
   const envVars: Record<string, string> = {
@@ -226,8 +235,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   };
 
   if (job.jobType === 'tts') {
-    const speakerWav = resolveLocalPath(payloadParams?.speaker_wav, payloadParams?.speakerWav);
-    if (payloadParams?.speaker_wav || payloadParams?.speakerWav) {
+    const speakerWav = resolveLocalPath(paramsMerged?.speaker_wav, paramsMerged?.speakerWav);
+    if (paramsMerged?.speaker_wav || paramsMerged?.speakerWav) {
       if (!speakerWav) {
         throw new Error('speaker_wav deve ser caminho local montado no container Salad (URLs não são suportadas)');
       }
@@ -236,8 +245,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
     envVars.OUTPUT_PATH = `${outputBaseDir}/tts/output-${job.id}.wav`;
   } else if (job.jobType === 'lip_sync') {
-    const videoPath = resolveLocalPath(payloadParams?.videoPath, payloadParams?.video_path);
-    const audioPath = resolveLocalPath(payloadParams?.audioPath, payloadParams?.audio_path);
+    const videoPath = resolveLocalPath(paramsMerged?.videoPath, paramsMerged?.video_path);
+    const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
     if (!videoPath || !audioPath) {
       if (inputUrl) {
         throw new Error('VIDEO_PATH e AUDIO_PATH são obrigatórios para lip_sync (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
@@ -248,8 +257,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     envVars.AUDIO_PATH = audioPath;
     envVars.OUTPUT_PATH = `${outputBaseDir}/lip-sync/output-${job.id}.mp4`;
   } else if (job.jobType === 'talking_head') {
-    const imagePath = resolveLocalPath(payloadParams?.imagePath, payloadParams?.image_path);
-    const audioPath = resolveLocalPath(payloadParams?.audioPath, payloadParams?.audio_path);
+    const imagePath = resolveLocalPath(paramsMerged?.imagePath, paramsMerged?.image_path);
+    const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
     if (!imagePath || !audioPath) {
       if (inputUrl) {
         throw new Error('IMAGE_PATH e AUDIO_PATH são obrigatórios para talking_head (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
