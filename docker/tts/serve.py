@@ -3,9 +3,6 @@ import os
 import pathlib
 import sys
 
-import soundfile as sf
-import numpy as np
-
 # Configurações do TTS ANTES do import (obrigatório para inicialização correta)
 # TTS_HOME: diretório de modelos pré-baixados no build
 # COQUI_TOS_AGREED: aceite automático de licença (necessário para execução não-interativa)
