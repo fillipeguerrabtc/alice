@@ -10,6 +10,7 @@ env:
 
 jobs:
   # Job separado para calcular checksums dos modelos (supply chain security)
+  # Apenas para lip-sync que é a única imagem que precisa dos checksums
   compute-checksums:
     runs-on: ubuntu-latest
     outputs:
@@ -19,19 +20,40 @@ jobs:
       - name: Calcular checksums dos modelos ML
         id: checksums
         run: |
+          set -euo pipefail
           echo "🔐 Calculando checksums SHA256 dos modelos (supply chain security)..."
           
           # Wav2Lip GAN checkpoint (~400MB)
           echo "📦 Baixando wav2lip_gan.pth para calcular checksum..."
-          WAV2LIP_SHA=$(curl -sL --retry 3 --retry-delay 5 \
-            "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth" | sha256sum | cut -d' ' -f1)
+          WAV2LIP_FILE=$(mktemp)
+          curl -fSL --retry 3 --retry-delay 5 -o "$WAV2LIP_FILE" \
+            "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth"
+          
+          # Validar que o arquivo não está vazio
+          if [ ! -s "$WAV2LIP_FILE" ]; then
+            echo "::error::Download do wav2lip_gan.pth falhou ou arquivo vazio"
+            exit 1
+          fi
+          
+          WAV2LIP_SHA=$(sha256sum "$WAV2LIP_FILE" | cut -d' ' -f1)
+          rm -f "$WAV2LIP_FILE"
           echo "wav2lip_sha256=${WAV2LIP_SHA}" >> $GITHUB_OUTPUT
           echo "✅ WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_SHA}"
           
           # S3FD face detection (~85MB)
           echo "📦 Baixando s3fd.pth para calcular checksum..."
-          S3FD_SHA=$(curl -sL --retry 3 --retry-delay 5 \
-            "https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth" | sha256sum | cut -d' ' -f1)
+          S3FD_FILE=$(mktemp)
+          curl -fSL --retry 3 --retry-delay 5 -o "$S3FD_FILE" \
+            "https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth"
+          
+          # Validar que o arquivo não está vazio
+          if [ ! -s "$S3FD_FILE" ]; then
+            echo "::error::Download do s3fd.pth falhou ou arquivo vazio"
+            exit 1
+          fi
+          
+          S3FD_SHA=$(sha256sum "$S3FD_FILE" | cut -d' ' -f1)
+          rm -f "$S3FD_FILE"
           echo "s3fd_sha256=${S3FD_SHA}" >> $GITHUB_OUTPUT
           echo "✅ S3FD_SHA256=${S3FD_SHA}"
 
@@ -60,6 +82,7 @@ jobs:
           password: ${{ secrets.GH_PAT }}
 
       # Cache enterprise: mesmo padrão do deploy-production.yml
+      # Build args com checksums apenas para lip-sync (única imagem que usa)
       - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
@@ -70,10 +93,8 @@ jobs:
           # Cache de registry enterprise (compartilhado entre builds)
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache,mode=max
-          # Build args com checksums calculados automaticamente
-          build-args: |
-            WAV2LIP_CHECKPOINT_SHA256=${{ needs.compute-checksums.outputs.wav2lip_sha256 }}
-            S3FD_SHA256=${{ needs.compute-checksums.outputs.s3fd_sha256 }}
+          # Build args apenas para lip-sync (única imagem que declara/usa esses ARGs)
+          build-args: ${{ matrix.image == 'lip-sync' && format('WAV2LIP_CHECKPOINT_SHA256={0}\nS3FD_SHA256={1}', needs.compute-checksums.outputs.wav2lip_sha256, needs.compute-checksums.outputs.s3fd_sha256) || '' }}
 
       - name: Show digest ${{ matrix.image }}
         run: |
