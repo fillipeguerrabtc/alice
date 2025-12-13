@@ -217,6 +217,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   }
   const containerName = `media-${job.jobType}-${job.id}`;
   const payloadObj = (payload as any) ?? {};
+  const { parametros: _nestedParams, ...payloadTopLevel } = payloadObj;
   const payloadParams =
     (typeof payloadObj.parametros === 'object' && payloadObj.parametros !== null ? payloadObj.parametros : {}) ||
     {};
@@ -224,7 +225,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   const paramsMerged = {
     ...(job.parametros ?? {}),
     ...payloadParams,
-    ...payloadObj,
+    ...payloadTopLevel,
   };
   const inputUrl = payloadObj.inputUrl ?? job.inputUrl;
   const outputBaseDir = '/opt/alice/uploads';
