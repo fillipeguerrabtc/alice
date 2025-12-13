@@ -70,7 +70,7 @@ RUN --mount=type=secret,id=huggingface_token \
     download_with_token() { \
       local URL="$$1" && \
       local OUTPUT="$$2" && \
-      local TOKEN=$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '') && \
+      local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')" && \
       if [ -n "$${TOKEN}" ]; then \
         echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..." && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
@@ -158,7 +158,7 @@ RUN --mount=type=secret,id=huggingface_token \
     download_with_token() { \
       local URL="$$1" && \
       local OUTPUT="$$2" && \
-      local TOKEN=$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '') && \
+      local TOKEN="$$(cat /run/secrets/huggingface_token 2>/dev/null || echo '')" && \
       if [ -n "$${TOKEN}" ]; then \
         echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..." && \
         HTTP_CODE=$$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer $${TOKEN}" -w "%{http_code}" -o "$${OUTPUT}" "$${URL}" 2>/dev/null || echo "000") && \
