@@ -224,6 +224,13 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   };
 
   if (job.jobType === 'tts') {
+    const speakerWav = resolveLocalPath(job.parametros?.speaker_wav, job.parametros?.speakerWav);
+    if (job.parametros?.speaker_wav || job.parametros?.speakerWav) {
+      if (!speakerWav) {
+        throw new Error('speaker_wav deve ser caminho local montado no container Salad (URLs não são suportadas)');
+      }
+      envVars.SPEAKER_WAV = speakerWav;
+    }
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
     envVars.OUTPUT_PATH = `${outputBaseDir}/tts/output-${job.id}.wav`;
   } else if (job.jobType === 'lip_sync') {

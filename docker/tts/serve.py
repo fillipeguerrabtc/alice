@@ -60,8 +60,11 @@ def main() -> None:
     # XTTS v2 requer speaker válido (não aceita None)
     voice = params.get("voice") or os.getenv("VOICE") or DEFAULT_SPEAKER
     
-    # speaker_wav: áudio de referência para voice cloning (opcional)
+    # speaker_wav: áudio de referência para voice cloning (opcional, deve ser caminho local)
     speaker_wav = params.get("speaker_wav") or os.getenv("SPEAKER_WAV")
+    if speaker_wav and speaker_wav.startswith(("http://", "https://")):
+        print("speaker_wav deve ser caminho local montado no container (URLs não são suportadas)", file=sys.stderr)
+        sys.exit(1)
     
     # lang: prioridade MEDIA_PARAMS.lang > TTS_LANG env > default "pt"
     # Código ISO 639-1: pt, en, es, fr, de, etc.

@@ -39,7 +39,7 @@
 - **SadTalker**: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos. Saída em `/opt/alice/uploads/talking-head/output-<job>.mp4` (volume extra).
 - **TTS (XTTS v2)**: pré-download **obrigatório** do modelo durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`. Saída em `/opt/alice/uploads/tts/output-<job>.wav` (volume extra).
 - **Ambiente Salad**: `lip_sync` e `talking_head` recebem `VIDEO_PATH`/`IMAGE_PATH` e `AUDIO_PATH` como variáveis de ambiente diretas (não via JSON), garantindo compatibilidade com `require_env()` dos containers.
-- **Arquivos locais obrigatórios**: `VIDEO_PATH`/`IMAGE_PATH`/`AUDIO_PATH` aceitam apenas caminhos locais montados no container Salad; URLs são rejeitadas para evitar falhas de runtime.
+- **Arquivos locais obrigatórios**: `VIDEO_PATH`/`IMAGE_PATH`/`AUDIO_PATH` e `speaker_wav` aceitam apenas caminhos locais montados no container Salad; URLs são rejeitadas para evitar falhas de runtime.
 
 ### Diferenciais
 
