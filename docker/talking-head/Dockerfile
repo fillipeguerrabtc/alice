@@ -7,7 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-      python3 python3-pip python3-venv git ffmpeg libgl1 wget unzip && \
+      python3 python3-pip python3-venv git ffmpeg libgl1 wget unzip ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -16,9 +16,11 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Clona SadTalker (sem setup.py); instala deps do projeto e exporta PYTHONPATH
-RUN git clone --depth 1 https://github.com/OpenTalker/SadTalker.git /opt/sadtalker && \
-    python3 -m pip install --no-cache-dir -r /opt/sadtalker/requirements.txt && \
-    cd /opt/sadtalker && set -euo pipefail && bash scripts/download_models.sh
+RUN set -euo pipefail; \
+    git clone https://github.com/OpenTalker/SadTalker.git /opt/sadtalker; \
+    cd /opt/sadtalker; \
+    python3 -m pip install --no-cache-dir -r requirements.txt; \
+    if [ -x scripts/download_models.sh ]; then bash scripts/download_models.sh; else echo "download_models.sh não encontrado"; exit 1; fi
 
 ENV PYTHONPATH="/opt/sadtalker:${PYTHONPATH}"
 
