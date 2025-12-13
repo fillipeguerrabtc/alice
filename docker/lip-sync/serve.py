@@ -19,10 +19,6 @@ def main() -> None:
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    env = os.environ.copy()
-    existing_py = env.get("PYTHONPATH")
-    env["PYTHONPATH"] = f"/opt/wav2lip:{existing_py}" if existing_py else "/opt/wav2lip"
-
     wav2lip_script = "/opt/wav2lip/inference.py"
     checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
     cmd = [
@@ -39,7 +35,7 @@ def main() -> None:
     ]
 
     print(f"Executando Wav2Lip: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, cwd="/opt/wav2lip", env=env)
+    subprocess.run(cmd, check=True, cwd="/opt/wav2lip")
     print(f"Lip-sync gerado em {output_path}")
 
 
