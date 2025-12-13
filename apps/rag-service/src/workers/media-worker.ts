@@ -173,11 +173,14 @@ type WorkerDeps = {
 async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
   switch (job.jobType) {
     case 'tts':
-      // Passa todos os parâmetros relevantes: text, voice, lang (idioma, default: pt conforme Regra 13 CLAUDE.md)
+      // TTS com XTTS v2: text, voice (speaker), lang, speaker_wav (voice cloning)
+      // Default speaker: "Claribel Dervla" (definido no serve.py)
+      // Default lang: "pt" (Regra 13 CLAUDE.md - PT-BR primário)
       await dispatchSalad(deps, job, SALAD_TTS_IMAGE, {
         text: job.parametros?.text,
-        voice: job.parametros?.voice,
-        lang: job.parametros?.lang, // Código ISO 639-1: pt, en, es, etc.
+        voice: job.parametros?.voice, // Nome do speaker (ex: "Ana Florence", "Claribel Dervla")
+        speaker_wav: job.parametros?.speaker_wav, // Áudio de referência para voice cloning
+        lang: job.parametros?.lang, // Código ISO 639-1: pt, en, es, fr, de, etc.
       });
       return true;
     case 'talking_head':

@@ -14,6 +14,10 @@ from TTS.api import TTS
 # Default: Português Brasileiro (Regra 13 CLAUDE.md - PT-BR primário)
 DEFAULT_LANG = "pt"
 
+# Speaker padrão do XTTS v2 (evita erro quando speaker=None)
+# Lista completa disponível em: tts.speakers após carregar o modelo
+DEFAULT_SPEAKER = "Claribel Dervla"
+
 
 def require_env(name: str) -> str:
     value = os.getenv(name)
@@ -49,8 +53,12 @@ def main() -> None:
     
     output_path = require_env("OUTPUT_PATH")
     
-    # voice: opcional (MEDIA_PARAMS.voice ou VOICE env)
-    voice = params.get("voice") or os.getenv("VOICE")
+    # voice/speaker: MEDIA_PARAMS.voice > VOICE env > DEFAULT_SPEAKER
+    # XTTS v2 requer speaker válido (não aceita None)
+    voice = params.get("voice") or os.getenv("VOICE") or DEFAULT_SPEAKER
+    
+    # speaker_wav: áudio de referência para voice cloning (opcional)
+    speaker_wav = params.get("speaker_wav") or os.getenv("SPEAKER_WAV")
     
     # lang: prioridade MEDIA_PARAMS.lang > TTS_LANG env > default "pt"
     # Código ISO 639-1: pt, en, es, fr, de, etc.
@@ -67,12 +75,24 @@ def main() -> None:
         tts.to("cpu")
 
     ensure_parent(output_path)
-    tts.tts_to_file(
-        text=text,
-        speaker=voice,
-        language=lang,
-        file_path=output_path,
-    )
+    
+    # Construir kwargs para tts_to_file (speaker_wav tem prioridade sobre speaker para voice cloning)
+    tts_kwargs = {
+        "text": text,
+        "language": lang,
+        "file_path": output_path,
+    }
+    
+    if speaker_wav:
+        # Voice cloning: usar áudio de referência
+        tts_kwargs["speaker_wav"] = speaker_wav
+        print(f"Usando voice cloning com referência: {speaker_wav}")
+    else:
+        # Speaker pré-definido do modelo
+        tts_kwargs["speaker"] = voice
+        print(f"Usando speaker: {voice}")
+    
+    tts.tts_to_file(**tts_kwargs)
     print(f"Áudio gerado em {output_path}")
 
 
