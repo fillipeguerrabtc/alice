@@ -19,11 +19,13 @@ def main() -> None:
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    wav2lip_script = "/opt/wav2lip/inference.py"
+    # Execução via módulo garante resolução de imports do pacote Wav2Lip
+    wav2lip_module = "Wav2Lip.inference"
     checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
     cmd = [
         "python3",
-        wav2lip_script,
+        "-m",
+        wav2lip_module,
         "--face",
         str(video_path),
         "--audio",
