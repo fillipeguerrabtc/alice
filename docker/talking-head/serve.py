@@ -60,8 +60,8 @@ def main() -> None:
         sys.exit(1)
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    latest.replace(output_path)
-    print(f"Talking-head gerado em {output_path}")
+    final_path = latest.replace(output_path)
+    print(f"Talking-head gerado em {final_path}")
 
 
 if __name__ == "__main__":
