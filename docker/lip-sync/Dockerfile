@@ -17,7 +17,7 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # Clona Wav2Lip em commit fixo (reprodutibilidade) e instala deps locais
 RUN git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
     cd /opt/wav2lip && \
-    git fetch origin d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
+    git fetch origin && \
     git checkout d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
     git lfs install --local && git lfs fetch --all && git lfs pull && \
     python3 -m pip install --no-cache-dir -r requirements.txt
