@@ -20,7 +20,7 @@ RUN set -euo pipefail; \
     git clone https://github.com/OpenTalker/SadTalker.git /opt/sadtalker; \
     cd /opt/sadtalker; \
     python3 -m pip install --no-cache-dir -r requirements.txt; \
-    if [ -f scripts/download_models.sh ]; then chmod +x scripts/download_models.sh && bash scripts/download_models.sh; else echo "download_models.sh não encontrado"; exit 1; fi
+    if [ -f scripts/download_models.sh ]; then chmod +x scripts/download_models.sh && bash scripts/download_models.sh; else echo "download_models.sh não encontrado - prosseguindo sem download automático"; fi
 
 ENV PYTHONPATH="/opt/sadtalker:${PYTHONPATH}"
 

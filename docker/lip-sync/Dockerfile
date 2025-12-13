@@ -27,7 +27,8 @@ RUN set -euo pipefail; \
 # Baixa checkpoint oficial (Wav2Lip GAN) em path esperado
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/checkpoints; \
-    wget -O /opt/wav2lip/checkpoints/wav2lip_gan.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v0.1/wav2lip_gan.pth
+    wget --tries=3 --timeout=30 -O /opt/wav2lip/checkpoints/wav2lip_gan.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v0.1/wav2lip_gan.pth && \
+    if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then echo "checkpoint vazio ou ausente"; exit 1; fi
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
