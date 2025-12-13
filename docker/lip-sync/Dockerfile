@@ -35,12 +35,15 @@ RUN set -euo pipefail; \
     if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then echo "WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; exit 1; fi; \
     echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
-# Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência
+# Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
 ARG S3FD_URL=https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth
+ARG S3FD_SHA256
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/face_detection/detection/sfd; \
     wget --tries=3 --timeout=60 -O /opt/wav2lip/face_detection/detection/sfd/s3fd.pth "$S3FD_URL"; \
-    if [ ! -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then echo "s3fd.pth vazio ou ausente"; exit 1; fi
+    if [ ! -s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth ]; then echo "s3fd.pth vazio ou ausente"; exit 1; fi; \
+    if [ -z "${S3FD_SHA256:-}" ]; then echo "S3FD_SHA256 é obrigatório"; exit 1; fi; \
+    echo "${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
