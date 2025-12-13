@@ -15,14 +15,28 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Clona Wav2Lip em branch master (reprodutibilidade) e instala deps locais
-# Enterprise-grade: usar branch master estável ao invés de commit específico que pode não existir
+# Clona Wav2Lip e detecta branch padrão automaticamente (main ou master)
+# Enterprise-grade: detecta automaticamente branch padrão para compatibilidade com repositórios modernos
 RUN set -euo pipefail; \
     git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
     git fetch origin; \
-    git checkout master; \
+    # Detectar branch padrão automaticamente (main ou master)
+    DEFAULT_BRANCH=$$(git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo ""); \
+    if [ -z "$$DEFAULT_BRANCH" ]; then \
+      # Fallback: tentar main primeiro, depois master
+      if git show-ref --verify --quiet refs/remotes/origin/main; then \
+        DEFAULT_BRANCH="main"; \
+      elif git show-ref --verify --quiet refs/remotes/origin/master; then \
+        DEFAULT_BRANCH="master"; \
+      else \
+        echo "::error::Nenhuma branch padrão encontrada (main ou master)"; \
+        exit 1; \
+      fi; \
+    fi; \
+    echo "📦 Usando branch padrão: $$DEFAULT_BRANCH"; \
+    git checkout $$DEFAULT_BRANCH; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
