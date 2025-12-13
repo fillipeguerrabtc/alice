@@ -1,6 +1,7 @@
 torch==2.1.2
 TTS==0.22.0
 soundfile==0.12.1
-# numpy 1.25.x é a linha testada/compatível com torch 2.1.2
-numpy==1.25.2
+# TTS 0.22.0 requer numpy==1.22.0 para Python <= 3.10 (Ubuntu 22.04 padrão)
+# numpy 1.22.0 é compatível com torch 2.1.2
+numpy==1.22.0
 requests==2.32.3
