@@ -237,6 +237,22 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   };
 
   if (job.jobType === 'tts') {
+    const textParam = typeof paramsMerged?.text === 'string' && paramsMerged.text.trim().length > 0 ? paramsMerged.text.trim() : null;
+    if (!textParam) {
+      throw new Error('TEXT é obrigatório para TTS (forneça texto em parametros.text)');
+    }
+    envVars.TEXT = textParam;
+
+    const voiceParam = typeof paramsMerged?.voice === 'string' && paramsMerged.voice.trim().length > 0 ? paramsMerged.voice.trim() : undefined;
+    if (voiceParam) {
+      envVars.VOICE = voiceParam;
+    }
+
+    const langParam = typeof paramsMerged?.lang === 'string' && paramsMerged.lang.trim().length > 0 ? paramsMerged.lang.trim() : undefined;
+    if (langParam) {
+      envVars.TTS_LANG = langParam;
+    }
+
     const speakerWav = resolveLocalPath(paramsMerged?.speaker_wav, paramsMerged?.speakerWav);
     if (paramsMerged?.speaker_wav || paramsMerged?.speakerWav) {
       if (!speakerWav) {
