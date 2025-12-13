@@ -84,13 +84,18 @@ jobs:
       # Preparar build-args apenas para lip-sync (única imagem que usa checksums)
       - name: Preparar build args
         id: build-args
+        env:
+          # Passar checksums via env para evitar problemas de interpolação em heredoc
+          WAV2LIP_SHA: ${{ needs.compute-checksums.outputs.wav2lip_sha256 }}
+          S3FD_SHA: ${{ needs.compute-checksums.outputs.s3fd_sha256 }}
+          IMAGE_TYPE: ${{ matrix.image }}
         run: |
-          if [ "${{ matrix.image }}" = "lip-sync" ]; then
+          if [ "$IMAGE_TYPE" = "lip-sync" ]; then
             # Multiline output para build-args (usando heredoc EOF)
             {
               echo 'args<<EOF'
-              echo "WAV2LIP_CHECKPOINT_SHA256=${{ needs.compute-checksums.outputs.wav2lip_sha256 }}"
-              echo "S3FD_SHA256=${{ needs.compute-checksums.outputs.s3fd_sha256 }}"
+              echo "WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_SHA}"
+              echo "S3FD_SHA256=${S3FD_SHA}"
               echo 'EOF'
             } >> $GITHUB_OUTPUT
           else
