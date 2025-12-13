@@ -25,16 +25,14 @@ RUN set -euo pipefail; \
       chmod +x scripts/download_models.sh; \
       # Enterprise-grade: modificar temporariamente o script para adicionar timeout aos wget
       # O script original pode ter wget sem timeout, causando loops infinitos
-      # Solução robusta: substituir apenas comandos wget reais (não em strings/comentários)
-      # Formato real: wget -nc <URL> -O <output> (onde -nc vem logo após wget)
-      # Padrão corresponde a: início de linha/operador + espaços + wget + espaço + -nc + resto da linha
-      # Isso evita substituir em contextos inválidos (strings, variáveis, comentários)
-      # NOTA: Esta abordagem é mais segura que substituição global simples, mas ainda pode ter edge cases
-      # Se o script tiver estruturas muito complexas, considere usar uma ferramenta mais robusta (awk/perl)
-      # Padrão corrigido: trata && e || explicitamente (ordem importa - sequências de 2 chars antes de 1 char)
-      # Primeiro: && e || (com e sem espaço antes), depois: ; & | individuais
-      # Usa múltiplas substituições para garantir ordem correta de matching
-      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1wget\2--timeout=300 --tries=3 -nc\3|g; s|(&&)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([[:space:]]&&)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|(\|\|)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([;&|])([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g' scripts/download_models.sh || true; \
+      # Solução simplificada: usar múltiplos comandos sed separados para evitar problemas de parsing
+      # NOTA: Separar em múltiplos comandos sed é mais seguro que um único comando complexo
+      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc|\1wget\2--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      sed -i -E 's|(&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      sed -i -E 's|([[:space:]]&&)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      sed -i -E 's|(\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      sed -i -E 's|([[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
+      sed -i -E 's|([;&|])([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
       # Timeout de 45 minutos (2700s) para evitar loops infinitos - downloads podem ser grandes (~1GB+)
       # coreutils garante que timeout está disponível
       timeout 2700 bash scripts/download_models.sh || { \
