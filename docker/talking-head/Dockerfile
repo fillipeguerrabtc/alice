@@ -31,7 +31,10 @@ RUN set -euo pipefail; \
       # Isso evita substituir em contextos inválidos (strings, variáveis, comentários)
       # NOTA: Esta abordagem é mais segura que substituição global simples, mas ainda pode ter edge cases
       # Se o script tiver estruturas muito complexas, considere usar uma ferramenta mais robusta (awk/perl)
-      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1wget\2--timeout=300 --tries=3 -nc\3|g; s|([;&|]|[[:space:]]&&|[[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g' scripts/download_models.sh || true; \
+      # Padrão corrigido: trata && e || explicitamente (ordem importa - sequências de 2 chars antes de 1 char)
+      # Primeiro: && e || (com e sem espaço antes), depois: ; & | individuais
+      # Usa múltiplas substituições para garantir ordem correta de matching
+      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1wget\2--timeout=300 --tries=3 -nc\3|g; s|(&&)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([[:space:]]&&)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|(\|\|)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g; s|([;&|])([[:space:]]*)wget([[:space:]]+)-nc(.*)|\1\2wget\3--timeout=300 --tries=3 -nc\4|g' scripts/download_models.sh || true; \
       # Timeout de 45 minutos (2700s) para evitar loops infinitos - downloads podem ser grandes (~1GB+)
       # coreutils garante que timeout está disponível
       timeout 2700 bash scripts/download_models.sh || { \
