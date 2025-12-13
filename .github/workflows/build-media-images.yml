@@ -81,8 +81,23 @@ jobs:
           username: ${{ env.GH_USER }}
           password: ${{ secrets.GH_PAT }}
 
+      # Preparar build-args apenas para lip-sync (única imagem que usa checksums)
+      - name: Preparar build args
+        id: build-args
+        run: |
+          if [ "${{ matrix.image }}" = "lip-sync" ]; then
+            # Multiline output para build-args (usando heredoc EOF)
+            {
+              echo 'args<<EOF'
+              echo "WAV2LIP_CHECKPOINT_SHA256=${{ needs.compute-checksums.outputs.wav2lip_sha256 }}"
+              echo "S3FD_SHA256=${{ needs.compute-checksums.outputs.s3fd_sha256 }}"
+              echo 'EOF'
+            } >> $GITHUB_OUTPUT
+          else
+            echo "args=" >> $GITHUB_OUTPUT
+          fi
+
       # Cache enterprise: mesmo padrão do deploy-production.yml
-      # Build args com checksums apenas para lip-sync (única imagem que usa)
       - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
@@ -93,8 +108,8 @@ jobs:
           # Cache de registry enterprise (compartilhado entre builds)
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache,mode=max
-          # Build args apenas para lip-sync (única imagem que declara/usa esses ARGs)
-          build-args: ${{ matrix.image == 'lip-sync' && format('WAV2LIP_CHECKPOINT_SHA256={0}\nS3FD_SHA256={1}', needs.compute-checksums.outputs.wav2lip_sha256, needs.compute-checksums.outputs.s3fd_sha256) || '' }}
+          # Build args definidos no step anterior (vazios para imagens que não usam)
+          build-args: ${{ steps.build-args.outputs.args }}
 
       - name: Show digest ${{ matrix.image }}
         run: |
