@@ -440,7 +440,18 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
     const download = await downloadAndStoreYoutube(deps, job.inputUrl, job.tenantId);
     // Envia para Salad (long_video) se configurado, passando caminho armazenado
     if (SALAD_LONG_VIDEO_IMAGE) {
-      const outputPath = `/opt/alice/uploads/long-video/output-${job.id}.mp4`;
+      const outputBaseDir = UPLOAD_PATHS.long_video;
+      const outputPath = `${outputBaseDir}/output-${job.id}.mp4`;
+      
+      // Configurar variáveis de upload (mesmo padrão de dispatchSalad)
+      if (!RAG_PUBLIC_BASE_URL) {
+        throw new Error('RAG_PUBLIC_BASE_URL é obrigatório para upload dos artefatos Salad');
+      }
+      const uploadBase = RAG_PUBLIC_BASE_URL.replace(/\/+$/, '');
+      const uploadUrl = `${uploadBase}/api/rag/internal/media/upload`;
+      const rawToken = `${job.id}:${job.jobType}:${job.tenantId ?? ''}`;
+      const uploadToken = createHmacToken(rawToken);
+      
       const result = await deps.saladClient.createAndWait({
         name: `media-long-video-${job.id}`,
         image: SALAD_LONG_VIDEO_IMAGE,
@@ -454,6 +465,13 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
           JOB_ID: job.id,
           TENANT_ID: job.tenantId,
           MEDIA_PARAMS: JSON.stringify(job.parametros ?? {}),
+          // Variáveis de upload para o serve.py fazer upload automático
+          UPLOAD_URL: uploadUrl,
+          UPLOAD_TOKEN: uploadToken,
+          UPLOAD_JOB_ID: String(job.id),
+          UPLOAD_JOB_TYPE: job.jobType,
+          UPLOAD_TENANT_ID: job.tenantId ?? '',
+          UPLOAD_OUTPUT_PATH: outputPath,
         },
       });
       await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null);
