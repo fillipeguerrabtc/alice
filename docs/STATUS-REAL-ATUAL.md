@@ -761,17 +761,19 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-## 🛠️ ATUALIZAÇÃO 12/12/2025 - Multimodal (Wav2Lip/SadTalker)
+## 🛠️ ATUALIZAÇÃO 12/12/2025 - Multimodal (Wav2Lip/SadTalker/TTS)
 
 | Tópico | Detalhe | Arquivo |
 |--------|---------|---------|
 | Shell hardening | `SHELL ["/bin/bash","-o","pipefail","-c"]` + `set -euo pipefail` em imagens multimodais | `docker/lip-sync/Dockerfile`, `docker/talking-head/Dockerfile`, `docker/tts/Dockerfile` |
 | Dependências | Inclusão de `git-lfs`, `wget`, `unzip`, `ca-certificates`; `numpy==1.25.2` em todos os serviços multimodais (compatível com `torch 2.1.2`) | Dockerfiles multimodais, `docker/*/requirements.txt` |
-| Wav2Lip build | Clone com commit fixo, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, ambos com **checksum SHA256 obrigatório**) | `docker/lip-sync/Dockerfile` |
+| Wav2Lip build | Clone com commit fixo, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, ambos com **checksum SHA256 calculado automaticamente** no workflow) | `docker/lip-sync/Dockerfile` |
 | Wav2Lip runtime | Execução via script `python3 /opt/wav2lip/inference.py`, `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip`, caminhos absolutos para face/audio/output e checkpoint explícito | `docker/lip-sync/serve.py` |
 | SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
 | SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path` | `docker/talking-head/serve.py` |
 | TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`, `COQUI_TOS_AGREED=1` (aceite automático de licença) | `docker/tts/Dockerfile`, `docker/tts/serve.py` |
+| Cache enterprise | Workflow `build-media-images` usa **cache de registry** (`cache-from/cache-to: type=registry`) igual ao `deploy-production.yml` para builds rápidos | `.github/workflows/build-media-images.yml` |
+| Checksums automáticos | SHA256 dos modelos calculados **automaticamente** durante o workflow (sem secrets manuais) — padrão enterprise igual ao cálculo de digests em `deploy-production.yml` | `.github/workflows/build-media-images.yml` |
 
 > Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
 

@@ -105,20 +105,7 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 
-**Secrets para Checksums de Modelos Multimodais (obrigatórios para `build-media-images`):**
-
-| Secret | Descrição | Como Obter |
-|--------|-----------|------------|
-| `WAV2LIP_CHECKPOINT_SHA256` | Checksum SHA256 do `wav2lip_gan.pth` | Ver comandos abaixo |
-| `S3FD_SHA256` | Checksum SHA256 do `s3fd.pth` (face detection) | Ver comandos abaixo |
-
-```bash
-# No servidor Hetzner:
-wget -O /tmp/wav2lip_gan.pth https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth && sha256sum /tmp/wav2lip_gan.pth | cut -d' ' -f1
-wget -O /tmp/s3fd.pth https://www.adrianbulat.com/downloads/python-fan/s3fd-619a316812.pth && sha256sum /tmp/s3fd.pth | cut -d' ' -f1
-```
-
-> **Nota:** Configure em **Settings → Secrets and variables → Actions → Secrets** (mesmo local dos demais secrets). O workflow `build-media-images` falha se não estiverem configurados.
+> **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). Não é necessário configurar secrets para checksums.
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
