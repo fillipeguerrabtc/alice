@@ -1,4 +1,5 @@
 FROM nvidia/cuda:12.1.1-base-ubuntu22.04
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \

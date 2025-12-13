@@ -22,8 +22,10 @@ ENV TTS_HOME=/opt/tts-models \
 # Força download completo do modelo chamando to() que carrega na memória
 # Validação: se tts.to('cpu') executar sem erro, o modelo foi baixado e carregado corretamente
 # set -euo pipefail garante que qualquer falha no Python abortará o build
-RUN set -euo pipefail; \
-    mkdir -p "$TTS_HOME"; \
+# NOTA: Usar && ao invés de ; para melhor controle de erros (melhores práticas Docker 2025)
+# NOTA: Variáveis ENV usam $ simples (Docker expande antes de passar ao shell)
+RUN set -euo pipefail && \
+    mkdir -p "${TTS_HOME}" && \
     python3 -c "from TTS.api import TTS; tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2'); tts.to('cpu'); print('Modelo XTTS v2 baixado e carregado com sucesso')"
 
 COPY serve.py .
