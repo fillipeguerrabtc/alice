@@ -14,6 +14,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
+# Clona SadTalker (sem setup.py); instala deps do projeto e exporta PYTHONPATH
+RUN git clone --depth 1 https://github.com/OpenTalker/SadTalker.git /opt/sadtalker && \
+    python3 -m pip install --no-cache-dir -r /opt/sadtalker/requirements.txt
+
+ENV PYTHONPATH="/opt/sadtalker:${PYTHONPATH}"
+
 COPY serve.py .
 
 # Comentário: gera talking-head via SadTalker; saída em OUTPUT_PATH.
