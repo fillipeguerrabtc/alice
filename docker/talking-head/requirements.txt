@@ -8,4 +8,4 @@ face-alignment==1.3.5
 numpy==1.26.4
 scipy==1.11.4
 # SadTalker upstream remove setup.py/pyproject; pin to tag with setup.py
-git+https://github.com/OpenTalker/SadTalker.git@v0.0.2#egg=SadTalker
+git+https://github.com/OpenTalker/SadTalker.git@v0.0.2#egg=sadtalker
