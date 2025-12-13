@@ -94,7 +94,10 @@ jobs:
       - name: Show digest ${{ matrix.image }}
         run: |
           echo "📋 Digest para ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1:"
-          if ! docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1" | grep -m1 digest; then
+          digest_line=$(docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:v1" | grep -m1 digest || true)
+          if [ -n "$digest_line" ]; then
+            echo "$digest_line"
+          else
             echo "::warning::Não foi possível capturar o digest (inspect/grep falhou). Build/push podem ter concluído; verifique manualmente o registry."
           fi
 
@@ -132,6 +135,9 @@ jobs:
       - name: Show digest lip-sync
         run: |
           echo "📋 Digest para ${{ env.IMAGE_PREFIX }}-lip-sync:v1:"
-          if ! docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-lip-sync:v1" | grep -m1 digest; then
+          digest_line=$(docker buildx imagetools inspect "${{ env.IMAGE_PREFIX }}-lip-sync:v1" | grep -m1 digest || true)
+          if [ -n "$digest_line" ]; then
+            echo "$digest_line"
+          else
             echo "::warning::Não foi possível capturar o digest (inspect/grep falhou). Build/push podem ter concluído; verifique manualmente o registry."
           fi
