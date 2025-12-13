@@ -233,7 +233,6 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
   const envVars: Record<string, string> = {
     JOB_ID: job.id,
     TENANT_ID: job.tenantId,
-    MEDIA_PARAMS: JSON.stringify(paramsMerged ?? {}),
   };
 
   if (job.jobType === 'tts') {
@@ -260,6 +259,8 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
       }
       // Para o TTS API (tts_to_file) o parâmetro é SPEAKER_WAV
       envVars.SPEAKER_WAV = speakerWav;
+      paramsMerged.speaker_wav = speakerWav;
+      paramsMerged.speakerWav = speakerWav;
     }
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
     envVars.OUTPUT_PATH = `${outputBaseDir}/tts/output-${job.id}.wav`;
@@ -293,6 +294,9 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     // Segurança para futuros tipos de job
     envVars.OUTPUT_PATH = `${outputBaseDir}/media/output-${job.id}`;
   }
+
+  // MEDIA_PARAMS deve refletir os valores já validados/normalizados
+  envVars.MEDIA_PARAMS = JSON.stringify(paramsMerged ?? {});
 
   const result = await deps.saladClient.createAndWait({
     name: containerName,
