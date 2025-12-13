@@ -861,7 +861,7 @@ function getSaladUploadPath(jobType: string, jobId: string): string {
 }
 
 function validateUploadToken(token: string, jobId: string, jobType: string, tenantId: string | null | undefined) {
-  const secret = INTERNAL_API_SECRET;
+  const secret = process.env.INTERNAL_API_SECRET;
   if (!secret) throw new Error('INTERNAL_API_SECRET ausente');
   const expected = crypto.createHmac('sha256', secret).update(`${jobId}:${jobType}:${tenantId ?? ''}`).digest('hex');
   return token === expected;
@@ -1449,8 +1449,11 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
 app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (req: Request, res: Response) => {
   try {
     const token = req.headers['x-upload-token'];
-    const jobId = String(req.body.jobId ?? req.body.job_id ?? '');
-    const jobType = String(req.body.jobType ?? req.body.job_type ?? '');
+    // Validação estrita: rejeitar null/undefined explícitos e strings 'null'/'undefined'
+    const jobIdRaw = req.body.jobId ?? req.body.job_id;
+    const jobTypeRaw = req.body.jobType ?? req.body.job_type;
+    const jobId = typeof jobIdRaw === 'string' && jobIdRaw.trim().length > 0 ? jobIdRaw.trim() : '';
+    const jobType = typeof jobTypeRaw === 'string' && jobTypeRaw.trim().length > 0 ? jobTypeRaw.trim() : '';
     const tenantId = req.body.tenantId ?? req.body.tenant_id ?? null;
     const originalName = req.file?.originalname || '';
     const buffer = req.file?.buffer;
