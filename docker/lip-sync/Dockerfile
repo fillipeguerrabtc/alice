@@ -28,7 +28,6 @@ RUN set -euo pipefail; \
 # Build args: apenas checksums (não secrets)
 # Enterprise-grade: token HuggingFace via Docker BuildKit secrets (--mount=type=secret)
 # Secrets não aparecem nos metadados da imagem, histórico de build ou layers
-ARG WAV2LIP_CHECKPOINT_URL=https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth
 ARG WAV2LIP_CHECKPOINT_SHA256
 RUN --mount=type=secret,id=huggingface_token \
     set -euo pipefail; \
@@ -68,12 +67,37 @@ RUN --mount=type=secret,id=huggingface_token \
         fi; \
       fi; \
     }; \
-    if ! download_with_token "$WAV2LIP_CHECKPOINT_URL" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
-      echo "::error::Download de wav2lip_gan.pth falhou"; \
+    # Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
+    # URL original do space fffiloni retorna 404, então usamos mirrors públicos do HuggingFace
+    WAV2LIP_DOWNLOADED=false; \
+    WAV2LIP_SOURCES=("https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth|Nekochu/Wav2Lip" \
+                     "https://huggingface.co/gmk123/wav2lip/resolve/main/wav2lip_gan.pth|gmk123/wav2lip" \
+                     "https://huggingface.co/commanderx/Wav2Lip-HD/resolve/main/checkpoints/wav2lip_gan.pth|commanderx/Wav2Lip-HD" \
+                     "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth|fffiloni/wav2lip (space - pode retornar 404)"); \
+    for SOURCE_INFO in $${WAV2LIP_SOURCES[@]}; do \
+      IFS='|' read -r WAV2LIP_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
+      echo "📦 Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..."; \
+      if download_with_token "$$WAV2LIP_URL" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
+        echo "✅ Download bem-sucedido de $${SOURCE_NAME}"; \
+        WAV2LIP_DOWNLOADED=true; \
+        break; \
+      else \
+        echo "⚠️ Falha ao baixar de $${SOURCE_NAME}"; \
+        rm -f /opt/wav2lip/checkpoints/wav2lip_gan.pth; \
+      fi; \
+    done; \
+    if [ "$$WAV2LIP_DOWNLOADED" != "true" ]; then \
+      echo "::error::Download de wav2lip_gan.pth falhou de todas as fontes"; \
+      echo "::error::Configure HUGGINGFACE_TOKEN no GitHub Secrets (read-only token do HuggingFace) para acesso confiável"; \
       exit 1; \
     fi; \
     if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then \
-      echo "::error::wav2lip_gan.pth está vazio"; \
+      echo "::error::wav2lip_gan.pth vazio ou ausente após download"; \
+      exit 1; \
+    fi; \
+    WAV2LIP_SIZE=$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
+    if [ "$$WAV2LIP_SIZE" -lt 400000000 ]; then \
+      echo "::error::wav2lip_gan.pth corrompido (tamanho: $${WAV2LIP_SIZE} bytes, esperado: ~400MB)"; \
       exit 1; \
     fi; \
     if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then \
