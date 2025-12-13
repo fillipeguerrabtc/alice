@@ -82,6 +82,7 @@ jobs:
           echo "🔐 Calculando checksums SHA256 dos modelos (fontes originais)..."
           
           # Função helper para download com token (obrigatório se configurado)
+          # Enterprise-grade: captura código HTTP mesmo em caso de erro (sem flag -f que aborta antes de capturar)
           download_with_token() {
             local URL="$1"
             local OUTPUT="$2"
@@ -90,7 +91,9 @@ jobs:
             if [ -n "$TOKEN" ]; then
               # Token configurado: usar OBRIGATORIAMENTE (sem fallback sem token)
               echo "🔐 Usando HUGGINGFACE_TOKEN para download autenticado..."
-              HTTP_CODE=$(curl -fSL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer ${TOKEN}" -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
+              # Remover flag -f para capturar código HTTP mesmo em erros 4xx/5xx
+              # -L: follow redirects, -S: show errors, --retry: retry on transient errors
+              HTTP_CODE=$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -H "Authorization: Bearer ${TOKEN}" -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
               if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTPUT" ]; then
                 return 0
               elif [ "$HTTP_CODE" = "401" ]; then
@@ -106,7 +109,8 @@ jobs:
             else
               # Token não configurado: tentar sem autenticação (repositórios públicos)
               echo "⚠️ HUGGINGFACE_TOKEN não configurado - tentando download público (pode falhar com 401)"
-              HTTP_CODE=$(curl -fSL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
+              # Remover flag -f para capturar código HTTP mesmo em erros 4xx/5xx
+              HTTP_CODE=$(curl -SL --retry 3 --retry-delay 5 --max-time 300 -w "%{http_code}" -o "$OUTPUT" "$URL" 2>/dev/null || echo "000")
               if [ "$HTTP_CODE" = "200" ] && [ -s "$OUTPUT" ]; then
                 return 0
               elif [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "403" ]; then
