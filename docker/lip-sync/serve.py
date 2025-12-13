@@ -20,6 +20,7 @@ def main() -> None:
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
     wav2lip_script = "/opt/wav2lip/inference.py"
+    checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
     cmd = [
         "python3",
         wav2lip_script,
@@ -29,10 +30,12 @@ def main() -> None:
         audio_path,
         "--outfile",
         output_path,
+        "--checkpoint_path",
+        checkpoint_path,
     ]
 
     print(f"Executando Wav2Lip: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    subprocess.run(cmd, check=True, cwd="/opt/wav2lip")
     print(f"Lip-sync gerado em {output_path}")
 
 

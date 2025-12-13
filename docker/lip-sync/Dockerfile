@@ -14,9 +14,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Clona Wav2Lip mais recente (contém setup.py) e instala deps locais
-RUN git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
-    python3 -m pip install --no-cache-dir -r /opt/wav2lip/requirements.txt
+# Clona Wav2Lip em commit fixo (reprodutibilidade) e instala deps locais
+RUN git clone --depth 1 https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip && \
+    cd /opt/wav2lip && \
+    git fetch --depth 1 origin d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
+    git checkout d83d7e5ab24f535494cfc2e7a286fe9899bfa710 && \
+    python3 -m pip install --no-cache-dir -r requirements.txt
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
