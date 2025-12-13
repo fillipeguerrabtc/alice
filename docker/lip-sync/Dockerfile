@@ -42,7 +42,9 @@ RUN set -euo pipefail && \
       echo "::error::Branches disponíveis:" && \
       BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo "") && \
       if [ -n "$${BRANCHES_OUTPUT}" ]; then \
-        echo "$${BRANCHES_OUTPUT}" | head -n 5 || echo "$${BRANCHES_OUTPUT}" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
+        # Enterprise-grade: mostrar primeiras 5 linhas usando head (confiável e disponível em Ubuntu)
+        # NOTA: head -n 5 é padrão e confiável, não precisa de fallback complexo
+        echo "$${BRANCHES_OUTPUT}" | head -n 5; \
       else \
         echo "  (não disponível)"; \
       fi && \
