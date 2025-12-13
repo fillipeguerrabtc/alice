@@ -173,7 +173,12 @@ type WorkerDeps = {
 async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
   switch (job.jobType) {
     case 'tts':
-      await dispatchSalad(deps, job, SALAD_TTS_IMAGE, { text: job.parametros?.text, voice: job.parametros?.voice });
+      // Passa todos os parâmetros relevantes: text, voice, lang (idioma, default: pt conforme Regra 13 CLAUDE.md)
+      await dispatchSalad(deps, job, SALAD_TTS_IMAGE, {
+        text: job.parametros?.text,
+        voice: job.parametros?.voice,
+        lang: job.parametros?.lang, // Código ISO 639-1: pt, en, es, etc.
+      });
       return true;
     case 'talking_head':
       await dispatchSalad(deps, job, SALAD_TALKING_HEAD_IMAGE, { inputUrl: job.inputUrl, parametros: job.parametros });

@@ -1,3 +1,4 @@
+import json
 import os
 import pathlib
 import sys
@@ -10,6 +11,9 @@ os.environ.setdefault("COQUI_TOS_AGREED", "1")
 
 from TTS.api import TTS
 
+# Default: Português Brasileiro (Regra 13 CLAUDE.md - PT-BR primário)
+DEFAULT_LANG = "pt"
+
 
 def require_env(name: str) -> str:
     value = os.getenv(name)
@@ -19,16 +23,39 @@ def require_env(name: str) -> str:
     return value
 
 
+def parse_media_params() -> dict:
+    """Parseia MEDIA_PARAMS JSON passado pelo media-worker (Salad container)."""
+    raw = os.getenv("MEDIA_PARAMS", "{}")
+    try:
+        return json.loads(raw) if raw else {}
+    except json.JSONDecodeError as e:
+        print(f"Aviso: MEDIA_PARAMS inválido, usando defaults: {e}", file=sys.stderr)
+        return {}
+
+
 def ensure_parent(path: str) -> None:
     pathlib.Path(path).parent.mkdir(parents=True, exist_ok=True)
 
 
 def main() -> None:
-    text = require_env("TEXT")
+    # Parâmetros podem vir de MEDIA_PARAMS (JSON) ou variáveis de ambiente individuais
+    params = parse_media_params()
+    
+    # text: obrigatório (MEDIA_PARAMS.text ou TEXT env)
+    text = params.get("text") or os.getenv("TEXT")
+    if not text:
+        print("Variável obrigatória ausente: TEXT (ou MEDIA_PARAMS.text)", file=sys.stderr)
+        sys.exit(1)
+    
     output_path = require_env("OUTPUT_PATH")
-    voice = os.getenv("VOICE")
-    # TTS_LANG: código de idioma (en, pt, es, etc.) - NÃO usar LANG que é locale do sistema (en_US.UTF-8)
-    lang = os.getenv("TTS_LANG", "pt")
+    
+    # voice: opcional (MEDIA_PARAMS.voice ou VOICE env)
+    voice = params.get("voice") or os.getenv("VOICE")
+    
+    # lang: prioridade MEDIA_PARAMS.lang > TTS_LANG env > default "pt"
+    # Código ISO 639-1: pt, en, es, fr, de, etc.
+    lang = params.get("lang") or os.getenv("TTS_LANG") or DEFAULT_LANG
+    
     model_name = os.getenv("MODEL_NAME", "tts_models/multilingual/multi-dataset/xtts_v2")
 
     device = "cuda" if os.getenv("FORCE_CPU", "false").lower() not in ("1", "true", "yes") else "cpu"
