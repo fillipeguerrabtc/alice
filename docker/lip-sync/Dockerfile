@@ -25,11 +25,15 @@ RUN set -euo pipefail; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
 
-# Baixa checkpoint oficial (Wav2Lip GAN) em path esperado
+# Baixa checkpoint oficial (Wav2Lip GAN) em path esperado + valida checksum
+ARG WAV2LIP_CHECKPOINT_URL=https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth
+ARG WAV2LIP_CHECKPOINT_SHA256
 RUN set -euo pipefail; \
     mkdir -p /opt/wav2lip/checkpoints; \
-    wget --tries=3 --timeout=30 -O /opt/wav2lip/checkpoints/wav2lip_gan.pth https://github.com/Rudrabha/Wav2Lip/releases/download/v0.1/wav2lip_gan.pth && \
-    if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then echo "checkpoint vazio ou ausente"; exit 1; fi
+    wget --tries=3 --timeout=30 -O /opt/wav2lip/checkpoints/wav2lip_gan.pth "$WAV2LIP_CHECKPOINT_URL"; \
+    if [ ! -s /opt/wav2lip/checkpoints/wav2lip_gan.pth ]; then echo "checkpoint vazio ou ausente"; exit 1; fi; \
+    if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then echo "WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; exit 1; fi; \
+    echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 

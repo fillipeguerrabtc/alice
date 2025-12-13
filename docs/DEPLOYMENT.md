@@ -7,6 +7,11 @@
 
 A plataforma Alice é composta por **42 containers** organizados em 6 categorias:
 
+### Notas Multimodais (12/12/2025)
+- Pré-requisito: `git-lfs` instalado no runner (Dockerfile lip-sync).
+- Wav2Lip: commit pinado `d83d7e5ab24f535494cfc2e7a286fe9899bfa710`, `git lfs install` antes de fetch/checkout, download do checkpoint `wav2lip_gan.pth` (retry/timeout/validação) com **SHA256 obrigatório** (`WAV2LIP_CHECKPOINT_SHA256`). Runtime: `python3 inference.py`, `PYTHONPATH` preservado, `cwd=/opt/wav2lip`, caminhos absolutos + checkpoint explícito.
+- SadTalker: modelos **obrigatórios**; build falha se `scripts/download_models.sh` não existir. Runtime: `PYTHONPATH` preservado, `cwd=/opt/sadtalker`, caminhos absolutos, rename final controlado.
+
 ### Categoria 1: Infraestrutura Core (6 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |

@@ -19,13 +19,15 @@ def main() -> None:
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    wav2lip_module = "Wav2Lip.inference"
+    env = os.environ.copy()
+    existing_py = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"/opt/wav2lip:{existing_py}" if existing_py else "/opt/wav2lip"
+
+    wav2lip_script = "/opt/wav2lip/inference.py"
     checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
-    env = {**os.environ, "PYTHONPATH": "/opt/wav2lip"}
     cmd = [
         "python3",
-        "-m",
-        wav2lip_module,
+        wav2lip_script,
         "--face",
         str(video_path),
         "--audio",

@@ -772,6 +772,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
 | SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path` | `docker/talking-head/serve.py` |
 
+> Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
+
 *Documento atualizado em: 12/12/2025*  
 *Autor: Fillipe Guerra*  
 

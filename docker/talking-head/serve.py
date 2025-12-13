@@ -34,7 +34,9 @@ def main() -> None:
 
     # SadTalker não possui pacote instalável com setup.py; usamos o script de inferência direto do repo clonado
     sadtalker_script = "/opt/sadtalker/inference.py"
-    env = {**os.environ, "PYTHONPATH": "/opt/sadtalker"}
+    env = os.environ.copy()
+    existing_py = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = f"/opt/sadtalker:{existing_py}" if existing_py else "/opt/sadtalker"
     cmd = [
         "python3",
         sadtalker_script,
