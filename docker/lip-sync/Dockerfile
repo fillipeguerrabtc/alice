@@ -74,7 +74,7 @@ RUN --mount=type=secret,id=huggingface_token \
                      "https://huggingface.co/gmk123/wav2lip/resolve/main/wav2lip_gan.pth|gmk123/wav2lip" \
                      "https://huggingface.co/commanderx/Wav2Lip-HD/resolve/main/checkpoints/wav2lip_gan.pth|commanderx/Wav2Lip-HD" \
                      "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth|fffiloni/wav2lip (space - pode retornar 404)"); \
-    for SOURCE_INFO in $${WAV2LIP_SOURCES[@]}; do \
+    for SOURCE_INFO in "$${WAV2LIP_SOURCES[@]}"; do \
       IFS='|' read -r WAV2LIP_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
       echo "📦 Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..."; \
       if download_with_token "$$WAV2LIP_URL" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
@@ -153,7 +153,7 @@ RUN --mount=type=secret,id=huggingface_token \
     S3FD_SOURCES=("https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth|gmk123/wav2lip" \
                   "https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth|manavisrani07/gradio-lipsync-wav2lip" \
                   "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/s3fd-619a316812.pth|camenduru/Wav2Lip"); \
-    for SOURCE_INFO in $${S3FD_SOURCES[@]}; do \
+    for SOURCE_INFO in "$${S3FD_SOURCES[@]}"; do \
       IFS='|' read -r S3FD_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
       echo "📦 Tentando baixar s3fd.pth de $${SOURCE_NAME}..."; \
       if download_with_token "$$S3FD_URL" /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; then \
