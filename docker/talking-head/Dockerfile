@@ -25,8 +25,13 @@ RUN set -euo pipefail; \
       chmod +x scripts/download_models.sh; \
       # Enterprise-grade: modificar temporariamente o script para adicionar timeout aos wget
       # O script original pode ter wget sem timeout, causando loops infinitos
-      # Criar versão modificada do script com timeouts adequados
-      sed -i 's/wget -nc/wget --timeout=300 --tries=3 -nc/g' scripts/download_models.sh || true; \
+      # Solução robusta: substituir apenas comandos wget reais (não em strings/comentários)
+      # Usa padrão que corresponde a comandos wget no início de linha ou após operadores de comando
+      # Isso evita substituir em contextos inválidos (strings, variáveis, comentários)
+      # Padrão: ^(espaços)wget(espaços)-nc OU (operador)(espaços)wget(espaços)-nc
+      # NOTA: Esta abordagem é mais segura que substituição global simples, mas ainda pode ter edge cases
+      # Se o script tiver estruturas muito complexas, considere usar uma ferramenta mais robusta (awk/perl)
+      sed -i -E 's|^([[:space:]]*)wget([[:space:]]+)-nc|\1wget\2--timeout=300 --tries=3 -nc|g; s|([;&|]|[[:space:]]&&|[[:space:]]\|\|)([[:space:]]*)wget([[:space:]]+)-nc|\1\2wget\3--timeout=300 --tries=3 -nc|g' scripts/download_models.sh || true; \
       # Timeout de 45 minutos (2700s) para evitar loops infinitos - downloads podem ser grandes (~1GB+)
       # coreutils garante que timeout está disponível
       timeout 2700 bash scripts/download_models.sh || { \
