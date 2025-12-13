@@ -21,6 +21,7 @@ def main() -> None:
 
     wav2lip_module = "Wav2Lip.inference"
     checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
+    env = {**os.environ, "PYTHONPATH": "/opt/wav2lip"}
     cmd = [
         "python3",
         "-m",
@@ -36,7 +37,7 @@ def main() -> None:
     ]
 
     print(f"Executando Wav2Lip: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, cwd="/opt/wav2lip")
+    subprocess.run(cmd, check=True, cwd="/opt/wav2lip", env=env)
     print(f"Lip-sync gerado em {output_path}")
 
 

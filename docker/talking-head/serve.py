@@ -34,6 +34,7 @@ def main() -> None:
 
     # SadTalker não possui pacote instalável com setup.py; usamos o script de inferência direto do repo clonado
     sadtalker_script = "/opt/sadtalker/inference.py"
+    env = {**os.environ, "PYTHONPATH": "/opt/sadtalker"}
     cmd = [
         "python3",
         sadtalker_script,
@@ -51,7 +52,7 @@ def main() -> None:
     ]
 
     print(f"Executando SadTalker: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True, cwd="/opt/sadtalker")
+    subprocess.run(cmd, check=True, cwd="/opt/sadtalker", env=env)
 
     latest = find_latest_video(workdir)
     if not latest:
