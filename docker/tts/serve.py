@@ -86,15 +86,16 @@ def main() -> None:
     }
     
     if speaker_wav:
-        # Voice cloning (XTTS v2): extrair latents e inferir manualmente
-        conditioning = tts.get_conditioning_latents(audio_path=speaker_wav)
+        # Voice cloning (XTTS v2): extrair latents (tuple) e inferir manualmente
+        # get_conditioning_latents retorna (gpt_cond_latent, speaker_embedding)
+        gpt_cond_latent, speaker_embedding = tts.get_conditioning_latents(audio_path=speaker_wav)
         audio = tts.inference(
             text=text,
             language=lang,
-            speaker_latents=conditioning["speaker_latents"],
-            gpt_cond_latent=conditioning["gpt_cond_latent"],
+            gpt_cond_latent=gpt_cond_latent,
+            speaker_embedding=speaker_embedding,
         )
-        sf.write(output_path, audio, 24000)
+        sf.write(output_path, audio["wav"], 24000)
         print(f"Usando voice cloning com referência: {speaker_wav}")
     else:
         # Speaker pré-definido do modelo (caminho padrão)
