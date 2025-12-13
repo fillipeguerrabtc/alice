@@ -7,9 +7,8 @@ env:
   REGISTRY: ghcr.io
   GH_USER: fillipeguerrabtc
   # Checksums SHA256 dos modelos (supply chain security)
-  # Esses valores são fixos e públicos, não precisam ser secrets
-  WAV2LIP_CHECKPOINT_SHA256: ${{ vars.WAV2LIP_CHECKPOINT_SHA256 }}
-  S3FD_SHA256: ${{ vars.S3FD_SHA256 }}
+  WAV2LIP_CHECKPOINT_SHA256: ${{ secrets.WAV2LIP_CHECKPOINT_SHA256 }}
+  S3FD_SHA256: ${{ secrets.S3FD_SHA256 }}
 
 jobs:
   build-and-push:
