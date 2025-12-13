@@ -13,9 +13,9 @@ def require_env(name: str) -> str:
 
 
 def main() -> None:
-    video_path = require_env("VIDEO_PATH")
-    audio_path = require_env("AUDIO_PATH")
-    output_path = require_env("OUTPUT_PATH")
+    video_path = pathlib.Path(require_env("VIDEO_PATH")).resolve()
+    audio_path = pathlib.Path(require_env("AUDIO_PATH")).resolve()
+    output_path = pathlib.Path(require_env("OUTPUT_PATH")).resolve()
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -26,11 +26,11 @@ def main() -> None:
         "-m",
         wav2lip_module,
         "--face",
-        video_path,
+        str(video_path),
         "--audio",
-        audio_path,
+        str(audio_path),
         "--outfile",
-        output_path,
+        str(output_path),
         "--checkpoint_path",
         checkpoint_path,
     ]
