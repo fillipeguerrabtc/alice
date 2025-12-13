@@ -33,10 +33,11 @@
 | **Observabilidade LLM** | Prometheus, Grafana, Jaeger, Langfuse para métricas específicas |
 | **Auto-aprendizado** | Progressive LoRA a cada 4 dias com dados aprovados |
 
-### Multimodal (Wav2Lip / SadTalker) — 12/12/2025
-- Imagens multimodais (lip-sync, talking-head) usam `git-lfs`, `wget`, `unzip`, `ca-certificates` e shell hardening (`pipefail`).
-- Wav2Lip: commit pinado `d83d7e5ab24f535494cfc2e7a286fe9899bfa710`, `git lfs install` antes de fetch/checkout, download do checkpoint `wav2lip_gan.pth` com retry/timeout/validação e **checksum SHA256 obrigatório** (`WAV2LIP_CHECKPOINT_SHA256`). Execução via `python3 inference.py` com `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip` e caminhos absolutos.
-- SadTalker: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos.
+### Multimodal (Wav2Lip / SadTalker / TTS) — 12/12/2025
+- Imagens multimodais (lip-sync, talking-head, tts) usam `git-lfs`, `wget`, `unzip`, `ca-certificates` e shell hardening (`pipefail`).
+- **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios), checksum SHA256 obrigatório. Execução via `python3 inference.py` com `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip` e caminhos absolutos.
+- **SadTalker**: clone completo (sem depth), download **obrigatório** de modelos via `scripts/download_models.sh` (build falha se ausente); execução com `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker` e caminhos absolutos.
+- **TTS (XTTS v2)**: pré-download do modelo durante build para autonomia 100% (sem download em runtime); `TTS_HOME=/opt/tts-models`.
 
 ### Diferenciais
 

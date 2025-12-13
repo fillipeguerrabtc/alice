@@ -2,6 +2,9 @@ import os
 import pathlib
 import sys
 
+# Garante que TTS use o diretório de modelos pré-baixados no build
+os.environ.setdefault("TTS_HOME", "/opt/tts-models")
+
 from TTS.api import TTS
 
 
