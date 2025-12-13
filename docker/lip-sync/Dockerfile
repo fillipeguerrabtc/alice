@@ -125,7 +125,8 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; \
       exit 1; \
     fi; \
-    echo "$${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
+    # NOTA: ARG do Docker usa $ simples (não $$) - Docker expande ANTES de passar ao shell
+    echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
 # Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
 # Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
@@ -205,7 +206,8 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::S3FD_SHA256 é obrigatório"; \
       exit 1; \
     fi; \
-    echo "$${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
+    # NOTA: ARG do Docker usa $ simples (não $$) - Docker expande ANTES de passar ao shell
+    echo "${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
