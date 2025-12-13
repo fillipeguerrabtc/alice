@@ -34,7 +34,8 @@ const SALAD_LONG_VIDEO_IMAGE = process.env.SALAD_LONG_VIDEO_IMAGE;
 const SALAD_GPU_CLASS = (process.env.SALAD_GPU_CLASS || 'premium-gpu').split(',').map((c) => c.trim()).filter(Boolean);
 
 function isUrl(candidate: string) {
-  return /^https?:\/\//i.test(candidate);
+  // Rejeita qualquer URI com esquema (http, https, file, etc.)
+  return /^[a-z][a-z0-9+.-]*:\/\//i.test(candidate);
 }
 
 function resolveLocalPath(...candidates: Array<string | null | undefined>) {
