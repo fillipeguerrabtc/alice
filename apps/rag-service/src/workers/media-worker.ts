@@ -240,6 +240,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
       if (!speakerWav) {
         throw new Error('speaker_wav deve ser caminho local montado no container Salad (URLs não são suportadas)');
       }
+      // Para o TTS API (tts_to_file) o parâmetro é SPEAKER_WAV
       envVars.SPEAKER_WAV = speakerWav;
     }
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)

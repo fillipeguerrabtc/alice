@@ -82,36 +82,20 @@ def main() -> None:
 
     ensure_parent(output_path)
     
-    # Construir kwargs para tts_to_file (speaker_wav tem prioridade sobre speaker para voice cloning)
+    # Uso do caminho suportado pelo TTS API para voice cloning:
+    # tts_to_file com speaker_wav quando disponível; caso contrário, speaker fixo.
     tts_kwargs = {
         "text": text,
         "language": lang,
         "file_path": output_path,
     }
-    
     if speaker_wav:
-        # Voice cloning (XTTS v2): extrair latents (tuple) e inferir manualmente
-        # get_conditioning_latents retorna (gpt_cond_latent, speaker_embedding)
-        gpt_cond_latent, speaker_embedding = tts.get_conditioning_latents(audio_path=speaker_wav)
-        result = tts.inference(
-            text=text,
-            language=lang,
-            gpt_cond_latent=gpt_cond_latent,
-            speaker_embedding=speaker_embedding,
-        )
-        wav = result["wav"]
-        sr = result.get("sample_rate", 24000)
-        # Garantir formato compatível (numpy 1D) antes de salvar
-        if hasattr(wav, "cpu"):
-            wav = wav.cpu().numpy()
-        wav = np.asarray(wav).squeeze()
-        sf.write(str(output_path), wav, int(sr))
+        tts_kwargs["speaker_wav"] = speaker_wav
         print(f"Usando voice cloning com referência: {speaker_wav}")
     else:
-        # Speaker pré-definido do modelo (caminho padrão)
         tts_kwargs["speaker"] = voice
         print(f"Usando speaker: {voice}")
-        tts.tts_to_file(**tts_kwargs)
+    tts.tts_to_file(**tts_kwargs)
 
     print(f"Áudio gerado em {output_path}")
 
