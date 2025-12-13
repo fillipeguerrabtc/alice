@@ -30,15 +30,15 @@ RUN set -euo pipefail; \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
     # Verificar se commit existe localmente (deve existir após clone completo + fetch)
-    if git cat-file -e "$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
-      echo "📦 Usando commit fixo: $WAV2LIP_COMMIT"; \
-      git checkout $WAV2LIP_COMMIT; \
+    if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
+      echo "📦 Usando commit fixo: $$WAV2LIP_COMMIT"; \
+      git checkout $$WAV2LIP_COMMIT; \
     else \
-      echo "::error::Commit fixo não encontrado: $WAV2LIP_COMMIT"; \
+      echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
       echo "::error::Branches disponíveis:"; \
-      BRANCHES_OUTPUT=$(git branch -r 2>/dev/null || echo ""); \
-      if [ -n "$BRANCHES_OUTPUT" ]; then \
-        echo "$BRANCHES_OUTPUT" | head -n 5 || echo "$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
+      BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
+      if [ -n "$$BRANCHES_OUTPUT" ]; then \
+        echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
       else \
         echo "  (não disponível)"; \
       fi; \
@@ -120,11 +120,11 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::wav2lip_gan.pth vazio ou ausente após download"; \
       exit 1; \
     fi; \
-    # Command substitution: no nível do RUN (fora de funções), usar $( ao invés de $$(
-    # NOTA: Dentro de funções shell, usar $$( para escapar. No nível RUN, $( funciona diretamente
-    WAV2LIP_SIZE=$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
-    if [ "$WAV2LIP_SIZE" -lt 400000000 ]; then \
-      echo "::error::wav2lip_gan.pth corrompido (tamanho: ${WAV2LIP_SIZE} bytes, esperado: ~400MB)"; \
+    # Command substitution: no nível RUN, usar $$ para escapar $ e passar literal ao shell
+    # NOTA: Docker processa $ antes de passar ao shell, então $$ passa $ literal ao shell
+    WAV2LIP_SIZE=$$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
+    if [ "$$WAV2LIP_SIZE" -lt 400000000 ]; then \
+      echo "::error::wav2lip_gan.pth corrompido (tamanho: $${WAV2LIP_SIZE} bytes, esperado: ~400MB)"; \
       exit 1; \
     fi; \
     if [ -z "${WAV2LIP_CHECKPOINT_SHA256:-}" ]; then \
@@ -203,11 +203,11 @@ RUN --mount=type=secret,id=huggingface_token \
       exit 1; \
     fi; \
     # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
-    # Command substitution: no nível do RUN (fora de funções), usar $( ao invés de $$(
-    # NOTA: Dentro de funções shell, usar $$( para escapar. No nível RUN, $( funciona diretamente
-    S3FD_SIZE=$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
-    if [ "$S3FD_SIZE" -lt 89128960 ]; then \
-      echo "::error::s3fd.pth corrompido (tamanho: ${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"; \
+    # Command substitution: no nível RUN, usar $$ para escapar $ e passar literal ao shell
+    # NOTA: Docker processa $ antes de passar ao shell, então $$ passa $ literal ao shell
+    S3FD_SIZE=$$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
+    if [ "$$S3FD_SIZE" -lt 89128960 ]; then \
+      echo "::error::s3fd.pth corrompido (tamanho: $${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"; \
       exit 1; \
     fi; \
     if [ -z "${S3FD_SHA256:-}" ]; then \
