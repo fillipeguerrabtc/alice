@@ -36,36 +36,36 @@ RUN set -euo pipefail; \
       # Timeout de 45 minutos (2700s) para evitar loops infinitos - downloads podem ser grandes (~1GB+)
       # coreutils garante que timeout está disponível
       timeout 2700 bash scripts/download_models.sh || { \
-        EXIT_CODE=$$?; \
-        if [ $$EXIT_CODE -eq 124 ]; then \
+        EXIT_CODE=$?; \
+        if [ $EXIT_CODE -eq 124 ]; then \
           echo "::error::Download de modelos SadTalker excedeu timeout de 45 minutos"; \
           echo "::error::Possível loop infinito ou download muito lento - verifique logs acima"; \
         else \
-          echo "::error::Download de modelos SadTalker falhou (código: $$EXIT_CODE)"; \
+          echo "::error::Download de modelos SadTalker falhou (código: $EXIT_CODE)"; \
           echo "::error::Verifique logs acima para identificar qual download falhou"; \
         fi; \
         exit 1; \
       }; \
       # Validação enterprise: verificar se checkpoints foram baixados corretamente
-      if [ ! -d checkpoints ] || [ -z "$$(ls -A checkpoints 2>/dev/null)" ]; then \
+      if [ ! -d checkpoints ] || [ -z "$(ls -A checkpoints 2>/dev/null)" ]; then \
         echo "::error::Diretório checkpoints vazio ou ausente após download"; \
         exit 1; \
       fi; \
       # Validação adicional: verificar se arquivos principais existem (safetensors ou pth.tar)
       # Enterprise-grade: usar múltiplos finds separados e somar resultados para evitar problemas com parênteses
       # IMPORTANTE: excluir .pth.tar do padrão *.pth para evitar contagem dupla
-      # NOTA: Usar expr ao invés de $((...)) para evitar problemas de parsing com $$ em Dockerfile
-      SAFETENSORS_COUNT=$$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l); \
-      PTHTAR_COUNT=$$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l); \
+      # NOTA: No nível RUN (fora de funções), usar $ simples para command substitution
+      SAFETENSORS_COUNT=$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l); \
+      PTHTAR_COUNT=$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l); \
       # Excluir arquivos .pth.tar do padrão *.pth para evitar contagem dupla
-      PTH_COUNT=$$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l); \
-      CHECKPOINT_FILES=$$(expr $$SAFETENSORS_COUNT + $$PTHTAR_COUNT + $$PTH_COUNT); \
-      if [ "$$CHECKPOINT_FILES" -eq 0 ]; then \
+      PTH_COUNT=$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l); \
+      CHECKPOINT_FILES=$(expr $SAFETENSORS_COUNT + $PTHTAR_COUNT + $PTH_COUNT); \
+      if [ "$CHECKPOINT_FILES" -eq 0 ]; then \
         echo "::error::Nenhum arquivo de checkpoint encontrado em checkpoints/ após download"; \
         echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth"; \
         exit 1; \
       fi; \
-      echo "✅ Modelos SadTalker baixados com sucesso ($$CHECKPOINT_FILES arquivos encontrados)"; \
+      echo "✅ Modelos SadTalker baixados com sucesso ($CHECKPOINT_FILES arquivos encontrados)"; \
     else \
       echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker"; \
       exit 1; \
