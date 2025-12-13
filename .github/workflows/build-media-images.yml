@@ -6,6 +6,10 @@ on:
 env:
   REGISTRY: ghcr.io
   GH_USER: fillipeguerrabtc
+  # Checksums SHA256 dos modelos (supply chain security)
+  # Esses valores são fixos e públicos, não precisam ser secrets
+  WAV2LIP_CHECKPOINT_SHA256: ${{ vars.WAV2LIP_CHECKPOINT_SHA256 }}
+  S3FD_SHA256: ${{ vars.S3FD_SHA256 }}
 
 jobs:
   build-and-push:
@@ -36,8 +40,22 @@ jobs:
           IMAGE_NAME: ${{ env.REGISTRY }}/${{ env.GH_USER }}/alice-${{ matrix.image }}:v1
           CONTEXT_DIR: docker/${{ matrix.image }}
         run: |
+          BUILD_ARGS=""
+          # lip-sync requer checksums dos modelos para supply chain security
+          if [ "${{ matrix.image }}" = "lip-sync" ]; then
+            if [ -z "$WAV2LIP_CHECKPOINT_SHA256" ]; then
+              echo "::error::WAV2LIP_CHECKPOINT_SHA256 não configurado em Repository Variables"
+              exit 1
+            fi
+            if [ -z "$S3FD_SHA256" ]; then
+              echo "::error::S3FD_SHA256 não configurado em Repository Variables"
+              exit 1
+            fi
+            BUILD_ARGS="--build-arg WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_CHECKPOINT_SHA256} --build-arg S3FD_SHA256=${S3FD_SHA256}"
+          fi
           docker buildx build \
             --platform linux/amd64 \
+            ${BUILD_ARGS} \
             -t "${IMAGE_NAME}" \
             --push \
             "${CONTEXT_DIR}"

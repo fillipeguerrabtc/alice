@@ -105,14 +105,14 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 
-**Build Args para Modelos Multimodais (passados via workflow `build-media-images`):**
+**Repository Variables para Modelos Multimodais (obrigatórios para `build-media-images`):**
 
-| Build Arg | Descrição |
-|-----------|-----------|
-| `WAV2LIP_CHECKPOINT_SHA256` | Checksum SHA256 do `wav2lip_gan.pth` (obrigatório para supply chain security) |
-| `S3FD_SHA256` | Checksum SHA256 do `s3fd.pth` (modelo de face detection, obrigatório) |
+| Variable | Descrição | Como Obter |
+|----------|-----------|------------|
+| `WAV2LIP_CHECKPOINT_SHA256` | Checksum SHA256 do `wav2lip_gan.pth` | `wget -qO- URL \| sha256sum` |
+| `S3FD_SHA256` | Checksum SHA256 do `s3fd.pth` (face detection) | `wget -qO- URL \| sha256sum` |
 
-> **Nota:** Esses checksums são passados como `--build-arg` no workflow e não precisam ser configurados como secrets do repositório. Podem ser obtidos localmente com `sha256sum arquivo.pth`.
+> **Nota:** Configure em **Settings → Secrets and variables → Actions → Variables** (não são secrets, são valores públicos de supply chain security). O workflow `build-media-images` falha se não estiverem configurados.
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
