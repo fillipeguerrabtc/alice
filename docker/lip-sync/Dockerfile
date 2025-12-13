@@ -32,27 +32,25 @@ RUN set -euo pipefail; \
     # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
     # Verificar se commit existe localmente (deve existir após clone completo + fetch)
+    # Enterprise-grade: commit fixo é OBRIGATÓRIO - sem fallback para garantir reprodutibilidade
+    # Regra 6: PROIBIDO workarounds - build DEVE falhar se commit não existe
     if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
       echo "📦 Usando commit fixo: $$WAV2LIP_COMMIT"; \
       git checkout $$WAV2LIP_COMMIT; \
     else \
       echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
-      echo "::error::Tentando usar HEAD do master como fallback..."; \
-      MASTER_HEAD=$$(git rev-parse origin/master 2>/dev/null || git rev-parse HEAD 2>/dev/null || echo ""); \
-      if [ -n "$$MASTER_HEAD" ]; then \
-        echo "::warning::Usando HEAD do master: $$MASTER_HEAD (reprodutibilidade comprometida)"; \
-        git checkout $$MASTER_HEAD; \
+      echo "::error::Branches disponíveis:"; \
+      BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
+      if [ -n "$$BRANCHES_OUTPUT" ]; then \
+        echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
       else \
-        echo "::error::Branches disponíveis:"; \
-        BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
-        if [ -n "$$BRANCHES_OUTPUT" ]; then \
-          echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
-        else \
-          echo "  (não disponível)"; \
-        fi; \
-        echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
-        exit 1; \
+        echo "  (não disponível)"; \
       fi; \
+      echo "::error::Último commit do master:"; \
+      git rev-parse origin/master 2>/dev/null || echo "  (não disponível)"; \
+      echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
+      echo "::error::Build falhou - commit fixo é obrigatório para reprodutibilidade enterprise (Regra 6)"; \
+      exit 1; \
     fi; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
