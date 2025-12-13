@@ -16,8 +16,9 @@ COPY requirements.txt .
 RUN python3 -m pip install --no-cache-dir -r requirements.txt
 
 # Pré-baixa modelo XTTS v2 durante build para autonomia 100% (sem download em runtime)
-# O TTS baixa para $TTS_HOME na inicialização do modelo
-ENV TTS_HOME=/opt/tts-models
+# COQUI_TOS_AGREED=1 aceita automaticamente os termos de licença (necessário para build não-interativo)
+ENV TTS_HOME=/opt/tts-models \
+    COQUI_TOS_AGREED=1
 RUN set -euo pipefail; \
     mkdir -p "$TTS_HOME"; \
     python3 -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"; \

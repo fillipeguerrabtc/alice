@@ -771,7 +771,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Wav2Lip runtime | Execução via script `python3 /opt/wav2lip/inference.py`, `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip`, caminhos absolutos para face/audio/output e checkpoint explícito | `docker/lip-sync/serve.py` |
 | SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
 | SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path` | `docker/talking-head/serve.py` |
-| TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models` | `docker/tts/Dockerfile`, `docker/tts/serve.py` |
+| TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100% (build falha se download falhar); `TTS_HOME=/opt/tts-models`, `COQUI_TOS_AGREED=1` (aceite automático de licença) | `docker/tts/Dockerfile`, `docker/tts/serve.py` |
 
 > Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
 
