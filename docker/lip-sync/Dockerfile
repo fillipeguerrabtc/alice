@@ -20,17 +20,26 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (master, 12/12/2025)
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 RUN set -euo pipefail; \
-    git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
+    git clone --depth 1 https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
-    git fetch origin; \
+    # Fetch completo para garantir que o commit esteja disponível
+    git fetch --unshallow origin || git fetch origin; \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
+    # Verificar se commit existe localmente ou buscar do remoto
     if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
       echo "📦 Usando commit fixo: $$WAV2LIP_COMMIT"; \
       git checkout $$WAV2LIP_COMMIT; \
+    elif git fetch origin $$WAV2LIP_COMMIT 2>/dev/null && git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
+      echo "📦 Commit encontrado após fetch específico: $$WAV2LIP_COMMIT"; \
+      git checkout $$WAV2LIP_COMMIT; \
     else \
       echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
+      echo "::error::Branches disponíveis:"; \
+      git branch -r 2>/dev/null | head -n 5 || git branch -r 2>/dev/null | sed -n '1,5p' || echo "  (não disponível)"; \
+      echo "::error::Último commit do master:"; \
+      git rev-parse origin/master 2>/dev/null || echo "  (não disponível)"; \
       echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
       exit 1; \
     fi; \
@@ -107,7 +116,7 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::wav2lip_gan.pth vazio ou ausente após download"; \
       exit 1; \
     fi; \
-    WAV2LIP_SIZE=$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
+    WAV2LIP_SIZE=$$(stat -f%z /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || stat -c%s /opt/wav2lip/checkpoints/wav2lip_gan.pth 2>/dev/null || echo "0"); \
     if [ "$$WAV2LIP_SIZE" -lt 400000000 ]; then \
       echo "::error::wav2lip_gan.pth corrompido (tamanho: $${WAV2LIP_SIZE} bytes, esperado: ~400MB)"; \
       exit 1; \
@@ -116,7 +125,7 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::WAV2LIP_CHECKPOINT_SHA256 é obrigatório"; \
       exit 1; \
     fi; \
-    echo "${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
+    echo "$${WAV2LIP_CHECKPOINT_SHA256}  /opt/wav2lip/checkpoints/wav2lip_gan.pth" | sha256sum -c -
 
 # Baixa modelo de detecção de faces (s3fd.pth) obrigatório para inferência + valida checksum
 # Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
@@ -187,7 +196,7 @@ RUN --mount=type=secret,id=huggingface_token \
       exit 1; \
     fi; \
     # Validação enterprise: verificar tamanho mínimo esperado (~85MB = 89128960 bytes)
-    S3FD_SIZE=$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
+    S3FD_SIZE=$$(stat -f%z /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || stat -c%s /opt/wav2lip/face_detection/detection/sfd/s3fd.pth 2>/dev/null || echo "0"); \
     if [ "$$S3FD_SIZE" -lt 89128960 ]; then \
       echo "::error::s3fd.pth corrompido (tamanho: $${S3FD_SIZE} bytes, esperado: ~85MB = 89128960 bytes)"; \
       exit 1; \
@@ -196,7 +205,7 @@ RUN --mount=type=secret,id=huggingface_token \
       echo "::error::S3FD_SHA256 é obrigatório"; \
       exit 1; \
     fi; \
-    echo "${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
+    echo "$${S3FD_SHA256}  /opt/wav2lip/face_detection/detection/sfd/s3fd.pth" | sha256sum -c -
 
 ENV PYTHONPATH="/opt/wav2lip:${PYTHONPATH}"
 
