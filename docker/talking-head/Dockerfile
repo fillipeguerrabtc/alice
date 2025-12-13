@@ -1,4 +1,5 @@
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -17,7 +18,7 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # Clona SadTalker (sem setup.py); instala deps do projeto e exporta PYTHONPATH
 RUN git clone --depth 1 https://github.com/OpenTalker/SadTalker.git /opt/sadtalker && \
     python3 -m pip install --no-cache-dir -r /opt/sadtalker/requirements.txt && \
-    cd /opt/sadtalker && bash scripts/download_models.sh
+    cd /opt/sadtalker && set -euo pipefail && bash scripts/download_models.sh
 
 ENV PYTHONPATH="/opt/sadtalker:${PYTHONPATH}"
 

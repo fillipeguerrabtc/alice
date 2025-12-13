@@ -19,11 +19,12 @@ def main() -> None:
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
 
-    wav2lip_script = "/opt/wav2lip/inference.py"
+    wav2lip_module = "Wav2Lip.inference"
     checkpoint_path = "/opt/wav2lip/checkpoints/wav2lip_gan.pth"
     cmd = [
         "python3",
-        wav2lip_script,
+        "-m",
+        wav2lip_module,
         "--face",
         video_path,
         "--audio",
