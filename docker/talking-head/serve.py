@@ -17,12 +17,12 @@ def ensure_dir(path: str) -> None:
     pathlib.Path(path).mkdir(parents=True, exist_ok=True)
 
 
-def find_latest_file(folder: pathlib.Path) -> Optional[pathlib.Path]:
-    candidates = list(folder.glob("**/*"))
-    files = [c for c in candidates if c.is_file()]
-    if not files:
+def find_latest_video(folder: pathlib.Path) -> Optional[pathlib.Path]:
+    exts = {".mp4", ".mov", ".mkv", ".avi"}
+    candidates = [p for p in folder.glob("**/*") if p.is_file() and p.suffix.lower() in exts]
+    if not candidates:
         return None
-    return max(files, key=lambda f: f.stat().st_mtime)
+    return max(candidates, key=lambda f: f.stat().st_mtime)
 
 
 def main() -> None:
@@ -53,9 +53,9 @@ def main() -> None:
     print(f"Executando SadTalker: {' '.join(cmd)}")
     subprocess.run(cmd, check=True)
 
-    latest = find_latest_file(workdir)
+    latest = find_latest_video(workdir)
     if not latest:
-        print("Nenhum arquivo gerado pelo SadTalker.", file=sys.stderr)
+        print("Nenhum vídeo gerado pelo SadTalker.", file=sys.stderr)
         sys.exit(1)
 
     pathlib.Path(output_path).parent.mkdir(parents=True, exist_ok=True)
