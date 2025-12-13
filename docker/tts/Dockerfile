@@ -21,7 +21,13 @@ ENV TTS_HOME=/opt/tts-models \
     COQUI_TOS_AGREED=1
 RUN set -euo pipefail; \
     mkdir -p "$TTS_HOME"; \
-    python3 -c "from TTS.api import TTS; TTS('tts_models/multilingual/multi-dataset/xtts_v2')"; \
+    python3 -c " \
+from TTS.api import TTS; \
+tts = TTS('tts_models/multilingual/multi-dataset/xtts_v2'); \
+# Forçar download completo chamando to() que carrega o modelo \
+tts.to('cpu'); \
+print('Modelo XTTS v2 carregado com sucesso'); \
+"; \
     if [ ! -d "$TTS_HOME/tts_models--multilingual--multi-dataset--xtts_v2" ]; then echo "Modelo XTTS v2 não foi baixado corretamente"; exit 1; fi
 
 COPY serve.py .
