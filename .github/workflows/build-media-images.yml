@@ -81,28 +81,8 @@ jobs:
           username: ${{ env.GH_USER }}
           password: ${{ secrets.GH_PAT }}
 
-      # Preparar build-args apenas para lip-sync (única imagem que usa checksums)
-      - name: Preparar build args
-        id: build-args
-        env:
-          # Passar checksums via env para evitar problemas de interpolação em heredoc
-          WAV2LIP_SHA: ${{ needs.compute-checksums.outputs.wav2lip_sha256 }}
-          S3FD_SHA: ${{ needs.compute-checksums.outputs.s3fd_sha256 }}
-          IMAGE_TYPE: ${{ matrix.image }}
-        run: |
-          if [ "$IMAGE_TYPE" = "lip-sync" ]; then
-            # Multiline output para build-args (usando heredoc EOF)
-            {
-              echo 'args<<EOF'
-              echo "WAV2LIP_CHECKPOINT_SHA256=${WAV2LIP_SHA}"
-              echo "S3FD_SHA256=${S3FD_SHA}"
-              echo 'EOF'
-            } >> $GITHUB_OUTPUT
-          else
-            echo "args=" >> $GITHUB_OUTPUT
-          fi
-
       # Cache enterprise: mesmo padrão do deploy-production.yml
+      # Build args condicionais: lip-sync usa checksums, outras imagens não
       - name: Build and push ${{ matrix.image }}
         uses: docker/build-push-action@v6
         with:
@@ -113,8 +93,11 @@ jobs:
           # Cache de registry enterprise (compartilhado entre builds)
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache,mode=max
-          # Build args definidos no step anterior (vazios para imagens que não usam)
-          build-args: ${{ steps.build-args.outputs.args }}
+          # Build args: lip-sync usa checksums calculados, outras imagens vazias
+          # Operador | (literal block style) preserva newlines corretamente no YAML
+          build-args: |
+            ${{ matrix.image == 'lip-sync' && format('WAV2LIP_CHECKPOINT_SHA256={0}', needs.compute-checksums.outputs.wav2lip_sha256) || '' }}
+            ${{ matrix.image == 'lip-sync' && format('S3FD_SHA256={0}', needs.compute-checksums.outputs.s3fd_sha256) || '' }}
 
       - name: Show digest ${{ matrix.image }}
         run: |
