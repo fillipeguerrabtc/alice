@@ -227,7 +227,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
     envVars.OUTPUT_PATH = `${outputBaseDir}/tts/output-${job.id}.wav`;
   } else if (job.jobType === 'lip_sync') {
-    const videoPath = resolveLocalPath(job.parametros?.videoPath, job.parametros?.video_path, job.inputPath);
+    const videoPath = resolveLocalPath(job.parametros?.videoPath, job.parametros?.video_path);
     const audioPath = resolveLocalPath(job.parametros?.audioPath, job.parametros?.audio_path);
     if (!videoPath || !audioPath) {
       throw new Error('VIDEO_PATH e AUDIO_PATH são obrigatórios para lip_sync (arquivo local esperado no container Salad)');
@@ -236,7 +236,7 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     envVars.AUDIO_PATH = audioPath;
     envVars.OUTPUT_PATH = `${outputBaseDir}/lip-sync/output-${job.id}.mp4`;
   } else if (job.jobType === 'talking_head') {
-    const imagePath = resolveLocalPath(job.parametros?.imagePath, job.parametros?.image_path, job.inputPath);
+    const imagePath = resolveLocalPath(job.parametros?.imagePath, job.parametros?.image_path);
     const audioPath = resolveLocalPath(job.parametros?.audioPath, job.parametros?.audio_path);
     if (!imagePath || !audioPath) {
       throw new Error('IMAGE_PATH e AUDIO_PATH são obrigatórios para talking_head (arquivo local esperado no container Salad)');
