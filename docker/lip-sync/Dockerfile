@@ -21,13 +21,15 @@ RUN python3 -m pip install --no-cache-dir -r requirements.txt
 # NOTA: Se este commit não existir mais, atualizar para commit mais recente do master
 # NOTA: Clone completo (sem --depth) para garantir que commit específico esteja disponível
 RUN set -euo pipefail; \
+    # Enterprise-grade: clone completo (sem --depth) + fetch explícito do master para garantir commit disponível
     git clone https://github.com/Rudrabha/Wav2Lip.git /opt/wav2lip; \
     cd /opt/wav2lip; \
     git lfs install --local; \
-    # Fetch todas as refs para garantir que commit esteja disponível
-    # Enterprise-grade: fetch de todas as branches/tags garante acesso a qualquer commit
-    git fetch origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/* || git fetch origin; \
+    # Fetch explícito do master para garantir que commit esteja disponível
+    # NOTA: git fetch origin master garante que o commit do master esteja no histórico local
+    git fetch origin master:refs/remotes/origin/master || git fetch origin +refs/heads/master:refs/remotes/origin/master || git fetch origin; \
     # Usar commit fixo para reprodutibilidade enterprise (builds determinísticos)
+    # Commit: bac9a81e63ecc153202353372e5724b83d9e6322 (HEAD do master, 13/12/2025)
     WAV2LIP_COMMIT="bac9a81e63ecc153202353372e5724b83d9e6322"; \
     # Verificar se commit existe localmente (deve existir após clone completo + fetch)
     if git cat-file -e "$$WAV2LIP_COMMIT^{commit}" 2>/dev/null; then \
@@ -35,17 +37,22 @@ RUN set -euo pipefail; \
       git checkout $$WAV2LIP_COMMIT; \
     else \
       echo "::error::Commit fixo não encontrado: $$WAV2LIP_COMMIT"; \
-      echo "::error::Branches disponíveis:"; \
-      BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
-      if [ -n "$$BRANCHES_OUTPUT" ]; then \
-        echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
+      echo "::error::Tentando usar HEAD do master como fallback..."; \
+      MASTER_HEAD=$$(git rev-parse origin/master 2>/dev/null || git rev-parse HEAD 2>/dev/null || echo ""); \
+      if [ -n "$$MASTER_HEAD" ]; then \
+        echo "::warning::Usando HEAD do master: $$MASTER_HEAD (reprodutibilidade comprometida)"; \
+        git checkout $$MASTER_HEAD; \
       else \
-        echo "  (não disponível)"; \
+        echo "::error::Branches disponíveis:"; \
+        BRANCHES_OUTPUT=$$(git branch -r 2>/dev/null || echo ""); \
+        if [ -n "$$BRANCHES_OUTPUT" ]; then \
+          echo "$$BRANCHES_OUTPUT" | head -n 5 || echo "$$BRANCHES_OUTPUT" | sed -n '1,5p' || echo "  (erro ao processar branches)"; \
+        else \
+          echo "  (não disponível)"; \
+        fi; \
+        echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
+        exit 1; \
       fi; \
-      echo "::error::Último commit do master:"; \
-      git rev-parse origin/master 2>/dev/null || echo "  (não disponível)"; \
-      echo "::error::Atualize WAV2LIP_COMMIT no Dockerfile para commit válido do master"; \
-      exit 1; \
     fi; \
     git lfs fetch --all; git lfs pull; \
     python3 -m pip install --no-cache-dir -r requirements.txt
@@ -94,13 +101,16 @@ RUN --mount=type=secret,id=huggingface_token \
     }; \
     # Enterprise-grade: múltiplas fontes com fallback sequencial + token (mesma lógica do workflow)
     # URL original do space fffiloni retorna 404, então usamos mirrors públicos do HuggingFace
+    # NOTA: Usar loop for simples conforme documentação oficial Docker (melhores práticas)
     WAV2LIP_DOWNLOADED=false; \
-    WAV2LIP_SOURCES=("https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth|Nekochu/Wav2Lip" \
-                     "https://huggingface.co/gmk123/wav2lip/resolve/main/wav2lip_gan.pth|gmk123/wav2lip" \
-                     "https://huggingface.co/commanderx/Wav2Lip-HD/resolve/main/checkpoints/wav2lip_gan.pth|commanderx/Wav2Lip-HD" \
-                     "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth|fffiloni/wav2lip (space - pode retornar 404)"); \
-    for SOURCE_INFO in "$${WAV2LIP_SOURCES[@]}"; do \
-      IFS='|' read -r WAV2LIP_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
+    for SOURCE in \
+      "https://huggingface.co/Nekochu/Wav2Lip/resolve/main/wav2lip_gan.pth|Nekochu/Wav2Lip" \
+      "https://huggingface.co/gmk123/wav2lip/resolve/main/wav2lip_gan.pth|gmk123/wav2lip" \
+      "https://huggingface.co/commanderx/Wav2Lip-HD/resolve/main/checkpoints/wav2lip_gan.pth|commanderx/Wav2Lip-HD" \
+      "https://huggingface.co/spaces/fffiloni/wav2lip/resolve/main/wav2lip_gan.pth|fffiloni/wav2lip (space - pode retornar 404)"; \
+    do \
+      WAV2LIP_URL=$$(echo "$$SOURCE" | cut -d'|' -f1); \
+      SOURCE_NAME=$$(echo "$$SOURCE" | cut -d'|' -f2); \
       echo "📦 Tentando baixar wav2lip_gan.pth de $${SOURCE_NAME}..."; \
       if download_with_token "$$WAV2LIP_URL" /opt/wav2lip/checkpoints/wav2lip_gan.pth; then \
         echo "✅ Download bem-sucedido de $${SOURCE_NAME}"; \
@@ -177,12 +187,15 @@ RUN --mount=type=secret,id=huggingface_token \
         fi; \
       fi; \
     }; \
+    # NOTA: Usar loop for simples conforme documentação oficial Docker (melhores práticas)
     S3FD_DOWNLOADED=false; \
-    S3FD_SOURCES=("https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth|gmk123/wav2lip" \
-                  "https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth|manavisrani07/gradio-lipsync-wav2lip" \
-                  "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/s3fd-619a316812.pth|camenduru/Wav2Lip"); \
-    for SOURCE_INFO in "$${S3FD_SOURCES[@]}"; do \
-      IFS='|' read -r S3FD_URL SOURCE_NAME <<< "$$SOURCE_INFO"; \
+    for SOURCE in \
+      "https://huggingface.co/gmk123/wav2lip/resolve/main/s3fd-619a316812.pth|gmk123/wav2lip" \
+      "https://huggingface.co/spaces/manavisrani07/gradio-lipsync-wav2lip/resolve/main/face_detection/detection/sfd/s3fd.pth|manavisrani07/gradio-lipsync-wav2lip" \
+      "https://huggingface.co/camenduru/Wav2Lip/resolve/main/checkpoints/s3fd-619a316812.pth|camenduru/Wav2Lip"; \
+    do \
+      S3FD_URL=$$(echo "$$SOURCE" | cut -d'|' -f1); \
+      SOURCE_NAME=$$(echo "$$SOURCE" | cut -d'|' -f2); \
       echo "📦 Tentando baixar s3fd.pth de $${SOURCE_NAME}..."; \
       if download_with_token "$$S3FD_URL" /opt/wav2lip/face_detection/detection/sfd/s3fd.pth; then \
         echo "✅ Download bem-sucedido de $${SOURCE_NAME}"; \
