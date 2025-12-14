@@ -1914,6 +1914,111 @@ jobs:
             echo "Timestamp: $(date)"
             echo "=============================================="
             
+            # ==========================================================
+            # ENTERPRISE: Verificação de TODOS os requisitos do servidor
+            # Regra 6: Deploy DEVE verificar e instalar tudo automaticamente
+            # ==========================================================
+            echo ""
+            echo "🔧 VERIFICANDO REQUISITOS DO SERVIDOR..."
+            echo "=============================================="
+            REQUIREMENTS_OK=true
+            
+            # 1. Docker (CRÍTICO)
+            if command -v docker >/dev/null 2>&1; then
+              DOCKER_VER=$(docker --version 2>/dev/null | head -1)
+              echo "✅ Docker: ${DOCKER_VER}"
+            else
+              echo "❌ Docker NÃO INSTALADO"
+              echo "   Instalando Docker via script oficial..."
+              curl -fsSL https://get.docker.com | sh || {
+                echo "::error::Falha ao instalar Docker. Deploy abortado."
+                exit 1
+              }
+              systemctl enable docker && systemctl start docker
+              echo "✅ Docker instalado com sucesso"
+            fi
+            
+            # 2. Docker Compose (CRÍTICO)
+            if docker compose version >/dev/null 2>&1; then
+              COMPOSE_VER=$(docker compose version 2>/dev/null | head -1)
+              echo "✅ Docker Compose: ${COMPOSE_VER}"
+            else
+              echo "❌ Docker Compose NÃO INSTALADO"
+              echo "   Docker Compose v2 é incluído no Docker Engine moderno."
+              echo "   Verifique se Docker foi instalado corretamente."
+              echo "::error::Docker Compose não disponível. Deploy abortado."
+              exit 1
+            fi
+            
+            # 3. Git (CRÍTICO)
+            if command -v git >/dev/null 2>&1; then
+              GIT_VER=$(git --version 2>/dev/null)
+              echo "✅ Git: ${GIT_VER}"
+            else
+              echo "❌ Git NÃO INSTALADO"
+              echo "   Instalando Git via apt..."
+              apt-get update -qq && apt-get install -y git >/dev/null 2>&1 || {
+                echo "::error::Falha ao instalar Git. Deploy abortado."
+                exit 1
+              }
+              echo "✅ Git instalado com sucesso"
+            fi
+            
+            # 4. Python3 (CRÍTICO para versionamento)
+            if command -v python3 >/dev/null 2>&1; then
+              PY_VER=$(python3 --version 2>/dev/null)
+              echo "✅ Python: ${PY_VER}"
+            else
+              echo "❌ Python3 NÃO INSTALADO"
+              echo "   Instalando Python3 via apt..."
+              apt-get update -qq && apt-get install -y python3 >/dev/null 2>&1 || {
+                echo "::error::Falha ao instalar Python3. Deploy abortado."
+                exit 1
+              }
+              echo "✅ Python3 instalado com sucesso"
+            fi
+            
+            # 5. pip3 (necessário para fallback de pacotes Python)
+            if command -v pip3 >/dev/null 2>&1; then
+              PIP_VER=$(pip3 --version 2>/dev/null | head -1)
+              echo "✅ pip3: ${PIP_VER}"
+            else
+              echo "⚠️ pip3 não encontrado, instalando..."
+              apt-get update -qq && apt-get install -y python3-pip >/dev/null 2>&1 || {
+                echo "::error::Falha ao instalar pip3"
+                exit 1
+              }
+              echo "✅ pip3 instalado com sucesso"
+            fi
+            
+            # 6. ruamel.yaml (necessário para versionamento YAML)
+            if python3 -c "import ruamel.yaml" >/dev/null 2>&1; then
+              echo "✅ ruamel.yaml: instalado"
+            else
+              echo "⚠️ ruamel.yaml não encontrado, instalando..."
+              apt-get install -y python3-ruamel.yaml >/dev/null 2>&1 || {
+                PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
+                  echo "::error::Falha ao instalar ruamel.yaml"
+                  exit 1
+                }
+              }
+              echo "✅ ruamel.yaml instalado com sucesso"
+            fi
+            
+            # 7. curl (necessário para downloads)
+            if command -v curl >/dev/null 2>&1; then
+              echo "✅ curl: instalado"
+            else
+              echo "⚠️ curl não encontrado, instalando..."
+              apt-get update -qq && apt-get install -y curl >/dev/null 2>&1
+              echo "✅ curl instalado"
+            fi
+            
+            echo "=============================================="
+            echo "✅ TODOS OS REQUISITOS VERIFICADOS"
+            echo "=============================================="
+            echo ""
+            
             # Criar estrutura de diretórios
             mkdir -p /opt/alice/{app,data,logs,backups}
             cd /opt/alice
@@ -1993,38 +2098,8 @@ jobs:
             fi
             cd /opt/alice/app/infra/docker
 
+            # NOTA: Requisitos (python3, pip3, ruamel.yaml) já verificados no início do script
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
-              # Garantir ruamel.yaml disponível (primeiro via apt, depois pip como fallback)
-              check_ruamel() {
-                python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('ruamel.yaml') else 1)" >/dev/null 2>&1
-              }
-
-              if ! check_ruamel; then
-                echo "⚠️ ruamel.yaml não encontrado, tentando instalar via apt..."
-                # NOTA: Não usar exit 1 aqui - permitir fallback para pip se apt falhar
-                if ! (apt-get update -qq && apt-get install -y python3-ruamel.yaml python3-pip python3-distutils python3-setuptools >/dev/null 2>&1); then
-                  echo "⚠️ Falha ao instalar python3-ruamel.yaml via apt (continuando para fallback pip...)"
-                fi
-              fi
-
-              if ! check_ruamel; then
-                echo "⚠️ ruamel.yaml ausente após apt; tentando pip (break-system-packages) e fallback --user..."
-                PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
-                  echo "⚠️  Falha no pip (modo padrão), tentando --user..."
-                  pip3 install --user ruamel.yaml || {
-                    echo "❌ ERRO CRÍTICO: Não foi possível instalar ruamel.yaml"
-                    echo "   Versionamento automático é obrigatório para supply chain security"
-                    echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
-                    exit 1
-                  }
-                }
-              fi
-
-              if ! check_ruamel; then
-                echo "❌ ERRO CRÍTICO: ruamel.yaml ausente após tentativas (apt/pip)"
-                exit 1
-              fi
-
               cd /opt/alice/app
               python3 scripts/update-component-versions.py \
                 --traefik-version "${TRAEFIK_VERSION}" \

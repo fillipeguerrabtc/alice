@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.59 - Correção crítica secrets Langfuse/SearXNG + checkout versionado
+> **Versão:** 3.60 - Correção requisitos servidor + instalação automática pip3/ruamel.yaml
 
 ---
 
@@ -609,6 +609,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Checkout Versionado no Deploy**: Corrigido bug onde script SSH sempre fazia `git checkout main` hardcoded, ignorando a versão/TAG passada pelo `release.yml`. Agora o script usa `DEPLOY_VERSION` para checkout da TAG específica (ex: `v1.0.0`) ou branch, garantindo reprodutibilidade total: código deployado = código das imagens Docker buildadas da mesma TAG.
 
+> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Instalação Automática de Requisitos**: Deploy falhou porque servidor Hetzner não tinha `pip3` instalado. Corrigido workflow para: (1) Verificar se pip3 existe e instalar via apt se necessário, (2) Verificar se ruamel.yaml existe e instalar via apt/pip, (3) Validar instalação antes de continuar. Também instalado manualmente no servidor: `apt-get install -y python3-pip python3-ruamel.yaml`. Regra 6: Deploy DEVE instalar tudo que precisar automaticamente.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -870,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.59 - Correção crítica secrets Langfuse/SearXNG + checkout versionado*
+*Versão: 3.60 - Correção requisitos servidor + instalação automática pip3/ruamel.yaml*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
