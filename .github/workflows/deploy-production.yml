@@ -1492,15 +1492,15 @@ jobs:
           SALAD_API_URL_VAR="$(curl -sL \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables/SALAD_API_URL" | jq -r '.value // empty' || true)"
+            "https://api.github.com/repos/${REPO_FULL_NAME}/actions/variables/SALAD_API_URL" | jq -r '.value // empty' || true)"
           SALAD_MEDIA_PROJECT_VAR="$(curl -sL \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables/SALAD_MEDIA_PROJECT" | jq -r '.value // empty' || true)"
+            "https://api.github.com/repos/${REPO_FULL_NAME}/actions/variables/SALAD_MEDIA_PROJECT" | jq -r '.value // empty' || true)"
           SALAD_GPU_CLASS_VAR="$(curl -sL \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/variables/SALAD_GPU_CLASS" | jq -r '.value // empty' || true)"
+            "https://api.github.com/repos/${REPO_FULL_NAME}/actions/variables/SALAD_GPU_CLASS" | jq -r '.value // empty' || true)"
           SALAD_API_URL_VAR="${SALAD_API_URL_VAR:-https://api.salad.com/api/public}"
           SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_VAR:-alice-media}"
           SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_VAR:-premium-gpu}"
