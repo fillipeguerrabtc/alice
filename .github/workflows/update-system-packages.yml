@@ -54,9 +54,9 @@ jobs:
         id: check-updates
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
-          host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_VM_HOST }}
           username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
             
@@ -118,14 +118,14 @@ jobs:
           # Segurança crítica: chave privada não pode permanecer no disco
           trap 'rm -f "$SSH_KEY_FILE"' EXIT ERR
           
-          echo "${{ secrets.HETZNER_SSH_KEY }}" > "$SSH_KEY_FILE"
+          echo "${{ secrets.HETZNER_SSH_PRIVATE_KEY }}" > "$SSH_KEY_FILE"
           chmod 600 "$SSH_KEY_FILE"
           
           # Ler arquivo de status via SSH
           # REGRA 6: Enterprise-grade - fallback deve usar mesmo formato do arquivo (newline-separated)
           # O arquivo /tmp/updates_status.txt usa formato newline-separated (linhas 73-74, 81-82)
           # Fallback deve usar mesmo formato para que o parsing funcione corretamente
-          STATUS_CONTENT=$(ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${{ secrets.HETZNER_HOST }} "cat /tmp/updates_status.txt 2>/dev/null || echo -e 'HAS_UPDATES=false\nUPDATES_COUNT=0'")
+          STATUS_CONTENT=$(ssh -i "$SSH_KEY_FILE" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@${{ secrets.HETZNER_VM_HOST }} "cat /tmp/updates_status.txt 2>/dev/null || echo -e 'HAS_UPDATES=false\nUPDATES_COUNT=0'")
           
           # Parsear valores
           if echo "$STATUS_CONTENT" | grep -q "HAS_UPDATES=true"; then
@@ -164,9 +164,9 @@ jobs:
         id: fetch-packages
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
-          host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_VM_HOST }}
           username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
             
@@ -181,8 +181,8 @@ jobs:
       - name: Criar issue com resumo de atualizações
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         env:
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
-          HETZNER_SSH_KEY: ${{ secrets.HETZNER_SSH_KEY }}
+          HETZNER_VM_HOST: ${{ secrets.HETZNER_VM_HOST }}
+          HETZNER_SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
         with:
           script: |
             const { data: issues } = await github.rest.issues.listForRepo({
@@ -218,11 +218,11 @@ jobs:
             try {
               // REGRA 6: Enterprise-grade - ler arquivo de pacotes via SSH
               sshKeyFile = path.join(process.env.RUNNER_TEMP || '/tmp', 'ssh_key_' + crypto.randomBytes(8).toString('hex'));
-              const sshKey = process.env.HETZNER_SSH_KEY || '';
-              const sshHost = process.env.HETZNER_HOST || '';
+              const sshKey = process.env.HETZNER_SSH_PRIVATE_KEY || '';
+              const sshHost = process.env.HETZNER_VM_HOST || '';
               
               if (!sshKey || !sshHost) {
-                throw new Error('HETZNER_SSH_KEY ou HETZNER_HOST não configurados');
+                throw new Error('HETZNER_SSH_PRIVATE_KEY ou HETZNER_VM_HOST não configurados');
               }
               
               fs.writeFileSync(sshKeyFile, sshKey, { mode: 0o600 });
@@ -332,9 +332,9 @@ jobs:
       - name: Backup antes de atualizar
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
-          host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_VM_HOST }}
           username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
             
@@ -358,9 +358,9 @@ jobs:
       - name: Atualizar pacotes do sistema
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
-          host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_VM_HOST }}
           username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
             
@@ -383,9 +383,9 @@ jobs:
       - name: Health checks após atualização
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
-          host: ${{ secrets.HETZNER_HOST }}
+          host: ${{ secrets.HETZNER_VM_HOST }}
           username: root
-          key: ${{ secrets.HETZNER_SSH_KEY }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
             set -euo pipefail
             
