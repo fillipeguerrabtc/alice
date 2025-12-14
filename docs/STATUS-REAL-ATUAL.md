@@ -593,6 +593,10 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > - `release.yml`: `trigger-deploy` usa `createWorkflowDispatch` via GH_PAT para disparar deploy como execução SEPARADA
 > - Pipeline 100% automático sem aprovação manual: Push → CI → Release → Deploy (security scan é o gate de qualidade)
 
+> **NOTA (14/12/2025):** **ESCLARECIMENTO - Regra 4 vs Pipeline Automática**: A Regra 4 ("APROVAÇÃO OBRIGATÓRIA") do CLAUDE.md refere-se ao workflow de DESENVOLVIMENTO (pedir aprovação ao usuário antes de mudanças grandes no código), NÃO a aprovação manual de deploy. A remoção de `environment: production` foi intencional - o security scan (Trivy) nas imagens Docker é o gate de qualidade enterprise antes do deploy. Pipeline 100% automática está CORRETA conforme definido em "Pipeline: Push → CI (auto) → Release (auto) → Deploy (auto)".
+
+> **NOTA (14/12/2025):** **ESCLARECIMENTO - vars.* vs fetch_repo_var()**: A sintaxe `vars.*` do GitHub Actions é o método oficial e enterprise-grade para acessar variáveis de repositório. Se houver problemas de permissão/auth no acesso às vars, o workflow falha ANTES de executar o job (fail-fast nativo). Os defaults (`|| 'value'`) são valores de produção válidos (não mocks), e se a configuração Salad estiver incorreta, falhará em runtime com erro claro. A função `fetch_repo_var()` foi removida por ser redundante - GitHub Actions já faz fail-fast em erros de API.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
