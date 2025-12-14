@@ -239,6 +239,18 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 **Pipeline 100% Automático:** Push para `main` vai direto para produção após todas as validações passarem.
 
+### Acesso SSH à Hetzner (Produção)
+
+- Alias recomendado (configurar em `~/.ssh/config`):
+  - `Host alice-hetzner`
+  - `HostName 46.224.46.93`
+  - `User root`
+  - `IdentityFile ~/.ssh/alice-deploy`
+- Conexão via alias: `ssh alice-hetzner`
+- Conexão direta: `ssh -i ~/.ssh/alice-deploy root@46.224.46.93`
+- Permissões da chave: `chmod 600 ~/.ssh/alice-deploy`
+- Teste/verbo­se: `ssh -v alice-hetzner`
+
 ### URLs de Produção
 
 | Serviço | URL |
