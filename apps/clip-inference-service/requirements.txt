@@ -1,9 +1,10 @@
 # CLIP Inference Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentação em PT-BR (Regra 10 CLAUDE.md)
-# Versões travadas e atualizadas para dezembro 2025 (Regra 11 - melhores práticas)
-# Última atualização: 02/12/2025
+# Documentacao em PT-BR (Regra 10 CLAUDE.md)
+# Versoes travadas e atualizadas para dezembro 2025 (Regra 11 - melhores praticas)
+# Ultima atualizacao: 14/12/2025
+# Author: Fillipe Guerra
 
 # =============================================================================
 # SEGURANÇA - Dependências com correções de CVE
@@ -91,4 +92,5 @@ prometheus-client==0.23.1
 python-json-logger==4.0.0
 
 # Circuit Breaker (Regra 16 CLAUDE.md - Best Practices 2025)
-pybreaker==1.0.2
+# pybreaker 1.4.1 (released Sep 21, 2025) - sem vulnerabilidades conhecidas
+pybreaker==1.4.1
