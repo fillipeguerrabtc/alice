@@ -11,21 +11,22 @@
 # =============================================================================
 
 # torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Nota: TTS 0.22.0 pode ter incompatibilidades - monitorar logs do container
+# Compativel com coqui-tts 0.27.2 (fork mantido)
 # torchvision e torchaudio sao OBRIGATORIOS para Coqui TTS (processamento de audio)
 torch==2.6.0
 torchvision==0.21.0
 torchaudio==2.6.0
 
 # =============================================================================
-# TTS - Coqui Text-to-Speech
+# TTS - Coqui Text-to-Speech (Fork Mantido)
 # =============================================================================
 
-# TTS 0.22.0 - ultima versao do pacote original
-# IMPORTANTE: Se houver erros de pickle/unpickling com XTTS, considerar:
-# 1. Usar fork mantido: pip install coqui-tts
-# 2. Ou downgrade para torch 2.5.1 (aceitar CVE-2025-32434 com mitigacao)
-TTS==0.22.0
+# coqui-tts 0.27.2 - fork mantido pela comunidade (Sep 2025)
+# O pacote original TTS foi abandonado em Dec 2023 e tem incompatibilidade
+# com torch >= 2.6.0 devido a mudanca em torch.load(weights_only=True)
+# O fork coqui-tts resolve esse problema e mantem compatibilidade ativa
+# Ref: https://pypi.org/project/coqui-tts/
+coqui-tts==0.27.2
 soundfile==0.12.1
 
 # =============================================================================
