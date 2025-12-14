@@ -1865,6 +1865,11 @@ jobs:
             # VERSIONAMENTO AUTOMÁTICO: Atualizar docker-compose.prod.yml
             # ==============================================
             echo "🔄 Atualizando docker-compose.prod.yml com versões e digests..."
+            if [ ! -d /opt/alice/app/infra/docker ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/app/infra/docker não existe após o clone."
+              echo "   Verifique o passo de clone ou permissões no diretório /opt/alice."
+              exit 1
+            fi
             cd /opt/alice/app/infra/docker
 
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
