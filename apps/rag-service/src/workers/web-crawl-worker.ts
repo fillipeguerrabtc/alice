@@ -2,9 +2,7 @@ import crypto from 'crypto';
 import pLimit from 'p-limit';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
-import { webCrawlRequests, webCrawlResults } from '@alice/database';
-import { eq, and, asc, sql } from '@alice/database';
-import { createWebSearchClient } from '../web-search.js';
+import { eq, and, asc, sql, schema } from '@alice/database';
 import * as cheerio from 'cheerio';
 
 const logger = createLogger('web-crawl-worker');
@@ -20,48 +18,53 @@ interface WebCrawlWorkerConfig {
 
 const DEFAULT_USER_AGENT = 'AliceCrawler/1.0 (+https://yesyoudeserve.duckdns.org)';
 
+// Tipo WebCrawlRequest inferido do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
+type WebCrawlRequest = typeof schema.webCrawlRequests.$inferSelect;
+
 export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) {
   const limit = pLimit(config.concurrency);
   // Nota: crawl é feito via HTTP direto; SearXNG não é usado como proxy aqui.
 
-  async function fetchAndMarkNextRequest() {
-    let selected: typeof webCrawlRequests.$inferSelect | null = null;
+  async function fetchAndMarkNextRequest(): Promise<WebCrawlRequest | null> {
+    let selected: WebCrawlRequest | null = null;
 
     await db.transaction(async (tx) => {
-      const [row] = await tx
+      // Busca request pendente mais antigo com lock pessimista (SKIP LOCKED para evitar race condition)
+      const rows = await tx
         .select()
-        .from(webCrawlRequests)
+        .from(schema.webCrawlRequests)
         .where(
           and(
-            eq(webCrawlRequests.tenantId, config.tenantId),
-            eq(webCrawlRequests.status, 'pending'),
-            sql`(${webCrawlRequests.agendadoPara} IS NULL OR ${webCrawlRequests.agendadoPara} <= NOW())`
+            eq(schema.webCrawlRequests.tenantId, config.tenantId),
+            eq(schema.webCrawlRequests.status, 'pending'),
+            sql`(${schema.webCrawlRequests.agendadoPara} IS NULL OR ${schema.webCrawlRequests.agendadoPara} <= NOW())`
           )
         )
         .orderBy(
-          asc(webCrawlRequests.prioridade),
-          sql`${webCrawlRequests.agendadoPara} NULLS FIRST`,
-          asc(webCrawlRequests.criadoEm)
+          asc(schema.webCrawlRequests.prioridade),
+          sql`${schema.webCrawlRequests.agendadoPara} NULLS FIRST`,
+          asc(schema.webCrawlRequests.criadoEm)
         )
         .limit(1)
         .for('update', { skipLocked: true });
 
+      const row = rows[0] as WebCrawlRequest | undefined;
       if (!row) {
         selected = null;
         return;
       }
 
       await tx
-        .update(webCrawlRequests)
+        .update(schema.webCrawlRequests)
         .set({
           status: 'running',
           iniciadoEm: sql`NOW()`,
         })
-        .where(eq(webCrawlRequests.id, row.id));
+        .where(eq(schema.webCrawlRequests.id, row.id));
 
       selected = {
         ...row,
-        status: 'running',
+        status: 'running' as const,
         iniciadoEm: new Date(),
       };
     });
@@ -90,9 +93,9 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
     }
 
     await db
-      .update(webCrawlRequests)
+      .update(schema.webCrawlRequests)
       .set(setData)
-      .where(eq(webCrawlRequests.id, id));
+      .where(eq(schema.webCrawlRequests.id, id));
   }
 
   function normalizeHtml(html: string) {
@@ -159,7 +162,7 @@ export function startWebCrawlWorker(db: Database, config: WebCrawlWorkerConfig) 
         try {
           // Crawl direto da URL solicitada (não mandar URL como query de busca)
           const page = await fetchPage(req.url, req.bytesMax, req.timeoutMs);
-          await db.insert(webCrawlResults).values({
+          await db.insert(schema.webCrawlResults).values({
             tenantId: config.tenantId,
             requestId: req.id,
             url: req.url,

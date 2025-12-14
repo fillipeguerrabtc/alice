@@ -1,8 +1,7 @@
 import pLimit from 'p-limit';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
-import { mediaJobs } from '@alice/database';
-import { eq, and, asc, sql } from '@alice/database';
+import { eq, and, asc, sql, schema } from '@alice/database';
 import { getStorageService } from '../storage.js';
 import ytdl from 'ytdl-core';
 import fs from 'fs';
@@ -13,7 +12,7 @@ import { execFile } from 'child_process';
 // @ts-expect-error - ffprobe-static não tem tipos TypeScript (apenas exports path para binário)
 import ffprobePath from 'ffprobe-static';
 import { createSaladMediaClient } from '../salad-media-client.js';
-import { metrics } from '@alice/shared-utils';
+import type { AliceMetrics } from '@alice/shared-utils';
 import { createHmac } from 'crypto';
 import { URL } from 'url';
 
@@ -28,6 +27,8 @@ interface MediaWorkerConfig {
   concurrency: number;
   pollIntervalMs: number;
   maxAttempts: number;
+  /** Métricas Prometheus para instrumentação do circuit breaker (OBRIGATÓRIO - Regra 16 CLAUDE.md) */
+  metrics: AliceMetrics;
 }
 
 const SALAD_TTS_IMAGE = process.env.SALAD_TTS_IMAGE;
@@ -68,49 +69,57 @@ function createHmacToken(payload: string) {
   return createHmac('sha256', secret).update(payload).digest('hex');
 }
 
+// Tipo MediaJob inferido do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
+type MediaJob = typeof schema.mediaJobs.$inferSelect;
+
 export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
   const limit = pLimit(config.concurrency);
-  const saladClient = createSaladMediaClient(logger, metrics);
+  
+  // Criar cliente Salad com métricas Prometheus (OBRIGATÓRIO - Regra 16 CLAUDE.md)
+  // Observabilidade é enterprise-grade e não opcional na plataforma Alice
+  const saladClient = createSaladMediaClient(logger, config.metrics);
 
-  async function fetchAndMarkNextJob() {
-    let selected: typeof mediaJobs.$inferSelect | null = null;
+  async function fetchAndMarkNextJob(): Promise<MediaJob | null> {
+    let selected: MediaJob | null = null;
 
     await db.transaction(async (tx) => {
-      const [row] = await tx
+      // Busca job pendente mais antigo com lock pessimista (SKIP LOCKED para evitar race condition)
+      const rows = await tx
         .select()
-        .from(mediaJobs)
+        .from(schema.mediaJobs)
         .where(
           and(
-            eq(mediaJobs.tenantId, config.tenantId),
-            eq(mediaJobs.status, 'pending'),
-            sql`(${mediaJobs.agendadoPara} IS NULL OR ${mediaJobs.agendadoPara} <= NOW())`
+            eq(schema.mediaJobs.tenantId, config.tenantId),
+            eq(schema.mediaJobs.status, 'pending'),
+            sql`(${schema.mediaJobs.agendadoPara} IS NULL OR ${schema.mediaJobs.agendadoPara} <= NOW())`
           )
         )
         .orderBy(
-          asc(mediaJobs.prioridade),
-          sql`${mediaJobs.agendadoPara} NULLS FIRST`,
-          asc(mediaJobs.criadoEm)
+          asc(schema.mediaJobs.prioridade),
+          sql`${schema.mediaJobs.agendadoPara} NULLS FIRST`,
+          asc(schema.mediaJobs.criadoEm)
         )
         .limit(1)
         .for('update', { skipLocked: true });
 
+      const row = rows[0] as MediaJob | undefined;
       if (!row) {
         selected = null;
         return;
       }
 
       await tx
-        .update(mediaJobs)
+        .update(schema.mediaJobs)
         .set({
           status: 'processing',
-          tentativas: sql`${mediaJobs.tentativas} + 1`,
+          tentativas: sql`${schema.mediaJobs.tentativas} + 1`,
           iniciadoEm: sql`NOW()`,
         })
-        .where(eq(mediaJobs.id, row.id));
+        .where(eq(schema.mediaJobs.id, row.id));
 
       selected = {
         ...row,
-        status: 'processing',
+        status: 'processing' as const,
         tentativas: (row.tentativas ?? 0) + 1,
         iniciadoEm: new Date(),
       };
@@ -131,7 +140,7 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
     };
 
     if (status === 'processing') {
-      setData.tentativas = sql`${mediaJobs.tentativas} + 1`;
+      setData.tentativas = sql`${schema.mediaJobs.tentativas} + 1`;
       setData.iniciadoEm = sql`NOW()`;
     } else if (status === 'completed' || status === 'failed') {
       if (attemptsOverride !== undefined) {
@@ -146,9 +155,9 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
     }
 
     await db
-      .update(mediaJobs)
+      .update(schema.mediaJobs)
       .set(setData)
-      .where(eq(mediaJobs.id, id));
+      .where(eq(schema.mediaJobs.id, id));
   }
 
   async function processLoop() {
@@ -166,9 +175,9 @@ export function startMediaWorker(db: Database, config: MediaWorkerConfig) {
         } catch (error) {
           // Recupera tentativas atualizadas após o incremento em 'processing'
           const fresh = await db
-            .select({ tentativas: mediaJobs.tentativas, maxTentativas: mediaJobs.maxTentativas })
-            .from(mediaJobs)
-            .where(eq(mediaJobs.id, job.id))
+            .select({ tentativas: schema.mediaJobs.tentativas, maxTentativas: schema.mediaJobs.maxTentativas })
+            .from(schema.mediaJobs)
+            .where(eq(schema.mediaJobs.id, job.id))
             .limit(1);
           if (!fresh[0]) {
             logger.warn({ jobId: job.id }, 'Tentativas não encontradas após falha; usando cache local');
@@ -351,11 +360,11 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
 
   await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null);
   await deps.db
-    .update(mediaJobs)
+    .update(schema.mediaJobs)
     .set({
       resultado: { saladResult: result },
     })
-    .where(eq(mediaJobs.id, job.id));
+    .where(eq(schema.mediaJobs.id, job.id));
 }
 
 async function downloadAndStoreYoutube(deps: WorkerDeps, url: string, tenantId: string) {
@@ -512,21 +521,21 @@ async function handleLongVideo(deps: WorkerDeps, job: any) {
       });
       await deps.markStatus(job.id, result.status === 'succeeded' ? 'completed' : 'failed', result.description ?? null);
       await deps.db
-        .update(mediaJobs)
+        .update(schema.mediaJobs)
         .set({
           resultado: { download, saladResult: result },
         })
-        .where(eq(mediaJobs.id, job.id));
+        .where(eq(schema.mediaJobs.id, job.id));
       return;
     }
     // Sem Salad configurado, mas download feito: marcar como failed para evitar pendência silenciosa
     await deps.markStatus(job.id, 'failed', 'SALAD_LONG_VIDEO_IMAGE não configurada');
     await deps.db
-      .update(mediaJobs)
+      .update(schema.mediaJobs)
       .set({
         resultado: { download, error: 'SALAD_LONG_VIDEO_IMAGE não configurada' },
       })
-      .where(eq(mediaJobs.id, job.id));
+      .where(eq(schema.mediaJobs.id, job.id));
     return;
   }
 

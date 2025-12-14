@@ -1,5 +1,5 @@
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, instrumentCircuitBreaker } from '@alice/shared-utils';
-import type { AlicePrometheus } from '@alice/shared-utils';
+import type { AliceMetrics } from '@alice/shared-utils';
 import { Logger } from 'pino';
 
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
@@ -33,7 +33,7 @@ function headers() {
   };
 }
 
-export function createSaladMediaClient(logger: Logger, metrics: AlicePrometheus) {
+export function createSaladMediaClient(logger: Logger, metrics: AliceMetrics) {
   const createGroup = async (config: SaladContainerConfig) => {
     const url = `${SALAD_API_URL}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_MEDIA_PROJECT}/containers`;
     const body = {
@@ -73,6 +73,9 @@ export function createSaladMediaClient(logger: Logger, metrics: AlicePrometheus)
 
   const breakerCreate = createCircuitBreaker(createGroup, { name: 'salad-media-create', ...CIRCUIT_BREAKER_PRESETS.saladDeployment });
   const breakerStatus = createCircuitBreaker(getStatus, { name: 'salad-media-status', ...CIRCUIT_BREAKER_PRESETS.saladDeployment });
+  
+  // Instrumentar circuit breakers com métricas Prometheus (OBRIGATÓRIO - Regra 16 CLAUDE.md)
+  // Observabilidade é enterprise-grade e não opcional na plataforma Alice
   instrumentCircuitBreaker(metrics, 'salad-media-create', breakerCreate as any);
   instrumentCircuitBreaker(metrics, 'salad-media-status', breakerStatus as any);
 

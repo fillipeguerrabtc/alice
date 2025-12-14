@@ -1,5 +1,5 @@
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, instrumentCircuitBreaker } from '@alice/shared-utils';
-import { AlicePrometheus } from '@alice/shared-utils';
+import type { AliceMetrics } from '@alice/shared-utils';
 import { Logger } from 'pino';
 
 export interface WebSearchResult {
@@ -37,7 +37,7 @@ interface CreateClientParams {
   baseUrl: string;
   apiKey?: string;
   logger: Logger;
-  metrics: AlicePrometheus;
+  metrics: AliceMetrics;
   defaultCount?: number;
   timeoutMs?: number;
 }

@@ -1,5 +1,8 @@
-import { eq, and, sql, asc, type Database, learningTasks, learningTaskEvents, type LearningTask } from '@alice/database';
+import { eq, and, sql, asc, type Database, schema } from '@alice/database';
 import type { Logger } from 'pino';
+
+// Tipo LearningTask inferido do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
+type LearningTask = typeof schema.learningTasks.$inferSelect;
 
 // =============================================================================
 // Learning Orchestrator (Fila priorizada, RLS-friendly, enterprise-grade)
@@ -30,7 +33,7 @@ const DEFAULT_PRIORITY = 5;
 const DEFAULT_MAX_TENTATIVAS = 3;
 
 async function appendLearningEvent(db: Database, logger: Logger, params: { tenantId: string; learningTaskId: string; status: LearningTask['status']; mensagem?: string; payload?: Record<string, unknown>; }) {
-  await db.insert(learningTaskEvents).values({
+  await db.insert(schema.learningTaskEvents).values({
     tenantId: params.tenantId,
     learningTaskId: params.learningTaskId,
     status: params.status,
@@ -42,7 +45,7 @@ async function appendLearningEvent(db: Database, logger: Logger, params: { tenan
 
 export async function createLearningTask(db: Database, logger: Logger, input: CreateLearningTaskInput): Promise<LearningTask> {
   const [task] = await db
-    .insert(learningTasks)
+    .insert(schema.learningTasks)
     .values({
       tenantId: input.tenantId,
       tipo: input.tipo,
@@ -74,37 +77,39 @@ export async function dequeueNextLearningTask(db: Database, logger: Logger, tena
   let selected: LearningTask | null = null;
 
   await db.transaction(async (tx) => {
-    const [row] = await tx
+    // Busca task pendente mais antiga com lock pessimista (SKIP LOCKED para evitar race condition)
+    const rows = await tx
       .select()
-      .from(learningTasks)
+      .from(schema.learningTasks)
       .where(
         and(
-          eq(learningTasks.tenantId, tenantId),
-          eq(learningTasks.status, 'pending'),
-          sql`(${learningTasks.agendadoPara} IS NULL OR ${learningTasks.agendadoPara} <= NOW())`
+          eq(schema.learningTasks.tenantId, tenantId),
+          eq(schema.learningTasks.status, 'pending'),
+          sql`(${schema.learningTasks.agendadoPara} IS NULL OR ${schema.learningTasks.agendadoPara} <= NOW())`
         )
       )
       .orderBy(
-        asc(learningTasks.prioridade),
-        sql`${learningTasks.agendadoPara} NULLS FIRST`,
-        asc(learningTasks.criadoEm)
+        asc(schema.learningTasks.prioridade),
+        sql`${schema.learningTasks.agendadoPara} NULLS FIRST`,
+        asc(schema.learningTasks.criadoEm)
       )
       .limit(1)
       .for('update', { skipLocked: true });
 
+    const row = rows[0] as LearningTask | undefined;
     if (!row) {
       selected = null;
       return;
     }
 
     await tx
-      .update(learningTasks)
+      .update(schema.learningTasks)
       .set({
         status: 'processing',
-        tentativas: sql`${learningTasks.tentativas} + 1`,
+        tentativas: sql`${schema.learningTasks.tentativas} + 1`,
         iniciadoEm: sql`NOW()`,
       })
-      .where(eq(learningTasks.id, row.id));
+      .where(eq(schema.learningTasks.id, row.id));
 
     await appendLearningEvent(tx, logger, {
       tenantId,
@@ -115,7 +120,7 @@ export async function dequeueNextLearningTask(db: Database, logger: Logger, tena
 
     selected = {
       ...row,
-      status: 'processing',
+      status: 'processing' as const,
       tentativas: row.tentativas + 1,
       iniciadoEm: new Date(),
     };
@@ -130,7 +135,7 @@ export async function dequeueNextLearningTask(db: Database, logger: Logger, tena
 
 export async function updateLearningTaskStatus(db: Database, logger: Logger, input: UpdateLearningTaskStatusInput): Promise<void> {
   await db
-    .update(learningTasks)
+    .update(schema.learningTasks)
     .set({
       status: input.status,
       progresso: input.progresso ?? null,
@@ -138,7 +143,7 @@ export async function updateLearningTaskStatus(db: Database, logger: Logger, inp
       resultado: input.resultado ?? null,
       finalizadoEm: ['completed', 'failed', 'cancelled'].includes(input.status) ? sql`NOW()` : null,
     })
-    .where(eq(learningTasks.id, input.taskId));
+    .where(eq(schema.learningTasks.id, input.taskId));
 
   await appendLearningEvent(db, logger, {
     tenantId: input.tenantId,

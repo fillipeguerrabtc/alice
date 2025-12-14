@@ -16,7 +16,6 @@ import multer from 'multer';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
-import path from 'path';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import { getDatabase, getPool, schema, toSql, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS, withTenantContext } from '@alice/database';
 import { eq, sql, desc, and } from '@alice/database';
@@ -709,6 +708,7 @@ if (WORKER_TENANT_ID) {
     concurrency: WORKER_CONCURRENCY,
     pollIntervalMs: WORKER_POLL_MS,
     maxAttempts: WORKER_MAX_ATTEMPTS,
+    metrics, // Passar metrics Prometheus para instrumentação do circuit breaker
   });
 
   startWebCrawlWorker(db, {
@@ -1523,12 +1523,12 @@ app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (re
 
     // Verificar se o update afetou pelo menos uma linha (job deve existir)
     const updated = await db
-      .update(mediaJobs)
+      .update(schema.mediaJobs)
       .set({
         resultado: sql`jsonb_set(COALESCE(resultado,'{}'::jsonb), '{upload}', jsonb_build_object('path', ${targetPath}, 'size', ${buffer.length}, 'original', ${originalName}, 'uploadedAt', NOW()))`,
       })
-      .where(eq(mediaJobs.id, jobId))
-      .returning({ id: mediaJobs.id });
+      .where(eq(schema.mediaJobs.id, jobId))
+      .returning({ id: schema.mediaJobs.id });
 
     if (updated.length === 0) {
       logger.warn({ jobId, jobType }, 'Upload recebido para job inexistente - possível race condition ou job deletado');
