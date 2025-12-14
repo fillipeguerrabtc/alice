@@ -1955,10 +1955,10 @@ jobs:
 
               if ! check_ruamel; then
                 echo "⚠️ ruamel.yaml não encontrado, tentando instalar via apt..."
-                apt-get update -qq && apt-get install -y python3-ruamel.yaml python3-pip python3-distutils python3-setuptools >/dev/null 2>&1 || {
-                  echo "❌ ERRO CRÍTICO: Falha ao instalar python3-ruamel.yaml (apt)"
-                  exit 1
-                }
+                # NOTA: Não usar exit 1 aqui - permitir fallback para pip se apt falhar
+                if ! (apt-get update -qq && apt-get install -y python3-ruamel.yaml python3-pip python3-distutils python3-setuptools >/dev/null 2>&1); then
+                  echo "⚠️ Falha ao instalar python3-ruamel.yaml via apt (continuando para fallback pip...)"
+                fi
               fi
 
               if ! check_ruamel; then
