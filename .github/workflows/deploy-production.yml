@@ -80,7 +80,6 @@ env:
   DOMAIN: yesyoudeserve.duckdns.org
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
-  CODE_SCANNING_ENABLED: "false"
 
 jobs:
   # ===========================================================================
@@ -90,7 +89,7 @@ jobs:
   code-quality:
     name: Análise de Qualidade
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: read
     
@@ -335,6 +334,11 @@ jobs:
               core.setOutput('enabled', 'false');
               core.exportVariable('CODE_SCANNING_ENABLED', 'false');
             }
+
+      - name: Persistir flag de Code Scanning (output)
+        id: cs-flag
+        if: always()
+        run: echo "enabled=${CODE_SCANNING_ENABLED}" >> "$GITHUB_OUTPUT"
 
       # Upload SARIF como artifact para download e análise
       # SHA: actions/upload-artifact@v4.6.0 (2024-12-18)
@@ -1928,8 +1932,9 @@ jobs:
                   exit 1
                 }
               fi
-              # Se ainda não estiver presente, tentar pip (global com break-system-packages) e, por fim, --user
+
               if ! check_ruamel; then
+                echo "⚠️ ruamel.yaml ausente após apt; tentando pip (break-system-packages) e fallback --user..."
                 PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
                   echo "⚠️  Falha no pip (modo padrão), tentando --user..."
                   pip3 install --user ruamel.yaml || {
@@ -1940,6 +1945,7 @@ jobs:
                   }
                 }
               fi
+
               if ! check_ruamel; then
                 echo "❌ ERRO CRÍTICO: ruamel.yaml ausente após tentativas (apt/pip)"
                 exit 1
