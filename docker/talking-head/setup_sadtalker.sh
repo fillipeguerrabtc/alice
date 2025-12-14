@@ -2,7 +2,7 @@
 # Script para configurar repositório SadTalker e baixar modelos
 # Enterprise-grade: download manual com URLs diretas (evita loops infinitos)
 # Autor: Fillipe Guerra
-# Data: 13/12/2025
+# Data: 14/12/2025
 
 set -euo pipefail
 
@@ -22,9 +22,9 @@ echo "Criando diretórios para modelos..."
 mkdir -p checkpoints
 mkdir -p gfpgan/weights
 
-# Download manual dos modelos com URLs diretas do GitHub Releases
-# Enterprise-grade: URLs estáveis do GitHub Releases (não precisa de autenticação)
-# Fonte: https://github.com/OpenTalker/SadTalker/releases/tag/v0.0.2
+# Download manual dos modelos
+# Enterprise-grade: HuggingFace mirrors (GitHub Releases v0.0.2 retorna 404 para alguns arquivos)
+# Fontes: HuggingFace (camenduru/SadTalker - público, sem autenticação)
 # wget options conforme documentação oficial:
 # --timeout=300: timeout de conexão de 5 minutos
 # --tries=5: 5 tentativas
@@ -32,99 +32,102 @@ mkdir -p gfpgan/weights
 # --retry-connrefused: retry em conexão recusada
 # --show-progress: mostra progresso do download
 
-SADTALKER_RELEASE="https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2"
+# HuggingFace mirror (público, sem autenticação)
+HF_SADTALKER="https://huggingface.co/camenduru/SadTalker/resolve/main/new/checkpoints"
+HF_GFPGAN="https://huggingface.co/camenduru/SadTalker/resolve/main/new/gfpgan/weights"
 WGET_OPTS="--timeout=300 --tries=5 --waitretry=10 --retry-connrefused --show-progress"
 
 echo "=== Baixando modelos principais (checkpoints/) ==="
+echo "Fonte: HuggingFace (camenduru/SadTalker)"
 
 # MappingNet Models
 echo "Baixando mapping_00109-model.pth.tar..."
 wget ${WGET_OPTS} -O checkpoints/mapping_00109-model.pth.tar \
-    "${SADTALKER_RELEASE}/mapping_00109-model.pth.tar"
+    "${HF_SADTALKER}/mapping_00109-model.pth.tar"
 
 echo "Baixando mapping_00229-model.pth.tar..."
 wget ${WGET_OPTS} -O checkpoints/mapping_00229-model.pth.tar \
-    "${SADTALKER_RELEASE}/mapping_00229-model.pth.tar"
+    "${HF_SADTALKER}/mapping_00229-model.pth.tar"
 
 # SadTalker Checkpoints (safetensors - formato mais recente)
 echo "Baixando SadTalker_V0.0.2_256.safetensors..."
 wget ${WGET_OPTS} -O checkpoints/SadTalker_V0.0.2_256.safetensors \
-    "${SADTALKER_RELEASE}/SadTalker_V0.0.2_256.safetensors"
+    "${HF_SADTALKER}/SadTalker_V0.0.2_256.safetensors"
 
 echo "Baixando SadTalker_V0.0.2_512.safetensors..."
 wget ${WGET_OPTS} -O checkpoints/SadTalker_V0.0.2_512.safetensors \
-    "${SADTALKER_RELEASE}/SadTalker_V0.0.2_512.safetensors"
+    "${HF_SADTALKER}/SadTalker_V0.0.2_512.safetensors"
 
 echo "=== Baixando modelos de enhancement (gfpgan/weights/) ==="
 
 # Face Alignment Model
 echo "Baixando alignment_WFLW_4HG.pth..."
 wget ${WGET_OPTS} -O gfpgan/weights/alignment_WFLW_4HG.pth \
-    "${SADTALKER_RELEASE}/alignment_WFLW_4HG.pth"
+    "${HF_GFPGAN}/alignment_WFLW_4HG.pth"
 
 # Face Detection Model
 echo "Baixando detection_Resnet50_Final.pth..."
 wget ${WGET_OPTS} -O gfpgan/weights/detection_Resnet50_Final.pth \
-    "${SADTALKER_RELEASE}/detection_Resnet50_Final.pth"
+    "${HF_GFPGAN}/detection_Resnet50_Final.pth"
 
 # GFPGAN Model
 echo "Baixando GFPGANv1.4.pth..."
 wget ${WGET_OPTS} -O gfpgan/weights/GFPGANv1.4.pth \
-    "${SADTALKER_RELEASE}/GFPGANv1.4.pth"
+    "${HF_GFPGAN}/GFPGANv1.4.pth"
 
 # Face Parsing Model
 echo "Baixando parsing_parsenet.pth..."
 wget ${WGET_OPTS} -O gfpgan/weights/parsing_parsenet.pth \
-    "${SADTALKER_RELEASE}/parsing_parsenet.pth"
+    "${HF_GFPGAN}/parsing_parsenet.pth"
 
 echo "=== Validando downloads ==="
 
-# Validação enterprise: verificar se checkpoints foram baixados corretamente
-if [ ! -d checkpoints ] || [ -z "$(ls -A checkpoints 2>/dev/null)" ]; then
-    echo "::error::Diretório checkpoints vazio ou ausente após download"
-    echo "::error::Conteúdo atual do diretório:"
-    ls -la checkpoints/ 2>/dev/null || echo "  (diretório não existe)"
-    exit 1
-fi
+# Validação enterprise: verificar existência de cada arquivo específico
+# Mais robusto que contagem por extensão (evita falsos positivos/negativos)
 
-# Contar arquivos de checkpoint
-# Enterprise-grade: validar contagem EXATA (2 safetensors + 2 pth.tar = 4 total)
-SAFETENSORS_COUNT=$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l)
-PTHTAR_COUNT=$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l)
-CHECKPOINT_FILES=$((SAFETENSORS_COUNT + PTHTAR_COUNT))
+CHECKPOINT_FILES=0
+GFPGAN_FILES=0
 
-# Validar contagem exata: 2 safetensors + 2 pth.tar = 4 arquivos
-if [ "${SAFETENSORS_COUNT}" -ne 2 ]; then
-    echo "::error::Esperado 2 arquivos safetensors, encontrado ${SAFETENSORS_COUNT}"
-    echo "::error::Arquivos esperados: SadTalker_V0.0.2_256.safetensors, SadTalker_V0.0.2_512.safetensors"
-    echo "::error::Conteúdo atual de checkpoints/:"
-    ls -la checkpoints/ 2>/dev/null || echo "  (diretório não existe)"
-    exit 1
-fi
+echo "Verificando arquivos de checkpoint..."
 
-if [ "${PTHTAR_COUNT}" -ne 2 ]; then
-    echo "::error::Esperado 2 arquivos pth.tar, encontrado ${PTHTAR_COUNT}"
-    echo "::error::Arquivos esperados: mapping_00109-model.pth.tar, mapping_00229-model.pth.tar"
-    echo "::error::Conteúdo atual de checkpoints/:"
-    ls -la checkpoints/ 2>/dev/null || echo "  (diretório não existe)"
-    exit 1
-fi
+# Verificar cada arquivo específico de checkpoint
+for FILE in \
+    "checkpoints/mapping_00109-model.pth.tar" \
+    "checkpoints/mapping_00229-model.pth.tar" \
+    "checkpoints/SadTalker_V0.0.2_256.safetensors" \
+    "checkpoints/SadTalker_V0.0.2_512.safetensors"; do
+    if [ -f "${FILE}" ] && [ -s "${FILE}" ]; then
+        echo "  OK: ${FILE}"
+        CHECKPOINT_FILES=$((CHECKPOINT_FILES + 1))
+    else
+        echo "::error::Arquivo ausente ou vazio: ${FILE}"
+        ls -la "$(dirname "${FILE}")/" 2>/dev/null || echo "  (diretório não existe)"
+        exit 1
+    fi
+done
 
-# Verificar arquivos gfpgan
-# Enterprise-grade: validar contagem EXATA (4 arquivos pth)
-GFPGAN_COUNT=$(find gfpgan/weights -type f -name "*.pth" 2>/dev/null | wc -l)
-if [ "${GFPGAN_COUNT}" -ne 4 ]; then
-    echo "::error::Esperado 4 arquivos GFPGAN, encontrado ${GFPGAN_COUNT}"
-    echo "::error::Arquivos esperados: alignment_WFLW_4HG.pth, detection_Resnet50_Final.pth, GFPGANv1.4.pth, parsing_parsenet.pth"
-    echo "::error::Conteúdo atual de gfpgan/weights/:"
-    ls -la gfpgan/weights/ 2>/dev/null || echo "  (diretório não existe)"
-    exit 1
-fi
+echo "Verificando arquivos GFPGAN..."
+
+# Verificar cada arquivo específico de GFPGAN
+for FILE in \
+    "gfpgan/weights/alignment_WFLW_4HG.pth" \
+    "gfpgan/weights/detection_Resnet50_Final.pth" \
+    "gfpgan/weights/GFPGANv1.4.pth" \
+    "gfpgan/weights/parsing_parsenet.pth"; do
+    if [ -f "${FILE}" ] && [ -s "${FILE}" ]; then
+        echo "  OK: ${FILE}"
+        GFPGAN_FILES=$((GFPGAN_FILES + 1))
+    else
+        echo "::error::Arquivo ausente ou vazio: ${FILE}"
+        ls -la "$(dirname "${FILE}")/" 2>/dev/null || echo "  (diretório não existe)"
+        exit 1
+    fi
+done
 
 # Calcular total de arquivos baixados
-TOTAL_FILES=$((CHECKPOINT_FILES + GFPGAN_COUNT))
+TOTAL_FILES=$((CHECKPOINT_FILES + GFPGAN_FILES))
 
 echo "=== Modelos SadTalker baixados com sucesso ==="
 echo "  - Checkpoints: ${CHECKPOINT_FILES} arquivos (2 safetensors + 2 pth.tar)"
-echo "  - GFPGAN weights: ${GFPGAN_COUNT} arquivos"
+echo "  - GFPGAN weights: ${GFPGAN_FILES} arquivos"
 echo "  - Total: ${TOTAL_FILES} arquivos"
