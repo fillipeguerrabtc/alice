@@ -1,49 +1,65 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from '../../../apps/rag-service/src/learning-orchestrator.js';
-import { learningTaskEvents } from '@alice/database';
+import { schema } from '@alice/database';
+import type { Database } from '@alice/database';
+import type { Logger } from 'pino';
 
-type Task = any;
-type Event = any;
+// Tipos inferidos do schema Drizzle (Regra 2 CLAUDE.md - NÃO DUPLICAR)
+type LearningTask = typeof schema.learningTasks.$inferSelect;
+type LearningTaskEvent = typeof schema.learningTaskEvents.$inferSelect;
+
+// Interface para mock do Database em testes unitários
+// Segue padrão enterprise de tipagem explícita (Regra 8 CLAUDE.md)
+interface MockDbQueryBuilder<T> {
+  values: (val: Partial<T>) => { returning: () => T[] };
+}
+
+interface MockDbUpdateBuilder<T> {
+  set: (val: Partial<T>) => { where: () => void };
+}
 
 interface MockDb {
-  insert: (table?: any) => any;
-  update: (table?: any) => any;
+  insert: (table: unknown) => MockDbQueryBuilder<LearningTask | LearningTaskEvent>;
+  update: (table: unknown) => MockDbUpdateBuilder<LearningTask>;
   transaction: (fn: (tx: MockDb) => Promise<void>) => Promise<void>;
-  execute?: (sql: any) => Promise<{ rows: Task[] }>;
+  execute?: (sql: unknown) => Promise<{ rows: LearningTask[] }>;
 }
 
 describe('learning-orchestrator', () => {
-  let tasks: Task[];
-  let events: Event[];
+  let tasks: LearningTask[];
+  let events: LearningTaskEvent[];
   let db: MockDb;
-  const logger = {
+  
+  // Logger mock tipado (Regra 8 CLAUDE.md - zero any)
+  const logger: Pick<Logger, 'info' | 'error' | 'debug'> = {
     info: vi.fn(),
     error: vi.fn(),
     debug: vi.fn(),
-  } as any;
+  };
 
   beforeEach(() => {
     tasks = [];
     events = [];
 
     db = {
-      insert: (table?: any) => ({
-        values: (val: any) => ({
+      insert: (table: unknown) => ({
+        values: (val: Partial<LearningTask | LearningTaskEvent>) => ({
           returning: () => {
-            if (!val.id) {
-              val.id = `task-${tasks.length + 1}`;
+            const record = val as LearningTask | LearningTaskEvent;
+            if (!('id' in record) || !record.id) {
+              (record as LearningTask).id = `task-${tasks.length + 1}`;
             }
-            if (table === learningTaskEvents) {
-              events.push(val);
+            if (table === schema.learningTaskEvents) {
+              events.push(record as LearningTaskEvent);
             } else {
-              tasks.push(val);
+              tasks.push(record as LearningTask);
             }
-            return [val];
+            return [record];
           },
         }),
       }),
       update: () => ({
-        set: (val: any) => ({
+        set: (val: Partial<LearningTask>) => ({
           where: () => {
             if (tasks[0]) {
               Object.assign(tasks[0], val);
@@ -58,7 +74,7 @@ describe('learning-orchestrator', () => {
             rows: tasks.filter(
               (t) =>
                 t.status === 'pending' &&
-                (!t.agendado_para || new Date(t.agendado_para) <= new Date())
+                (!t.agendadoPara || new Date(t.agendadoPara) <= new Date())
             ),
           }),
         };
@@ -68,7 +84,7 @@ describe('learning-orchestrator', () => {
   });
 
   it('cria tarefa e registra evento pending', async () => {
-    const task = await createLearningTask(db as any, logger, {
+    const task = await createLearningTask(db as unknown as Database, logger as Logger, {
       tenantId: 'tenant-1',
       tipo: 'fine_tune',
     });
@@ -78,24 +94,24 @@ describe('learning-orchestrator', () => {
   });
 
   it('dequeue marca como processing e incrementa tentativas', async () => {
-    await createLearningTask(db as any, logger, {
+    await createLearningTask(db as unknown as Database, logger as Logger, {
       tenantId: 'tenant-1',
       tipo: 'fine_tune',
     });
 
-    const dequeued = await dequeueNextLearningTask(db as any, logger, 'tenant-1');
+    const dequeued = await dequeueNextLearningTask(db as unknown as Database, logger as Logger, 'tenant-1');
 
     expect(dequeued?.status).toBe('processing');
     expect(dequeued?.tentativas).toBe(1);
   });
 
   it('atualiza status para completed e registra evento', async () => {
-    const created = await createLearningTask(db as any, logger, {
+    const created = await createLearningTask(db as unknown as Database, logger as Logger, {
       tenantId: 'tenant-1',
       tipo: 'fine_tune',
     });
 
-    await updateLearningTaskStatus(db as any, logger, {
+    await updateLearningTaskStatus(db as unknown as Database, logger as Logger, {
       taskId: created.id,
       tenantId: 'tenant-1',
       status: 'completed',

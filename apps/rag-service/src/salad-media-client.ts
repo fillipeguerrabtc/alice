@@ -76,8 +76,8 @@ export function createSaladMediaClient(logger: Logger, metrics: AliceMetrics) {
   
   // Instrumentar circuit breakers com métricas Prometheus (OBRIGATÓRIO - Regra 16 CLAUDE.md)
   // Observabilidade é enterprise-grade e não opcional na plataforma Alice
-  instrumentCircuitBreaker(metrics, 'salad-media-create', breakerCreate as any);
-  instrumentCircuitBreaker(metrics, 'salad-media-status', breakerStatus as any);
+  instrumentCircuitBreaker(metrics, 'salad-media-create', breakerCreate as unknown);
+  instrumentCircuitBreaker(metrics, 'salad-media-status', breakerStatus as unknown);
 
   async function createAndWait(config: SaladContainerConfig, pollMs = 5000, maxWaitMs = 15 * 60 * 1000): Promise<SaladJobResult> {
     const created = await breakerCreate.fire(config);

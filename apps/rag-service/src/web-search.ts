@@ -108,7 +108,7 @@ export function createWebSearchClient({
     ...CIRCUIT_BREAKER_PRESETS.webSearch,
   });
 
-  instrumentCircuitBreaker(metrics, 'searxng-web-search', breaker as any);
+  instrumentCircuitBreaker(metrics, 'searxng-web-search', breaker as unknown);
 
   return {
     isEnabled: () => Boolean(apiKey),

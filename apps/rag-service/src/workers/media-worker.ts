@@ -14,7 +14,6 @@ import ffprobePath from 'ffprobe-static';
 import { createSaladMediaClient } from '../salad-media-client.js';
 import type { AliceMetrics } from '@alice/shared-utils';
 import { createHmac } from 'crypto';
-import { URL } from 'url';
 
 const pipeline = promisify(require('stream').pipeline);
 const execFileAsync = promisify(execFile);
@@ -214,7 +213,7 @@ type WorkerDeps = {
   config: MediaWorkerConfig;
 };
 
-async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
+async function handleJob(deps: WorkerDeps, job: MediaJob): Promise<boolean> {
   switch (job.jobType) {
     case 'tts':
       // TTS com XTTS v2: text, voice (speaker), lang, speaker_wav (voice cloning)
@@ -241,12 +240,12 @@ async function handleJob(deps: WorkerDeps, job: any): Promise<boolean> {
   }
 }
 
-async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload?: Record<string, unknown>) {
+async function dispatchSalad(deps: WorkerDeps, job: MediaJob, image?: string, payload?: Record<string, unknown>) {
   if (!image) {
     throw new Error('Imagem Salad não configurada para o tipo de job');
   }
   const containerName = `media-${job.jobType}-${job.id}`;
-  const payloadObj = (payload as any) ?? {};
+  const payloadObj = payload ?? {};
   const { parametros: _nestedParams, ...payloadTopLevel } = payloadObj;
   const payloadParams =
     (typeof payloadObj.parametros === 'object' && payloadObj.parametros !== null ? payloadObj.parametros : {}) ||
@@ -287,7 +286,10 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
       envVars.TTS_LANG = langParam;
     }
 
-    const speakerWav = resolveLocalPath(paramsMerged?.speaker_wav, paramsMerged?.speakerWav);
+    const speakerWav = resolveLocalPath(
+      paramsMerged?.speaker_wav as string | null | undefined,
+      paramsMerged?.speakerWav as string | null | undefined
+    );
     if (paramsMerged?.speaker_wav || paramsMerged?.speakerWav) {
       if (!speakerWav) {
         throw new Error('speaker_wav deve ser caminho local montado no container Salad (URLs não são suportadas)');
@@ -300,8 +302,14 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     // Saída de áudio no volume extra (/opt/alice -> /mnt/alice-data)
     envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.wav`;
   } else if (job.jobType === 'lip_sync') {
-    const videoPath = resolveLocalPath(paramsMerged?.videoPath, paramsMerged?.video_path);
-    const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
+    const videoPath = resolveLocalPath(
+      paramsMerged?.videoPath as string | null | undefined,
+      paramsMerged?.video_path as string | null | undefined
+    );
+    const audioPath = resolveLocalPath(
+      paramsMerged?.audioPath as string | null | undefined,
+      paramsMerged?.audio_path as string | null | undefined
+    );
     if (!videoPath || !audioPath) {
       if (inputUrl) {
         throw new Error('VIDEO_PATH e AUDIO_PATH são obrigatórios para lip_sync (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
@@ -312,8 +320,14 @@ async function dispatchSalad(deps: WorkerDeps, job: any, image?: string, payload
     envVars.AUDIO_PATH = audioPath;
     envVars.OUTPUT_PATH = `${outputBaseDir}/output-${job.id}.mp4`;
   } else if (job.jobType === 'talking_head') {
-    const imagePath = resolveLocalPath(paramsMerged?.imagePath, paramsMerged?.image_path);
-    const audioPath = resolveLocalPath(paramsMerged?.audioPath, paramsMerged?.audio_path);
+    const imagePath = resolveLocalPath(
+      paramsMerged?.imagePath as string | null | undefined,
+      paramsMerged?.image_path as string | null | undefined
+    );
+    const audioPath = resolveLocalPath(
+      paramsMerged?.audioPath as string | null | undefined,
+      paramsMerged?.audio_path as string | null | undefined
+    );
     if (!imagePath || !audioPath) {
       if (inputUrl) {
         throw new Error('IMAGE_PATH e AUDIO_PATH são obrigatórios para talking_head (inputUrl não é aceito; forneça caminhos locais montados no container Salad)');
@@ -480,7 +494,7 @@ function guessMime(formatName?: string): string {
   return 'application/octet-stream';
 }
 
-async function handleLongVideo(deps: WorkerDeps, job: any) {
+async function handleLongVideo(deps: WorkerDeps, job: MediaJob) {
   if (job.inputUrl && isYoutubeUrl(job.inputUrl)) {
     const download = await downloadAndStoreYoutube(deps, job.inputUrl, job.tenantId);
     // Envia para Salad (long_video) se configurado, passando caminho armazenado

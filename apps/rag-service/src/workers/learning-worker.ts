@@ -1,5 +1,5 @@
 import pLimit from 'p-limit';
-import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from '../learning-orchestrator.js';
+import { dequeueNextLearningTask, updateLearningTaskStatus } from '../learning-orchestrator.js';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
 

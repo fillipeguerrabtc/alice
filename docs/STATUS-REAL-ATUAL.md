@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.39 - Correção de inferência de tipos Drizzle ORM nos workers multimodais
+> **Versão:** 3.40 - Correção de 25 warnings ESLint para compliance enterprise (zero any)
 
 ---
 
