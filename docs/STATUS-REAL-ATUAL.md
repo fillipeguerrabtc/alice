@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.45 - Update ALL platform dependencies to latest stable versions (42+ containers)
+> **Versão:** 3.46 - Correção SHA256 digests + migração ERPNext para arquitetura unificada v15
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 42 (produção) |
+| **Total de Containers** | 43 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -614,14 +614,17 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Serviço | Função | URL Externa |
 |---------|--------|-------------|
-| Prometheus 3.0 | Métricas | prometheus.yesyoudeserve.duckdns.org |
-| Grafana OSS 11.3 | Dashboards | observability.yesyoudeserve.duckdns.org |
-| Jaeger 1.62 | Tracing | tracing.yesyoudeserve.duckdns.org |
-| Langfuse 2.x | LLM Metrics | llm-metrics.yesyoudeserve.duckdns.org |
-| OTel Collector | Instrumentação | (interno) |
-| Vector | Log Aggregation | (interno) |
+| Prometheus 3.8.0 | Métricas | prometheus.yesyoudeserve.duckdns.org |
+| Grafana OSS 11.6.2 | Dashboards | observability.yesyoudeserve.duckdns.org |
+| Jaeger 1.76.0 | Tracing | tracing.yesyoudeserve.duckdns.org |
+| Langfuse 3.139.0 (Web) | LLM Metrics | llm-metrics.yesyoudeserve.duckdns.org |
+| Langfuse Worker | Processamento Assíncrono | (interno) |
+| OTel Collector 0.141.0 | Instrumentação | (interno) |
+| Vector 0.51.1 | Log Aggregation | (interno) |
 
 > **NOTA IMPORTANTE:** Stack separada da Alice para continuar monitorando mesmo se Alice tiver problemas. Isso é **best practice**, não um problema.
+
+> **NOTA Langfuse v3 (14/12/2025):** Langfuse atualizado para v3.139.0 com arquitetura que inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
 
 ### Dashboards Grafana Enterprise (9 dashboards, 100% completos)
 
@@ -831,13 +834,14 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 13/12/2025*  
-*Autor: Fillipe Guerra*  
-*Versão: 3.36 - Alinhado com CLAUDE.md (versão principal)*
-*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*  
+*Documento atualizado em: 14/12/2025*
+*Autor: Fillipe Guerra*
+*Versão: 3.47 - Análise de impacto integrações + Langfuse v3 worker container*
+*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
+*Integrações: Verificadas em 14/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext - todas compatíveis*
 
 ---
 

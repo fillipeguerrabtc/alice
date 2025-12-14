@@ -7,9 +7,9 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 47 configurados no repositório (42 obrigatórios pré-deploy + 5 opcionais/novos)
+**Total de Secrets:** 49 configurados no repositório (44 obrigatórios pré-deploy + 5 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 42 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
+**Total de Containers:** 43 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
@@ -208,9 +208,17 @@ Estes são necessários para o deploy funcionar:
 |--------|-----------|------------|
 | `LANGFUSE_SECRET_KEY` | Chave secreta Langfuse | `openssl rand -hex 32` com prefixo `sk-lf-` |
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
+| `LANGFUSE_SALT` | **OBRIGATÓRIO v3** - Salt para hashing | `openssl rand -base64 16` |
+| `LANGFUSE_ENCRYPTION_KEY` | **OBRIGATÓRIO v3** - Chave 256-bit hex | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
 | `SMTP_PASSWORD` (arquivo) | **API Key do Resend** para relay SMTP do Alertmanager | O workflow escreve a `RESEND_API_KEY` em `/opt/alice/secrets/alertmanager/smtp_password` |
+
+**⚠️ IMPORTANTE - Langfuse v3 (Atualizado 14/12/2025):**
+- Langfuse foi atualizado para v3.139.0 que requer novas variáveis obrigatórias:
+  - `LANGFUSE_SALT`: String aleatória para hashing (gerar com `openssl rand -base64 16`)
+  - `LANGFUSE_ENCRYPTION_KEY`: Chave 256-bit hex (gerar com `openssl rand -hex 32`)
+- Nova arquitetura v3 inclui container `langfuse-worker` para processamento assíncrono
 
 **Observação sobre Alertmanager + Resend:**
 - O Alertmanager usa o relay SMTP do Resend (`smtp.resend.com:587`) para enviar alertas por email
@@ -328,6 +336,8 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `LANGFUSE_SECRET_KEY` | ✅ |
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
+| `LANGFUSE_SALT` | ⏳ **OBRIGATÓRIO v3** (adicionar - `openssl rand -base64 16`) |
+| `LANGFUSE_ENCRYPTION_KEY` | ⏳ **OBRIGATÓRIO v3** (adicionar - `openssl rand -hex 32`) |
 | `SMTP_PASSWORD` (arquivo) | ✅ |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
@@ -416,11 +426,12 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 13 de Dezembro de 2025*  
-*Versão: 6.7*  
-*Total de Secrets: 47 configurados (42 obrigatórios + 5 opcionais/novos)*  
-*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*  
+*Documento atualizado em: 14 de Dezembro de 2025*  
+*Versão: 6.8*  
+*Total de Secrets: 49 configurados (44 obrigatórios + 5 opcionais/novos)*  
+*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *CORS_ORIGINS: Adicionado em 10/12/2025 para permitir requisições do frontend*  
-*HUGGINGFACE_TOKEN: Adicionado em 13/12/2025 para downloads confiáveis de modelos ML (evita rate limits e permite acesso a repositórios gated)*
+*HUGGINGFACE_TOKEN: Adicionado em 13/12/2025 para downloads confiáveis de modelos ML*  
+*LANGFUSE v3: Adicionado em 14/12/2025 - LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
