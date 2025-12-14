@@ -1486,6 +1486,7 @@ jobs:
           SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
+          REPO_FULL_NAME: ${{ github.repository }}
         run: |
           set -euo pipefail
           # Ler repository variables via GitHub API (respeitando defaults)
