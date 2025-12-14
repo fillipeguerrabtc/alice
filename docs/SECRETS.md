@@ -54,7 +54,7 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_VM_HOST` | `46.224.46.93` | IP do servidor |
 | `HETZNER_VM_USER` | `root` | Usuário SSH |
 | `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` |
-| `GH_PAT` | Token GitHub | Personal Access Token com write:packages |
+| `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) |
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
