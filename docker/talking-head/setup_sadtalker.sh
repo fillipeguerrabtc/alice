@@ -25,17 +25,19 @@ mkdir -p gfpgan/weights
 # Download manual dos modelos
 # Enterprise-grade: HuggingFace mirrors (GitHub Releases v0.0.2 retorna 404 para alguns arquivos)
 # Fontes: HuggingFace (camenduru/SadTalker - público, sem autenticação)
-# wget options conforme documentação oficial:
-# --timeout=300: timeout de conexão de 5 minutos
-# --tries=5: 5 tentativas
-# --waitretry=10: espera 10 segundos entre tentativas
+# wget options conforme documentação oficial (gnu.org/software/wget/manual):
+# --connect-timeout=60: timeout de conexão inicial (60 segundos)
+# --read-timeout=300: timeout de leitura de dados (5 minutos sem dados = retry)
+# --tries=10: 10 tentativas (arquivos grandes podem precisar de mais retries)
+# --waitretry=15: espera 15 segundos entre tentativas
 # --retry-connrefused: retry em conexão recusada
-# --show-progress: mostra progresso do download
+# --continue: permite resumir downloads interrompidos
+# --progress=bar:force: força barra de progresso mesmo em logs
 
 # HuggingFace mirror (público, sem autenticação)
 HF_SADTALKER="https://huggingface.co/camenduru/SadTalker/resolve/main/new/checkpoints"
 HF_GFPGAN="https://huggingface.co/camenduru/SadTalker/resolve/main/new/gfpgan/weights"
-WGET_OPTS="--timeout=300 --tries=5 --waitretry=10 --retry-connrefused --show-progress"
+WGET_OPTS="--connect-timeout=60 --read-timeout=300 --tries=10 --waitretry=15 --retry-connrefused --continue --progress=bar:force"
 
 echo "=== Baixando modelos principais (checkpoints/) ==="
 echo "Fonte: HuggingFace (camenduru/SadTalker)"
