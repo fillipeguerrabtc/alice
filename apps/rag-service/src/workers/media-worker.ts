@@ -9,7 +9,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { promisify } from 'util';
-import ffmpeg from 'fluent-ffmpeg';
+import { execFile } from 'child_process';
+// @ts-expect-error - ffprobe-static não tem tipos TypeScript (apenas exports path para binário)
 import ffprobePath from 'ffprobe-static';
 import { createSaladMediaClient } from '../salad-media-client.js';
 import { metrics } from '@alice/shared-utils';
@@ -17,7 +18,7 @@ import { createHmac } from 'crypto';
 import { URL } from 'url';
 
 const pipeline = promisify(require('stream').pipeline);
-ffmpeg.setFfprobePath(ffprobePath.path);
+const execFileAsync = promisify(execFile);
 
 const logger = createLogger('media-worker');
 const storageService = getStorageService();
@@ -400,34 +401,63 @@ async function downloadAndStoreYoutube(deps: WorkerDeps, url: string, tenantId: 
   }
 }
 
-async function probeVideo(filePath: string) {
-  return new Promise<{
-    durationSeconds: number | null;
-    formatName: string | undefined;
-    mimeType: string;
-    videoCodec: string | undefined;
-    audioCodec: string | undefined;
-    width: number | undefined;
-    height: number | undefined;
-  }>((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, data) => {
-      if (err) return reject(err);
-      const formatName = data.format.format_name;
-      const mimeType = guessMime(formatName);
-      const durationSeconds = data.format.duration ? Number(data.format.duration) : null;
-      const videoStream = data.streams.find((s) => s.codec_type === 'video');
-      const audioStream = data.streams.find((s) => s.codec_type === 'audio');
-      resolve({
-        durationSeconds,
-        formatName,
-        mimeType,
-        videoCodec: videoStream?.codec_name,
-        audioCodec: audioStream?.codec_name,
-        width: videoStream?.width,
-        height: videoStream?.height,
-      });
-    });
+// Interface para tipagem do output do ffprobe
+interface FfprobeStream {
+  codec_type?: string;
+  codec_name?: string;
+  width?: number;
+  height?: number;
+}
+
+interface FfprobeFormat {
+  format_name?: string;
+  duration?: string;
+}
+
+interface FfprobeOutput {
+  streams?: FfprobeStream[];
+  format?: FfprobeFormat;
+}
+
+async function probeVideo(filePath: string): Promise<{
+  durationSeconds: number | null;
+  formatName: string | undefined;
+  mimeType: string;
+  videoCodec: string | undefined;
+  audioCodec: string | undefined;
+  width: number | undefined;
+  height: number | undefined;
+}> {
+  // Usa ffprobe-static diretamente via child_process (substitui fluent-ffmpeg deprecated)
+  // REGRA 6: Enterprise-grade - sem dependências deprecated
+  const args = [
+    '-v', 'quiet',
+    '-print_format', 'json',
+    '-show_format',
+    '-show_streams',
+    filePath,
+  ];
+
+  const { stdout } = await execFileAsync(ffprobePath.path, args, {
+    maxBuffer: 10 * 1024 * 1024, // 10MB para arquivos grandes
   });
+
+  const data: FfprobeOutput = JSON.parse(stdout);
+  const formatName = data.format?.format_name;
+  const mimeType = guessMime(formatName);
+  const durationSeconds = data.format?.duration ? Number(data.format.duration) : null;
+  const videoStream = data.streams?.find((s) => s.codec_type === 'video');
+  const audioStream = data.streams?.find((s) => s.codec_type === 'audio');
+
+  return {
+    durationSeconds,
+    formatName,
+    mimeType,
+    videoCodec: videoStream?.codec_name,
+    audioCodec: audioStream?.codec_name,
+    width: videoStream?.width,
+    height: videoStream?.height,
+  };
 }
 
 function guessMime(formatName?: string): string {
