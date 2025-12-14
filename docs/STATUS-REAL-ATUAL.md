@@ -580,6 +580,10 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** `deploy-production.yml`: removida variável de ambiente `SERVICES_INPUT` redundante do step SSH. A variável era definida mas nunca referenciada - o input de serviços é corretamente passado via `DEPLOY_SERVICES` que é listada em `envs:` e usada no script.
 
+> **NOTA (14/12/2025):** `deploy-production.yml`: corrigida ordem de prioridade em `INPUT_VERSION`. Anteriormente `github.event.inputs.version` era priorizado sobre `inputs.version`, o que causava a versão passada via `workflow_call` (de release.yml) ser ignorada. Agora `inputs.version` é verificado primeiro, garantindo que a versão do release seja usada corretamente.
+
+> **NOTA (14/12/2025):** `deploy-production.yml`: função `fetch_repo_var()` enterprise para leitura de variáveis do repositório via GitHub API. Diferencia entre 200 (variável existe), 404 (usar default) e 401/403/5xx (fail-fast com erro explícito). Substitui `|| true` que mascarava erros de segurança/permissão.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -840,7 +844,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.49 - Remoção variável SERVICES_INPUT redundante no deploy*
+*Versão: 3.50 - Correções INPUT_VERSION + fetch_repo_var enterprise*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
