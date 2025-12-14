@@ -273,7 +273,7 @@ jobs:
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    uses: ./.github/workflows/deploy-production.yml
+    uses: fillipeguerrabtc/alice/.github/workflows/deploy-production.yml@main
     with:
       version: ${{ needs.create-release.outputs.version }}
       services: all
