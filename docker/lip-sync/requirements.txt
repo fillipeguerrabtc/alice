@@ -10,13 +10,13 @@
 # PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# torch 2.8.0 corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
 # COMPATIBILIDADE: Wav2Lip usa torch.load legado para carregar checkpoints
 # IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
 # que Wav2Lip carregue modelos corretamente (torch.load weights_only=False)
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 
 # =============================================================================
 # Dependencias Numericas

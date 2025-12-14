@@ -13,10 +13,13 @@
 # =============================================================================
 #
 # Atualizacoes realizadas em 14/12/2025:
-# - torch: 2.1.2 -> 2.6.0 (corrige CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# - torch: 2.1.2 -> 2.8.0 (corrige CVE-2025-32434, CVE-2024-31580, CVE-2024-31583, CVE-2025-3730, CVE-2025-2953)
+# - torchvision: 0.16.2 -> 0.23.0 (compativel com torch 2.8.0)
+# - torchaudio: 2.1.2 -> 2.8.0 (compativel com torch 2.8.0)
 # - transformers: 4.35.2 -> 4.53.0 (corrige 17+ CVEs)
 # - requests: 2.32.3 -> 2.32.4 (corrige CVE-2024-47081)
 # - pybreaker: 1.0.2 -> 1.4.1 (sem CVEs conhecidos)
+# - TTS: 0.22.0 -> coqui-tts 0.27.2 (fork mantido, compativel com torch 2.8.0)
 #
 # Se o Trivy detectar novos CVEs apos esta atualizacao, eles devem ser
 # analisados e corrigidos, NAO ignorados.

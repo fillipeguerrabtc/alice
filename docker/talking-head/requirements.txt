@@ -10,13 +10,13 @@
 # PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# torch 2.8.0 corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
 # COMPATIBILIDADE: SadTalker foi testado com PyTorch 2.0+ (HuggingFace Discuss, Dec 2025)
 # IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
 # que SadTalker e face-alignment carreguem modelos corretamente (torch.load legado)
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 
 # =============================================================================
 # Computer Vision

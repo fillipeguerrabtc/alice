@@ -10,12 +10,12 @@
 # PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# torch 2.8.0 corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
 # Compativel com coqui-tts 0.27.2 (fork mantido)
 # torchvision e torchaudio sao OBRIGATORIOS para Coqui TTS (processamento de audio)
-torch==2.6.0
-torchvision==0.21.0
-torchaudio==2.6.0
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 
 # =============================================================================
 # TTS - Coqui Text-to-Speech (Fork Mantido)
