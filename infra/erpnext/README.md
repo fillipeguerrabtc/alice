@@ -1,7 +1,7 @@
 # ERPNext SSO com Alice IdP
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Dezembro de 2025
+**Data:** 14 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -13,7 +13,7 @@ O ERPNext v15 está configurado para usar **Alice Enterprise Platform** como Ide
 ┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
 │                 │ ◄────────────────────► │                 │
 │    ERPNext      │   Authorization Code   │   Alice IdP     │
-│    v15.88.0     │                        │  (auth-service) │
+│    v15.91.3     │                        │  (auth-service) │
 │                 │                        │                 │
 └─────────────────┘                        └─────────────────┘
          │                                          │
@@ -35,13 +35,13 @@ O stack ERPNext inclui:
 |-----------------------|------------------------------|---------------------------|
 | erpnext-db            | mariadb:10.11                | Banco de dados            |
 | erpnext-redis         | redis:7-alpine               | Cache e filas             |
-| erpnext-backend       | frappe/erpnext:v15.88.0      | Backend Python            |
-| erpnext-frontend      | frappe/frappe-nginx:v15.88.0 | Servidor web              |
-| erpnext-socketio      | frappe/frappe-socketio:v15.88.0| Real-time               |
-| erpnext-scheduler     | frappe/erpnext:v15.88.0      | Jobs agendados            |
-| erpnext-worker-*      | frappe/erpnext:v15.88.0      | Workers de background     |
+| erpnext-backend       | frappe/erpnext:v15.91.3      | Backend Python            |
+| erpnext-frontend      | frappe/erpnext:v15.91.3      | Servidor web (NGINX)      |
+| erpnext-socketio      | frappe/erpnext:v15.91.3      | Real-time WebSocket       |
+| erpnext-scheduler     | frappe/erpnext:v15.91.3      | Jobs agendados            |
+| erpnext-worker-*      | frappe/erpnext:v15.91.3      | Workers de background     |
 
-**SEGURANÇA:** v15.88.0 corrige CVE-2025-55732 e CVE-2025-55731 (SQL Injection críticos).
+**SEGURANÇA:** v15.91.3 inclui TODOS os patches de segurança (SQL Injection, XSS, etc).
 Ver `docs/FRAPPE-PATCHING.md` para detalhes.
 
 ## Configuração
@@ -189,5 +189,5 @@ O ERPNext será integrado com:
 
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro*  
-*Atualizado: 09 de Dezembro de 2025*  
-*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Atualizado: 14 de Dezembro de 2025*  
+*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*

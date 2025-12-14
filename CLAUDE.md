@@ -90,7 +90,7 @@ Alice employs a microservices architecture with 43 containerized services orches
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
 - **Database**: PostgreSQL with pgvector extension.
 - **Observability**: Prometheus 3.8.0, Grafana OSS 11.6.2, Jaeger 1.76.0, Loki 3.6.3, Promtail 3.6.3, Alertmanager 0.27.0, Vector 0.51.1, OpenTelemetry Collector 0.141.0, Langfuse 3.139.0, Node Exporter 1.8.2, cAdvisor 0.49.1.
-- **API Gateway**: Traefik v3.6.
+- **API Gateway**: Traefik v3.6.4.
 - **CI/CD**: GitHub Actions.
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
 

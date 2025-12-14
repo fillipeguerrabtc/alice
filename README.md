@@ -274,7 +274,7 @@ Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 alice/
 ├── apps/                           # Microserviços independentes
 │   ├── frontend-service/           # React + Vite SPA
-│   ├── api-gateway/                # Traefik v3.1 config
+│   ├── api-gateway/                # Traefik v3.6.4 config (dev only)
 │   ├── auth-service/               # OAuth/SAML/Local + RBAC
 │   ├── chat-service/               # LLM Proxy + WebSocket
 │   ├── rag-service/                # Embeddings + pgvector
@@ -330,7 +330,7 @@ alice/
 - Passport.js, openid-client
 
 ### Infraestrutura
-- Docker, Traefik v3.6
+- Docker, Traefik v3.6.4
 - **Google Distroless** (6 serviços Node.js)
 - nginx:1.27-alpine (frontend)
 - GitHub Actions CI/CD
@@ -350,7 +350,7 @@ alice/
 
 | Documento | Descrição |
 |-----------|-----------|
-| [CLAUDE.md](CLAUDE.md) | Contexto completo do projeto e 17 regras |
+| [CLAUDE.md](CLAUDE.md) | Contexto completo do projeto e 18 regras |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deploy para produção |
 | [docs/SECRETS.md](docs/SECRETS.md) | Guia de secrets e webhooks |
 | [docs/STATUS-REAL-ATUAL.md](docs/STATUS-REAL-ATUAL.md) | Estado atual da plataforma (multimodal incluso) |
@@ -403,12 +403,12 @@ Proprietário - Todos os direitos reservados.
 
 | Imagem | Versão | Status |
 |--------|--------|--------|
-| Traefik | v3.6 | Pinned |
+| Traefik | v3.6.4 | Pinned |
 | PostgreSQL | pg16 (pgvector) | Pinned |
-| MariaDB | 10.11.15 | Pinned |
-| Redis | 7.4-alpine | Pinned |
-| ERPNext | v15.91.0 | Pinned |
-| Vector | 0.43.1-alpine | Pinned |
+| MariaDB | 10.11 | Pinned |
+| Redis | 7.4.6-alpine | Pinned |
+| ERPNext | v15.91.3 | Pinned |
+| Vector | 0.51.1-alpine | Pinned |
 | pgBackRest | 2.56.0 | Pinned |
 | Docker Socket Proxy | latest | Pinned |
 | BusyBox | 1.37 | Pinned |

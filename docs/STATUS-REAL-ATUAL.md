@@ -62,7 +62,7 @@
 | 8 | Multimodal Inference | `apps/clip-inference-service` | alice-clip-inference | 8000 | Python, PyTorch, FastAPI - Embeddings (texto + imagem) + Transcrição 100% LOCAL |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
-> **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.3 atua como API Gateway.
+> **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
 
 ---
 
@@ -415,7 +415,7 @@ Retenção Arquivo:   30 dias
 |---|-----------|--------|--------|
 | 1 | dockerproxy | tecnativa/docker-socket-proxy | Proxy seguro Docker API |
 | 2 | traefik-init | busybox:1.36 | Inicializa ACME |
-| 3 | traefik | traefik:v3.3 | API Gateway + SSL + Rate Limiting |
+| 3 | traefik | traefik:v3.6.4 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
 | 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
 | 6 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |

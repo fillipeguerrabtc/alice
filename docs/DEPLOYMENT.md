@@ -22,9 +22,9 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 |---|---------|-----------|-----------|------------|
 | 1 | **Docker Socket Proxy** | `dockerproxy` | Proxy seguro para API Docker. Expõe apenas endpoints necessários para Traefik, sem acesso de escrita. | Tecnativa Docker Socket Proxy |
 | 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.37 |
-| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.6 |
+| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.6.4 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4 Alpine |
+| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.6 Alpine |
 | 6 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
 ### Categoria 2: Microsserviços Alice (8 serviços)
