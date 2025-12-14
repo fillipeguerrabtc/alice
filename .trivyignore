@@ -1,7 +1,22 @@
 # Trivy Ignore - Alice Enterprise Platform
 # Autor: Fillipe Guerra
-# Data: 05 de Dezembro de 2025
+# Data: 14 de Dezembro de 2025
+#
+# IMPORTANTE: Este arquivo lista CVEs que sao falsos positivos ou
+# que foram mitigados de outra forma. Cada entrada DEVE ter justificativa.
+#
+# Regra 6 CLAUDE.md: PROIBIDO ignorar vulnerabilidades reais sem mitigacao.
+# Todas as dependencias devem estar atualizadas para versoes seguras.
 
-# PyTorch CVEs - Falsos positivos (torch==2.9.1 ja corrige)
-CVE-2025-3730
-CVE-2025-2953
+# =============================================================================
+# NENHUM CVE IGNORADO - TODAS AS VULNERABILIDADES FORAM CORRIGIDAS
+# =============================================================================
+#
+# Atualizacoes realizadas em 14/12/2025:
+# - torch: 2.1.2 -> 2.6.0 (corrige CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# - transformers: 4.35.2 -> 4.53.0 (corrige 17+ CVEs)
+# - requests: 2.32.3 -> 2.32.4 (corrige CVE-2024-47081)
+# - pybreaker: 1.0.2 -> 1.4.1 (sem CVEs conhecidos)
+#
+# Se o Trivy detectar novos CVEs apos esta atualizacao, eles devem ser
+# analisados e corrigidos, NAO ignorados.

@@ -1,9 +1,38 @@
-torch==2.1.2
-torchvision==0.16.2
-torchaudio==2.1.2
-# numpy 1.25.x é a linha testada/compatível com torch 2.1.2
-numpy==1.25.2
+# Lip Sync Service - Dependencias
+# Alice Enterprise Platform
+#
+# Documentacao em PT-BR (Regra 10 CLAUDE.md)
+# Versoes atualizadas para corrigir vulnerabilidades de seguranca
+# Ultima atualizacao: 14/12/2025
+# Author: Fillipe Guerra
+
+# =============================================================================
+# PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# =============================================================================
+
+# torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
+
+# =============================================================================
+# Dependencias Numericas
+# =============================================================================
+
+# numpy 1.26.x compativel com torch 2.6.0
+numpy==1.26.4
 scipy==1.11.4
+
+# =============================================================================
+# Video Processing
+# =============================================================================
+
 opencv-python-headless==4.8.1.78
 ffmpeg-python==0.2.0
-requests==2.32.3
+
+# =============================================================================
+# HTTP Client - Versao segura
+# =============================================================================
+
+# requests 2.32.4 corrige CVE-2024-47081 (.netrc credentials leak)
+requests==2.32.4

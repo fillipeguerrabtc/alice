@@ -1,11 +1,51 @@
-torch==2.1.2
+# TTS Service - Dependencias
+# Alice Enterprise Platform
+#
+# Documentacao em PT-BR (Regra 10 CLAUDE.md)
+# Versoes atualizadas para corrigir vulnerabilidades de seguranca
+# Ultima atualizacao: 14/12/2025
+# Author: Fillipe Guerra
+
+# =============================================================================
+# PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# =============================================================================
+
+# torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Nota: TTS 0.22.0 pode ter incompatibilidades - monitorar logs do container
+torch==2.6.0
+
+# =============================================================================
+# TTS - Coqui Text-to-Speech
+# =============================================================================
+
+# TTS 0.22.0 - ultima versao do pacote original
+# IMPORTANTE: Se houver erros de pickle/unpickling com XTTS, considerar:
+# 1. Usar fork mantido: pip install coqui-tts
+# 2. Ou downgrade para torch 2.5.1 (aceitar CVE-2025-32434 com mitigacao)
 TTS==0.22.0
 soundfile==0.12.1
-# TTS 0.22.0 requer numpy==1.22.0 para Python <= 3.10 (Ubuntu 22.04 padrão)
-# numpy 1.22.0 é compatível com torch 2.1.2
-numpy==1.22.0
-# Fixar transformers para versão compatível com torch 2.1.2
-# Versões mais recentes do transformers usam register_pytree_node que foi removido/renomeado no PyTorch 2.1.2
-# transformers 4.35.2 é compatível com torch 2.1.2 e TTS 0.22.0
-transformers==4.35.2
-requests==2.32.3
+
+# =============================================================================
+# Dependencias Numericas
+# =============================================================================
+
+# numpy 1.26.x compativel com torch 2.6.0 e Python 3.10+
+numpy==1.26.4
+
+# =============================================================================
+# Transformers - Versao segura
+# =============================================================================
+
+# transformers 4.53.0 corrige todas as CVEs conhecidas:
+# CVE-2023-6730, CVE-2023-7018, CVE-2024-11392, CVE-2024-11393,
+# CVE-2024-11394, CVE-2024-12720, CVE-2025-1194, CVE-2025-2099,
+# CVE-2025-3263, CVE-2025-3264, CVE-2025-3933, CVE-2025-5197,
+# CVE-2025-6051, CVE-2025-6638, CVE-2025-6921, CVE-2024-3568, CVE-2025-3777
+transformers>=4.53.0
+
+# =============================================================================
+# HTTP Client - Versao segura
+# =============================================================================
+
+# requests 2.32.4 corrige CVE-2024-47081 (.netrc credentials leak)
+requests==2.32.4

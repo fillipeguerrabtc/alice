@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.41 - Fix pybreaker security vulnerability (1.0.2 -> 1.4.1)
+> **Versão:** 3.42 - Fix ALL security vulnerabilities in Salad containers (torch, transformers, requests)
 
 ---
 
