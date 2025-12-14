@@ -31,11 +31,16 @@ concurrency:
   cancel-in-progress: true
 
 # =============================================================================
-# SEGURANÇA: Permissões mínimas (Best Practices 2025)
+# SEGURANÇA: Permissões no nível do workflow (Best Practices 2025)
+# IMPORTANTE: O job trigger-deploy chama deploy-production.yml via workflow_call.
+# Jobs não podem escalar permissões além do workflow-level, então todas as
+# permissões necessárias pelo workflow chamado devem estar aqui.
 # =============================================================================
 permissions:
-  contents: write
-  packages: write
+  contents: write          # Necessário para criar tags e releases
+  packages: write          # Necessário para push ao GHCR (build-images + deploy)
+  security-events: write   # Necessário para upload SARIF no deploy (security-scan jobs)
+  actions: read            # Necessário para verificar Code Scanning habilitado no deploy
 
 env:
   REGISTRY: ghcr.io
