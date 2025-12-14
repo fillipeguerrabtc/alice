@@ -2010,8 +2010,11 @@ jobs:
               echo "✅ curl: instalado"
             else
               echo "⚠️ curl não encontrado, instalando..."
-              apt-get update -qq && apt-get install -y curl >/dev/null 2>&1
-              echo "✅ curl instalado"
+              apt-get update -qq && apt-get install -y curl >/dev/null 2>&1 || {
+                echo "::error::Falha ao instalar curl. Deploy abortado."
+                exit 1
+              }
+              echo "✅ curl instalado com sucesso"
             fi
             
             echo "=============================================="
