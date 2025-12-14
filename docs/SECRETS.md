@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 13 de Dezembro de 2025
+**Data:** 14 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -252,8 +252,8 @@ Estes são necessários para o deploy funcionar:
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 13 de Dezembro de 2025  
-> **Resumo:** 47 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 14 de Dezembro de 2025  
+> **Resumo:** 49 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -336,14 +336,20 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|
 | `LANGFUSE_SECRET_KEY` | ✅ |
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
-| `LANGFUSE_SALT` | ⏳ **OBRIGATÓRIO v3** (adicionar - `openssl rand -base64 16`) |
-| `LANGFUSE_ENCRYPTION_KEY` | ⏳ **OBRIGATÓRIO v3** (adicionar - `openssl rand -hex 32`) |
+| `LANGFUSE_SALT` | ✅ **OBRIGATÓRIO v3** |
+| `LANGFUSE_ENCRYPTION_KEY` | ✅ **OBRIGATÓRIO v3** |
 | `SMTP_PASSWORD` (arquivo) | ✅ |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
 | `LANGFUSE_DB_NAME` | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
+
+### Web Search (SearXNG)
+
+| Secret | Status |
+|--------|--------|
+| `SEARXNG_SECRET_KEY` | ✅ |
 
 ### Backup (pgBackRest)
 
@@ -427,7 +433,7 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 14 de Dezembro de 2025*  
-*Versão: 6.8*  
+*Versão: 6.9*  
 *Total de Secrets: 49 configurados (44 obrigatórios + 5 opcionais/novos)*  
 *Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  

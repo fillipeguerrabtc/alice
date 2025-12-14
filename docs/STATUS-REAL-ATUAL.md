@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.58 - Code Review Enterprise completa (zero violações)
+> **Versão:** 3.59 - Correção crítica secrets Langfuse/SearXNG + checkout versionado
 
 ---
 
@@ -605,11 +605,15 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **CODE REVIEW ENTERPRISE COMPLETA**: Revisão sistemática de todos os 8 microsserviços Alice + 5 packages compartilhados. Resultado: **ZERO VIOLAÇÕES** das 18 regras do CLAUDE.md. Verificados: (1) Zero `any`/`as any` não justificado, (2) Zero `console.log` em código (apenas documentação), (3) Zero TODO/FIXME pendentes, (4) Zero in-memory storage para estado persistente, (5) Health checks `/health` e `/ready` em todos os serviços, (6) Circuit breakers implementados, (7) Logging estruturado via Pino (Node.js) e JSON (Python), (8) TypeScript strict mode habilitado em todos os packages/services.
 
+> **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Secrets Faltantes no .env.prod**: Identificado e corrigido bug crítico onde 3 secrets obrigatórios NÃO estavam sendo escritos no `.env.prod` durante deploy: (1) `LANGFUSE_SALT` - obrigatório Langfuse v3, (2) `LANGFUSE_ENCRYPTION_KEY` - obrigatório Langfuse v3, (3) `SEARXNG_SECRET_KEY` - obrigatório SearXNG. O `docker-compose.prod.yml` referenciava estes secrets mas o workflow não os exportava. Corrigido em `deploy-production.yml` linhas 1787-1797.
+
+> **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Checkout Versionado no Deploy**: Corrigido bug onde script SSH sempre fazia `git checkout main` hardcoded, ignorando a versão/TAG passada pelo `release.yml`. Agora o script usa `DEPLOY_VERSION` para checkout da TAG específica (ex: `v1.0.0`) ou branch, garantindo reprodutibilidade total: código deployado = código das imagens Docker buildadas da mesma TAG.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
 
-### Por Categoria (Total: ~39, 35 configurados no GitHub)
+### Por Categoria (Total: ~42, 38 configurados no GitHub)
 
 | Categoria | Secrets |
 |-----------|---------|
@@ -620,7 +624,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Payments** | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET |
 | **Communication** | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, RESEND_API_KEY |
 | **ERPNext** | ERPNEXT_ADMIN_PASSWORD, ERPNEXT_DB_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
-| **Observability** | LANGFUSE_SECRET_KEY, LANGFUSE_NEXT_AUTH_SECRET, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD |
+| **Observability** | LANGFUSE_SECRET_KEY, LANGFUSE_NEXT_AUTH_SECRET, LANGFUSE_SALT, LANGFUSE_ENCRYPTION_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD |
+| **SearXNG** | SEARXNG_SECRET_KEY |
 | **Backup** | BACKUP_CIPHER_PASS |
 | **SSL** | ACME_EMAIL |
 | **Internal** | INTERNAL_API_SECRET |
@@ -865,7 +870,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.58 - Code Review Enterprise completa (zero violações)*
+*Versão: 3.59 - Correção crítica secrets Langfuse/SearXNG + checkout versionado*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

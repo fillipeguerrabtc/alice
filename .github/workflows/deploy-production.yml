@@ -1784,12 +1784,17 @@ jobs:
             printf 'ADMIN_USER=%s\n' "${ADMIN_USER}"
             printf 'ADMIN_PWD=%s\n' "${ADMIN_PWD}"
             printf '\n'
-            printf '# Langfuse (Métricas LLM)\n'
+            printf '# Langfuse (Métricas LLM - v3 requer SALT e ENCRYPTION_KEY)\n'
             printf 'LANGFUSE_SECRET_KEY=%s\n' "${{ secrets.LANGFUSE_SECRET_KEY }}"
             printf 'LANGFUSE_NEXT_AUTH_SECRET=%s\n' "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}"
+            printf 'LANGFUSE_SALT=%s\n' "${{ secrets.LANGFUSE_SALT }}"
+            printf 'LANGFUSE_ENCRYPTION_KEY=%s\n' "${{ secrets.LANGFUSE_ENCRYPTION_KEY }}"
             printf 'LANGFUSE_DB_USER=%s\n' "${LANGFUSE_DB_USER}"
             printf 'LANGFUSE_DB_PASSWORD=%s\n' "${LANGFUSE_DB_PASSWORD}"
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
+            printf '\n'
+            printf '# SearXNG (Metabusca interna - Web Search)\n'
+            printf 'SEARXNG_SECRET_KEY=%s\n' "${{ secrets.SEARXNG_SECRET_KEY }}"
           } > .env.prod
           chmod 600 .env.prod
           
@@ -1829,6 +1834,10 @@ jobs:
           IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
           # Serviços para deploy (workflow_dispatch único trigger)
           DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
+          # Versão/TAG para checkout (garante reprodutibilidade - mesma tag = mesmo código)
+          # Quando release.yml dispara com ref:TAG, GITHUB_REF contém refs/tags/vX.Y.Z
+          # Para workflow_dispatch manual, usa version input ou fallback para main
+          DEPLOY_VERSION: ${{ github.event.inputs.version || github.ref_name || 'main' }}
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -1867,7 +1876,7 @@ jobs:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST
+          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST
           script: |
             set -e
             
@@ -1914,12 +1923,28 @@ jobs:
             # =====================================================
             REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
 
+            # DEPLOY_VERSION: TAG da release (ex: v1.0.0) ou 'main' para deploy manual
+            # Garante reprodutibilidade: mesmo código das imagens Docker buildadas
+            TARGET_REF="${DEPLOY_VERSION:-main}"
+            echo "📦 Deploy da versão: ${TARGET_REF}"
+            
             if [ -d "app/.git" ]; then
               cd app
               git remote set-url origin "${REPO_URL}" || { echo "::error::Falha ao setar remote origin"; exit 1; }
-              git fetch origin || { echo "::error::Falha ao fazer git fetch origin"; exit 1; }
-              git checkout main || { echo "::error::Falha ao fazer git checkout main"; exit 1; }
-              git reset --hard origin/main || { echo "::error::Falha ao fazer git reset --hard origin/main"; exit 1; }
+              git fetch origin --tags || { echo "::error::Falha ao fazer git fetch origin"; exit 1; }
+              
+              # Checkout da TAG ou branch especificada (não hardcoded main)
+              # Para tags: git checkout tags/v1.0.0
+              # Para branches: git checkout main
+              if [[ "${TARGET_REF}" == v* ]]; then
+                echo "🏷️ Checkout da TAG: ${TARGET_REF}"
+                git checkout "tags/${TARGET_REF}" || { echo "::error::Falha ao fazer git checkout tags/${TARGET_REF}"; exit 1; }
+              else
+                echo "🌿 Checkout da branch: ${TARGET_REF}"
+                git checkout "${TARGET_REF}" || { echo "::error::Falha ao fazer git checkout ${TARGET_REF}"; exit 1; }
+                git reset --hard "origin/${TARGET_REF}" || { echo "::error::Falha ao fazer git reset --hard origin/${TARGET_REF}"; exit 1; }
+              fi
+              
               git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git" || { echo "::error::Falha ao restaurar remote HTTPS"; exit 1; }
               cd ..
             else
@@ -1927,8 +1952,20 @@ jobs:
               git clone "${REPO_URL}" app || { echo "::error::Falha ao clonar repositório ${REPO_FULL_NAME}"; exit 1; }
               cd app
               git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git" || { echo "::error::Falha ao ajustar remote HTTPS pós-clone"; exit 1; }
+              
+              # Após clone, checkout da versão específica
+              if [[ "${TARGET_REF}" == v* ]]; then
+                echo "🏷️ Checkout da TAG após clone: ${TARGET_REF}"
+                git fetch origin --tags || { echo "::error::Falha ao fazer git fetch tags"; exit 1; }
+                git checkout "tags/${TARGET_REF}" || { echo "::error::Falha ao fazer git checkout tags/${TARGET_REF}"; exit 1; }
+              elif [ "${TARGET_REF}" != "main" ]; then
+                echo "🌿 Checkout da branch após clone: ${TARGET_REF}"
+                git checkout "${TARGET_REF}" || { echo "::error::Falha ao fazer git checkout ${TARGET_REF}"; exit 1; }
+              fi
               cd ..
             fi
+            
+            echo "✅ Código atualizado para: ${TARGET_REF}"
 
             # REGRA 6: mover .env.prod imediatamente após clone/update
             if [ -f /tmp/.env.prod ]; then
