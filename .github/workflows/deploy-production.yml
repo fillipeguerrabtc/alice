@@ -1719,6 +1719,9 @@ jobs:
             printf 'SALAD_LONG_VIDEO_IMAGE=%s\n' "${{ secrets.SALAD_LONG_VIDEO_IMAGE }}"
             printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
             printf '\n'
+            printf '# RAG Service (URLs públicas)\n'
+            printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
+            printf '\n'
             printf '# CLIP Inference (multimodal embeddings)\n'
             printf 'CLIP_API_TOKEN=%s\n' "${{ secrets.CLIP_API_TOKEN }}"
             printf '\n'
