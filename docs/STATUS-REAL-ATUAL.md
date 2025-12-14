@@ -584,6 +584,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** `deploy-production.yml`: função `fetch_repo_var()` enterprise para leitura de variáveis do repositório via GitHub API. Diferencia entre 200 (variável existe), 404 (usar default) e 401/403/5xx (fail-fast com erro explícito). Substitui `|| true` que mascarava erros de segurança/permissão.
 
+> **NOTA (14/12/2025):** `release.yml`: adicionado bloco `permissions` ao job `trigger-deploy` para workflow_call. Quando um workflow chama outro via `workflow_call`, as permissões do chamado são limitadas pelas do chamador. Sem permissões explícitas, o job herdava `none` causando falha. Permissões adicionadas: `contents: read`, `packages: write`, `security-events: write`, `actions: read`.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -844,7 +846,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.50 - Correções INPUT_VERSION + fetch_repo_var enterprise*
+*Versão: 3.51 - Correção permissões workflow_call em release.yml*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

@@ -273,6 +273,17 @@ jobs:
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
     if: ${{ github.ref == 'refs/heads/main' && (!github.event.inputs.prerelease || github.event.inputs.prerelease == 'false') && needs.build-images.result == 'success' }}
+    # IMPORTANTE: Permissões necessárias para workflow_call
+    # O workflow chamado (deploy-production.yml) requer estas permissões:
+    # - security-events: write (jobs security-scan e image-security-scan - upload SARIF)
+    # - actions: read (workflow level - verificar Code Scanning)
+    # - packages: write (job build-docker - push para GHCR)
+    # - contents: read (todos os jobs - checkout)
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+      actions: read
     uses: ./.github/workflows/deploy-production.yml
     with:
       version: ${{ needs.create-release.outputs.version }}
