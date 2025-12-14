@@ -1427,6 +1427,7 @@ jobs:
     needs: [build-docker, image-security-scan]
     # Deploy automático se build e security scan passarem
     if: needs.build-docker.result == 'success' && needs.image-security-scan.result == 'success'
+    environment: production
     
     permissions:
       contents: read
