@@ -11,6 +11,9 @@
 # =============================================================================
 
 # torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# COMPATIBILIDADE: SadTalker foi testado com PyTorch 2.0+ (HuggingFace Discuss, Dec 2025)
+# IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
+# que SadTalker e face-alignment carreguem modelos corretamente (torch.load legado)
 torch==2.6.0
 torchvision==0.21.0
 torchaudio==2.6.0
@@ -22,7 +25,9 @@ torchaudio==2.6.0
 opencv-python-headless==4.8.1.78
 imageio==2.34.0
 imageio-ffmpeg==0.4.9
-face-alignment==1.3.5
+# face-alignment 1.4.1 - versao mais recente (Aug 2023)
+# Requer TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 no Dockerfile para PyTorch 2.6+
+face-alignment==1.4.1
 
 # =============================================================================
 # Dependencias Numericas

@@ -1,14 +1,20 @@
 # Dockerfile para lip-sync service
 # Enterprise-grade: scripts externos para lógica complexa (melhor prática Docker)
 # Autor: Fillipe Guerra
-# Data: 13/12/2025
+# Data: 14/12/2025
+# Atualização: Adicionado TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD para compatibilidade PyTorch 2.6+
 
 FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    # PyTorch 2.6+ mudou default de torch.load para weights_only=True
+    # Wav2Lip usa torch.load sem weights_only explícito para carregar modelos
+    # Esta variável permite carregar modelos de fontes confiáveis (HuggingFace)
+    # Ref: https://docs.pytorch.org/docs/stable/miscellaneous_environment_variables.html
+    TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1
 
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \

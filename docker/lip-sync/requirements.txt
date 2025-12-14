@@ -11,6 +11,9 @@
 # =============================================================================
 
 # torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# COMPATIBILIDADE: Wav2Lip usa torch.load legado para carregar checkpoints
+# IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
+# que Wav2Lip carregue modelos corretamente (torch.load weights_only=False)
 torch==2.6.0
 torchvision==0.21.0
 torchaudio==2.6.0
