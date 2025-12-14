@@ -1873,24 +1873,32 @@ jobs:
             cd /opt/alice/app/infra/docker
 
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
-              # Garantir pip/setuptools/distutils disponíveis
-              if ! command -v pip3 >/dev/null 2>&1; then
-                echo "⚠️ pip3 não encontrado, instalando python3-pip..."
-                apt-get update -qq && apt-get install -y python3-pip python3-distutils python3-setuptools >/dev/null 2>&1 || {
-                  echo "❌ ERRO CRÍTICO: Não foi possível instalar python3-pip/distutils/setuptools"
+              # Garantir ruamel.yaml disponível (primeiro via apt, depois pip como fallback)
+              if ! python3 - <<'PY' >/dev/null 2>&1; then
+from ruamel import yaml  # noqa
+PY
+              then
+                echo "⚠️ ruamel.yaml não encontrado, tentando instalar via apt..."
+                apt-get update -qq && apt-get install -y python3-ruamel.yaml python3-pip python3-distutils python3-setuptools >/dev/null 2>&1 || {
+                  echo "❌ ERRO CRÍTICO: Falha ao instalar python3-ruamel.yaml (apt)"
                   exit 1
                 }
               fi
-              # Instalar ruamel.yaml (sem silencioso para logar eventual falha)
-              PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
-                echo "⚠️  Falha no pip (modo padrão), tentando --user..."
-                pip3 install --user ruamel.yaml || {
-                  echo "❌ ERRO CRÍTICO: Não foi possível instalar ruamel.yaml"
-                  echo "   Versionamento automático é obrigatório para supply chain security"
-                  echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
-                  exit 1
+              # Se ainda não estiver presente, tentar pip (global com break-system-packages) e, por fim, --user
+              if ! python3 - <<'PY' >/dev/null 2>&1; then
+from ruamel import yaml  # noqa
+PY
+              then
+                PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
+                  echo "⚠️  Falha no pip (modo padrão), tentando --user..."
+                  pip3 install --user ruamel.yaml || {
+                    echo "❌ ERRO CRÍTICO: Não foi possível instalar ruamel.yaml"
+                    echo "   Versionamento automático é obrigatório para supply chain security"
+                    echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
+                    exit 1
+                  }
                 }
-              }
+              fi
 
               cd /opt/alice/app
               python3 scripts/update-component-versions.py \
