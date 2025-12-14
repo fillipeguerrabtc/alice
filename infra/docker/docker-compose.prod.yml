@@ -2339,7 +2339,7 @@ services:
   # CADVISOR - Métricas de containers Docker
   # ===========================================================================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1@sha256:df9ecdeb7be0287defd063fa6bae7c14def5cdbf0b8d4754e1691f7b3e80e124
+    image: gcr.io/cadvisor/cadvisor:v0.49.1@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388
     platform: linux/amd64
     container_name: alice-cadvisor
     restart: unless-stopped

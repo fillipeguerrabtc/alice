@@ -2146,9 +2146,6 @@ jobs:
                 --langfuse-digest "${LANGFUSE_DIGEST:-}" \
                 --erpnext-version "${ERPNEXT_VERSION}" \
                 --erpnext-digest "${ERPNEXT_DIGEST:-}" \
-                --erpnext-nginx-digest "${ERPNEXT_NGINX_DIGEST:-}" \
-                --erpnext-socketio-digest "${ERPNEXT_SOCKETIO_DIGEST:-}" \
-                --erpnext-worker-digest "${ERPNEXT_WORKER_DIGEST:-}" \
                 --docker-socket-proxy-version "${DOCKER_SOCKET_PROXY_VERSION}" \
                 --docker-socket-proxy-digest "${DOCKER_SOCKET_PROXY_DIGEST:-}" \
                 --busybox-version "${BUSYBOX_VERSION}" \

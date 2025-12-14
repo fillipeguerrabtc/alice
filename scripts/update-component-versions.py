@@ -73,35 +73,24 @@ COMPONENT_CONFIG = {
         "version_prefix": "",
         "services": ["langfuse"],
     },
+    # ENTERPRISE: ERPNext usa UMA ÚNICA imagem (frappe/erpnext) para TUDO
+    # NÃO existem imagens separadas como frappe/erpnext-worker ou frappe/erpnext-nginx
+    # Backend, Frontend (nginx), Workers e Scheduler usam a mesma imagem com comandos diferentes
     "erpnext": {
         "docker_image": "frappe/erpnext",
         "version_prefix": "v15.",
         "services": [
             "erpnext-backend",
-        ],
-    },
-    "erpnext-worker": {
-        "docker_image": "frappe/erpnext-worker",
-        "version_prefix": "v15.",
-        "services": [
+            "erpnext-frontend",  # Usa mesma imagem frappe/erpnext
             "erpnext-worker-default",
             "erpnext-worker-default-2",
             "erpnext-worker-short",
             "erpnext-worker-short-2",
             "erpnext-worker-long",
             "erpnext-worker-long-2",
-            "erpnext-scheduler",  # scheduler também usa frappe/erpnext-worker
+            "erpnext-scheduler",
+            "erpnext-websocket",  # Websocket também usa frappe/erpnext (não frappe-socketio)
         ],
-    },
-    "erpnext-nginx": {
-        "docker_image": "frappe/erpnext-nginx",
-        "version_prefix": "v15.",
-        "services": ["erpnext-frontend"],
-    },
-    "erpnext-socketio": {
-        "docker_image": "frappe/frappe-socketio",
-        "version_prefix": "v15.",
-        "services": ["erpnext-websocket"],
     },
     "docker-socket-proxy": {
         "docker_image": "tecnativa/docker-socket-proxy",
@@ -240,9 +229,9 @@ def main():
     parser.add_argument("--pgvector-tag", default="pg16", help="Tag do pgvector")
     parser.add_argument("--pgvector-digest", default="", help="SHA256 digest do pgvector")
     
-    # ERPNext tem múltiplas imagens
-    for suffix in ["nginx", "socketio", "worker"]:
-        parser.add_argument(f"--erpnext-{suffix}-digest", default="", help=f"SHA256 digest do erpnext-{suffix}")
+    # NOTA: ERPNext usa UMA imagem (frappe/erpnext) para TUDO
+    # NÃO existem imagens separadas como frappe/erpnext-nginx ou frappe/erpnext-worker
+    # Argumentos obsoletos removidos para evitar confusão
     
     args = parser.parse_args()
     
@@ -284,18 +273,9 @@ def main():
             digests[component] = digest if digest else None
             print(f"✅ {component}: {version}{' @' + digest[:20] + '...' if digest else ' (sem digest)'}")
     
-    # ERPNext imagens adicionais (herdam versão do erpnext)
-    # Bug 2 corrigido: erpnext-worker é componente separado (imagem frappe/erpnext-worker)
-    if "erpnext" in versions:
-        erpnext_version = versions["erpnext"]
-        for suffix in ["nginx", "socketio", "worker"]:
-            component = f"erpnext-{suffix}"
-            digest_attr = f"erpnext_{suffix}_digest"
-            digest = getattr(args, digest_attr, None) or ""
-            
-            versions[component] = erpnext_version
-            digests[component] = digest if digest else None
-            print(f"✅ {component}: {erpnext_version}{' @' + digest[:20] + '...' if digest else ' (sem digest)'}")
+    # NOTA: ERPNext usa UMA ÚNICA imagem (frappe/erpnext) para TUDO
+    # Backend, Frontend, Workers, Scheduler e Websocket usam a mesma imagem
+    # Código obsoleto removido - não existem mais componentes separados
     
     # pgvector usa tag (não versão)
     pgvector_tag = getattr(args, "pgvector_tag", None) or "pg16"
