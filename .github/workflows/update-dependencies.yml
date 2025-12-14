@@ -11,6 +11,12 @@
 name: Update Dependencies
 
 on:
+  # ENTERPRISE: Explicitamente DESABILITAR trigger de push
+  # Sem isso, GitHub Actions pode disparar o workflow em push por comportamento padrão
+  push:
+    branches-ignore:
+      - '**'  # Ignora TODOS os branches - workflow NUNCA roda em push
+  
   # Executar semanalmente (domingos às 02:00 UTC)
   schedule:
     - cron: '0 2 * * 0'  # Todo domingo às 02:00 UTC
