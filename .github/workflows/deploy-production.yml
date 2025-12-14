@@ -1800,10 +1800,10 @@ jobs:
           GH_PAT: ${{ secrets.GH_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
-          # Compatível com workflow_call (inputs.*) e workflow_dispatch (github.event.inputs.*)
+          # Tag de imagem: sempre usar o output do build (sha), garantindo alinhamento com o que foi escaneado pelo Trivy
+          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
+          # Serviços: compatível com workflow_call (inputs.*) e workflow_dispatch (github.event.inputs.*)
           SERVICES_INPUT: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.services || 'all')) || inputs.services || 'all' }}
-          VERSION_INPUT: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.version || needs.build-docker.outputs.image_tag || github.sha)) || inputs.version || needs.build-docker.outputs.image_tag || github.sha }}
-          IMAGE_TAG: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.version || needs.build-docker.outputs.image_tag || github.sha)) || inputs.version || needs.build-docker.outputs.image_tag || github.sha }}
           DEPLOY_SERVICES: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.services || 'all')) || inputs.services || 'all' }}
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
