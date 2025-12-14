@@ -1,11 +1,11 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 13 de Dezembro de 2025
+**Data:** 14 de Dezembro de 2025
 
-## Visão Geral da Arquitetura - 42 Containers em Produção
+## Visão Geral da Arquitetura - 43 Containers em Produção
 
-A plataforma Alice é composta por **42 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
 
 ### Notas Multimodais (13/12/2025)
 - Pré-requisito: `git-lfs` instalado no runner (Dockerfile lip-sync).
@@ -95,7 +95,7 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 42 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 43 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -911,9 +911,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 42/42 containers (100%) |
-| **resource limits** | ✅ | 42/42 containers (100%) |
-| **read_only: true** | ✅ | 24/42 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 43/43 containers (100%) |
+| **resource limits** | ✅ | 43/43 containers (100%) |
+| **read_only: true** | ✅ | 24/43 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -945,8 +945,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Documento atualizado em: 13 de Dezembro de 2025*
 *Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
-*Security Hardening: 100% completo - 42/42 containers com no-new-privileges, 42/42 com resource limits, 24/42 com read_only (13/12/2025)*
+*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only (14/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*

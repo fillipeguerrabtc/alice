@@ -96,9 +96,9 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 42 Containers em Produção
+### Arquitetura de Microsserviços - 43 Containers em Produção
 
-A plataforma Alice é composta por **42 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
 
 #### Categoria 1: Infraestrutura Core (6 serviços)
 
@@ -146,28 +146,29 @@ A plataforma Alice é composta por **42 containers** organizados em 6 categorias
 | 28 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
 | 29 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
 
-#### Categoria 4: Observability Stack (12 serviços)
+#### Categoria 4: Observability Stack (13 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 30 | Langfuse | `langfuse` | LLM observability e analytics |
-| 31 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
-| 32 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
-| 33 | Grafana | `grafana` | Dashboards e visualizações |
-| 34 | Loki | `loki` | Agregação e armazenamento de logs |
-| 35 | Promtail | `promtail` | Coleta de logs do host |
-| 36 | Jaeger | `jaeger` | Distributed tracing |
-| 37 | Vector | `alice-vector` | Agregação de logs → Loki |
-| 38 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
-| 39 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
-| 40 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
-| 41 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+| 30 | Langfuse Web | `langfuse` | LLM observability e analytics |
+| 31 | Langfuse Worker | `langfuse-worker` | Processamento assíncrono (migrations/jobs) |
+| 32 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
+| 33 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
+| 34 | Grafana | `grafana` | Dashboards e visualizações |
+| 35 | Loki | `loki` | Agregação e armazenamento de logs |
+| 36 | Promtail | `promtail` | Coleta de logs do host |
+| 37 | Jaeger | `jaeger` | Distributed tracing |
+| 38 | Vector | `alice-vector` | Agregação de logs → Loki |
+| 39 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
+| 40 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
+| 41 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
+| 42 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
 
 #### Categoria 5: Backup (1 serviço)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 42 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
+| 43 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
 
 ---
 
@@ -324,12 +325,12 @@ alice/
 - Hetzner Cloud (Nuremberg)
 
 ### Observabilidade
-- Prometheus 3.8 (métricas)
-- Grafana OSS 11.3 (dashboards)
-- Jaeger 1.76 (tracing distribuído)
-- Loki 3.6, Promtail 3.6 (logs)
-- OpenTelemetry (instrumentação)
-- Langfuse (métricas LLM)
+- Prometheus 3.8.0 (métricas)
+- Grafana OSS 11.6.2 (dashboards)
+- Jaeger 1.76.0 (tracing distribuído)
+- Loki 3.6.3, Promtail 3.6.3 (logs)
+- OpenTelemetry Collector 0.141.0 (instrumentação)
+- Langfuse 3.139.0 (métricas LLM)
 
 ---
 
@@ -379,9 +380,9 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 42/42 containers | 100% |
-| **read_only: true** | 24/42 containers | 100% aplicável (somente onde não há escrita) |
-| **security_opt: no-new-privileges** | 42/42 containers | 100% |
+| **Resource Limits** | 43/43 containers | 100% |
+| **read_only: true** | 24/43 containers | 100% aplicável (somente onde não há escrita) |
+| **security_opt: no-new-privileges** | 43/43 containers | 100% |
 | **Healthchecks** | 38/38 containers | 100% (3 init usam service_completed_successfully) |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
@@ -402,7 +403,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 42 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (18 containers: bancos de dados, workers/init ERPNext, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
+Todos os 43 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (19 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
 
 - Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
@@ -413,9 +414,9 @@ Todos os 42 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.16.0 - 12 de Dezembro de 2025*
+*Versão 3.17.0 - 14 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

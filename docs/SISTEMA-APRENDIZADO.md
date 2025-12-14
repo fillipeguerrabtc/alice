@@ -351,8 +351,8 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 1.9 - 12 de Dezembro de 2025*
+*Versão 1.10 - 14 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3*
-*Total de Containers: 42 (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*
 *Bulk Import: Interface visual enterprise implementada (09/12/2025)*

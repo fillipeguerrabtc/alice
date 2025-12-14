@@ -28,19 +28,19 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 42/42 containers (100%) |
-| `read_only: true` | ✅ | 24/42 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 42/42 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 43/43 containers (100%) |
+| `read_only: true` | ✅ | 24/43 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 43/43 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
-- Prometheus 3.0.1 / Alertmanager 0.27.0: sem breaking identificado; monitorar métricas deprecated.  
-- Grafana 11.1.4: atualização menor.  
-- Loki/Promtail 3.1.0: pareados, sem mudanças em labels/pipeline.  
-- Jaeger 1.58: estável; OTLP habilitado.  
-- OTel Collector 0.114.0: config atual compatível; revisar changelog em novos pipelines.  
-- Vector 0.43.1: sink Loki ativo.
+- Prometheus 3.8.0 / Alertmanager 0.27.0  
+- Grafana 11.6.2  
+- Loki/Promtail 3.6.3 (pareados)  
+- Jaeger 1.76.0 (OTLP habilitado)  
+- OTel Collector 0.141.0  
+- Vector 0.51.1  
 - Alertmanager SMTP: senha via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 - Vector: métricas expostas em 8686 para Prometheus; escrita em `/var/lib/vector` (sem read_only).
 
@@ -407,7 +407,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (42 containers)
+## 🐳 INFRAESTRUTURA DOCKER (43 containers)
 
 ### Core Infra (6)
 
@@ -465,10 +465,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 42/42 containers (100% COMPLETO) |
-| read_only: true | ✅ | 24/42 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 42/42 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 42/42 containers |
+| no-new-privileges | ✅ | 43/43 containers (100% COMPLETO) |
+| read_only: true | ✅ | 24/43 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 43/43 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 43/43 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |

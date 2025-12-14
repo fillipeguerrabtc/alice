@@ -1,25 +1,26 @@
 # Observability Service - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Dezembro de 2025
+**Data:** 14 de Dezembro de 2025
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 42 containers da plataforma Alice Enterprise (6 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup).
+**Contexto:** Este é o serviço de observabilidade dos 43 containers da plataforma Alice Enterprise (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup).
 
 ## Componentes
 
 | Componente | Porta | Tecnologia | Licença | Função |
 |------------|-------|------------|---------|--------|
-| Prometheus | 9090 | Prometheus 3.0.1 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS 11.1.4 | AGPL 3.0 | Dashboards e alertas |
-| Jaeger | 16686 | Jaeger 1.58 | Apache 2.0 | Distributed tracing |
-| OTel Collector | 4317/4318 | OpenTelemetry | Apache 2.0 | Instrumentação |
-| Langfuse | 3006 | Langfuse 2.x | MIT | Métricas LLM |
+| Prometheus | 9090 | Prometheus 3.8.0 | Apache 2.0 | Coleta de métricas |
+| Grafana | 3000 | Grafana OSS 11.6.2 | AGPL 3.0 | Dashboards e alertas |
+| Jaeger | 16686 | Jaeger 1.76.0 | Apache 2.0 | Distributed tracing |
+| OTel Collector | 4317/4318 | OpenTelemetry Collector 0.141.0 | Apache 2.0 | Instrumentação |
+| Langfuse Web | 3006 | Langfuse 3.139.0 | MIT | Métricas LLM (UI) |
+| Langfuse Worker | interno | Langfuse 3.139.0 | MIT | Processamento assíncrono/migrations |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
-| Vector | 8686 | Vector 0.43.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
-| Alertmanager | interno | Alertmanager 0.27 | Apache 2.0 | Alertas (Prometheus) |
+| Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
+| Alertmanager | interno | Alertmanager 0.27.0 | Apache 2.0 | Alertas (Prometheus) |
 | node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
 | cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
 
@@ -219,6 +220,6 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 2.5.0 - 05 de Dezembro de 2025*
+*Versão 2.6.0 - 14 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 41 (5 infraestrutura + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*

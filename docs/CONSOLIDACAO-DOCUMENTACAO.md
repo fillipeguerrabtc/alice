@@ -78,6 +78,6 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 12 de Dezembro de 2025*  
-*Versão: 1.6 - Atualizado para 18 regras (Regra 18: Commits Consolidados)*  
-*Total de Containers: 42 (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)*
+*Documento atualizado em: 14 de Dezembro de 2025*  
+*Versão: 1.7 - Atualizado para Langfuse v3 + 43 containers*  
+*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*

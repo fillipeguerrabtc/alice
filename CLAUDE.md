@@ -194,10 +194,10 @@ Permissões Enterprise (13/12/2025):
 - **ERPNext**: usuário fixo `Administrator` + `ERPNEXT_ADMIN_PASSWORD` (pode usar a mesma senha do admin global).
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
-## Security Hardening (10 de Dezembro de 2025)
-- **42 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+## Security Hardening (14 de Dezembro de 2025)
+- **43 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
 - **24 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **42 containers** = 100% com resource limits ✅ COMPLETO
+- **43 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
