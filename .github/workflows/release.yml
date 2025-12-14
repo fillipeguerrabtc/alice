@@ -272,8 +272,8 @@ jobs:
     name: Disparar Deploy Automático
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
-    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    uses: ./.github/workflows/deploy-production.yml@main
+    if: ${{ github.ref == 'refs/heads/main' && !inputs.prerelease && needs.build-images.result == 'success' }}
+    uses: ./.github/workflows/deploy-production.yml
     with:
       version: ${{ needs.create-release.outputs.version }}
       services: all
