@@ -12,7 +12,10 @@
 
 # torch 2.6.0 corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
 # Nota: TTS 0.22.0 pode ter incompatibilidades - monitorar logs do container
+# torchvision e torchaudio sao OBRIGATORIOS para Coqui TTS (processamento de audio)
 torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
 
 # =============================================================================
 # TTS - Coqui Text-to-Speech
@@ -41,7 +44,8 @@ numpy==1.26.4
 # CVE-2024-11394, CVE-2024-12720, CVE-2025-1194, CVE-2025-2099,
 # CVE-2025-3263, CVE-2025-3264, CVE-2025-3933, CVE-2025-5197,
 # CVE-2025-6051, CVE-2025-6638, CVE-2025-6921, CVE-2024-3568, CVE-2025-3777
-transformers>=4.53.0
+# PINNED para reprodutibilidade enterprise (Regra 6 CLAUDE.md)
+transformers==4.53.0
 
 # =============================================================================
 # HTTP Client - Versao segura
