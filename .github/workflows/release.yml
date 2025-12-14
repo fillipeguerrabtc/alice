@@ -281,22 +281,28 @@ jobs:
           # Precisa de PAT com permissão 'workflow' (GH_PAT)
           github-token: ${{ secrets.GH_PAT }}
           script: |
+            const version = '${{ needs.create-release.outputs.version }}';
+            
             console.log('🚀 Iniciando deploy automático após Release bem-sucedido');
-            console.log('📦 Versão: ${{ needs.create-release.outputs.version }}');
+            console.log('📦 Versão: ' + version);
+            console.log('🏷️ Usando TAG para consistência de versionamento');
             
             // Disparar workflow de deploy como execução SEPARADA
-            // Isso garante auditoria e rastreabilidade independentes
+            // IMPORTANTE: Usar a TAG (não main) para garantir que:
+            // - docker-compose.prod.yml seja da mesma versão das imagens
+            // - Scripts de deploy sejam consistentes com as imagens buildadas
+            // - Reprodutibilidade total: mesma tag = mesmo resultado
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'deploy-production.yml',
-              ref: 'main',
+              ref: version,
               inputs: {
-                version: '${{ needs.create-release.outputs.version }}',
+                version: version,
                 services: 'all'
               }
             });
             
             console.log('✅ Deploy disparado automaticamente!');
             console.log('🔗 Verifique a aba Actions para acompanhar o deploy');
-            console.log('⏳ O deploy aparecerá como uma execução separada');
+            console.log('⏳ O deploy aparecerá como uma execução separada na TAG: ' + version);

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.55 - Validação enterprise Salad Cloud + pipeline 3 workflows
+> **Versão:** 3.56 - Versionamento consistente (TAG) no trigger-deploy
 
 ---
 
@@ -597,6 +597,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Validação Salad Cloud**: Implementada validação enterprise-grade para variáveis Salad Cloud. Em vez de usar `vars.* || 'default'` silenciosamente, o workflow agora: (1) Separa variáveis configuradas dos defaults, (2) Emite `::warning::` quando usando defaults para auditoria, (3) Loga resumo completo dos valores Salad para rastreabilidade. Os defaults são valores de produção válidos (API oficial Salad), não mocks. Esta abordagem garante visibilidade quando variáveis não estão configuradas, mantendo compatibilidade com repositórios que usam defaults.
 
+> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Versionamento Consistente**: Corrigido bug crítico no `release.yml` onde `createWorkflowDispatch` usava `ref: 'main'` ao invés da TAG da release. Isso causava inconsistência: imagens Docker eram buildadas da TAG (commit específico), mas deploy usava scripts/docker-compose da main (potencialmente diferente). Correção: `ref` agora usa `${{ needs.create-release.outputs.version }}` (a TAG). Garante reprodutibilidade total: mesma tag = mesmo resultado. Cache enterprise (Registry Cache GHCR) não é afetado pois usa tag fixa `:cache` compartilhada entre branches/tags.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -857,7 +859,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.55 - Validação enterprise Salad Cloud + pipeline 3 workflows*
+*Versão: 3.56 - Versionamento consistente (TAG) no trigger-deploy*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
