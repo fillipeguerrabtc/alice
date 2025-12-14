@@ -13,7 +13,7 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 42 total (6 infra + 8 Alice + 15 ERPNext + 12 observability + 1 backup)
+# CONTAINERS: 43 total (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
 #

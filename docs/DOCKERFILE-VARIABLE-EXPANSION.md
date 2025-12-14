@@ -205,5 +205,6 @@ RUN set -euo pipefail; \
 
 ---
 
-**Última atualização:** 12 de Dezembro de 2025  
-**Mantido por:** Fillipe Guerra
+**Última atualização:** 14 de Dezembro de 2025  
+**Autor:** Fillipe Guerra  
+**Total de Containers:** 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)

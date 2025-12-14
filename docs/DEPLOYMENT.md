@@ -42,29 +42,49 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
-### Categoria 3: ERPNext Stack (12 serviços)
+### Categoria 3: ERPNext Stack (15 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 15 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.11.15 |
-| 16 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 |
-| 17 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 |
-| 18 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe Bench |
-| 19 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe Bench |
-| 20 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Python, Frappe v15 |
-| 21 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | NGINX |
-| 22 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Node.js, Socket.io |
-| 23 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Python, Frappe |
-| 24 | **Worker Short** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos). | Python, Frappe |
-| 25 | **Worker Default** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos). | Python, Frappe |
-| 26 | **Worker Long** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos). | Python, Frappe |
+| 15 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.11 |
+| 16 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 Alpine |
+| 17 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 Alpine |
+| 18 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe/ERPNext v15.91.3 |
+| 19 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe/ERPNext v15.91.3 |
+| 20 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Frappe/ERPNext v15.91.3 |
+| 21 | **Frontend** | `erpnext-frontend` | Frontend NGINX do ERPNext. Serve arquivos estáticos e proxy reverso. | Frappe/ERPNext v15.91.3 |
+| 22 | **WebSocket** | `erpnext-websocket` | Socket.io para atualizações em tempo real no ERPNext. | Frappe/ERPNext v15.91.3 |
+| 23 | **Scheduler** | `erpnext-scheduler` | Agendador de tarefas periódicas (cron jobs do ERPNext). | Frappe/ERPNext v15.91.3 |
+| 24 | **Worker Default 1** | `erpnext-worker-default` | Worker para jobs normais (5-60 segundos) - instância 1. | Frappe/ERPNext v15.91.3 |
+| 25 | **Worker Short 1** | `erpnext-worker-short` | Worker para jobs rápidos (< 5 segundos) - instância 1. | Frappe/ERPNext v15.91.3 |
+| 26 | **Worker Long 1** | `erpnext-worker-long` | Worker para jobs longos (> 60 segundos) - instância 1. | Frappe/ERPNext v15.91.3 |
+| 27 | **Worker Default 2** | `erpnext-worker-default-2` | Worker para jobs normais (5-60 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
+| 28 | **Worker Short 2** | `erpnext-worker-short-2` | Worker para jobs rápidos (< 5 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
+| 29 | **Worker Long 2** | `erpnext-worker-long-2` | Worker para jobs longos (> 60 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
 
-### Categoria 4: Backup e Logs (2 serviços)
+### Categoria 4: Observability Stack (13 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 27 | **pgBackRest** | `pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving. | pgBackRest (versão automática via GitHub API) |
-| 28 | **Vector** | `vector` | Agregador de logs. Coleta logs de todos os containers e encaminha para observability stack. | Vector (Datadog) |
+| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.139.0 |
+| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.139.0 |
+| 32 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
+| 33 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.0 |
+| 34 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 11.6.2 |
+| 35 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
+| 36 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
+| 37 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 1.76.0 |
+| 38 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
+| 39 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
+| 40 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.141.0 |
+| 41 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.8.2 |
+| 42 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.49.1 |
+
+### Categoria 5: Backup (1 serviço)
+
+| # | Serviço | Container | Descrição | Tecnologia |
+|---|---------|-----------|-----------|------------|
+| 43 | **pgBackRest** | `alice-pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving, criptografia AES-256. | pgBackRest 2.56.0 |
 
 ### Diagrama de Arquitetura
 
@@ -102,33 +122,41 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
 │  │                                                                     │ │
 │  │  ┌──────────────────────────────────────────────────────────────┐  │ │
-│  │  │ INFRAESTRUTURA CORE (5)                                       │  │ │
-│  │  │  dockerproxy → traefik-init → traefik → postgres → redis     │  │ │
-│  │  └──────────────────────────────────────────────────────────────┘  │ │
-│  │                              │                                      │ │
-│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
-│  │  │ MICROSSERVIÇOS ALICE (8)                                      │  │ │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
-│  │  │  │Frontend │ │  Auth   │ │  Chat   │ │   RAG   │             │  │ │
-│  │  │  │  :5000  │ │ :3001   │ │  :3002  │ │  :3003  │             │  │ │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
-│  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
-│  │  │  │Training │ │Integra. │ │Observab.│ │  CLIP   │             │  │ │
-│  │  │  │  :3004  │ │  :3005  │ │  :3010  │ │  :8000  │             │  │ │
-│  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
-│  │  └──────────────────────────────────────────────────────────────┘  │ │
-│  │                              │                                      │ │
-│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
-│  │  │ ERPNEXT STACK (12)                                            │  │ │
-│  │  │  mariadb │ redis-cache │ redis-queue │ configurator           │  │ │
-│  │  │  create-site │ backend │ frontend │ websocket                 │  │ │
-│  │  │  scheduler │ worker-short │ worker-default │ worker-long      │  │ │
-│  │  └──────────────────────────────────────────────────────────────┘  │ │
-│  │                              │                                      │ │
-│  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
-│  │  │ BACKUP/LOGS (2)                                               │  │ │
-│  │  │  pgbackrest (PostgreSQL PITR) │ vector (Log Aggregator)       │  │ │
-│  │  └──────────────────────────────────────────────────────────────┘  │ │
+   │  │  │ INFRAESTRUTURA CORE (6)                                       │  │ │
+   │  │  │  dockerproxy → traefik-init → traefik → postgres → redis      │  │ │
+   │  │  │  searxng (metabusca)                                          │  │ │
+   │  │  └──────────────────────────────────────────────────────────────┘  │ │
+   │  │                              │                                      │ │
+   │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+   │  │  │ MICROSSERVIÇOS ALICE (8)                                      │  │ │
+   │  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
+   │  │  │  │Frontend │ │  Auth   │ │  Chat   │ │   RAG   │             │  │ │
+   │  │  │  │  :5000  │ │ :3001   │ │  :3002  │ │  :3003  │             │  │ │
+   │  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
+   │  │  │  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐             │  │ │
+   │  │  │  │Training │ │Integra. │ │Observab.│ │  CLIP   │             │  │ │
+   │  │  │  │  :3004  │ │  :3005  │ │  :3010  │ │  :8000  │             │  │ │
+   │  │  │  └─────────┘ └─────────┘ └─────────┘ └─────────┘             │  │ │
+   │  │  └──────────────────────────────────────────────────────────────┘  │ │
+   │  │                              │                                      │ │
+   │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+   │  │  │ ERPNEXT STACK (15)                                            │  │ │
+   │  │  │  mariadb │ redis-cache │ redis-queue │ configurator           │  │ │
+   │  │  │  create-site │ backend │ frontend │ websocket │ scheduler     │  │ │
+   │  │  │  worker-default (x2) │ worker-short (x2) │ worker-long (x2)   │  │ │
+   │  │  └──────────────────────────────────────────────────────────────┘  │ │
+   │  │                              │                                      │ │
+   │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+   │  │  │ OBSERVABILITY STACK (13)                                      │  │ │
+   │  │  │  langfuse (web+worker+db) │ prometheus │ grafana │ loki       │  │ │
+   │  │  │  promtail │ jaeger │ vector │ alertmanager │ otel-collector   │  │ │
+   │  │  │  node-exporter │ cadvisor                                     │  │ │
+   │  │  └──────────────────────────────────────────────────────────────┘  │ │
+   │  │                              │                                      │ │
+   │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
+   │  │  │ BACKUP (1)                                                    │  │ │
+   │  │  │  pgbackrest (PostgreSQL PITR + WAL archiving + AES-256)       │  │ │
+   │  │  └──────────────────────────────────────────────────────────────┘  │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
@@ -954,8 +982,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 13 de Dezembro de 2025*
-*Versão: 6.5 - Processamento Multimodal 100% LOCAL + 18 Regras*
+*Documento atualizado em: 14 de Dezembro de 2025*
+*Versão: 6.6 - Correção tabelas de containers (43 total) + Observability Stack documentado*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only (14/12/2025)*

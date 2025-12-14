@@ -924,10 +924,9 @@ jobs:
       - name: Determinar tag da imagem (versão solicitada ou SHA)
         id: image-tag
         env:
-          # IMPORTANTE: Priorizar inputs.version (workflow_call) sobre github.event.inputs.version (workflow_dispatch)
-          # Quando release.yml chama via workflow_call com 'with: version:', o valor vem em inputs.version
-          # github.event.inputs refere-se aos inputs do dispatch ORIGINAL, não aos passados via workflow_call
-          INPUT_VERSION: ${{ inputs.version || (github.event_name == 'workflow_dispatch' && github.event.inputs.version) || '' }}
+          # Versão recebida via workflow_dispatch (único trigger após reversão enterprise)
+          # Quando vazio ou 'latest', usa SHA do commit para rastreabilidade
+          INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
           set -euo pipefail
           TAG="${INPUT_VERSION}"
@@ -1828,8 +1827,8 @@ jobs:
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           # Tag de imagem: sempre usar o output do build (sha), garantindo alinhamento com o que foi escaneado pelo Trivy
           IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
-          # Serviços: compatível com workflow_call (inputs.*) e workflow_dispatch (github.event.inputs.*)
-          DEPLOY_SERVICES: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.services || 'all')) || inputs.services || 'all' }}
+          # Serviços para deploy (workflow_dispatch único trigger)
+          DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}

@@ -311,13 +311,14 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.39 - 14 de Dezembro de 2025*
+*Versão: 3.40 - 14 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
-*Security Hardening: 100% no-new-privileges, 100% resource limits, 23/41 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
+*Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
 *Salad Cloud: APENAS para LLM inference, image generation e fine-tuning (GPUs)*
+*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) 100% automáticos via GitHub Actions*
