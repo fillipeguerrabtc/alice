@@ -44,6 +44,9 @@ jobs:
   check_updates:
     name: Verificar Atualizações
     runs-on: ubuntu-latest
+    # ENTERPRISE: Cancelar se disparado por push (bug do GitHub Actions)
+    # Este workflow só deve rodar em schedule ou workflow_dispatch
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     outputs:
       has_updates: ${{ steps.check_updates.outputs.has_updates }}
       updates_json: ${{ steps.check_updates.outputs.updates_json }}
