@@ -578,6 +578,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** `deploy-production.yml`: corrigido bug na instalação do `ruamel.yaml`. Anteriormente, se `apt-get install` falhasse, o script executava `exit 1` imediatamente, impedindo a execução do fallback via pip. Agora o apt falha graciosamente (apenas warning) e o script continua para a lógica de fallback pip, garantindo resiliência em diferentes ambientes de deploy.
 
+> **NOTA (14/12/2025):** `deploy-production.yml`: removida variável de ambiente `SERVICES_INPUT` redundante do step SSH. A variável era definida mas nunca referenciada - o input de serviços é corretamente passado via `DEPLOY_SERVICES` que é listada em `envs:` e usada no script.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -838,7 +840,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.48 - Correção bug ruamel.yaml fallback no deploy*
+*Versão: 3.49 - Remoção variável SERVICES_INPUT redundante no deploy*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
