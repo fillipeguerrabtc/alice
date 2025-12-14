@@ -1832,17 +1832,17 @@ jobs:
 
             if [ -d "app/.git" ]; then
               cd app
-              git remote set-url origin "${REPO_URL}"
-              git fetch origin
-              git checkout main
-              git reset --hard origin/main
-              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
+              git remote set-url origin "${REPO_URL}" || { echo "::error::Falha ao setar remote origin"; exit 1; }
+              git fetch origin || { echo "::error::Falha ao fazer git fetch origin"; exit 1; }
+              git checkout main || { echo "::error::Falha ao fazer git checkout main"; exit 1; }
+              git reset --hard origin/main || { echo "::error::Falha ao fazer git reset --hard origin/main"; exit 1; }
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git" || { echo "::error::Falha ao restaurar remote HTTPS"; exit 1; }
               cd ..
             else
               rm -rf app
-              git clone "${REPO_URL}" app
+              git clone "${REPO_URL}" app || { echo "::error::Falha ao clonar repositório ${REPO_FULL_NAME}"; exit 1; }
               cd app
-              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git" || { echo "::error::Falha ao ajustar remote HTTPS pós-clone"; exit 1; }
               cd ..
             fi
 
@@ -1859,7 +1859,7 @@ jobs:
 
             # Login no GHCR (necessário antes de pulls)
             cd /opt/alice/app
-            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
 
             # ==============================================
             # VERSIONAMENTO AUTOMÁTICO: Atualizar docker-compose.prod.yml
@@ -2001,7 +2001,7 @@ jobs:
             cd /opt/alice/app
 
             # Login no GitHub Container Registry (mantido aqui para garantir sessão válida)
-            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
 
             cd infra/docker
             
