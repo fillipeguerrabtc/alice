@@ -8,6 +8,7 @@
 A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
 
 ### Notas Multimodais (13/12/2025)
+
 - Pré-requisito: `git-lfs` instalado no runner (Dockerfile lip-sync).
 - **Wav2Lip**: commit pinado, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, **checksums SHA256 calculados automaticamente** no workflow usando token `HUGGINGFACE_TOKEN` para acesso confiável). Runtime: `python3 inference.py`, `PYTHONPATH` preservado, `cwd=/opt/wav2lip`, caminhos absolutos + checkpoint explícito. Saída: `/opt/alice/uploads/lip-sync/output-<job>.mp4` (volume extra).
 - **SadTalker**: modelos **obrigatórios**; build falha se `scripts/download_models.sh` não existir. Runtime: `PYTHONPATH` preservado, `cwd=/opt/sadtalker`, caminhos absolutos, rename final controlado. Saída: `/opt/alice/uploads/talking-head/output-<job>.mp4` (volume extra).
@@ -67,7 +68,7 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 
 ### Diagrama de Arquitetura
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                         CURSOR IDE (APENAS DEV)                          │
 │  ┌───────────────────────────────────────────────────────────────────┐  │
@@ -307,7 +308,7 @@ GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 
 **Configuração local recomendada** (`~/.ssh/config`):
 
-```
+```text
 Host alice-hetzner
     HostName 46.224.46.93
     User root
@@ -395,9 +396,11 @@ O deploy é **100% automático** via GitHub Actions:
 
 ## Fluxo de CI/CD (Best Practices 2025)
 
+**Tag única e determinística:** a pipeline de deploy agora usa a versão recebida pelo `release.yml` (`inputs.version`) como tag principal das imagens; se a versão não for informada, usa-se `GITHUB_SHA` como fallback. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
+
 ### Pipeline Automatizado
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     FLUXO CI/CD ALICE                            │
 ├─────────────────────────────────────────────────────────────────┤
@@ -448,6 +451,7 @@ Pipeline totalmente automático: push para `main` vai direto para produção.
 ### Versionamento Automático
 
 O Release é disparado automaticamente quando o CI passa, com versão incremental:
+
 - `v1.0.5` → `v1.0.6` → `v1.0.7` ...
 
 ### Deploy 100% Automático
@@ -469,6 +473,7 @@ Actions → Deploy to Production → Run workflow → Selecionar versão
 ```
 
 **Benefícios do Pipeline 100% Automático:**
+
 - ✅ Zero intervenção humana no deploy
 - ✅ Feedback rápido (push → produção em minutos)
 - ✅ Security scan obrigatório antes do deploy
@@ -483,6 +488,7 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 3. **0003_update_embedding_dimensions_768.sql**: Atualiza dimensões de embeddings para 768 (multilingual-e5-base + CLIP) - **CRÍTICA**
 
 **⚠️ IMPORTANTE:** A migration 0003 é **OBRIGATÓRIA** e deve ser executada antes do deploy do código que usa `vector(768)`. O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
+
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
 
@@ -497,11 +503,13 @@ O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
 | Imagens `:cache` | Cada serviço tem sua própria imagem de cache |
 
 **Vantagens sobre GHA Cache:**
+
 - ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (main)
 - ✅ Sem limite de 10GB do GitHub Actions cache
 - ✅ Reprodutibilidade: releases usam a tag exata
 
 **Performance Esperada:**
+
 | Cenário | Sem Cache | Com Cache |
 |---------|-----------|-----------|
 | Rebuild completo | ~45 min | ~45 min |
@@ -519,6 +527,7 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 | **Artifacts** | `packages/*/dist` compartilhado entre jobs | Build incremental |
 
 **⚠️ REGRA CRÍTICA:** NUNCA limpar caches do GitHub Actions nos workflows:
+
 - ❌ `rm -rf ~/.cache/pip` - Quebra cache do pip
 - ❌ `rm -rf ~/.pnpm-store` - Quebra cache do pnpm
 - ❌ `--no-cache-dir` no pip - Desabilita cache
@@ -532,38 +541,39 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 
 | Serviço | URL |
 |---------|-----|
-| Alice Frontend | https://yesyoudeserve.duckdns.org |
-| Alice Chat | https://yesyoudeserve.duckdns.org/chat |
-| Alice Dashboard | https://yesyoudeserve.duckdns.org/dashboard |
-| Alice API | https://yesyoudeserve.duckdns.org/api |
+| Alice Frontend | <https://yesyoudeserve.duckdns.org> |
+| Alice Chat | <https://yesyoudeserve.duckdns.org/chat> |
+| Alice Dashboard | <https://yesyoudeserve.duckdns.org/dashboard> |
+| Alice API | <https://yesyoudeserve.duckdns.org/api> |
 
 ### ERPNext
 
 | Serviço | URL |
 |---------|-----|
-| ERPNext | https://erp.yesyoudeserve.duckdns.org |
+| ERPNext | <https://erp.yesyoudeserve.duckdns.org> |
 
 ### Observability Stack
 
 | Serviço | URL | Descrição |
 |---------|-----|-----------|
-| Grafana | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
-| Prometheus | https://prometheus.yesyoudeserve.duckdns.org | Métricas e consultas |
-| Jaeger | https://tracing.yesyoudeserve.duckdns.org | Distributed tracing |
-| Langfuse | https://llm-metrics.yesyoudeserve.duckdns.org | Métricas LLM |
-| Health Check | https://yesyoudeserve.duckdns.org/observability/health | Status do stack |
+| Grafana | <https://observability.yesyoudeserve.duckdns.org> | Dashboards e alertas |
+| Prometheus | <https://prometheus.yesyoudeserve.duckdns.org> | Métricas e consultas |
+| Jaeger | <https://tracing.yesyoudeserve.duckdns.org> | Distributed tracing |
+| Langfuse | <https://llm-metrics.yesyoudeserve.duckdns.org> | Métricas LLM |
+| Health Check | <https://yesyoudeserve.duckdns.org/observability/health> | Status do stack |
 
 ### Infraestrutura
 
 | Serviço | URL |
 |---------|-----|
-| Traefik Dashboard | https://traefik.yesyoudeserve.duckdns.org (protegido) |
+| Traefik Dashboard | <https://traefik.yesyoudeserve.duckdns.org> (protegido) |
 
 ---
 
 ## Rollback
 
 ### Automático
+
 Rollback automático acontece se health checks falharem após deploy.
 
 ### Manual
@@ -685,7 +695,7 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 
 #### Arquitetura de Backup
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                     BACKUP ORCHESTRATOR                          │
 │                 (observability-service)                          │
@@ -716,7 +726,7 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-> **NOTA:** Backups são armazenados 100% localmente no Volume Hetzner. 
+> **NOTA:** Backups são armazenados 100% localmente no Volume Hetzner.
 > Para backups offsite, o admin pode fazer download manual via Dashboard ou configurar rsync externo.
 
 #### API Endpoints de Backup
@@ -736,7 +746,7 @@ A plataforma Alice inclui um **Painel de Backup & Restore** enterprise-grade ace
 
 #### Schedule Padrão (Configurável via Dashboard)
 
-```
+```text
 Full Backup:        0 3 * * 0   (Domingo às 03:00)
 Incremental Backup: 0 3 * * 1-6 (Segunda a Sábado às 03:00)
 Retenção Full:      15 dias
@@ -788,7 +798,8 @@ Get-Content $env:USERPROFILE\.ssh\config
 ```
 
 **Configuração SSH recomendada** (`~/.ssh/config`):
-```
+
+```text
 Host alice-hetzner
     HostName 46.224.46.93
     User root
@@ -918,6 +929,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
 ### Compatibilidade do Stack de Observabilidade (pins atuais)
+
 - Prometheus 3.0.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes; manter atenção em mudanças de métricas deprecated (consultar release notes v3.0/v0.27).
 - Grafana 11.1.4: atualização menor; dashboards e datasources preservados.
 - Loki/Promtail 3.1.0: versão alinhada; labels e pipeline existentes compatíveis.

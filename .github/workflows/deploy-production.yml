@@ -382,7 +382,7 @@ jobs:
       packages: write
 
     outputs:
-      image_tag: ${{ steps.meta.outputs.version }}
+      image_tag: ${{ steps.image-tag.outputs.value }}
       # Versões dos componentes (buscadas automaticamente)
       pgbackrest_version: ${{ steps.versions.outputs.pgbackrest_version }}
       traefik_version: ${{ steps.versions.outputs.traefik_version }}
@@ -942,10 +942,24 @@ jobs:
           echo "📊 Espaço após limpeza:"
           df -h /
 
+      - name: Determinar tag da imagem (versão solicitada ou SHA)
+        id: image-tag
+        env:
+          INPUT_VERSION: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.version) || inputs.version || '' }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_VERSION}"
+          if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
+            TAG="${GITHUB_SHA}"
+          fi
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "🏷️ Tag efetiva das imagens: $TAG"
+
       - name: Extrair metadata
         id: meta
         run: |
-          echo "version=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "version=${{ steps.image-tag.outputs.value }}" >> $GITHUB_OUTPUT
           echo "short_sha=${GITHUB_SHA::8}" >> $GITHUB_OUTPUT
 
       # SHA: docker/setup-buildx-action@v3.7.1 (2024-10-22)
@@ -994,7 +1008,7 @@ jobs:
           file: apps/auth-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-auth:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-auth:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-auth:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-auth:cache,mode=max
@@ -1007,7 +1021,7 @@ jobs:
           file: apps/chat-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-chat:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-chat:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-chat:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-chat:cache,mode=max
@@ -1020,7 +1034,7 @@ jobs:
           file: apps/rag-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-rag:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-rag:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-rag:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-rag:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-rag:cache,mode=max
@@ -1033,7 +1047,7 @@ jobs:
           file: apps/training-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-training:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-training:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-training:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-training:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-training:cache,mode=max
@@ -1046,7 +1060,7 @@ jobs:
           file: apps/integrations-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-integrations:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-integrations:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-integrations:cache,mode=max
@@ -1059,7 +1073,7 @@ jobs:
           file: apps/frontend-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-frontend:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-frontend:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-frontend:cache,mode=max
@@ -1076,7 +1090,7 @@ jobs:
           file: apps/observability-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-observability:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-observability:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache,mode=max
@@ -1089,7 +1103,7 @@ jobs:
           file: apps/clip-inference-service/Dockerfile
           push: true
           tags: |
-            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-clip-inference:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache,mode=max
@@ -1104,7 +1118,7 @@ jobs:
           build-args: |
             TRAEFIK_VERSION=${{ steps.versions.outputs.traefik_version }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-api-gateway:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-api-gateway:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-api-gateway:cache,mode=max
@@ -1119,7 +1133,7 @@ jobs:
           build-args: |
             PGBACKREST_VERSION=${{ steps.versions.outputs.pgbackrest_version }}
           tags: |
-            ${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}
+            ${{ env.IMAGE_PREFIX }}-pgbackrest:${{ steps.image-tag.outputs.value }}
             ${{ env.IMAGE_PREFIX }}-pgbackrest:latest
           cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-pgbackrest:cache
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-pgbackrest:cache,mode=max
@@ -1164,7 +1178,7 @@ jobs:
         continue-on-error: true
         with:
           scan-type: 'image'
-          image-ref: '${{ env.IMAGE_PREFIX }}-auth:${{ github.sha }}'
+          image-ref: '${{ env.IMAGE_PREFIX }}-auth:${{ needs.build-docker.outputs.image_tag }}'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           format: 'sarif'
@@ -1177,7 +1191,7 @@ jobs:
         continue-on-error: true
         with:
           scan-type: 'image'
-          image-ref: '${{ env.IMAGE_PREFIX }}-chat:${{ github.sha }}'
+          image-ref: '${{ env.IMAGE_PREFIX }}-chat:${{ needs.build-docker.outputs.image_tag }}'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           format: 'sarif'
@@ -1190,7 +1204,7 @@ jobs:
         continue-on-error: true
         with:
           scan-type: 'image'
-          image-ref: '${{ env.IMAGE_PREFIX }}-frontend:${{ github.sha }}'
+          image-ref: '${{ env.IMAGE_PREFIX }}-frontend:${{ needs.build-docker.outputs.image_tag }}'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           format: 'sarif'
@@ -1203,7 +1217,7 @@ jobs:
         continue-on-error: true
         with:
           scan-type: 'image'
-          image-ref: '${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}'
+          image-ref: '${{ env.IMAGE_PREFIX }}-pgbackrest:${{ needs.build-docker.outputs.image_tag }}'
           severity: 'CRITICAL,HIGH'
           exit-code: '1'
           format: 'sarif'
