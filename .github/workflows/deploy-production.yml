@@ -2053,6 +2053,14 @@ jobs:
             if [ -d "app/.git" ]; then
               cd app
               git remote set-url origin "${REPO_URL}" || { echo "::error::Falha ao setar remote origin"; exit 1; }
+              
+              # ENTERPRISE: Limpar mudanças locais antes do checkout
+              # O script de versionamento automático modifica docker-compose.prod.yml
+              # Essas mudanças ficam no diretório e bloqueiam checkout de nova TAG
+              echo "🧹 Limpando mudanças locais (versionamento automático do deploy anterior)..."
+              git reset --hard HEAD || { echo "::error::Falha ao fazer git reset --hard HEAD"; exit 1; }
+              git clean -fd || { echo "::error::Falha ao fazer git clean -fd"; exit 1; }
+              
               git fetch origin --tags || { echo "::error::Falha ao fazer git fetch origin"; exit 1; }
               
               # Checkout da TAG ou branch especificada (não hardcoded main)
