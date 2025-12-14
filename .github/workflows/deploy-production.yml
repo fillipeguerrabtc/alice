@@ -1917,13 +1917,25 @@ jobs:
             # ==========================================================
             # ENTERPRISE: Verificação de TODOS os requisitos do servidor
             # Regra 6: Deploy DEVE verificar e instalar tudo automaticamente
+            # ORDEM: Dependências são verificadas na ordem correta de uso
             # ==========================================================
             echo ""
             echo "🔧 VERIFICANDO REQUISITOS DO SERVIDOR..."
             echo "=============================================="
-            REQUIREMENTS_OK=true
             
-            # 1. Docker (CRÍTICO)
+            # 1. curl (PRÉ-REQUISITO - necessário para instalar Docker)
+            if command -v curl >/dev/null 2>&1; then
+              echo "✅ curl: instalado"
+            else
+              echo "⚠️ curl não encontrado, instalando..."
+              apt-get update -qq && apt-get install -y curl >/dev/null 2>&1 || {
+                echo "::error::Falha ao instalar curl. Deploy abortado."
+                exit 1
+              }
+              echo "✅ curl instalado com sucesso"
+            fi
+            
+            # 2. Docker (CRÍTICO - usa curl para instalação)
             if command -v docker >/dev/null 2>&1; then
               DOCKER_VER=$(docker --version 2>/dev/null | head -1)
               echo "✅ Docker: ${DOCKER_VER}"
@@ -1938,7 +1950,7 @@ jobs:
               echo "✅ Docker instalado com sucesso"
             fi
             
-            # 2. Docker Compose (CRÍTICO)
+            # 3. Docker Compose (CRÍTICO - incluído no Docker moderno)
             if docker compose version >/dev/null 2>&1; then
               COMPOSE_VER=$(docker compose version 2>/dev/null | head -1)
               echo "✅ Docker Compose: ${COMPOSE_VER}"
@@ -1950,7 +1962,7 @@ jobs:
               exit 1
             fi
             
-            # 3. Git (CRÍTICO)
+            # 4. Git (CRÍTICO - necessário para clone/update)
             if command -v git >/dev/null 2>&1; then
               GIT_VER=$(git --version 2>/dev/null)
               echo "✅ Git: ${GIT_VER}"
@@ -1964,7 +1976,7 @@ jobs:
               echo "✅ Git instalado com sucesso"
             fi
             
-            # 4. Python3 (CRÍTICO para versionamento)
+            # 5. Python3 (CRÍTICO - necessário para versionamento)
             if command -v python3 >/dev/null 2>&1; then
               PY_VER=$(python3 --version 2>/dev/null)
               echo "✅ Python: ${PY_VER}"
@@ -1978,43 +1990,31 @@ jobs:
               echo "✅ Python3 instalado com sucesso"
             fi
             
-            # 5. pip3 (necessário para fallback de pacotes Python)
+            # 6. pip3 (necessário para fallback de pacotes Python)
             if command -v pip3 >/dev/null 2>&1; then
               PIP_VER=$(pip3 --version 2>/dev/null | head -1)
               echo "✅ pip3: ${PIP_VER}"
             else
               echo "⚠️ pip3 não encontrado, instalando..."
               apt-get update -qq && apt-get install -y python3-pip >/dev/null 2>&1 || {
-                echo "::error::Falha ao instalar pip3"
+                echo "::error::Falha ao instalar pip3. Deploy abortado."
                 exit 1
               }
               echo "✅ pip3 instalado com sucesso"
             fi
             
-            # 6. ruamel.yaml (necessário para versionamento YAML)
+            # 7. ruamel.yaml (necessário para versionamento YAML)
             if python3 -c "import ruamel.yaml" >/dev/null 2>&1; then
               echo "✅ ruamel.yaml: instalado"
             else
               echo "⚠️ ruamel.yaml não encontrado, instalando..."
               apt-get install -y python3-ruamel.yaml >/dev/null 2>&1 || {
                 PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
-                  echo "::error::Falha ao instalar ruamel.yaml"
+                  echo "::error::Falha ao instalar ruamel.yaml. Deploy abortado."
                   exit 1
                 }
               }
               echo "✅ ruamel.yaml instalado com sucesso"
-            fi
-            
-            # 7. curl (necessário para downloads)
-            if command -v curl >/dev/null 2>&1; then
-              echo "✅ curl: instalado"
-            else
-              echo "⚠️ curl não encontrado, instalando..."
-              apt-get update -qq && apt-get install -y curl >/dev/null 2>&1 || {
-                echo "::error::Falha ao instalar curl. Deploy abortado."
-                exit 1
-              }
-              echo "✅ curl instalado com sucesso"
             fi
             
             echo "=============================================="
