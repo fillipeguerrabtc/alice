@@ -10,21 +10,23 @@
 # PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# torch 2.8.0 corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
+# torch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
 # COMPATIBILIDADE: SadTalker foi testado com PyTorch 2.0+ (HuggingFace Discuss, Dec 2025)
 # IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
 # que SadTalker e face-alignment carreguem modelos corretamente (torch.load legado)
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
 
 # =============================================================================
 # Computer Vision
 # =============================================================================
 
-opencv-python-headless==4.8.1.78
-imageio==2.34.0
-imageio-ffmpeg==0.4.9
+# Versoes mais recentes (Dec 2025)
+opencv-python-headless==4.12.0.88
+imageio==2.37.2
+imageio-ffmpeg==0.6.0
 # face-alignment 1.4.1 - versao mais recente (Aug 2023)
 # Requer TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 no Dockerfile para PyTorch 2.6+
 face-alignment==1.4.1
@@ -33,9 +35,10 @@ face-alignment==1.4.1
 # Dependencias Numericas
 # =============================================================================
 
-# numpy 1.26.x compativel com torch 2.6.0
+# numpy 1.26.4 - compativel com torch 2.9.1 (evitar numpy 2.x por breaking changes)
 numpy==1.26.4
-scipy==1.11.4
+# scipy 1.14.1 - compativel com numpy 1.26.x (Aug 2024)
+scipy==1.14.1
 
 # =============================================================================
 # HTTP Client - Versao segura

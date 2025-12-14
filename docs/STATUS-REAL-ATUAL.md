@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.43 - Update PyTorch to 2.8.0 (fix CVE-2025-3730, CVE-2025-2953)
+> **Versão:** 3.44 - Update ALL dependencies to latest stable versions (torch 2.9.1, scipy 1.14.1, opencv 4.12.0)
 
 ---
 
