@@ -2179,25 +2179,26 @@ services:
     env_file:
       - .env.prod
     entrypoint: ["/bin/sh", "-c"]
+    # NOTA: $$ é escape para $ no Docker Compose (evita interpolação de variáveis shell)
     command: |
       set -e
       apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
       # REGRA 6: Validação explícita de variáveis obrigatórias antes de envsubst (fail-fast)
-      # envsubst não falha se variável não estiver definida - deixa literal ${VAR} no arquivo
+      # envsubst não falha se variável não estiver definida - deixa literal $${VAR} no arquivo
       # Validação garante que todas as variáveis estão definidas antes de processar template
       # NOTA: Usar eval para compatibilidade POSIX shell (Alpine usa /bin/sh, não bash)
-      # ${!VAR} é sintaxe BASH-only e não funciona em POSIX shell
+      # $${!VAR} é sintaxe BASH-only e não funciona em POSIX shell
       REQUIRED_VARS="SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USERNAME ALERT_EMAIL CRITICAL_EMAIL ONCALL_EMAIL"
-      for VAR in $REQUIRED_VARS; do
-        eval "value=\${$VAR}"
-        if [ -z "$value" ]; then
-          echo "ERRO: Variável obrigatória $VAR não está definida (Regra 6 - fail-fast)" >&2
+      for VAR in $$REQUIRED_VARS; do
+        eval "value=\$${$$VAR}"
+        if [ -z "$$value" ]; then
+          echo "ERRO: Variável obrigatória $$VAR não está definida (Regra 6 - fail-fast)" >&2
           exit 1
         fi
       done
       # REGRA 6: envsubst com lista específica garante que apenas variáveis definidas sejam substituídas
-      # Template usa ${VAR} format, então lista deve usar ${VAR} também (não $VAR)
-      envsubst '${SMTP_HOST} ${SMTP_PORT} ${SMTP_FROM} ${SMTP_USERNAME} ${ALERT_EMAIL} ${CRITICAL_EMAIL} ${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
+      # Template usa $${VAR} format, então lista deve usar $${VAR} também (não $$VAR)
+      envsubst '$${SMTP_HOST} $${SMTP_PORT} $${SMTP_FROM} $${SMTP_USERNAME} $${ALERT_EMAIL} $${CRITICAL_EMAIL} $${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
