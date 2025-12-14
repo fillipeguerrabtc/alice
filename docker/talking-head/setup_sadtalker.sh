@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script para configurar repositório SadTalker e baixar modelos
-# Enterprise-grade: timeout e validação robusta
+# Enterprise-grade: download manual com URLs diretas (evita loops infinitos)
 # Autor: Fillipe Guerra
 # Data: 13/12/2025
 
@@ -11,36 +11,66 @@ git clone https://github.com/OpenTalker/SadTalker.git /opt/sadtalker
 
 cd /opt/sadtalker
 
-echo "Instalando dependências Python..."
-python3 -m pip install --no-cache-dir -r requirements.txt
+# NOTA: NÃO instalamos requirements.txt do SadTalker porque:
+# 1. O requirements.txt do repositório pode ter versões antigas ou incompatíveis
+# 2. Já instalamos nossas próprias dependências compatíveis no Dockerfile
+# 3. Evita conflitos de versões entre dependências
+echo "Pulando instalação de requirements.txt do SadTalker (usando dependências do container)"
 
-# Verificar se script de download existe
-if [ ! -f scripts/download_models.sh ]; then
-    echo "::error::scripts/download_models.sh não encontrado no repositório SadTalker"
-    exit 1
-fi
+# Criar diretórios para modelos
+echo "Criando diretórios para modelos..."
+mkdir -p checkpoints
+mkdir -p gfpgan/weights
 
-chmod +x scripts/download_models.sh
+# Download manual dos modelos com URLs diretas do GitHub Releases
+# Enterprise-grade: URLs estáveis do GitHub Releases (não precisa de autenticação)
+# Fonte: https://github.com/OpenTalker/SadTalker/releases/tag/v0.0.2
 
-# Modificar script para adicionar timeout aos wget (evitar loops infinitos)
-echo "Configurando timeout para downloads..."
-sed -i -E 's|wget([[:space:]]+)-nc|wget\1--timeout=300 --tries=3 -nc|g' scripts/download_models.sh 2>/dev/null || true
-sed -i -E 's|wget([[:space:]]+)--no-check-certificate|wget\1--timeout=300 --tries=3 --no-check-certificate|g' scripts/download_models.sh 2>/dev/null || true
+SADTALKER_RELEASE="https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2"
 
-# Timeout de 45 minutos (2700s) para evitar loops infinitos
-# Downloads podem ser grandes (~1GB+)
-echo "Baixando modelos SadTalker (timeout: 45 minutos)..."
-if ! timeout 2700 bash scripts/download_models.sh; then
-    EXIT_CODE=$?
-    if [ ${EXIT_CODE} -eq 124 ]; then
-        echo "::error::Download de modelos SadTalker excedeu timeout de 45 minutos"
-        echo "::error::Possível loop infinito ou download muito lento - verifique logs acima"
-    else
-        echo "::error::Download de modelos SadTalker falhou (código: ${EXIT_CODE})"
-        echo "::error::Verifique logs acima para identificar qual download falhou"
-    fi
-    exit 1
-fi
+echo "=== Baixando modelos principais (checkpoints/) ==="
+
+# MappingNet Models
+echo "Baixando mapping_00109-model.pth.tar..."
+wget --timeout=300 --tries=3 -q --show-progress -O checkpoints/mapping_00109-model.pth.tar \
+    "${SADTALKER_RELEASE}/mapping_00109-model.pth.tar"
+
+echo "Baixando mapping_00229-model.pth.tar..."
+wget --timeout=300 --tries=3 -q --show-progress -O checkpoints/mapping_00229-model.pth.tar \
+    "${SADTALKER_RELEASE}/mapping_00229-model.pth.tar"
+
+# SadTalker Checkpoints (safetensors - formato mais recente)
+echo "Baixando SadTalker_V0.0.2_256.safetensors..."
+wget --timeout=300 --tries=3 -q --show-progress -O checkpoints/SadTalker_V0.0.2_256.safetensors \
+    "${SADTALKER_RELEASE}/SadTalker_V0.0.2_256.safetensors"
+
+echo "Baixando SadTalker_V0.0.2_512.safetensors..."
+wget --timeout=300 --tries=3 -q --show-progress -O checkpoints/SadTalker_V0.0.2_512.safetensors \
+    "${SADTALKER_RELEASE}/SadTalker_V0.0.2_512.safetensors"
+
+echo "=== Baixando modelos de enhancement (gfpgan/weights/) ==="
+
+# Face Alignment Model
+echo "Baixando alignment_WFLW_4HG.pth..."
+wget --timeout=300 --tries=3 -q --show-progress -O gfpgan/weights/alignment_WFLW_4HG.pth \
+    "${SADTALKER_RELEASE}/alignment_WFLW_4HG.pth"
+
+# Face Detection Model
+echo "Baixando detection_Resnet50_Final.pth..."
+wget --timeout=300 --tries=3 -q --show-progress -O gfpgan/weights/detection_Resnet50_Final.pth \
+    "${SADTALKER_RELEASE}/detection_Resnet50_Final.pth"
+
+# GFPGAN Model
+echo "Baixando GFPGANv1.4.pth..."
+wget --timeout=300 --tries=3 -q --show-progress -O gfpgan/weights/GFPGANv1.4.pth \
+    "${SADTALKER_RELEASE}/GFPGANv1.4.pth"
+
+# Face Parsing Model
+echo "Baixando parsing_parsenet.pth..."
+wget --timeout=300 --tries=3 -q --show-progress -O gfpgan/weights/parsing_parsenet.pth \
+    "${SADTALKER_RELEASE}/parsing_parsenet.pth"
+
+echo "=== Validando downloads ==="
 
 # Validação enterprise: verificar se checkpoints foram baixados corretamente
 if [ ! -d checkpoints ] || [ -z "$(ls -A checkpoints 2>/dev/null)" ]; then
@@ -60,4 +90,13 @@ if [ "${CHECKPOINT_FILES}" -eq 0 ]; then
     exit 1
 fi
 
-echo "Modelos SadTalker baixados com sucesso (${CHECKPOINT_FILES} arquivos encontrados)"
+# Verificar arquivos gfpgan
+GFPGAN_COUNT=$(find gfpgan/weights -type f -name "*.pth" 2>/dev/null | wc -l)
+if [ "${GFPGAN_COUNT}" -eq 0 ]; then
+    echo "::error::Nenhum arquivo de modelo encontrado em gfpgan/weights/ após download"
+    exit 1
+fi
+
+echo "=== Modelos SadTalker baixados com sucesso ==="
+echo "  - Checkpoints: ${CHECKPOINT_FILES} arquivos"
+echo "  - GFPGAN weights: ${GFPGAN_COUNT} arquivos"

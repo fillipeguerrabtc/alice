@@ -38,7 +38,10 @@ echo "Baixando arquivos LFS..."
 git lfs fetch --all
 git lfs pull
 
-echo "Instalando dependências Python..."
-python3 -m pip install --no-cache-dir -r requirements.txt
+# NOTA: NÃO instalamos requirements.txt do Wav2Lip porque:
+# 1. O requirements.txt do repositório tem versões antigas (opencv-python==4.1.0.25) que não existem mais no PyPI
+# 2. Já instalamos nossas próprias dependências compatíveis no Dockerfile (docker/lip-sync/requirements.txt)
+# 3. Evita conflitos de versões entre dependências
+echo "Pulando instalação de requirements.txt do Wav2Lip (usando dependências do container)"
 
 echo "Repositório Wav2Lip configurado com sucesso"
