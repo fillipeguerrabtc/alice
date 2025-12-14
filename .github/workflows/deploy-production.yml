@@ -65,12 +65,16 @@ concurrency:
   cancel-in-progress: true
 
 # =============================================================================
-# SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
+# SEGURANÇA: Permissões no nível do workflow (GAP-GHACTIONS-003)
+# IMPORTANTE: Quando chamado via workflow_call, estas permissões definem o
+# escopo máximo disponível para os jobs. O chamador (release.yml) deve
+# conceder pelo menos estas permissões no job trigger-deploy.
 # =============================================================================
 permissions:
   contents: read
-  security-events: write
-  actions: read
+  packages: write        # Necessário para push ao GHCR (job build-docker)
+  security-events: write # Necessário para upload SARIF (jobs security-scan, image-security-scan)
+  actions: read          # Necessário para verificar Code Scanning habilitado
 
 env:
   # REGRA 6: Enterprise-grade - versionamento automático (não hardcoded)

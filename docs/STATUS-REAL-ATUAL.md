@@ -586,6 +586,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** `release.yml`: adicionado bloco `permissions` ao job `trigger-deploy` para workflow_call. Quando um workflow chama outro via `workflow_call`, as permissões do chamado são limitadas pelas do chamador. Sem permissões explícitas, o job herdava `none` causando falha. Permissões adicionadas: `contents: read`, `packages: write`, `security-events: write`, `actions: read`.
 
+> **NOTA (14/12/2025):** `deploy-production.yml`: adicionado `packages: write` às permissões do workflow-level. Quando chamado via `workflow_call`, as permissões do workflow-level do chamado definem o escopo máximo disponível para os jobs internos. Sem `packages: write`, o job `build-docker` falharia ao tentar push para GHCR.
+
 ---
 
 ## 🔑 SECRETS DOCUMENTADOS
@@ -846,7 +848,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.51 - Correção permissões workflow_call em release.yml*
+*Versão: 3.52 - Correção completa permissões workflow_call (release + deploy)*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
