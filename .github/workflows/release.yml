@@ -270,34 +270,11 @@ jobs:
   # ===========================================================================
   trigger-deploy:
     name: Disparar Deploy Automático
-    runs-on: ubuntu-latest
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    
-    steps:
-      - name: Disparar workflow de deploy
-        uses: actions/github-script@v7
-        with:
-          # IMPORTANTE: GITHUB_TOKEN não pode disparar workflows
-          # Precisa de PAT com permissão 'workflow' (GH_PAT)
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            console.log('🚀 Iniciando deploy automático após Release bem-sucedido');
-            console.log('📦 Versão: ${{ needs.create-release.outputs.version }}');
-            
-            // NOTA: deploy-production.yml aceita apenas 'version' e 'services'
-            // skip_approval e skip_tests foram removidos (REGRA 4 e 6 CLAUDE.md)
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
-              ref: 'main',
-              inputs: {
-                version: '${{ needs.create-release.outputs.version }}',
-                services: 'all'
-              }
-            });
-            
-            console.log('✅ Deploy disparado automaticamente!');
-            console.log('🚀 Pipeline 100% automático - deploy em andamento...');
+    uses: ./.github/workflows/deploy-production.yml
+    with:
+      version: ${{ needs.create-release.outputs.version }}
+      services: all
+    secrets: inherit

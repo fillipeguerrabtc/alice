@@ -38,6 +38,24 @@ on:
         required: false
         default: 'all'
 
+  # =============================================================================
+  # REUSO ENTERPRISE: Permitir chamada via workflow_call (Release -> Deploy)
+  # - Elimina dependência de PAT; secrets herdados (secrets: inherit)
+  # - Inputs compatíveis com workflow_dispatch para manter comportamento uniforme
+  # =============================================================================
+  workflow_call:
+    inputs:
+      version:
+        description: 'Versão para deploy (ex: v1.0.0, latest)'
+        required: false
+        default: 'latest'
+        type: string
+      services:
+        description: 'Serviços para deploy (all, alice-only, erpnext-only)'
+        required: false
+        default: 'all'
+        type: string
+
 # =============================================================================
 # CONCURRENCY: Evitar múltiplos deploys simultâneos
 # cancel-in-progress: true cancela deploys anteriores automaticamente
@@ -62,6 +80,7 @@ env:
   DOMAIN: yesyoudeserve.duckdns.org
   REGISTRY: ghcr.io
   IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+  CODE_SCANNING_ENABLED: "false"
 
 jobs:
   # ===========================================================================
@@ -230,6 +249,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: code-quality
     if: always() && (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped')
+    env:
+      CODE_SCANNING_ENABLED: "false"
     
     permissions:
       contents: read
@@ -308,9 +329,11 @@ jobs:
               core.info('Repository visibility: ' + res.data.visibility);
               core.info('Code Scanning enabled: ' + enabled);
               core.setOutput('enabled', enabled ? 'true' : 'false');
+              core.exportVariable('CODE_SCANNING_ENABLED', enabled ? 'true' : 'false');
             } catch (e) {
               core.warning('Erro ao verificar Code Scanning: ' + e.message);
               core.setOutput('enabled', 'false');
+              core.exportVariable('CODE_SCANNING_ENABLED', 'false');
             }
 
       # Upload SARIF como artifact para download e análise
@@ -327,13 +350,13 @@ jobs:
       # SHA: github/codeql-action@v3.27.0 (2024-11-05)
 
       - name: Upload Trivy scan results
-        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        if: always() && env.CODE_SCANNING_ENABLED == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-results.sarif'
 
       - name: Skip SARIF upload (Code Scanning disabled)
-        if: always() && steps.check-code-scanning.outputs.enabled != 'true'
+        if: always() && env.CODE_SCANNING_ENABLED != 'true'
         run: |
           echo "ℹ️ Upload SARIF para aba Security/Code scanning foi pulado."
           echo "Motivo: Code Scanning indisponível neste repositório (ex.: repo privado sem GitHub Advanced Security)."
@@ -1073,7 +1096,7 @@ jobs:
           file: apps/api-gateway/Dockerfile
           push: true
           build-args: |
-            TRAEFIK_VERSION=${{ env.TRAEFIK_VERSION }}
+            TRAEFIK_VERSION=${{ steps.versions.outputs.traefik_version }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-api-gateway:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-api-gateway:latest
@@ -1088,7 +1111,7 @@ jobs:
           file: ./infra/backup/Dockerfile.pgbackrest
           push: true
           build-args: |
-            PGBACKREST_VERSION=${{ env.PGBACKREST_VERSION }}
+            PGBACKREST_VERSION=${{ steps.versions.outputs.pgbackrest_version }}
           tags: |
             ${{ env.IMAGE_PREFIX }}-pgbackrest:${{ github.sha }}
             ${{ env.IMAGE_PREFIX }}-pgbackrest:latest
@@ -1262,28 +1285,28 @@ jobs:
       # Se falhar, é um problema que precisa ser investigado, não mascarado.
       # Os resultados do scan crítico já estão salvos como artifacts (step posterior).
       - name: Upload Trivy Auth scan results
-        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        if: always() && env.CODE_SCANNING_ENABLED == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-auth.sarif'
           category: 'trivy-auth-image'
 
       - name: Upload Trivy Chat scan results
-        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        if: always() && env.CODE_SCANNING_ENABLED == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-chat.sarif'
           category: 'trivy-chat-image'
 
       - name: Upload Trivy Frontend scan results
-        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        if: always() && env.CODE_SCANNING_ENABLED == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-frontend.sarif'
           category: 'trivy-frontend-image'
 
       - name: Upload Trivy pgBackRest scan results
-        if: always() && steps.check-code-scanning.outputs.enabled == 'true'
+        if: always() && env.CODE_SCANNING_ENABLED == 'true'
         uses: github/codeql-action/upload-sarif@4f3212b61783c3c68e8309a0f18a699764811cda
         with:
           sarif_file: 'trivy-pgbackrest.sarif'
@@ -1444,9 +1467,9 @@ jobs:
           SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
-          SALAD_API_URL_VAR: ${{ vars.SALAD_API_URL || 'https://api.salad.com/api/public' }}
-          SALAD_MEDIA_PROJECT_VAR: ${{ vars.SALAD_MEDIA_PROJECT || 'alice-media' }}
-          SALAD_GPU_CLASS_VAR: ${{ vars.SALAD_GPU_CLASS || 'premium-gpu' }}
+          SALAD_API_URL_VAR: ${{ secrets.SALAD_API_URL }}
+          SALAD_MEDIA_PROJECT_VAR: ${{ secrets.SALAD_MEDIA_PROJECT }}
+          SALAD_GPU_CLASS_VAR: ${{ secrets.SALAD_GPU_CLASS }}
         run: |
           set -euo pipefail
           # Secrets obrigatórias (fail-fast em produção)
@@ -1876,10 +1899,11 @@ jobs:
 
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
               # Garantir ruamel.yaml disponível (primeiro via apt, depois pip como fallback)
-              if ! python3 - <<'PY' >/dev/null 2>&1; then
-from ruamel import yaml  # noqa
-PY
-              then
+              check_ruamel() {
+                python3 -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('ruamel.yaml') else 1)" >/dev/null 2>&1
+              }
+
+              if ! check_ruamel; then
                 echo "⚠️ ruamel.yaml não encontrado, tentando instalar via apt..."
                 apt-get update -qq && apt-get install -y python3-ruamel.yaml python3-pip python3-distutils python3-setuptools >/dev/null 2>&1 || {
                   echo "❌ ERRO CRÍTICO: Falha ao instalar python3-ruamel.yaml (apt)"
@@ -1887,10 +1911,7 @@ PY
                 }
               fi
               # Se ainda não estiver presente, tentar pip (global com break-system-packages) e, por fim, --user
-              if ! python3 - <<'PY' >/dev/null 2>&1; then
-from ruamel import yaml  # noqa
-PY
-              then
+              if ! check_ruamel; then
                 PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
                   echo "⚠️  Falha no pip (modo padrão), tentando --user..."
                   pip3 install --user ruamel.yaml || {
@@ -1900,6 +1921,10 @@ PY
                     exit 1
                   }
                 }
+              fi
+              if ! check_ruamel; then
+                echo "❌ ERRO CRÍTICO: ruamel.yaml ausente após tentativas (apt/pip)"
+                exit 1
               fi
 
               cd /opt/alice/app
