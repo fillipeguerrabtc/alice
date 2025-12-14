@@ -11,16 +11,10 @@
 name: Update Dependencies
 
 on:
-  # ENTERPRISE: Explicitamente DESABILITAR trigger de push
-  # Sem isso, GitHub Actions pode disparar o workflow em push por comportamento padrão
-  push:
-    branches-ignore:
-      - '**'  # Ignora TODOS os branches - workflow NUNCA roda em push
-  
-  # Executar semanalmente (domingos às 02:00 UTC)
+  # APENAS schedule e workflow_dispatch - SEM trigger de push
+  # Workflow roda: domingos 02:00 UTC (automático) ou manual (workflow_dispatch)
   schedule:
-    - cron: '0 2 * * 0'  # Todo domingo às 02:00 UTC
-  # Permitir execução manual
+    - cron: '0 2 * * 0'
   workflow_dispatch:
     inputs:
       update_type:
@@ -50,9 +44,6 @@ jobs:
   check_updates:
     name: Verificar Atualizações
     runs-on: ubuntu-latest
-    # ENTERPRISE: Cancelar se disparado por push (bug do GitHub Actions)
-    # Este workflow só deve rodar em schedule ou workflow_dispatch
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     outputs:
       has_updates: ${{ steps.check_updates.outputs.has_updates }}
       updates_json: ${{ steps.check_updates.outputs.updates_json }}
@@ -179,10 +170,7 @@ jobs:
   update-and-pr:
     name: Atualizar Dependências e Criar PR
     needs: check_updates
-    # ENTERPRISE: Garantir que só rode em schedule/workflow_dispatch E quando há updates
-    if: |
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
-      needs.check_updates.outputs.has_updates == 'true'
+    if: needs.check_updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     
     steps:
