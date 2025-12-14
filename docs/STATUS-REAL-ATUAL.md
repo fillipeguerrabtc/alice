@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.54 - Restauração pipeline 3 workflows separados (CI → Release → Deploy)
+> **Versão:** 3.55 - Validação enterprise Salad Cloud + pipeline 3 workflows
 
 ---
 
@@ -595,7 +595,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **ESCLARECIMENTO - Regra 4 vs Pipeline Automática**: A Regra 4 ("APROVAÇÃO OBRIGATÓRIA") do CLAUDE.md refere-se ao workflow de DESENVOLVIMENTO (pedir aprovação ao usuário antes de mudanças grandes no código), NÃO a aprovação manual de deploy. A remoção de `environment: production` foi intencional - o security scan (Trivy) nas imagens Docker é o gate de qualidade enterprise antes do deploy. Pipeline 100% automática está CORRETA conforme definido em "Pipeline: Push → CI (auto) → Release (auto) → Deploy (auto)".
 
-> **NOTA (14/12/2025):** **ESCLARECIMENTO - vars.* vs fetch_repo_var()**: A sintaxe `vars.*` do GitHub Actions é o método oficial e enterprise-grade para acessar variáveis de repositório. Se houver problemas de permissão/auth no acesso às vars, o workflow falha ANTES de executar o job (fail-fast nativo). Os defaults (`|| 'value'`) são valores de produção válidos (não mocks), e se a configuração Salad estiver incorreta, falhará em runtime com erro claro. A função `fetch_repo_var()` foi removida por ser redundante - GitHub Actions já faz fail-fast em erros de API.
+> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Validação Salad Cloud**: Implementada validação enterprise-grade para variáveis Salad Cloud. Em vez de usar `vars.* || 'default'` silenciosamente, o workflow agora: (1) Separa variáveis configuradas dos defaults, (2) Emite `::warning::` quando usando defaults para auditoria, (3) Loga resumo completo dos valores Salad para rastreabilidade. Os defaults são valores de produção válidos (API oficial Salad), não mocks. Esta abordagem garante visibilidade quando variáveis não estão configuradas, mantendo compatibilidade com repositórios que usam defaults.
 
 ---
 
@@ -857,7 +857,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.54 - Restauração pipeline 3 workflows separados (CI → Release → Deploy)*
+*Versão: 3.55 - Validação enterprise Salad Cloud + pipeline 3 workflows*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

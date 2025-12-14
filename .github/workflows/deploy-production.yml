@@ -1480,12 +1480,56 @@ jobs:
           SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
-          # Variáveis Salad com defaults (vars.* acessível diretamente)
-          SALAD_API_URL_VAR: ${{ vars.SALAD_API_URL || 'https://api.salad.com/api/public' }}
-          SALAD_MEDIA_PROJECT_VAR: ${{ vars.SALAD_MEDIA_PROJECT || 'alice-media' }}
-          SALAD_GPU_CLASS_VAR: ${{ vars.SALAD_GPU_CLASS || 'premium-gpu' }}
+          # Variáveis Salad (passadas separadamente para auditoria)
+          SALAD_API_URL_CONFIGURED: ${{ vars.SALAD_API_URL }}
+          SALAD_MEDIA_PROJECT_CONFIGURED: ${{ vars.SALAD_MEDIA_PROJECT }}
+          SALAD_GPU_CLASS_CONFIGURED: ${{ vars.SALAD_GPU_CLASS }}
         run: |
           set -euo pipefail
+          # =============================================================
+          # REGRA 6: Validação Enterprise das variáveis Salad
+          # - Logging de auditoria para rastreabilidade
+          # - Distinção clara entre "configurado" e "usando default"
+          # - Aviso visível quando usando defaults
+          # =============================================================
+          echo "🔍 Validando variáveis Salad Cloud..."
+          
+          # Defaults de produção válidos (não mocks)
+          SALAD_API_URL_DEFAULT="https://api.salad.com/api/public"
+          SALAD_MEDIA_PROJECT_DEFAULT="alice-media"
+          SALAD_GPU_CLASS_DEFAULT="premium-gpu"
+          
+          # Aplicar valores com logging de auditoria
+          if [ -n "${SALAD_API_URL_CONFIGURED:-}" ]; then
+            SALAD_API_URL_VAR="${SALAD_API_URL_CONFIGURED}"
+            echo "✅ SALAD_API_URL: usando valor configurado no repositório"
+          else
+            SALAD_API_URL_VAR="${SALAD_API_URL_DEFAULT}"
+            echo "::warning::SALAD_API_URL não configurado - usando default: ${SALAD_API_URL_DEFAULT}"
+          fi
+          
+          if [ -n "${SALAD_MEDIA_PROJECT_CONFIGURED:-}" ]; then
+            SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_CONFIGURED}"
+            echo "✅ SALAD_MEDIA_PROJECT: usando valor configurado no repositório"
+          else
+            SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_DEFAULT}"
+            echo "::warning::SALAD_MEDIA_PROJECT não configurado - usando default: ${SALAD_MEDIA_PROJECT_DEFAULT}"
+          fi
+          
+          if [ -n "${SALAD_GPU_CLASS_CONFIGURED:-}" ]; then
+            SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_CONFIGURED}"
+            echo "✅ SALAD_GPU_CLASS: usando valor configurado no repositório"
+          else
+            SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_DEFAULT}"
+            echo "::warning::SALAD_GPU_CLASS não configurado - usando default: ${SALAD_GPU_CLASS_DEFAULT}"
+          fi
+          
+          echo "📋 Resumo Salad Cloud:"
+          echo "   API URL: ${SALAD_API_URL_VAR}"
+          echo "   Project: ${SALAD_MEDIA_PROJECT_VAR}"
+          echo "   GPU Class: ${SALAD_GPU_CLASS_VAR}"
+          echo ""
+          
           # Secrets obrigatórias (fail-fast em produção)
           POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
           if [ -z "${POSTGRES_PASSWORD}" ]; then
