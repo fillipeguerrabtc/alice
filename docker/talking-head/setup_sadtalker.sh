@@ -79,24 +79,37 @@ if [ ! -d checkpoints ] || [ -z "$(ls -A checkpoints 2>/dev/null)" ]; then
 fi
 
 # Contar arquivos de checkpoint
+# Enterprise-grade: validar contagem EXATA (2 safetensors + 2 pth.tar = 4 total)
 SAFETENSORS_COUNT=$(find checkpoints -type f -name "*.safetensors" 2>/dev/null | wc -l)
 PTHTAR_COUNT=$(find checkpoints -type f -name "*.pth.tar" 2>/dev/null | wc -l)
-PTH_COUNT=$(find checkpoints -type f -name "*.pth" ! -name "*.pth.tar" 2>/dev/null | wc -l)
-CHECKPOINT_FILES=$((SAFETENSORS_COUNT + PTHTAR_COUNT + PTH_COUNT))
+CHECKPOINT_FILES=$((SAFETENSORS_COUNT + PTHTAR_COUNT))
 
-if [ "${CHECKPOINT_FILES}" -eq 0 ]; then
-    echo "::error::Nenhum arquivo de checkpoint encontrado em checkpoints/ após download"
-    echo "::error::Arquivos esperados: *.safetensors, *.pth.tar ou *.pth"
+# Validar contagem exata: 2 safetensors + 2 pth.tar = 4 arquivos
+if [ "${SAFETENSORS_COUNT}" -ne 2 ]; then
+    echo "::error::Esperado 2 arquivos safetensors, encontrado ${SAFETENSORS_COUNT}"
+    echo "::error::Arquivos esperados: SadTalker_V0.0.2_256.safetensors, SadTalker_V0.0.2_512.safetensors"
+    exit 1
+fi
+
+if [ "${PTHTAR_COUNT}" -ne 2 ]; then
+    echo "::error::Esperado 2 arquivos pth.tar, encontrado ${PTHTAR_COUNT}"
+    echo "::error::Arquivos esperados: mapping_00109-model.pth.tar, mapping_00229-model.pth.tar"
     exit 1
 fi
 
 # Verificar arquivos gfpgan
+# Enterprise-grade: validar contagem EXATA (4 arquivos pth)
 GFPGAN_COUNT=$(find gfpgan/weights -type f -name "*.pth" 2>/dev/null | wc -l)
-if [ "${GFPGAN_COUNT}" -eq 0 ]; then
-    echo "::error::Nenhum arquivo de modelo encontrado em gfpgan/weights/ após download"
+if [ "${GFPGAN_COUNT}" -ne 4 ]; then
+    echo "::error::Esperado 4 arquivos GFPGAN, encontrado ${GFPGAN_COUNT}"
+    echo "::error::Arquivos esperados: alignment_WFLW_4HG.pth, detection_Resnet50_Final.pth, GFPGANv1.4.pth, parsing_parsenet.pth"
     exit 1
 fi
 
+# Calcular total de arquivos baixados
+TOTAL_FILES=$((CHECKPOINT_FILES + GFPGAN_COUNT))
+
 echo "=== Modelos SadTalker baixados com sucesso ==="
-echo "  - Checkpoints: ${CHECKPOINT_FILES} arquivos"
+echo "  - Checkpoints: ${CHECKPOINT_FILES} arquivos (2 safetensors + 2 pth.tar)"
 echo "  - GFPGAN weights: ${GFPGAN_COUNT} arquivos"
+echo "  - Total: ${TOTAL_FILES} arquivos"
