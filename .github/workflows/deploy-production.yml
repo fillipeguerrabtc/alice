@@ -1884,7 +1884,7 @@ jobs:
               # Instalar ruamel.yaml (sem silencioso para logar eventual falha)
               PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
                 echo "⚠️  Falha no pip (modo padrão), tentando --user..."
-                PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install --user ruamel.yaml || {
+                pip3 install --user ruamel.yaml || {
                   echo "❌ ERRO CRÍTICO: Não foi possível instalar ruamel.yaml"
                   echo "   Versionamento automático é obrigatório para supply chain security"
                   echo "   Deploy abortado para evitar uso de versões/digests desatualizados"
