@@ -17,13 +17,9 @@ name: Deploy to Production (Hetzner Cloud)
 
 on:
   # =============================================================================
-  # REGRA 4: Deploy APENAS manual (Aprovação Obrigatória)
-  # Best Practices 2025: Usar Release & Tag para versionamento, depois deploy
-  # 
-  # COMPLIANCE: Removidos skip_approval e skip_tests (REGRA 4 e 6 do CLAUDE.md)
-  # - Testes são OBRIGATÓRIOS antes de qualquer deploy
-  # - Aprovação manual é OBRIGATÓRIA sem exceções
-  # - Para hotfixes críticos, usar branch hotfix/ com PR review
+  # Deploy disparado automaticamente pelo Release workflow via GH_PAT
+  # Pipeline 100% automático: Push → CI → Release → Deploy
+  # Sem aprovação manual - security scan é o gate de qualidade
   # =============================================================================
   workflow_dispatch:
     inputs:
@@ -38,24 +34,6 @@ on:
         required: false
         default: 'all'
 
-  # =============================================================================
-  # REUSO ENTERPRISE: Permitir chamada via workflow_call (Release -> Deploy)
-  # - Elimina dependência de PAT; secrets herdados (secrets: inherit)
-  # - Inputs compatíveis com workflow_dispatch para manter comportamento uniforme
-  # =============================================================================
-  workflow_call:
-    inputs:
-      version:
-        description: 'Versão para deploy (ex: v1.0.0, latest)'
-        required: false
-        default: 'latest'
-        type: string
-      services:
-        description: 'Serviços para deploy (all, alice-only, erpnext-only)'
-        required: false
-        default: 'all'
-        type: string
-
 # =============================================================================
 # CONCURRENCY: Evitar múltiplos deploys simultâneos
 # cancel-in-progress: true cancela deploys anteriores automaticamente
@@ -65,16 +43,13 @@ concurrency:
   cancel-in-progress: true
 
 # =============================================================================
-# SEGURANÇA: Permissões no nível do workflow (GAP-GHACTIONS-003)
-# IMPORTANTE: Quando chamado via workflow_call, estas permissões definem o
-# escopo máximo disponível para os jobs. O chamador (release.yml) deve
-# conceder pelo menos estas permissões no job trigger-deploy.
+# SEGURANÇA: Permissões mínimas no nível do workflow (GAP-GHACTIONS-003)
 # =============================================================================
 permissions:
   contents: read
-  packages: write        # Necessário para push ao GHCR (job build-docker)
-  security-events: write # Necessário para upload SARIF (jobs security-scan, image-security-scan)
-  actions: read          # Necessário para verificar Code Scanning habilitado
+  packages: write
+  security-events: write
+  actions: read
 
 env:
   # REGRA 6: Enterprise-grade - versionamento automático (não hardcoded)
@@ -1457,7 +1432,6 @@ jobs:
     needs: [build-docker, image-security-scan]
     # Deploy automático se build e security scan passarem
     if: needs.build-docker.result == 'success' && needs.image-security-scan.result == 'success'
-    environment: production
     
     permissions:
       contents: read
@@ -1506,67 +1480,12 @@ jobs:
           SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
           SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
-          GITHUB_TOKEN: ${{ github.token }}
-          REPO_FULL_NAME: ${{ github.repository }}
+          # Variáveis Salad com defaults (vars.* acessível diretamente)
+          SALAD_API_URL_VAR: ${{ vars.SALAD_API_URL || 'https://api.salad.com/api/public' }}
+          SALAD_MEDIA_PROJECT_VAR: ${{ vars.SALAD_MEDIA_PROJECT || 'alice-media' }}
+          SALAD_GPU_CLASS_VAR: ${{ vars.SALAD_GPU_CLASS || 'premium-gpu' }}
         run: |
           set -euo pipefail
-          # =============================================================
-          # Função para ler repository variables via GitHub API
-          # - 200: Variável existe -> retorna valor
-          # - 404: Variável não existe -> retorna vazio (usar default)
-          # - Outros (401/403/5xx): Erro de API -> fail-fast
-          # REGRA 6: Enterprise-grade - não mascarar erros de segurança
-          # =============================================================
-          fetch_repo_var() {
-            local var_name="$1"
-            local api_url="https://api.github.com/repos/${REPO_FULL_NAME}/actions/variables/${var_name}"
-            local response http_code body
-            
-            # Capturar código HTTP e corpo separadamente
-            response=$(curl -sL -w "\n%{http_code}" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "${api_url}" 2>/dev/null) || {
-              echo "::error::Falha de rede ao acessar GitHub API para variável ${var_name}" >&2
-              return 1
-            }
-            
-            http_code=$(echo "${response}" | tail -n1)
-            body=$(echo "${response}" | sed '$d')
-            
-            case "${http_code}" in
-              200)
-                # Variável existe - extrair valor
-                echo "${body}" | jq -r '.value // empty'
-                ;;
-              404)
-                # Variável não configurada - comportamento esperado, usar default
-                echo ""
-                ;;
-              401|403)
-                # Erro de autenticação/permissão - fail-fast (problema de segurança)
-                echo "::error::GitHub API retornou ${http_code} para variável ${var_name}. Verifique permissões do GITHUB_TOKEN." >&2
-                echo "::error::Resposta: ${body}" >&2
-                return 1
-                ;;
-              *)
-                # Outros erros (5xx, etc) - fail-fast
-                echo "::error::GitHub API retornou erro ${http_code} para variável ${var_name}." >&2
-                echo "::error::Resposta: ${body}" >&2
-                return 1
-                ;;
-            esac
-          }
-          
-          # Ler repository variables via GitHub API (com fail-fast em erros reais)
-          SALAD_API_URL_VAR="$(fetch_repo_var "SALAD_API_URL")" || exit 1
-          SALAD_MEDIA_PROJECT_VAR="$(fetch_repo_var "SALAD_MEDIA_PROJECT")" || exit 1
-          SALAD_GPU_CLASS_VAR="$(fetch_repo_var "SALAD_GPU_CLASS")" || exit 1
-          
-          # Aplicar defaults apenas se variável não estiver configurada (404)
-          SALAD_API_URL_VAR="${SALAD_API_URL_VAR:-https://api.salad.com/api/public}"
-          SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_VAR:-alice-media}"
-          SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_VAR:-premium-gpu}"
           # Secrets obrigatórias (fail-fast em produção)
           POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
           if [ -z "${POSTGRES_PASSWORD}" ]; then

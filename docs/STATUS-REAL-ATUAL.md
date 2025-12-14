@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.46 - Correção SHA256 digests + migração ERPNext para arquitetura unificada v15
+> **Versão:** 3.54 - Restauração pipeline 3 workflows separados (CI → Release → Deploy)
 
 ---
 
@@ -588,7 +588,10 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** `deploy-production.yml`: adicionado `packages: write` às permissões do workflow-level. Quando chamado via `workflow_call`, as permissões do workflow-level do chamado definem o escopo máximo disponível para os jobs internos. Sem `packages: write`, o job `build-docker` falharia ao tentar push para GHCR.
 
-> **NOTA (14/12/2025):** `release.yml`: adicionado `security-events: write` e `actions: read` às permissões do workflow-level. Jobs não podem escalar permissões além do workflow-level. Sem estas permissões, o job `trigger-deploy` falharia ao chamar `deploy-production.yml` que requer estas permissões para upload SARIF e verificação de Code Scanning.
+> **NOTA (14/12/2025):** **REVERSÃO ENTERPRISE PIPELINE**: Restaurada arquitetura original de 3 workflows separados (CI → Release → Deploy) para garantir auditoria e versionamento independentes. Alterações:
+> - `deploy-production.yml`: removido `workflow_call` trigger (mantém apenas `workflow_dispatch`), removido `environment: production` (deploy 100% automático), removida função `fetch_repo_var()` (substituída por `vars.*` com fallback direto), removidas permissões extras de workflow_call
+> - `release.yml`: `trigger-deploy` usa `createWorkflowDispatch` via GH_PAT para disparar deploy como execução SEPARADA
+> - Pipeline 100% automático sem aprovação manual: Push → CI → Release → Deploy (security scan é o gate de qualidade)
 
 ---
 
@@ -850,7 +853,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 14/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.53 - Correção workflow-level permissions em release.yml*
+*Versão: 3.54 - Restauração pipeline 3 workflows separados (CI → Release → Deploy)*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

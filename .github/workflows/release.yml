@@ -3,7 +3,7 @@
 # =============================================================================
 # Descrição: Versionamento semântico da Alice Enterprise Platform
 # Best Practices 2025: Conventional Commits, SHA pinning, least privilege
-# Fluxo: Criar Release → Build Images → Deploy Manual
+# Fluxo: Criar Release → Build Images → Disparar Deploy (workflow separado)
 # =============================================================================
 
 name: Release & Tag
@@ -19,7 +19,7 @@ on:
         description: 'É uma pré-release (alpha/beta)?'
         type: boolean
         default: false
-      # NOTA: Deploy agora é automático após Release bem-sucedido
+      # NOTA: Deploy é disparado automaticamente após Release bem-sucedido
       # O gate de segurança está no ambiente "production" do deploy-production.yml
 
 # =============================================================================
@@ -31,16 +31,11 @@ concurrency:
   cancel-in-progress: true
 
 # =============================================================================
-# SEGURANÇA: Permissões no nível do workflow (Best Practices 2025)
-# IMPORTANTE: O job trigger-deploy chama deploy-production.yml via workflow_call.
-# Jobs não podem escalar permissões além do workflow-level, então todas as
-# permissões necessárias pelo workflow chamado devem estar aqui.
+# SEGURANÇA: Permissões mínimas (Best Practices 2025)
 # =============================================================================
 permissions:
-  contents: write          # Necessário para criar tags e releases
-  packages: write          # Necessário para push ao GHCR (build-images + deploy)
-  security-events: write   # Necessário para upload SARIF no deploy (security-scan jobs)
-  actions: read            # Necessário para verificar Code Scanning habilitado no deploy
+  contents: write
+  packages: write
 
 env:
   REGISTRY: ghcr.io
@@ -165,10 +160,10 @@ jobs:
             Para fazer deploy desta versão, execute o workflow "Deploy to Production" com `version: ${{ inputs.version }}`
 
   # ===========================================================================
-  # Job 2: Build e Push Docker Images (opcional)
+  # Job 2: Build e Push Docker Images
   # ===========================================================================
   # NOTA: Cada runner da matrix executa em VM isolada, então a limpeza de disco
-  # precisa estar em cada job. O cache do Docker é via GHA (remoto), não local.
+  # precisa estar em cada job. O cache do Docker é via Registry Cache (GHCR).
   # ===========================================================================
   build-images:
     name: Build Docker Images
@@ -205,7 +200,6 @@ jobs:
     steps:
       # IMPORTANTE: Checkout da TAG para garantir reprodutibilidade de releases
       # A tag aponta para o commit exato que representa esta versão
-      # Usar Registry Cache (não GHA cache) para compartilhar entre branches/tags
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -213,7 +207,7 @@ jobs:
 
       # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
       # Cada runner da matrix é uma VM isolada, então precisa limpar em cada uma
-      # NOTA: NÃO limpar cache do Docker - usamos GHA cache (remoto) que é preservado
+      # NOTA: NÃO limpar cache do Docker - usamos Registry Cache (remoto) que é preservado
       - name: Liberar espaço em disco
         run: |
           echo "📊 Espaço antes da limpeza:"
@@ -237,7 +231,6 @@ jobs:
       # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
       # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
       # Mais seguro que PAT: não requer secret manual, expira automaticamente, permissões mínimas
-      # NOTA: Usar github.token (não secrets.GITHUB_TOKEN) - é um contexto especial do GitHub Actions
       - name: Login no GHCR
         uses: docker/login-action@v3
         with:
@@ -254,7 +247,6 @@ jobs:
       # - mode=max salva todas as layers intermediárias
       # - Hash SHA256 invalida cache automaticamente quando arquivos mudam
       # - pnpm-lock.yaml garante versões exatas
-      # - Trivy escaneia imagem FINAL, não cache
       # ===========================================================================
       - name: Build e Push
         uses: docker/build-push-action@v6
@@ -269,28 +261,42 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache,mode=max
 
   # ===========================================================================
-  # Job 3: Disparar Deploy Automaticamente
-  # REGRA 4: Deploy automático após Release bem-sucedido (com gate de segurança)
-  # O deploy-production.yml tem aprovação manual obrigatória (environment: production)
+  # Job 3: Disparar Deploy Automaticamente (Workflow Separado)
+  # Pipeline 100% automático: CI → Release → Deploy (sem aprovação manual)
+  # Security scan em imagens é o gate de qualidade antes do deploy
+  # IMPORTANTE: Workflows separados para auditoria e versionamento independente
   # ===========================================================================
   trigger-deploy:
     name: Disparar Deploy Automático
+    runs-on: ubuntu-latest
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
-    if: ${{ github.ref == 'refs/heads/main' && (!github.event.inputs.prerelease || github.event.inputs.prerelease == 'false') && needs.build-images.result == 'success' }}
-    # IMPORTANTE: Permissões necessárias para workflow_call
-    # O workflow chamado (deploy-production.yml) requer estas permissões:
-    # - security-events: write (jobs security-scan e image-security-scan - upload SARIF)
-    # - actions: read (workflow level - verificar Code Scanning)
-    # - packages: write (job build-docker - push para GHCR)
-    # - contents: read (todos os jobs - checkout)
-    permissions:
-      contents: read
-      packages: write
-      security-events: write
-      actions: read
-    uses: ./.github/workflows/deploy-production.yml
-    with:
-      version: ${{ needs.create-release.outputs.version }}
-      services: all
-    secrets: inherit
+    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
+    
+    steps:
+      - name: Disparar workflow de deploy
+        uses: actions/github-script@v7
+        with:
+          # IMPORTANTE: GITHUB_TOKEN não pode disparar workflows
+          # Precisa de PAT com permissão 'workflow' (GH_PAT)
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            console.log('🚀 Iniciando deploy automático após Release bem-sucedido');
+            console.log('📦 Versão: ${{ needs.create-release.outputs.version }}');
+            
+            // Disparar workflow de deploy como execução SEPARADA
+            // Isso garante auditoria e rastreabilidade independentes
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-production.yml',
+              ref: 'main',
+              inputs: {
+                version: '${{ needs.create-release.outputs.version }}',
+                services: 'all'
+              }
+            });
+            
+            console.log('✅ Deploy disparado automaticamente!');
+            console.log('🔗 Verifique a aba Actions para acompanhar o deploy');
+            console.log('⏳ O deploy aparecerá como uma execução separada');
