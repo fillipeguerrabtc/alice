@@ -1946,7 +1946,10 @@ jobs:
                 echo "::error::Falha ao instalar Docker. Deploy abortado."
                 exit 1
               }
-              systemctl enable docker && systemctl start docker
+              systemctl enable docker && systemctl start docker || {
+                echo "::error::Falha ao iniciar serviço Docker. Deploy abortado."
+                exit 1
+              }
               echo "✅ Docker instalado com sucesso"
             fi
             
@@ -2008,13 +2011,24 @@ jobs:
               echo "✅ ruamel.yaml: instalado"
             else
               echo "⚠️ ruamel.yaml não encontrado, instalando..."
-              apt-get install -y python3-ruamel.yaml >/dev/null 2>&1 || {
+              # Tentar apt primeiro
+              apt-get update -qq && apt-get install -y python3-ruamel.yaml >/dev/null 2>&1
+              
+              # Verificar se apt funcionou - se não, tentar pip
+              if ! python3 -c "import ruamel.yaml" >/dev/null 2>&1; then
+                echo "⚠️ apt não instalou corretamente, tentando pip..."
                 PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
-                  echo "::error::Falha ao instalar ruamel.yaml. Deploy abortado."
+                  echo "::error::Falha ao instalar ruamel.yaml via pip. Deploy abortado."
                   exit 1
                 }
-              }
-              echo "✅ ruamel.yaml instalado com sucesso"
+              fi
+              
+              # Verificação FINAL obrigatória (Enterprise - Regra 6)
+              if ! python3 -c "import ruamel.yaml" >/dev/null 2>&1; then
+                echo "::error::ruamel.yaml não está importável após instalação. Deploy abortado."
+                exit 1
+              fi
+              echo "✅ ruamel.yaml instalado e verificado com sucesso"
             fi
             
             echo "=============================================="
