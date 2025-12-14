@@ -1824,19 +1824,50 @@ jobs:
             # Criar estrutura de diretórios
             mkdir -p /opt/alice/{app,data,logs,backups}
             cd /opt/alice
-            
+
+            # =====================================================
+            # CLONE/UPDATE DO REPO (precisa existir antes do cd infra/docker)
+            # =====================================================
+            REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
+
+            if [ -d "app/.git" ]; then
+              cd app
+              git remote set-url origin "${REPO_URL}"
+              git fetch origin
+              git checkout main
+              git reset --hard origin/main
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
+              cd ..
+            else
+              rm -rf app
+              git clone "${REPO_URL}" app
+              cd app
+              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
+              cd ..
+            fi
+
+            # REGRA 6: mover .env.prod imediatamente após clone/update
+            if [ -f /tmp/.env.prod ]; then
+              mkdir -p app/infra/docker
+              mv /tmp/.env.prod app/infra/docker/.env.prod
+              chmod 600 app/infra/docker/.env.prod
+              echo "✅ .env.prod movido para app/infra/docker/.env.prod"
+            else
+              echo "::error::Arquivo /tmp/.env.prod não encontrado. Verifique o passo de SCP." >&2
+              exit 1
+            fi
+
+            # Login no GHCR (necessário antes de pulls)
+            cd /opt/alice/app
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+
             # ==============================================
             # VERSIONAMENTO AUTOMÁTICO: Atualizar docker-compose.prod.yml
-            # REGRA 6: Enterprise-grade - usar script Python dedicado (não workarounds)
-            # REGRA 11: Seguir melhores práticas - manipulação YAML precisa com ruamel.yaml
             # ==============================================
             echo "🔄 Atualizando docker-compose.prod.yml com versões e digests..."
             cd /opt/alice/app/infra/docker
-            
-            # REGRA 6: Enterprise-grade - usar script Python dedicado (não regex inline)
+
             if [ -f "docker-compose.prod.yml" ] && command -v python3 >/dev/null 2>&1; then
-              # Instalar ruamel.yaml (biblioteca enterprise para manipulação YAML)
-              # REGRA 6: Enterprise-grade - falhar se dependência crítica não puder ser instalada
               pip3 install --quiet --user ruamel.yaml >/dev/null 2>&1 || {
                 echo "⚠️  Falha ao instalar ruamel.yaml, tentando instalação global..."
                 pip3 install --quiet ruamel.yaml >/dev/null 2>&1 || {
@@ -1846,8 +1877,7 @@ jobs:
                   exit 1
                 }
               }
-              
-              # Executar script Python enterprise
+
               cd /opt/alice/app
               python3 scripts/update-component-versions.py \
                 --traefik-version "${TRAEFIK_VERSION}" \
@@ -1889,7 +1919,7 @@ jobs:
               echo "⚠️ docker-compose.prod.yml não encontrado ou python3 não disponível"
               echo "   Usando versões do .env.prod (digests precisam ser atualizados manualmente)"
             fi
-            
+
             cd /opt/alice
             
             # ==============================================
@@ -1962,44 +1992,12 @@ jobs:
             fi
             echo "PRÉ-DEPLOY: Limpeza completa ✓"
             
-            # Clone ou update do repositório
-            REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
-            
-            if [ -d "app/.git" ]; then
-              cd app
-              git remote set-url origin "${REPO_URL}"
-              git fetch origin
-              git checkout main
-              git reset --hard origin/main
-              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
-              cd ..
-            else
-              rm -rf app
-              git clone "${REPO_URL}" app
-              cd app
-              git remote set-url origin "https://github.com/${REPO_FULL_NAME}.git"
-              cd ..
-            fi
-            
-            # REGRA 6: Mover .env.prod para diretório correto IMEDIATAMENTE após clone/update
-            # O arquivo é transferido via SCP para /tmp/.env.prod e DEVE estar disponível
-            # no diretório de trabalho do docker-compose (infra/docker/) para serviços que usam env_file
-            # IMPORTANTE: Mover ANTES de qualquer cd ou uso do docker-compose
-            if [ -f /tmp/.env.prod ]; then
-              mkdir -p app/infra/docker
-              mv /tmp/.env.prod app/infra/docker/.env.prod
-              chmod 600 app/infra/docker/.env.prod
-              echo "✅ .env.prod movido para app/infra/docker/.env.prod"
-            else
-              echo "::error::Arquivo /tmp/.env.prod não encontrado. Verifique o passo de SCP." >&2
-              exit 1
-            fi
-            
-            cd app
-            
-            # Login no GitHub Container Registry
+            # Clone já realizado antes; .env.prod já movido; repositório em /opt/alice/app
+            cd /opt/alice/app
+
+            # Login no GitHub Container Registry (mantido aqui para garantir sessão válida)
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
-            
+
             cd infra/docker
             
             # ==============================================
