@@ -29,10 +29,12 @@ on:
     inputs:
       version:
         description: 'Versão para deploy (ex: v1.0.0, latest)'
+        type: string
         required: false
         default: 'latest'
       services:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
+        type: string
         required: false
         default: 'all'
 
