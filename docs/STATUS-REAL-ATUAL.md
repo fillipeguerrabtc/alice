@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 14 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.44 - Update ALL dependencies to latest stable versions (torch 2.9.1, scipy 1.14.1, opencv 4.12.0)
+> **Versão:** 3.45 - Update ALL platform dependencies to latest stable versions (42+ containers)
 
 ---
 

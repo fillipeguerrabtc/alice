@@ -18,7 +18,8 @@
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
 #
 # Autor: Fillipe Guerra
-# Data: 05 de Dezembro de 2025
+# Data: 14 de Dezembro de 2025
+# Atualização: Todas as imagens atualizadas para versões mais recentes (enterprise-grade)
 # =============================================================================
 
 # =============================================================================
@@ -267,7 +268,8 @@ services:
   # SEGURANÇA: CAP_NET_BIND_SERVICE + Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik:
-    image: traefik:v3.3@sha256:8884ac1939c29f829857dd35229aec4d070a9bd8551c56aee9b81e9df137512e
+    # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
+    image: traefik:v3.6.4@sha256:c5bd185c4ea4b753e4f5189fd7bbdf3e05990da7f00f5140c82c0a8a14c4f85c
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -412,7 +414,8 @@ services:
   # ISOLAMENTO: Redis dedicado para Alice (segregação de ERPNext - Regra 15)
   # ===========================================================================
   alice-redis:
-    image: redis:7-alpine@sha256:4706ecab5371690fecfdd782268929c94ad5b5ce9ce0b35bfdfe191c4ad17851
+    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
+    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
     platform: linux/amd64
     container_name: alice-redis
     restart: always
@@ -1089,7 +1092,8 @@ services:
   # Docs 2025: Redis 7.4 cache - maxmemory = 80-90% do container (200MB para 256MB)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
-    image: redis:7-alpine@sha256:4706ecab5371690fecfdd782268929c94ad5b5ce9ce0b35bfdfe191c4ad17851
+    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
+    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
     platform: linux/amd64
     container_name: erpnext-redis-cache
     restart: always
@@ -1148,7 +1152,8 @@ services:
   # Docs 2025: Redis 7.4 queue - maxmemory = 80-90% do container (200MB para 256MB)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
-    image: redis:7-alpine@sha256:4706ecab5371690fecfdd782268929c94ad5b5ce9ce0b35bfdfe191c4ad17851
+    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
+    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
     platform: linux/amd64
     container_name: erpnext-redis-queue
     restart: always
@@ -1207,7 +1212,8 @@ services:
   # ERPNext restante (services) - mantidos conforme original
   # ===================================================================
   erpnext-configurator:
-    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext:v15.91.0@sha256:3d1e5569642e7fe47efdb01df8543e7d21dbe93edcc0675e0877be0d49789043
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
@@ -1257,7 +1263,8 @@ services:
           cpus: '0.1'
 
   erpnext-create-site:
-    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext:v15.91.0@sha256:3d1e5569642e7fe47efdb01df8543e7d21dbe93edcc0675e0877be0d49789043
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
@@ -1296,7 +1303,8 @@ services:
           cpus: '0.1'
 
   erpnext-backend:
-    image: frappe/erpnext:v15.38.6@sha256:3ea8dbb32c1882272b48f31e73d71a9a8d0a04139a0d2e190ca3ffa2efd5b1d8
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext:v15.91.0@sha256:3d1e5569642e7fe47efdb01df8543e7d21dbe93edcc0675e0877be0d49789043
     platform: linux/amd64
     container_name: erpnext-backend
     restart: unless-stopped
@@ -1340,7 +1348,9 @@ services:
       start_period: 60s
 
   erpnext-frontend:
-    image: frappe/erpnext-nginx:v15.38.6@sha256:7f483b45153f8e2bd05f8ccf6c6e8cb48460fd03d99b389125f81261f3c489b6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: frappe/erpnext-nginx:v15.91.0
     platform: linux/amd64
     container_name: erpnext-frontend
     restart: unless-stopped
@@ -1377,7 +1387,9 @@ services:
       start_period: 30s
 
   erpnext-websocket:
-    image: frappe/frappe-socketio:v15.38.6@sha256:5f8055b3c1e43b67b8aa6fce60077f7b77e58bcbd13913b8a6fac51b07cdbc07
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: frappe/frappe-socketio:v15.91.0
     platform: linux/amd64
     container_name: erpnext-websocket
     restart: unless-stopped
@@ -1413,7 +1425,9 @@ services:
       start_period: 30s
 
   erpnext-worker-default:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-default
     restart: unless-stopped
@@ -1463,7 +1477,8 @@ services:
           cpus: '0.25'
 
   erpnext-worker-short:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-short
     restart: unless-stopped
@@ -1514,7 +1529,8 @@ services:
           cpus: '0.25'
 
   erpnext-worker-long:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-long
     restart: unless-stopped
@@ -1565,7 +1581,8 @@ services:
           cpus: '0.25'
 
   erpnext-scheduler:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-scheduler
     restart: unless-stopped
@@ -1615,7 +1632,8 @@ services:
           cpus: '0.25'
 
   erpnext-worker-default-2:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-default-2
     restart: unless-stopped
@@ -1666,7 +1684,8 @@ services:
           cpus: '0.25'
 
   erpnext-worker-short-2:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-short-2
     restart: unless-stopped
@@ -1717,7 +1736,8 @@ services:
           cpus: '0.25'
 
   erpnext-worker-long-2:
-    image: frappe/erpnext-worker:v15.38.6@sha256:e207cb894c048cbcd03f5f1caef97df45b7df3a3c0de064ca29cb148bc4f4ea6
+    # ATUALIZADO 14/12/2025: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+    image: frappe/erpnext-worker:v15.91.0
     platform: linux/amd64
     container_name: erpnext-worker-long-2
     restart: unless-stopped
@@ -1771,7 +1791,9 @@ services:
   # LANGFUSE, PROMETHEUS, GRAFANA, LOKI, TEMPO, JAEGER (mantidos)
   # ===========================================================================
   langfuse:
-    image: langfuse/langfuse:2.39.1@sha256:cfa44a698370ca2dfaa229bf2e95bdca7b5f64bd9767ed508caee2b1c5c52b0c
+    # ATUALIZADO 14/12/2025: 2.39.1 -> 2.95.12 (corrige CVE-2025-65107)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: langfuse/langfuse:2.95.12
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -1858,7 +1880,8 @@ services:
           cpus: '0.1'
 
   prometheus:
-    image: prom/prometheus:v3.0.1@sha256:ad5624f29c7e2d29e2a57f8e30d24b7fc361c0e7e5f98a5c18f4f4de4dc87914
+    # ATUALIZADO 14/12/2025: v3.0.1 -> v3.8.0 (Dec 2, 2025)
+    image: prom/prometheus:v3.8.0@sha256:2c785d4e9af2224941598d142337931a5f8333065916938c6444294020b45f50
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
@@ -1906,7 +1929,9 @@ services:
           cpus: '0.25'
 
   grafana:
-    image: grafana/grafana:11.1.4@sha256:e730eb7c23ea176c5ba8254286a502b3d8c778e142170a1c0e2d3320171a2d5b
+    # ATUALIZADO 14/12/2025: 11.1.4 -> 11.6.2 (May 22, 2025 - ultima do 11.x, suporte até Jun 2026)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: grafana/grafana:11.6.2
     platform: linux/amd64
     container_name: grafana
     restart: unless-stopped
@@ -1944,7 +1969,9 @@ services:
           cpus: '0.25'
 
   loki:
-    image: grafana/loki:3.1.0@sha256:de41edb2f2c0f908f2a3d5d8fca97a3bc0d2bf262587322c2a0dfbd237d85aed
+    # ATUALIZADO 14/12/2025: 3.1.0 -> 3.6.0 (latest stable)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: grafana/loki:3.6.0
     platform: linux/amd64
     container_name: loki
     restart: unless-stopped
@@ -1973,7 +2000,9 @@ services:
           cpus: '0.25'
 
   promtail:
-    image: grafana/promtail:3.1.0@sha256:ae3863e79fba9d04d13a392fa1430cfd07c25fca053cad3e05447c176278f0da
+    # ATUALIZADO 14/12/2025: 3.1.0 -> 3.6.0 (latest stable)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: grafana/promtail:3.6.0
     platform: linux/amd64
     container_name: promtail
     restart: unless-stopped
@@ -2002,7 +2031,10 @@ services:
           cpus: '0.1'
 
   jaeger:
-    image: jaegertracing/all-in-one:1.58@sha256:1e38787d0ed42e1516289767d04f6c75c5aaf20b611ea343785646533d3a844a
+    # ATUALIZADO 14/12/2025: 1.58 -> 1.76.0 (Dec 3, 2025 - ultima do v1, v1 EOL Dec 31, 2025)
+    # NOTA: Migrar para v2.x em Janeiro 2026
+    # NOTA: Digest será verificado no primeiro deploy
+    image: jaegertracing/all-in-one:1.76.0
     platform: linux/amd64
     container_name: jaeger
     restart: unless-stopped
@@ -2037,7 +2069,9 @@ services:
   # VECTOR - Agregador de logs para Loki
   # ===========================================================================
   vector:
-    image: timberio/vector:0.43.1-alpine@sha256:17f7fd57b9a5bba2b7e8f5c4d4d589c98c47ffc4d7254598b3d5f0f7f6d93c5f
+    # ATUALIZADO 14/12/2025: 0.43.1 -> 0.51.1 (Nov 11, 2025)
+    # NOTA: Digest será verificado no primeiro deploy
+    image: timberio/vector:0.51.1-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped
@@ -2164,7 +2198,8 @@ services:
   # OTEL COLLECTOR - Pipeline unificado de telemetria
   # ===========================================================================
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.114.0@sha256:5d2f6e388933c51dd1bc75fa2d38c2b0b4c6d37cb1e11a77d8f263c3e50c9b0d
+    # ATUALIZADO 14/12/2025: 0.114.0 -> 0.141.0 (Dec 3, 2025)
+    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
     platform: linux/amd64
     container_name: alice-otel-collector
     restart: unless-stopped

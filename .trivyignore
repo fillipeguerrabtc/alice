@@ -13,6 +13,8 @@
 # =============================================================================
 #
 # Atualizacoes realizadas em 14/12/2025:
+#
+# === PYTHON/SALAD CONTAINERS ===
 # - torch: 2.1.2 -> 2.9.1 (corrige CVE-2025-32434, CVE-2024-31580, CVE-2024-31583, CVE-2025-3730, CVE-2025-2953)
 # - torchvision: 0.16.2 -> 0.24.1 (compativel com torch 2.9.1)
 # - torchaudio: 2.1.2 -> 2.9.1 (compativel com torch 2.9.1)
@@ -23,7 +25,27 @@
 # - transformers: 4.35.2 -> 4.53.0 (corrige 17+ CVEs)
 # - requests: 2.32.3 -> 2.32.4 (corrige CVE-2024-47081)
 # - pybreaker: 1.0.2 -> 1.4.1 (sem CVEs conhecidos)
-# - TTS: 0.22.0 -> coqui-tts 0.27.2 (fork mantido, compativel com torch 2.8.0)
+# - TTS: 0.22.0 -> coqui-tts 0.27.2 (fork mantido, compativel com torch 2.9.1)
+#
+# === INFRAESTRUTURA CORE ===
+# - traefik: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
+# - redis: 7-alpine -> 7.4.6-alpine (ultima estavel do 7.x)
+#
+# === ERPNEXT STACK ===
+# - frappe/erpnext: v15.38.6 -> v15.91.0 (Dec 2, 2025)
+# - frappe/erpnext-nginx: v15.38.6 -> v15.91.0
+# - frappe/frappe-socketio: v15.38.6 -> v15.91.0
+# - frappe/erpnext-worker: v15.38.6 -> v15.91.0
+#
+# === OBSERVABILITY STACK ===
+# - prometheus: v3.0.1 -> v3.8.0 (Dec 2, 2025)
+# - grafana: 11.1.4 -> 11.6.2 (ultima do 11.x, suporte ate Jun 2026)
+# - loki: 3.1.0 -> 3.6.0 (latest stable)
+# - promtail: 3.1.0 -> 3.6.0 (latest stable)
+# - jaeger: 1.58 -> 1.76.0 (ultima do v1, v1 EOL Dec 31 2025)
+# - langfuse: 2.39.1 -> 2.95.12 (corrige CVE-2025-65107)
+# - vector: 0.43.1 -> 0.51.1 (Nov 11, 2025)
+# - otel-collector: 0.114.0 -> 0.141.0 (Dec 3, 2025)
 #
 # Se o Trivy detectar novos CVEs apos esta atualizacao, eles devem ser
 # analisados e corrigidos, NAO ignorados.
