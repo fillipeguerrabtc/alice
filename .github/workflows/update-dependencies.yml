@@ -173,7 +173,10 @@ jobs:
   update-and-pr:
     name: Atualizar Dependências e Criar PR
     needs: check_updates
-    if: needs.check_updates.outputs.has_updates == 'true'
+    # ENTERPRISE: Garantir que só rode em schedule/workflow_dispatch E quando há updates
+    if: |
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      needs.check_updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
     
     steps:
