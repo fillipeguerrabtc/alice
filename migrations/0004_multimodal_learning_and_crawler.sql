@@ -5,27 +5,54 @@
 --            media_jobs com RLS multi-tenant.
 -- Regra 6: Persistência real em PostgreSQL (zero workarounds/mocks)
 -- 
--- NOTA (15/12/2025): Foreign keys para tenants/users removidas porque essas 
--- tabelas são criadas pelo Drizzle ORM APÓS as migrações SQL. A integridade
--- referencial é mantida pela aplicação (Regra 6 - Enterprise-Grade).
+-- NOTA (15/12/2025): 100% IDEMPOTENTE - pode ser re-executada em qualquer estado
+-- - Foreign keys para tenants/users removidas (Drizzle ORM)
+-- - DROP POLICY IF EXISTS antes de CREATE POLICY
+-- - CREATE TABLE/INDEX IF NOT EXISTS
+-- - DO blocks com verificação de existência
 -- 
 -- Autor: Fillipe Guerra
--- Data: 12 de Dezembro de 2025
--- Versão: 1.1 - Removidas FKs para tabelas Drizzle
+-- Data: 15 de Dezembro de 2025
+-- Versão: 1.2 - 100% Idempotente (Enterprise-Grade)
 -- ============================================================================
+
+-- ============================================================================
+-- 0) PRÉ-REQUISITO: Garantir que enum task_status existe
+-- NOTA: Este enum é usado por learning_task_events e media_jobs
+-- ============================================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+    CREATE TYPE task_status AS ENUM ('pending', 'processing', 'completed', 'failed', 'cancelled');
+    RAISE NOTICE 'Enum task_status criado';
+  ELSE
+    RAISE NOTICE 'Enum task_status já existe';
+  END IF;
+END$$;
 
 -- ============================================================================
 -- 1) Ajustes em learning_tasks para fila priorizada e RLS
+-- NOTA (15/12/2025): Envolvido em DO block para idempotência - tabela pode não
+-- existir no primeiro deploy (criada pelo Drizzle ORM)
 -- ============================================================================
 
--- NOTA: criado_por sem FK para users (criada pelo Drizzle ORM)
-ALTER TABLE learning_tasks
-  ADD COLUMN IF NOT EXISTS tenant_id UUID,
-  ADD COLUMN IF NOT EXISTS prioridade INTEGER NOT NULL DEFAULT 5,
-  ADD COLUMN IF NOT EXISTS tentativas INTEGER NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS max_tentativas INTEGER NOT NULL DEFAULT 3,
-  ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMP NULL,
-  ADD COLUMN IF NOT EXISTS criado_por VARCHAR(255);
+DO $$
+BEGIN
+  -- Verificar se tabela learning_tasks existe antes de alterar
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'learning_tasks') THEN
+    -- NOTA: criado_por sem FK para users (criada pelo Drizzle ORM)
+    ALTER TABLE learning_tasks
+      ADD COLUMN IF NOT EXISTS tenant_id UUID,
+      ADD COLUMN IF NOT EXISTS prioridade INTEGER NOT NULL DEFAULT 5,
+      ADD COLUMN IF NOT EXISTS tentativas INTEGER NOT NULL DEFAULT 0,
+      ADD COLUMN IF NOT EXISTS max_tentativas INTEGER NOT NULL DEFAULT 3,
+      ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMP NULL,
+      ADD COLUMN IF NOT EXISTS criado_por VARCHAR(255);
+    RAISE NOTICE 'Colunas adicionadas em learning_tasks';
+  ELSE
+    RAISE NOTICE 'Tabela learning_tasks não existe - será criada pelo Drizzle ORM';
+  END IF;
+END$$;
 
 -- Backfill seguro de tenant_id (usa relacionamentos existentes)
 -- NOTA (15/12/2025): Backfill condicional - só executa se tabelas Drizzle existirem
@@ -84,43 +111,62 @@ BEGIN
   END IF;
 END$$;
 
-DROP INDEX IF EXISTS idx_learning_tasks_priority;
-DROP INDEX IF EXISTS idx_learning_tasks_status;
-DROP INDEX IF EXISTS idx_learning_tasks_agent;
-
--- Garantir status NOT NULL com default pending (integridade da fila)
-ALTER TABLE learning_tasks
-  ALTER COLUMN status SET NOT NULL;
-
-CREATE INDEX idx_learning_tasks_priority
-  ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
-CREATE INDEX idx_learning_tasks_status
-  ON learning_tasks(tenant_id, status);
-CREATE INDEX idx_learning_tasks_agent
-  ON learning_tasks(tenant_id, agent_id);
-
--- RLS alinhado ao modelo multi-tenant (usa funções current_tenant_id/is_super_admin)
-ALTER TABLE learning_tasks ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS learning_tasks_super_admin ON learning_tasks;
-CREATE POLICY learning_tasks_super_admin ON learning_tasks
-  FOR ALL
-  USING (is_super_admin() = true);
-
-DROP POLICY IF EXISTS learning_tasks_tenant_policy ON learning_tasks;
-CREATE POLICY learning_tasks_tenant_policy ON learning_tasks
-  FOR ALL
-  USING (tenant_id = current_tenant_id())
-  WITH CHECK (tenant_id = current_tenant_id());
+-- Índices e RLS para learning_tasks (apenas se tabela existir)
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'learning_tasks') THEN
+    -- Dropar índices antigos
+    DROP INDEX IF EXISTS idx_learning_tasks_priority;
+    DROP INDEX IF EXISTS idx_learning_tasks_status;
+    DROP INDEX IF EXISTS idx_learning_tasks_agent;
+    
+    -- Garantir status NOT NULL com default pending (integridade da fila)
+    -- Apenas se coluna status existir
+    IF EXISTS (
+      SELECT 1 FROM information_schema.columns 
+      WHERE table_name = 'learning_tasks' AND column_name = 'status'
+    ) THEN
+      ALTER TABLE learning_tasks ALTER COLUMN status SET NOT NULL;
+    END IF;
+    
+    -- Criar índices (100% idempotente com IF NOT EXISTS)
+    CREATE INDEX IF NOT EXISTS idx_learning_tasks_priority
+      ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
+    CREATE INDEX IF NOT EXISTS idx_learning_tasks_status
+      ON learning_tasks(tenant_id, status);
+    CREATE INDEX IF NOT EXISTS idx_learning_tasks_agent
+      ON learning_tasks(tenant_id, agent_id);
+    
+    -- RLS alinhado ao modelo multi-tenant
+    ALTER TABLE learning_tasks ENABLE ROW LEVEL SECURITY;
+    DROP POLICY IF EXISTS learning_tasks_super_admin ON learning_tasks;
+    CREATE POLICY learning_tasks_super_admin ON learning_tasks
+      FOR ALL
+      USING (is_super_admin() = true);
+    
+    DROP POLICY IF EXISTS learning_tasks_tenant_policy ON learning_tasks;
+    CREATE POLICY learning_tasks_tenant_policy ON learning_tasks
+      FOR ALL
+      USING (tenant_id = current_tenant_id())
+      WITH CHECK (tenant_id = current_tenant_id());
+    
+    RAISE NOTICE 'Índices e RLS aplicados em learning_tasks';
+  ELSE
+    RAISE NOTICE 'Tabela learning_tasks não existe - índices e RLS serão aplicados quando criada';
+  END IF;
+END$$;
 
 -- ============================================================================
 -- 2) Tabela: learning_task_events (log estruturado de progresso)
+-- NOTA (15/12/2025): FK para learning_tasks removida - tabela pode não existir
+-- no primeiro deploy (criada pelo Drizzle ORM). Integridade mantida pela app.
 -- ============================================================================
 
--- NOTA: tenant_id sem FK para tenants (criada pelo Drizzle ORM)
 CREATE TABLE IF NOT EXISTS learning_task_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL,
-  learning_task_id UUID NOT NULL REFERENCES learning_tasks(id) ON DELETE CASCADE,
+  -- NOTA: learning_task_id sem FK para learning_tasks (criada pelo Drizzle ORM)
+  learning_task_id UUID NOT NULL,
   status task_status NOT NULL,
   mensagem TEXT,
   payload JSONB DEFAULT '{}'::jsonb,

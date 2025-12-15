@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.62 - Criação automática de diretórios no deploy
+> **Versão:** 3.64 - Deploy 100% Idempotente (workflow + migrações)
 
 ---
 
@@ -872,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.62 - Correção digests Docker + migrações SQL + criação automática de diretórios bind mounts*
+*Versão: 3.64 - Deploy 100% Idempotente: workflow ignora erros de idempotência + migrações com DROP POLICY IF EXISTS + CREATE INDEX IF NOT EXISTS*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -914,13 +914,28 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 /opt/alice/secrets/alertmanager
 ```
 
+**4. Migrações SQL Não Idempotentes**
+- `0002_create_feature_flags.sql` - `CREATE POLICY` sem `DROP POLICY IF EXISTS`
+- `0004_multimodal_learning_and_crawler.sql` - `ALTER TABLE` e `CREATE INDEX` sem verificação
+
+**Causa Raiz:** Em re-deploys, as migrações são executadas novamente. Sem verificações de idempotência, o PostgreSQL retorna erros como "policy already exists" ou "index already exists".
+
+**Solução:** Deploy 100% idempotente:
+1. **Workflow**: Função `run_migration()` com `ON_ERROR_STOP=0` e filtro de mensagens "already exists"
+2. **Migrações**: Todas agora usam:
+   - `DROP POLICY IF EXISTS` antes de cada `CREATE POLICY`
+   - `CREATE INDEX IF NOT EXISTS` em vez de DROP+CREATE
+   - `DO $$ ... IF EXISTS ... END $$` para verificar tabelas
+   - FKs removidas para tabelas criadas pelo Drizzle ORM
+   - Criação de ENUMs com verificação de existência
+
 ### Arquivos Modificados:
 | Arquivo | Modificação |
 |---------|-------------|
 | `infra/docker/docker-compose.prod.yml` | Removidos digests inválidos de 3 imagens |
-| `migrations/0002_create_feature_flags.sql` | Removidas FKs para `tenants` e `users` |
-| `migrations/0004_multimodal_learning_and_crawler.sql` | Removidas FKs para `tenants` e `users`, backfill condicional |
-| `.github/workflows/deploy-production.yml` | Criação automática de 18 subdiretórios para bind mounts |
+| `migrations/0002_create_feature_flags.sql` | DROP POLICY IF EXISTS + removidas FKs |
+| `migrations/0004_multimodal_learning_and_crawler.sql` | 100% idempotente (v1.2) + task_status enum |
+| `.github/workflows/deploy-production.yml` | Migrações idempotentes + execução da 0004 |
 
 ---
 

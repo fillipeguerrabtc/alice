@@ -79,12 +79,14 @@ CREATE TRIGGER trigger_feature_flags_updated
 -- ============================================================================
 -- ROW LEVEL SECURITY (RLS) - Isolamento Multi-Tenant
 -- Usa funções definidas em 0001_rls_security_enterprise.sql
+-- NOTA (15/12/2025): DROP POLICY IF EXISTS garante idempotência em re-deploys
 -- ============================================================================
 
 -- Habilitar RLS na tabela
 ALTER TABLE feature_flags ENABLE ROW LEVEL SECURITY;
 
 -- Policy: Super admins podem ver/modificar todas as flags
+DROP POLICY IF EXISTS feature_flags_super_admin_policy ON feature_flags;
 CREATE POLICY feature_flags_super_admin_policy ON feature_flags
     FOR ALL
     USING (
@@ -92,6 +94,7 @@ CREATE POLICY feature_flags_super_admin_policy ON feature_flags
     );
 
 -- Policy: Tenant admins podem ver flags globais e do seu tenant
+DROP POLICY IF EXISTS feature_flags_tenant_read_policy ON feature_flags;
 CREATE POLICY feature_flags_tenant_read_policy ON feature_flags
     FOR SELECT
     USING (
@@ -100,6 +103,7 @@ CREATE POLICY feature_flags_tenant_read_policy ON feature_flags
     );
 
 -- Policy: Tenant admins podem modificar apenas flags do seu tenant
+DROP POLICY IF EXISTS feature_flags_tenant_write_policy ON feature_flags;
 CREATE POLICY feature_flags_tenant_write_policy ON feature_flags
     FOR ALL
     USING (
