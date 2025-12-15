@@ -35,8 +35,20 @@ const KEEP_WARM_MS = 30 * 60 * 1000;
 /** Prefixo para chaves Redis */
 const REDIS_PREFIX = 'alice:embeddings';
 
-/** TTL padrão para jobs em segundos (1 hora) */
-const JOB_TTL_SECONDS = 60 * 60;
+/** 
+ * TTL padrão para dados do job em segundos (24 horas)
+ * 
+ * IMPORTANTE: Este TTL deve ser maior que o tempo máximo esperado na fila.
+ * Se o TTL for menor que o tempo de espera, os dados do job expiram antes
+ * do processamento, causando perda silenciosa de jobs.
+ * 
+ * Histórico:
+ * - Valor anterior: 1 hora (3600s) - causava perda de jobs em filas congestionadas
+ * - Valor atual: 24 horas (86400s) - margem de segurança enterprise
+ * 
+ * Nota: A entrada na fila (sorted set via zAdd) não tem TTL, apenas os dados do job.
+ */
+const JOB_TTL_SECONDS = 60 * 60 * 24; // 24 horas
 
 /** Tamanho máximo do batch para processamento */
 const MAX_BATCH_SIZE = 10;
@@ -223,7 +235,19 @@ export async function dequeueEmbeddingJob(): Promise<EmbeddingJob | null> {
   const jobData = await client.get(`${JOBS_KEY}:${jobId}`);
   
   if (!jobData) {
-    logger.warn({ jobId }, 'Job não encontrado no Redis');
+    // Bug fix: Dados do job expiraram (TTL JOB_TTL_SECONDS) mas entrada na fila (zAdd) não tem TTL
+    // O job já foi removido da fila via zPopMin acima, então devemos:
+    // 1. Decrementar contador 'pending' para manter stats consistentes
+    // 2. Logar como erro (perda de dados - job não pode ser recuperado)
+    logger.error({
+      jobId,
+      ttlSeconds: JOB_TTL_SECONDS,
+    }, 'PERDA DE JOB: Dados do job expiraram antes de ser processado. Job removido da fila mas dados não disponíveis. Verifique se a fila está congestionada.');
+    
+    // Decrementar pending para manter consistência das stats
+    // O job foi contabilizado como pending quando enfileirado (linha 190)
+    await client.hIncrBy(STATS_KEY, 'pending', -1);
+    
     return null;
   }
   
