@@ -622,48 +622,61 @@ const saladUpload = multer({
 });
 
 // ============================================================================
-// CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
+// CIRCUIT BREAKER - Text Embeddings GPU (ARQUITETURA 100% GPU - 15/12/2025)
 // Usa serviço GPU embeddings-gpu via Salad Cloud (BGE-M3, 1024 dim)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
+/** URL do serviço de embeddings GPU (Salad Cloud) */
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+
 interface TextEmbeddingResponse {
   embedding: number[];
   model: string;
+  dimension: number;
   processing_time_ms: number;
 }
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // REGRA 6: Serviço local autônomo - não depende de API externa
-  // Serviço interno na rede Docker privada - não requer autenticação
-  const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text,
-      context: 'query', // Queries de busca usam prefixo "query: "
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
+  // ARQUITETURA 100% GPU (15/12/2025): BGE-M3 via Salad Cloud (1024 dim)
+  // GPU é OBRIGATÓRIO - schema usa vector(1024)
+  if (!EMBEDDINGS_GPU_URL) {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
   }
 
-  const data = await response.json() as TextEmbeddingResponse;
-  const resultEmbedding = data.embedding;
-  
-  if (!resultEmbedding || resultEmbedding.length === 0) {
-    throw new Error('Serviço de embeddings retornou resultado vazio');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+  try {
+    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ text }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json() as TextEmbeddingResponse;
+    const resultEmbedding = data.embedding;
+    
+    if (!resultEmbedding || resultEmbedding.length === 0) {
+      throw new Error('Serviço GPU de embeddings retornou resultado vazio');
+    }
+    
+    // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
+    // Lança erro se dimensão estiver incorreta (não apenas warning)
+    validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    
+    return resultEmbedding;
+  } finally {
+    clearTimeout(timeoutId);
   }
-  
-  // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
-  // Lança erro se dimensão estiver incorreta (não apenas warning)
-  validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-  
-  return resultEmbedding;
 }
 
 const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
@@ -3154,7 +3167,36 @@ app.post('/api/rag/embeddings/queue',
 );
 
 /**
+ * Estatísticas da fila de embeddings e WebSocket
+ * IMPORTANTE: Esta rota estática DEVE vir ANTES da rota parametrizada /:jobId
+ * para evitar que Express capture "stats" como jobId
+ */
+app.get('/api/rag/embeddings/queue/stats',
+  requireAuth,
+  async (_req: Request, res: Response) => {
+    try {
+      const queueStats = await getEmbeddingQueueStats();
+      const workerStatus = await getEmbeddingWorkerStatus();
+      const wsStats = getWebSocketStats();
+      
+      res.json({
+        queue: queueStats,
+        worker: workerStatus,
+        websocket: wsStats,
+        strategy: 'warm-on-demand',
+        keepWarmMinutes: 30,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error({ error }, 'Erro ao obter estatísticas da fila');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
+
+/**
  * Consulta status de um job de embedding
+ * NOTA: Esta rota parametrizada deve vir APÓS rotas estáticas como /stats
  */
 app.get('/api/rag/embeddings/queue/:jobId',
   requireAuth,
@@ -3191,32 +3233,6 @@ app.get('/api/rag/embeddings/queue/:jobId',
       });
     } catch (error) {
       logger.error({ error }, 'Erro ao consultar job de embedding');
-      res.status(500).json({ error: 'Erro interno do servidor' });
-    }
-  }
-);
-
-/**
- * Estatísticas da fila de embeddings e WebSocket
- */
-app.get('/api/rag/embeddings/queue/stats',
-  requireAuth,
-  async (_req: Request, res: Response) => {
-    try {
-      const queueStats = await getEmbeddingQueueStats();
-      const workerStatus = await getEmbeddingWorkerStatus();
-      const wsStats = getWebSocketStats();
-      
-      res.json({
-        queue: queueStats,
-        worker: workerStatus,
-        websocket: wsStats,
-        strategy: 'warm-on-demand',
-        keepWarmMinutes: 30,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      logger.error({ error }, 'Erro ao obter estatísticas da fila');
       res.status(500).json({ error: 'Erro interno do servidor' });
     }
   }
