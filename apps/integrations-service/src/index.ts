@@ -2182,9 +2182,10 @@ async function processWhatsAppMediaForRAG(
         'X-User-Id': userId,
       },
       body: JSON.stringify({
+        // Bug fix: Campo deve ser 'file', não 'base64Data' (conforme jsonUploadSchema do RAG service)
+        file: mediaBase64,
         filename: `whatsapp_${Date.now()}.${extension}`,
         mimeType: mediaContentType,
-        base64Data: mediaBase64,
         description: `Mídia recebida via WhatsApp na conversa ${conversationId}`,
         conversationId,
       }),
