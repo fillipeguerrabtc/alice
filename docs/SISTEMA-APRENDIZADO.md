@@ -182,6 +182,78 @@ Permite que sistemas externos enviem dados diretamente para treinamento.
 
 ---
 
+## Processamento de Áudio - ARQUITETURA HÍBRIDA (15/12/2025)
+
+### Visão Geral
+
+O processamento de áudio utiliza uma **arquitetura híbrida** que combina:
+- **GPU (Salad Cloud):** Transcrição primária via faster-whisper large-v3 (7-9x mais rápido)
+- **CPU (Hetzner):** Fallback automático via faster-whisper medium
+
+### Benefícios
+
+| Aspecto | GPU (Salad) | CPU (Hetzner) |
+|---------|-------------|---------------|
+| Velocidade | 7-9x realtime | 1x realtime |
+| Modelo | large-v3 (melhor qualidade) | medium (boa qualidade) |
+| Custo | ~$0.002/min | Incluído na infraestrutura |
+| Disponibilidade | 99.5% (fallback se indisponível) | 100% LOCAL |
+
+### Fluxo de Transcrição
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                   UPLOAD DE ÁUDIO                          │
+│  • Validação de formato (MP3, WAV, OGG, WEBM, etc.)        │
+│  • Extração de metadata (duração, bitrate, channels)       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│            GPU DISPONÍVEL? (SALAD_WHISPER_URL)             │
+└─────────────────────────────────────────────────────────────┘
+          │                              │
+         SIM                            NÃO
+          ↓                              ↓
+┌─────────────────────┐      ┌─────────────────────┐
+│  TRANSCRIÇÃO GPU    │      │  TRANSCRIÇÃO CPU    │
+│  • large-v3 model   │      │  • medium model     │
+│  • 7-9x realtime    │      │  • 1x realtime      │
+│  • CUDA accelerated │      │  • 100% LOCAL       │
+└─────────────────────┘      └─────────────────────┘
+          │                              │
+          └──────────────┬───────────────┘
+                         ↓
+┌─────────────────────────────────────────────────────────────┐
+│               GERAÇÃO DE EMBEDDING (CPU LOCAL)             │
+│  • multilingual-e5-base (768 dim)                          │
+│  • 100% Hetzner (privacidade máxima)                       │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                 ARMAZENAMENTO                              │
+│  • Transcrição + embedding no PostgreSQL                   │
+│  • Arquivo original em /opt/alice/uploads                  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Configuração
+
+| Variável | Descrição |
+|----------|-----------|
+| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad (OPCIONAL) |
+| `CLIP_SERVICE_URL` | URL do clip-inference (embeddings + fallback CPU) |
+| `TRANSCRIPTION_TIMEOUT_MS` | Timeout para CPU (default: 300000ms) |
+| `SALAD_WHISPER_TIMEOUT_MS` | Timeout para GPU (default: 600000ms) |
+
+### Container whisper-gpu (Salad Cloud)
+
+- **Imagem:** `ghcr.io/fillipeguerrabtc/alice-whisper-gpu:v1`
+- **Modelo:** faster-whisper large-v3 (GPU)
+- **Base:** NVIDIA CUDA 12.6.3 + cuDNN
+- **Endpoints:** `/transcribe`, `/transcribe/file`, `/health`, `/ready`, `/metrics`
+
+---
+
 ## Versionamento de Modelos
 
 Cada ciclo de fine-tuning cria uma nova versão:
@@ -351,8 +423,9 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 1.10 - 14 de Dezembro de 2025*
+*Versão 1.11 - 15 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3*
 *Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*
+*ARQUITETURA HÍBRIDA: Transcrição GPU (Salad) + CPU (fallback), Embeddings 100% LOCAL*
 *Bulk Import: Interface visual enterprise implementada (09/12/2025)*

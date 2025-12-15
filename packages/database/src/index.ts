@@ -373,9 +373,10 @@ export {
 export const toSql = pgvector.toSql;
 
 // Dimensões dos embeddings (conforme CLAUDE.md)
+// ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025
 export const EMBEDDING_DIMENSIONS = {
-  TEXT: 768,    // multilingual-e5-base local (CPU no Hetzner) - 100+ idiomas incluindo PT-BR e EN
-  CLIP: 768,    // CLIP ViT-L/14 local (CPU no Hetzner) - embeddings multimodais (texto + imagem)
+  TEXT: 1024,    // BGE-M3 (GPU Salad Cloud) - 100+ idiomas incluindo PT-BR e EN
+  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Salad Cloud) - embeddings multimodais (imagem)
 } as const;
 
 /**
@@ -401,7 +402,7 @@ export function validateEmbeddingDimension(
   if (embedding.length !== expectedDim) {
     throw new Error(
       `Embedding ${type} com dimensão incorreta: ${embedding.length} (esperado: ${expectedDim}). ` +
-      `Isso causará erro no PostgreSQL vector(768). Verifique o serviço de embeddings local.`
+      `Isso causará erro no PostgreSQL vector(1024). Verifique o serviço de embeddings GPU.`
     );
   }
   

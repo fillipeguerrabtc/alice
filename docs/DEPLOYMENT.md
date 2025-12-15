@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 14 de Dezembro de 2025
+**Data:** 15 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 43 Containers em Produção
 
@@ -34,11 +34,11 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
 | 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
 | 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
-| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings 100% locais via CPU no Hetzner (multilingual-e5-base + CLIP ViT-L/14), busca semântica pgvector, processamento de documentos. | Node.js, pgvector, CLIP Service local (CPU no Hetzner) |
+| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim), busca semântica pgvector, processamento de documentos. | Node.js, pgvector, GPU Salad Cloud |
 | 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
 | 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
-| 14 | **Multimodal Inference** | `alice-clip-inference` | `apps/clip-inference-service` | Processamento multimodal 100% LOCAL (CPU Hetzner): embeddings de texto (multilingual-e5-base, 768 dim), embeddings de imagem (CLIP ViT-L/14, 768 dim), transcrição de áudio (faster-whisper medium). | Python, PyTorch 2.9.1, FastAPI |
+| 14 | **Embeddings GPU** | `embeddings-gpu` | `docker/embeddings-gpu` | Processamento multimodal 100% GPU: BGE-M3 (texto) + OpenCLIP ViT-H/14 (imagem), 1024 dim. | Python, PyTorch 2.5.1, FastAPI |
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -513,9 +513,9 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 
 1. **0001_rls_security_enterprise.sql**: Configura RLS (Row Level Security), funções de tenant, índices e grants
 2. **0002_create_feature_flags.sql**: Cria tabela de feature flags enterprise
-3. **0003_update_embedding_dimensions_768.sql**: Atualiza dimensões de embeddings para 768 (multilingual-e5-base + CLIP) - **CRÍTICA**
+3. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings para 1024 (BGE-M3 + OpenCLIP ViT-H/14 GPU) - **CRÍTICA**
 
-**⚠️ IMPORTANTE:** A migration 0003 é **OBRIGATÓRIA** e deve ser executada antes do deploy do código que usa `vector(768)`. O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
+**⚠️ IMPORTANTE:** A migration de embeddings é **OBRIGATÓRIA** e deve ser executada antes do deploy do código que usa `vector(1024)`. O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
@@ -989,6 +989,6 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only (14/12/2025)*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
+*Processamento Multimodal: Arquitetura 100% GPU - embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + transcrição (Whisper large-v3) via GPU Salad Cloud*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

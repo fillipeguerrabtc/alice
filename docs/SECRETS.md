@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 14 de Dezembro de 2025
+**Data:** 15 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -23,8 +23,8 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
-| **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
-| **Alice Multimodal Inference** | alice-clip-inference | Nenhum (serviço interno - processamento 100% LOCAL, acesso controlado pela rede Docker) |
+| **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_WHISPER_URL, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
+| **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud para embeddings 1024 dim) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **Web Search (SearXNG)** | alice-searxng | SEARXNG_SECRET_KEY |
@@ -103,6 +103,7 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_TALKING_HEAD_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_LIP_SYNC_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
 | `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
+| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad (OPCIONAL - se não configurado, usa CPU local como fallback). Obter após build da imagem `whisper-gpu` |
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 | `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 

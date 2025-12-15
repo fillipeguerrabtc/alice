@@ -19,7 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 // CONSTANTES
 // ============================================================================
 
-const TEXT_EMBEDDING_DIM = 768; // multilingual-e5-base local
+const TEXT_EMBEDDING_DIM = 1024; // BGE-M3 GPU
 
 // ============================================================================
 // TESTES DE TIPOS DE ÁUDIO SUPORTADOS
@@ -167,7 +167,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     const result: ProcessedAudio = {
       transcription: 'Texto transcrito do áudio',
       embedding: [],
-      embeddingModel: 'intfloat/multilingual-e5-base (Local)',
+      embeddingModel: 'BAAI/bge-m3 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -180,7 +180,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Olá, como você está?',
       transcriptionLanguage: 'pt',
       embedding: [],
-      embeddingModel: 'intfloat/multilingual-e5-base (Local)',
+      embeddingModel: 'BAAI/bge-m3 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -193,7 +193,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Hello world',
       transcriptionConfidence: 0.95,
       embedding: [],
-      embeddingModel: 'intfloat/multilingual-e5-base (Local)',
+      embeddingModel: 'BAAI/bge-m3 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -202,21 +202,21 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     expect(result.transcriptionConfidence).toBeLessThanOrEqual(1);
   });
 
-  it('deve usar modelo de embedding multilingual-e5-base local', () => {
+  it('deve usar modelo de embedding BGE-M3 GPU', () => {
     const result: ProcessedAudio = {
       transcription: 'Test',
       embedding: new Array(TEXT_EMBEDDING_DIM).fill(0),
-      embeddingModel: 'intfloat/multilingual-e5-base (Local)',
+      embeddingModel: 'BAAI/bge-m3 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
     };
-    expect(result.embeddingModel).toBe('intfloat/multilingual-e5-base (Local)');
+    expect(result.embeddingModel).toBe('BAAI/bge-m3 (GPU)');
   });
 
-    it('deve ter embedding com dimensão 768 (multilingual-e5-base local)', () => {
+    it('deve ter embedding com dimensão 1024 (BGE-M3 GPU)', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(768);
+    expect(embedding.length).toBe(1024);
   });
 });
 

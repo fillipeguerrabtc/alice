@@ -19,7 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 // CONSTANTES
 // ============================================================================
 
-const CLIP_EMBEDDING_DIM = 768;
+const CLIP_EMBEDDING_DIM = 1024;
 
 // ============================================================================
 // TESTES DE TIPOS DE IMAGEM SUPORTADOS
@@ -77,13 +77,13 @@ describe('Image Processor - MIME Types Suportados', () => {
 // ============================================================================
 
 describe('Image Processor - Embeddings CLIP', () => {
-  it('deve ter dimensão de embedding CLIP de 768', () => {
-    expect(CLIP_EMBEDDING_DIM).toBe(768);
+  it('deve ter dimensão de embedding de 1024 (OpenCLIP ViT-H/14 GPU)', () => {
+    expect(CLIP_EMBEDDING_DIM).toBe(1024);
   });
 
   it('deve criar embedding com dimensão correta', () => {
     const embedding = new Array(CLIP_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(768);
+    expect(embedding.length).toBe(1024);
   });
 
   it('deve normalizar embeddings para busca semântica', () => {
@@ -96,8 +96,8 @@ describe('Image Processor - Embeddings CLIP', () => {
     expect(normalized[1]).toBeCloseTo(0.8, 5);
   });
 
-  it('deve usar modelo CLIP ViT-L/14', () => {
-    const model = 'clip-vit-large-patch14';
+  it('deve usar modelo OpenCLIP ViT-H/14 GPU', () => {
+    const model = 'openclip-vit-h-14';
     expect(model).toContain('clip');
     expect(model).toContain('vit');
   });
@@ -203,25 +203,25 @@ describe('Image Processor - Estrutura de Resultado', () => {
 
   it('deve ter embedding obrigatório', () => {
     const result: ProcessedImage = {
-      embedding: new Array(768).fill(0),
-      embeddingModel: 'clip-vit-large-patch14',
+      embedding: new Array(1024).fill(0),
+      embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 200,
     };
     expect(result.embedding).toBeDefined();
-    expect(result.embedding.length).toBe(768);
+    expect(result.embedding.length).toBe(1024);
   });
 
-  it('deve usar modelo CLIP', () => {
+  it('deve usar modelo OpenCLIP GPU', () => {
     const result: ProcessedImage = {
       embedding: [],
-      embeddingModel: 'clip-vit-large-patch14',
+      embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 200,
     };
-    expect(result.embeddingModel).toContain('clip');
+    expect(result.embeddingModel).toContain('CLIP');
   });
 
   it('deve incluir thumbnail base64 quando gerado', () => {

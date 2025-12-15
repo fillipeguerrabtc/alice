@@ -92,7 +92,8 @@
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      SALAD CLOUD (GPUs)                              │
-│       Llama 4 Maverick 400B (Inferência) + FLUX.1 Schnell (Imagens) │
+│  Llama 4 Maverick 400B (LLM) + FLUX.1 Schnell (Imagens) +           │
+│  Whisper large-v3 (Transcrição áudio - 7-9x mais rápido)            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -122,7 +123,7 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 11 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
 | 12 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
 | 13 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 14 | CLIP Inference | `alice-clip-inference` | 8000 | Embeddings multimodais (CLIP) + text embeddings (multilingual-e5-base) - 100% local |
+| 14 | Embeddings GPU | `embeddings-gpu` | 8080 | Embeddings 100% GPU (OpenCLIP ViT-H/14 + BGE-M3, 1024 dim) via Salad Cloud |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
@@ -426,14 +427,14 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.17.0 - 14 de Dezembro de 2025*
+*Versão 3.18.0 - 15 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio (faster-whisper)*
-*Salad Cloud: APENAS para LLM inference, image generation e fine-tuning (GPUs)*
+*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*
+*Salad Cloud: LLM inference, image generation, fine-tuning, transcrição de áudio (GPU whisper-gpu)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 *Bulk Import UI: Interface enterprise com drag & drop, validação Zod (09/12/2025)*
 

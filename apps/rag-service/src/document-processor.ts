@@ -6,35 +6,31 @@
  * - DOCX: Extração de texto via mammoth
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
- * - Text embeddings do conteúdo extraído (multilingual-e5-base local - 100% local via CPU no Hetzner)
+ * - Text embeddings via GPU (BGE-M3, 1024 dim)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
- * - Não depende de APIs externas para embeddings
- * - GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+ * ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
+ * - Embeddings via GPU Salad Cloud (BGE-M3, 1024 dim)
+ * - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  *
  * Autor: Fillipe Guerra
- * Data: 12 de Dezembro de 2025
+ * Data: 15 de Dezembro de 2025
  */
 
 import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
-import { resolveClipServiceUrl } from './clip-service-url.js';
 import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
 
-// Configuração - Embeddings 100% locais via CPU no Hetzner (Regra 6 - Autonomia Total)
-// CLIP Service URL para embeddings locais (serviço interno na rede Docker)
-// NOTA: Todos os embeddings (texto e CLIP) são gerados 100% localmente via CPU no servidor Hetzner
-const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
+// Configuração - Embeddings via GPU (Salad Cloud) - ARQUITETURA 100% GPU
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings de texto (multilingual-e5-base: 768 dim)
-export const TEXT_EMBEDDING_DIM = 768;
+// Dimensão dos embeddings de texto (BGE-M3: 1024 dim) - ARQUITETURA 100% GPU
+export const TEXT_EMBEDDING_DIM = 1024;
 
 // Limites de processamento
 const MAX_DOCUMENT_SIZE_MB = parseInt(process.env.MAX_DOCUMENT_SIZE_MB || '50', 10);
@@ -92,43 +88,48 @@ interface EmbeddingParams {
 }
 
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
-  // REGRA 6: Serviço local autônomo - não depende de API externa
-  // Serviço interno na rede Docker privada - não requer autenticação
-  // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
-  const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      text: params.text,
-      context: 'passage', // Documentos sendo indexados usam prefixo "passage: "
-    }),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Embedding API error: ${response.status} - ${errorText}`);
+  // ARQUITETURA 100% GPU - BGE-M3 via Salad Cloud (1024 dim)
+  // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
+  if (!EMBEDDINGS_GPU_URL) {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings');
   }
 
-  const result = await response.json() as {
-    embedding: number[];
-    model: string;
-    processing_time_ms: number;
-  };
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
-  if (!result.embedding || result.embedding.length === 0) {
-    throw new Error('Resposta de embedding vazia');
+  try {
+    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: params.text }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GPU Embedding API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json() as {
+      embedding: number[];
+      model: string;
+      dimension: number;
+    };
+
+    if (!result.embedding || result.embedding.length === 0) {
+      throw new Error('Resposta de embedding GPU vazia');
+    }
+
+    // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
+    validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+
+    return {
+      embedding: result.embedding,
+      model: result.model || 'BAAI/bge-m3',
+    };
+  } finally {
+    clearTimeout(timeoutId);
   }
-
-  // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
-  // Lança erro se dimensão estiver incorreta (não apenas warning)
-  validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-
-  return {
-    embedding: result.embedding,
-    model: result.model || 'intfloat/multilingual-e5-base',
-  };
 }
 
 const embeddingBreaker = createCircuitBreaker(generateEmbeddingInternal, {
@@ -148,10 +149,15 @@ class DocumentProcessorService {
   private isConfigured: boolean;
 
   constructor() {
-    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
-    // Não depende de configuração externa (Salad Cloud)
-    this.isConfigured = typeof CLIP_SERVICE_URL === 'string' && CLIP_SERVICE_URL.length > 0;
-    logger.info('Document Processor configurado com serviço local de embeddings (multilingual-e5-base)');
+    // ARQUITETURA 100% GPU - BGE-M3 via Salad Cloud
+    this.isConfigured = typeof EMBEDDINGS_GPU_URL === 'string' && EMBEDDINGS_GPU_URL.length > 0;
+    
+    if (!this.isConfigured) {
+      logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de documento não funcionarão');
+    } else {
+      logger.info({ gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: TEXT_EMBEDDING_DIM }, 
+        'Document Processor - ARQUITETURA 100% GPU (BGE-M3, 1024 dim)');
+    }
   }
 
   /**
@@ -270,7 +276,7 @@ class DocumentProcessorService {
           const result = await generateEmbedding(chunkText);
           embeddingModel = result.model;
 
-          // Enterprise-grade: garantir dimensão esperada (768) antes de acumular.
+          // Enterprise-grade: garantir dimensão esperada (1024) antes de acumular.
           // Isso evita "corrupção silenciosa" do embedding médio caso a dependência retorne dimensão inesperada.
           validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
@@ -685,34 +691,31 @@ class DocumentProcessorService {
   }
 
   /**
-   * Readiness real (assíncrono): valida conectividade com o serviço local de embeddings
-   * (alice-clip-inference) e evita falso-positivo quando a dependência está fora do ar.
+   * Readiness real (assíncrono): valida conectividade com o serviço GPU de embeddings
    */
   async isReadyAsync(): Promise<boolean> {
-    // "configured" aqui significa que há URL configurada; prontidão real depende do health check.
     if (!this.isConfigured) return false;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout para readiness check
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     try {
-      // Document embeddings dependem somente de text embeddings (multilingual-e5-base)
-      const response = await fetch(`${CLIP_SERVICE_URL}/ready/text-embedding`, {
+      const response = await fetch(`${EMBEDDINGS_GPU_URL}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });
 
       if (!response.ok) {
         logger.warn(
-          { status: response.status, serviceUrl: CLIP_SERVICE_URL },
-          'Serviço de text embeddings não está pronto para document-processor'
+          { status: response.status, gpuUrl: EMBEDDINGS_GPU_URL },
+          'Serviço GPU de embeddings não está pronto'
         );
         return false;
       }
 
       return true;
     } catch (error) {
-      logger.error({ error, serviceUrl: CLIP_SERVICE_URL }, 'Erro ao verificar readiness do serviço de text embeddings');
+      logger.error({ error, gpuUrl: EMBEDDINGS_GPU_URL }, 'Erro ao verificar readiness do serviço GPU de embeddings');
       return false;
     } finally {
       clearTimeout(timeoutId);

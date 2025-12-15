@@ -18,6 +18,8 @@ jobs:
           - tts
           - talking-head
           - long-video
+          - whisper-gpu
+          - embeddings-gpu
     steps:
       - name: Checkout
         uses: actions/checkout@v4

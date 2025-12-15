@@ -1,9 +1,9 @@
 # Consolidação de Documentação - Alice Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 14 de Dezembro de 2025  
-**Versão:** 1.8  
-**Atualizado:** 14 de Dezembro de 2025 (limpeza de documentos obsoletos/redundantes + 43 containers)
+**Data:** 15 de Dezembro de 2025  
+**Versão:** 1.9  
+**Atualizado:** 15 de Dezembro de 2025 (Arquitetura Híbrida Multimodal + 43 containers)
 
 ## Estrutura Atual da Documentação
 
@@ -72,6 +72,7 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 14 de Dezembro de 2025*  
-*Versão: 1.8 - Limpeza de documentos obsoletos + 43 containers*  
-*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Documento atualizado em: 15 de Dezembro de 2025*  
+*Versão: 1.9 - Arquitetura Híbrida Multimodal + 43 containers*  
+*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
+*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*

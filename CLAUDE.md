@@ -59,10 +59,10 @@ Alice employs a microservices architecture with 43 containerized services orches
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **Multimodal Inference**: Processamento multimodal 100% LOCAL (Python, PyTorch, FastAPI):
-        - Embeddings de texto: multilingual-e5-base (768 dim)
-        - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
-        - Transcrição de áudio: faster-whisper medium
+    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Salad Cloud (Python, PyTorch, FastAPI):
+        - Embeddings de texto: BGE-M3 (1024 dim) - GPU OBRIGATÓRIO
+        - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU OBRIGATÓRIO
+        - Transcrição de áudio: faster-whisper large-v3 - GPU OBRIGATÓRIO
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -80,11 +80,14 @@ Alice employs a microservices architecture with 43 containerized services orches
 - **LLM Inference**: Llama 4 Maverick (400B params) - chat e geração de texto
 - **Image Generation**: FLUX.1 Schnell - geração de imagens
 - **Fine-tuning**: Treinamento de modelos customizados
+- **Embeddings GPU (embeddings-gpu)**: BGE-M3 (texto, 1024 dim) + OpenCLIP ViT-H/14 (imagem, 1024 dim)
+- **Transcrição GPU (whisper-gpu)**: faster-whisper large-v3
 
-### Processamento Multimodal LOCAL (100% Autônomo - Regra 6)
-- **Embeddings de Texto**: multilingual-e5-base (CPU Hetzner, 768 dim, 100+ idiomas) - 100% LOCAL
-- **Embeddings de Imagem**: CLIP ViT-L/14 (CPU Hetzner, 768 dim) - 100% LOCAL
-- **Transcrição de Áudio**: faster-whisper medium (CPU Hetzner, 100+ idiomas) - 100% LOCAL
+### Processamento Multimodal - ARQUITETURA 100% GPU (Opção B - 15/12/2025)
+- **Embeddings de Texto**: BGE-M3 (GPU Salad, 1024 dim, 100+ idiomas) - GPU OBRIGATÓRIO
+- **Embeddings de Imagem**: OpenCLIP ViT-H/14 (GPU Salad, 1024 dim) - GPU OBRIGATÓRIO
+- **Transcrição de Áudio**: faster-whisper large-v3 (GPU Salad)
+- **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6 - schema usa vector(1024))
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -311,7 +314,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.43 - 15 de Dezembro de 2025*
+*Versão: 3.45 - 15 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -319,6 +322,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*Processamento Multimodal: 100% LOCAL via CPU Hetzner - embeddings (texto + imagem) + transcrição de áudio*
-*Salad Cloud: APENAS para LLM inference, image generation e fine-tuning (GPUs)*
-*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) 100% automáticos via GitHub Actions*
+*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*
+*Salad Cloud: LLM inference, image generation, fine-tuning, embeddings-gpu, whisper-gpu*
+*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + build-media-images (manual)*

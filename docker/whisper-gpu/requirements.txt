@@ -1,0 +1,74 @@
+# Whisper GPU Service - Dependências
+# Alice Enterprise Platform
+#
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões atualizadas e travadas para dezembro 2025 (Regra 11 - melhores práticas)
+# Última atualização: 15/12/2025
+# Author: Fillipe Guerra
+
+# =============================================================================
+# SEGURANÇA - Dependências com correções de CVE
+# =============================================================================
+
+# urllib3 2.5.0+ corrige CVE-2025-50181 e CVE-2025-50182 (Open Redirect/SSRF)
+# Referência: https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v
+urllib3>=2.5.0
+
+# PyTorch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss) - Fixed in 2.8.0
+# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d) - Fixed in 2.7.1
+# Referência: https://github.com/pytorch/pytorch/releases/tag/v2.9.1
+torch==2.9.1
+
+# =============================================================================
+# Framework Web - Versões estáveis dezembro 2025
+# =============================================================================
+
+# FastAPI 0.123.0 (released Nov 30, 2025)
+fastapi==0.123.0
+
+# Uvicorn 0.38.0 (released Oct 18, 2025) - ASGI server
+uvicorn[standard]==0.38.0
+
+# =============================================================================
+# Validação e Segurança
+# =============================================================================
+
+# Pydantic 2.12.5 (released Nov 26, 2025) - Validação de dados
+pydantic==2.12.5
+
+# Rate limiting (OWASP API4 - Unrestricted Resource Consumption)
+slowapi==0.1.9
+
+# =============================================================================
+# Whisper - Speech-to-Text (GPU Optimized)
+# =============================================================================
+
+# faster-whisper 1.1.0 (CTranslate2 - 4x mais rápido que Whisper original)
+# Modelo: large-v3 para máxima qualidade em GPU
+# Licença: MIT (uso comercial permitido)
+# Referência: https://github.com/SYSTRAN/faster-whisper
+faster-whisper==1.1.0
+
+# CTranslate2 para otimização GPU (dependência explícita)
+# CUDA 12 suportado nativamente
+ctranslate2>=4.6.0
+
+# =============================================================================
+# Observabilidade e Resiliência
+# =============================================================================
+
+# Prometheus metrics 0.23.1 (released Sep 18, 2025)
+prometheus-client==0.23.1
+
+# Circuit Breaker (Regra 16 CLAUDE.md - Best Practices 2025)
+# pybreaker 1.4.1 (released Sep 21, 2025) - sem vulnerabilidades conhecidas
+pybreaker==1.4.1
+
+# =============================================================================
+# Dependências de sistema
+# =============================================================================
+
+# numpy 1.26.4 - compatível com torch 2.9.1 (evitar numpy 2.x por breaking changes)
+numpy==1.26.4

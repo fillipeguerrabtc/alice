@@ -1717,6 +1717,12 @@ jobs:
             printf 'SALAD_TALKING_HEAD_IMAGE=%s\n' "${{ secrets.SALAD_TALKING_HEAD_IMAGE }}"
             printf 'SALAD_LIP_SYNC_IMAGE=%s\n' "${{ secrets.SALAD_LIP_SYNC_IMAGE }}"
             printf 'SALAD_LONG_VIDEO_IMAGE=%s\n' "${{ secrets.SALAD_LONG_VIDEO_IMAGE }}"
+            # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
+            # Secret será criado após build da imagem whisper-gpu via workflow build-media-images
+            printf 'SALAD_WHISPER_URL=%s\n' "${{ secrets.SALAD_WHISPER_URL }}"
+            # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (BGE-M3 + OpenCLIP ViT-H/14)
+            # Secret será criado após build da imagem embeddings-gpu via workflow build-media-images
+            printf 'EMBEDDINGS_GPU_URL=%s\n' "${{ secrets.EMBEDDINGS_GPU_URL }}"
             printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
             printf '\n'
             printf '# RAG Service (URLs públicas)\n'

@@ -3,7 +3,7 @@
  *
  * Foco: garantir semântica correta entre espaços de embedding:
  * - `combinedEmbedding` é SEMPRE CLIP-space (persistido em `clipEmbedding`)
- * - `textEmbedding` (multilingual-e5-base) é persistido separadamente
+ * - `textEmbedding` (BGE-M3 GPU, 1024 dim) é persistido separadamente
  *
  * Author: Fillipe Guerra
  * Data: 12/12/2025

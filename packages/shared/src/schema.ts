@@ -40,14 +40,16 @@ import {
 // ============================================================================
 // PGVECTOR TYPE (Enterprise-Grade)
 // ============================================================================
-// Tipo customizado para colunas pgvector (768 dimensões para multilingual-e5-base e CLIP)
-// Embeddings são gerados 100% localmente via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
+// Tipo customizado para colunas pgvector (1024 dimensões para BGE-M3 e OpenCLIP ViT-H/14)
+// ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025
+// - Texto: BGE-M3 (1024 dim, multilíngue, GPU Salad Cloud)
+// - Imagem: OpenCLIP ViT-H/14 (1024 dim, GPU Salad Cloud)
 // Referência: https://github.com/pgvector/pgvector
 // NOTA: A conversão toDriver/fromDriver é feita automaticamente pelo driver pgvector
-// O Drizzle apenas precisa saber que é do tipo vector(768) no PostgreSQL
+// O Drizzle apenas precisa saber que é do tipo vector(1024) no PostgreSQL
 const vector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
-    return 'vector(768)';
+    return 'vector(1024)';
   },
   // pgvector driver já faz a conversão automaticamente
   // toDriver e fromDriver são opcionais - o driver cuida da serialização

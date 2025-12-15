@@ -218,7 +218,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Embedding (768 dim - multilingual-e5-base local - 100% local via CPU no Hetzner)',
+          description: 'Embedding (1024 dim - BGE-M3 GPU via Salad Cloud)',
           content: {
             'application/json': {
               schema: {
@@ -254,7 +254,7 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'CLIP embedding (768 dim - 100% local via CPU no Hetzner)' } },
+      responses: { 200: { description: 'OpenCLIP embedding (1024 dim - ViT-H/14 GPU via Salad Cloud)' } },
     },
   },
   '/api/rag/stats': {

@@ -492,23 +492,23 @@ if (!DATABASE_URL) {
 }
 
 // ==============================================================================
-// ARQUITETURA MULTIMODAL 100% LOCAL (Regra 6 CLAUDE.md - Autonomia Total)
+// ARQUITETURA MULTIMODAL 100% GPU (Opção B - Alta Qualidade - 15/12/2025)
 // ==============================================================================
-// TODOS os processamentos multimodais são 100% LOCAIS via CPU no servidor Hetzner:
-// - Text embeddings: multilingual-e5-base (768 dim)
-// - Image embeddings: CLIP ViT-L/14 (768 dim)
-// - Transcrição de áudio: faster-whisper medium
+// TODOS os processamentos multimodais via GPU Salad Cloud:
+// - Text embeddings: BGE-M3 (1024 dim)
+// - Image embeddings: OpenCLIP ViT-H/14 (1024 dim)
+// - Transcrição de áudio: Whisper large-v3
 // 
-// NÃO dependem de APIs externas - autonomia total
-// Serviço: clip-inference-service (Python FastAPI no Hetzner)
+// GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
+// Schema usa vector(1024) - incompatível com CPU (768 dim)
 // ==============================================================================
 //
-// SALAD CLOUD é usado APENAS para:
+// SALAD CLOUD é usado para:
 // - chat-service: LLM inference (Llama 4 Maverick 400B)
 // - training-service: fine-tuning de modelos
 // - image-generation: FLUX.1 Schnell
-//
-// SALAD_API_KEY NÃO é usada no rag-service (tudo é local)
+// - embeddings-gpu: BGE-M3 + OpenCLIP ViT-H/14 (1024 dim)
+// - whisper-gpu: Whisper large-v3 (transcrição)
 
 function normalizeBaseUrl(raw?: string): string {
   const base = (raw && raw.trim()) || 'http://alice-searxng:8080/';
@@ -612,7 +612,7 @@ const saladUpload = multer({
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
-// Usa serviço local alice-clip-inference com multilingual-e5-base
+// Usa serviço GPU embeddings-gpu via Salad Cloud (BGE-M3, 1024 dim)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -648,7 +648,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     throw new Error('Serviço de embeddings retornou resultado vazio');
   }
   
-  // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+  // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
   // Lança erro se dimensão estiver incorreta (não apenas warning)
   validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
   
@@ -906,8 +906,8 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
     status: 'ok', 
     service: 'rag-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'local', // 100% local via CPU no servidor Hetzner (multilingual-e5-base + CLIP ViT-L/14)
-    model: 'intfloat/multilingual-e5-base (Local - CPU no Hetzner)',
+    embeddingsProvider: 'gpu-salad-cloud', // 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14)
+    model: 'BAAI/bge-m3 + OpenCLIP-ViT-H-14 (GPU - Salad Cloud, 1024 dim)',
     circuitBreaker: {
       state: circuitState,
       stats: {
@@ -1222,21 +1222,16 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
-        -- Não depende de APIs externas - autonomia total (Regra 6)
-        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
-        -- A migration atualiza as colunas de vector(1536) para vector(768)
-        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
-        -- Apenas o parâmetro $1 precisa de cast explícito para vector(768)
-        -- Se a migration não for executada, haverá erro de incompatibilidade de dimensões
-        1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
+        -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
+        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
+        1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         AND d.tenant_id = $3
         ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1::vector(768)
+      ORDER BY dc.embedding <=> $1::vector(1024)
       LIMIT $2
     `, queryParams);
     
@@ -1308,17 +1303,15 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
-        -- Não depende de APIs externas - autonomia total (Regra 6)
-        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
-        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
-        1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
+        -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
+        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
+        1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1::vector(768)
+      ORDER BY dc.embedding <=> $1::vector(1024)
       LIMIT $2
     `, queryParams);
     
@@ -1607,11 +1600,9 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          -- Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base - 768 dim)
-        -- Não depende de APIs externas - autonomia total (Regra 6)
-          -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
-          -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
-          1 - (dc.embedding <=> $1::vector(768)) / 2 as similarity
+          -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
+          -- GPU é OBRIGATÓRIO - schema usa vector(1024)
+          1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
         FROM document_chunks dc
         INNER JOIN documents d ON dc.document_id = d.id
         INNER JOIN namespaces n ON d.namespace_id = n.id
@@ -1619,7 +1610,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.embedding IS NOT NULL
           AND n.tenant_id = $2
           ${namespaceFilter}
-        ORDER BY dc.embedding <=> $1::vector(768)
+        ORDER BY dc.embedding <=> $1::vector(1024)
         LIMIT $3
       `, queryParams);
       
@@ -1984,7 +1975,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
-              clipEmbedding: result.embedding, // CLIP embedding 768 dim para imagens
+              clipEmbedding: result.embedding, // CLIP embedding 1024 dim para imagens (OpenCLIP ViT-H/14 GPU)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -2023,7 +2014,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 768 dim (multilingual-e5-base local - CPU no Hetzner)
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 1024 dim (BGE-M3 GPU)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -2046,7 +2037,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Usar versão async para aguardar inicialização completa (evita race condition)
           if (!(await videoProcessor.isReadyAsync())) {
             throw new Error(
-              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com o serviço local de inferência (alice-clip-inference).'
+              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com os serviços GPU.'
             );
           }
           
@@ -2110,7 +2101,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           );
 
           // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
-          // (multilingual-e5-base, 768 dim). Portanto, a validação correta aqui é `TEXT` (não CLIP).
+          // (BGE-M3 GPU, 1024 dim). Portanto, a validação correta aqui é `TEXT` (não CLIP).
           // (Enterprise-Grade - Regra 6)
           // 
           // Regra 6: Validar que combinedEmbedding não está vazio antes de persistir.
@@ -2186,20 +2177,20 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     // Determinar mensagem e features baseado no tipo de mídia
     const processingInfo: Record<string, { message: string; features: string[] }> = {
       image: {
-        message: 'Upload recebido. Processamento CLIP iniciado.',
-        features: ['CLIP embedding (768 dim)', 'thumbnail', 'metadata extraction'],
+        message: 'Upload recebido. Processamento GPU iniciado.',
+        features: ['OpenCLIP embedding (1024 dim GPU)', 'thumbnail', 'metadata extraction'],
       },
       audio: {
-        message: 'Upload recebido. Transcrição Whisper iniciada.',
-        features: ['Transcrição Whisper', 'text embedding (768 dim - multilingual-e5-base local - CPU no Hetzner)', 'metadata extraction'],
+        message: 'Upload recebido. Transcrição GPU iniciada.',
+        features: ['Whisper large-v3 GPU', 'BGE-M3 embedding (1024 dim GPU)', 'metadata extraction'],
       },
       video: {
         message: 'Upload recebido. Processamento pendente.',
-        features: ['Frame extraction (pendente)', 'Transcrição Whisper (pendente)'],
+        features: ['Frame extraction (pendente)', 'Whisper large-v3 GPU (pendente)'],
       },
       document: {
         message: 'Upload recebido. Processamento pendente.',
-        features: ['Text extraction (pendente)', 'text embedding (pendente)'],
+        features: ['Text extraction (pendente)', 'BGE-M3 embedding (1024 dim GPU) (pendente)'],
       },
     };
 
@@ -2794,8 +2785,8 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
-      // Busca por texto: gerar embedding CLIP do texto via serviço local (100% local via CPU no Hetzner)
-      // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
+      // Busca por texto: gerar embedding via GPU (Salad Cloud)
+      // ARQUITETURA 100% GPU - sem fallback CPU (Regra 6)
       const imageProcessor = getImageProcessor();
       
       try {
@@ -2846,7 +2837,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
     // ÍNDICE: idx_media_uploads_clip_embedding_hnsw (vector_cosine_ops)
     // ============================================================================
     
-    // Converter embedding CLIP para formato SQL pgvector (enterprise-grade - 768 dim)
+    // Converter embedding CLIP para formato SQL pgvector (enterprise-grade - 1024 dim)
     const embeddingVector = toSql(sanitizedEmbedding);
     
     // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
@@ -2878,11 +2869,9 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         mime_type as "mimeType",
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
-        -- CLIP embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14 - 768 dim)
-        -- Não depende de APIs externas - autonomia total (Regra 6)
-        -- OBRIGATÓRIO: Migration 0003_update_embedding_dimensions_768.sql DEVE ser executada antes do deploy
-        -- Não fazer cast na coluna - PostgreSQL usa o tipo da coluna automaticamente
-        1 - (clip_embedding <=> $1::vector(768)) / 2 as similarity
+        -- Image embeddings via GPU Salad Cloud (OpenCLIP ViT-H/14 - 1024 dim)
+        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
+        1 - (clip_embedding <=> $1::vector(1024)) / 2 as similarity
       FROM media_uploads
       WHERE 
         tenant_id = $2
@@ -2890,7 +2879,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         AND processing_status = 'completed'
         AND clip_embedding IS NOT NULL
         ${excludeImageFilter}
-      ORDER BY clip_embedding <=> $1::vector(768)
+      ORDER BY clip_embedding <=> $1::vector(1024)
       LIMIT $3
     `, queryParams);
 

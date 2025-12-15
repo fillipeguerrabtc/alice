@@ -699,10 +699,14 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-      # Serviço Multimodal LOCAL (Regra 6 - Autonomia Total)
-      # Inclui: embeddings (texto + imagem) + transcrição de áudio (faster-whisper)
-      # Serviço interno na rede Docker privada - não requer autenticação
-      CLIP_SERVICE_URL: http://alice-clip-inference:8080
+      # ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
+      # - Embeddings (texto + imagem): GPU Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim)
+      # - Transcrição de áudio: GPU Salad Cloud (Whisper large-v3)
+      # - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
+      # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
+      SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-}
+      # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (1024 dim)
+      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
       # Web Search interno (SearXNG self-hosted) - sem dependências externas
       SEARXNG_URL: http://alice-searxng:8080
       SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY}
@@ -1017,11 +1021,16 @@ services:
       - "traefik.http.routers.alice-clip.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-clip.loadbalancer.server.port=8080"
     healthcheck:
+      # CORREÇÃO 15/12/2025: Aumentado start_period e retries para modelos ML pesados
+      # - CLIP ViT-L/14: ~2GB modelo
+      # - multilingual-e5-base: ~1GB modelo
+      # - faster-whisper medium: ~1.5GB modelo
+      # Em CPU (Hetzner CX43), carregamento pode levar 5+ minutos no cold start
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
+      timeout: 15s
+      retries: 10
+      start_period: 300s
     deploy:
       resources:
         limits:
@@ -1922,11 +1931,12 @@ services:
       # CORREÇÃO 15/12/2025: pg_isready NÃO precisa de senha - apenas verifica se PostgreSQL aceita conexões
       # Docker Compose expande ${VAR:-default} ANTES de passar para o container
       # Isso é Enterprise-Grade (Regra 6) - respeita configuração customizada via .env.prod
+      # start_period aumentado para 60s: primeira inicialização do PostgreSQL cria cluster de dados
       test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
       interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 30s
+      retries: 15
+      start_period: 60s
     deploy:
       resources:
         limits:

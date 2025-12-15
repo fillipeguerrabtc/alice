@@ -364,8 +364,8 @@ export const RAG_CHUNK_CONFIG = {
   chunkSize: 1000,
   /** Sobreposição entre chunks */
   chunkOverlap: 200,
-  /** Dimensão dos embeddings (multilingual-e5-base local - 768 dim) */
-  embeddingDimensions: 768,
+  /** Dimensão dos embeddings (BGE-M3 GPU - 1024 dim) - ARQUITETURA 100% GPU */
+  embeddingDimensions: 1024,
   /** Threshold de similaridade para busca */
   similarityThreshold: 0.7,
 };

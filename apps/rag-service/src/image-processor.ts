@@ -2,14 +2,14 @@
  * Image Processor Service - Alice Enterprise Platform
  * 
  * Processamento de imagens:
- * - CLIP embeddings (768 dimensões) via serviço local (alice-clip-inference)
+ * - OpenCLIP ViT-H/14 embeddings (1024 dimensões) via GPU (Salad Cloud)
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
  * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - CLIP roda localmente no Hetzner via CPU (100% local)
- * - Embeddings CLIP são gerados 100% localmente via CPU no servidor Hetzner
+ * ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025:
+ * - OpenCLIP ViT-H/14 roda em GPU via Salad Cloud (1024 dim)
+ * - GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -17,7 +17,6 @@
 import pino from 'pino';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 import { validateEmbeddingDimension } from '@alice/database';
-import { resolveClipServiceUrl } from './clip-service-url.js';
 
 const logger = pino({
   level: process.env.LOG_LEVEL || 'info',
@@ -27,62 +26,65 @@ const logger = pino({
   }
 }).child({ service: 'image-processor' });
 
-// Configuração CLIP Local (Autônomo - Regra 6)
-// REGRA 6: Serviço local no Hetzner, não depende de API externa
-// Serviço interno na rede Docker privada - não requer autenticação
-const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
+// Configuração Embeddings GPU (Salad Cloud) - ARQUITETURA 100% GPU
+// GPU é OBRIGATÓRIO - schema usa vector(1024)
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings CLIP (ViT-L/14)
-export const CLIP_EMBEDDING_DIM = 768;
+// Dimensão dos embeddings (OpenCLIP ViT-H/14 - 1024 dim)
+export const CLIP_EMBEDDING_DIM = 1024;
 
 // ============================================================================
-// CIRCUIT BREAKER - CLIP API (Regra 16 - Melhores Práticas 2025)
-// Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
+// CIRCUIT BREAKER - GPU Embeddings API (Regra 16 - Melhores Práticas 2025)
 // ============================================================================
 
-// Função interna para chamar API CLIP (será protegida pelo circuit breaker)
-interface ClipApiParams {
-  endpoint: string;
-  body: { text?: string; image?: string; model: string };
+interface EmbeddingsApiParams {
+  image: string;
 }
 
-async function callClipApiInternal(params: ClipApiParams): Promise<{ embedding: number[]; model: string }> {
-  // REGRA 6: Serviço local autônomo - não depende de API externa
-  // Serviço interno na rede Docker privada - não requer autenticação
-  const response = await fetch(`${CLIP_SERVICE_URL}${params.endpoint}`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(params.body),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`CLIP API error: ${response.status} - ${errorText}`);
+async function callEmbeddingsGpuApi(params: EmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
+  if (!EMBEDDINGS_GPU_URL) {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
   }
 
-  const result = await response.json() as { embedding: number[]; model: string; input_type?: string };
-  
-  if (!result.embedding || !Array.isArray(result.embedding)) {
-    throw new Error('Resposta CLIP inválida - embedding ausente');
-  }
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
 
-  return {
-    embedding: result.embedding,
-    model: result.model || 'ViT-L/14',
-  };
+  try {
+    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json() as { embedding: number[]; model: string; dimension: number };
+    
+    if (!result.embedding || !Array.isArray(result.embedding)) {
+      throw new Error('Resposta GPU inválida - embedding ausente');
+    }
+
+    return {
+      embedding: result.embedding,
+      model: result.model || 'OpenCLIP-ViT-H-14',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
-// Circuit breaker para chamadas CLIP
-const clipBreaker = createCircuitBreaker(callClipApiInternal, {
-  name: 'clip-api',
+// Circuit breaker para chamadas GPU
+const gpuBreaker = createCircuitBreaker(callEmbeddingsGpuApi, {
+  name: 'embeddings-gpu-image',
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
 });
 
-// Função para chamar API CLIP através do circuit breaker
-async function callClipApi(params: ClipApiParams): Promise<{ embedding: number[]; model: string }> {
-  return clipBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
+async function callGpuApi(params: EmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
+  return gpuBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
 }
 
 export interface ImageMetadata {
@@ -116,13 +118,16 @@ class ImageProcessorService {
   private isConfigured: boolean = false;
 
   constructor() {
-    // "Configured" aqui significa: existe URL configurada; prontidão real depende do health check.
-    // (Regra 6: sem hardcoded/false positives)
-    this.isConfigured = typeof CLIP_SERVICE_URL === 'string' && CLIP_SERVICE_URL.length > 0;
-    logger.info(
-      { serviceUrl: CLIP_SERVICE_URL, configured: this.isConfigured },
-      'Image Processor configurado com serviço CLIP local (autônomo)'
-    );
+    this.isConfigured = typeof EMBEDDINGS_GPU_URL === 'string' && EMBEDDINGS_GPU_URL.length > 0;
+    
+    if (!this.isConfigured) {
+      logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de imagem não funcionarão');
+    } else {
+      logger.info(
+        { gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: CLIP_EMBEDDING_DIM },
+        'Image Processor configurado - ARQUITETURA 100% GPU (OpenCLIP ViT-H/14, 1024 dim)'
+      );
+    }
   }
 
   /**
@@ -139,24 +144,25 @@ class ImageProcessorService {
     // Extrair metadata básica
     const metadata = await this.extractMetadata(imageBuffer, mimeType, extractExif);
 
-    // Gerar embedding via CLIP
+    // Gerar embedding via GPU (OBRIGATÓRIO)
     let embedding: number[] = [];
     let embeddingModel = 'none';
 
     if (this.isConfigured) {
       try {
-        const result = await this.generateClipEmbedding(imageBuffer, mimeType);
+        const result = await this.generateImageEmbedding(imageBuffer, mimeType);
         embedding = result.embedding;
         embeddingModel = result.model;
       } catch (error) {
-        logger.error({ error }, 'Erro ao gerar CLIP embedding');
-        // Regra 6 (CLAUDE.md): PROIBIDO retornar embeddings "falsos" (ex: vetor de zeros).
-        // Em caso de falha, retornamos "sem embedding" e deixamos o call site persistir como NULL (ou ignorar).
+        logger.error({ error }, 'Erro ao gerar embedding de imagem via GPU');
+        // Regra 6: NÃO retornar embedding falso, deixar vazio
         embedding = [];
-        embeddingModel = 'unavailable';
+        embeddingModel = 'error';
       }
+    } else {
+      logger.error('GPU não configurado - embedding de imagem não gerado');
+      embeddingModel = 'not_configured';
     }
-    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
 
     // Gerar thumbnail
     let thumbnailBuffer: Buffer | undefined;
@@ -174,7 +180,6 @@ class ImageProcessorService {
       embeddingDim: embedding.length,
       embeddingModel,
       hasThumbnail: !!thumbnailBuffer,
-      thumbnailSize: thumbnailBuffer?.length,
       metadata: { width: metadata.width, height: metadata.height, format: metadata.format },
       processingTimeMs,
     }, 'Imagem processada');
@@ -191,17 +196,13 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP de texto via serviço local (com circuit breaker - Regra 16)
+   * Gera embedding de texto via GPU para busca por descrição
    * Permite buscar imagens por descrição textual
-   * 
-   * ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (100% local via CPU no Hetzner)
-   * Embeddings são gerados 100% localmente via CPU no servidor Hetzner
-   * 
-   * @param text - Texto descritivo para gerar embedding (ex: "gato laranja dormindo")
-   * @returns Embedding CLIP (768 dim) e modelo usado
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
-    // REGRA 6: Serviço local sempre disponível (serviço interno na rede Docker)
+    if (!this.isConfigured) {
+      throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO');
+    }
 
     if (!text || text.trim().length === 0) {
       throw new Error('Texto vazio não é permitido para geração de embedding');
@@ -210,18 +211,24 @@ class ImageProcessorService {
     const startTime = Date.now();
     const trimmedText = text.trim();
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
     try {
-      // Usar circuit breaker para resiliência (Regra 16)
-      const result = await callClipApi({
-        endpoint: '/inference/clip',
-        body: {
-          text: trimmedText,
-          model: 'ViT-L/14',
-        },
+      const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: trimmedText }),
+        signal: controller.signal,
       });
 
-      // Validar dimensão do embedding (Enterprise-Grade - Regra 6)
-      // Lança erro se dimensão estiver incorreta (não apenas warning)
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json() as { embedding: number[]; model: string; dimension: number };
+      
       validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
       const processingTimeMs = Date.now() - startTime;
@@ -229,29 +236,21 @@ class ImageProcessorService {
       logger.info({
         textLength: trimmedText.length,
         embeddingDim: result.embedding.length,
-        model: result.model || 'ViT-L/14',
+        model: result.model,
         processingTimeMs,
-      }, 'Text embedding CLIP gerado com sucesso');
+      }, 'Text embedding gerado via GPU');
 
       return {
         embedding: result.embedding,
-        model: result.model || 'ViT-L/14',
+        model: result.model || 'BAAI/bge-m3',
       };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      logger.error({ 
-        error: errorMessage, 
-        textLength: trimmedText.length,
-        endpoint: `${CLIP_SERVICE_URL}/inference/clip`,
-      }, 'Erro ao gerar text embedding CLIP (circuit breaker)');
-      throw error;
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 
   /**
    * Gera thumbnail da imagem
-   * Sem dependência de sharp - usa imagem original para imagens pequenas
-   * ou retorna undefined para imagens grandes (thumbnail não disponível)
    */
   private async generateThumbnail(
     imageBuffer: Buffer,
@@ -260,27 +259,16 @@ class ImageProcessorService {
     metadata: ImageMetadata
   ): Promise<{ buffer: Buffer; mimeType: string } | null> {
     try {
-      // Se a imagem já é pequena o suficiente, usa como próprio thumbnail
       const width = metadata.width || 0;
       const height = metadata.height || 0;
       
       if (width > 0 && height > 0 && width <= maxSize * 2 && height <= maxSize * 2) {
-        // Imagem pequena - usar original como thumbnail
-        logger.debug({ width, height, maxSize }, 'Usando imagem original como thumbnail');
-        return {
-          buffer: imageBuffer,
-          mimeType,
-        };
+        return { buffer: imageBuffer, mimeType };
       }
 
-      // Para imagens grandes, tentamos carregar sharp dinamicamente
-      // Se sharp não estiver disponível, usamos fallback
       try {
-        // Tenta carregar sharp dinamicamente (módulo opcional)
-        // REGRA 8: TypeScript strict, zero any - tipagem explícita para módulo dinâmico
         const sharpModule = await import('sharp').catch(() => null);
         
-        // Tipo helper para módulo sharp (pode ser default export ou named export)
         type SharpModule = {
           default?: (input?: Buffer | string) => SharpInstance;
         } & ((input?: Buffer | string) => SharpInstance);
@@ -301,37 +289,16 @@ class ImageProcessorService {
             .jpeg({ quality: 80 })
             .toBuffer();
 
-          logger.debug({ 
-            originalSize: imageBuffer.length, 
-            thumbnailSize: thumbnailBuffer.length 
-          }, 'Thumbnail gerado com sharp');
-
-          return {
-            buffer: thumbnailBuffer,
-            mimeType: 'image/jpeg',
-          };
+          return { buffer: thumbnailBuffer, mimeType: 'image/jpeg' };
         }
       } catch {
-        // Sharp não instalado ou não funciona - usar fallback silenciosamente
-        logger.debug('Sharp não disponível, usando fallback');
+        logger.debug('Sharp não disponível');
       }
 
-      // Fallback: para imagens grandes sem sharp, retornar a imagem original
-      // se for menor que 500KB, caso contrário não gerar thumbnail
       if (imageBuffer.length < 500 * 1024) {
-        return {
-          buffer: imageBuffer,
-          mimeType,
-        };
+        return { buffer: imageBuffer, mimeType };
       }
 
-      // Thumbnail é um recurso auxiliar. Se sharp não estiver disponível e a imagem for grande,
-      // seguir sem thumbnail é comportamento esperado (não é warning operacional).
-      logger.info(
-        { width, height, size: imageBuffer.length },
-        'Thumbnail não gerado (imagem grande e sharp indisponível)'
-      );
-      
       return null;
     } catch (error) {
       logger.error({ error }, 'Erro ao gerar thumbnail');
@@ -340,37 +307,20 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding CLIP via serviço local (com circuit breaker - Regra 16)
-   * ARQUITETURA AUTÔNOMA: Serviço local no Hetzner via CPU (100% local)
+   * Gera embedding de imagem via GPU (OpenCLIP ViT-H/14, 1024 dim)
    */
-  private async generateClipEmbedding(
+  private async generateImageEmbedding(
     imageBuffer: Buffer,
     mimeType: string
   ): Promise<{ embedding: number[]; model: string }> {
     const base64Image = imageBuffer.toString('base64');
+    const imageDataUri = `data:${mimeType};base64,${base64Image}`;
     
-    try {
-      // Usar circuit breaker para resiliência
-      const result = await callClipApi({
-        endpoint: '/inference/clip',
-        body: {
-          image: `data:${mimeType};base64,${base64Image}`,
-          model: 'ViT-L/14',
-        },
-      });
-      
-      // Validar dimensão do embedding (Enterprise-Grade - Regra 6)
-      // Lança erro se dimensão estiver incorreta (não apenas warning)
-      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
+    const result = await callGpuApi({ image: imageDataUri });
+    
+    validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
-      return {
-        embedding: result.embedding,
-        model: result.model || 'ViT-L/14',
-      };
-    } catch (error) {
-      logger.error({ error }, 'Erro na API CLIP (circuit breaker)');
-      throw error;
-    }
+    return result;
   }
 
   /**
@@ -383,7 +333,6 @@ class ImageProcessorService {
   ): Promise<ImageMetadata> {
     const metadata: ImageMetadata = {};
 
-    // Determinar formato baseado no MIME type
     const formatMap: Record<string, string> = {
       'image/jpeg': 'jpeg',
       'image/png': 'png',
@@ -394,7 +343,6 @@ class ImageProcessorService {
     };
     metadata.format = formatMap[mimeType] || 'unknown';
 
-    // Tentar extrair dimensões do header da imagem
     try {
       const dimensions = this.extractDimensionsFromBuffer(imageBuffer, mimeType);
       if (dimensions) {
@@ -405,7 +353,6 @@ class ImageProcessorService {
       logger.warn({ error }, 'Não foi possível extrair dimensões da imagem');
     }
 
-    // Extração EXIF (simplificada - sem dependência externa)
     if (extractExif && (mimeType === 'image/jpeg' || mimeType === 'image/tiff')) {
       try {
         const exif = this.extractBasicExif(imageBuffer);
@@ -421,36 +368,33 @@ class ImageProcessorService {
   }
 
   /**
-   * Extrai dimensões do buffer da imagem (PNG/JPEG/GIF/WebP)
+   * Extrai dimensões do buffer da imagem
    */
   private extractDimensionsFromBuffer(
     buffer: Buffer,
     mimeType: string
   ): { width: number; height: number } | null {
     try {
-      // PNG: dimensões nos bytes 16-23 do header
+      // PNG
       if (mimeType === 'image/png' && buffer.length >= 24) {
         if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4E && buffer[3] === 0x47) {
-          const width = buffer.readUInt32BE(16);
-          const height = buffer.readUInt32BE(20);
-          return { width, height };
+          return { width: buffer.readUInt32BE(16), height: buffer.readUInt32BE(20) };
         }
       }
 
-      // JPEG: procurar marker SOF0 (0xFFC0) ou SOF2 (0xFFC2)
+      // JPEG
       if (mimeType === 'image/jpeg' && buffer.length > 2) {
         if (buffer[0] === 0xFF && buffer[1] === 0xD8) {
           let offset = 2;
           while (offset < buffer.length - 8) {
             if (buffer[offset] === 0xFF) {
               const marker = buffer[offset + 1];
-              // SOF0, SOF1, SOF2, SOF3
               if (marker >= 0xC0 && marker <= 0xC3) {
-                const height = buffer.readUInt16BE(offset + 5);
-                const width = buffer.readUInt16BE(offset + 7);
-                return { width, height };
+                return { 
+                  width: buffer.readUInt16BE(offset + 7), 
+                  height: buffer.readUInt16BE(offset + 5) 
+                };
               }
-              // Pular para próximo marker
               const length = buffer.readUInt16BE(offset + 2);
               offset += 2 + length;
             } else {
@@ -460,64 +404,53 @@ class ImageProcessorService {
         }
       }
 
-      // GIF: dimensões nos bytes 6-9
+      // GIF
       if (mimeType === 'image/gif' && buffer.length >= 10) {
         if (buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-          const width = buffer.readUInt16LE(6);
-          const height = buffer.readUInt16LE(8);
-          return { width, height };
+          return { width: buffer.readUInt16LE(6), height: buffer.readUInt16LE(8) };
         }
       }
 
-      // WebP: mais complexo, precisa parsear RIFF container
+      // WebP
       if (mimeType === 'image/webp' && buffer.length >= 30) {
         if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'WEBP') {
           const chunk = buffer.slice(12, 16).toString();
           if (chunk === 'VP8 ' && buffer.length >= 30) {
-            // VP8 lossy
-            const width = buffer.readUInt16LE(26) & 0x3FFF;
-            const height = buffer.readUInt16LE(28) & 0x3FFF;
-            return { width, height };
+            return { 
+              width: buffer.readUInt16LE(26) & 0x3FFF, 
+              height: buffer.readUInt16LE(28) & 0x3FFF 
+            };
           } else if (chunk === 'VP8L' && buffer.length >= 25) {
-            // VP8L lossless
             const bits = buffer.readUInt32LE(21);
-            const width = (bits & 0x3FFF) + 1;
-            const height = ((bits >> 14) & 0x3FFF) + 1;
-            return { width, height };
+            return { width: (bits & 0x3FFF) + 1, height: ((bits >> 14) & 0x3FFF) + 1 };
           }
         }
       }
 
       return null;
-    } catch (error) {
-      logger.warn({ error, mimeType }, 'Erro ao extrair dimensões');
+    } catch {
       return null;
     }
   }
 
   /**
-   * Extrai campos EXIF básicos (sem biblioteca externa)
+   * Extrai campos EXIF básicos
    */
   private extractBasicExif(buffer: Buffer): Record<string, unknown> {
     const exif: Record<string, unknown> = {};
 
-    // Verificar se é JPEG
     if (buffer[0] !== 0xFF || buffer[1] !== 0xD8) {
       return exif;
     }
 
-    // Procurar marker EXIF (APP1)
     let offset = 2;
     while (offset < buffer.length - 4) {
       if (buffer[offset] === 0xFF && buffer[offset + 1] === 0xE1) {
         const length = buffer.readUInt16BE(offset + 2);
         const app1Data = buffer.slice(offset + 4, offset + 2 + length);
         
-        // Verificar header "Exif\0\0"
         if (app1Data.slice(0, 6).toString() === 'Exif\0\0') {
           exif.hasExif = true;
-          // Parsear TIFF header e IFDs seria muito complexo aqui
-          // Apenas indicamos que existe EXIF
         }
         break;
       }
@@ -527,72 +460,40 @@ class ImageProcessorService {
     return exif;
   }
 
-  /**
-   * Verifica se o serviço está configurado corretamente
-   */
-  /**
-   * @deprecated Use `isReadyAsync()` para readiness real (com checagem de rede).
-   *
-   * Mantido por compatibilidade: `isReady()` é **síncrono** e indica apenas se o processor
-   * está "configurado" localmente. NÃO garante disponibilidade do `alice-clip-inference`.
-   */
   isReady(): boolean {
     return this.isConfigured;
   }
 
-  /**
-   * Readiness real: valida conectividade com o `alice-clip-inference` (capability CLIP).
-   */
-  private async checkReadyAsync(): Promise<boolean> {
-    // REGRA 6: Serviço local é OBRIGATÓRIO em produção (autonomia)
-    // IMPORTANTE: Apesar de ser 100% LOCAL (CPU Hetzner), dependemos do alice-clip-inference estar acessível.
-    // Isso evita falso-positivo de readiness quando o container de inferência multimodal está fora do ar.
+  async isReadyAsync(): Promise<boolean> {
     if (!this.isConfigured) return false;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000); // 3s timeout para readiness check
+    const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     try {
-      // /ready/clip valida SOMENTE a capacidade CLIP (evita falso-negativo quando o serviço está "degraded" por Whisper)
-      const response = await fetch(`${CLIP_SERVICE_URL}/ready/clip`, {
+      const response = await fetch(`${EMBEDDINGS_GPU_URL}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });
-
-      if (!response.ok) {
-        logger.warn(
-          { status: response.status, serviceUrl: CLIP_SERVICE_URL },
-          'CLIP inference service não está pronto'
-        );
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      logger.error({ error, serviceUrl: CLIP_SERVICE_URL }, 'Erro ao verificar readiness do CLIP inference service');
+      return response.ok;
+    } catch {
       return false;
     } finally {
       clearTimeout(timeoutId);
     }
   }
 
-  /**
-   * Alias explícito para padronização com outros processors.
-   * Contrato: SEMPRE assíncrono e retorna `Promise<boolean>`.
-   */
-  async isReadyAsync(): Promise<boolean> {
-    return await this.checkReadyAsync();
-  }
-
-  /**
-   * Retorna informações sobre a configuração
-   */
-  getConfig(): { configured: boolean; embeddingDim: number; model: string; serviceUrl: string } {
+  getConfig(): { 
+    configured: boolean; 
+    embeddingDim: number; 
+    model: string; 
+    gpuUrl: string;
+  } {
     return {
       configured: this.isConfigured,
       embeddingDim: CLIP_EMBEDDING_DIM,
-      model: this.isConfigured ? 'ViT-L/14 (Local - CPU no Hetzner)' : 'NÃO CONFIGURADO',
-      serviceUrl: CLIP_SERVICE_URL,
+      model: 'OpenCLIP-ViT-H-14 (GPU - Salad Cloud)',
+      gpuUrl: EMBEDDINGS_GPU_URL,
     };
   }
 }
@@ -610,9 +511,9 @@ export function getImageProcessor(): ImageProcessorService {
 export const imageProcessor = getImageProcessor();
 
 /**
- * Retorna status do circuit breaker CLIP (Regra 16 - Observability)
+ * Retorna status do circuit breaker GPU
  */
-export function getClipCircuitBreakerStatus(): {
+export function getGpuCircuitBreakerStatus(): {
   state: string;
   stats: {
     fires: number;
@@ -624,9 +525,9 @@ export function getClipCircuitBreakerStatus(): {
     latencyMean: number;
   };
 } {
-  const stats = clipBreaker.stats;
+  const stats = gpuBreaker.stats;
   return {
-    state: clipBreaker.opened ? 'open' : (clipBreaker.halfOpen ? 'half-open' : 'closed'),
+    state: gpuBreaker.opened ? 'open' : (gpuBreaker.halfOpen ? 'half-open' : 'closed'),
     stats: {
       fires: stats.fires || 0,
       failures: stats.failures || 0,

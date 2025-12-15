@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.69 - Healthcheck langfuse-db Enterprise (sem hardcoded)
+> **Versão:** 3.71 - Arquitetura 100% GPU Multimodal (Salad Cloud - 1024 dim)
 
 ---
 
@@ -59,7 +59,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 8 | Multimodal Inference | `apps/clip-inference-service` | alice-clip-inference | 8000 | Python, PyTorch, FastAPI - Embeddings (texto + imagem) + Transcrição 100% LOCAL |
+| 8 | Multimodal Inference | `docker/embeddings-gpu` + `docker/whisper-gpu` | embeddings-gpu, whisper-gpu | 8080 | GPU Salad Cloud - Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
@@ -110,7 +110,7 @@
 |----------------|--------|---------|
 | pgvector (busca semântica) | ✅ | `index.ts` |
 | Image Processing (CLIP) | ✅ | `image-processor.ts` |
-| Audio Processing (faster-whisper LOCAL) | ✅ | `audio-processor.ts` |
+| Audio Processing (Arquitetura Híbrida) | ✅ | `audio-processor.ts` (GPU Salad + fallback CPU) |
 | Video Processing (FFmpeg+faster-whisper+CLIP) | ✅ | `video-processor.ts` |
 | Document Processing (PDF/DOCX/XLSX) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
@@ -213,14 +213,19 @@
 |----------------|--------|---------|
 | **Embeddings de Imagem** (CLIP ViT-L/14 - 768 dim) | ✅ | `server.py` |
 | **Embeddings de Texto** (multilingual-e5-base - 768 dim) | ✅ | `server.py` |
-| **Transcrição de Áudio** (faster-whisper medium) | ✅ | `server.py` |
+| **Transcrição de Áudio** (faster-whisper medium - CPU fallback) | ✅ | `server.py` |
 | Suporte Multilíngue (100+ idiomas) | ✅ | multilingual-e5-base + faster-whisper |
-| 100% LOCAL (CPU Hetzner) | ✅ | Nenhuma dependência externa |
+| Embeddings 100% LOCAL (CPU Hetzner) | ✅ | Nenhuma dependência externa |
+| Transcrição Híbrida | ✅ | GPU Salad (primário) + CPU Hetzner (fallback) |
 | Rate Limiting | ✅ | `server.py` |
 | Circuit Breaker (Python) | ✅ | `server.py` (CLIP + Text + Whisper) |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-> **ARQUITETURA AUTÔNOMA (Regra 6):** Todos os processamentos multimodais são 100% locais via CPU no servidor Hetzner. Nenhuma dependência de APIs externas para embeddings ou transcrição.
+> **ARQUITETURA HÍBRIDA (15/12/2025):**
+> - **Embeddings (texto + imagem):** 100% LOCAL via CPU Hetzner - privacidade máxima
+> - **Transcrição de áudio:** GPU Salad (primário, 7-9x mais rápido) + CPU Hetzner (fallback automático)
+> - O container whisper-gpu roda em Salad Cloud com faster-whisper large-v3
+> - Se GPU indisponível ou erro, fallback transparente para CPU local (faster-whisper medium)
 
 > **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio/vídeo).
 
@@ -689,21 +694,27 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 |------------|------------|--------|
 | Chat Conversacional | Llama 4 Maverick (400B) | ✅ |
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
-| Embeddings Multimodais | CLIP ViT-L/14 (100% local - CPU no Hetzner) | ✅ |
-| Embeddings Texto | multilingual-e5-base (100% local - CPU no Hetzner) | ✅ |
+| Embeddings Multimodais | OpenCLIP ViT-H/14 (GPU Salad Cloud, 1024 dim) | ✅ |
+| Embeddings Texto | BGE-M3 (GPU Salad Cloud, 1024 dim) | ✅ |
 
-### Processamento Multimodal (INPUT) - 100% LOCAL
+### Processamento Multimodal (INPUT) - ARQUITETURA HÍBRIDA (15/12/2025)
 
-> **ARQUITETURA AUTÔNOMA (Regra 6):** Todos os processamentos são realizados localmente via CPU no servidor Hetzner. Nenhuma dependência de APIs externas.
+> **ARQUITETURA HÍBRIDA (Opção B - Híbrido Inteligente):**
+> - **Embeddings:** 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim)
+> - **Transcrição:** GPU Salad Cloud (Whisper large-v3)
+> - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6 - schema usa vector(1024))
 
-| Tipo | Processador | Tecnologia LOCAL | Output |
-|------|-------------|------------------|--------|
-| Imagem | `image-processor.ts` | CLIP ViT-L/14 | 768 dim embedding |
-| Áudio | `audio-processor.ts` | faster-whisper medium + multilingual-e5-base | Transcrição + 768 dim embedding |
-| Vídeo | `video-processor.ts` | FFmpeg + faster-whisper + CLIP | Combinado 768 dim |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + multilingual-e5-base | 768 dim embedding |
+| Tipo | Processador | Tecnologia | Output |
+|------|-------------|------------|--------|
+| Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim embedding |
+| Áudio | `audio-processor.ts` | Whisper large-v3 (GPU) + BGE-M3 (GPU) | Transcrição + 1024 dim embedding |
+| Vídeo | `video-processor.ts` | FFmpeg + Whisper GPU + OpenCLIP GPU | Combinado 1024 dim |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + BGE-M3 GPU | 1024 dim embedding |
 
-**Serviço de Inferência:** `clip-inference-service` (Python FastAPI)
+**Serviços de Inferência:**
+- `embeddings-gpu` (Python FastAPI GPU) - BGE-M3 (texto) + OpenCLIP ViT-H/14 (imagem)
+- `whisper-gpu` (Python FastAPI GPU) - Whisper large-v3 (transcrição)
+- `whisper-gpu` (Python FastAPI, Salad Cloud) - Transcrição GPU (7-9x mais rápido)
 
 ### Auto-Learning
 
@@ -922,7 +933,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 **Solução:** Deploy com duas estratégias de migração:
 1. **run_migration_idempotent()**: Para migrações 0001, 0002, 0004 - usa `ON_ERROR_STOP=0` e continua em erros de idempotência
-2. **run_migration_critical()**: Para migração 0003 - captura exit code do psql em variável separada (evita problema de pipeline onde exit code vem do último comando grep), usa `ON_ERROR_STOP=1` e `exit 1` em qualquer falha (OBRIGATÓRIA para embeddings 768 dim)
+2. **run_migration_critical()**: Para migração de embeddings - captura exit code do psql em variável separada (evita problema de pipeline onde exit code vem do último comando grep), usa `ON_ERROR_STOP=1` e `exit 1` em qualquer falha (OBRIGATÓRIA para embeddings 1024 dim)
 3. **Migrações**: Todas agora usam:
    - `DROP POLICY IF EXISTS` antes de cada `CREATE POLICY`
    - `CREATE INDEX IF NOT EXISTS` em vez de DROP+CREATE
@@ -962,6 +973,6 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Processor | Testes | Funcionalidades |
 |-----------|--------|-----------------|
 | document-processor | ✅ | ExcelJS, chunking, MIME types |
-| audio-processor | ✅ | faster-whisper LOCAL, metadata, transcrição |
+| audio-processor | ✅ | Whisper híbrido (GPU Salad + CPU fallback), metadata |
 | image-processor | ✅ | CLIP, magic bytes, thumbnails |
 | video-processor | ✅ | FFmpeg, frames, metadata |

@@ -173,15 +173,15 @@ describe('Video Processor - Metadata', () => {
 // ============================================================================
 
 describe('Video Processor - Dimensões de Embedding', () => {
-  const TEXT_EMBEDDING_DIM = 768;  // multilingual-e5-base local (transcrição)
-  const CLIP_EMBEDDING_DIM = 768;   // CLIP ViT-L/14 (frames)
+  const TEXT_EMBEDDING_DIM = 1024;  // BGE-M3 GPU (transcrição)
+  const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (frames)
 
-  it('deve ter text embedding de 768 dimensões (multilingual-e5-base local)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(768);
+  it('deve ter text embedding de 1024 dimensões (BGE-M3 GPU)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(1024);
   });
 
-  it('deve ter CLIP embedding de 768 dimensões por frame', () => {
-    expect(CLIP_EMBEDDING_DIM).toBe(768);
+  it('deve ter image embedding de 1024 dimensões por frame (OpenCLIP ViT-H/14 GPU)', () => {
+    expect(CLIP_EMBEDDING_DIM).toBe(1024);
   });
 
   it('deve criar array de embeddings para múltiplos frames', () => {
@@ -191,7 +191,7 @@ describe('Video Processor - Dimensões de Embedding', () => {
     );
     
     expect(frameEmbeddings.length).toBe(10);
-    expect(frameEmbeddings[0].length).toBe(768);
+    expect(frameEmbeddings[0].length).toBe(1024);
   });
 });
 
@@ -263,10 +263,10 @@ describe('Video Processor - Estrutura de Resultado', () => {
     const result: ProcessedVideo = {
       transcription: 'Transcrição do vídeo',
       transcriptionLanguage: 'pt',
-      textEmbedding: new Array(768).fill(0), // multilingual-e5-base local (768 dim)
-      frameEmbeddings: [new Array(768).fill(0), new Array(768).fill(0)],
-      combinedEmbedding: new Array(768).fill(0),
-      embeddingModel: 'clip-vit-large-patch14',
+      textEmbedding: new Array(1024).fill(0), // BGE-M3 GPU (1024 dim)
+      frameEmbeddings: [new Array(1024).fill(0), new Array(1024).fill(0)],
+      combinedEmbedding: new Array(1024).fill(0),
+      embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
       metadata: { fileSize: 50000000 },
       framesExtracted: 2,
       processedAt: new Date().toISOString(),
@@ -274,7 +274,7 @@ describe('Video Processor - Estrutura de Resultado', () => {
     };
 
     expect(result.transcription).toBeDefined();
-    expect(result.textEmbedding.length).toBe(768); // multilingual-e5-base local (768 dim)
+    expect(result.textEmbedding.length).toBe(1024); // BGE-M3 GPU (1024 dim)
     expect(result.frameEmbeddings.length).toBe(2);
     expect(result.framesExtracted).toBe(2);
   });

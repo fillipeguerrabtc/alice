@@ -1,21 +1,19 @@
 /**
  * Video Processor Service - Alice Enterprise Platform
  * 
- * Processamento de vídeos 100% LOCAL (Regra 6 CLAUDE.md - Autonomia Total):
- * - Extração de áudio via FFmpeg
- * - Transcrição via faster-whisper (CPU Hetzner - 100% LOCAL)
- * - Extração de frames chave para CLIP embeddings (CPU Hetzner - 100% LOCAL)
- * - Text embeddings da transcrição via multilingual-e5-base (CPU Hetzner - 100% LOCAL)
+ * ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
+ * - Extração de áudio via FFmpeg (local)
+ * - Transcrição via Whisper large-v3 GPU (Salad Cloud)
+ * - Extração de frames chave para embeddings (local FFmpeg)
+ * - Image embeddings via OpenCLIP ViT-H/14 GPU (Salad Cloud, 1024 dim)
+ * - Text embeddings via BGE-M3 GPU (Salad Cloud, 1024 dim)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA AUTÔNOMA (Regra 6 CLAUDE.md):
- * - TODOS os processamentos são 100% locais via CPU no servidor Hetzner
- * - Embeddings: CLIP ViT-L/14 (imagens) + multilingual-e5-base (texto)
- * - Transcrição: faster-whisper medium
- * - NENHUMA dependência de APIs externas
+ * GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6 - sem workarounds)
+ * Schema usa vector(1024) - incompatível com CPU (768 dim)
  * 
  * Autor: Fillipe Guerra
- * Data: 12 de Dezembro de 2025
+ * Data: 15 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -38,7 +36,7 @@ const logger = createLogger('video-processor');
  *
  * Contrato enterprise:
  * - Retorna SEMPRE embedding no espaço **CLIP** (para persistir em `clipEmbedding`).
- * - `textEmbedding` (multilingual-e5-base) é persistido separadamente em `textEmbedding` e NÃO pode ser armazenado como CLIP.
+ * - `textEmbedding` (BGE-M3 GPU) é persistido separadamente em `textEmbedding` e NÃO pode ser armazenado como CLIP.
  * - Se não houver frames, retorna `[]` (não há CLIP embedding de vídeo).
  */
 export function combineVideoEmbeddingsForSearch(
@@ -127,7 +125,7 @@ export function combineVideoEmbeddingsForSearch(
   const normalizedText =
     textEmbedding.length === TEXT_EMBEDDING_DIM ? textEmbedding : textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
 
-  // NOTA ARQUITETURAL: TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM são ambas 768 (multilingual-e5-base e CLIP ViT-L/14).
+  // NOTA ARQUITETURAL: TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM são ambas 1024 (BGE-M3 e OpenCLIP ViT-H/14 via GPU).
   // Se no futuro essas dimensões divergirem, o código precisará ser atualizado para lidar com a incompatibilidade.
   // A validação abaixo (normalizedText.length) já protege contra edge cases de corrupção de dados.
 
@@ -214,9 +212,9 @@ export interface ProcessedVideo {
   transcriptionLanguage?: string;
   transcriptionConfidence?: number;
   
-  // Embeddings (100% locais via CPU no Hetzner)
-  textEmbedding: number[]; // 768 dim - da transcrição (multilingual-e5-base local - CPU no Hetzner)
-  frameEmbeddings: number[][]; // Array de CLIP embeddings (768 dim cada) dos frames (CLIP ViT-L/14 local - CPU no Hetzner)
+  // Embeddings (100% GPU via Salad Cloud)
+  textEmbedding: number[]; // 1024 dim - da transcrição (BGE-M3 GPU)
+  frameEmbeddings: number[][]; // Array de image embeddings (1024 dim cada) dos frames (OpenCLIP ViT-H/14 GPU)
   combinedEmbedding: number[]; // Embedding CLIP combinado para busca (frames ± sinal de texto). Se não houver frames, retorna [].
   
   // Metadados
@@ -367,7 +365,7 @@ class VideoProcessorService {
       await this.runCommand(FFMPEG_PATH, ['-version']);
       await this.runCommand(FFPROBE_PATH, ['-version']);
       
-      // Verificar se processadores de áudio e imagem estão prontos (100% LOCAL)
+      // Verificar se processadores de áudio e imagem estão prontos (100% GPU)
       const audioProcessor = getAudioProcessor();
       const imageProcessor = getImageProcessor();
       
@@ -391,7 +389,7 @@ class VideoProcessorService {
       
       if (audioReady && imageReady) {
         this.isConfigured = true;
-        logger.info('Video Processor configurado com FFmpeg + Whisper (transcrição LOCAL) + Embeddings locais (multilingual-e5-base)');
+        logger.info('Video Processor - ARQUITETURA 100% GPU (Whisper large-v3 + BGE-M3 + OpenCLIP ViT-H/14)');
       } else {
         logger.warn({ audioReady, imageReady }, 'Dependências não configuradas - processamento de vídeo indisponível');
         this.isConfigured = false;
@@ -446,7 +444,7 @@ class VideoProcessorService {
     
     if (!this.isConfigured) {
       throw new Error(
-        'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com o serviço local de inferência (alice-clip-inference).'
+        'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com os serviços GPU (embeddings-gpu, whisper-gpu).'
       );
     }
     
