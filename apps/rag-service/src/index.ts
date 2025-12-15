@@ -3074,7 +3074,7 @@ app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) =>
  * Retorna imediatamente com jobId para consulta posterior
  */
 app.post('/api/rag/embeddings/queue',
-  requireAuth,
+  requireAuth(),
   async (req: Request, res: Response) => {
     try {
       const { tenantId } = getAuthUser(req);
@@ -3172,7 +3172,7 @@ app.post('/api/rag/embeddings/queue',
  * para evitar que Express capture "stats" como jobId
  */
 app.get('/api/rag/embeddings/queue/stats',
-  requireAuth,
+  requireAuth(),
   async (_req: Request, res: Response) => {
     try {
       const queueStats = await getEmbeddingQueueStats();
@@ -3199,7 +3199,7 @@ app.get('/api/rag/embeddings/queue/stats',
  * NOTA: Esta rota parametrizada deve vir APÓS rotas estáticas como /stats
  */
 app.get('/api/rag/embeddings/queue/:jobId',
-  requireAuth,
+  requireAuth(),
   async (req: Request, res: Response) => {
     try {
       const { tenantId } = getAuthUser(req);

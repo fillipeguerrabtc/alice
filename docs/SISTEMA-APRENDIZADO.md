@@ -1,6 +1,8 @@
 # Sistema de Aprendizado da Alice
 
-**Autor:** Fillipe Guerra
+**Autor:** Fillipe Guerra  
+**Versão:** 2.0 - ARQUITETURA 100% GPU  
+**Data:** 15 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -8,23 +10,92 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ---
 
+## ARQUITETURA 100% GPU (15/12/2025)
+
+### Mudança Crítica
+
+A partir de 15/12/2025, a Alice utiliza **arquitetura 100% GPU via Salad Cloud** para todos os processamentos de embeddings e transcrições:
+
+| Componente | Modelo | Dimensões | Infraestrutura |
+|------------|--------|-----------|----------------|
+| **Embeddings de Texto** | BGE-M3 | 1024 dim | GPU Salad Cloud |
+| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim | GPU Salad Cloud |
+| **Transcrição de Áudio** | Whisper large-v3 | - | GPU Salad Cloud |
+| **LLM Inference** | Llama 4 Maverick 400B | - | GPU Salad Cloud |
+| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Salad Cloud |
+| **Fine-tuning** | LoRA Progressive | - | GPU Salad Cloud |
+
+### Estratégia "Warm on Demand"
+
+Para otimizar custos e latência:
+
+| Cenário | Latência | Motivo |
+|---------|----------|--------|
+| **Primeira requisição** | 5-30 segundos | GPU cold start no Salad Cloud |
+| **Requisições subsequentes** | ~1 segundo | GPU permanece "quente" |
+| **Após 30 min inatividade** | 5-30 segundos | GPU é desligada, cold start novamente |
+
+**Componentes:**
+- **Redis Queue:** Processamento assíncrono de embeddings
+- **Embedding Worker:** Worker dedicado para processar fila
+- **WebSocket:** Notificações em tempo real (`/ws/embeddings`)
+- **REST Endpoints:** `/api/rag/embeddings/queue/*`
+
+---
+
 ## Fontes de Dados para Aprendizado
 
-### 1. Chat (Automático)
+### 1. Chat (Automático) ✅
 
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
 | **Imagens Geradas** | Semi-automático | Aprovação manual no dashboard |
-| **Imagens Upload** | Automático | CLIP embeddings para RAG multimodal |
+| **Imagens Upload** | Automático | OpenCLIP embeddings (1024 dim) para RAG multimodal |
 
 **Como funciona:**
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
 - Mensagens com rating >= 4 são candidatas a treinamento
-- Admin pode aprovar/reprovar no dashboard
+- Admin pode aprovar/reprovar no dashboard (`/training`)
 - Dados aprovados entram no próximo ciclo de fine-tuning
 
-### 2. Upload de Documentos (RAG)
+**Integração Implementada (chat-service/index.ts linha 3905):**
+```typescript
+// Quando usuário avalia mensagem com rating >= 4
+const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+  method: 'POST',
+  body: JSON.stringify({
+    source: 'chat',
+    messages: [...],
+    rating: finalRating,
+  }),
+});
+```
+
+### 2. WhatsApp (Automático) ✅
+
+| Tipo | Processamento | Critério de Aprovação |
+|------|---------------|----------------------|
+| **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
+| **Imagens** | Automático | OpenCLIP embeddings (1024 dim) |
+| **Áudios** | Automático | Whisper transcrição + BGE-M3 embeddings |
+| **Vídeos** | Automático | Frames + transcrição |
+
+**Integração Implementada (integrations-service/index.ts linha 2369):**
+```typescript
+// Após cada interação WhatsApp bem-sucedida
+const rating = chatResult.escalated ? 1 : 5; // Inferir rating baseado em escalação
+const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`, {
+  method: 'POST',
+  body: JSON.stringify({
+    source: 'whatsapp',
+    messages: [userMessage, assistantResponse],
+    rating: rating,
+  }),
+});
+```
+
+### 3. Upload de Documentos (RAG) ✅
 
 | Formato Suportado | Processamento |
 |-------------------|---------------|
@@ -37,10 +108,10 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados localmente (multilingual-e5-base via CLIP Service)
-- Chunks ficam disponíveis IMEDIATAMENTE para busca
+- Embeddings são gerados via GPU Salad Cloud (BGE-M3, 1024 dim)
+- Chunks ficam disponíveis IMEDIATAMENTE para busca semântica
 
-### 3. Dashboard Admin (Manual)
+### 4. Dashboard Admin (Manual) ✅
 
 **Funcionalidades:**
 - Visualizar todos os dados pendentes de aprovação
@@ -54,16 +125,7 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 - Rota: `/training`
 - Requer role: `admin` ou `super_admin`
 
-**Bulk Import (Nova Funcionalidade - 09/12/2025):**
-- Upload de arquivos JSON ou JSONL (até 10MB, máx 1000 entradas)
-- Validação automática com Zod schema
-- Preview dos dados antes da importação
-- Auto-aprovação configurável
-- Drag & drop enterprise
-- Feedback visual de progresso
-- Deduplicação automática via SemHash
-
-### 4. API de Bulk Import (Programático)
+### 5. API de Bulk Import (Programático) ✅
 
 **Endpoint:** `POST /api/training/bulk-import`
 
@@ -82,27 +144,29 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 }
 ```
 
-### 5. Webhook de Integração (Externo)
-
-**Endpoint:** `POST /api/training/webhook`
-
-Permite que sistemas externos enviem dados diretamente para treinamento.
-
 ---
 
-## Fluxo de Aprendizado
+## Fluxo de Aprendizado Completo
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    COLETA (Tempo Real)                      │
-│  Chat → Documentos → Dashboard → API → Webhook              │
+│  Chat → WhatsApp → Documentos → Dashboard → API             │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│           PROCESSAMENTO MULTIMODAL (GPU Salad Cloud)        │
+│  • Texto: BGE-M3 (1024 dim)                                 │
+│  • Imagem: OpenCLIP ViT-H/14 (1024 dim)                     │
+│  • Áudio: Whisper large-v3 + BGE-M3                         │
+│  • Vídeo: Frames OpenCLIP + Transcrição BGE-M3              │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                AVALIAÇÃO DE QUALIDADE                       │
-│  • Rating >= 4 estrelas                                     │
+│  • Rating >= 4 estrelas (chat)                              │
+│  • Sem escalação (WhatsApp)                                 │
 │  • Aprovação manual (opcional)                              │
-│  • Verificação de duplicatas                                │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -141,63 +205,40 @@ Permite que sistemas externos enviem dados diretamente para treinamento.
 
 ---
 
-## Schedule de Aprendizado
+## Schedule de Aprendizado (Híbrido: Cron + Threshold)
 
-| Operação | Frequência | Horário | Mínimo de Dados |
-|----------|------------|---------|-----------------|
-| RAG Update | Tempo real | - | 1 documento |
-| Auto-indexação | Diário | 3:00 AM | - |
-| Fine-tuning LoRA | 4 dias | 2:00 AM | 50 entradas |
-| Fine-tuning Completo | Quinzenal | 1:00 AM | 200 entradas |
+| Operação | Frequência | Horário | Mínimo de Dados | Qualidade Mínima |
+|----------|------------|---------|-----------------|------------------|
+| RAG Update | Tempo real | - | 1 documento | - |
+| Auto-indexação | Diário | 3:00 AM | - | - |
+| Fine-tuning LoRA | **4 dias** | 2:00 AM | **50 entradas** | **50% rating >= 4** |
+| Fine-tuning Completo | **Quinzenal** | 1:00 AM | **200 entradas** | **50% rating >= 4** |
 
----
-
-## Imagens e Aprendizado Visual
-
-### Como Funciona
-
-1. **Geração de Imagem (FLUX.1 Schnell)**
-   - Usuário pede imagem no chat
-   - Alice detecta intenção de gerar imagem
-   - FLUX.1 Schnell gera em 1-3 segundos
-   - Imagem é exibida no chat
-
-2. **Feedback e Aprovação**
-   - Usuário avalia imagem (1-5 estrelas)
-   - Admin pode aprovar para treinamento
-   - Imagens aprovadas entram no dataset
-
-3. **Progressive LoRA Visual**
-   - Imagens aprovadas são usadas para fine-tuning
-   - CLIP embeddings para RAG multimodal
-   - Busca por similaridade visual
-
-### Upload de Imagens
-
-| Fonte | Processamento |
-|-------|---------------|
-| Chat | CLIP embedding + armazenamento |
-| Dashboard | Upload direto + aprovação |
-| API | Bulk import de imagens |
+**Lógica de Decisão:**
+```typescript
+// auto-learning-scheduler.ts
+if (evaluation.recommendation === 'proceed' && job.tenantId) {
+  // Só executa se:
+  // 1. Atingiu threshold mínimo de dados
+  // 2. Qualidade >= 50% (rating >= 4)
+  await startProgressiveLoRA(job.tenantId, { includeImages: true });
+}
+```
 
 ---
 
-## Processamento de Áudio - ARQUITETURA HÍBRIDA (15/12/2025)
+## Processamento de Áudio - ARQUITETURA 100% GPU
 
 ### Visão Geral
 
-O processamento de áudio utiliza uma **arquitetura híbrida** que combina:
-- **GPU (Salad Cloud):** Transcrição primária via faster-whisper large-v3 (7-9x mais rápido)
-- **CPU (Hetzner):** Fallback automático via faster-whisper medium
+O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 
-### Benefícios
-
-| Aspecto | GPU (Salad) | CPU (Hetzner) |
-|---------|-------------|---------------|
-| Velocidade | 7-9x realtime | 1x realtime |
-| Modelo | large-v3 (melhor qualidade) | medium (boa qualidade) |
-| Custo | ~$0.002/min | Incluído na infraestrutura |
-| Disponibilidade | 99.5% (fallback se indisponível) | 100% LOCAL |
+| Aspecto | GPU Salad Cloud |
+|---------|-----------------|
+| **Modelo Transcrição** | Whisper large-v3 |
+| **Velocidade** | 7-9x realtime |
+| **Modelo Embeddings** | BGE-M3 (1024 dim) |
+| **Fallback CPU** | **NÃO EXISTE** (Regra 6) |
 
 ### Fluxo de Transcrição
 
@@ -209,24 +250,17 @@ O processamento de áudio utiliza uma **arquitetura híbrida** que combina:
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│            GPU DISPONÍVEL? (SALAD_WHISPER_URL)             │
+│          TRANSCRIÇÃO GPU (OBRIGATÓRIA)                     │
+│  • Whisper large-v3                                         │
+│  • 7-9x realtime                                            │
+│  • CUDA accelerated                                         │
+│  • SALAD_WHISPER_URL é OBRIGATÓRIO em produção             │
 └─────────────────────────────────────────────────────────────┘
-          │                              │
-         SIM                            NÃO
-          ↓                              ↓
-┌─────────────────────┐      ┌─────────────────────┐
-│  TRANSCRIÇÃO GPU    │      │  TRANSCRIÇÃO CPU    │
-│  • large-v3 model   │      │  • medium model     │
-│  • 7-9x realtime    │      │  • 1x realtime      │
-│  • CUDA accelerated │      │  • 100% LOCAL       │
-└─────────────────────┘      └─────────────────────┘
-          │                              │
-          └──────────────┬───────────────┘
-                         ↓
+                              ↓
 ┌─────────────────────────────────────────────────────────────┐
-│               GERAÇÃO DE EMBEDDING (CPU LOCAL)             │
-│  • multilingual-e5-base (768 dim)                          │
-│  • 100% Hetzner (privacidade máxima)                       │
+│              GERAÇÃO DE EMBEDDING (GPU)                    │
+│  • BGE-M3 (1024 dim)                                       │
+│  • EMBEDDINGS_GPU_URL é OBRIGATÓRIO em produção            │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -238,19 +272,31 @@ O processamento de áudio utiliza uma **arquitetura híbrida** que combina:
 
 ### Configuração
 
-| Variável | Descrição |
-|----------|-----------|
-| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad (OPCIONAL) |
-| `CLIP_SERVICE_URL` | URL do clip-inference (embeddings + fallback CPU) |
-| `TRANSCRIPTION_TIMEOUT_MS` | Timeout para CPU (default: 300000ms) |
-| `SALAD_WHISPER_TIMEOUT_MS` | Timeout para GPU (default: 600000ms) |
+| Variável | Descrição | Obrigatoriedade |
+|----------|-----------|-----------------|
+| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad | **OBRIGATÓRIO** |
+| `EMBEDDINGS_GPU_URL` | URL do serviço embeddings-gpu no Salad | **OBRIGATÓRIO** |
 
-### Container whisper-gpu (Salad Cloud)
+---
 
-- **Imagem:** `ghcr.io/fillipeguerrabtc/alice-whisper-gpu:v1`
-- **Modelo:** faster-whisper large-v3 (GPU)
-- **Base:** NVIDIA CUDA 12.6.3 + cuDNN
-- **Endpoints:** `/transcribe`, `/transcribe/file`, `/health`, `/ready`, `/metrics`
+## Processamento de Imagens - ARQUITETURA 100% GPU
+
+### Modelos
+
+| Tipo | Modelo | Dimensões | Uso |
+|------|--------|-----------|-----|
+| **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim | Busca por imagem |
+| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim | Busca texto→imagem |
+| **Texto genérico** | BGE-M3 | 1024 dim | Documentos, chat |
+
+### Endpoints GPU
+
+| Endpoint | Modelo | Uso |
+|----------|--------|-----|
+| `/embed/text` | BGE-M3 | Texto de documentos, transcrições |
+| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens |
+| `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem |
+| `/embed/batch` | Ambos | Processamento em lote |
 
 ---
 
@@ -275,65 +321,6 @@ Se uma nova versão tiver degradação > 5%:
 2. Reverte para versão anterior
 3. Marca nova versão como `rolled_back`
 4. Notifica administradores
-
----
-
-## Onde Alimentar o Modelo
-
-### 1. Interface do Chat
-- Converse normalmente
-- Avalie as respostas (estrelas)
-- Faça upload de documentos
-
-### 2. Dashboard Admin - Bulk Import (NOVO - 09/12/2025)
-- **Rota:** `/training` → Tab "Import em Massa"
-- **Funcionalidades:**
-  - Upload de arquivos JSON/JSONL via drag & drop
-  - Validação automática de formato
-  - Preview dos dados antes de importar
-  - Auto-aprovação opcional
-  - Importação de até 1000 entradas por arquivo
-  - Deduplicação automática via SemHash
-- **Formatos Aceitos:**
-  - **JSON:** `{"data": [{"messages": [...], "rating": 5}, ...]}`
-  - **JSONL:** Uma entrada por linha
-- **Validações:**
-  - Tamanho máximo: 10MB
-  - Máximo 1000 entradas por importação
-  - Schema Zod enterprise para garantir qualidade
-  - Rating entre 1 e 5 (opcional)
-
-### 3. Dashboard Admin - Manual
-- Rota: `/training` → Tab "Dados de Treinamento"
-- Aprovar/Reprovar dados em lote
-- Visualizar galeria de imagens
-
-### 4. API REST
-
-```bash
-# Importar dados de treinamento em massa
-POST /api/training/bulk-import
-Content-Type: application/json
-{
-  "data": [...],
-  "source": "bulk-import",
-  "autoApprove": false
-}
-
-# Upload de documento para RAG
-POST /api/rag/documents
-
-# Aprovar dados para treinamento
-PATCH /api/training/data/{id}/approve
-
-# Aprovar imagem para treinamento
-PATCH /api/images/{id}/approve
-```
-
-### 4. Integrações Externas
-- Webhook para sistemas externos
-- Sincronização com ERPNext
-- Import de bases de conhecimento
 
 ---
 
@@ -364,68 +351,169 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
-## 📝 Atualização 09/12/2025 - Interface Bulk Import Enterprise
+# 📋 PLANO DE GAPS - VERIFICAÇÃO COMPLETA (15/12/2025)
 
-### Funcionalidade Implementada
+## Status Geral
 
-✅ **Interface Visual para Bulk Import de Training Data**
-
-**Localização:** `/training` → Tab "Import em Massa"
-
-**Capacidades:**
-- Upload de arquivos JSON/JSONL via drag & drop enterprise
-- Validação automática com Zod schema (TypeScript strict)
-- Preview dos dados antes da importação (mostra primeiras 5 entradas)
-- Auto-aprovação configurável (apenas dados com rating >= 4)
-- Source customizável para rastreabilidade
-- Progress feedback visual durante importação
-- Deduplicação automática via SemHash
-- Error handling completo com mensagens descritivas
-- Suporte a até 1000 entradas por arquivo (10MB máx)
-
-**Validações Implementadas:**
-- ✅ Tamanho de arquivo (máx 10MB)
-- ✅ Formato JSON/JSONL válido
-- ✅ Estrutura de dados (messages array obrigatório)
-- ✅ Limite de 1000 entradas
-- ✅ Rating entre 1 e 5 (opcional)
-- ✅ Role válido (user, assistant, system)
-- ✅ Content não vazio
-
-**UX Enterprise:**
-- ✅ Drag & drop zone com feedback visual
-- ✅ Preview com scroll area
-- ✅ Badges de status
-- ✅ Progress bar durante upload
-- ✅ Alerts para erros de validação
-- ✅ Internacionalização PT-BR e EN
-
-**Componentes Criados:**
-- `apps/frontend-service/src/components/ui/alert.tsx` (shadcn/ui)
-- Tab "Import em Massa" em `apps/frontend-service/src/pages/Training.tsx`
-
-**Aderência às 18 Regras:**
-- ✅ Regra 6: Zero workarounds, API real `/api/training/bulk-import`
-- ✅ Regra 8: TypeScript strict, validação Zod, zero `any`
-- ✅ Regra 10: Comentários em PT-BR
-- ✅ Regra 13: Internacionalização PT-BR primário, EN secundário
-- ✅ Regra 16: Best practices UX 2025 (drag & drop, validação client-side)
-- ✅ Regra 17: Review antes de cada commit consolidado
-- ✅ Regra 18: Commits consolidados enterprise, push manual apenas
-
-**Persistência pronta (multimodal/learning):** tabelas `learning_tasks` (prioridade + retries + RLS), `learning_task_events`, `web_crawl_requests/results` e `media_jobs` criadas para orquestração e auditoria.
-
-**Workers em background (opcional):** habilite com `WORKER_TENANT_ID` e configure `WORKER_POLL_MS`, `WORKER_CONCURRENCY`, `WORKER_MAX_ATTEMPTS` para processar learning, web_crawl e media_jobs em modo seguro (fila priorizada + retries).
-
-**Crawler enterprise:** web-crawl-worker usa lock `FOR UPDATE SKIP LOCKED`, fetch direto da URL solicitada (não envia URL como query de busca), timeout/limite de bytes, parsing cheerio, hash SHA-256 e registro em `web_crawl_results`.
+| Categoria | Status | Prioridade |
+|-----------|--------|------------|
+| Arquitetura 100% GPU | ✅ Implementada | - |
+| Warm on Demand | ✅ Implementada | - |
+| Coleta Chat → Training | ✅ Implementada | - |
+| Coleta WhatsApp → Training | ✅ Implementada | - |
+| Dashboard Admin | ⚠️ Parcial | Alta |
+| Documentação | ✅ Atualizada | - |
 
 ---
 
-*Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 1.11 - 15 de Dezembro de 2025*
-*Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3*
-*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
-*Storage: Volume Hetzner 100GB local (/opt/alice/uploads) para RAG multimodal*
-*ARQUITETURA HÍBRIDA: Transcrição GPU (Salad) + CPU (fallback), Embeddings 100% LOCAL*
-*Bulk Import: Interface visual enterprise implementada (09/12/2025)*
+## ✅ IMPLEMENTADO CORRETAMENTE
+
+### 1. Arquitetura 100% GPU
+- ✅ Embeddings de texto (BGE-M3, 1024 dim) via GPU Salad
+- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Salad
+- ✅ Transcrição de áudio (Whisper large-v3) via GPU Salad
+- ✅ Schema PostgreSQL atualizado para `vector(1024)`
+- ✅ Validação de dimensão em `validateEmbeddingDimension`
+- ✅ Sem fallback CPU (Regra 6)
+
+### 2. Estratégia "Warm on Demand"
+- ✅ Redis Queue para processamento assíncrono (`embedding-queue.ts`)
+- ✅ Worker dedicado (`embedding-worker.ts`)
+- ✅ WebSocket para notificações (`embedding-websocket.ts`)
+- ✅ Keep-warm por 30 minutos após último uso
+- ✅ Endpoints REST: `/api/rag/embeddings/queue/*`
+
+### 3. Coleta de Dados para Treinamento
+- ✅ **Chat Web:** `chat-service/index.ts` linha 3905 - POST `/api/training/data`
+- ✅ **WhatsApp:** `integrations-service/index.ts` linha 2369 - POST `/api/training/data`
+- ✅ Rating inferido automaticamente (sem escalação = 5, com escalação = 1)
+
+### 4. Schedule de Treinamento
+- ✅ Fine-tuning LoRA a cada 4 dias (minDataRequired: 50)
+- ✅ Fine-tuning Completo quinzenal (minDataRequired: 200)
+- ✅ Threshold de qualidade >= 50% rating >= 4
+- ✅ Rollback automático se degradação > 5%
+
+### 5. Documentação
+- ✅ `CLAUDE.md` atualizado para arquitetura 100% GPU
+- ✅ `SISTEMA-APRENDIZADO.md` atualizado (este arquivo)
+- ✅ `STATUS-REAL-ATUAL.md` atualizado
+- ✅ `DEPLOYMENT.md` atualizado
+- ✅ `SECRETS.md` atualizado
+
+---
+
+## ⚠️ GAPS IDENTIFICADOS
+
+### GAP 1: Dashboard Multimodal Unificado
+**Prioridade:** Alta  
+**Descrição:** Não existe página dedicada para upload de imagens/áudios/vídeos para treinamento
+
+**Status Atual:**
+- ✅ Existe: `/training` com tabs "Dados de Treinamento", "Jobs", "Import em Massa"
+- ❌ Falta: Upload direto de imagens para treinamento
+- ❌ Falta: Upload direto de áudios para treinamento  
+- ❌ Falta: Upload direto de vídeos para treinamento
+
+**Solução Proposta:**
+```
+/training → Nova tab "Upload Multimodal"
+├── Drag & drop para imagens (JPEG, PNG, WebP, GIF)
+├── Drag & drop para áudios (MP3, WAV, OGG, WEBM)
+├── Drag & drop para vídeos (MP4, WebM, MOV)
+├── Preview do conteúdo
+├── Auto-processamento via GPU
+└── Botão aprovar para treinamento
+```
+
+### GAP 2: Endpoint RAG Documents no Dashboard
+**Prioridade:** Média  
+**Descrição:** O endpoint `/api/rag/documents` existe mas não tem UI dedicada no dashboard
+
+**Status Atual:**
+- ✅ Existe: Endpoint REST `/api/rag/documents`
+- ❌ Falta: Página `/documents` no dashboard
+- ❌ Falta: Interface para upload de PDF/DOCX/TXT
+
+**Solução Proposta:**
+```
+/documents → Nova página
+├── Upload de documentos (PDF, DOCX, TXT, MD)
+├── Lista de documentos indexados
+├── Status de processamento
+├── Busca semântica nos documentos
+└── Remoção de documentos
+```
+
+### GAP 3: Coleta de Mídia WhatsApp para RAG
+**Prioridade:** Média  
+**Descrição:** WhatsApp coleta dados para training, mas mídia (imagens/áudios) pode não estar sendo indexada no RAG
+
+**Status Atual:**
+- ✅ Texto: Coletado para training
+- ⚠️ Imagens: Verificar se embeddings são gerados e salvos no RAG
+- ⚠️ Áudios: Verificar se transcrição + embeddings são salvos no RAG
+
+**Verificação Necessária:**
+```typescript
+// integrations-service: Verificar se mídia WhatsApp gera embeddings
+// 1. Imagem recebida → OpenCLIP embedding → salvar no RAG?
+// 2. Áudio recebido → Whisper transcrição → BGE-M3 embedding → salvar no RAG?
+```
+
+### GAP 4: Imagens Docker GPU
+**Prioridade:** Alta  
+**Descrição:** Dockerfiles criados mas não buildados
+
+**Status Atual:**
+- ✅ `docker/embeddings-gpu/Dockerfile` criado
+- ✅ `docker/embeddings-gpu/serve.py` criado
+- ✅ `docker/whisper-gpu/Dockerfile` criado
+- ✅ `docker/whisper-gpu/serve.py` criado
+- ❌ Imagens ainda não buildadas no GHCR
+- ❌ Secrets `EMBEDDINGS_GPU_URL` e `SALAD_WHISPER_URL` não criados
+
+**Ação Necessária:**
+1. Rodar workflow `build-media-images` manualmente
+2. Pegar digests das imagens
+3. Criar secrets no GitHub
+4. Deploy em produção
+
+### GAP 5: Arquivo clip-service-url.ts Obsoleto
+**Prioridade:** Baixa  
+**Descrição:** Arquivo `apps/rag-service/src/clip-service-url.ts` pode ser obsoleto após migração para GPU
+
+**Status Atual:**
+- Arquivo existe com definição de `CLIP_SERVICE_URL`
+- Não é mais usado após migração para `EMBEDDINGS_GPU_URL`
+
+**Ação Necessária:**
+- Verificar se arquivo pode ser deletado
+- Remover imports não utilizados
+
+---
+
+## 📊 RESUMO EXECUTIVO
+
+| Item | Status | Ação |
+|------|--------|------|
+| Bug `requireAuth` vs `requireAuth()` | ✅ Corrigido | Commit pendente |
+| Bug ordenação rotas Express | ✅ Corrigido | Commit pendente |
+| Bug `generateEmbeddingInternal` | ✅ Corrigido | Commit pendente |
+| Arquitetura 100% GPU | ✅ Implementada | - |
+| Warm on Demand | ✅ Implementada | - |
+| Coleta Chat → Training | ✅ Funcionando | - |
+| Coleta WhatsApp → Training | ✅ Funcionando | - |
+| Dashboard Upload Multimodal | ❌ GAP #1 | Implementar |
+| Página /documents | ❌ GAP #2 | Implementar |
+| Mídia WhatsApp → RAG | ⚠️ GAP #3 | Verificar |
+| Build Imagens GPU | ❌ GAP #4 | Rodar workflow |
+| Limpeza código obsoleto | ⚠️ GAP #5 | Limpar |
+
+---
+
+*Autor: Fillipe Guerra*  
+*Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*  
+*Versão 2.0 - 15 de Dezembro de 2025*  
+*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*  
+*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications*
