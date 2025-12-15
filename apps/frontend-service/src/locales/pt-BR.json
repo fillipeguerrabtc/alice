@@ -875,7 +875,8 @@
     },
     "tabs": {
       "data": "Dados",
-      "jobs": "Jobs"
+      "jobs": "Jobs",
+      "multimodal": "Upload Multimodal"
     },
     "filter": {
       "placeholder": "Filtrar",
@@ -983,6 +984,48 @@
         "messagesField": "messages: array com role + content",
         "optionalFields": "Campos opcionais:",
         "ratingField": "rating: número entre 1 e 5"
+      }
+    },
+    "multimodal": {
+      "tabTitle": "Multimodal",
+      "title": "Upload de Mídia Multimodal",
+      "subtitle": "Faça upload de imagens, áudios e vídeos para treinar a Alice. A mídia será processada via GPU para gerar embeddings e enriquecer a base de conhecimento.",
+      "descriptionLabel": "Descrição (opcional)",
+      "descriptionPlaceholder": "Descreva o conteúdo das mídias para melhor contextualização",
+      "dragDrop": "Arraste arquivos ou clique para selecionar",
+      "supportedTypes": "Imagens (JPEG, PNG, WebP, GIF), Áudios (MP3, WAV, WebM) e Vídeos (MP4, WebM, MOV)",
+      "queueTitle": "Fila de Upload",
+      "clearCompleted": "Limpar Concluídos",
+      "uploadAll": "Enviar Todos ({{count}})",
+      "status": {
+        "pending": "Pendente",
+        "uploading": "Enviando",
+        "processing": "Processando",
+        "completed": "Concluído",
+        "error": "Erro"
+      },
+      "info": {
+        "title": "Como funciona o processamento",
+        "images": {
+          "title": "Imagens",
+          "desc": "OpenCLIP ViT-H/14 gera embeddings de 1024 dimensões para busca visual semântica"
+        },
+        "audio": {
+          "title": "Áudios",
+          "desc": "Whisper large-v3 transcreve o áudio, BGE-M3 gera embeddings do texto"
+        },
+        "video": {
+          "title": "Vídeos",
+          "desc": "Combina extração de frames (OpenCLIP) com transcrição de áudio (Whisper + BGE-M3)"
+        },
+        "gpu": {
+          "title": "Processamento GPU Salad Cloud",
+          "desc": "Todo processamento multimodal é feito em GPUs dedicadas na Salad Cloud para máxima qualidade e performance. Os primeiros uploads podem levar alguns segundos adicionais enquanto as GPUs são ativadas."
+        }
+      },
+      "errors": {
+        "fileTooLarge": "Arquivo muito grande (máx 100MB)",
+        "unsupportedType": "Tipo de arquivo não suportado"
       }
     }
   },

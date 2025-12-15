@@ -869,10 +869,14 @@ services:
       # Inter-service communication
       CHAT_SERVICE_URL: http://alice-chat:3002
       TRAINING_SERVICE_URL: http://alice-training:3004
+      # RAG Service para indexação de mídia WhatsApp (15/12/2025)
+      RAG_SERVICE_URL: http://alice-rag:3003
     depends_on:
       postgres:
         condition: service_healthy
       alice-chat:
+        condition: service_healthy
+      alice-rag:
         condition: service_healthy
     networks:
       - alice-network

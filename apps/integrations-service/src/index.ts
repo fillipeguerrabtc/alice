@@ -1845,7 +1845,7 @@ if (!CHAT_SERVICE_URL && process.env.NODE_ENV === 'production') {
 // Fallback apenas para desenvolvimento
 const CHAT_SERVICE_URL_FINAL = CHAT_SERVICE_URL || 'http://localhost:3002';
 
-// URL do Training Service para coleta de dados de treinamento (GAP CRÍTICO #2 - WhatsApp)
+// URL do Training Service para coleta de dados de treinamento
 // REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
 // Alice MULTIMODAL: coleta dados de WhatsApp (texto, imagens, áudio, vídeo) para aprendizado
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
@@ -1854,6 +1854,15 @@ if (!TRAINING_SERVICE_URL && process.env.NODE_ENV === 'production') {
 }
 // Fallback apenas para desenvolvimento
 const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL || 'http://localhost:3004';
+
+// URL do RAG Service para indexação de mídia multimodal do WhatsApp
+// REGRA 6: Sem fallbacks para localhost em produção
+// Permite indexar imagens/áudios/vídeos recebidos via WhatsApp no RAG
+const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL;
+if (!RAG_SERVICE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('RAG_SERVICE_URL é obrigatório em produção');
+}
+const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL || 'http://localhost:3003';
 
 /**
  * Valida assinatura do webhook Twilio
@@ -2079,6 +2088,144 @@ async function processMessageWithLLM(
 }
 
 /**
+ * Processa mídia recebida via WhatsApp e indexa no RAG
+ * 
+ * ARQUITETURA 100% GPU (15/12/2025):
+ * - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim)
+ * - Áudios: Whisper large-v3 transcrição + BGE-M3 embeddings (1024 dim)
+ * - Vídeos: Frames OpenCLIP + transcrição BGE-M3
+ * 
+ * @param mediaUrl - URL do Twilio para baixar a mídia
+ * @param mediaContentType - MIME type da mídia
+ * @param conversationId - ID da conversa para contexto
+ * @param tenantId - ID do tenant para isolamento
+ * @param userId - ID do usuário que enviou
+ * @returns Promise com resultado do processamento
+ */
+async function processWhatsAppMediaForRAG(
+  mediaUrl: string,
+  mediaContentType: string,
+  conversationId: string,
+  tenantId: string,
+  userId: string
+): Promise<{ success: boolean; uploadId?: string; error?: string }> {
+  // Determinar tipo de mídia
+  const isImage = mediaContentType.startsWith('image/');
+  const isAudio = mediaContentType.startsWith('audio/');
+  const isVideo = mediaContentType.startsWith('video/');
+  
+  if (!isImage && !isAudio && !isVideo) {
+    logger.warn({
+      mediaContentType,
+      conversationId,
+    }, 'Tipo de mídia WhatsApp não suportado para RAG - ignorando');
+    return { success: false, error: 'Tipo de mídia não suportado' };
+  }
+  
+  // RESILIÊNCIA: AbortController com timeout de 60s para download + upload
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
+  
+  try {
+    // Passo 1: Baixar mídia do Twilio (requer autenticação Basic)
+    const twilioAuthHeader = Buffer.from(
+      `${process.env.TWILIO_ACCOUNT_SID}:${process.env.TWILIO_AUTH_TOKEN}`
+    ).toString('base64');
+    
+    const mediaResponse = await fetch(mediaUrl, {
+      headers: {
+        'Authorization': `Basic ${twilioAuthHeader}`,
+      },
+      signal: controller.signal,
+    });
+    
+    if (!mediaResponse.ok) {
+      throw new Error(`Falha ao baixar mídia do Twilio: ${mediaResponse.status}`);
+    }
+    
+    const mediaBuffer = Buffer.from(await mediaResponse.arrayBuffer());
+    const mediaBase64 = mediaBuffer.toString('base64');
+    
+    // Determinar extensão do arquivo
+    const extensionMap: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+      'audio/ogg': 'ogg',
+      'audio/mpeg': 'mp3',
+      'audio/mp4': 'm4a',
+      'audio/wav': 'wav',
+      'audio/webm': 'webm',
+      'video/mp4': 'mp4',
+      'video/webm': 'webm',
+      'video/quicktime': 'mov',
+    };
+    const extension = extensionMap[mediaContentType] || 'bin';
+    const mediaType = isImage ? 'image' : isAudio ? 'audio' : 'video';
+    
+    // Gerar headers de autenticação interna
+    const internalHeaders = generateInternalAuthHeaders({
+      userId,
+      tenantId,
+      roles: ['user'],
+    });
+    
+    // Passo 2: Enviar para RAG Service via endpoint JSON (mais eficiente para base64)
+    const ragResponse = await fetch(`${RAG_SERVICE_URL_FINAL}/api/media/upload/json`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Internal-Signature': internalHeaders['x-internal-signature'],
+        'X-Internal-Timestamp': internalHeaders['x-internal-timestamp'],
+        'X-Tenant-Id': tenantId,
+        'X-User-Id': userId,
+      },
+      body: JSON.stringify({
+        filename: `whatsapp_${Date.now()}.${extension}`,
+        mimeType: mediaContentType,
+        base64Data: mediaBase64,
+        description: `Mídia recebida via WhatsApp na conversa ${conversationId}`,
+        conversationId,
+      }),
+      signal: controller.signal,
+    });
+    
+    if (!ragResponse.ok) {
+      const errorText = await ragResponse.text();
+      throw new Error(`Falha ao enviar mídia para RAG: ${ragResponse.status} - ${errorText}`);
+    }
+    
+    const ragData = await ragResponse.json() as { id?: string; uploadId?: string };
+    const uploadId = ragData.id || ragData.uploadId;
+    
+    logger.info({
+      uploadId,
+      mediaType,
+      conversationId,
+      tenantId,
+      sizeBytes: mediaBuffer.length,
+    }, 'Mídia WhatsApp indexada no RAG com sucesso');
+    
+    return { success: true, uploadId };
+  } catch (error) {
+    logger.error({
+      error: error instanceof Error ? error.message : String(error),
+      mediaUrl,
+      conversationId,
+      tenantId,
+    }, 'Erro ao processar mídia WhatsApp para RAG');
+    
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Erro desconhecido',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Webhook principal para mensagens WhatsApp recebidas
  * Rota: POST /api/integrations/twilio/webhook/whatsapp
  */
@@ -2220,6 +2367,25 @@ app.post('/api/integrations/twilio/webhook/whatsapp', async (req: Request, res: 
         channel: 'whatsapp',
       },
     });
+
+    // ARQUITETURA 100% GPU (15/12/2025): Processar mídia WhatsApp para RAG
+    // Executa em background (fire-and-forget) para não bloquear a resposta ao usuário
+    // Mídia será indexada com embeddings (imagem) ou transcrita + embeddings (áudio/vídeo)
+    if (MediaUrl0 && MediaContentType0 && user.tenantId) {
+      processWhatsAppMediaForRAG(
+        MediaUrl0,
+        MediaContentType0,
+        conversation.id,
+        user.tenantId,
+        user.id
+      ).catch(err => {
+        logger.error({
+          error: err instanceof Error ? err.message : String(err),
+          mediaUrl: MediaUrl0,
+          conversationId: conversation.id,
+        }, 'Erro ao processar mídia WhatsApp para RAG (não crítico)');
+      });
+    }
 
     // Verificar estado de handover/takeover
     const conversationState = await db.query.conversationStates.findFirst({

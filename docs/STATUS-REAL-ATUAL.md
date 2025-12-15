@@ -267,7 +267,7 @@
 | Documents | `Documents.tsx` | Upload/gestão documentos RAG |
 | Namespaces | `Namespaces.tsx` | Contextos RAG |
 | Agents | `Agents.tsx` | Agentes IA |
-| **Training** | `Training.tsx` | **3 tabs: Dados + Jobs + Bulk Import (NOVO)** |
+| **Training** | `Training.tsx` | **4 tabs: Dados + Jobs + Bulk Import + Upload Multimodal (15/12/2025)** |
 | Integrations | `Integrations.tsx` | Stripe, Wise, Twilio |
 | WisePayments | `WisePayments.tsx` | Transferências Wise |
 | ImageGallery | `ImageGalleryPage.tsx` | Galeria FLUX.1 |
@@ -897,11 +897,13 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.69 - Healthcheck langfuse-db Enterprise: pg_isready com variáveis ${LANGFUSE_DB_USER:-langfuse} (não hardcoded)*
+*Versão: 3.73 - Upload Multimodal UI + WhatsApp Mídia → RAG + Limpeza código obsoleto*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
+*Upload Multimodal: Nova tab em /training para imagens/áudios/vídeos (15/12/2025)*
+*WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
 *Integrações: Verificadas em 14/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext - todas compatíveis*
 
 ---

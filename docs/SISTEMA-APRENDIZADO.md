@@ -361,7 +361,9 @@ Acessíveis em `/dashboard/analytics`:
 | Warm on Demand | ✅ Implementada | - |
 | Coleta Chat → Training | ✅ Implementada | - |
 | Coleta WhatsApp → Training | ✅ Implementada | - |
-| Dashboard Admin | ⚠️ Parcial | Alta |
+| WhatsApp Mídia → RAG | ✅ Implementada (15/12/2025) | - |
+| Dashboard Admin | ✅ Completo (15/12/2025) | - |
+| Upload Multimodal UI | ✅ Implementada (15/12/2025) | - |
 | Documentação | ✅ Atualizada | - |
 
 ---
@@ -403,117 +405,93 @@ Acessíveis em `/dashboard/analytics`:
 
 ---
 
-## ⚠️ GAPS IDENTIFICADOS
+## ✅ GAPS RESOLVIDOS (15/12/2025)
 
-### GAP 1: Dashboard Multimodal Unificado
-**Prioridade:** Alta  
-**Descrição:** Não existe página dedicada para upload de imagens/áudios/vídeos para treinamento
+### GAP 1: Dashboard Multimodal Unificado ✅ RESOLVIDO
+**Status:** Implementado em 15/12/2025
 
-**Status Atual:**
-- ✅ Existe: `/training` com tabs "Dados de Treinamento", "Jobs", "Import em Massa"
-- ❌ Falta: Upload direto de imagens para treinamento
-- ❌ Falta: Upload direto de áudios para treinamento  
-- ❌ Falta: Upload direto de vídeos para treinamento
+**Solução Implementada:**
+- Nova tab "Upload Multimodal" em `/training`
+- Drag & drop para imagens (JPEG, PNG, WebP, GIF até 100MB)
+- Drag & drop para áudios (MP3, WAV, OGG, WEBM até 100MB)
+- Drag & drop para vídeos (MP4, WebM, MOV até 100MB)
+- Fila de upload visual com status em tempo real
+- Processamento via GPU (BGE-M3 + OpenCLIP + Whisper)
+- Internacionalização PT-BR e EN
 
-**Solução Proposta:**
-```
-/training → Nova tab "Upload Multimodal"
-├── Drag & drop para imagens (JPEG, PNG, WebP, GIF)
-├── Drag & drop para áudios (MP3, WAV, OGG, WEBM)
-├── Drag & drop para vídeos (MP4, WebM, MOV)
-├── Preview do conteúdo
-├── Auto-processamento via GPU
-└── Botão aprovar para treinamento
-```
+**Arquivos modificados:**
+- `apps/frontend-service/src/pages/Training.tsx` - Novo componente `MultimodalUploadTab`
+- `apps/frontend-service/src/locales/pt-BR.json` - Traduções PT-BR
+- `apps/frontend-service/src/locales/en.json` - Traduções EN
 
-### GAP 2: Endpoint RAG Documents no Dashboard
-**Prioridade:** Média  
-**Descrição:** O endpoint `/api/rag/documents` existe mas não tem UI dedicada no dashboard
+### GAP 2: Endpoint RAG Documents no Dashboard ✅ JÁ EXISTIA
+**Status:** Página `/documents` já existia desde versões anteriores
 
-**Status Atual:**
-- ✅ Existe: Endpoint REST `/api/rag/documents`
-- ❌ Falta: Página `/documents` no dashboard
-- ❌ Falta: Interface para upload de PDF/DOCX/TXT
+**Funcionalidades existentes:**
+- Upload de documentos (PDF, DOCX, TXT, MD, CSV, JSON)
+- Lista de documentos com status de processamento
+- Filtros por status (processado/pendente)
+- Visualização de conteúdo
+- Deleção de documentos
+- Grid/List view modes
 
-**Solução Proposta:**
-```
-/documents → Nova página
-├── Upload de documentos (PDF, DOCX, TXT, MD)
-├── Lista de documentos indexados
-├── Status de processamento
-├── Busca semântica nos documentos
-└── Remoção de documentos
-```
+### GAP 3: Coleta de Mídia WhatsApp para RAG ✅ RESOLVIDO
+**Status:** Implementado em 15/12/2025
 
-### GAP 3: Coleta de Mídia WhatsApp para RAG
-**Prioridade:** Média  
-**Descrição:** WhatsApp coleta dados para training, mas mídia (imagens/áudios) pode não estar sendo indexada no RAG
+**Solução Implementada:**
+- Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
+- Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
+- Imagens: OpenCLIP embeddings (1024 dim)
+- Áudios: Whisper transcrição + BGE-M3 embeddings (1024 dim)
+- Vídeos: Frames OpenCLIP + transcrição BGE-M3
+- Processamento fire-and-forget (não bloqueia resposta ao usuário)
+- `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
 
-**Status Atual:**
-- ✅ Texto: Coletado para training
-- ⚠️ Imagens: Verificar se embeddings são gerados e salvos no RAG
-- ⚠️ Áudios: Verificar se transcrição + embeddings são salvos no RAG
+**Arquivos modificados:**
+- `apps/integrations-service/src/index.ts` - Nova função e chamada no webhook
+- `infra/docker/docker-compose.prod.yml` - RAG_SERVICE_URL e depends_on alice-rag
 
-**Verificação Necessária:**
-```typescript
-// integrations-service: Verificar se mídia WhatsApp gera embeddings
-// 1. Imagem recebida → OpenCLIP embedding → salvar no RAG?
-// 2. Áudio recebido → Whisper transcrição → BGE-M3 embedding → salvar no RAG?
-```
+### GAP 4: Imagens Docker GPU ⏳ AGUARDANDO BUILD MANUAL
+**Status:** Dockerfiles prontos, aguardando build manual
 
-### GAP 4: Imagens Docker GPU
-**Prioridade:** Alta  
-**Descrição:** Dockerfiles criados mas não buildados
-
-**Status Atual:**
-- ✅ `docker/embeddings-gpu/Dockerfile` criado
-- ✅ `docker/embeddings-gpu/serve.py` criado
-- ✅ `docker/whisper-gpu/Dockerfile` criado
-- ✅ `docker/whisper-gpu/serve.py` criado
-- ❌ Imagens ainda não buildadas no GHCR
-- ❌ Secrets `EMBEDDINGS_GPU_URL` e `SALAD_WHISPER_URL` não criados
-
-**Ação Necessária:**
-1. Rodar workflow `build-media-images` manualmente
-2. Pegar digests das imagens
-3. Criar secrets no GitHub
+**Próximos passos (manual):**
+1. Rodar workflow `build-media-images` manualmente no GitHub Actions
+2. Pegar digests SHA256 das imagens geradas
+3. Criar secrets no repositório: `EMBEDDINGS_GPU_URL` e `SALAD_WHISPER_URL`
 4. Deploy em produção
 
-### GAP 5: Arquivo clip-service-url.ts Obsoleto
-**Prioridade:** Baixa  
-**Descrição:** Arquivo `apps/rag-service/src/clip-service-url.ts` pode ser obsoleto após migração para GPU
+### GAP 5: Arquivo clip-service-url.ts Obsoleto ✅ RESOLVIDO
+**Status:** Removido em 15/12/2025
 
-**Status Atual:**
-- Arquivo existe com definição de `CLIP_SERVICE_URL`
-- Não é mais usado após migração para `EMBEDDINGS_GPU_URL`
-
-**Ação Necessária:**
-- Verificar se arquivo pode ser deletado
-- Remover imports não utilizados
+**Ações realizadas:**
+- Arquivo `apps/rag-service/src/clip-service-url.ts` deletado
+- Import removido de `apps/rag-service/src/index.ts`
+- Variável `CLIP_SERVICE_URL` não utilizada removida
 
 ---
 
-## 📊 RESUMO EXECUTIVO
+## 📊 RESUMO EXECUTIVO (15/12/2025)
 
-| Item | Status | Ação |
-|------|--------|------|
-| Bug `requireAuth` vs `requireAuth()` | ✅ Corrigido | Commit pendente |
-| Bug ordenação rotas Express | ✅ Corrigido | Commit pendente |
-| Bug `generateEmbeddingInternal` | ✅ Corrigido | Commit pendente |
+| Item | Status | Observação |
+|------|--------|------------|
+| Bug `requireAuth` vs `requireAuth()` | ✅ Corrigido | - |
+| Bug ordenação rotas Express | ✅ Corrigido | - |
+| Bug `generateEmbeddingInternal` | ✅ Corrigido | - |
 | Arquitetura 100% GPU | ✅ Implementada | - |
 | Warm on Demand | ✅ Implementada | - |
 | Coleta Chat → Training | ✅ Funcionando | - |
 | Coleta WhatsApp → Training | ✅ Funcionando | - |
-| Dashboard Upload Multimodal | ❌ GAP #1 | Implementar |
-| Página /documents | ❌ GAP #2 | Implementar |
-| Mídia WhatsApp → RAG | ⚠️ GAP #3 | Verificar |
-| Build Imagens GPU | ❌ GAP #4 | Rodar workflow |
-| Limpeza código obsoleto | ⚠️ GAP #5 | Limpar |
+| Dashboard Upload Multimodal | ✅ GAP #1 Resolvido | Nova tab em /training |
+| Página /documents | ✅ GAP #2 Já existia | UI completa |
+| Mídia WhatsApp → RAG | ✅ GAP #3 Resolvido | Indexação automática |
+| Build Imagens GPU | ⏳ GAP #4 Pendente | Workflow manual necessário |
+| Limpeza código obsoleto | ✅ GAP #5 Resolvido | Arquivo deletado |
 
 ---
 
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*  
-*Versão 2.0 - 15 de Dezembro de 2025*  
+*Versão 2.1 - 15 de Dezembro de 2025*  
 *ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*  
-*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications*
+*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications*  
+*GAPS RESOLVIDOS: Upload Multimodal UI, WhatsApp Mídia → RAG, Limpeza código obsoleto*

@@ -42,7 +42,6 @@ import {
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
-import { resolveClipServiceUrl } from './clip-service-url.js';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getGpuCircuitBreakerStatus } from './image-processor.js';
 import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
@@ -485,9 +484,6 @@ const logger = createLogger('rag-service');
 
 const PORT = process.env.PORT || 3003;
 const DATABASE_URL = process.env.DATABASE_URL;
-// CLIP Service URL para processamento multimodal LOCAL (Regra 6 - Autonomia Total)
-// Inclui: embeddings (texto + imagem) + transcrição de áudio
-const CLIP_SERVICE_URL = resolveClipServiceUrl(logger);
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');

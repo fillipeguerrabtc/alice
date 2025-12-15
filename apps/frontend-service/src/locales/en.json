@@ -875,7 +875,8 @@
     },
     "tabs": {
       "data": "Data",
-      "jobs": "Jobs"
+      "jobs": "Jobs",
+      "multimodal": "Multimodal Upload"
     },
     "filter": {
       "placeholder": "Filter",
@@ -983,6 +984,48 @@
         "messagesField": "messages: array with role + content",
         "optionalFields": "Optional fields:",
         "ratingField": "rating: number between 1 and 5"
+      }
+    },
+    "multimodal": {
+      "tabTitle": "Multimodal",
+      "title": "Multimodal Media Upload",
+      "subtitle": "Upload images, audio, and video to train Alice. Media will be processed via GPU to generate embeddings and enrich the knowledge base.",
+      "descriptionLabel": "Description (optional)",
+      "descriptionPlaceholder": "Describe the media content for better contextualization",
+      "dragDrop": "Drag files or click to select",
+      "supportedTypes": "Images (JPEG, PNG, WebP, GIF), Audio (MP3, WAV, WebM), and Videos (MP4, WebM, MOV)",
+      "queueTitle": "Upload Queue",
+      "clearCompleted": "Clear Completed",
+      "uploadAll": "Upload All ({{count}})",
+      "status": {
+        "pending": "Pending",
+        "uploading": "Uploading",
+        "processing": "Processing",
+        "completed": "Completed",
+        "error": "Error"
+      },
+      "info": {
+        "title": "How processing works",
+        "images": {
+          "title": "Images",
+          "desc": "OpenCLIP ViT-H/14 generates 1024-dimension embeddings for semantic visual search"
+        },
+        "audio": {
+          "title": "Audio",
+          "desc": "Whisper large-v3 transcribes the audio, BGE-M3 generates text embeddings"
+        },
+        "video": {
+          "title": "Videos",
+          "desc": "Combines frame extraction (OpenCLIP) with audio transcription (Whisper + BGE-M3)"
+        },
+        "gpu": {
+          "title": "GPU Processing on Salad Cloud",
+          "desc": "All multimodal processing is done on dedicated GPUs on Salad Cloud for maximum quality and performance. First uploads may take a few extra seconds while GPUs are activated."
+        }
+      },
+      "errors": {
+        "fileTooLarge": "File too large (max 100MB)",
+        "unsupportedType": "Unsupported file type"
       }
     }
   },
