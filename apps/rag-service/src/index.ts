@@ -3297,7 +3297,9 @@ registerShutdownCallback(
   'rag-websocket-server',
   async () => {
     logger.info('Encerrando WebSocket server...');
-    closeEmbeddingWebSocket();
+    // Bug fix: await necessário porque closeEmbeddingWebSocket é async
+    // Sem await, o callback retorna antes do cleanup completar (resource leak)
+    await closeEmbeddingWebSocket();
     logger.info('WebSocket server encerrado com sucesso');
   },
   { priority: ShutdownPriority.HTTP_SERVER }

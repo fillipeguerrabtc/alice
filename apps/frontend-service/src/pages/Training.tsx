@@ -613,43 +613,54 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       }
 
       // Simular progresso durante upload (real progress seria via XHR)
-      const progressInterval = setInterval(() => {
+      // Bug fix: Declarar fora do try para garantir cleanup no catch
+      let progressInterval: ReturnType<typeof setInterval> | null = null;
+      
+      try {
+        progressInterval = setInterval(() => {
+          setUploads(prev => prev.map(u => 
+            u.id === upload.id && u.progress < 90 
+              ? { ...u, progress: Math.min(90, u.progress + 10) } 
+              : u
+          ));
+        }, 300);
+
+        const response = await fetch('/api/media/upload', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `Erro ${response.status}`);
+        }
+
+        const result = await response.json() as MediaUploadResult;
+
         setUploads(prev => prev.map(u => 
-          u.id === upload.id && u.progress < 90 
-            ? { ...u, progress: Math.min(90, u.progress + 10) } 
+          u.id === upload.id 
+            ? { ...u, status: 'processing' as const, progress: 100, uploadId: result.id } 
             : u
         ));
-      }, 300);
 
-      const response = await fetch('/api/media/upload', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
+        // Marcar como completado após pequeno delay (processamento assíncrono no backend)
+        setTimeout(() => {
+          setUploads(prev => prev.map(u => 
+            u.id === upload.id ? { ...u, status: 'completed' as const } : u
+          ));
+          // Invalidar queries para atualizar lista de uploads
+          queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
+        }, 2000);
 
-      clearInterval(progressInterval);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || `Erro ${response.status}`);
+      } catch (innerError) {
+        throw innerError; // Re-throw para o catch externo
+      } finally {
+        // Bug fix: Sempre limpar interval, mesmo em caso de erro
+        if (progressInterval) {
+          clearInterval(progressInterval);
+        }
       }
-
-      const result = await response.json() as MediaUploadResult;
-
-      setUploads(prev => prev.map(u => 
-        u.id === upload.id 
-          ? { ...u, status: 'processing' as const, progress: 100, uploadId: result.id } 
-          : u
-      ));
-
-      // Marcar como completado após pequeno delay (processamento assíncrono no backend)
-      setTimeout(() => {
-        setUploads(prev => prev.map(u => 
-          u.id === upload.id ? { ...u, status: 'completed' as const } : u
-        ));
-        // Invalidar queries para atualizar lista de uploads
-        queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
-      }, 2000);
 
     } catch (error) {
       frontendLogger.error('Erro ao fazer upload de mídia', {
