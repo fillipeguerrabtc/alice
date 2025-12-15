@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.61 - Correção digests Docker + migrações SQL (deploy fix)
+> **Versão:** 3.62 - Criação automática de diretórios no deploy
 
 ---
 
@@ -872,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.61 - Correção digests Docker inválidos (node-exporter, alertmanager, postgres:16-alpine) + migrações SQL com FKs para tabelas Drizzle*
+*Versão: 3.62 - Correção digests Docker + migrações SQL + criação automática de diretórios bind mounts*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -900,12 +900,27 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 **Solução:** Removidas foreign keys para tabelas Drizzle. Integridade referencial mantida pela aplicação (Regra 6 - Enterprise-Grade).
 
+**3. Diretórios de Bind Mounts Não Criados Automaticamente**
+- Erro: `failed to mount local volume: mount /opt/alice/data/searxng-config: no such file or directory`
+- O workflow criava apenas `/opt/alice/{app,data,logs,backups}` mas não os subdiretórios
+
+**Solução:** Workflow atualizado para criar TODOS os 18 subdiretórios necessários pelos bind mounts do docker-compose.prod.yml:
+```
+/opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config,
+  erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue,
+  vector,alertmanager,langfuse-db,prometheus,grafana,loki}
+/opt/alice/logs/erpnext
+/opt/alice/backups/postgresql{,/logs}
+/opt/alice/secrets/alertmanager
+```
+
 ### Arquivos Modificados:
 | Arquivo | Modificação |
 |---------|-------------|
 | `infra/docker/docker-compose.prod.yml` | Removidos digests inválidos de 3 imagens |
 | `migrations/0002_create_feature_flags.sql` | Removidas FKs para `tenants` e `users` |
 | `migrations/0004_multimodal_learning_and_crawler.sql` | Removidas FKs para `tenants` e `users`, backfill condicional |
+| `.github/workflows/deploy-production.yml` | Criação automática de 18 subdiretórios para bind mounts |
 
 ---
 

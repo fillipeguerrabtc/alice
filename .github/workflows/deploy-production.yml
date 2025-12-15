@@ -2039,8 +2039,51 @@ jobs:
             echo "=============================================="
             echo ""
             
-            # Criar estrutura de diretórios
-            mkdir -p /opt/alice/{app,data,logs,backups}
+            # ==========================================================
+            # CRIAR ESTRUTURA COMPLETA DE DIRETÓRIOS (Enterprise - Regra 6)
+            # IMPORTANTE: Todos os diretórios usados por bind mounts no
+            # docker-compose.prod.yml DEVEM ser criados ANTES do docker compose up
+            # ==========================================================
+            echo "📁 Criando estrutura de diretórios..."
+            
+            # Diretórios principais
+            mkdir -p /opt/alice/{app,data,logs,backups,uploads,secrets}
+            
+            # Subdiretórios de data (volumes Docker bind mounts)
+            mkdir -p /opt/alice/data/postgres
+            mkdir -p /opt/alice/data/redis-alice
+            mkdir -p /opt/alice/data/traefik-acme
+            mkdir -p /opt/alice/data/searxng-config
+            mkdir -p /opt/alice/data/erpnext-sites
+            mkdir -p /opt/alice/data/erpnext-mariadb
+            mkdir -p /opt/alice/data/erpnext-redis-cache
+            mkdir -p /opt/alice/data/erpnext-redis-queue
+            mkdir -p /opt/alice/data/vector
+            mkdir -p /opt/alice/data/alertmanager
+            mkdir -p /opt/alice/data/langfuse-db
+            mkdir -p /opt/alice/data/prometheus
+            mkdir -p /opt/alice/data/grafana
+            mkdir -p /opt/alice/data/loki
+            
+            # Subdiretórios de logs
+            mkdir -p /opt/alice/logs/erpnext
+            
+            # Subdiretórios de backups (pgBackRest)
+            mkdir -p /opt/alice/backups/postgresql
+            mkdir -p /opt/alice/backups/postgresql/logs
+            
+            # Subdiretórios de secrets
+            mkdir -p /opt/alice/secrets/alertmanager
+            
+            # Permissões enterprise (750 para diretórios)
+            chmod -R 750 /opt/alice/data
+            chmod -R 750 /opt/alice/logs
+            chmod -R 750 /opt/alice/backups
+            chmod -R 750 /opt/alice/uploads
+            chmod -R 700 /opt/alice/secrets
+            
+            echo "✅ Estrutura de diretórios criada"
+            
             cd /opt/alice
 
             # =====================================================
