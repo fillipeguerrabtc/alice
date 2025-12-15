@@ -37,11 +37,24 @@ export const CLIP_EMBEDDING_DIM = 1024;
 // CIRCUIT BREAKER - GPU Embeddings API (Regra 16 - Melhores Práticas 2025)
 // ============================================================================
 
-interface EmbeddingsApiParams {
+// ============================================================================
+// CIRCUIT BREAKERS - GPU Embeddings API (Regra 16 - Melhores Práticas 2025)
+// ============================================================================
+
+// Parâmetros para embedding de imagem
+interface ImageEmbeddingsApiParams {
   image: string;
 }
 
-async function callEmbeddingsGpuApi(params: EmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
+// Parâmetros para embedding de texto (busca text-to-image)
+interface TextForImageApiParams {
+  text: string;
+}
+
+/**
+ * Chama API GPU para embedding de IMAGEM (OpenCLIP ViT-H/14)
+ */
+async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
   if (!EMBEDDINGS_GPU_URL) {
     throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
   }
@@ -77,14 +90,69 @@ async function callEmbeddingsGpuApi(params: EmbeddingsApiParams): Promise<{ embe
   }
 }
 
-// Circuit breaker para chamadas GPU
-const gpuBreaker = createCircuitBreaker(callEmbeddingsGpuApi, {
+/**
+ * Chama API GPU para embedding de TEXTO para busca de imagens (OpenCLIP text encoder)
+ * 
+ * IMPORTANTE: Usa /embed/text-for-image que gera embeddings no MESMO espaço vetorial
+ * das imagens (OpenCLIP), permitindo busca semântica correta text-to-image.
+ * 
+ * NÃO confundir com /embed/text que usa BGE-M3 (espaço vetorial diferente!)
+ */
+async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
+  if (!EMBEDDINGS_GPU_URL) {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
+  try {
+    // IMPORTANTE: Usar /embed/text-for-image (OpenCLIP) e NÃO /embed/text (BGE-M3)
+    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text-for-image`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GPU Text-for-Image API error: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json() as { embedding: number[]; model: string; dimension: number };
+    
+    if (!result.embedding || !Array.isArray(result.embedding)) {
+      throw new Error('Resposta GPU inválida - embedding ausente');
+    }
+
+    return {
+      embedding: result.embedding,
+      model: result.model || 'OpenCLIP-ViT-H-14-text',
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+// Circuit breaker para chamadas GPU de IMAGEM
+const gpuImageBreaker = createCircuitBreaker(callImageEmbeddingsGpuApi, {
   name: 'embeddings-gpu-image',
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
 });
 
-async function callGpuApi(params: EmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
-  return gpuBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
+// Circuit breaker para chamadas GPU de TEXTO para busca de imagens
+const gpuTextForImageBreaker = createCircuitBreaker(callTextForImageGpuApi, {
+  name: 'embeddings-gpu-text-for-image',
+  ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
+});
+
+async function callGpuImageApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
+  return gpuImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
+}
+
+async function callGpuTextForImageApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
+  return gpuTextForImageBreaker.fire(params) as Promise<{ embedding: number[]; model: string }>;
 }
 
 export interface ImageMetadata {
@@ -196,8 +264,15 @@ class ImageProcessorService {
   }
 
   /**
-   * Gera embedding de texto via GPU para busca por descrição
-   * Permite buscar imagens por descrição textual
+   * Gera embedding de texto via GPU para busca por descrição de imagens
+   * 
+   * IMPORTANTE (Bug Fix 15/12/2025):
+   * - Usa /embed/text-for-image (OpenCLIP text encoder)
+   * - Gera embeddings no MESMO espaço vetorial das imagens
+   * - Permite busca semântica correta text-to-image
+   * - Protegido por circuit breaker (Regra 16)
+   * 
+   * NÃO confundir com embeddings de documentos que usam BGE-M3!
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
     if (!this.isConfigured) {
@@ -211,42 +286,25 @@ class ImageProcessorService {
     const startTime = Date.now();
     const trimmedText = text.trim();
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    // Usar circuit breaker para resiliência (Regra 16)
+    // Chama /embed/text-for-image (OpenCLIP) para mesmo espaço vetorial das imagens
+    const result = await callGpuTextForImageApi({ text: trimmedText });
+    
+    validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
-    try {
-      const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text: trimmedText }),
-        signal: controller.signal,
-      });
+    const processingTimeMs = Date.now() - startTime;
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
-      }
+    logger.info({
+      textLength: trimmedText.length,
+      embeddingDim: result.embedding.length,
+      model: result.model,
+      processingTimeMs,
+    }, 'Text-for-image embedding gerado via GPU (OpenCLIP)');
 
-      const result = await response.json() as { embedding: number[]; model: string; dimension: number };
-      
-      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
-
-      const processingTimeMs = Date.now() - startTime;
-
-      logger.info({
-        textLength: trimmedText.length,
-        embeddingDim: result.embedding.length,
-        model: result.model,
-        processingTimeMs,
-      }, 'Text embedding gerado via GPU');
-
-      return {
-        embedding: result.embedding,
-        model: result.model || 'BAAI/bge-m3',
-      };
-    } finally {
-      clearTimeout(timeoutId);
-    }
+    return {
+      embedding: result.embedding,
+      model: result.model,
+    };
   }
 
   /**
@@ -308,6 +366,7 @@ class ImageProcessorService {
 
   /**
    * Gera embedding de imagem via GPU (OpenCLIP ViT-H/14, 1024 dim)
+   * Protegido por circuit breaker (Regra 16)
    */
   private async generateImageEmbedding(
     imageBuffer: Buffer,
@@ -316,7 +375,8 @@ class ImageProcessorService {
     const base64Image = imageBuffer.toString('base64');
     const imageDataUri = `data:${mimeType};base64,${base64Image}`;
     
-    const result = await callGpuApi({ image: imageDataUri });
+    // Usar circuit breaker para resiliência (Regra 16)
+    const result = await callGpuImageApi({ image: imageDataUri });
     
     validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
@@ -511,31 +571,61 @@ export function getImageProcessor(): ImageProcessorService {
 export const imageProcessor = getImageProcessor();
 
 /**
- * Retorna status do circuit breaker GPU
+ * Retorna status dos circuit breakers GPU
  */
 export function getGpuCircuitBreakerStatus(): {
-  state: string;
-  stats: {
-    fires: number;
-    failures: number;
-    successes: number;
-    fallbacks: number;
-    timeouts: number;
-    cacheHits: number;
-    latencyMean: number;
+  image: {
+    state: string;
+    stats: {
+      fires: number;
+      failures: number;
+      successes: number;
+      fallbacks: number;
+      timeouts: number;
+      cacheHits: number;
+      latencyMean: number;
+    };
+  };
+  textForImage: {
+    state: string;
+    stats: {
+      fires: number;
+      failures: number;
+      successes: number;
+      fallbacks: number;
+      timeouts: number;
+      cacheHits: number;
+      latencyMean: number;
+    };
   };
 } {
-  const stats = gpuBreaker.stats;
+  const imageStats = gpuImageBreaker.stats;
+  const textStats = gpuTextForImageBreaker.stats;
+  
   return {
-    state: gpuBreaker.opened ? 'open' : (gpuBreaker.halfOpen ? 'half-open' : 'closed'),
-    stats: {
-      fires: stats.fires || 0,
-      failures: stats.failures || 0,
-      successes: stats.successes || 0,
-      fallbacks: stats.fallbacks || 0,
-      timeouts: stats.timeouts || 0,
-      cacheHits: stats.cacheHits || 0,
-      latencyMean: stats.latencyMean || 0,
+    image: {
+      state: gpuImageBreaker.opened ? 'open' : (gpuImageBreaker.halfOpen ? 'half-open' : 'closed'),
+      stats: {
+        fires: imageStats.fires || 0,
+        failures: imageStats.failures || 0,
+        successes: imageStats.successes || 0,
+        fallbacks: imageStats.fallbacks || 0,
+        timeouts: imageStats.timeouts || 0,
+        cacheHits: imageStats.cacheHits || 0,
+        latencyMean: imageStats.latencyMean || 0,
+      },
+    },
+    textForImage: {
+      state: gpuTextForImageBreaker.opened ? 'open' : (gpuTextForImageBreaker.halfOpen ? 'half-open' : 'closed'),
+      stats: {
+        fires: textStats.fires || 0,
+        failures: textStats.failures || 0,
+        successes: textStats.successes || 0,
+        fallbacks: textStats.fallbacks || 0,
+        timeouts: textStats.timeouts || 0,
+        cacheHits: textStats.cacheHits || 0,
+        latencyMean: textStats.latencyMean || 0,
+      },
     },
   };
 }

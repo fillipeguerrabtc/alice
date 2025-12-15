@@ -4,12 +4,14 @@ Embeddings GPU Inference Server - Alice Enterprise Platform
 Servidor de embeddings multimodal via GPU (Salad Cloud).
 
 Modelos:
-- Texto: BGE-M3 (1024 dim, multilíngue, 100+ idiomas)
+- Texto (documentos/transcrição): BGE-M3 (1024 dim, multilíngue, 100+ idiomas)
 - Imagem: OpenCLIP ViT-H/14 (1024 dim)
+- Texto para busca de imagem: OpenCLIP text encoder (mesmo espaço vetorial das imagens)
 
 Endpoints:
-- POST /embed/text - Embedding de texto (JSON)
-- POST /embed/image - Embedding de imagem (base64)
+- POST /embed/text - Embedding de texto usando BGE-M3 (para documentos/transcrição)
+- POST /embed/text-for-image - Embedding de texto usando OpenCLIP (para busca de imagens)
+- POST /embed/image - Embedding de imagem usando OpenCLIP
 - POST /embed/batch - Batch de embeddings (texto ou imagem)
 - GET /health - Health check básico
 - GET /ready - Readiness probe (modelos carregados)
@@ -17,8 +19,14 @@ Endpoints:
 - GET /metrics - Métricas Prometheus
 
 ARQUITETURA 100% GPU (Opção B - Alta Qualidade)
-- BGE-M3: 1024 dim, multilíngue (100+ idiomas incluindo PT-BR)
-- OpenCLIP ViT-H/14: 1024 dim, alta qualidade para imagens
+- BGE-M3: 1024 dim, multilíngue (100+ idiomas incluindo PT-BR) - para documentos
+- OpenCLIP ViT-H/14: 1024 dim - para imagens E busca text-to-image
+
+IMPORTANTE (Bug Fix 15/12/2025):
+- /embed/text usa BGE-M3 → para embeddings de DOCUMENTOS e TRANSCRIÇÕES
+- /embed/text-for-image usa OpenCLIP → para BUSCA de imagens por texto
+- Estes modelos produzem embeddings em ESPAÇOS VETORIAIS DIFERENTES
+- Comparar embedding BGE-M3 com OpenCLIP resulta em similaridade sem sentido
 
 Autor: Fillipe Guerra
 Data: 15 de Dezembro de 2025
@@ -117,6 +125,12 @@ image_breaker = pybreaker.CircuitBreaker(
     reset_timeout=30,
     name="image-embedding-breaker"
 )
+# Circuit breaker para text-to-image (usa OpenCLIP)
+text_for_image_breaker = pybreaker.CircuitBreaker(
+    fail_max=5,
+    reset_timeout=30,
+    name="text-for-image-embedding-breaker"
+)
 
 # ============================================================================
 # MODELOS GLOBAIS
@@ -124,7 +138,7 @@ image_breaker = pybreaker.CircuitBreaker(
 text_model = None
 image_model = None
 image_preprocess = None
-tokenizer = None
+tokenizer = None  # OpenCLIP tokenizer para text-to-image
 device = None
 
 def load_models():
@@ -139,7 +153,7 @@ def load_models():
         logger.info(f"GPU: {torch.cuda.get_device_name(0)}")
         logger.info(f"VRAM Total: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
     
-    # Carregar BGE-M3 para texto
+    # Carregar BGE-M3 para texto (documentos/transcrição)
     logger.info(f"Carregando modelo de texto: {TEXT_MODEL_NAME}...")
     start_time = time.time()
     
@@ -158,7 +172,7 @@ def load_models():
         MODEL_LOADED.labels(model_name="bge-m3").set(0)
         raise
     
-    # Carregar OpenCLIP ViT-H/14 para imagem
+    # Carregar OpenCLIP ViT-H/14 para imagem E text-to-image
     logger.info(f"Carregando modelo de imagem: {IMAGE_MODEL_NAME}...")
     start_time = time.time()
     
@@ -170,10 +184,12 @@ def load_models():
             device=device
         )
         image_model.eval()  # Modo avaliação
+        # IMPORTANTE: tokenizer é usado para text-to-image search
         tokenizer = open_clip.get_tokenizer(IMAGE_MODEL_NAME)
         
         image_load_time = time.time() - start_time
         logger.info(f"OpenCLIP ViT-H/14 carregado em {image_load_time:.2f}s")
+        logger.info("OpenCLIP tokenizer carregado para text-to-image search")
         MODEL_LOADED.labels(model_name="openclip-vit-h-14").set(1)
     except Exception as e:
         logger.error(f"Erro ao carregar OpenCLIP: {e}")
@@ -214,7 +230,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Alice Embeddings GPU Service",
     description="Serviço de embeddings multimodal via GPU (BGE-M3 + OpenCLIP ViT-H/14)",
-    version="1.0.0",
+    version="1.1.0",
     lifespan=lifespan
 )
 
@@ -290,7 +306,12 @@ class HealthResponse(BaseModel):
 # ============================================================================
 @text_breaker
 def generate_text_embedding(text: str) -> List[float]:
-    """Gera embedding de texto usando BGE-M3."""
+    """
+    Gera embedding de texto usando BGE-M3.
+    
+    IMPORTANTE: Use este método para embeddings de DOCUMENTOS e TRANSCRIÇÕES.
+    Para busca text-to-image, use generate_text_for_image_embedding().
+    """
     if text_model is None:
         raise RuntimeError("Modelo de texto não carregado")
     
@@ -310,6 +331,31 @@ def generate_text_embedding(text: str) -> List[float]:
         embedding = embedding.tolist()
     
     return embedding
+
+@text_for_image_breaker
+def generate_text_for_image_embedding(text: str) -> List[float]:
+    """
+    Gera embedding de texto usando OpenCLIP para busca de imagens.
+    
+    IMPORTANTE: Este método usa o mesmo espaço vetorial das imagens (OpenCLIP).
+    Essencial para que a busca text-to-image funcione corretamente.
+    
+    O OpenCLIP foi treinado com pares (texto, imagem), então textos e imagens
+    que são semanticamente relacionados ficam próximos no espaço vetorial.
+    """
+    if image_model is None or tokenizer is None:
+        raise RuntimeError("Modelo de imagem (OpenCLIP) não carregado")
+    
+    # Tokenizar texto usando OpenCLIP tokenizer
+    text_tokens = tokenizer([text]).to(device)
+    
+    # Gerar embedding de texto usando o encoder de texto do OpenCLIP
+    with torch.no_grad():
+        text_embedding = image_model.encode_text(text_tokens)
+        text_embedding = text_embedding / text_embedding.norm(dim=-1, keepdim=True)  # Normalizar
+        text_embedding = text_embedding.squeeze().cpu().numpy()
+    
+    return text_embedding.tolist()
 
 @image_breaker
 def generate_image_embedding(image_data: bytes) -> List[float]:
@@ -339,6 +385,9 @@ def generate_image_embedding(image_data: bytes) -> List[float]:
 async def embed_text(request: Request, body: TextEmbedRequest) -> TextEmbedResponse:
     """
     Gera embedding de texto usando BGE-M3 (1024 dim).
+    
+    Use para: documentos, transcrições, chunks de texto.
+    NÃO use para: busca de imagens por texto (use /embed/text-for-image).
     
     Suporta 100+ idiomas incluindo Português Brasileiro.
     Máximo de 8192 tokens por texto.
@@ -375,6 +424,56 @@ async def embed_text(request: Request, body: TextEmbedRequest) -> TextEmbedRespo
     except Exception as e:
         REQUESTS_TOTAL.labels(endpoint="/embed/text", status="error").inc()
         logger.error(f"Erro ao gerar embedding de texto: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/embed/text-for-image", response_model=TextEmbedResponse)
+@limiter.limit(RATE_LIMIT)
+async def embed_text_for_image(request: Request, body: TextEmbedRequest) -> TextEmbedResponse:
+    """
+    Gera embedding de texto usando OpenCLIP para busca de imagens (1024 dim).
+    
+    IMPORTANTE: Este endpoint usa OpenCLIP (mesmo modelo das imagens).
+    Isso garante que texto e imagem estejam no MESMO espaço vetorial,
+    permitindo busca semântica correta entre texto e imagens.
+    
+    Use para: buscar imagens por descrição textual.
+    NÃO use para: embeddings de documentos (use /embed/text).
+    
+    Exemplo: "cachorro brincando na praia" → encontra imagens similares
+    """
+    start_time = time.time()
+    
+    if not body.text or len(body.text.strip()) == 0:
+        REQUESTS_TOTAL.labels(endpoint="/embed/text-for-image", status="error").inc()
+        raise HTTPException(status_code=400, detail="Texto vazio não é permitido")
+    
+    # OpenCLIP tem limite de 77 tokens
+    if len(body.text) > 300:  # ~77 tokens * 4 chars/token
+        REQUESTS_TOTAL.labels(endpoint="/embed/text-for-image", status="error").inc()
+        raise HTTPException(status_code=400, detail="Texto muito longo para busca de imagem. Máximo: ~77 tokens (~300 caracteres)")
+    
+    try:
+        with EMBEDDING_DURATION.labels(model_type="text-for-image").time():
+            embedding = await asyncio.get_event_loop().run_in_executor(
+                None, generate_text_for_image_embedding, body.text.strip()
+            )
+        
+        processing_time_ms = (time.time() - start_time) * 1000
+        REQUESTS_TOTAL.labels(endpoint="/embed/text-for-image", status="success").inc()
+        
+        return TextEmbedResponse(
+            embedding=embedding,
+            model="OpenCLIP-ViT-H-14-text",
+            dimension=len(embedding),
+            processing_time_ms=round(processing_time_ms, 2)
+        )
+    
+    except pybreaker.CircuitBreakerError:
+        REQUESTS_TOTAL.labels(endpoint="/embed/text-for-image", status="circuit_open").inc()
+        raise HTTPException(status_code=503, detail="Serviço temporariamente indisponível (circuit breaker aberto)")
+    except Exception as e:
+        REQUESTS_TOTAL.labels(endpoint="/embed/text-for-image", status="error").inc()
+        logger.error(f"Erro ao gerar embedding de texto para imagem: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/embed/image", response_model=ImageEmbedResponse)
@@ -437,6 +536,9 @@ async def embed_batch(request: Request, body: BatchEmbedRequest) -> BatchEmbedRe
     Gera batch de embeddings (texto ou imagem).
     
     Máximo de 32 itens por batch.
+    
+    NOTA: Para textos, usa BGE-M3 (para documentos).
+    Para busca text-to-image em batch, faça chamadas individuais para /embed/text-for-image.
     """
     start_time = time.time()
     
@@ -455,6 +557,10 @@ async def embed_batch(request: Request, body: BatchEmbedRequest) -> BatchEmbedRe
         model_name = ""
         
         if body.texts:
+            # Bug Fix: Verificar se modelo está carregado antes de usar
+            if text_model is None:
+                raise HTTPException(status_code=503, detail="Modelo de texto não carregado")
+            
             model_name = "BAAI/bge-m3"
             # BGE-M3 suporta batch nativo
             result = text_model.encode(
@@ -466,6 +572,10 @@ async def embed_batch(request: Request, body: BatchEmbedRequest) -> BatchEmbedRe
             embeddings = [e.tolist() if isinstance(e, np.ndarray) else e for e in result['dense_vecs']]
         
         elif body.images:
+            # Bug Fix: Verificar se modelo está carregado antes de usar
+            if image_model is None or image_preprocess is None:
+                raise HTTPException(status_code=503, detail="Modelo de imagem não carregado")
+            
             model_name = "OpenCLIP-ViT-H-14"
             for img_b64 in body.images:
                 if img_b64.startswith("data:"):
@@ -490,6 +600,8 @@ async def embed_batch(request: Request, body: BatchEmbedRequest) -> BatchEmbedRe
             processing_time_ms=round(processing_time_ms, 2)
         )
     
+    except HTTPException:
+        raise
     except Exception as e:
         REQUESTS_TOTAL.labels(endpoint="/embed/batch", status="error").inc()
         logger.error(f"Erro ao gerar batch de embeddings: {e}")
@@ -518,7 +630,12 @@ async def readiness_probe():
         "text_model": TEXT_MODEL_NAME,
         "image_model": IMAGE_MODEL_NAME,
         "dimension": EMBEDDING_DIM,
-        "device": device
+        "device": device,
+        "features": {
+            "text_embedding": "BGE-M3 (documentos/transcrição)",
+            "text_for_image": "OpenCLIP (busca de imagens por texto)",
+            "image_embedding": "OpenCLIP ViT-H/14"
+        }
     }
 
 @app.get("/live")
@@ -543,7 +660,7 @@ async def root():
     """Informações do serviço."""
     return {
         "service": "Alice Embeddings GPU Service",
-        "version": "1.0.0",
+        "version": "1.1.0",
         "models": {
             "text": TEXT_MODEL_NAME,
             "image": f"{IMAGE_MODEL_NAME}/{IMAGE_PRETRAINED}"
@@ -551,13 +668,19 @@ async def root():
         "dimension": EMBEDDING_DIM,
         "device": device or "loading...",
         "endpoints": [
-            "POST /embed/text - Embedding de texto (1024 dim)",
-            "POST /embed/image - Embedding de imagem (1024 dim)",
+            "POST /embed/text - Embedding de texto BGE-M3 (para documentos/transcrição)",
+            "POST /embed/text-for-image - Embedding de texto OpenCLIP (para busca de imagens)",
+            "POST /embed/image - Embedding de imagem OpenCLIP (1024 dim)",
             "POST /embed/batch - Batch de embeddings",
             "GET /health - Health check",
             "GET /ready - Readiness probe",
             "GET /live - Liveness probe",
             "GET /metrics - Métricas Prometheus"
+        ],
+        "important_notes": [
+            "Use /embed/text para documentos e transcrições (BGE-M3)",
+            "Use /embed/text-for-image para buscar imagens por descrição (OpenCLIP)",
+            "NÃO misture: BGE-M3 e OpenCLIP estão em espaços vetoriais DIFERENTES"
         ]
     }
 
