@@ -1919,10 +1919,10 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 15/12/2025: Simplificado healthcheck para evitar problemas com escape de variáveis
-      # pg_isready NÃO precisa de senha - apenas verifica se PostgreSQL aceita conexões
-      # Usar valores hardcoded (defaults) é mais confiável que expansão de variáveis em healthcheck
-      test: ["CMD", "pg_isready", "-U", "langfuse", "-d", "langfuse"]
+      # CORREÇÃO 15/12/2025: pg_isready NÃO precisa de senha - apenas verifica se PostgreSQL aceita conexões
+      # Docker Compose expande ${VAR:-default} ANTES de passar para o container
+      # Isso é Enterprise-Grade (Regra 6) - respeita configuração customizada via .env.prod
+      test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
       interval: 10s
       timeout: 5s
       retries: 10

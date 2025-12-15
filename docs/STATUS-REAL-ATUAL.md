@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.68 - Healthcheck langfuse-db Simplificado
+> **Versão:** 3.69 - Healthcheck langfuse-db Enterprise (sem hardcoded)
 
 ---
 
@@ -872,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.68 - Healthcheck langfuse-db simplificado (pg_isready sem senha) + start_period 30s + retries 10*
+*Versão: 3.69 - Healthcheck langfuse-db Enterprise: pg_isready com variáveis ${LANGFUSE_DB_USER:-langfuse} (não hardcoded)*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -937,7 +937,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | `migrations/0002_create_feature_flags.sql` | DROP POLICY IF EXISTS + removidas FKs |
 | `migrations/0004_multimodal_learning_and_crawler.sql` | 100% idempotente (v1.2) + task_status enum |
 | `.github/workflows/deploy-production.yml` | Ordem correta: secrets dir → mover secrets → bind mounts |
-| `infra/docker/docker-compose.prod.yml` | Healthcheck langfuse-db simplificado (pg_isready sem escape de variáveis) |
+| `infra/docker/docker-compose.prod.yml` | Healthcheck langfuse-db com variáveis (Regra 6 - sem hardcoded) |
 
 ---
 
