@@ -2417,13 +2417,18 @@ jobs:
             # Migration 0002: Feature Flags (idempotente)
             run_migration_idempotent "../../migrations/0002_create_feature_flags.sql" "0002_create_feature_flags"
             
-            # Migration 0003: Update Embedding Dimensions to 768 (CRÍTICA!)
-            # OBRIGATÓRIA: DEVE ser executada ANTES do deploy do código que usa vector(768)
-            # Caso contrário, haverá erro de incompatibilidade de dimensões nas queries SQL
+            # Migration 0003: Update Embedding Dimensions to 768 (LEGADO - mantido para histórico)
+            # Esta migration foi substituída pela 0005 (1024 dim GPU)
+            # Mantida para ambientes que ainda não executaram
             run_migration_critical "../../migrations/0003_update_embedding_dimensions_768.sql" "0003_update_embedding_dimensions_768"
             
             # Migration 0004: Multimodal Learning and Crawler (idempotente)
             run_migration_idempotent "../../migrations/0004_multimodal_learning_and_crawler.sql" "0004_multimodal_learning_and_crawler"
+            
+            # Migration 0005: Update Embedding Dimensions to 1024 (ARQUITETURA 100% GPU)
+            # OBRIGATÓRIA: Atualiza vector(768) para vector(1024)
+            # Compatível com BGE-M3 (texto) e OpenCLIP ViT-H/14 (imagem) via GPU Salad Cloud
+            run_migration_critical "../../migrations/0005_update_embedding_dimensions_1024.sql" "0005_update_embedding_dimensions_1024"
             
             echo "✅ Todas as migrações processadas"
             

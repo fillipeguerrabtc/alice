@@ -71,9 +71,9 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  /** CLIP ViT-L/14 embeddings - embeddings multimodais 100% local via CPU no Hetzner */
+  /** OpenCLIP ViT-H/14 embeddings - ARQUITETURA 100% GPU (Salad Cloud) */
   clipEmbeddings: {
-    timeout: 30000,
+    timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
@@ -169,10 +169,10 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
-  /** Text Embeddings local - multilingual-e5-base (CPU no Hetzner) - 100+ idiomas */
-  /** Timeout moderado para serviço local (latência típica: 50-200ms) */
+  /** BGE-M3 Text Embeddings - ARQUITETURA 100% GPU (Salad Cloud) - 100+ idiomas */
+  /** Timeout ajustado para GPU com estratégia Warm on Demand */
   textEmbeddings: {
-    timeout: 30000,
+    timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,

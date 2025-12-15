@@ -86,9 +86,10 @@ describe('Training Service - Estados de Job', () => {
 // ============================================================================
 
 describe('Training Service - Deduplicação Semântica', () => {
+  // ARQUITETURA 100% GPU (15/12/2025)
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
-    embeddingDim: 768, // multilingual-e5-base local
+    embeddingDim: 1024, // BGE-M3 GPU (Salad Cloud)
     batchSize: 100,
   };
 
@@ -295,12 +296,13 @@ describe('Training Service - Health Check', () => {
   }
 
   it('deve retornar estrutura de health correta', () => {
+    // ARQUITETURA 100% GPU (15/12/2025)
     const health: TrainingHealthResponse = {
       status: 'ok',
       service: 'training-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'local',
-      model: 'intfloat/multilingual-e5-base',
+      embeddingsProvider: 'salad-gpu',
+      model: 'BAAI/bge-m3',
       saladCloudAvailable: true,
       circuitBreakers: {
         embeddings: { state: 'closed', stats: {} },

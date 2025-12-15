@@ -1167,7 +1167,7 @@ export const generatedImages = pgTable(
     thumbnailPath: text("thumbnail_path"),
     imageUrl: text("image_url"),
     
-    // Embeddings para RAG multimodal (CLIP - 768 dimensões)
+    // Embeddings para RAG multimodal (OpenCLIP ViT-H/14 - 1024 dim) - ARQUITETURA 100% GPU
     clipEmbedding: real("clip_embedding").array(),
     
     // Feedback e aprovação para training
@@ -1239,9 +1239,9 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal
-    clipEmbedding: real("clip_embedding").array(), // CLIP para imagens (768 dim)
-    textEmbedding: real("text_embedding").array(), // Para transcrição de áudio
+    // Embeddings para RAG multimodal - ARQUITETURA 100% GPU (15/12/2025)
+    clipEmbedding: real("clip_embedding").array(), // OpenCLIP ViT-H/14 para imagens (1024 dim)
+    textEmbedding: real("text_embedding").array(), // BGE-M3 para transcrição de áudio (1024 dim)
     
     // Transcrição (para áudio/vídeo)
     transcription: text("transcription"),

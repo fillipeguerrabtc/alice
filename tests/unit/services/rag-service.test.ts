@@ -68,23 +68,24 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
 // ============================================================================
 
 describe('RAG Service - Dimensões de Embedding', () => {
-  const TEXT_EMBEDDING_DIM = 768;   // multilingual-e5-base local
-  const CLIP_EMBEDDING_DIM = 768;   // CLIP ViT-L/14 local
+  // ARQUITETURA 100% GPU (15/12/2025)
+  const TEXT_EMBEDDING_DIM = 1024;   // BGE-M3 GPU (Salad Cloud)
+  const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (Salad Cloud)
 
-  it('deve ter text embedding de 768 dimensões (multilingual-e5-base local)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(768);
+  it('deve ter text embedding de 1024 dimensões (BGE-M3 GPU)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(1024);
   });
 
-  it('deve ter CLIP embedding de 768 dimensões', () => {
-    expect(CLIP_EMBEDDING_DIM).toBe(768);
+  it('deve ter image embedding de 1024 dimensões (OpenCLIP ViT-H/14 GPU)', () => {
+    expect(CLIP_EMBEDDING_DIM).toBe(1024);
   });
 
   it('deve criar array de embedding com dimensão correta', () => {
     const textEmb = new Array(TEXT_EMBEDDING_DIM).fill(0);
     const clipEmb = new Array(CLIP_EMBEDDING_DIM).fill(0);
     
-    expect(textEmb.length).toBe(768);
-    expect(clipEmb.length).toBe(768);
+    expect(textEmb.length).toBe(1024);
+    expect(clipEmb.length).toBe(1024);
   });
 });
 
@@ -269,12 +270,13 @@ describe('RAG Service - Health Check', () => {
   }
 
   it('deve retornar estrutura de health correta', () => {
+    // ARQUITETURA 100% GPU (15/12/2025)
     const health: RAGHealthResponse = {
       status: 'ok',
       service: 'rag-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'local',
-      model: 'intfloat/multilingual-e5-base',
+      embeddingsProvider: 'salad-gpu',
+      model: 'BAAI/bge-m3',
       circuitBreaker: {
         state: 'closed',
         stats: { failures: 0, successes: 100, timeouts: 0 },
@@ -282,8 +284,8 @@ describe('RAG Service - Health Check', () => {
     };
 
     expect(health.status).toBe('ok');
-    expect(health.embeddingsProvider).toBe('local');
-    expect(health.model).toBe('intfloat/multilingual-e5-base');
+    expect(health.embeddingsProvider).toBe('salad-gpu');
+    expect(health.model).toBe('BAAI/bge-m3');
   });
 });
 
@@ -385,14 +387,15 @@ describe('RAG Service - Deduplicação', () => {
 // ============================================================================
 
 describe('RAG Service - Circuit Breakers', () => {
+  // ARQUITETURA 100% GPU (15/12/2025) - Salad Cloud
   const breakers = {
     embeddings: {
-      name: 'embedding-api',
+      name: 'embedding-gpu',
       failureThreshold: 5,
       resetTimeout: 30000,
     },
-    clip: {
-      name: 'clip-inference',
+    imageEmbedding: {
+      name: 'openclip-gpu',
       failureThreshold: 3,
       resetTimeout: 30000,
     },
@@ -403,12 +406,12 @@ describe('RAG Service - Circuit Breakers', () => {
     },
   };
 
-  it('deve ter circuit breaker para embeddings', () => {
-    expect(breakers.embeddings.name).toBe('embedding-api');
+  it('deve ter circuit breaker para embeddings GPU', () => {
+    expect(breakers.embeddings.name).toBe('embedding-gpu');
   });
 
-  it('deve ter circuit breaker para CLIP', () => {
-    expect(breakers.clip.name).toBe('clip-inference');
+  it('deve ter circuit breaker para OpenCLIP GPU', () => {
+    expect(breakers.imageEmbedding.name).toBe('openclip-gpu');
   });
 
   it('deve ter circuit breaker para FFmpeg', () => {

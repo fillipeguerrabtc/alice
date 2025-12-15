@@ -145,7 +145,7 @@
 
 > **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor`, `document-processor` e `video-processor` **não** retornam mais embeddings “falsos” (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando “hardcoded”, “mock” ou “default falso”).
 
-> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (768)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (CLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente).
+> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (1024 para BGE-M3 GPU)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (OpenCLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente).
 >
 > **Nota (Robustez CLIP frames):** o `combinedEmbedding` nunca contém `NaN`: frames CLIP com dimensão incorreta ou valores não-finitos são ignorados antes do cálculo da média; se nenhum frame válido existir, `combinedEmbedding` é `[]` (persistido como `NULL`).
 >
@@ -221,22 +221,24 @@
 | Circuit Breakers Status | ✅ | `/api/observability/circuit-breakers` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-### 7. clip-inference-service - Multimodal Inference (Porta 8080)
+### 7. Embeddings GPU Service - Multimodal Inference (Salad Cloud)
 
-| Funcionalidade | Status | Arquivo |
-|----------------|--------|---------|
-| **Embeddings de Imagem** (CLIP ViT-L/14 - 768 dim) | ✅ | `server.py` |
-| **Embeddings de Texto** (multilingual-e5-base - 768 dim) | ✅ | `server.py` |
-| **Transcrição de Áudio** (faster-whisper medium - CPU fallback) | ✅ | `server.py` |
-| Suporte Multilíngue (100+ idiomas) | ✅ | multilingual-e5-base + faster-whisper |
-| Embeddings 100% LOCAL (CPU Hetzner) | ✅ | Nenhuma dependência externa |
-| Transcrição Híbrida | ✅ | GPU Salad (primário) + CPU Hetzner (fallback) |
-| Rate Limiting | ✅ | `server.py` |
-| Circuit Breaker (Python) | ✅ | `server.py` (CLIP + Text + Whisper) |
+| Funcionalidade | Status | Tecnologia |
+|----------------|--------|------------|
+| **Embeddings de Imagem** (OpenCLIP ViT-H/14 - 1024 dim) | ✅ | GPU Salad Cloud |
+| **Embeddings de Texto** (BGE-M3 - 1024 dim) | ✅ | GPU Salad Cloud |
+| **Transcrição de Áudio** (Whisper large-v3) | ✅ | GPU Salad Cloud |
+| Suporte Multilíngue (100+ idiomas) | ✅ | BGE-M3 + Whisper large-v3 |
+| Warm on Demand (30 min keep-warm) | ✅ | Estratégia enterprise |
+| Rate Limiting | ✅ | `serve.py` |
+| Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-> **ARQUITETURA HÍBRIDA (15/12/2025):**
-> - **Embeddings (texto + imagem):** 100% LOCAL via CPU Hetzner - privacidade máxima
+> **ARQUITETURA 100% GPU (15/12/2025):**
+> - **Embeddings de texto:** BGE-M3 (1024 dim) via GPU Salad Cloud
+> - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) via GPU Salad Cloud
+> - **Transcrição de áudio:** Whisper large-v3 via GPU Salad Cloud
+> - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
 > - **Transcrição de áudio:** GPU Salad (primário, 7-9x mais rápido) + CPU Hetzner (fallback automático)
 > - O container whisper-gpu roda em Salad Cloud com faster-whisper large-v3
 > - Se GPU indisponível ou erro, fallback transparente para CPU local (faster-whisper medium)
@@ -450,7 +452,9 @@ Retenção Arquivo:   30 dias
 | 11 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
 | 12 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
-| 14 | alice-clip-inference | python:3.11-slim | CLIP ViT-L/14 |
+| 14 | alice-clip-inference | python:3.11-slim | Legado (Embeddings GPU via Salad Cloud) |
+
+> **NOTA (15/12/2025):** O container `alice-clip-inference` está marcado como LEGADO. A plataforma agora usa **ARQUITETURA 100% GPU** via Salad Cloud para embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) e transcrição (Whisper large-v3). O container permanece para compatibilidade durante a transição.
 
 ### ERPNext Stack (12)
 

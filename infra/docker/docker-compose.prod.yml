@@ -670,10 +670,10 @@ services:
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Multimodal Processing + Storage Local
-  # Processamento 100% LOCAL via clip-inference-service:
-  # - Embeddings de texto: multilingual-e5-base (768 dim)
-  # - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
-  # - Transcrição de áudio: faster-whisper medium
+  # ARQUITETURA 100% GPU (15/12/2025) via Salad Cloud:
+  # - Embeddings de texto: BGE-M3 (1024 dim) - GPU Salad Cloud
+  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud
+  # - Transcrição de áudio: Whisper large-v3 - GPU Salad Cloud
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
@@ -985,13 +985,16 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # ALICE MULTIMODAL INFERENCE SERVICE - 100% LOCAL (CPU Hetzner)
-  # ARQUITETURA AUTÔNOMA (Regra 6 - Autonomia Total):
-  # - Embeddings de texto: multilingual-e5-base (768 dim)
-  # - Embeddings de imagem: CLIP ViT-L/14 (768 dim)
-  # - Transcrição de áudio: faster-whisper medium
-  # NOTA: Serviço roda localmente no Hetzner via CPU (não requer GPU)
-  # SEGURANÇA: Container hardening (Docker 2025 + OWASP Container Security)
+  # ALICE MULTIMODAL INFERENCE SERVICE - LEGADO (será removido em versão futura)
+  # 
+  # IMPORTANTE: Este serviço CPU está OBSOLETO. A plataforma Alice agora usa
+  # ARQUITETURA 100% GPU (15/12/2025) via Salad Cloud:
+  # - Embeddings de texto: BGE-M3 (1024 dim) - GPU Salad Cloud
+  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud  
+  # - Transcrição de áudio: Whisper large-v3 - GPU Salad Cloud
+  #
+  # Este container permanece para compatibilidade durante transição.
+  # Novos desenvolvimentos devem usar EMBEDDINGS_GPU_URL e SALAD_WHISPER_URL.
   # ===========================================================================
   alice-clip-inference:
     image: ${IMAGE_PREFIX}-clip-inference:${IMAGE_TAG:-latest}

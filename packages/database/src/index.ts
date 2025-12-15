@@ -384,7 +384,7 @@ export const EMBEDDING_DIMENSIONS = {
  * Lança erro se dimensão estiver incorreta (enterprise-grade - Regra 6)
  * 
  * @param embedding - Array de números representando o embedding
- * @param expectedDim - Dimensão esperada (default: 768)
+ * @param expectedDim - Dimensão esperada (1024 para BGE-M3/OpenCLIP GPU)
  * @param type - Tipo de embedding ('TEXT' ou 'CLIP') para mensagem de erro
  * @throws Error se dimensão estiver incorreta
  * 

@@ -190,18 +190,16 @@ export async function generateImage(
 }
 
 // ============================================================================
-// CLIP EMBEDDINGS (Para RAG Multimodal)
-// ARQUITETURA AUTÔNOMA: Usa serviço local alice-clip-inference (CPU no Hetzner)
-// Embeddings são 100% locais via CPU no servidor Hetzner (Regra 6 - Autonomia Total)
-// GPUs Salad Cloud são APENAS para LLM (inferência) e treinamento
+// IMAGE EMBEDDINGS (Para RAG Multimodal)
+// ARQUITETURA 100% GPU (15/12/2025): OpenCLIP ViT-H/14 via Salad Cloud
+// Embeddings de imagem com 1024 dimensões para máxima qualidade
 // ============================================================================
 
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || 'http://localhost:8080';
 
-async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
-  // REGRA 6: Serviço local autônomo - não depende de API externa
-  // Serviço interno na rede Docker privada - não requer autenticação
-  // Embeddings são 100% locais via CPU no servidor Hetzner (CLIP ViT-L/14)
+async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
+  // ARQUITETURA 100% GPU (15/12/2025): OpenCLIP ViT-H/14 via Salad Cloud
+  // Embeddings de imagem com 1024 dimensões para máxima qualidade
   // NOTA: imageBase64 pode vir com ou sem prefixo data:image/...;base64,
   // O servidor Python trata ambos os formatos, mas padronizamos para incluir prefixo
   // Se já tem prefixo, usar como está; caso contrário, adicionar prefixo genérico
@@ -209,41 +207,41 @@ async function generateCLIPEmbeddingInternal(imageBase64: string): Promise<CLIPE
     ? imageBase64 
     : `data:image/png;base64,${imageBase64}`;
   
-  const response = await fetch(`${CLIP_SERVICE_URL}/inference/clip`, {
+  const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       image: imageData,
-      model: 'ViT-L/14',
     }),
   });
 
   if (!response.ok) {
     const error = await response.text();
-    throw new Error(`Erro ao gerar CLIP embedding: ${error}`);
+    throw new Error(`Erro ao gerar embedding de imagem (GPU): ${error}`);
   }
 
   const data = await response.json() as { embedding: number[]; model: string };
   return { embedding: data.embedding };
 }
 
-const clipBreaker = createCircuitBreaker(generateCLIPEmbeddingInternal, {
-  name: 'clip-embeddings',
+const imageEmbeddingBreaker = createCircuitBreaker(generateImageEmbeddingInternal, {
+  name: 'image-embeddings-gpu',
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-  timeout: 10000, // Override: CLIP é mais rápido que FLUX
+  timeout: 30000, // GPU pode precisar de tempo para warm-up
 });
 
 /**
- * Gera embedding CLIP para uma imagem (768 dimensões)
+ * Gera embedding de imagem via OpenCLIP ViT-H/14 GPU (1024 dimensões)
+ * ARQUITETURA 100% GPU (15/12/2025)
  */
 export async function generateCLIPEmbedding(imageBase64: string): Promise<number[]> {
   try {
-    const result = await clipBreaker.fire(imageBase64) as CLIPEmbeddingResponse;
+    const result = await imageEmbeddingBreaker.fire(imageBase64) as CLIPEmbeddingResponse;
     return result.embedding;
   } catch (error) {
-    logger.error({ error }, 'Erro ao gerar CLIP embedding');
+    logger.error({ error }, 'Erro ao gerar embedding de imagem (GPU)');
     throw error;
   }
 }

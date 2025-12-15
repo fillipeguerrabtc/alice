@@ -102,9 +102,10 @@ const chatHealthSchema = baseHealthSchema.extend({
 /**
  * Schema para rag-service /api/rag/health
  */
+// ARQUITETURA 100% GPU (15/12/2025)
 const ragHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('local'),
-  model: z.literal('intfloat/multilingual-e5-base'),
+  embeddingsProvider: z.literal('salad-gpu'),
+  model: z.literal('BAAI/bge-m3'),
   circuitBreaker: z.object({
     state: z.enum(['open', 'closed', 'half-open']),
     stats: circuitBreakerStatsSchema,
@@ -114,9 +115,10 @@ const ragHealthSchema = baseHealthSchema.extend({
 /**
  * Schema para training-service /api/training/health
  */
+// ARQUITETURA 100% GPU (15/12/2025)
 const trainingHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('local'),
-  model: z.literal('intfloat/multilingual-e5-base'),
+  embeddingsProvider: z.literal('salad-gpu'),
+  model: z.literal('BAAI/bge-m3'),
   saladCloudAvailable: z.boolean(),
   circuitBreakers: z.object({
     embeddings: z.object({
@@ -236,12 +238,13 @@ const mockRagHealthResponse = {
   },
 };
 
+// ARQUITETURA 100% GPU (15/12/2025)
 const mockTrainingHealthResponse = {
   status: 'ok',
   service: 'training-service',
   timestamp: FIXED_TIMESTAMP,
-  embeddingsProvider: 'local',
-  model: 'intfloat/multilingual-e5-base',
+  embeddingsProvider: 'salad-gpu',
+  model: 'BAAI/bge-m3',
   saladCloudAvailable: true,
   circuitBreakers: {
     embeddings: {
@@ -375,12 +378,12 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockRagHealthResponse.service).toBe('rag-service');
     });
 
-    it('deve usar embeddingsProvider "local"', () => {
-      expect(mockRagHealthResponse.embeddingsProvider).toBe('local');
+    it('deve usar embeddingsProvider "salad-gpu"', () => {
+      expect(mockRagHealthResponse.embeddingsProvider).toBe('salad-gpu');
     });
 
-    it('deve usar modelo "intfloat/multilingual-e5-base"', () => {
-      expect(mockRagHealthResponse.model).toBe('intfloat/multilingual-e5-base');
+    it('deve usar modelo "BAAI/bge-m3" (GPU)', () => {
+      expect(mockRagHealthResponse.model).toBe('BAAI/bge-m3');
     });
 
     it('deve ter circuit breaker para embeddings', () => {

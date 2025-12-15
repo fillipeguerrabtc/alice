@@ -4,12 +4,12 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA:
- * - Embeddings de texto: multilingual-e5-base (100% LOCAL via CPU Hetzner)
+ * ARQUITETURA 100% GPU (15/12/2025):
+ * - Embeddings de texto: BGE-M3 (1024 dim, GPU Salad Cloud)
  * - Fine-tuning: Salad Cloud (GPUs externas) - SALAD_API_KEY obrigatória
  * 
  * Autor: Fillipe Guerra
- * Data: 11 de Dezembro de 2025
+ * Data: 15 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -142,14 +142,18 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // ============================================================================
-// CIRCUIT BREAKER - Text Embeddings Local (Regra 6 - Autonomia Total)
-// Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
-// Usa serviço local alice-clip-inference com multilingual-e5-base
+// CIRCUIT BREAKER - Text Embeddings GPU (Salad Cloud)
+// ARQUITETURA 100% GPU (15/12/2025): BGE-M3 (1024 dim) via Salad Cloud
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-// CLIP Service URL para embeddings locais
-const CLIP_SERVICE_URL = process.env.CLIP_SERVICE_URL || 'http://alice-clip-inference:8080';
+// Embeddings GPU Service URL (Salad Cloud)
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL;
+if (!EMBEDDINGS_GPU_URL && process.env.NODE_ENV === 'production') {
+  logger.error('EMBEDDINGS_GPU_URL não configurado - obrigatório para embeddings em produção (arquitetura 100% GPU)');
+  process.exit(1);
+}
+const EMBEDDINGS_SERVICE_URL = EMBEDDINGS_GPU_URL || 'http://localhost:8080';
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -161,38 +165,36 @@ interface TextEmbeddingResponse {
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // REGRA 6: Serviço local autônomo - não depende de API externa
-  // Serviço interno na rede Docker privada - não requer autenticação
-  // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
+  // ARQUITETURA 100% GPU (15/12/2025): BGE-M3 via Salad Cloud
+  // Embeddings de texto com 1024 dimensões para máxima qualidade
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   
   try {
-    const response = await fetch(`${CLIP_SERVICE_URL}/inference/text-embedding`, {
+    const response = await fetch(`${EMBEDDINGS_SERVICE_URL}/embed/text`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
         text: text.slice(0, 2000),
-        context: 'passage', // Dados de treinamento são documentos sendo indexados
       }),
       signal: controller.signal,
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Falha ao gerar embedding: ${response.status} - ${errorText}`);
+      throw new Error(`Falha ao gerar embedding GPU: ${response.status} - ${errorText}`);
     }
 
     const data = await response.json() as TextEmbeddingResponse;
     const resultEmbedding = data.embedding;
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
-      throw new Error('Serviço de embeddings retornou resultado vazio');
+      throw new Error('Serviço de embeddings GPU retornou resultado vazio');
     }
     
-    // Validar dimensão (deve ser 768 para multilingual-e5-base) - Enterprise-Grade
+    // Validar dimensão (deve ser 1024 para BGE-M3 GPU) - Enterprise-Grade
     // Lança erro se dimensão estiver incorreta (não apenas warning) - Regra 6
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
@@ -290,8 +292,8 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'local', // 100% local via CPU no servidor Hetzner (multilingual-e5-base)
-    model: 'intfloat/multilingual-e5-base',
+    embeddingsProvider: 'salad-gpu', // ARQUITETURA 100% GPU (15/12/2025)
+    model: 'BAAI/bge-m3',
     saladCloudAvailable: saladAvailable,
     circuitBreakers: {
       embeddings: {

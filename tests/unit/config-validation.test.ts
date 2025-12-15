@@ -696,8 +696,8 @@ describe('Config - RAG Chunk Configuration', () => {
       expect(RAG_CHUNK_CONFIG.chunkOverlap).toBe(200);
     });
 
-    it('deve ter dimensão de embeddings de 768 (multilingual-e5-base local)', () => {
-      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(768);
+    it('deve ter dimensão de embeddings de 1024 (BGE-M3 GPU)', () => {
+      expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(1024);
     });
 
     it('deve ter threshold de similaridade de 0.7', () => {
