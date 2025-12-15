@@ -1919,17 +1919,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test:
-        - CMD-SHELL
-        # REGRA 6: $$ escapa a variável para que Docker Compose escreva ${VAR} literal
-        # O shell do container expande usando variáveis de env_file: .env.prod
-        # Isso é mais robusto que depender de --env-file no comando docker-compose
-        - >
-          PGPASSWORD="$$(cat /run/secrets/langfuse_db_password)" pg_isready -U $${LANGFUSE_DB_USER:-langfuse} -d $${LANGFUSE_DB_NAME:-langfuse} -h localhost
+      # CORREÇÃO 15/12/2025: Simplificado healthcheck para evitar problemas com escape de variáveis
+      # pg_isready NÃO precisa de senha - apenas verifica se PostgreSQL aceita conexões
+      # Usar valores hardcoded (defaults) é mais confiável que expansão de variáveis em healthcheck
+      test: ["CMD", "pg_isready", "-U", "langfuse", "-d", "langfuse"]
       interval: 10s
       timeout: 5s
-      retries: 5
-      start_period: 15s
+      retries: 10
+      start_period: 30s
     deploy:
       resources:
         limits:
