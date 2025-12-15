@@ -2354,6 +2354,8 @@ jobs:
             run_migration_critical() {
               local migration_file="$1"
               local migration_name="$2"
+              local psql_exit_code=0
+              local psql_output=""
               
               if [ ! -f "$migration_file" ]; then
                 echo "❌ ERRO CRÍTICO: $migration_name não encontrada!"
@@ -2362,18 +2364,27 @@ jobs:
               fi
               
               echo "  → Executando $migration_name (CRÍTICA)..."
-              # psql com ON_ERROR_STOP=1 para falhar em qualquer erro real
-              # Apenas NOTICE são filtrados (mensagens informativas do PostgreSQL)
-              if ! docker compose -f docker-compose.prod.yml \
+              
+              # ENTERPRISE-GRADE: Captura output e exit code separadamente
+              # Evita problema de pipeline onde exit code vem do último comando (grep)
+              # Em vez de pipe, usamos variável para capturar output do psql
+              psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres psql -U alice -d alice_prod \
                 -v ON_ERROR_STOP=1 \
-                -f /dev/stdin < "$migration_file" 2>&1 | grep -v "NOTICE:"; then
-                echo "❌ ERRO CRÍTICO: Falha na execução de $migration_name"
+                -f /dev/stdin < "$migration_file" 2>&1) || psql_exit_code=$?
+              
+              # Mostrar output filtrado (sem NOTICE informativas)
+              echo "$psql_output" | grep -v "NOTICE:" || true
+              
+              # Verificar exit code REAL do psql (não do grep)
+              if [ "$psql_exit_code" -ne 0 ]; then
+                echo "❌ ERRO CRÍTICO: Falha na execução de $migration_name (exit code: $psql_exit_code)"
                 echo "   Esta migration é OBRIGATÓRIA e o deploy NÃO pode continuar sem ela."
                 echo "   Verifique os logs do PostgreSQL acima para identificar o problema."
                 exit 1
               fi
+              
               echo "  ✓ $migration_name aplicada (CRÍTICA)"
             }
             

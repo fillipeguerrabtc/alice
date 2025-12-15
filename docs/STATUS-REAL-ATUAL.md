@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.65 - Deploy Idempotente com Migrações Críticas
+> **Versão:** 3.66 - Deploy Idempotente com Captura Correta de Exit Code
 
 ---
 
@@ -872,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.65 - Deploy Idempotente: migrações não-críticas (0001, 0002, 0004) com run_migration_idempotent() + migração CRÍTICA 0003 com run_migration_critical() e exit 1 em falha*
+*Versão: 3.66 - Deploy Idempotente: run_migration_critical() captura exit code do psql corretamente (não do grep) para falha hard real*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -922,7 +922,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 **Solução:** Deploy com duas estratégias de migração:
 1. **run_migration_idempotent()**: Para migrações 0001, 0002, 0004 - usa `ON_ERROR_STOP=0` e continua em erros de idempotência
-2. **run_migration_critical()**: Para migração 0003 - usa `ON_ERROR_STOP=1` e `exit 1` em qualquer falha (OBRIGATÓRIA para embeddings 768 dim)
+2. **run_migration_critical()**: Para migração 0003 - captura exit code do psql em variável separada (evita problema de pipeline onde exit code vem do último comando grep), usa `ON_ERROR_STOP=1` e `exit 1` em qualquer falha (OBRIGATÓRIA para embeddings 768 dim)
 3. **Migrações**: Todas agora usam:
    - `DROP POLICY IF EXISTS` antes de cada `CREATE POLICY`
    - `CREATE INDEX IF NOT EXISTS` em vez de DROP+CREATE
