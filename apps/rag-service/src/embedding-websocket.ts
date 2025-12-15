@@ -55,6 +55,8 @@ interface WebSocketMessage {
 
 let wss: WebSocketServer | null = null;
 let heartbeatInterval: NodeJS.Timeout | null = null;
+/** Referência ao subscriber Redis para cleanup no shutdown (Bug fix: evitar resource leak) */
+let redisSubscriber: ReturnType<typeof getRedisClient> | null = null;
 
 /**
  * Inicializa o servidor WebSocket para notificações de embeddings
@@ -141,10 +143,21 @@ export function initEmbeddingWebSocket(server: Server): void {
 /**
  * Encerra o servidor WebSocket
  */
-export function closeEmbeddingWebSocket(): void {
+export async function closeEmbeddingWebSocket(): Promise<void> {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval);
     heartbeatInterval = null;
+  }
+  
+  // Bug fix: Fechar conexão Redis subscriber para evitar resource leak
+  if (redisSubscriber) {
+    try {
+      await redisSubscriber.quit();
+      logger.info('Redis subscriber para WebSocket encerrado');
+    } catch (error) {
+      logger.warn({ error }, 'Erro ao fechar Redis subscriber (não crítico)');
+    }
+    redisSubscriber = null;
   }
   
   if (wss) {
@@ -213,8 +226,12 @@ async function initRedisPubSub(): Promise<void> {
   
   try {
     // Criar subscriber separado (Redis Pub/Sub requer conexão dedicada)
+    // Bug fix: Armazenar referência para cleanup no shutdown
     const subscriber = client.duplicate();
     await subscriber.connect();
+    
+    // Armazenar referência em variável de módulo para cleanup (evitar resource leak)
+    redisSubscriber = subscriber;
     
     const channel = getNotificationChannel();
     

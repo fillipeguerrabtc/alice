@@ -416,10 +416,22 @@ async function workerLoop(): Promise<void> {
       }
       
       // Processar job em paralelo (não bloquear o loop)
+      // Bug fix: Adicionar .catch() para evitar unhandled promise rejection
+      // Se failEmbeddingJob ou publishNotification falharem (ex: Redis down),
+      // o erro será logado mas não propagará como unhandled rejection
       currentConcurrent++;
       processJob(job)
         .then(() => {
           processedCount++;
+        })
+        .catch((unexpectedError) => {
+          // Este catch captura erros que escaparam do try/catch interno do processJob
+          // (ex: failEmbeddingJob ou publishNotification falhando porque Redis está down)
+          logger.error({
+            jobId: job.id,
+            type: job.type,
+            error: unexpectedError instanceof Error ? unexpectedError.message : String(unexpectedError),
+          }, 'Erro inesperado no processamento de job (failEmbeddingJob/publishNotification falhou)');
         })
         .finally(() => {
           currentConcurrent--;
