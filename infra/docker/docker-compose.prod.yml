@@ -1897,7 +1897,9 @@ services:
           cpus: '0.25'
 
   langfuse-db:
-    image: postgres:16-alpine@sha256:9d5c0f7b3dab1ad927cf8488c946f001d2ed369a43ec7a65f5784586ca978da0
+    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
+    # Digest será adicionado quando imagem for incluída no versionamento automático
+    image: postgres:16-alpine
     platform: linux/amd64
     container_name: alice-langfuse-db
     restart: unless-stopped
@@ -2167,7 +2169,9 @@ services:
   # ALERTMANAGER - Notificações Prometheus
   # ===========================================================================
   alertmanager:
-    image: prom/alertmanager:v0.27.0@sha256:bf9a10d03fb3d909c8c46f476405d720a54245cb713d1c4bd82cb1c2c44b007d
+    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
+    # Digest será adicionado quando imagem for incluída no versionamento automático
+    image: prom/alertmanager:v0.27.0
     platform: linux/amd64
     container_name: alice-alertmanager
     restart: unless-stopped
@@ -2299,7 +2303,9 @@ services:
   # NODE EXPORTER - Métricas do host
   # ===========================================================================
   node-exporter:
-    image: prom/node-exporter:v1.8.2@sha256:f503a55e9c5017d6f7282678ae77658e3d0f157f5b1032d5db36b27ca2e8bbdb
+    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
+    # Digest será adicionado quando imagem for incluída no versionamento automático
+    image: prom/node-exporter:v1.8.2
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped

@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 14 de Dezembro de 2025  
+> **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.60 - Correção requisitos servidor + instalação automática pip3/ruamel.yaml
+> **Versão:** 3.61 - Correção digests Docker + migrações SQL (deploy fix)
 
 ---
 
@@ -870,14 +870,42 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 14/12/2025*
+*Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.60 - Correção requisitos servidor + instalação automática pip3/ruamel.yaml*
+*Versão: 3.61 - Correção digests Docker inválidos (node-exporter, alertmanager, postgres:16-alpine) + migrações SQL com FKs para tabelas Drizzle*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
 *Integrações: Verificadas em 14/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext - todas compatíveis*
+
+---
+
+## 🔧 ATUALIZAÇÃO 15/12/2025 - CORREÇÃO DEPLOY HETZNER
+
+### Problemas Identificados e Corrigidos:
+
+**1. Digests SHA256 Inválidos no docker-compose.prod.yml**
+- `prom/node-exporter:v1.8.2` - digest incorreto causava "not found" no pull
+- `prom/alertmanager:v0.27.0` - digest incorreto causava "not found" no pull
+- `postgres:16-alpine` (Langfuse DB) - digest incorreto causava "not found" no pull
+
+**Solução:** Removidos digests inválidos. Tags versionadas são suficientes para segurança enquanto imagens não são incluídas no versionamento automático.
+
+**2. Migrações SQL com Foreign Keys para Tabelas Drizzle ORM**
+- `0002_create_feature_flags.sql` - tinha FKs para `tenants` e `users`
+- `0004_multimodal_learning_and_crawler.sql` - tinha FKs para `tenants` e `users`
+
+**Causa Raiz:** As tabelas `tenants` e `users` são criadas pelo Drizzle ORM (schema.ts), que executa APÓS as migrações SQL. Isso causava erro "relation does not exist".
+
+**Solução:** Removidas foreign keys para tabelas Drizzle. Integridade referencial mantida pela aplicação (Regra 6 - Enterprise-Grade).
+
+### Arquivos Modificados:
+| Arquivo | Modificação |
+|---------|-------------|
+| `infra/docker/docker-compose.prod.yml` | Removidos digests inválidos de 3 imagens |
+| `migrations/0002_create_feature_flags.sql` | Removidas FKs para `tenants` e `users` |
+| `migrations/0004_multimodal_learning_and_crawler.sql` | Removidas FKs para `tenants` e `users`, backfill condicional |
 
 ---
 

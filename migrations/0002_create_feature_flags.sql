@@ -10,17 +10,24 @@
 
 -- ============================================================================
 -- TABELA: feature_flags
+-- NOTA (15/12/2025): Foreign keys para tenants/users removidas porque essas 
+-- tabelas são criadas pelo Drizzle ORM APÓS as migrações SQL. A integridade
+-- referencial é mantida pela aplicação (Regra 6 - Enterprise-Grade).
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS feature_flags (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tenant_id UUID REFERENCES tenants(id) ON DELETE CASCADE,
+    -- NOTA: tenant_id é UUID sem FK para tenants (criada pelo Drizzle ORM)
+    -- Integridade referencial mantida pela aplicação
+    tenant_id UUID,
     key VARCHAR(100) NOT NULL,
     enabled BOOLEAN NOT NULL DEFAULT false,
     description TEXT,
     metadata JSONB DEFAULT '{}',
-    created_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
-    updated_by VARCHAR(255) REFERENCES users(id) ON DELETE SET NULL,
+    -- NOTA: created_by/updated_by são VARCHAR sem FK para users (criada pelo Drizzle ORM)
+    -- Integridade referencial mantida pela aplicação
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255),
     criado_em TIMESTAMP DEFAULT NOW(),
     atualizado_em TIMESTAMP DEFAULT NOW()
 );
