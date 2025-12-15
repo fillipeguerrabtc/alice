@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.66 - Deploy Idempotente com Captura Correta de Exit Code
+> **Versão:** 3.67 - Deploy com Ordem Correta de Operações
 
 ---
 
@@ -872,7 +872,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.66 - Deploy Idempotente: run_migration_critical() captura exit code do psql corretamente (não do grep) para falha hard real*
+*Versão: 3.67 - Deploy corrigido: diretórios de secrets criados ANTES de mover arquivos + exit code do psql capturado corretamente*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -936,7 +936,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | `infra/docker/docker-compose.prod.yml` | Removidos digests inválidos de 3 imagens |
 | `migrations/0002_create_feature_flags.sql` | DROP POLICY IF EXISTS + removidas FKs |
 | `migrations/0004_multimodal_learning_and_crawler.sql` | 100% idempotente (v1.2) + task_status enum |
-| `.github/workflows/deploy-production.yml` | Migrações idempotentes + execução da 0004 |
+| `.github/workflows/deploy-production.yml` | Ordem correta: secrets dir → mover secrets → bind mounts |
 
 ---
 

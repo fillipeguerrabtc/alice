@@ -1883,11 +1883,30 @@ jobs:
           script: |
             set -e
             
-            # Preparar secrets (langfuse-db e alertmanager SMTP)
+            # ==========================================================
+            # ETAPA 1: CRIAR ESTRUTURA DE DIRETÓRIOS PRIMEIRO
+            # IMPORTANTE: Diretórios devem existir ANTES de mover secrets
+            # ==========================================================
+            echo "📁 Criando estrutura de diretórios (pré-requisito para secrets)..."
+            
+            # Diretórios principais (incluindo secrets - obrigatório ANTES de mover arquivos)
+            mkdir -p /opt/alice/{app,data,logs,backups,uploads,secrets}
             mkdir -p /opt/alice/secrets/alertmanager
+            
+            # Permissões para secrets (700 - apenas owner)
+            chmod -R 700 /opt/alice/secrets
+            
+            echo "✅ Diretórios de secrets criados"
+            
+            # ==========================================================
+            # ETAPA 2: MOVER SECRETS (diretórios já existem)
+            # ==========================================================
+            echo "🔐 Preparando secrets (langfuse-db e alertmanager SMTP)..."
+            
             if [ -f /tmp/langfuse_db_password ]; then
               mv /tmp/langfuse_db_password /opt/alice/secrets/langfuse_db_password
               chmod 600 /opt/alice/secrets/langfuse_db_password
+              echo "  ✓ langfuse_db_password movido"
             else
               echo "::error::Arquivo /tmp/langfuse_db_password não encontrado. Verifique o passo de SCP." >&2
               exit 1
@@ -1895,10 +1914,13 @@ jobs:
             if [ -f /tmp/alertmanager_smtp_password ]; then
               mv /tmp/alertmanager_smtp_password /opt/alice/secrets/alertmanager/smtp_password
               chmod 600 /opt/alice/secrets/alertmanager/smtp_password
+              echo "  ✓ alertmanager_smtp_password movido"
             else
               echo "::error::Arquivo /tmp/alertmanager_smtp_password não encontrado. Verifique o passo de SCP." >&2
               exit 1
             fi
+            
+            echo "✅ Secrets preparados"
             
             # Variáveis já injetadas via envs do ssh-action
             export IMAGE_PREFIX="${IMAGE_PREFIX}"
@@ -2043,11 +2065,9 @@ jobs:
             # CRIAR ESTRUTURA COMPLETA DE DIRETÓRIOS (Enterprise - Regra 6)
             # IMPORTANTE: Todos os diretórios usados por bind mounts no
             # docker-compose.prod.yml DEVEM ser criados ANTES do docker compose up
+            # NOTA: /opt/alice/secrets já criado na ETAPA 1 (antes de mover secrets)
             # ==========================================================
-            echo "📁 Criando estrutura de diretórios..."
-            
-            # Diretórios principais
-            mkdir -p /opt/alice/{app,data,logs,backups,uploads,secrets}
+            echo "📁 Criando estrutura de diretórios para bind mounts..."
             
             # Subdiretórios de data (volumes Docker bind mounts)
             mkdir -p /opt/alice/data/postgres
@@ -2072,15 +2092,12 @@ jobs:
             mkdir -p /opt/alice/backups/postgresql
             mkdir -p /opt/alice/backups/postgresql/logs
             
-            # Subdiretórios de secrets
-            mkdir -p /opt/alice/secrets/alertmanager
-            
-            # Permissões enterprise (750 para diretórios)
+            # Permissões enterprise (750 para diretórios de dados, logs, backups)
+            # NOTA: /opt/alice/secrets já tem permissões 700 aplicadas na ETAPA 1
             chmod -R 750 /opt/alice/data
             chmod -R 750 /opt/alice/logs
             chmod -R 750 /opt/alice/backups
             chmod -R 750 /opt/alice/uploads
-            chmod -R 700 /opt/alice/secrets
             
             echo "✅ Estrutura de diretórios criada"
             
