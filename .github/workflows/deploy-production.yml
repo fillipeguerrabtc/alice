@@ -2328,8 +2328,9 @@ jobs:
             
             echo "Executando migrações do banco de dados (idempotentes)..."
             
-            # Função helper para executar migration de forma idempotente
-            run_migration() {
+            # Função helper para executar migration de forma idempotente (não-crítica)
+            # Usada para migrações que podem já estar aplicadas parcialmente
+            run_migration_idempotent() {
               local migration_file="$1"
               local migration_name="$2"
               
@@ -2348,19 +2349,49 @@ jobs:
               fi
             }
             
-            # Migration 0001: RLS Security Enterprise
-            run_migration "../../migrations/0001_rls_security_enterprise.sql" "0001_rls_security_enterprise"
+            # Função para executar migration CRÍTICA com falha hard
+            # Usada para migrações que DEVEM ser executadas com sucesso
+            run_migration_critical() {
+              local migration_file="$1"
+              local migration_name="$2"
+              
+              if [ ! -f "$migration_file" ]; then
+                echo "❌ ERRO CRÍTICO: $migration_name não encontrada!"
+                echo "   Esta migration é OBRIGATÓRIA e o deploy NÃO pode continuar sem ela."
+                exit 1
+              fi
+              
+              echo "  → Executando $migration_name (CRÍTICA)..."
+              # psql com ON_ERROR_STOP=1 para falhar em qualquer erro real
+              # Apenas NOTICE são filtrados (mensagens informativas do PostgreSQL)
+              if ! docker compose -f docker-compose.prod.yml \
+                --env-file .env.prod \
+                exec -T postgres psql -U alice -d alice_prod \
+                -v ON_ERROR_STOP=1 \
+                -f /dev/stdin < "$migration_file" 2>&1 | grep -v "NOTICE:"; then
+                echo "❌ ERRO CRÍTICO: Falha na execução de $migration_name"
+                echo "   Esta migration é OBRIGATÓRIA e o deploy NÃO pode continuar sem ela."
+                echo "   Verifique os logs do PostgreSQL acima para identificar o problema."
+                exit 1
+              fi
+              echo "  ✓ $migration_name aplicada (CRÍTICA)"
+            }
             
-            # Migration 0002: Feature Flags
-            run_migration "../../migrations/0002_create_feature_flags.sql" "0002_create_feature_flags"
+            # Migration 0001: RLS Security Enterprise (idempotente)
+            run_migration_idempotent "../../migrations/0001_rls_security_enterprise.sql" "0001_rls_security_enterprise"
             
-            # Migration 0003: Update Embedding Dimensions to 768
-            run_migration "../../migrations/0003_update_embedding_dimensions_768.sql" "0003_update_embedding_dimensions_768"
+            # Migration 0002: Feature Flags (idempotente)
+            run_migration_idempotent "../../migrations/0002_create_feature_flags.sql" "0002_create_feature_flags"
             
-            # Migration 0004: Multimodal Learning and Crawler
-            run_migration "../../migrations/0004_multimodal_learning_and_crawler.sql" "0004_multimodal_learning_and_crawler"
+            # Migration 0003: Update Embedding Dimensions to 768 (CRÍTICA!)
+            # OBRIGATÓRIA: DEVE ser executada ANTES do deploy do código que usa vector(768)
+            # Caso contrário, haverá erro de incompatibilidade de dimensões nas queries SQL
+            run_migration_critical "../../migrations/0003_update_embedding_dimensions_768.sql" "0003_update_embedding_dimensions_768"
             
-            echo "✅ Todas as migrações processadas (idempotentes)"
+            # Migration 0004: Multimodal Learning and Crawler (idempotente)
+            run_migration_idempotent "../../migrations/0004_multimodal_learning_and_crawler.sql" "0004_multimodal_learning_and_crawler"
+            
+            echo "✅ Todas as migrações processadas"
             
             # Deploy baseado nos serviços selecionados
             case "${DEPLOY_SERVICES}" in
