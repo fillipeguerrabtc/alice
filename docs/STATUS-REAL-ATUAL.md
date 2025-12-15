@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 15 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.71 - Arquitetura 100% GPU Multimodal (Salad Cloud - 1024 dim)
+> **Versão:** 3.72 - Arquitetura 100% GPU + Estratégia "Warm on Demand" (30 min keep-warm)
 
 ---
 
@@ -109,15 +109,29 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | pgvector (busca semântica) | ✅ | `index.ts` |
-| Image Processing (CLIP) | ✅ | `image-processor.ts` |
-| Audio Processing (Arquitetura Híbrida) | ✅ | `audio-processor.ts` (GPU Salad + fallback CPU) |
-| Video Processing (FFmpeg+faster-whisper+CLIP) | ✅ | `video-processor.ts` |
-| Document Processing (PDF/DOCX/XLSX) | ✅ | `document-processor.ts` |
+| Image Processing (OpenCLIP ViT-H/14, 1024 dim) | ✅ | `image-processor.ts` |
+| Audio Processing (Whisper GPU, BGE-M3 1024 dim) | ✅ | `audio-processor.ts` |
+| Video Processing (Whisper GPU + OpenCLIP GPU) | ✅ | `video-processor.ts` |
+| Document Processing (BGE-M3 GPU, 1024 dim) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
 | Multer Upload | ✅ | `index.ts` |
-| Circuit Breakers | ✅ | Multimodal Inference (clip-inference-service) |
+| Circuit Breakers | ✅ | GPU Embeddings (embeddings-gpu) |
 | Prometheus Metrics | ✅ | `/metrics` |
+| **Embedding Queue (Redis)** | ✅ | `embedding-queue.ts` |
+| **Embedding Worker** | ✅ | `workers/embedding-worker.ts` |
+| **WebSocket Notificações** | ✅ | `embedding-websocket.ts` (path: `/ws/embeddings`) |
+| **Estratégia Warm on Demand** | ✅ | Keep-warm 30 min após último uso |
+
+#### Endpoints de Embedding Assíncrono (Warm on Demand)
+
+| Endpoint | Método | Descrição |
+|----------|--------|-----------|
+| `/api/rag/embeddings/queue` | POST | Enfileira job de embedding (retorna jobId) |
+| `/api/rag/embeddings/queue/:jobId` | GET | Consulta status/resultado de um job |
+| `/api/rag/embeddings/queue/stats` | GET | Estatísticas da fila, worker e WebSocket |
+| `/api/rag/circuit-breaker/embeddings` | GET | Status dos circuit breakers GPU |
+| `/ws/embeddings` | WebSocket | Notificações em tempo real |
 
 > **Nota (Readiness enterprise):** O `video-processor` valida prontidão real dos processadores (`audio-processor` e `image-processor`) usando `isReadyAsync()` (contrato explícito `Promise<boolean>`) e evita falso-positivo ao nunca tratar `Promise<boolean>` como boolean. Para compatibilidade, `image-processor.isReady()` voltou a ser **síncrono** (apenas “configurado”), e o readiness real fica em `isReadyAsync()`. Além disso, cada processor valida **apenas** as capabilities necessárias no `clip-inference-service`:
 > - `image-processor` → `GET /ready/clip`

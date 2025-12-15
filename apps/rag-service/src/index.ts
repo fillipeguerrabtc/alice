@@ -44,7 +44,18 @@ import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
 import { resolveClipServiceUrl } from './clip-service-url.js';
 import { getStorageService } from './storage.js';
-import { getImageProcessor, CLIP_EMBEDDING_DIM, getClipCircuitBreakerStatus } from './image-processor.js';
+import { getImageProcessor, CLIP_EMBEDDING_DIM, getGpuCircuitBreakerStatus } from './image-processor.js';
+import { startEmbeddingWorker, getEmbeddingWorkerStatus } from './workers/embedding-worker.js';
+import {
+  enqueueEmbeddingJob,
+  getEmbeddingJobStatus,
+  getEmbeddingQueueStats,
+  isQueueAvailable,
+  isGpuWarm,
+  getGpuWarmUntil,
+  type EmbeddingJobType,
+} from './embedding-queue.js';
+import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
 import { getVideoProcessor } from './video-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
@@ -720,7 +731,11 @@ if (WORKER_TENANT_ID) {
     searxngKey: SEARXNG_SECRET_KEY,
   });
 
-  logger.info({ tenantId: WORKER_TENANT_ID }, 'Workers multimodais iniciados');
+  // Embedding Worker - Estratégia "Warm on Demand" (30 min keep-warm)
+  // Processa embeddings assíncronos via fila Redis
+  startEmbeddingWorker({ metrics });
+
+  logger.info({ tenantId: WORKER_TENANT_ID }, 'Workers multimodais iniciados (incluindo embedding-worker)');
 } else {
   logger.info('Workers desativados: defina WORKER_TENANT_ID para habilitar processamento em background');
 }
@@ -3026,16 +3041,186 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
   }
 });
 
-// Status do circuit breaker CLIP (Regra 16 - Observability)
-app.get('/api/rag/circuit-breaker/clip', (_req: Request, res: Response) => {
-  const clipStatus = getClipCircuitBreakerStatus();
+// Status do circuit breaker GPU Embeddings (Regra 16 - Observability)
+app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) => {
+  const gpuStatus = getGpuCircuitBreakerStatus();
   
   res.json({
-    service: 'clip-embeddings',
+    service: 'embeddings-gpu',
     timestamp: new Date().toISOString(),
-    circuitBreaker: clipStatus,
+    circuitBreakers: gpuStatus,
   });
 });
+
+// ============================================================================
+// EMBEDDING QUEUE - Processamento Assíncrono (Warm on Demand)
+// ============================================================================
+
+/**
+ * Enfileira job de embedding para processamento assíncrono
+ * Retorna imediatamente com jobId para consulta posterior
+ */
+app.post('/api/rag/embeddings/queue',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = getAuthUser(req);
+      
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant não identificado' });
+      }
+      
+      if (!isQueueAvailable()) {
+        return res.status(503).json({ 
+          error: 'Fila de embeddings não disponível',
+          detail: 'Redis não está conectado',
+        });
+      }
+      
+      const body = req.body as {
+        type: EmbeddingJobType;
+        text?: string;
+        texts?: string[];
+        imageBase64?: string;
+        imagesBase64?: string[];
+        priority?: number;
+        metadata?: {
+          source?: string;
+          correlationId?: string;
+          originalFilename?: string;
+        };
+      };
+      
+      if (!body.type) {
+        return res.status(400).json({ error: 'Campo "type" é obrigatório' });
+      }
+      
+      // Validar input conforme o tipo
+      if ((body.type === 'text' || body.type === 'text-for-image') && !body.text) {
+        return res.status(400).json({ error: 'Campo "text" é obrigatório para este tipo' });
+      }
+      
+      if (body.type === 'image' && !body.imageBase64) {
+        return res.status(400).json({ error: 'Campo "imageBase64" é obrigatório para este tipo' });
+      }
+      
+      if (body.type === 'batch-text' && (!body.texts || body.texts.length === 0)) {
+        return res.status(400).json({ error: 'Campo "texts" é obrigatório para batch de texto' });
+      }
+      
+      if (body.type === 'batch-image' && (!body.imagesBase64 || body.imagesBase64.length === 0)) {
+        return res.status(400).json({ error: 'Campo "imagesBase64" é obrigatório para batch de imagens' });
+      }
+      
+      const jobId = await enqueueEmbeddingJob({
+        type: body.type,
+        tenantId,
+        userId: getAuthUser(req).id,
+        priority: body.priority ?? 5,
+        input: {
+          text: body.text,
+          texts: body.texts,
+          imageBase64: body.imageBase64,
+          imagesBase64: body.imagesBase64,
+        },
+        metadata: body.metadata,
+      });
+      
+      const gpuWarmUntil = getGpuWarmUntil();
+      
+      logger.info({
+        jobId,
+        type: body.type,
+        tenantId,
+        gpuWarm: isGpuWarm(),
+      }, 'Job de embedding enfileirado');
+      
+      res.status(202).json({
+        jobId,
+        status: 'pending',
+        message: 'Job enfileirado para processamento',
+        gpuStatus: {
+          warm: isGpuWarm(),
+          warmUntil: gpuWarmUntil?.toISOString() || null,
+          estimatedWaitMs: isGpuWarm() ? 1000 : 30000, // 1s se warm, 30s se cold
+        },
+        statusUrl: `/api/rag/embeddings/queue/${jobId}`,
+      });
+    } catch (error) {
+      logger.error({ error }, 'Erro ao enfileirar job de embedding');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
+
+/**
+ * Consulta status de um job de embedding
+ */
+app.get('/api/rag/embeddings/queue/:jobId',
+  requireAuth,
+  async (req: Request, res: Response) => {
+    try {
+      const { tenantId } = getAuthUser(req);
+      const { jobId } = req.params;
+      
+      if (!tenantId) {
+        return res.status(401).json({ error: 'Tenant não identificado' });
+      }
+      
+      const job = await getEmbeddingJobStatus(jobId);
+      
+      if (!job) {
+        return res.status(404).json({ error: 'Job não encontrado' });
+      }
+      
+      // Verificar isolamento de tenant
+      if (job.tenantId !== tenantId) {
+        return res.status(403).json({ error: 'Acesso negado a este job' });
+      }
+      
+      res.json({
+        jobId: job.id,
+        type: job.type,
+        status: job.status,
+        createdAt: job.createdAt,
+        startedAt: job.startedAt,
+        completedAt: job.completedAt,
+        error: job.error,
+        result: job.status === 'completed' ? job.result : undefined,
+        metadata: job.metadata,
+      });
+    } catch (error) {
+      logger.error({ error }, 'Erro ao consultar job de embedding');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
+
+/**
+ * Estatísticas da fila de embeddings e WebSocket
+ */
+app.get('/api/rag/embeddings/queue/stats',
+  requireAuth,
+  async (_req: Request, res: Response) => {
+    try {
+      const queueStats = await getEmbeddingQueueStats();
+      const workerStatus = await getEmbeddingWorkerStatus();
+      const wsStats = getWebSocketStats();
+      
+      res.json({
+        queue: queueStats,
+        worker: workerStatus,
+        websocket: wsStats,
+        strategy: 'warm-on-demand',
+        keepWarmMinutes: 30,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error({ error }, 'Erro ao obter estatísticas da fila');
+      res.status(500).json({ error: 'Erro interno do servidor' });
+    }
+  }
+);
 
 // ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
@@ -3054,11 +3239,17 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: true, // Embeddings sempre locais (Regra 6 - Autonomia Total)
-    clipServiceUrl: CLIP_SERVICE_URL,
+    embeddingsConfigured: true,
+    embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
     circuitBreaker: 'enabled',
-  }, 'RAG service iniciado com Circuit Breaker e embeddings locais');
+    strategy: 'warm-on-demand',
+    keepWarmMinutes: 30,
+  }, 'RAG service iniciado - Arquitetura 100% GPU com Warm on Demand');
 });
+
+// Inicializar WebSocket para notificações de embeddings
+initEmbeddingWebSocket(server);
+logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
 server.timeout = 60000; // 60s para processamento de embeddings/uploads
@@ -3086,6 +3277,16 @@ registerShutdownCallback(
         }
       });
     });
+  },
+  { priority: ShutdownPriority.HTTP_SERVER }
+);
+
+registerShutdownCallback(
+  'rag-websocket-server',
+  async () => {
+    logger.info('Encerrando WebSocket server...');
+    closeEmbeddingWebSocket();
+    logger.info('WebSocket server encerrado com sucesso');
   },
   { priority: ShutdownPriority.HTTP_SERVER }
 );

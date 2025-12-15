@@ -88,6 +88,16 @@ Alice employs a microservices architecture with 43 containerized services orches
 - **Embeddings de Imagem**: OpenCLIP ViT-H/14 (GPU Salad, 1024 dim) - GPU OBRIGATÓRIO
 - **Transcrição de Áudio**: faster-whisper large-v3 (GPU Salad)
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6 - schema usa vector(1024))
+- **Estratégia "Warm on Demand"**: GPUs mantidas quentes por 30 minutos após último uso
+
+### Estratégia de GPU "Warm on Demand" (15/12/2025)
+Otimização de custos para GPUs Salad Cloud:
+- **Fila Redis**: Processamento assíncrono de embeddings (`embedding-queue.ts`)
+- **Worker dedicado**: `embedding-worker.ts` processa fila em background
+- **Keep-warm 30 min**: GPU mantida ativa por 30 minutos após último uso
+- **WebSocket**: Notificações em tempo real quando embedding está pronto (`/ws/embeddings`)
+- **Endpoints assíncronos**: `POST /api/rag/embeddings/queue` retorna `jobId` imediatamente
+- **Benefícios**: Cold start apenas no primeiro request; custo proporcional ao uso real
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -314,7 +324,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.45 - 15 de Dezembro de 2025*
+*Versão: 3.46 - 15 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -323,5 +333,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*
+*Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + WebSocket para notificações*
 *Salad Cloud: LLM inference, image generation, fine-tuning, embeddings-gpu, whisper-gpu*
 *Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + build-media-images (manual)*
