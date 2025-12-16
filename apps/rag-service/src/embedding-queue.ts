@@ -314,10 +314,11 @@ export async function completeEmbeddingJob(
   touchGpuWarm();
   await client.set(`${STATS_KEY}:lastActivity`, new Date().toISOString());
   
+  // Log com verificação de result (pode ser undefined se job foi completado sem resultado)
   logger.info({
     jobId,
-    processingTimeMs: result.processingTimeMs,
-    dimension: result.dimension,
+    processingTimeMs: result?.processingTimeMs,
+    dimension: result?.dimension,
   }, 'Job de embedding completado');
 }
 

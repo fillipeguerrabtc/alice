@@ -160,9 +160,10 @@ async function callGpuBatchApi(params: GpuBatchParams): Promise<GpuResponse> {
 }
 
 // Circuit breakers serão criados no start do worker
-let gpuTextBreaker: ReturnType<typeof createCircuitBreaker<GpuTextParams, GpuResponse>> | null = null;
-let gpuImageBreaker: ReturnType<typeof createCircuitBreaker<GpuImageParams, GpuResponse>> | null = null;
-let gpuBatchBreaker: ReturnType<typeof createCircuitBreaker<GpuBatchParams, GpuResponse>> | null = null;
+// Tipos corrigidos: TArgs deve ser array (tuple) para createCircuitBreaker<TArgs extends unknown[], TResult>
+let gpuTextBreaker: ReturnType<typeof createCircuitBreaker<[GpuTextParams], GpuResponse>> | null = null;
+let gpuImageBreaker: ReturnType<typeof createCircuitBreaker<[GpuImageParams], GpuResponse>> | null = null;
+let gpuBatchBreaker: ReturnType<typeof createCircuitBreaker<[GpuBatchParams], GpuResponse>> | null = null;
 
 // ============================================================================
 // PROCESSAMENTO DE JOBS

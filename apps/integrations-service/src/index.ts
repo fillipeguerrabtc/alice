@@ -2165,10 +2165,11 @@ async function processWhatsAppMediaForRAG(
     const mediaType = isImage ? 'image' : isAudio ? 'audio' : 'video';
     
     // Gerar headers de autenticação interna
+    // AuthContext usa 'role' (singular), não 'roles'
     const internalHeaders = generateInternalAuthHeaders({
       userId,
       tenantId,
-      roles: ['user'],
+      role: 'user',
     });
     
     // Passo 2: Enviar para RAG Service via endpoint JSON (mais eficiente para base64)
