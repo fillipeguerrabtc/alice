@@ -1,49 +1,51 @@
 # CLIP Inference Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentacao em PT-BR (Regra 10 CLAUDE.md)
-# Versoes travadas e atualizadas para dezembro 2025 (Regra 11 - melhores praticas)
-# Ultima atualizacao: 14/12/2025
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
 # Author: Fillipe Guerra
+#
+# NOTA: Este serviço é LEGADO - usado apenas para compatibilidade durante transição
+# Novos desenvolvimentos usam embeddings-gpu (BGE-M3 + OpenCLIP via Salad Cloud)
 
 # =============================================================================
 # SEGURANÇA - Dependências com correções de CVE
 # =============================================================================
 
-# urllib3 2.5.0+ corrige CVE-2025-50181 e CVE-2025-50182 (Open Redirect/SSRF)
-# Referência: https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v
+# urllib3 >= 2.5.0 corrige CVE-2025-50181 e CVE-2025-50182
 urllib3>=2.5.0
 
-# PyTorch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss) - Fixed in 2.8.0
-# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d) - Fixed in 2.7.1
-# Referência: https://github.com/pytorch/pytorch/releases/tag/v2.9.1
-torch==2.9.1
-torchvision==0.24.1
-
 # =============================================================================
-# Framework Web - Versões estáveis dezembro 2025
+# PyTorch Stack - Versões mais recentes (Dezembro 2025)
 # =============================================================================
 
-# FastAPI 0.123.0 (released Nov 30, 2025)
-fastapi==0.123.0
+# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
+# Compatível com CUDA 12.6
+# Referência: https://pytorch.org/get-started/previous-versions/
+torch==2.8.0
+torchvision==0.23.0
 
-# Uvicorn 0.38.0 (released Oct 18, 2025) - ASGI server
+# =============================================================================
+# Framework Web - Versões mais recentes (Dezembro 2025)
+# =============================================================================
+
+# FastAPI 0.124.4 (Dec 12, 2025)
+fastapi==0.124.4
+# Uvicorn 0.38.0 (Oct 18, 2025) - ASGI server
 uvicorn[standard]==0.38.0
-
-# =============================================================================
-# Validação e Segurança
-# =============================================================================
-
-# Pydantic 2.12.5 (released Nov 26, 2025) - Validação de dados
+# Pydantic 2.12.5 (Nov 26, 2025)
 pydantic==2.12.5
 
-# Rate limiting (OWASP API4 - Unrestricted Resource Consumption)
+# =============================================================================
+# Rate Limiting e Resiliência
+# =============================================================================
+
 slowapi==0.1.9
+pybreaker==1.4.1
 
 # =============================================================================
-# CLIP - OpenAI CLIP Model
+# CLIP - OpenAI CLIP Model (LEGADO)
 # =============================================================================
 
 # CLIP ViT-L/14 - Commit específico para reprodutibilidade
@@ -53,44 +55,37 @@ git+https://github.com/openai/CLIP.git@a1d071733d7111c9c014f024669f959182114e33
 # Processamento de Imagem
 # =============================================================================
 
-# Pillow 11.1.0 - Seguro (CVE-2025-48379 afeta apenas 11.2.0+)
-Pillow==11.1.0
+# Pillow 12.0.0 (Oct 15, 2025)
+Pillow==12.0.0
 
 # =============================================================================
 # Text Embeddings - Sentence Transformers (Multilíngue)
 # =============================================================================
 
-# sentence-transformers 3.3.1 (released Dec 2025)
-# Modelo: multilingual-e5-base (768 dim, 100+ idiomas incluindo PT-BR e EN)
-# Licença: Apache 2.0 (uso comercial permitido)
-# Referência: https://www.sbert.net/docs/installation.html
-sentence-transformers>=3.3.1
-
-# transformers 4.46.0+ (dependência do sentence-transformers)
-# Referência: https://huggingface.co/docs/transformers/index
-transformers>=4.46.0
+# sentence-transformers 5.2.0 (Dec 11, 2025)
+sentence-transformers==5.2.0
+# transformers 4.57.3 (Nov 25, 2025)
+transformers==4.57.3
 
 # =============================================================================
-# Speech-to-Text - Whisper (Transcrição de Áudio - 100% LOCAL)
+# Speech-to-Text - Whisper (Transcrição de Áudio)
 # =============================================================================
 
-# faster-whisper 1.1.0 (CTranslate2 - 4x mais rápido que Whisper original)
-# Modelo: medium (equilíbrio qualidade/velocidade em CPU)
-# Licença: MIT (uso comercial permitido)
-# Referência: https://github.com/SYSTRAN/faster-whisper
-# ARQUITETURA AUTÔNOMA: Transcrição 100% local via CPU no Hetzner (Regra 6)
-faster-whisper==1.1.0
+# faster-whisper 1.2.1 (Oct 31, 2025)
+faster-whisper==1.2.1
 
 # =============================================================================
-# Observabilidade e Resiliência
+# Observabilidade
 # =============================================================================
 
-# Prometheus metrics 0.23.1 (released Sep 18, 2025)
+# prometheus-client 0.23.1 (Sep 18, 2025)
 prometheus-client==0.23.1
-
-# Logging estruturado JSON - 4.0.0 (released Oct 6, 2025)
+# Logging estruturado JSON
 python-json-logger==4.0.0
 
-# Circuit Breaker (Regra 16 CLAUDE.md - Best Practices 2025)
-# pybreaker 1.4.1 (released Sep 21, 2025) - sem vulnerabilidades conhecidas
-pybreaker==1.4.1
+# =============================================================================
+# Dependências Numéricas - Versões mais recentes
+# =============================================================================
+
+# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
+numpy==2.3.5

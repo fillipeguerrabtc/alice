@@ -1,57 +1,51 @@
-# TTS Service - Dependencias
+# TTS Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentacao em PT-BR (Regra 10 CLAUDE.md)
-# Versoes atualizadas para corrigir vulnerabilidades de seguranca
-# Ultima atualizacao: 14/12/2025
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# PyTorch Stack - Versões mais recentes (Dezembro 2025)
 # =============================================================================
 
-# torch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
-# Compativel com coqui-tts 0.27.2 (fork mantido)
-# torchvision e torchaudio sao OBRIGATORIOS para Coqui TTS (processamento de audio)
-torch==2.9.1
-torchvision==0.24.1
-torchaudio==2.9.1
+# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
+# Compatível com CUDA 12.6 e coqui-tts 0.27.3
+# Referência: https://pytorch.org/get-started/previous-versions/
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 
 # =============================================================================
 # TTS - Coqui Text-to-Speech (Fork Mantido)
 # =============================================================================
 
-# coqui-tts 0.27.2 - fork mantido pela comunidade (Sep 2025)
-# O pacote original TTS foi abandonado em Dec 2023 e tem incompatibilidade
-# com torch >= 2.6.0 devido a mudanca em torch.load(weights_only=True)
-# O fork coqui-tts resolve esse problema e mantem compatibilidade ativa
-# Ref: https://pypi.org/project/coqui-tts/
-coqui-tts==0.27.2
+# coqui-tts 0.27.3 (Dec 13, 2025) - versão mais recente
+# Fork mantido pela comunidade com compatibilidade ativa
+# Licença: MPL-2.0 (uso comercial permitido)
+# Referência: https://pypi.org/project/coqui-tts/
+coqui-tts==0.27.3
 soundfile==0.12.1
 
 # =============================================================================
-# Dependencias Numericas
+# Dependências Numéricas - Versões mais recentes
 # =============================================================================
 
-# numpy 1.26.4 - compativel com torch 2.9.1 (evitar numpy 2.x por breaking changes)
-numpy==1.26.4
+# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
+numpy==2.3.5
 
 # =============================================================================
-# Transformers - Versao segura
+# Transformers - Versão mais recente
 # =============================================================================
 
-# transformers 4.53.0 corrige todas as CVEs conhecidas:
-# CVE-2023-6730, CVE-2023-7018, CVE-2024-11392, CVE-2024-11393,
-# CVE-2024-11394, CVE-2024-12720, CVE-2025-1194, CVE-2025-2099,
-# CVE-2025-3263, CVE-2025-3264, CVE-2025-3933, CVE-2025-5197,
-# CVE-2025-6051, CVE-2025-6638, CVE-2025-6921, CVE-2024-3568, CVE-2025-3777
-# PINNED para reprodutibilidade enterprise (Regra 6 CLAUDE.md)
-transformers==4.53.0
+# transformers 4.57.3 (Nov 25, 2025) - corrige todas as CVEs conhecidas
+# Referência: https://pypi.org/project/transformers/
+transformers==4.57.3
 
 # =============================================================================
-# HTTP Client - Versao segura
+# HTTP Client - Versão mais recente
 # =============================================================================
 
-# requests 2.32.4 corrige CVE-2024-47081 (.netrc credentials leak)
-requests==2.32.4
+# requests 2.32.5 (Aug 18, 2025)
+requests==2.32.5

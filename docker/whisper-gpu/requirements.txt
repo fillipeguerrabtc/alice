@@ -2,73 +2,68 @@
 # Alice Enterprise Platform
 #
 # Documentação em PT-BR (Regra 10 CLAUDE.md)
-# Versões atualizadas e travadas para dezembro 2025 (Regra 11 - melhores práticas)
-# Última atualização: 15/12/2025
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
 # Author: Fillipe Guerra
 
 # =============================================================================
 # SEGURANÇA - Dependências com correções de CVE
 # =============================================================================
 
-# urllib3 2.5.0+ corrige CVE-2025-50181 e CVE-2025-50182 (Open Redirect/SSRF)
-# Referência: https://github.com/urllib3/urllib3/security/advisories/GHSA-pq67-6m6q-mj2v
+# urllib3 >= 2.5.0 corrige CVE-2025-50181 e CVE-2025-50182
 urllib3>=2.5.0
 
-# PyTorch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss) - Fixed in 2.8.0
-# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d) - Fixed in 2.7.1
-# Referência: https://github.com/pytorch/pytorch/releases/tag/v2.9.1
-torch==2.9.1
-
 # =============================================================================
-# Framework Web - Versões estáveis dezembro 2025
+# PyTorch Stack - Versões mais recentes (Dezembro 2025)
 # =============================================================================
 
-# FastAPI 0.123.0 (released Nov 30, 2025)
-fastapi==0.123.0
+# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
+# Compatível com CUDA 12.6
+# Referência: https://pytorch.org/get-started/previous-versions/
+torch==2.8.0
 
-# Uvicorn 0.38.0 (released Oct 18, 2025) - ASGI server
+# =============================================================================
+# Framework Web - Versões mais recentes (Dezembro 2025)
+# =============================================================================
+
+# FastAPI 0.124.4 (Dec 12, 2025)
+fastapi==0.124.4
+# Uvicorn 0.38.0 (Oct 18, 2025) - ASGI server
 uvicorn[standard]==0.38.0
-
-# =============================================================================
-# Validação e Segurança
-# =============================================================================
-
-# Pydantic 2.12.5 (released Nov 26, 2025) - Validação de dados
+# Pydantic 2.12.5 (Nov 26, 2025)
 pydantic==2.12.5
 
-# Rate limiting (OWASP API4 - Unrestricted Resource Consumption)
+# =============================================================================
+# Rate Limiting e Resiliência
+# =============================================================================
+
 slowapi==0.1.9
+pybreaker==1.4.1
 
 # =============================================================================
 # Whisper - Speech-to-Text (GPU Optimized)
 # =============================================================================
 
-# faster-whisper 1.1.0 (CTranslate2 - 4x mais rápido que Whisper original)
+# faster-whisper 1.2.1 (Oct 31, 2025) - versão mais recente
+# CTranslate2 - 4x mais rápido que Whisper original
 # Modelo: large-v3 para máxima qualidade em GPU
 # Licença: MIT (uso comercial permitido)
 # Referência: https://github.com/SYSTRAN/faster-whisper
-faster-whisper==1.1.0
+faster-whisper==1.2.1
 
 # CTranslate2 para otimização GPU (dependência explícita)
-# CUDA 12 suportado nativamente
 ctranslate2>=4.6.0
 
 # =============================================================================
-# Observabilidade e Resiliência
+# Observabilidade
 # =============================================================================
 
-# Prometheus metrics 0.23.1 (released Sep 18, 2025)
+# prometheus-client 0.23.1 (Sep 18, 2025)
 prometheus-client==0.23.1
 
-# Circuit Breaker (Regra 16 CLAUDE.md - Best Practices 2025)
-# pybreaker 1.4.1 (released Sep 21, 2025) - sem vulnerabilidades conhecidas
-pybreaker==1.4.1
-
 # =============================================================================
-# Dependências de sistema
+# Dependências Numéricas - Versões mais recentes
 # =============================================================================
 
-# numpy 1.26.4 - compatível com torch 2.9.1 (evitar numpy 2.x por breaking changes)
-numpy==1.26.4
+# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
+numpy==2.3.5

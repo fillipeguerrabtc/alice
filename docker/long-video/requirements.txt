@@ -1,9 +1,9 @@
-# Long Video Service - Dependencias
+# Long Video Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentacao em PT-BR (Regra 10 CLAUDE.md)
-# Versoes atualizadas para corrigir vulnerabilidades de seguranca
-# Ultima atualizacao: 14/12/2025
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
 # Author: Fillipe Guerra
 
 # =============================================================================
@@ -13,15 +13,15 @@
 ffmpeg-python==0.2.0
 
 # =============================================================================
-# Dependencias Numericas
+# Dependências Numéricas - Versões mais recentes
 # =============================================================================
 
-# numpy 1.26.x para consistencia com demais servicos multimodais
-numpy==1.26.4
+# numpy 2.3.5 (Nov 16, 2025) - versão mais recente
+numpy==2.3.5
 
 # =============================================================================
-# HTTP Client - Versao segura
+# HTTP Client - Versão mais recente
 # =============================================================================
 
-# requests 2.32.4 corrige CVE-2024-47081 (.netrc credentials leak)
-requests==2.32.4
+# requests 2.32.5 (Aug 18, 2025)
+requests==2.32.5

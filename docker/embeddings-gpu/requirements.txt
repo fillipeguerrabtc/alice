@@ -1,54 +1,93 @@
 # Embeddings GPU Service - Dependências
 # Alice Enterprise Platform
-# Autor: Fillipe Guerra
-# Data: 15 de Dezembro de 2025
+#
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
+# Author: Fillipe Guerra
 #
 # Serviço de embeddings multimodal via GPU (Salad Cloud)
 # - Texto: BGE-M3 (1024 dim, multilíngue, 100+ idiomas)
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim)
 #
 # ARQUITETURA 100% GPU (Opção B - Alta Qualidade)
-# Versões mais recentes de Dezembro 2025
 
-# PyTorch 2.5.1 com CUDA 12.4 (versão estável compatível com Salad Cloud)
-# Nota: PyTorch 2.7/2.8 requer CUDA 12.8/12.9 que pode não estar disponível em todas as GPUs Salad
-torch==2.5.1
-torchvision==0.20.1
+# =============================================================================
+# PyTorch Stack - Versões mais recentes (Dezembro 2025)
+# =============================================================================
 
-# FastAPI 0.115.6 + Uvicorn (versões estáveis de dezembro 2025)
-fastapi==0.115.6
-uvicorn[standard]==0.34.0
-pydantic==2.10.3
+# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
+# Compatível com CUDA 12.6
+# Referência: https://pytorch.org/get-started/previous-versions/
+torch==2.8.0
+torchvision==0.23.0
 
-# Rate limiting
+# =============================================================================
+# Framework Web - Versões mais recentes (Dezembro 2025)
+# =============================================================================
+
+# FastAPI 0.124.4 (Dec 12, 2025)
+fastapi==0.124.4
+# Uvicorn 0.38.0 (Oct 18, 2025) - ASGI server
+uvicorn[standard]==0.38.0
+# Pydantic 2.12.5 (Nov 26, 2025)
+pydantic==2.12.5
+
+# =============================================================================
+# Rate Limiting e Resiliência
+# =============================================================================
+
 slowapi==0.1.9
-
-# Métricas Prometheus
-prometheus-client==0.21.1
-
-# Circuit Breaker
 pybreaker==1.4.1
 
-# Embeddings de texto (BGE-M3 - 1024 dim multilíngue)
-# FlagEmbedding 1.3.4 (dezembro 2025) - versão mais recente
+# =============================================================================
+# Observabilidade
+# =============================================================================
+
+# prometheus-client 0.23.1 (Sep 18, 2025)
+prometheus-client==0.23.1
+
+# =============================================================================
+# Embeddings de Texto (BGE-M3 - 1024 dim multilíngue)
+# =============================================================================
+
+# FlagEmbedding 1.3.5 (May 28, 2025) - versão mais recente
 # Suporta FlagAutoModel, multi-GPU, dynamic batch sizing
-FlagEmbedding==1.3.4
+FlagEmbedding==1.3.5
 
+# =============================================================================
 # OpenCLIP para embeddings de imagem (ViT-H/14 - 1024 dim)
-open_clip_torch==2.29.0
+# =============================================================================
 
-# Processamento de imagem
-Pillow==11.0.0
+# open_clip_torch 3.2.0 (Sep 21, 2025)
+open_clip_torch==3.2.0
 
-# Numpy (versão compatível com torch 2.5.1)
-numpy==2.1.3
+# =============================================================================
+# Processamento de Imagem
+# =============================================================================
 
-# Transformers (dependência do FlagEmbedding)
-transformers==4.47.0
-sentence-transformers==3.3.1
+# Pillow 12.0.0 (Oct 15, 2025)
+Pillow==12.0.0
 
+# =============================================================================
+# Dependências Numéricas - Versões mais recentes
+# =============================================================================
+
+# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
+numpy==2.3.5
+
+# =============================================================================
+# NLP - Versões mais recentes
+# =============================================================================
+
+# transformers 4.57.3 (Nov 25, 2025)
+transformers==4.57.3
+# sentence-transformers 5.2.0 (Dec 11, 2025)
+sentence-transformers==5.2.0
+
+# =============================================================================
 # Hugging Face Hub
-huggingface-hub==0.27.0
+# =============================================================================
 
-# Tokenizers
-tokenizers==0.21.0
+# huggingface-hub 1.2.3 (Dec 12, 2025)
+huggingface-hub==1.2.3

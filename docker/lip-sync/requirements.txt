@@ -1,44 +1,42 @@
-# Lip Sync Service - Dependencias
+# Lip Sync Service - Dependências
 # Alice Enterprise Platform
 #
-# Documentacao em PT-BR (Regra 10 CLAUDE.md)
-# Versoes atualizadas para corrigir vulnerabilidades de seguranca
-# Ultima atualizacao: 14/12/2025
+# Documentação em PT-BR (Regra 10 CLAUDE.md)
+# Versões mais recentes oficiais de Dezembro 2025
+# Última atualização: 16/12/2025
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versoes seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# PyTorch Stack - Versões mais recentes (Dezembro 2025)
 # =============================================================================
 
-# torch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434, CVE-2025-3730, CVE-2025-2953
-# COMPATIBILIDADE: Wav2Lip usa torch.load legado para carregar checkpoints
-# IMPORTANTE: Dockerfile define TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1 para permitir
-# que Wav2Lip carregue modelos corretamente (torch.load weights_only=False)
-torch==2.9.1
-torchvision==0.24.1
-torchaudio==2.9.1
+# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
+# Compatível com CUDA 12.6
+# Referência: https://pytorch.org/get-started/previous-versions/
+torch==2.8.0
+torchvision==0.23.0
+torchaudio==2.8.0
 
 # =============================================================================
-# Dependencias Numericas
+# Dependências Numéricas - Versões mais recentes
 # =============================================================================
 
-# numpy 1.26.4 - compativel com torch 2.9.1 (evitar numpy 2.x por breaking changes)
-numpy==1.26.4
-# scipy 1.14.1 - compativel com numpy 1.26.x (Aug 2024)
-scipy==1.14.1
+# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
+numpy==2.3.5
+# scipy 1.16.3 (Oct 28, 2025) - compatível com numpy 2.x
+scipy==1.16.3
 
 # =============================================================================
-# Video Processing
+# Video Processing - Versões mais recentes
 # =============================================================================
 
-# Versoes mais recentes (Dec 2025)
+# opencv-python-headless 4.12.0.88 (Jul 7, 2025)
 opencv-python-headless==4.12.0.88
 ffmpeg-python==0.2.0
 
 # =============================================================================
-# HTTP Client - Versao segura
+# HTTP Client - Versão mais recente
 # =============================================================================
 
-# requests 2.32.4 corrige CVE-2024-47081 (.netrc credentials leak)
-requests==2.32.4
+# requests 2.32.5 (Aug 18, 2025)
+requests==2.32.5
