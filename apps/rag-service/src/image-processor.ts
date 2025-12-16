@@ -64,16 +64,16 @@ async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Prom
 
   try {
     const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
-      method: 'POST',
+    method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
       signal: controller.signal,
-    });
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+  if (!response.ok) {
+    const errorText = await response.text();
       throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
-    }
+  }
 
     const result = await response.json() as { embedding: number[]; model: string; dimension: number };
     
@@ -121,15 +121,15 @@ async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ 
     }
 
     const result = await response.json() as { embedding: number[]; model: string; dimension: number };
-    
-    if (!result.embedding || !Array.isArray(result.embedding)) {
+  
+  if (!result.embedding || !Array.isArray(result.embedding)) {
       throw new Error('Resposta GPU inválida - embedding ausente');
-    }
+  }
 
-    return {
-      embedding: result.embedding,
+  return {
+    embedding: result.embedding,
       model: result.model || 'OpenCLIP-ViT-H-14-text',
-    };
+  };
   } finally {
     clearTimeout(timeoutId);
   }
@@ -191,10 +191,10 @@ class ImageProcessorService {
     if (!this.isConfigured) {
       logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de imagem não funcionarão');
     } else {
-      logger.info(
+    logger.info(
         { gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: CLIP_EMBEDDING_DIM },
         'Image Processor configurado - ARQUITETURA 100% GPU (OpenCLIP ViT-H/14, 1024 dim)'
-      );
+    );
     }
   }
 
@@ -286,25 +286,25 @@ class ImageProcessorService {
     const startTime = Date.now();
     const trimmedText = text.trim();
 
-    // Usar circuit breaker para resiliência (Regra 16)
+      // Usar circuit breaker para resiliência (Regra 16)
     // Chama /embed/text-for-image (OpenCLIP) para mesmo espaço vetorial das imagens
     const result = await callGpuTextForImageApi({ text: trimmedText });
     
-    validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
+      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
-    const processingTimeMs = Date.now() - startTime;
+      const processingTimeMs = Date.now() - startTime;
 
-    logger.info({
-      textLength: trimmedText.length,
-      embeddingDim: result.embedding.length,
+      logger.info({
+        textLength: trimmedText.length,
+        embeddingDim: result.embedding.length,
       model: result.model,
-      processingTimeMs,
+        processingTimeMs,
     }, 'Text-for-image embedding gerado via GPU (OpenCLIP)');
 
-    return {
-      embedding: result.embedding,
+      return {
+        embedding: result.embedding,
       model: result.model,
-    };
+      };
   }
 
   /**
@@ -356,7 +356,7 @@ class ImageProcessorService {
       if (imageBuffer.length < 500 * 1024) {
         return { buffer: imageBuffer, mimeType };
       }
-
+      
       return null;
     } catch (error) {
       logger.error({ error }, 'Erro ao gerar thumbnail');
@@ -374,11 +374,11 @@ class ImageProcessorService {
   ): Promise<{ embedding: number[]; model: string }> {
     const base64Image = imageBuffer.toString('base64');
     const imageDataUri = `data:${mimeType};base64,${base64Image}`;
-    
+      
     // Usar circuit breaker para resiliência (Regra 16)
     const result = await callGpuImageApi({ image: imageDataUri });
     
-    validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
+      validateEmbeddingDimension(result.embedding, CLIP_EMBEDDING_DIM, 'CLIP');
 
     return result;
   }
@@ -587,15 +587,15 @@ export function getGpuCircuitBreakerStatus(): {
     };
   };
   textForImage: {
-    state: string;
-    stats: {
-      fires: number;
-      failures: number;
-      successes: number;
-      fallbacks: number;
-      timeouts: number;
-      cacheHits: number;
-      latencyMean: number;
+  state: string;
+  stats: {
+    fires: number;
+    failures: number;
+    successes: number;
+    fallbacks: number;
+    timeouts: number;
+    cacheHits: number;
+    latencyMean: number;
     };
   };
 } {
@@ -617,7 +617,7 @@ export function getGpuCircuitBreakerStatus(): {
     },
     textForImage: {
       state: gpuTextForImageBreaker.opened ? 'open' : (gpuTextForImageBreaker.halfOpen ? 'half-open' : 'closed'),
-      stats: {
+    stats: {
         fires: textStats.fires || 0,
         failures: textStats.failures || 0,
         successes: textStats.successes || 0,

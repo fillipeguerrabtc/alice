@@ -41,12 +41,12 @@ BEGIN
   -- Verificar se tabela learning_tasks existe antes de alterar
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'learning_tasks') THEN
     -- NOTA: criado_por sem FK para users (criada pelo Drizzle ORM)
-    ALTER TABLE learning_tasks
-      ADD COLUMN IF NOT EXISTS tenant_id UUID,
-      ADD COLUMN IF NOT EXISTS prioridade INTEGER NOT NULL DEFAULT 5,
-      ADD COLUMN IF NOT EXISTS tentativas INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS max_tentativas INTEGER NOT NULL DEFAULT 3,
-      ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMP NULL,
+ALTER TABLE learning_tasks
+  ADD COLUMN IF NOT EXISTS tenant_id UUID,
+  ADD COLUMN IF NOT EXISTS prioridade INTEGER NOT NULL DEFAULT 5,
+  ADD COLUMN IF NOT EXISTS tentativas INTEGER NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS max_tentativas INTEGER NOT NULL DEFAULT 3,
+  ADD COLUMN IF NOT EXISTS agendado_para TIMESTAMP NULL,
       ADD COLUMN IF NOT EXISTS criado_por VARCHAR(255);
     RAISE NOTICE 'Colunas adicionadas em learning_tasks';
   ELSE
@@ -74,20 +74,20 @@ BEGIN
 
   -- Se existir namespace associado E tabela namespaces existir, herda tenant do namespace
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'namespaces') THEN
-    UPDATE learning_tasks lt
-    SET tenant_id = n.tenant_id
-    FROM namespaces n
-    WHERE lt.namespace_id = n.id
-      AND lt.tenant_id IS NULL;
+  UPDATE learning_tasks lt
+  SET tenant_id = n.tenant_id
+  FROM namespaces n
+  WHERE lt.namespace_id = n.id
+    AND lt.tenant_id IS NULL;
   END IF;
 
   -- Se existir agent associado E tabela agents existir, herda tenant do agent
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'agents') THEN
-    UPDATE learning_tasks lt
-    SET tenant_id = a.tenant_id
-    FROM agents a
-    WHERE lt.agent_id = a.id
-      AND lt.tenant_id IS NULL;
+  UPDATE learning_tasks lt
+  SET tenant_id = a.tenant_id
+  FROM agents a
+  WHERE lt.agent_id = a.id
+    AND lt.tenant_id IS NULL;
   END IF;
 
   -- Caso ainda reste null em tabela com dados, falha explicitamente para evitar dados órfãos
@@ -116,11 +116,11 @@ DO $$
 BEGIN
   IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'learning_tasks') THEN
     -- Dropar índices antigos
-    DROP INDEX IF EXISTS idx_learning_tasks_priority;
-    DROP INDEX IF EXISTS idx_learning_tasks_status;
-    DROP INDEX IF EXISTS idx_learning_tasks_agent;
-    
-    -- Garantir status NOT NULL com default pending (integridade da fila)
+DROP INDEX IF EXISTS idx_learning_tasks_priority;
+DROP INDEX IF EXISTS idx_learning_tasks_status;
+DROP INDEX IF EXISTS idx_learning_tasks_agent;
+
+-- Garantir status NOT NULL com default pending (integridade da fila)
     -- Apenas se coluna status existir
     IF EXISTS (
       SELECT 1 FROM information_schema.columns 
@@ -131,24 +131,24 @@ BEGIN
     
     -- Criar índices (100% idempotente com IF NOT EXISTS)
     CREATE INDEX IF NOT EXISTS idx_learning_tasks_priority
-      ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
+  ON learning_tasks(tenant_id, status, prioridade, agendado_para, criado_em);
     CREATE INDEX IF NOT EXISTS idx_learning_tasks_status
-      ON learning_tasks(tenant_id, status);
+  ON learning_tasks(tenant_id, status);
     CREATE INDEX IF NOT EXISTS idx_learning_tasks_agent
-      ON learning_tasks(tenant_id, agent_id);
-    
+  ON learning_tasks(tenant_id, agent_id);
+
     -- RLS alinhado ao modelo multi-tenant
-    ALTER TABLE learning_tasks ENABLE ROW LEVEL SECURITY;
-    DROP POLICY IF EXISTS learning_tasks_super_admin ON learning_tasks;
-    CREATE POLICY learning_tasks_super_admin ON learning_tasks
-      FOR ALL
-      USING (is_super_admin() = true);
-    
-    DROP POLICY IF EXISTS learning_tasks_tenant_policy ON learning_tasks;
-    CREATE POLICY learning_tasks_tenant_policy ON learning_tasks
-      FOR ALL
-      USING (tenant_id = current_tenant_id())
-      WITH CHECK (tenant_id = current_tenant_id());
+ALTER TABLE learning_tasks ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS learning_tasks_super_admin ON learning_tasks;
+CREATE POLICY learning_tasks_super_admin ON learning_tasks
+  FOR ALL
+  USING (is_super_admin() = true);
+
+DROP POLICY IF EXISTS learning_tasks_tenant_policy ON learning_tasks;
+CREATE POLICY learning_tasks_tenant_policy ON learning_tasks
+  FOR ALL
+  USING (tenant_id = current_tenant_id())
+  WITH CHECK (tenant_id = current_tenant_id());
     
     RAISE NOTICE 'Índices e RLS aplicados em learning_tasks';
   ELSE

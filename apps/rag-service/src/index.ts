@@ -645,31 +645,31 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
 
   try {
     const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
       body: JSON.stringify({ text }),
       signal: controller.signal,
-    });
+  });
 
-    if (!response.ok) {
-      const errorText = await response.text();
+  if (!response.ok) {
+    const errorText = await response.text();
       throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
-    }
+  }
 
-    const data = await response.json() as TextEmbeddingResponse;
-    const resultEmbedding = data.embedding;
-    
-    if (!resultEmbedding || resultEmbedding.length === 0) {
+  const data = await response.json() as TextEmbeddingResponse;
+  const resultEmbedding = data.embedding;
+  
+  if (!resultEmbedding || resultEmbedding.length === 0) {
       throw new Error('Serviço GPU de embeddings retornou resultado vazio');
-    }
-    
+  }
+  
     // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
-    // Lança erro se dimensão estiver incorreta (não apenas warning)
-    validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-    
-    return resultEmbedding;
+  // Lança erro se dimensão estiver incorreta (não apenas warning)
+  validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+  
+  return resultEmbedding;
   } finally {
     clearTimeout(timeoutId);
   }
