@@ -59,10 +59,11 @@ Alice employs a microservices architecture with 43 containerized services orches
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Salad Cloud (Python, PyTorch, FastAPI):
-        - Embeddings de texto: BGE-M3 (1024 dim) - GPU OBRIGATÓRIO
-        - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU OBRIGATÓRIO
-        - Transcrição de áudio: faster-whisper large-v3 - GPU OBRIGATÓRIO
+    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Salad Cloud:
+        - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, halfvec) - GPU OBRIGATÓRIO
+        - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim, vector) - GPU OBRIGATÓRIO
+        - ASR: Canary-Qwen-2.5B - GPU OBRIGATÓRIO
+        - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -76,19 +77,26 @@ Alice employs a microservices architecture with 43 containerized services orches
 
 ## External Dependencies
 
-### Salad Cloud (GPUs Externas)
-- **LLM Inference**: Llama 4 Maverick (400B params) - chat e geração de texto
+### Salad Cloud (GPUs Externas) - Atualizado 16/12/2025
+- **LLM Inference**: Mixtral 8x7B (MoE ~12B ativos, quantizado 4/5-bit via vLLM) - chat, trading, geração de texto
 - **Image Generation**: FLUX.1 Schnell - geração de imagens
-- **Fine-tuning**: Treinamento de modelos customizados
-- **Embeddings GPU (embeddings-gpu)**: BGE-M3 (texto, 1024 dim) + OpenCLIP ViT-H/14 (imagem, 1024 dim)
-- **Transcrição GPU (whisper-gpu)**: faster-whisper large-v3
+- **Fine-tuning**: Treinamento de modelos customizados, LoRA para trading BTC
+- **Embeddings Texto**: Qwen3-Embedding-8B (4096 dim, halfvec) - +38% qualidade para Trading/RAG
+- **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
+- **ASR**: Canary-Qwen-2.5B - transcrição de áudio
 
-### Processamento Multimodal - ARQUITETURA 100% GPU (Opção B - 15/12/2025)
-- **Embeddings de Texto**: BGE-M3 (GPU Salad, 1024 dim, 100+ idiomas) - GPU OBRIGATÓRIO
-- **Embeddings de Imagem**: OpenCLIP ViT-H/14 (GPU Salad, 1024 dim) - GPU OBRIGATÓRIO
-- **Transcrição de Áudio**: faster-whisper large-v3 (GPU Salad)
-- **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6 - schema usa vector(1024))
+### Processamento Multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
+Embeddings otimizados por caso de uso para máxima qualidade:
+
+| Modalidade | Modelo | Dimensões | Tipo pgvector | Benefício |
+|------------|--------|-----------|---------------|-----------|
+| **Texto (Trading/RAG)** | Qwen3-Embedding-8B | **4096** | `halfvec` | +38% qualidade retrieval |
+| **Imagem** | OpenCLIP ViT-H/14 | **1024** | `vector` | Dimensão nativa |
+| **Transcrição** | Canary-Qwen-2.5B | - | - | ASR dedicado |
+
+- **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
 - **Estratégia "Warm on Demand"**: GPUs mantidas quentes por 30 minutos após último uso
+- **Sem conflito**: Colunas separadas por tipo, índices HNSW independentes
 
 ### Estratégia de GPU "Warm on Demand" (15/12/2025)
 Otimização de custos para GPUs Salad Cloud:
@@ -324,15 +332,18 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.48 - 16 de Dezembro de 2025*
+*Versão: 3.50 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
+*Trading: Schema completo (5 tabelas) - signals, orders, positions, risk_config, audit_log*
+*Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*
+*ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(4096) Qwen3-Embedding-8B (+38% qualidade) | Imagem vector(1024) OpenCLIP ViT-H/14*
+*LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + WebSocket para notificações*
-*Salad Cloud: LLM inference, image generation, fine-tuning, embeddings-gpu, whisper-gpu*
-*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + build-media-images (manual)*
+*Salad Cloud: Mixtral 8x7B (vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-Qwen-2.5B (ASR)*
+*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI*

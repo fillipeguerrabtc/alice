@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 15 de Dezembro de 2025  
+> **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.72 - Arquitetura 100% GPU + Estratégia "Warm on Demand" (30 min keep-warm)
+> **Versão:** 3.74 - Schema Trading KuCoin Futures + Circuit Breakers GPU
 
 ---
 
@@ -19,7 +19,7 @@
 | **Docker** | 29.1.2 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 46.224.46.93 |
-| **LLM** | Llama 4 Maverick (400B params) via Salad Cloud |
+| **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud + Trading BTC |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
@@ -225,23 +225,21 @@
 
 | Funcionalidade | Status | Tecnologia |
 |----------------|--------|------------|
-| **Embeddings de Imagem** (OpenCLIP ViT-H/14 - 1024 dim) | ✅ | GPU Salad Cloud |
-| **Embeddings de Texto** (BGE-M3 - 1024 dim) | ✅ | GPU Salad Cloud |
-| **Transcrição de Áudio** (Whisper large-v3) | ✅ | GPU Salad Cloud |
-| Suporte Multilíngue (100+ idiomas) | ✅ | BGE-M3 + Whisper large-v3 |
+| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4096 dim, halfvec) - GPU Salad |
+| **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim, vector) - GPU Salad |
+| **ASR (Transcrição)** | ✅ | Canary-Qwen-2.5B - GPU Salad |
+| Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
 | Warm on Demand (30 min keep-warm) | ✅ | Estratégia enterprise |
 | Rate Limiting | ✅ | `serve.py` |
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-> **ARQUITETURA 100% GPU (15/12/2025):**
-> - **Embeddings de texto:** BGE-M3 (1024 dim) via GPU Salad Cloud
-> - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) via GPU Salad Cloud
-> - **Transcrição de áudio:** Whisper large-v3 via GPU Salad Cloud
+> **ARQUITETURA DUAL-DIMENSION (16/12/2025):**
+> - **Embeddings de texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim, halfvec) - +38% qualidade retrieval
+> - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
+> - **ASR:** Canary-Qwen-2.5B - GPU Salad Cloud
 > - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
-> - **Transcrição de áudio:** GPU Salad (primário, 7-9x mais rápido) + CPU Hetzner (fallback automático)
-> - O container whisper-gpu roda em Salad Cloud com faster-whisper large-v3
-> - Se GPU indisponível ou erro, fallback transparente para CPU local (faster-whisper medium)
+> - **LLM Trading:** Mixtral 8x7B (MoE ~12B ativos) via vLLM - Trading BTC Futures KuCoin
 
 > **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio/vídeo).
 
@@ -424,7 +422,24 @@ Retenção Arquivo:   30 dias
 | `generated_images` | Imagens FLUX.1 |
 | `media_uploads` | Uploads multimodais |
 
-**Total: 32 tabelas**
+### Schema Trading (5 tabelas) - FASE Trading Mixtral 8x7B
+
+| Tabela | Propósito |
+|--------|-----------|
+| `trading_signals` | Sinais gerados pelo LLM Mixtral |
+| `trading_orders` | OMS - Order Management System |
+| `trading_positions` | EMS - Execution Management System |
+| `trading_risk_config` | Configuração de risco por tenant |
+| `trading_audit_log` | Auditoria completa para compliance |
+
+> **Arquitetura Trading:**
+> - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
+> - **LLM:** Mixtral 8x7B (MoE ~12B ativos) via vLLM na Salad Cloud
+> - **Embeddings:** Qwen3-Embedding-8B (4096 dim) para análise de mercado
+> - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
+> - **Risk Management:** Limites diários, max posições, alavancagem configurável
+
+**Total: 37 tabelas**
 
 ---
 
@@ -710,29 +725,33 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Capacidade | Tecnologia | Status |
 |------------|------------|--------|
-| Chat Conversacional | Llama 4 Maverick (400B) | ✅ |
+| Chat Conversacional + Trading | Mixtral 8x7B (MoE ~12B, vLLM) | ✅ |
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
-| Embeddings Multimodais | OpenCLIP ViT-H/14 (GPU Salad Cloud, 1024 dim) | ✅ |
-| Embeddings Texto | BGE-M3 (GPU Salad Cloud, 1024 dim) | ✅ |
+| Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim, vector) | ✅ |
+| Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B (4096 dim, halfvec) | ✅ |
+| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | 🔄 Em desenvolvimento |
 
-### Processamento Multimodal (INPUT) - ARQUITETURA HÍBRIDA (15/12/2025)
+### Processamento Multimodal (INPUT) - ARQUITETURA DUAL-DIMENSION (16/12/2025)
 
-> **ARQUITETURA HÍBRIDA (Opção B - Híbrido Inteligente):**
-> - **Embeddings:** 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim)
-> - **Transcrição:** GPU Salad Cloud (Whisper large-v3)
-> - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6 - schema usa vector(1024))
+> **ARQUITETURA DUAL-DIMENSION:**
+> - **Embeddings Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim, halfvec) - +38% qualidade
+> - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
+> - **ASR:** Canary-Qwen-2.5B (GPU Salad Cloud)
+> - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
 
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
-| Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim embedding |
-| Áudio | `audio-processor.ts` | Whisper large-v3 (GPU) + BGE-M3 (GPU) | Transcrição + 1024 dim embedding |
-| Vídeo | `video-processor.ts` | FFmpeg + Whisper GPU + OpenCLIP GPU | Combinado 1024 dim |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + BGE-M3 GPU | 1024 dim embedding |
+| Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim (vector) |
+| Áudio | `audio-processor.ts` | Canary-Qwen-2.5B + Qwen3-Embedding-8B | Transcrição + 4096 dim (halfvec) |
+| Vídeo | `video-processor.ts` | FFmpeg + Canary + OpenCLIP | Dual-dimension |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3-Embedding | 4096 dim (halfvec) |
 
-**Serviços de Inferência:**
-- `embeddings-gpu` (Python FastAPI GPU) - BGE-M3 (texto) + OpenCLIP ViT-H/14 (imagem)
-- `whisper-gpu` (Python FastAPI GPU) - Whisper large-v3 (transcrição)
-- `whisper-gpu` (Python FastAPI, Salad Cloud) - Transcrição GPU (7-9x mais rápido)
+**Serviços de Inferência (GPU Salad Cloud):**
+- **LLM:** Mixtral 8x7B (vLLM, quantizado 4/5-bit) - Chat e Trading
+- **Embeddings Texto:** Qwen3-Embedding-8B (4096 dim)
+- **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim)
+- **ASR:** Canary-Qwen-2.5B (transcrição)
+- **Image Gen:** FLUX.1 Schnell
 
 ### Auto-Learning
 

@@ -1,0 +1,36 @@
+# ============================================================================
+# Alice Enterprise Platform - Salad Cloud Configuration
+# ============================================================================
+# Copie este arquivo para terraform.tfvars e preencha com seus valores.
+# NUNCA commite terraform.tfvars com secrets reais!
+#
+# Autor: Fillipe Guerra
+# Data: 16 de Dezembro de 2025
+# ============================================================================
+
+# Salad Cloud Credentials
+# Obter em: https://portal.salad.com → Profile → API Keys
+salad_api_key         = "YOUR_SALAD_API_KEY"
+salad_organization_id = "your-organization-id"
+salad_project_id      = "alice-platform"
+
+# Environment
+environment = "production"
+
+# HuggingFace Token
+# Obter em: https://huggingface.co/settings/tokens
+huggingface_token = "hf_YOUR_TOKEN"
+
+# Container Images (GHCR)
+# Após CI/CD build, usar digest específico para imutabilidade
+mixtral_image    = "ghcr.io/alice-platform/mixtral-vllm:latest"
+asr_image        = "ghcr.io/alice-platform/asr-canary:latest"
+flux_image       = "ghcr.io/alice-platform/flux-schnell:latest"
+embeddings_image = "ghcr.io/alice-platform/embeddings-gpu:latest"
+
+# Scaling
+min_replicas = 1
+max_replicas = 3
+
+# Keep-warm Strategy (minutos)
+keep_warm_minutes = 30

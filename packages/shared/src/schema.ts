@@ -15,8 +15,12 @@
  * - agents e conversations possuem tenantId para isolamento
  * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
  * 
+ * ARQUITETURA DUAL-DIMENSION DE EMBEDDINGS (16/12/2025):
+ * - Texto (Trading/RAG): halfvec(4096) - Qwen3-Embedding-8B (+38% qualidade)
+ * - Imagem: vector(1024) - OpenCLIP ViT-H/14 (dimensão nativa)
+ * 
  * Autor: Fillipe Guerra
- * Data: 05 de Dezembro de 2025
+ * Data: 16 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -38,22 +42,45 @@ import {
 } from "drizzle-orm/pg-core";
 
 // ============================================================================
-// PGVECTOR TYPE (Enterprise-Grade)
+// PGVECTOR TYPES (Enterprise-Grade) - Arquitetura Dual-Dimension
 // ============================================================================
-// Tipo customizado para colunas pgvector (1024 dimensões para BGE-M3 e OpenCLIP ViT-H/14)
-// ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025
-// - Texto: BGE-M3 (1024 dim, multilíngue, GPU Salad Cloud)
-// - Imagem: OpenCLIP ViT-H/14 (1024 dim, GPU Salad Cloud)
+// Decisão arquitetural 16/12/2025 - Dimensões otimizadas por caso de uso:
+//
+// TEXTO (Trading/RAG): halfvec(4096) - Qwen3-Embedding-8B
+//   - +38% qualidade retrieval vs 1024 dimensões
+//   - Usado em: documents, documentChunks, trainingData, mediaUploads.textEmbedding
+//   - halfvec usa half-precision (2 bytes/valor) = storage eficiente
+//   - Limite HNSW: até 4000 dim (halfvec suporta até 4096)
+//
+// IMAGEM: vector(1024) - OpenCLIP ViT-H/14
+//   - Dimensão nativa do modelo (full precision para qualidade visual)
+//   - Usado em: generatedImages.clipEmbedding, mediaUploads.clipEmbedding
+//
 // Referência: https://github.com/pgvector/pgvector
-// NOTA: A conversão toDriver/fromDriver é feita automaticamente pelo driver pgvector
-// O Drizzle apenas precisa saber que é do tipo vector(1024) no PostgreSQL
-const vector = customType<{ data: number[]; driverData: number[] }>({
+// Best Practices 2025: Google/Microsoft usam dimensões consistentes por modalidade
+// ============================================================================
+
+// TEXTO: halfvec(4096) - Qwen3-Embedding-8B para Trading/RAG
+// Half-precision (2 bytes/valor) permite indexar até 4000 dim com HNSW
+const textVector = customType<{ data: number[]; driverData: number[] }>({
+  dataType() {
+    return 'halfvec(4096)';
+  },
+  // pgvector driver já faz a conversão automaticamente
+});
+
+// IMAGEM: vector(1024) - OpenCLIP ViT-H/14 para geração/análise de imagens
+// Full-precision (4 bytes/valor) para máxima qualidade visual
+const imageVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
     return 'vector(1024)';
   },
   // pgvector driver já faz a conversão automaticamente
-  // toDriver e fromDriver são opcionais - o driver cuida da serialização
 });
+
+// LEGADO: Alias para compatibilidade durante migração (será removido)
+// TODO: Remover após migração completa para textVector/imageVector
+const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -869,7 +896,10 @@ export const messages = pgTable(
 );
 
 // ============================================================================
-// DOCUMENTOS (Base de Conhecimento para RAG)
+// DOCUMENTOS (Base de Conhecimento para RAG/Trading)
+// ARQUITETURA DUAL-DIMENSION (16/12/2025):
+// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
+// - +38% qualidade retrieval para análises de trading
 // ============================================================================
 
 export const documents = pgTable(
@@ -899,7 +929,9 @@ export const documents = pgTable(
 );
 
 // ============================================================================
-// CHUNKS DE DOCUMENTOS (Para RAG)
+// CHUNKS DE DOCUMENTOS (Para RAG/Trading)
+// ARQUITETURA DUAL-DIMENSION (16/12/2025):
+// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
 // ============================================================================
 
 export const documentChunks = pgTable(
@@ -1168,7 +1200,9 @@ export const usageMetrics = pgTable(
 );
 
 // ============================================================================
-// DADOS DE TREINAMENTO (Auto-evolução)
+// DADOS DE TREINAMENTO (Auto-evolução/Fine-tuning)
+// ARQUITETURA DUAL-DIMENSION (16/12/2025):
+// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
 // ============================================================================
 
 export const trainingDataStatusEnum = pgEnum("training_data_status", [
@@ -1354,6 +1388,300 @@ export const stripeErpnextMapping = pgTable(
     idxStripeFlowStatus: index("idx_stripe_erpnext_flow_status").on(table.flowStatus),
   })
 );
+
+// ============================================================================
+// TRADING - KuCoin Futures BTC Perpetuals (FASE Trading Mixtral 8x7B)
+// Sistema de trading automatizado com OMS/EMS e auditoria completa
+// Exchange: KuCoin Futures (https://www.kucoin.com/futures/trade)
+// Par: XBTUSDTM (BTC/USDT Perpetual)
+// ============================================================================
+
+// Enums para Trading
+export const tradingOrderSideEnum = pgEnum("trading_order_side", [
+  "buy",   // Compra (long)
+  "sell",  // Venda (short ou fechar posição)
+]);
+
+export const tradingOrderTypeEnum = pgEnum("trading_order_type", [
+  "limit",       // Ordem limitada
+  "market",      // Ordem a mercado
+  "stop_limit",  // Stop loss com preço limite
+  "stop_market", // Stop loss a mercado
+  "take_profit", // Take profit
+]);
+
+export const tradingOrderStatusEnum = pgEnum("trading_order_status", [
+  "pending",      // Aguardando envio para exchange
+  "submitted",    // Enviada para exchange
+  "open",         // Aberta (parcialmente executada)
+  "filled",       // Totalmente executada
+  "cancelled",    // Cancelada
+  "rejected",     // Rejeitada pela exchange
+  "expired",      // Expirada
+  "error",        // Erro no processamento
+]);
+
+export const tradingPositionStatusEnum = pgEnum("trading_position_status", [
+  "open",         // Posição aberta
+  "closed",       // Posição fechada
+  "liquidated",   // Posição liquidada (margin call)
+]);
+
+export const tradingSignalTypeEnum = pgEnum("trading_signal_type", [
+  "entry_long",   // Entrada long
+  "entry_short",  // Entrada short
+  "exit",         // Saída da posição
+  "adjust_sl",    // Ajustar stop loss
+  "adjust_tp",    // Ajustar take profit
+  "hold",         // Manter posição
+  "neutral",      // Sem sinal (esperar)
+]);
+
+// Zod schema para metadados de trading (JSONB)
+export const TradingSignalMetadataSchema = z.object({
+  confidence: z.number().min(0).max(1).optional(),  // Confiança do modelo (0-1)
+  reasoning: z.string().optional(),                  // Raciocínio do LLM
+  indicators: z.record(z.number()).optional(),       // Indicadores técnicos usados
+  marketCondition: z.string().optional(),            // Condição de mercado identificada
+  riskScore: z.number().min(0).max(100).optional(),  // Score de risco (0-100)
+  modelVersion: z.string().optional(),               // Versão do modelo usado
+});
+export type TradingSignalMetadata = z.infer<typeof TradingSignalMetadataSchema>;
+
+export const TradingOrderMetadataSchema = z.object({
+  kucoinOrderId: z.string().optional(),              // ID da ordem na KuCoin
+  kucoinClientOid: z.string().optional(),            // Client order ID
+  signalId: z.string().uuid().optional(),            // ID do sinal que gerou a ordem
+  leverage: z.number().min(1).max(100).optional(),   // Alavancagem usada
+  executionPrice: z.number().positive().optional(),  // Preço de execução real
+  fees: z.number().optional(),                       // Taxas pagas
+  slippage: z.number().optional(),                   // Slippage em %
+  responseTime: z.number().optional(),               // Tempo de resposta da exchange (ms)
+});
+export type TradingOrderMetadata = z.infer<typeof TradingOrderMetadataSchema>;
+
+export const TradingPositionMetadataSchema = z.object({
+  entrySignalId: z.string().uuid().optional(),       // Sinal que abriu a posição
+  exitSignalId: z.string().uuid().optional(),        // Sinal que fechou a posição
+  maxDrawdown: z.number().optional(),                // Máximo drawdown durante a posição
+  maxProfit: z.number().optional(),                  // Máximo profit durante a posição
+  holdingTime: z.number().optional(),                // Tempo de hold em segundos
+  closingReason: z.string().optional(),              // Motivo do fechamento
+});
+export type TradingPositionMetadata = z.infer<typeof TradingPositionMetadataSchema>;
+
+// SINAIS DE TRADING (Gerados pelo Mixtral 8x7B com RAG)
+// Cada sinal é uma recomendação do LLM baseada em análise de mercado
+export const tradingSignals = pgTable(
+  "trading_signals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    signalType: tradingSignalTypeEnum("signal_type").notNull(),
+    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"), // Par de trading
+    suggestedPrice: real("suggested_price"),           // Preço sugerido para entrada
+    suggestedStopLoss: real("suggested_stop_loss"),    // Stop loss sugerido
+    suggestedTakeProfit: real("suggested_take_profit"), // Take profit sugerido
+    suggestedSize: real("suggested_size"),             // Tamanho sugerido (% do capital)
+    confidence: real("confidence"),                    // Confiança (0-1)
+    metadata: jsonb("metadata").$type<TradingSignalMetadata>().default({}),
+    executedAt: timestamp("executed_at"),              // Quando foi executado (null se não executado)
+    executedOrderId: uuid("executed_order_id"),        // ID da ordem que executou o sinal
+    isActive: boolean("is_active").default(true),      // Se o sinal ainda é válido
+    expiresAt: timestamp("expires_at"),                // Quando o sinal expira
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxSignalsTenant: index("idx_trading_signals_tenant").on(table.tenantId),
+    idxSignalsType: index("idx_trading_signals_type").on(table.signalType),
+    idxSignalsActive: index("idx_trading_signals_active").on(table.isActive),
+    idxSignalsCreated: index("idx_trading_signals_created").on(table.criadoEm),
+    idxSignalsSymbol: index("idx_trading_signals_symbol").on(table.symbol),
+  })
+);
+
+// ORDENS DE TRADING (OMS - Order Management System)
+// Registro completo de todas as ordens enviadas para a exchange
+export const tradingOrders = pgTable(
+  "trading_orders",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    signalId: uuid("signal_id").references(() => tradingSignals.id), // Sinal que gerou a ordem (opcional)
+    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    side: tradingOrderSideEnum("side").notNull(),
+    orderType: tradingOrderTypeEnum("order_type").notNull(),
+    status: tradingOrderStatusEnum("status").default("pending"),
+    price: real("price"),                              // Preço da ordem (null para market)
+    stopPrice: real("stop_price"),                     // Preço de stop (para stop orders)
+    size: real("size").notNull(),                      // Quantidade (contratos)
+    leverage: integer("leverage").default(1),          // Alavancagem (1-100x)
+    filledSize: real("filled_size").default(0),        // Quantidade executada
+    avgFilledPrice: real("avg_filled_price"),          // Preço médio de execução
+    fees: real("fees").default(0),                     // Taxas pagas
+    kucoinOrderId: varchar("kucoin_order_id", { length: 100 }), // ID na exchange
+    clientOid: varchar("client_oid", { length: 100 }), // ID do cliente (idempotência)
+    metadata: jsonb("metadata").$type<TradingOrderMetadata>().default({}),
+    errorMessage: text("error_message"),               // Mensagem de erro se houver
+    submittedAt: timestamp("submitted_at"),            // Quando foi enviada
+    filledAt: timestamp("filled_at"),                  // Quando foi completamente executada
+    cancelledAt: timestamp("cancelled_at"),            // Quando foi cancelada
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxOrdersTenant: index("idx_trading_orders_tenant").on(table.tenantId),
+    idxOrdersStatus: index("idx_trading_orders_status").on(table.status),
+    idxOrdersKucoin: index("idx_trading_orders_kucoin").on(table.kucoinOrderId),
+    idxOrdersClientOid: index("idx_trading_orders_client_oid").on(table.clientOid),
+    idxOrdersSymbol: index("idx_trading_orders_symbol").on(table.symbol),
+    idxOrdersCreated: index("idx_trading_orders_created").on(table.criadoEm),
+  })
+);
+
+// POSIÇÕES DE TRADING (EMS - Execution Management System)
+// Estado atual das posições abertas e histórico de posições fechadas
+export const tradingPositions = pgTable(
+  "trading_positions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    side: tradingOrderSideEnum("side").notNull(),      // long ou short
+    status: tradingPositionStatusEnum("status").default("open"),
+    entryPrice: real("entry_price").notNull(),         // Preço médio de entrada
+    currentPrice: real("current_price"),               // Preço atual (atualizado periodicamente)
+    size: real("size").notNull(),                      // Tamanho da posição (contratos)
+    leverage: integer("leverage").default(1),          // Alavancagem
+    stopLoss: real("stop_loss"),                       // Stop loss atual
+    takeProfit: real("take_profit"),                   // Take profit atual
+    unrealizedPnl: real("unrealized_pnl"),             // PnL não realizado (atualizado periodicamente)
+    realizedPnl: real("realized_pnl"),                 // PnL realizado (quando fechada)
+    totalFees: real("total_fees").default(0),          // Total de taxas pagas
+    margin: real("margin"),                            // Margem usada
+    liquidationPrice: real("liquidation_price"),       // Preço de liquidação
+    metadata: jsonb("metadata").$type<TradingPositionMetadata>().default({}),
+    openedAt: timestamp("opened_at").defaultNow(),     // Quando foi aberta
+    closedAt: timestamp("closed_at"),                  // Quando foi fechada
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxPositionsTenant: index("idx_trading_positions_tenant").on(table.tenantId),
+    idxPositionsStatus: index("idx_trading_positions_status").on(table.status),
+    idxPositionsSymbol: index("idx_trading_positions_symbol").on(table.symbol),
+    idxPositionsOpened: index("idx_trading_positions_opened").on(table.openedAt),
+  })
+);
+
+// CONFIGURAÇÃO DE RISCO (Por tenant - Risk Management)
+// Define limites e parâmetros de risco para cada tenant
+export const tradingRiskConfig = pgTable(
+  "trading_risk_config",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id).unique(),
+    // Limites de risco
+    maxPositionSize: real("max_position_size").default(0.1),     // Máximo % do capital por posição
+    maxDailyLoss: real("max_daily_loss").default(0.05),          // Máxima perda diária % (circuit breaker)
+    maxOpenPositions: integer("max_open_positions").default(3),  // Máximo de posições abertas
+    maxLeverage: integer("max_leverage").default(10),            // Alavancagem máxima permitida
+    // Configurações de execução
+    defaultLeverage: integer("default_leverage").default(5),     // Alavancagem padrão
+    defaultStopLoss: real("default_stop_loss").default(0.02),    // Stop loss padrão (2%)
+    defaultTakeProfit: real("default_take_profit").default(0.04), // Take profit padrão (4%)
+    // Controles
+    tradingEnabled: boolean("trading_enabled").default(false),   // Se trading está habilitado
+    autoExecuteSignals: boolean("auto_execute_signals").default(false), // Execução automática
+    minConfidenceToExecute: real("min_confidence_to_execute").default(0.7), // Confiança mínima
+    // Credenciais KuCoin (criptografadas)
+    kucoinApiKey: text("kucoin_api_key"),             // Criptografado
+    kucoinApiSecret: text("kucoin_api_secret"),       // Criptografado  
+    kucoinPassphrase: text("kucoin_passphrase"),      // Criptografado
+    kucoinSandbox: boolean("kucoin_sandbox").default(true), // Usar sandbox por padrão
+    // Métricas diárias (reset meia-noite UTC)
+    dailyPnl: real("daily_pnl").default(0),
+    dailyTradeCount: integer("daily_trade_count").default(0),
+    lastResetDate: timestamp("last_reset_date"),
+    // Timestamps
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxRiskConfigTenant: uniqueIndex("idx_trading_risk_config_tenant").on(table.tenantId),
+  })
+);
+
+// AUDIT LOG DE TRADING (Auditoria completa para compliance)
+// Registro imutável de todas as ações de trading
+export const tradingAuditLog = pgTable(
+  "trading_audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    userId: uuid("user_id").references(() => users.id), // Usuário que iniciou (se humano)
+    action: varchar("action", { length: 50 }).notNull(), // Tipo de ação
+    entityType: varchar("entity_type", { length: 50 }).notNull(), // signal, order, position, config
+    entityId: uuid("entity_id"),                        // ID da entidade afetada
+    previousState: jsonb("previous_state").$type<Record<string, unknown>>(), // Estado anterior
+    newState: jsonb("new_state").$type<Record<string, unknown>>(),          // Novo estado
+    ipAddress: varchar("ip_address", { length: 45 }),   // IP do usuário
+    userAgent: text("user_agent"),                      // User agent
+    reason: text("reason"),                             // Motivo da ação
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxAuditLogTenant: index("idx_trading_audit_log_tenant").on(table.tenantId),
+    idxAuditLogAction: index("idx_trading_audit_log_action").on(table.action),
+    idxAuditLogEntity: index("idx_trading_audit_log_entity").on(table.entityType, table.entityId),
+    idxAuditLogCreated: index("idx_trading_audit_log_created").on(table.criadoEm),
+  })
+);
+
+// Relations de Trading
+export const tradingSignalsRelations = relations(tradingSignals, ({ one, many }) => ({
+  tenant: one(tenants, {
+    fields: [tradingSignals.tenantId],
+    references: [tenants.id],
+  }),
+  orders: many(tradingOrders),
+}));
+
+export const tradingOrdersRelations = relations(tradingOrders, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingOrders.tenantId],
+    references: [tenants.id],
+  }),
+  signal: one(tradingSignals, {
+    fields: [tradingOrders.signalId],
+    references: [tradingSignals.id],
+  }),
+}));
+
+export const tradingPositionsRelations = relations(tradingPositions, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingPositions.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const tradingRiskConfigRelations = relations(tradingRiskConfig, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingRiskConfig.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const tradingAuditLogRelations = relations(tradingAuditLog, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingAuditLog.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [tradingAuditLog.userId],
+    references: [users.id],
+  }),
+}));
 
 // ============================================================================
 // TAKEOVER/HANDOVER (FASE 6.5 - Controle de Conversas Humano/IA)
@@ -1579,8 +1907,9 @@ export const generatedImages = pgTable(
     thumbnailPath: text("thumbnail_path"),
     imageUrl: text("image_url"),
     
-    // Embeddings para RAG multimodal (OpenCLIP ViT-H/14 - 1024 dim) - ARQUITETURA 100% GPU
-    clipEmbedding: vector("clip_embedding"),
+    // Embeddings para RAG multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
+    // OpenCLIP ViT-H/14 (1024 dim) - imageVector para qualidade visual
+    clipEmbedding: imageVector("clip_embedding"),
     
     // Feedback e aprovação para training
     feedbackScore: integer("feedback_score"), // 1-5 estrelas
@@ -1651,9 +1980,11 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA 100% GPU (15/12/2025)
-    clipEmbedding: vector("clip_embedding"), // OpenCLIP ViT-H/14 para imagens (1024 dim) - GPU Salad Cloud
-    textEmbedding: vector("text_embedding"), // BGE-M3 para transcrição de áudio (1024 dim) - GPU Salad Cloud
+    // Embeddings para RAG multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
+    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud
+    clipEmbedding: imageVector("clip_embedding"),
+    // Texto/Transcrição: Qwen3-Embedding-8B (4096 dim) - GPU Salad Cloud (+38% qualidade)
+    textEmbedding: textVector("text_embedding"),
     
     // Transcrição (para áudio/vídeo)
     transcription: text("transcription"),
@@ -2184,6 +2515,22 @@ export type InsertWebhookEvent = typeof webhookEvents.$inferInsert;
 export type StripeErpnextMapping = typeof stripeErpnextMapping.$inferSelect;
 export type InsertStripeErpnextMapping = typeof stripeErpnextMapping.$inferInsert;
 
+// Trading Types (FASE Trading Mixtral 8x7B - KuCoin Futures BTC)
+export type TradingSignal = typeof tradingSignals.$inferSelect;
+export type InsertTradingSignal = typeof tradingSignals.$inferInsert;
+
+export type TradingOrder = typeof tradingOrders.$inferSelect;
+export type InsertTradingOrder = typeof tradingOrders.$inferInsert;
+
+export type TradingPosition = typeof tradingPositions.$inferSelect;
+export type InsertTradingPosition = typeof tradingPositions.$inferInsert;
+
+export type TradingRiskConfig = typeof tradingRiskConfig.$inferSelect;
+export type InsertTradingRiskConfig = typeof tradingRiskConfig.$inferInsert;
+
+export type TradingAuditLog = typeof tradingAuditLog.$inferSelect;
+export type InsertTradingAuditLog = typeof tradingAuditLog.$inferInsert;
+
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;
 export type InsertConversationState = typeof conversationStates.$inferInsert;
@@ -2247,6 +2594,45 @@ export const insertStripeErpnextMappingSchema: z.ZodType<unknown> = createInsert
   id: true,
   criadoEm: true,
   atualizadoEm: true,
+});
+
+// Trading Insert Schemas (FASE Trading Mixtral 8x7B - KuCoin Futures BTC)
+export const insertTradingSignalSchema: z.ZodType<unknown> = createInsertSchema(tradingSignals).omit({
+  id: true,
+  criadoEm: true,
+  executedAt: true,
+  executedOrderId: true,
+});
+
+export const insertTradingOrderSchema: z.ZodType<unknown> = createInsertSchema(tradingOrders).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  submittedAt: true,
+  filledAt: true,
+  cancelledAt: true,
+});
+
+export const insertTradingPositionSchema: z.ZodType<unknown> = createInsertSchema(tradingPositions).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  openedAt: true,
+  closedAt: true,
+});
+
+export const insertTradingRiskConfigSchema: z.ZodType<unknown> = createInsertSchema(tradingRiskConfig).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+  dailyPnl: true,
+  dailyTradeCount: true,
+  lastResetDate: true,
+});
+
+export const insertTradingAuditLogSchema: z.ZodType<unknown> = createInsertSchema(tradingAuditLog).omit({
+  id: true,
+  criadoEm: true,
 });
 
 // Takeover/Handover Insert Schemas (FASE 6.5)

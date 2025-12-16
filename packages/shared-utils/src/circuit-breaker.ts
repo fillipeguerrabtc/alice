@@ -127,6 +127,34 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
+  /** KuCoin Futures API - Trading BTC Perps (timeout rápido para ordens) */
+  kucoinFutures: {
+    timeout: 5000, // Trading precisa de respostas rápidas
+    errorThresholdPercentage: 30, // Mais sensível a erros (trading crítico)
+    resetTimeout: 15000, // Recuperação rápida
+    volumeThreshold: 3, // Abre circuit com poucos erros
+  },
+  /** Embeddings GPU Dual-Dimension - Qwen3 (4096 dim) + OpenCLIP (1024 dim) */
+  embeddingsGPU: {
+    timeout: 60000, // GPU pode precisar warm-up
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** ASR Canary-Qwen - Transcrição de áudio */
+  asrCanary: {
+    timeout: 30000, // Transcrição pode demorar para áudios longos
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  /** Mixtral 8x7B vLLM - LLM Trading (menor que Llama 4, mais rápido) */
+  mixtralLLM: {
+    timeout: 45000, // Mais rápido que Maverick 400B
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
   /** Resend API - emails transacionais */
   resendAPI: {
     timeout: 10000,
