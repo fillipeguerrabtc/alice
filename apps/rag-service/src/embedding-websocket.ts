@@ -30,9 +30,6 @@ const logger = createLogger('embedding-websocket');
 /** Intervalo de heartbeat em ms (30 segundos) */
 const HEARTBEAT_INTERVAL_MS = 30000;
 
-/** Timeout para conexões inativas em ms (2 minutos) */
-const CONNECTION_TIMEOUT_MS = 120000;
-
 // ============================================================================
 // TIPOS
 // ============================================================================

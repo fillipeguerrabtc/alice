@@ -41,7 +41,6 @@ import {
   Image,
   Mic,
   Video,
-  Trash2,
   X,
   FileAudio,
   FileVideo,
@@ -613,18 +612,15 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       }
 
       // Simular progresso durante upload (real progress seria via XHR)
-      // Bug fix: Declarar fora do try para garantir cleanup no catch
-      let progressInterval: ReturnType<typeof setInterval> | null = null;
-      
-      try {
-        progressInterval = setInterval(() => {
-          setUploads(prev => prev.map(u => 
-            u.id === upload.id && u.progress < 90 
-              ? { ...u, progress: Math.min(90, u.progress + 10) } 
-              : u
-          ));
-        }, 300);
+      const progressInterval = setInterval(() => {
+        setUploads(prev => prev.map(u => 
+          u.id === upload.id && u.progress < 90 
+            ? { ...u, progress: Math.min(90, u.progress + 10) } 
+            : u
+        ));
+      }, 300);
 
+      try {
         const response = await fetch('/api/media/upload', {
           method: 'POST',
           body: formData,
@@ -653,13 +649,9 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
           queryClient.invalidateQueries({ queryKey: ['/api/media/uploads'] });
         }, 2000);
 
-      } catch (innerError) {
-        throw innerError; // Re-throw para o catch externo
       } finally {
-        // Bug fix: Sempre limpar interval, mesmo em caso de erro
-        if (progressInterval) {
-          clearInterval(progressInterval);
-        }
+        // Sempre limpar interval (sucesso ou erro)
+        clearInterval(progressInterval);
       }
 
     } catch (error) {
@@ -707,7 +699,6 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   const pendingCount = uploads.filter(u => u.status === 'pending').length;
   const completedCount = uploads.filter(u => u.status === 'completed').length;
-  const hasErrors = uploads.some(u => u.status === 'error');
 
   return (
     <div className="flex-1 p-4 space-y-6">
