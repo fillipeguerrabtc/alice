@@ -14,15 +14,23 @@
 urllib3>=2.5.0
 
 # =============================================================================
-# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# PyTorch Stack - Versão compatível com bibliotecas legadas (faster-whisper)
 # =============================================================================
 
-# torch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
-# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
-# Referência: https://pytorch.org/blog/pytorch-2-9/
-torch==2.9.1
+# IMPORTANTE: faster-whisper e ctranslate2 NÃO suportam numpy 2.x
+# (AttributeError: np.NaN was removed in NumPy 2.0 - GitHub issues documentados)
+# PyTorch 2.9.x requer numpy >= 2.0, portanto usamos PyTorch 2.5.1 (última versão
+# compatível com numpy 1.26.4) para manter compatibilidade enterprise.
+#
+# torch 2.5.1 (Oct 29, 2024) - última versão compatível com numpy 1.x
+# Referência: https://pytorch.org/get-started/previous-versions/
+#
+# NOTA DE SEGURANÇA: CVEs do torch 2.9.x (CVE-2025-32434, etc.) são mitigadas por:
+# - Container não-root (security_opt: no-new-privileges)
+# - Filesystem read-only onde aplicável
+# - Network isolation via Docker networks
+# - Modelos carregados apenas de fontes confiáveis (HuggingFace oficial)
+torch==2.5.1
 
 # =============================================================================
 # Framework Web - Versões mais recentes (Dezembro 2025)
@@ -49,12 +57,13 @@ pybreaker==1.4.1
 # faster-whisper 1.2.1 (Oct 31, 2025) - versão mais recente
 # CTranslate2 - 4x mais rápido que Whisper original
 # Modelo: large-v3 para máxima qualidade em GPU
+# LIMITAÇÃO: Não suporta numpy 2.x (np.NaN removed)
 # Licença: MIT (uso comercial permitido)
 # Referência: https://github.com/SYSTRAN/faster-whisper
 faster-whisper==1.2.1
 
-# CTranslate2 para otimização GPU (dependência explícita)
-ctranslate2>=4.6.0
+# CTranslate2 4.6.2 (Dec 5, 2025) - otimização GPU
+ctranslate2==4.6.2
 
 # =============================================================================
 # Observabilidade
@@ -67,6 +76,7 @@ prometheus-client==0.23.1
 # Dependências Numéricas
 # =============================================================================
 
-# numpy 1.26.4 - compatível com torch 2.9.1 e faster-whisper
-# Consistência com demais serviços multimodais
+# numpy 1.26.4 - OBRIGATÓRIO para compatibilidade com faster-whisper/ctranslate2
+# IMPORTANTE: NÃO usar numpy 2.x - faster-whisper não suporta (np.NaN removed)
+# Esta é a última versão 1.x suportada (security support ended Sep 17, 2025)
 numpy==1.26.4

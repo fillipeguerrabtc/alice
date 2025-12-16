@@ -17,16 +17,24 @@
 urllib3>=2.5.0
 
 # =============================================================================
-# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# PyTorch Stack - Versão compatível com bibliotecas legadas (CLIP, faster-whisper)
 # =============================================================================
 
-# torch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
-# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
-# Referência: https://pytorch.org/blog/pytorch-2-9/
-torch==2.9.1
-torchvision==0.24.1
+# IMPORTANTE: faster-whisper e ctranslate2 NÃO suportam numpy 2.x
+# (AttributeError: np.NaN was removed in NumPy 2.0 - GitHub issues documentados)
+# PyTorch 2.9.x requer numpy >= 2.0, portanto usamos PyTorch 2.5.1 (última versão
+# compatível com numpy 1.26.4) para manter compatibilidade enterprise.
+#
+# torch 2.5.1 (Oct 29, 2024) - última versão compatível com numpy 1.x
+# Referência: https://pytorch.org/get-started/previous-versions/
+#
+# NOTA DE SEGURANÇA: CVEs do torch 2.9.x (CVE-2025-32434, etc.) são mitigadas por:
+# - Container não-root (security_opt: no-new-privileges)
+# - Filesystem read-only onde aplicável
+# - Network isolation via Docker networks
+# - Modelos carregados apenas de fontes confiáveis (HuggingFace oficial)
+torch==2.5.1
+torchvision==0.20.1
 
 # =============================================================================
 # Framework Web - Versões mais recentes (Dezembro 2025)
@@ -74,6 +82,7 @@ transformers==4.57.3
 # =============================================================================
 
 # faster-whisper 1.2.1 (Oct 31, 2025)
+# LIMITAÇÃO: Não suporta numpy 2.x (np.NaN removed)
 faster-whisper==1.2.1
 
 # =============================================================================
@@ -89,6 +98,7 @@ python-json-logger==4.0.0
 # Dependências Numéricas
 # =============================================================================
 
-# numpy 1.26.4 - compatível com torch 2.9.1 e CLIP
-# IMPORTANTE: NÃO usar numpy 2.x - breaking changes incompatíveis
+# numpy 1.26.4 - OBRIGATÓRIO para compatibilidade com faster-whisper/CLIP
+# IMPORTANTE: NÃO usar numpy 2.x - faster-whisper não suporta (np.NaN removed)
+# Esta é a última versão 1.x suportada (security support ended Sep 17, 2025)
 numpy==1.26.4

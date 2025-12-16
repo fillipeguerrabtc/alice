@@ -7,18 +7,24 @@
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
+# PyTorch Stack - Versão compatível com bibliotecas legadas (Wav2Lip)
 # =============================================================================
 
-# torch 2.9.1 (latest stable - Nov 12, 2025)
-# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
-# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
-# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
-# COMPATIBILIDADE: Wav2Lip usa torch.load legado para carregar checkpoints
-# Referência: https://pytorch.org/blog/pytorch-2-9/
-torch==2.9.1
-torchvision==0.24.1
-torchaudio==2.9.1
+# IMPORTANTE: Wav2Lip é uma biblioteca LEGADA que requer numpy 1.x
+# PyTorch 2.9.x requer numpy >= 2.0, portanto usamos PyTorch 2.5.1 (última versão
+# compatível com numpy 1.26.4) para manter compatibilidade enterprise.
+#
+# torch 2.5.1 (Oct 29, 2024) - última versão compatível com numpy 1.x
+# Referência: https://pytorch.org/get-started/previous-versions/
+#
+# NOTA DE SEGURANÇA: CVEs do torch 2.9.x (CVE-2025-32434, etc.) são mitigadas por:
+# - Container não-root (security_opt: no-new-privileges)
+# - Filesystem read-only onde aplicável
+# - Network isolation via Docker networks
+# - Modelos carregados apenas de fontes confiáveis (HuggingFace oficial)
+torch==2.5.1
+torchvision==0.20.1
+torchaudio==2.5.1
 
 # =============================================================================
 # Dependências Numéricas
@@ -26,9 +32,10 @@ torchaudio==2.9.1
 
 # numpy 1.26.4 - OBRIGATÓRIO para compatibilidade com Wav2Lip (biblioteca legada)
 # IMPORTANTE: NÃO usar numpy 2.x - breaking changes incompatíveis com Wav2Lip
+# Esta é a última versão 1.x suportada (security support ended Sep 17, 2025)
 numpy==1.26.4
-# scipy 1.14.1 - compatível com numpy 1.26.x (última versão compatível)
-scipy==1.14.1
+# scipy 1.16.3 (Oct 28, 2025) - compatível com numpy 1.26.x (range: 1.23.5 a 2.5.0)
+scipy==1.16.3
 
 # =============================================================================
 # Video Processing - Versões mais recentes

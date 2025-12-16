@@ -17,6 +17,8 @@ ffmpeg-python==0.2.0
 # =============================================================================
 
 # numpy 1.26.4 - consistência com demais serviços multimodais
+# IMPORTANTE: Padronizado em numpy 1.x para evitar incompatibilidades
+# Esta é a última versão 1.x suportada (security support ended Sep 17, 2025)
 numpy==1.26.4
 
 # =============================================================================
