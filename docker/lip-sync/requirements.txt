@@ -7,24 +7,28 @@
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versões mais recentes (Dezembro 2025)
+# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
-# Compatível com CUDA 12.6
-# Referência: https://pytorch.org/get-started/previous-versions/
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
+# torch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
+# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
+# COMPATIBILIDADE: Wav2Lip usa torch.load legado para carregar checkpoints
+# Referência: https://pytorch.org/blog/pytorch-2-9/
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
 
 # =============================================================================
-# Dependências Numéricas - Versões mais recentes
+# Dependências Numéricas
 # =============================================================================
 
-# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
-numpy==2.3.5
-# scipy 1.16.3 (Oct 28, 2025) - compatível com numpy 2.x
-scipy==1.16.3
+# numpy 1.26.4 - OBRIGATÓRIO para compatibilidade com Wav2Lip (biblioteca legada)
+# IMPORTANTE: NÃO usar numpy 2.x - breaking changes incompatíveis com Wav2Lip
+numpy==1.26.4
+# scipy 1.14.1 - compatível com numpy 1.26.x (última versão compatível)
+scipy==1.14.1
 
 # =============================================================================
 # Video Processing - Versões mais recentes

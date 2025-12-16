@@ -7,15 +7,17 @@
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versões mais recentes (Dezembro 2025)
+# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
-# Compatível com CUDA 12.6 e coqui-tts 0.27.3
-# Referência: https://pytorch.org/get-started/previous-versions/
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
+# torch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
+# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
+# Referência: https://pytorch.org/blog/pytorch-2-9/
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
 
 # =============================================================================
 # TTS - Coqui Text-to-Speech (Fork Mantido)
@@ -29,11 +31,12 @@ coqui-tts==0.27.3
 soundfile==0.12.1
 
 # =============================================================================
-# Dependências Numéricas - Versões mais recentes
+# Dependências Numéricas
 # =============================================================================
 
-# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
-numpy==2.3.5
+# numpy 1.26.4 - compatível com torch 2.9.1 e coqui-tts
+# IMPORTANTE: Manter consistência com demais serviços multimodais
+numpy==1.26.4
 
 # =============================================================================
 # Transformers - Versão mais recente

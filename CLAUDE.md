@@ -317,7 +317,7 @@ git commit -a -m "test: adiciona testes unitários"
 - **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
 - **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22, pnpm (versão automática via package.json)
 - **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
-- **Python**: Python 3.13 (via .python-version - fonte primária para garantir compatibilidade), PyTorch 2.8.0 (versão mais recente - Sep 2025)
+- **Python**: Python 3.13 (via .python-version - fonte primária para garantir compatibilidade), PyTorch 2.9.1 (versão mais recente - Nov 2025, corrige CVE-2025-32434)
 - **CI/CD**: GitHub Actions (100% automático)
 - **Atualização Periódica**: Workflows automáticos para dependências npm/pnpm (semanal) e pacotes do sistema Hetzner (semanal)
 - **pnpm (build scripts)**: Em **CI/deploy**, definimos `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true` para permitir execução automática de scripts (sem `approve-builds`). Para builds Docker, os `Dockerfile` dos serviços exportam essa variável **somente no build stage** (onde roda `pnpm install`). Em desenvolvimento local, a proteção padrão permanece.

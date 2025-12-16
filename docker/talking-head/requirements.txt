@@ -7,15 +7,18 @@
 # Author: Fillipe Guerra
 
 # =============================================================================
-# PyTorch Stack - Versões mais recentes (Dezembro 2025)
+# PyTorch Stack - Versões seguras (CVE-2025-32434, CVE-2024-31580, CVE-2024-31583)
 # =============================================================================
 
-# PyTorch 2.8.0 (latest stable - Sep 13, 2025)
-# Compatível com CUDA 12.6
-# Referência: https://pytorch.org/get-started/previous-versions/
-torch==2.8.0
-torchvision==0.23.0
-torchaudio==2.8.0
+# torch 2.9.1 (latest stable - Nov 12, 2025)
+# Corrige CVE-2025-32434 (CRITICAL RCE via torch.load)
+# Corrige CVE-2025-3730 (MEDIUM DoS via ctc_loss)
+# Corrige CVE-2025-2953 (LOW DoS via mkldnn_max_pool2d)
+# COMPATIBILIDADE: SadTalker e face-alignment usam torch.load legado
+# Referência: https://pytorch.org/blog/pytorch-2-9/
+torch==2.9.1
+torchvision==0.24.1
+torchaudio==2.9.1
 
 # =============================================================================
 # Computer Vision - Versões mais recentes
@@ -25,17 +28,19 @@ torchaudio==2.8.0
 opencv-python-headless==4.12.0.88
 imageio==2.37.2
 imageio-ffmpeg==0.6.0
-# face-alignment 1.4.1 - versão mais recente (Aug 2023)
+# face-alignment 1.4.1 - versão mais recente disponível (Aug 2023)
+# IMPORTANTE: Biblioteca legada - requer numpy 1.x
 face-alignment==1.4.1
 
 # =============================================================================
-# Dependências Numéricas - Versões mais recentes
+# Dependências Numéricas
 # =============================================================================
 
-# numpy 2.3.5 (Nov 16, 2025) - compatível com torch 2.8.0
-numpy==2.3.5
-# scipy 1.16.3 (Oct 28, 2025) - compatível com numpy 2.x
-scipy==1.16.3
+# numpy 1.26.4 - OBRIGATÓRIO para compatibilidade com SadTalker e face-alignment
+# IMPORTANTE: NÃO usar numpy 2.x - breaking changes incompatíveis com face-alignment 1.4.1
+numpy==1.26.4
+# scipy 1.14.1 - compatível com numpy 1.26.x (última versão compatível)
+scipy==1.14.1
 
 # =============================================================================
 # HTTP Client - Versão mais recente
