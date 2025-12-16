@@ -60,11 +60,17 @@ deploy_service() {
     fi
     
     # Enviar configuração
+    # Bug fix: Sintaxe bash corrigida (${} é para expansão, não condicional)
+    local url_suffix=""
+    if [ "$method" == "PUT" ]; then
+        url_suffix="/${name}"
+    fi
+    
     curl -s -X ${method} \
         -H "Salad-Api-Key: ${SALAD_API_KEY}" \
         -H "Content-Type: application/json" \
         -d @"${config_file}" \
-        "${API_BASE}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_ID}/containers${method == 'PUT' && echo "/${name}" || echo ''}"
+        "${API_BASE}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_ID}/containers${url_suffix}"
     
     echo -e "${GREEN}✓ ${name} deployed${NC}"
 }

@@ -97,7 +97,8 @@ jobs:
       # ===========================================================================
       - name: Build e Push - Mixtral vLLM
         id: build-mixtral
-        if: github.event.inputs.services == 'all' || github.event.inputs.services == 'mixtral'
+        # Bug fix: Tratar push trigger onde inputs é vazio (services undefined = build all)
+        if: github.event_name == 'push' || github.event.inputs.services == 'all' || github.event.inputs.services == 'mixtral'
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: ./docker/gpu/mixtral-vllm
@@ -118,7 +119,8 @@ jobs:
       # ===========================================================================
       - name: Build e Push - ASR Canary
         id: build-asr
-        if: github.event.inputs.services == 'all' || github.event.inputs.services == 'asr'
+        # Bug fix: Tratar push trigger onde inputs é vazio (services undefined = build all)
+        if: github.event_name == 'push' || github.event.inputs.services == 'all' || github.event.inputs.services == 'asr'
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: ./docker/gpu/asr-canary
@@ -135,7 +137,8 @@ jobs:
       # ===========================================================================
       - name: Build e Push - FLUX.1 Schnell
         id: build-flux
-        if: github.event.inputs.services == 'all' || github.event.inputs.services == 'flux'
+        # Bug fix: Tratar push trigger onde inputs é vazio (services undefined = build all)
+        if: github.event_name == 'push' || github.event.inputs.services == 'all' || github.event.inputs.services == 'flux'
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: ./docker/gpu/flux-schnell
@@ -152,7 +155,8 @@ jobs:
       # ===========================================================================
       - name: Build e Push - Embeddings GPU
         id: build-embeddings
-        if: github.event.inputs.services == 'all' || github.event.inputs.services == 'embeddings'
+        # Bug fix: Tratar push trigger onde inputs é vazio (services undefined = build all)
+        if: github.event_name == 'push' || github.event.inputs.services == 'all' || github.event.inputs.services == 'embeddings'
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: ./docker/gpu/embeddings-gpu
@@ -174,6 +178,13 @@ jobs:
     if: github.event.inputs.apply_terraform == 'true' || github.event.inputs.apply_terraform == ''
     
     environment: ${{ github.event.inputs.environment || 'production' }}
+    
+    # Bug fix: Exportar outputs para jobs downstream (state local não é compartilhado)
+    outputs:
+      mixtral_endpoint: ${{ steps.outputs.outputs.mixtral_endpoint }}
+      asr_endpoint: ${{ steps.outputs.outputs.asr_endpoint }}
+      flux_endpoint: ${{ steps.outputs.outputs.flux_endpoint }}
+      embeddings_endpoint: ${{ steps.outputs.outputs.embeddings_endpoint }}
 
     steps:
       - name: Checkout código
@@ -220,6 +231,13 @@ jobs:
         id: outputs
         working-directory: ./infra/salad-cloud
         run: |
+          # Exportar endpoints para job outputs (Bug fix: state local não compartilhado entre runners)
+          echo "mixtral_endpoint=$(terraform output -raw mixtral_endpoint)" >> $GITHUB_OUTPUT
+          echo "asr_endpoint=$(terraform output -raw asr_endpoint)" >> $GITHUB_OUTPUT
+          echo "flux_endpoint=$(terraform output -raw flux_endpoint)" >> $GITHUB_OUTPUT
+          echo "embeddings_endpoint=$(terraform output -raw embeddings_endpoint)" >> $GITHUB_OUTPUT
+          
+          # Summary para visualização
           echo "## Salad Cloud Endpoints" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           terraform output -json all_endpoints | jq -r 'to_entries[] | "- **\(.key)**: \(.value)"' >> $GITHUB_STEP_SUMMARY
@@ -234,20 +252,14 @@ jobs:
     if: always() && needs.deploy-salad-terraform.result == 'success'
 
     steps:
-      - name: Checkout código
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Terraform (para ler outputs)
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        working-directory: ./infra/salad-cloud
-        run: terraform init
-
       - name: Health Check - Todos os serviços
-        working-directory: ./infra/salad-cloud
         env:
           SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
+          # Bug fix: Usar outputs do job anterior (state Terraform local não compartilhado)
+          MIXTRAL_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.mixtral_endpoint }}
+          ASR_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.asr_endpoint }}
+          FLUX_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.flux_endpoint }}
+          EMBEDDINGS_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.embeddings_endpoint }}
         run: |
           echo "## Health Checks" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -256,9 +268,16 @@ jobs:
           echo "Aguardando 120s para cold start dos containers..."
           sleep 120
           
-          # Verificar cada endpoint
-          for service in mixtral asr flux embeddings; do
-            endpoint=$(terraform output -raw ${service}_endpoint 2>/dev/null || echo "")
+          # Verificar cada endpoint usando outputs do job anterior
+          declare -A endpoints=(
+            ["mixtral"]="${MIXTRAL_ENDPOINT}"
+            ["asr"]="${ASR_ENDPOINT}"
+            ["flux"]="${FLUX_ENDPOINT}"
+            ["embeddings"]="${EMBEDDINGS_ENDPOINT}"
+          )
+          
+          for service in "${!endpoints[@]}"; do
+            endpoint="${endpoints[$service]}"
             if [ -n "$endpoint" ]; then
               echo "Verificando ${service}: ${endpoint}/health"
               
@@ -271,6 +290,8 @@ jobs:
               else
                 echo "- ⚠️ **${service}**: ${status} (pode estar em cold start)" >> $GITHUB_STEP_SUMMARY
               fi
+            else
+              echo "- ⏭️ **${service}**: Endpoint não disponível" >> $GITHUB_STEP_SUMMARY
             fi
           done
 
@@ -284,21 +305,22 @@ jobs:
     if: always() && needs.deploy-salad-terraform.result == 'success'
 
     steps:
-      - name: Checkout código
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
-      - name: Terraform Init
-        working-directory: ./infra/salad-cloud
-        run: terraform init
-
       - name: Gerar variáveis para Hetzner
-        working-directory: ./infra/salad-cloud
+        env:
+          # Bug fix: Usar outputs do job anterior (state Terraform local não compartilhado)
+          MIXTRAL_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.mixtral_endpoint }}
+          ASR_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.asr_endpoint }}
+          FLUX_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.flux_endpoint }}
+          EMBEDDINGS_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.embeddings_endpoint }}
         run: |
           echo "Gerando variáveis de ambiente para Hetzner..."
-          terraform output -raw environment_variables > /tmp/salad_endpoints.env
+          cat > /tmp/salad_endpoints.env << EOF
+          # Salad Cloud Endpoints (gerado por GitHub Actions)
+          SALAD_MIXTRAL_URL=${MIXTRAL_ENDPOINT}
+          SALAD_ASR_URL=${ASR_ENDPOINT}
+          SALAD_FLUX_URL=${FLUX_ENDPOINT}
+          SALAD_EMBEDDINGS_URL=${EMBEDDINGS_ENDPOINT}
+          EOF
           cat /tmp/salad_endpoints.env
 
       - name: Atualizar .env no Hetzner
