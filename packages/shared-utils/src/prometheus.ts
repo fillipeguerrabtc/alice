@@ -173,6 +173,24 @@ export interface AliceMetrics {
     /** Taxa de cache hit (0-1) - sem labels */
     cacheHitRate: Gauge<string>;
   };
+  
+  /** 
+   * Métricas Response Cache (Greetings Gate) - 17/12/2025
+   * Cache de respostas para saudações e mensagens simples
+   * Evita chamadas desnecessárias ao LLM GPU
+   */
+  responseCache: {
+    /** Total de cache hits (respostas servidas do cache) */
+    hitsTotal: Counter<'tenant_id'>;
+    /** Total de cache misses (precisou chamar LLM) */
+    missesTotal: Counter<'tenant_id'>;
+    /** Total de saudações detectadas */
+    greetingsDetected: Counter<'tenant_id'>;
+    /** Latência do check de cache em segundos */
+    checkDuration: Histogram<'tenant_id'>;
+    /** Taxa de hit atual (0-1) */
+    hitRate: Gauge<string>;
+  };
 }
 
 /**
@@ -516,7 +534,48 @@ export function createAlicePrometheus(config: PrometheusConfig): {
     help: 'Taxa de cache hit RBAC (0-1)',
     registers: [registry],
   });
-  
+
+  // ============================================================================
+  // MÉTRICAS RESPONSE CACHE (Greetings Gate) - 17/12/2025
+  // Cache de respostas para saudações e mensagens simples
+  // Autor: Fillipe Guerra
+  // ============================================================================
+
+  const responseCacheHitsTotal = new Counter({
+    name: `${prefix}response_cache_hits_total`,
+    help: 'Total de respostas servidas do cache (sem chamar LLM)',
+    labelNames: ['tenant_id'] as const,
+    registers: [registry],
+  });
+
+  const responseCacheMissesTotal = new Counter({
+    name: `${prefix}response_cache_misses_total`,
+    help: 'Total de cache misses (precisou chamar LLM)',
+    labelNames: ['tenant_id'] as const,
+    registers: [registry],
+  });
+
+  const responseCacheGreetingsDetected = new Counter({
+    name: `${prefix}response_cache_greetings_detected_total`,
+    help: 'Total de saudações simples detectadas',
+    labelNames: ['tenant_id'] as const,
+    registers: [registry],
+  });
+
+  const responseCacheCheckDuration = new Histogram({
+    name: `${prefix}response_cache_check_duration_seconds`,
+    help: 'Latência do check de response cache em segundos',
+    labelNames: ['tenant_id'] as const,
+    buckets: [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05],
+    registers: [registry],
+  });
+
+  const responseCacheHitRate = new Gauge({
+    name: `${prefix}response_cache_hit_rate`,
+    help: 'Taxa de hit do response cache (0-1)',
+    registers: [registry],
+  });
+
   // ============================================================================
   // OBJETO DE MÉTRICAS
   // ============================================================================
@@ -579,6 +638,13 @@ export function createAlicePrometheus(config: PrometheusConfig): {
       cacheInvalidationsTotal: rbacCacheInvalidationsTotal,
       checkDuration: rbacCheckDuration,
       cacheHitRate: rbacCacheHitRate,
+    },
+    responseCache: {
+      hitsTotal: responseCacheHitsTotal,
+      missesTotal: responseCacheMissesTotal,
+      greetingsDetected: responseCacheGreetingsDetected,
+      checkDuration: responseCacheCheckDuration,
+      hitRate: responseCacheHitRate,
     },
   } satisfies AliceMetrics;
   

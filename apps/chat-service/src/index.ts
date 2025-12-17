@@ -78,6 +78,12 @@ import {
   getImageGenBreakerStats,
 } from './image-generation-client.js';
 import { initTradingOrchestrator } from './trading-orchestrator.js';
+import { 
+  checkResponseCache, 
+  isGreeting, 
+  getCacheMetrics,
+  isCacheOperational,
+} from './response-cache.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -2256,6 +2262,73 @@ wss.on('connection', (ws, req) => {
               error: 'Não foi possível gerar a imagem. Tente novamente.',
             }));
           }
+        }
+
+        // ========================================================================
+        // RESPONSE CACHE / GREETINGS GATE (17/12/2025)
+        // Verifica se a mensagem é uma saudação simples que pode ser respondida
+        // sem chamar o LLM GPU. Economiza custos e reduz latência.
+        // Autor: Fillipe Guerra
+        // ========================================================================
+        const cacheResult = await checkResponseCache(safeTenantId, message.content);
+        
+        // Incrementar métricas Prometheus
+        if (cacheResult.isGreeting) {
+          metrics.responseCache.greetingsDetected.inc({ tenant_id: safeTenantId });
+        }
+        
+        if (cacheResult.hit && cacheResult.response) {
+          // CACHE HIT - responder sem chamar LLM
+          metrics.responseCache.hitsTotal.inc({ tenant_id: safeTenantId });
+          metrics.responseCache.checkDuration.observe(
+            { tenant_id: safeTenantId }, 
+            cacheResult.latencyMs / 1000
+          );
+          
+          const cacheLatency = cacheResult.latencyMs;
+          
+          // Salvar resposta no banco
+          const [cachedMsg] = await db.insert(schema.messages).values({
+            conversationId: message.conversationId,
+            agentId: conversation?.agentId,
+            conteudo: cacheResult.response,
+            tipo: 'text',
+            isFromUser: false,
+            latenciaMs: cacheLatency,
+            metadata: { 
+              source: 'response-cache',
+              cacheKey: cacheResult.cacheKey,
+              isGreeting: true,
+            },
+          }).returning();
+          
+          // Enviar resposta ao cliente (simular streaming para UX consistente)
+          ws.send(JSON.stringify({ type: 'stream', data: cacheResult.response }));
+          ws.send(JSON.stringify({ 
+            type: 'complete', 
+            data: cachedMsg,
+            metrics: {
+              cacheHit: true,
+              cacheLatencyMs: cacheLatency,
+              source: 'response-cache',
+            },
+          }));
+          
+          logger.info({
+            conversationId: message.conversationId,
+            tenantId: safeTenantId,
+            cacheLatencyMs: cacheLatency,
+            isGreeting: true,
+          }, 'Resposta servida do cache (Greetings Gate) - sem GPU');
+          
+          return; // Não continuar para LLM
+        } else {
+          // CACHE MISS - registrar métrica e continuar para LLM
+          metrics.responseCache.missesTotal.inc({ tenant_id: safeTenantId });
+          metrics.responseCache.checkDuration.observe(
+            { tenant_id: safeTenantId }, 
+            cacheResult.latencyMs / 1000
+          );
         }
 
         const agent = conversation?.agent as { instrucoes?: string } | null;

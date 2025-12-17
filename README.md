@@ -427,14 +427,15 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.61.0 - 17 de Dezembro de 2025*
+*Versão 3.62.0 - 17 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
-*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido*
+*Response Cache (17/12/2025): Greetings Gate - saudações respondidas via cache Redis (sem GPU)*
+*Bug Fixes Trading (17/12/2025): extractNumber (regex groups), WebSocket unsubscribe, Orchestrator atomicity*
 *Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning + RBAC*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *Salad Cloud: LLM (Mixtral vLLM), image generation (FLUX.1), fine-tuning, embeddings-gpu (Qwen3 + OpenCLIP), whisper-gpu (ASR)*

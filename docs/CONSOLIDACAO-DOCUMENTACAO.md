@@ -2,8 +2,8 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Dezembro de 2025  
-**Versão:** 2.1  
-**Atualizado:** 17 de Dezembro de 2025 (Arquitetura Enterprise - Qwen3-Embedding-8B 4096 dim)
+**Versão:** 2.2  
+**Atualizado:** 17 de Dezembro de 2025 (Response Cache / Greetings Gate + Bug Fixes Trading)
 
 ## Estrutura Atual da Documentação
 
@@ -73,10 +73,12 @@
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 2.8 - Bug Fix CandleChart Wicks + Pipeline 100% Enterprise*
+*Versão: 2.9 - Response Cache (Greetings Gate) + Bug Fixes Trading*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem 1024 dim OpenCLIP MIT (pgvector)*
+*Response Cache (17/12/2025): Greetings Gate implementado - saudações respondidas via cache Redis (sem GPU)*
+*Bug Fixes Trading (17/12/2025): extractNumber (regex groups), WebSocket unsubscribe (oldSymbol), Orchestrator atomicity*
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5/Linq-Embed/NV-Embed são CC BY-NC.*
 *Bug Fixes (17/12/2025): CandleChart wicks + Schema import + initTradingOrchestrator + embeddings texto → Qdrant + KuCoin*
 *Pipeline: Versionamento automático + Cache GHA + Auto-instalação requisitos + Scripts limpeza pós-deploy*

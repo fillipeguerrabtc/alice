@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.97 - Bug Fix CandleChart: Wicks (sombras) agora são renderizados (17/12/2025)
+> **Versão:** 3.98 - Response Cache (Greetings Gate) + Bug Fixes Trading (17/12/2025)
 
 ---
 
@@ -1020,7 +1020,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.97 - Bug Fix CandleChart: Wicks (sombras) agora são renderizados (17/12/2025)*
+*Versão: 3.98 - Response Cache (Greetings Gate) + Bug Fixes Trading (17/12/2025)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -1037,6 +1037,11 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix initTradingOrchestrator (17/12/2025): Adicionada chamada de inicialização faltante em chat-service/index.ts - evita db undefined*
 *Bug Fix Schema Import (17/12/2025): trading-orchestrator.ts usava db._.schema incorreto - corrigido para import * as schema*
 *Bug Fix CandleChart Wicks (17/12/2025): Wicks (sombras high/low) não eram renderizados - apenas body era mostrado*
+*Response Cache (17/12/2025): Greetings Gate implementado - saudações simples respondidas via cache Redis (sem GPU)*
+*Response Cache Métricas (17/12/2025): alice_response_cache_hits_total, misses_total, greetings_detected, check_duration*
+*Bug Fix Trading Parser (17/12/2025): extractNumber corrigido para usar grupos capturados do regex (evita amount incorreto)*
+*Bug Fix WebSocket Unsubscribe (17/12/2025): useKucoinWebSocket.ts passa oldSymbol explícito ao desinscrever (evita subscriptions órfãs)*
+*Bug Fix Trading Orchestrator Atomicity (17/12/2025): handover/takeover agora são atômicos via db.transaction()*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

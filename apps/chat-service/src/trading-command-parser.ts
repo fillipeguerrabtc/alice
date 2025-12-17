@@ -296,7 +296,37 @@ function extractOrderId(text: string): string | undefined {
 }
 
 /**
+ * Extrai amount dos grupos capturados do regex match
+ * 
+ * CORREÇÃO 17/12/2025: Não usar extractNumber(text) que pega o primeiro número do texto.
+ * Para "10x compre 5 BTC", extractNumber retornaria 10 (errado) ao invés de 5 (correto).
+ * Agora extraímos o amount dos grupos capturados pelo regex pattern.
+ * 
+ * Autor: Fillipe Guerra
+ */
+function extractAmountFromMatch(match: RegExpMatchArray): number | undefined {
+  // Percorrer grupos capturados (ignora grupo 0 que é o match completo)
+  for (let i = 1; i < match.length; i++) {
+    const group = match[i];
+    // Verificar se o grupo é um número válido (inteiro ou decimal)
+    if (group && /^\d+(?:\.\d+)?$/.test(group)) {
+      return parseFloat(group);
+    }
+  }
+  return undefined;
+}
+
+/**
  * Parse principal - analisa texto e retorna comando identificado
+ * 
+ * CORREÇÃO 17/12/2025: Bug fix crítico na extração de amounts.
+ * Antes: extractNumber(text) pegava o primeiro número do texto inteiro
+ * Agora: Usa os grupos capturados do regex para extrair o amount correto
+ * 
+ * Exemplo do bug corrigido:
+ * - Input: "10x compre 5 BTC"
+ * - Antes: amount = 10 (ERRADO - pegava primeiro número)
+ * - Depois: amount = 5 (CORRETO - do grupo capturado pelo regex)
  */
 export function parseTradingCommand(text: string): ParsedTradingCommand {
   const result: ParsedTradingCommand = {
@@ -314,7 +344,9 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
   // Tentar match com cada padrão
   for (const pattern of COMMAND_PATTERNS) {
     for (const regex of pattern.patterns) {
-      if (regex.test(normalizedText)) {
+      // CORREÇÃO: Usar match() para obter grupos capturados, não apenas test()
+      const match = normalizedText.match(regex);
+      if (match) {
         result.type = pattern.type;
         result.isTrading = true;
         result.matchedPattern = regex.source;
@@ -324,13 +356,19 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
 
         // Extrair dados adicionais baseado no tipo
         if (pattern.type === 'buy' || pattern.type === 'sell') {
-          result.amount = extractNumber(text);
+          // CORREÇÃO: Extrair amount dos grupos capturados, NÃO do texto inteiro
+          result.amount = extractAmountFromMatch(match);
           result.symbol = extractSymbol(text);
           
-          // Verificar alavancagem mencionada
-          const leverageMatch = text.match(/(\d+)x/i);
+          // Verificar alavancagem mencionada (buscar padrão Xx no texto)
+          // CORREÇÃO: Garantir que leverage não seja confundido com amount
+          const leverageMatch = text.match(/(\d+)x\b/i);
           if (leverageMatch) {
-            result.leverage = parseInt(leverageMatch[1]);
+            const leverageValue = parseInt(leverageMatch[1]);
+            // Só definir leverage se for diferente do amount (evitar confusão)
+            if (leverageValue !== result.amount) {
+              result.leverage = leverageValue;
+            }
           }
 
           // Aumentar confiança se tiver amount
@@ -360,6 +398,8 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
           confidence: result.confidence,
           amount: result.amount,
           symbol: result.symbol,
+          leverage: result.leverage,
+          matchedGroups: match.slice(1), // Log dos grupos capturados para debug
         }, 'Comando de trading identificado');
 
         return result;
