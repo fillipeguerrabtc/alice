@@ -402,7 +402,12 @@ export async function createOrderFromSignal(
     // Obter preço atual para validação
     const ticker = await kucoinClient.getTicker(symbol);
     const currentPrice = parseFloat(ticker.price);
-    const orderValue = params.size * currentPrice;
+    
+    // CORREÇÃO 17/12/2025: Para ordens limite, usar params.price na validação de risco
+    // Bug: orderValue usava sempre currentPrice, permitindo ordens acima do limite
+    // quando limit price > current price (ex: limit buy a $200k quando BTC está a $100k)
+    const priceForValidation = params.price !== undefined ? params.price : currentPrice;
+    const orderValue = params.size * priceForValidation;
 
     // Validar limites de risco
     const riskCheck = await validateTradingAllowed(authContext, params.size, orderValue);
