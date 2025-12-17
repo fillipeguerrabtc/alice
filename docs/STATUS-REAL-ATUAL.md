@@ -1048,6 +1048,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix WebSocket content undefined (17/12/2025): Type assertion corrigida (content: string → content?: string), validação defensiva*
 *Bug Fix Leverage igual Amount (17/12/2025): Lógica corrigida para aceitar leverage mesmo quando valor=amount (ex: "compre 10 BTC 10x")*
 *Bug Fix messageContent Inconsistente (17/12/2025): Todas as funções agora usam messageContent (com fallback) ao invés de message.content (undefined)*
+*Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): Hook useKucoinWebSocket evita subscriptions duplicadas na conexão inicial*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

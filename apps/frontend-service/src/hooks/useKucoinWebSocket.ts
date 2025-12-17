@@ -139,6 +139,11 @@ export function useKucoinWebSocket(
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const subscriptionsRef = useRef<Set<string>>(new Set());
+  // CORREÇÃO 17/12/2025: Flag para evitar subscriptions duplicadas na conexão inicial
+  // Bug: onopen envia subscriptions E o useEffect[state.connected] dispara novamente
+  // quando connected=true, enviando subscriptions duplicadas porque subscriptionsRef está vazio
+  const initialSubscriptionSentRef = useRef(false);
+  const previousSymbolRef = useRef<string>(symbol);
 
   // Get WebSocket URL
   const getWsUrl = useCallback(() => {
@@ -258,6 +263,11 @@ export function useKucoinWebSocket(
             interval: channel === 'klines' ? interval : undefined,
           }));
         });
+
+        // CORREÇÃO 17/12/2025: Marcar que subscriptions iniciais foram enviadas
+        // Isso evita que o useEffect[state.connected] envie subscriptions duplicadas
+        initialSubscriptionSentRef.current = true;
+        previousSymbolRef.current = symbol;
       };
 
       ws.onmessage = handleMessage;
@@ -316,6 +326,8 @@ export function useKucoinWebSocket(
       lastPing: null,
     });
     subscriptionsRef.current.clear();
+    // CORREÇÃO 17/12/2025: Resetar flag para que a próxima conexão funcione corretamente
+    initialSubscriptionSentRef.current = false;
   }, [clearReconnect, clearPing]);
 
   // Subscribe to a channel
@@ -365,6 +377,20 @@ export function useKucoinWebSocket(
   // Resubscribe when symbol changes
   useEffect(() => {
     if (state.connected) {
+      // CORREÇÃO 17/12/2025: Evitar subscriptions duplicadas na conexão inicial
+      // Bug: onopen já envia subscriptions, mas este useEffect dispara novamente quando
+      // state.connected muda para true, enviando subscriptions duplicadas
+      // Solução: Verificar se é conexão inicial (flag true E símbolo não mudou)
+      const isInitialConnection = initialSubscriptionSentRef.current && previousSymbolRef.current === symbol;
+      
+      if (isInitialConnection) {
+        // Conexão inicial - subscriptions já foram enviadas no onopen
+        // Apenas resetar a flag e não fazer nada
+        initialSubscriptionSentRef.current = false;
+        return;
+      }
+
+      // Mudança de símbolo ou reconexão - fazer resubscribe normalmente
       // Unsubscribe from old channels
       // CORREÇÃO 17/12/2025: Extrair oldSymbol da subscription para enviar unsubscribe correto
       // Bug anterior: unsubscribe(channel) usava o novo símbolo via closure, deixando subscriptions órfãs
@@ -377,6 +403,9 @@ export function useKucoinWebSocket(
       channels.forEach(channel => {
         subscribe(channel, symbol, channel === 'klines' ? interval : undefined);
       });
+
+      // Atualizar referência do símbolo
+      previousSymbolRef.current = symbol;
     }
   }, [symbol, state.connected, channels, interval, subscribe, unsubscribe]);
 

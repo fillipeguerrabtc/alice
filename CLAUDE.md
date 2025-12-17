@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.84 - 17 de Dezembro de 2025*
+*Versão: 3.85 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -381,3 +381,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix WebSocket content undefined (17/12/2025): Type assertion corrigida, validação defensiva em checkResponseCache e isGreeting*
 *Bug Fix Leverage igual Amount (17/12/2025): Removida verificação incorreta que descartava leverage quando valor=amount (ex: "compre 10 BTC 10x")*
 *Bug Fix messageContent Inconsistente (17/12/2025): buscarContextoRAG e callLlamaAPI agora usam messageContent (com fallback) ao invés de message.content*
+*Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
