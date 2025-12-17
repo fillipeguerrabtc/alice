@@ -1585,6 +1585,7 @@ export const tradingRiskConfig = pgTable(
     tenantId: uuid("tenant_id").notNull().references(() => tenants.id).unique(),
     // Limites de risco
     maxPositionSize: real("max_position_size").default(0.1),     // Máximo % do capital por posição
+    maxOrderValue: real("max_order_value").default(10000),       // Valor máximo por ordem em USD (CORREÇÃO 17/12/2025)
     maxDailyLoss: real("max_daily_loss").default(0.05),          // Máxima perda diária % (circuit breaker)
     maxOpenPositions: integer("max_open_positions").default(3),  // Máximo de posições abertas
     maxLeverage: integer("max_leverage").default(10),            // Alavancagem máxima permitida
