@@ -51,11 +51,11 @@ data "saladcloud_gpu_classes" "available" {}
 
 locals {
   # Tags comuns para todos os recursos
+  # Bug fix: Removido timestamp() que causava mudanças a cada terraform plan/apply
   common_labels = {
     project     = "alice"
     environment = var.environment
     managed_by  = "terraform"
-    created_at  = timestamp()
   }
 
   # GPU class para RTX 4090 (24GB VRAM)
@@ -100,7 +100,8 @@ resource "saladcloud_container_group" "mixtral_llm" {
 
     environment_variables = {
       # vLLM Configuration
-      MODEL_NAME              = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      # Bug fix: Usar modelo AWQ pré-quantizado (base model não tem weights AWQ)
+      MODEL_NAME              = "TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ"
       QUANTIZATION            = "awq"  # 4-bit quantization
       MAX_MODEL_LEN           = "32768"
       GPU_MEMORY_UTILIZATION  = "0.95"
@@ -121,7 +122,7 @@ resource "saladcloud_container_group" "mixtral_llm" {
     # Comando para iniciar vLLM
     command = [
       "python", "-m", "vllm.entrypoints.openai.api_server",
-      "--model", "mistralai/Mixtral-8x7B-Instruct-v0.1",
+      "--model", "TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ",
       "--quantization", "awq",
       "--max-model-len", "32768",
       "--gpu-memory-utilization", "0.95",

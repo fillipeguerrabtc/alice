@@ -89,7 +89,7 @@ generate_mixtral_config() {
             "gpu_classes": ["rtx4090-24gb"]
         },
         "environment_variables": {
-            "MODEL_NAME": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+            "MODEL_NAME": "TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ",
             "QUANTIZATION": "awq",
             "MAX_MODEL_LEN": "32768",
             "GPU_MEMORY_UTILIZATION": "0.95",
@@ -97,7 +97,7 @@ generate_mixtral_config() {
             "PORT": "8000",
             "HOST": "0.0.0.0"
         },
-        "command": ["python", "-m", "vllm.entrypoints.openai.api_server", "--model", "mistralai/Mixtral-8x7B-Instruct-v0.1", "--quantization", "awq", "--port", "8000"]
+        "command": ["python", "-m", "vllm.entrypoints.openai.api_server", "--model", "TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ", "--quantization", "awq", "--port", "8000"]
     },
     "networking": {
         "protocol": "http",

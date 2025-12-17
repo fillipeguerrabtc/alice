@@ -61,7 +61,8 @@ RUN chown -R vllm:vllm /app
 USER vllm
 
 # Variáveis de configuração do modelo
-ENV MODEL_NAME="mistralai/Mixtral-8x7B-Instruct-v0.1"
+# Bug fix: Usar modelo AWQ pré-quantizado (base model não tem weights AWQ)
+ENV MODEL_NAME="TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ"
 ENV QUANTIZATION="awq"
 ENV MAX_MODEL_LEN="32768"
 ENV GPU_MEMORY_UTILIZATION="0.95"
