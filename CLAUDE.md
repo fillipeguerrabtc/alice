@@ -332,7 +332,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.67 - 17 de Dezembro de 2025*
+*Versão: 3.68 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -346,8 +346,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem vector(1024) OpenCLIP MIT (pgvector)*
-*Bug Fix Embeddings (17/12/2025): Embeddings de texto de áudio/vídeo agora vão para Qdrant (4096 dim), não PostgreSQL halfvec(3584)*
+*Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio/vídeo) agora vão para Qdrant (4096 dim), não PostgreSQL*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus*
 *Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR)*
-*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI*
+*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI + Scripts auto-correção*

@@ -1242,6 +1242,8 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo frontend/API)
+    // CORREÇÃO 17/12/2025: Embedding de documento (4096 dim) vai para QDRANT, não PostgreSQL
+    // Schema documents.embedding é vector(1024) - incompatível com Qwen3-Embedding-8B (4096 dim)
     const [document] = await db.insert(schema.documents).values({
       namespaceId: body.namespaceId,
       titulo: body.titulo,
@@ -1250,9 +1252,29 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       fonte: body.fonte,
       urlOrigem: body.urlOrigem,
       hashConteudo,
-      embedding: documentEmbedding,
+      // embedding OMITIDO - texto 4096 dim vai para Qdrant, não pgvector vector(1024)
       processado: false,
     }).returning();
+    
+    // Armazenar embedding do documento inteiro no Qdrant para busca semântica
+    if (documentEmbedding.length > 0 && isQdrantConfigured()) {
+      await upsertPoints(TEXT_COLLECTION_NAME, [{
+        id: `document-${document.id}`,
+        vector: documentEmbedding,
+        payload: {
+          type: 'document',
+          documentId: document.id,
+          titulo: body.titulo,
+          tenantId: tenantId,
+          namespaceId: body.namespaceId,
+          fonte: body.fonte,
+          urlOrigem: body.urlOrigem,
+          conteudoPreview: body.conteudo.slice(0, 500),
+          criadoEm: new Date().toISOString(),
+        },
+      }]);
+      logger.debug({ documentId: document.id }, 'Embedding de documento inserido no Qdrant');
+    }
 
     const chunks = chunkText(body.conteudo);
     
@@ -1345,15 +1367,37 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
 
     // MULTI-TENANCY: Documento associado ao tenant via namespaceId
     // namespaceId deve pertencer ao tenant do usuário (validado pelo middleware)
+    // CORREÇÃO 17/12/2025: Embedding de documento (4096 dim) vai para QDRANT, não PostgreSQL
+    // Schema documents.embedding é vector(1024) - incompatível com Qwen3-Embedding-8B (4096 dim)
     const [document] = await db.insert(schema.documents).values({
       namespaceId,
       titulo,
       conteudo: content,
       tipo: req.file.mimetype,
       hashConteudo,
-      embedding: documentEmbedding,
+      // embedding OMITIDO - texto 4096 dim vai para Qdrant, não pgvector vector(1024)
       processado: false,
     }).returning();
+    
+    // Armazenar embedding do documento inteiro no Qdrant para busca semântica
+    if (documentEmbedding.length > 0 && isQdrantConfigured()) {
+      await upsertPoints(TEXT_COLLECTION_NAME, [{
+        id: `document-${document.id}`,
+        vector: documentEmbedding,
+        payload: {
+          type: 'document',
+          documentId: document.id,
+          titulo: titulo,
+          tenantId: req.tenantId,
+          namespaceId: namespaceId,
+          nomeArquivo: req.file?.originalname,
+          tipoArquivo: req.file?.mimetype,
+          conteudoPreview: content.slice(0, 500),
+          criadoEm: new Date().toISOString(),
+        },
+      }]);
+      logger.debug({ documentId: document.id }, 'Embedding de documento inserido no Qdrant');
+    }
 
     const chunks = chunkText(content);
     

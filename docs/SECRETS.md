@@ -512,12 +512,12 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*  
-*Versão: 7.1*  
+*Versão: 7.2*  
 *Total de Secrets: 55 configurados (50 obrigatórios + 5 opcionais/novos)*  
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
-*Bug Fixes (17/12/2025): Embeddings texto áudio/vídeo → Qdrant (não PostgreSQL halfvec) | KuCoin sync status 'active'*
+*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido*
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
