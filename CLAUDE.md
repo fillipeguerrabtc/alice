@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-Alice is an autonomous AI enterprise platform powered by the Llama 4 Maverick (400B parameters) model, hosted on Salad Cloud. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via fine-tuning. The platform aims to eliminate external API dependencies, mitigate privacy concerns, and offer an alternative to unpredictable token-based pricing. Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend, image generation, aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
+Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Salad Cloud RTX 4090 GPUs. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with dual-dimension embeddings (text 3584 dim + image 1024 dim), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -346,5 +346,5 @@ git commit -a -m "test: adiciona testes unitários"
 *ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(3584) gte-Qwen2-7B-instruct (nativo) | Imagem vector(1024) OpenCLIP ViT-H/14*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus (last_request_timestamp)*
-*Salad Cloud: Mixtral 8x7B (vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-Qwen-2.5B (ASR)*
+*Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, gte-Qwen2-7B-instruct (embeddings), OpenCLIP ViT-H/14, Canary-Qwen-2.5B (ASR)*
 *Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI*

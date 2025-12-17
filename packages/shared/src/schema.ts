@@ -899,7 +899,7 @@ export const messages = pgTable(
 // ============================================================================
 // DOCUMENTOS (Base de Conhecimento para RAG/Trading)
 // ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
+// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
 // - +38% qualidade retrieval para análises de trading
 // ============================================================================
 
@@ -932,7 +932,7 @@ export const documents = pgTable(
 // ============================================================================
 // CHUNKS DE DOCUMENTOS (Para RAG/Trading)
 // ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
+// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
 // ============================================================================
 
 export const documentChunks = pgTable(
@@ -1203,7 +1203,7 @@ export const usageMetrics = pgTable(
 // ============================================================================
 // DADOS DE TREINAMENTO (Auto-evolução/Fine-tuning)
 // ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 4096 dim) - Qwen3-Embedding-8B
+// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
 // ============================================================================
 
 export const trainingDataStatusEnum = pgEnum("training_data_status", [
@@ -2241,7 +2241,7 @@ export const mediaUploads = pgTable(
     // Embeddings para RAG multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
     // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud
     clipEmbedding: imageVector("clip_embedding"),
-    // Texto/Transcrição: Qwen3-Embedding-8B (4096 dim) - GPU Salad Cloud (+38% qualidade)
+    // Texto/Transcrição: gte-Qwen2-7B-instruct (3584 dim nativo) - GPU Salad Cloud (+38% qualidade)
     textEmbedding: textVector("text_embedding"),
     
     // Transcrição (para áudio/vídeo)

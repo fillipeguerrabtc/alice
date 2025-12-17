@@ -1,9 +1,9 @@
 # Consolidação de Documentação - Alice Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 15 de Dezembro de 2025  
-**Versão:** 1.9  
-**Atualizado:** 15 de Dezembro de 2025 (Arquitetura Híbrida Multimodal + 43 containers)
+**Data:** 17 de Dezembro de 2025  
+**Versão:** 2.0  
+**Atualizado:** 17 de Dezembro de 2025 (Arquitetura Dual-Dimension + Trading BTC)
 
 ## Estrutura Atual da Documentação
 
@@ -72,7 +72,9 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 15 de Dezembro de 2025*  
-*Versão: 1.9 - Arquitetura Híbrida Multimodal + 43 containers*  
+*Documento atualizado em: 17 de Dezembro de 2025*  
+*Versão: 2.0 - Arquitetura Dual-Dimension + Trading BTC*  
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
-*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*
+*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*  
+*ARQUITETURA DUAL-DIMENSION: Texto (gte-Qwen2-7B-instruct, 3584 dim) + Imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Salad Cloud*  
+*Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning*

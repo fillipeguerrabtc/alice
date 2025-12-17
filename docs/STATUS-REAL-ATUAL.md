@@ -762,7 +762,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
 | Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim (vector) |
-| Áudio | `audio-processor.ts` | Canary-Qwen-2.5B + Qwen3-Embedding-8B | Transcrição + 4000 dim (halfvec) |
+| Áudio | `audio-processor.ts` | Canary-Qwen-2.5B + gte-Qwen2-7B-instruct | Transcrição + 3584 dim (halfvec) |
 | Vídeo | `video-processor.ts` | FFmpeg + Canary + OpenCLIP | Dual-dimension |
 | Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + gte-Qwen2 | 3584 dim (halfvec) |
 

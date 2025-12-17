@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Salad Cloud Infrastructure
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 16 de Dezembro de 2025  
-> **Versão:** 1.0.0
+> **Data:** 17 de Dezembro de 2025  
+> **Versão:** 1.1.0
 
 ## Visão Geral
 
@@ -23,7 +23,7 @@ Este diretório contém a infraestrutura como código (IaC) para os Container Gr
 │                                                                 │
 │  ┌─────────────────────────────────────────────────────────────┐│
 │  │              Embeddings GPU (Dual-Dimension)                ││
-│  │  Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)       ││
+│  │  gte-Qwen2-7B-instruct (3584 dim) + OpenCLIP (1024 dim)    ││
 │  │  RTX 4090 (24GB VRAM)                                       ││
 │  └─────────────────────────────────────────────────────────────┘│
 │                                                                 │
@@ -43,7 +43,7 @@ Este diretório contém a infraestrutura como código (IaC) para os Container Gr
 | **Mixtral 8x7B** | RTX 4090 | 24GB | vLLM quantizado 4-bit | LLM para chat e trading |
 | **ASR Canary** | RTX 4090 | 24GB | Canary-Qwen-2.5B | Transcrição de áudio |
 | **FLUX.1 Schnell** | RTX 4090 | 24GB | FLUX.1 Schnell | Geração de imagens |
-| **Embeddings GPU** | RTX 4090 | 24GB | Qwen3 + OpenCLIP | Embeddings dual-dimension |
+| **Embeddings GPU** | RTX 4090 | 24GB | gte-Qwen2 + OpenCLIP | Embeddings dual-dimension |
 
 ## Arquitetura de Embeddings (Dual-Dimension)
 

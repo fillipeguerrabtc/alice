@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 2.0 - ARQUITETURA 100% GPU  
-**Data:** 15 de Dezembro de 2025
+**Versão:** 3.0 - ARQUITETURA DUAL-DIMENSION + TRADING  
+**Data:** 17 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -10,20 +10,21 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ---
 
-## ARQUITETURA 100% GPU (15/12/2025)
+## ARQUITETURA DUAL-DIMENSION + TRADING (17/12/2025)
 
 ### Mudança Crítica
 
-A partir de 15/12/2025, a Alice utiliza **arquitetura 100% GPU via Salad Cloud** para todos os processamentos de embeddings e transcrições:
+A partir de 17/12/2025, a Alice utiliza **arquitetura dual-dimension 100% GPU via Salad Cloud** para processamento de IA:
 
 | Componente | Modelo | Dimensões | Infraestrutura |
 |------------|--------|-----------|----------------|
-| **Embeddings de Texto** | BGE-M3 | 1024 dim | GPU Salad Cloud |
-| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim | GPU Salad Cloud |
-| **Transcrição de Áudio** | Whisper large-v3 | - | GPU Salad Cloud |
-| **LLM Inference** | Llama 4 Maverick 400B | - | GPU Salad Cloud |
-| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Salad Cloud |
-| **Fine-tuning** | LoRA Progressive | - | GPU Salad Cloud |
+| **Embeddings de Texto** | gte-Qwen2-7B-instruct | **3584 dim (nativo)** | GPU Salad Cloud RTX 4090 |
+| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | GPU Salad Cloud RTX 4090 |
+| **Transcrição de Áudio** | Canary-Qwen-2.5B (NeMo) | - | GPU Salad Cloud RTX 4090 |
+| **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Salad Cloud RTX 4090 |
+| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Salad Cloud RTX 4090 |
+| **Fine-tuning** | LoRA Progressive | - | GPU Salad Cloud RTX 4090 |
+| **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
 ### Estratégia "Warm on Demand"
 
@@ -51,7 +52,7 @@ Para otimizar custos e latência:
 |------|---------------|----------------------|
 | **Conversas Texto** | Automático | Rating >= 4 estrelas pelo usuário |
 | **Imagens Geradas** | Semi-automático | Aprovação manual no dashboard |
-| **Imagens Upload** | Automático | OpenCLIP embeddings (1024 dim) para RAG multimodal |
+| **Imagens Upload** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) para RAG multimodal |
 
 **Como funciona:**
 - Cada mensagem no chat é avaliada pelo usuário (1-5 estrelas)
@@ -77,8 +78,8 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
-| **Imagens** | Automático | OpenCLIP embeddings (1024 dim) |
-| **Áudios** | Automático | Whisper transcrição + BGE-M3 embeddings |
+| **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) |
+| **Áudios** | Automático | Canary-Qwen-2.5B transcrição + gte-Qwen2 embeddings (3584 dim) |
 | **Vídeos** | Automático | Frames + transcrição |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
@@ -108,7 +109,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados via GPU Salad Cloud (BGE-M3, 1024 dim)
+- Embeddings são gerados via GPU Salad Cloud (gte-Qwen2-7B-instruct, 3584 dim)
 - Chunks ficam disponíveis IMEDIATAMENTE para busca semântica
 
 ### 4. Dashboard Admin (Manual) ✅
@@ -156,10 +157,10 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │           PROCESSAMENTO MULTIMODAL (GPU Salad Cloud)        │
-│  • Texto: BGE-M3 (1024 dim)                                 │
-│  • Imagem: OpenCLIP ViT-H/14 (1024 dim)                     │
-│  • Áudio: Whisper large-v3 + BGE-M3                         │
-│  • Vídeo: Frames OpenCLIP + Transcrição BGE-M3              │
+│  • Texto: gte-Qwen2-7B-instruct (3584 dim nativo)           │
+│  • Imagem: OpenCLIP ViT-H/14 (1024 dim nativo)              │
+│  • Áudio: Canary-Qwen-2.5B + gte-Qwen2 (3584 dim)           │
+│  • Vídeo: Frames OpenCLIP + Transcrição gte-Qwen2           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -235,9 +236,9 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 
 | Aspecto | GPU Salad Cloud |
 |---------|-----------------|
-| **Modelo Transcrição** | Whisper large-v3 |
+| **Modelo Transcrição** | Canary-Qwen-2.5B (NeMo) |
 | **Velocidade** | 7-9x realtime |
-| **Modelo Embeddings** | BGE-M3 (1024 dim) |
+| **Modelo Embeddings** | gte-Qwen2-7B-instruct (3584 dim) |
 | **Fallback CPU** | **NÃO EXISTE** (Regra 6) |
 
 ### Fluxo de Transcrição
@@ -251,15 +252,15 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │          TRANSCRIÇÃO GPU (OBRIGATÓRIA)                     │
-│  • Whisper large-v3                                         │
+│  • Canary-Qwen-2.5B (NeMo)                                  │
 │  • 7-9x realtime                                            │
-│  • CUDA accelerated                                         │
-│  • SALAD_WHISPER_URL é OBRIGATÓRIO em produção             │
+│  • CUDA accelerated RTX 4090                                │
+│  • SALAD_ASR_URL é OBRIGATÓRIO em produção                 │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │              GERAÇÃO DE EMBEDDING (GPU)                    │
-│  • BGE-M3 (1024 dim)                                       │
+│  • gte-Qwen2-7B-instruct (3584 dim nativo)                 │
 │  • EMBEDDINGS_GPU_URL é OBRIGATÓRIO em produção            │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -285,17 +286,17 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 
 | Tipo | Modelo | Dimensões | Uso |
 |------|--------|-----------|-----|
-| **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim | Busca por imagem |
-| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim | Busca texto→imagem |
-| **Texto genérico** | BGE-M3 | 1024 dim | Documentos, chat |
+| **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | Busca por imagem |
+| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim (nativo) | Busca texto→imagem |
+| **Texto genérico** | gte-Qwen2-7B-instruct | 3584 dim (nativo) | Documentos, chat, trading |
 
 ### Endpoints GPU
 
 | Endpoint | Modelo | Uso |
 |----------|--------|-----|
-| `/embed/text` | BGE-M3 | Texto de documentos, transcrições |
-| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens |
-| `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem |
+| `/embed/text` | gte-Qwen2-7B-instruct | Texto de documentos, transcrições (3584 dim) |
+| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens (1024 dim) |
+| `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem (1024 dim) |
 | `/embed/batch` | Ambos | Processamento em lote |
 
 ---
@@ -307,7 +308,7 @@ Cada ciclo de fine-tuning cria uma nova versão:
 | Campo | Descrição |
 |-------|-----------|
 | `version` | Número incremental (1, 2, 3...) |
-| `baseModel` | Llama 4 Maverick |
+| `baseModel` | Mixtral 8x7B (vLLM AWQ) |
 | `loraPath` | Caminho dos pesos LoRA |
 | `trainingDataCount` | Quantidade de dados usados |
 | `imageDataCount` | Quantidade de imagens usadas |
@@ -370,11 +371,12 @@ Acessíveis em `/dashboard/analytics`:
 
 ## ✅ IMPLEMENTADO CORRETAMENTE
 
-### 1. Arquitetura 100% GPU
-- ✅ Embeddings de texto (BGE-M3, 1024 dim) via GPU Salad
-- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Salad
-- ✅ Transcrição de áudio (Whisper large-v3) via GPU Salad
-- ✅ Schema PostgreSQL atualizado para `vector(1024)`
+### 1. Arquitetura Dual-Dimension 100% GPU
+- ✅ Embeddings de texto (gte-Qwen2-7B-instruct, **3584 dim nativo**) via GPU Salad RTX 4090
+- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim nativo) via GPU Salad RTX 4090
+- ✅ Transcrição de áudio (Canary-Qwen-2.5B NeMo) via GPU Salad RTX 4090
+- ✅ LLM Trading (Mixtral 8x7B vLLM AWQ) via GPU Salad RTX 4090
+- ✅ Schema PostgreSQL atualizado para `halfvec(3584)` texto + `vector(1024)` imagem
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
 
@@ -491,7 +493,9 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*  
-*Versão 2.1 - 15 de Dezembro de 2025*  
-*ARQUITETURA 100% GPU: Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) via GPU Salad Cloud*  
-*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications*  
-*GAPS RESOLVIDOS: Upload Multimodal UI, WhatsApp Mídia → RAG, Limpeza código obsoleto*
+*Versão 3.0 - 17 de Dezembro de 2025*  
+*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*  
+*ARQUITETURA DUAL-DIMENSION: Texto (gte-Qwen2-7B-instruct, 3584 dim) + Imagem (OpenCLIP ViT-H/14, 1024 dim)*  
+*ASR: Canary-Qwen-2.5B via NeMo Toolkit*  
+*Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*  
+*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications, Prometheus metrics*
