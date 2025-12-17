@@ -133,10 +133,11 @@ async def transcribe_audio(
     
     try:
         # Salvar arquivo temporário
+        # Bug fix: Atribuir tmp_path ANTES de operações que podem falhar
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-            content = await file.read()
+            tmp_path = tmp.name  # Primeiro - garante cleanup no finally
+            content = await file.read()  # Pode falhar (client disconnect, OOM)
             tmp.write(content)
-            tmp_path = tmp.name
         
         # Transcrever com NeMo Canary
         # O modelo Canary usa transcribe() diretamente com path do arquivo
