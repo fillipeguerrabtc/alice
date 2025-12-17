@@ -83,16 +83,10 @@ async def load_model():
         logger.info("✅ Modelo ASR carregado com sucesso")
         
     except Exception as e:
-        logger.error(f"Erro ao carregar modelo: {e}")
-        # Fallback para Whisper se Canary não disponível
-        try:
-            logger.info("Tentando fallback para Whisper...")
-            import whisper
-            model = whisper.load_model("large-v3", device=DEVICE)
-            logger.info("✅ Modelo Whisper carregado como fallback")
-        except Exception as e2:
-            logger.error(f"Falha no fallback: {e2}")
-            raise
+        logger.error(f"❌ Erro ao carregar modelo ASR: {e}")
+        logger.error("O serviço iniciará mas /transcribe retornará 503 até o modelo ser carregado")
+        # Nota: Não usamos fallback whisper pois não está instalado no container
+        # O modelo será None e endpoints retornarão 503 (Service Unavailable)
 
 
 @app.get("/health")

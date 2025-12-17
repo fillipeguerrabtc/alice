@@ -78,8 +78,8 @@ const imageVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// LEGADO: Alias para compatibilidade durante migração (será removido)
-// TODO: Remover após migração completa para textVector/imageVector
+// Alias: vector = textVector para embeddings de texto (4096 dim)
+// Arquitetura dual-dimension: textVector(4096) para texto/trading, imageVector(1024) para imagens
 const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";

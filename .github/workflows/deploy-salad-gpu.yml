@@ -71,6 +71,11 @@ jobs:
       flux_digest: ${{ steps.build-flux.outputs.digest }}
       embeddings_digest: ${{ steps.build-embeddings.outputs.digest }}
       image_tag: ${{ steps.vars.outputs.image_tag }}
+      # Bug fix: Exportar quais serviços foram construídos para usar tag correta no Terraform
+      mixtral_built: ${{ steps.build-mixtral.outcome == 'success' }}
+      asr_built: ${{ steps.build-asr.outcome == 'success' }}
+      flux_built: ${{ steps.build-flux.outcome == 'success' }}
+      embeddings_built: ${{ steps.build-embeddings.outcome == 'success' }}
 
     steps:
       - name: Checkout código
@@ -208,10 +213,11 @@ jobs:
           TF_VAR_salad_project_id: ${{ secrets.SALAD_PROJECT_ID }}
           TF_VAR_huggingface_token: ${{ secrets.HUGGINGFACE_TOKEN }}
           TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
-          TF_VAR_mixtral_image: ${{ env.IMAGE_PREFIX }}-mixtral-vllm:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_asr_image: ${{ env.IMAGE_PREFIX }}-asr-canary:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_flux_image: ${{ env.IMAGE_PREFIX }}-flux-schnell:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_embeddings_image: ${{ env.IMAGE_PREFIX }}-embeddings-gpu:${{ needs.build-gpu-images.outputs.image_tag }}
+          # Bug fix: Usar tag SHA se serviço foi construído, senão fallback para 'latest'
+          TF_VAR_mixtral_image: ${{ env.IMAGE_PREFIX }}-mixtral-vllm:${{ needs.build-gpu-images.outputs.mixtral_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_asr_image: ${{ env.IMAGE_PREFIX }}-asr-canary:${{ needs.build-gpu-images.outputs.asr_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_flux_image: ${{ env.IMAGE_PREFIX }}-flux-schnell:${{ needs.build-gpu-images.outputs.flux_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_embeddings_image: ${{ env.IMAGE_PREFIX }}-embeddings-gpu:${{ needs.build-gpu-images.outputs.embeddings_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
         run: terraform plan -out=tfplan
 
       - name: Terraform Apply
@@ -222,10 +228,11 @@ jobs:
           TF_VAR_salad_project_id: ${{ secrets.SALAD_PROJECT_ID }}
           TF_VAR_huggingface_token: ${{ secrets.HUGGINGFACE_TOKEN }}
           TF_VAR_environment: ${{ github.event.inputs.environment || 'production' }}
-          TF_VAR_mixtral_image: ${{ env.IMAGE_PREFIX }}-mixtral-vllm:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_asr_image: ${{ env.IMAGE_PREFIX }}-asr-canary:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_flux_image: ${{ env.IMAGE_PREFIX }}-flux-schnell:${{ needs.build-gpu-images.outputs.image_tag }}
-          TF_VAR_embeddings_image: ${{ env.IMAGE_PREFIX }}-embeddings-gpu:${{ needs.build-gpu-images.outputs.image_tag }}
+          # Bug fix: Usar tag SHA se serviço foi construído, senão fallback para 'latest'
+          TF_VAR_mixtral_image: ${{ env.IMAGE_PREFIX }}-mixtral-vllm:${{ needs.build-gpu-images.outputs.mixtral_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_asr_image: ${{ env.IMAGE_PREFIX }}-asr-canary:${{ needs.build-gpu-images.outputs.asr_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_flux_image: ${{ env.IMAGE_PREFIX }}-flux-schnell:${{ needs.build-gpu-images.outputs.flux_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
+          TF_VAR_embeddings_image: ${{ env.IMAGE_PREFIX }}-embeddings-gpu:${{ needs.build-gpu-images.outputs.embeddings_built == 'true' && needs.build-gpu-images.outputs.image_tag || 'latest' }}
         run: terraform apply -auto-approve tfplan
 
       - name: Capturar Outputs
