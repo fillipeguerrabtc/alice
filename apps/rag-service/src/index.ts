@@ -1397,7 +1397,13 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
   }
 });
 
-app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) => {
+app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
+  // SEGURANÇA ENTERPRISE (17/12/2025): Multi-tenancy obrigatório
+  // - requirePermission: Verifica se usuário tem permissão para leitura
+  // - requireSameTenant: Valida tenant_id do request (RLS enterprise)
+  // - Sem fallback para 'default' (OWASP API1 - Broken Object Level Authorization)
+  const tenantId = req.tenantId;
+
   try {
     const body = searchSchema.parse(req.body);
 
@@ -1406,6 +1412,7 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
     // ============================================================================
     // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
     // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+    // SEGURANÇA: tenantId validado pelo middleware (sem fallback para 'default')
     // ============================================================================
 
     // Verificar se Qdrant está configurado
@@ -1420,10 +1427,7 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
     // Gerar embedding da query (4096 dim via Qwen3-Embedding-8B)
     const queryEmbedding = await generateEmbedding(body.query);
     
-    // Obter tenantId do request (pode não estar presente em todas as rotas)
-    const tenantId = req.tenantId || 'default';
-    
-    // Buscar documentos similares via Qdrant
+    // Buscar documentos similares via Qdrant (tenantId validado pelo middleware)
     const results = await searchDocumentsInQdrant(queryEmbedding, tenantId, {
       limit: body.limit,
       threshold: body.threshold,
