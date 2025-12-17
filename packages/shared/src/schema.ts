@@ -16,7 +16,7 @@
  * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
  * 
  * ARQUITETURA DUAL-DIMENSION DE EMBEDDINGS (16/12/2025):
- * - Texto (Trading/RAG): halfvec(4096) - Qwen3-Embedding-8B (+38% qualidade)
+ * - Texto (Trading/RAG): halfvec(4000) - Qwen3-Embedding-8B (+38% qualidade, máx HNSW)
  * - Imagem: vector(1024) - OpenCLIP ViT-H/14 (dimensão nativa)
  * 
  * Autor: Fillipe Guerra

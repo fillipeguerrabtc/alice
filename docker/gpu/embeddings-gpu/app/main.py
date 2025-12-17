@@ -94,7 +94,7 @@ image_preprocess = None
 
 class TextEmbeddingRequest(BaseModel):
     """Request para embedding de texto."""
-    texts: List[str] = Field(..., description="Lista de textos para gerar embeddings")
+    texts: List[str] = Field(..., min_length=1, description="Lista de textos para gerar embeddings (mínimo 1)")
     instruction: Optional[str] = Field(
         "Represent this text for retrieval:",
         description="Instrução para o modelo (Qwen usa instruções)"

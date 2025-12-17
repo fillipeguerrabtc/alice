@@ -349,9 +349,9 @@ resource "saladcloud_container_group" "embeddings_gpu" {
     }
 
     environment_variables = {
-      # Text Embeddings (4096 dim) - Trading/RAG
+      # Text Embeddings (4000 dim) - Trading/RAG (máx HNSW pgvector)
       TEXT_MODEL_NAME         = "Alibaba-NLP/gte-Qwen2-7B-instruct"  # Ou Qwen3-Embedding-8B
-      TEXT_EMBEDDING_DIM      = "4096"
+      TEXT_EMBEDDING_DIM      = "4000"
       
       # Image Embeddings (1024 dim)
       IMAGE_MODEL_NAME        = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
