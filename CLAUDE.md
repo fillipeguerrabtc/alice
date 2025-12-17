@@ -332,7 +332,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.77 - 17 de Dezembro de 2025*
+*Versão: 3.78 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -369,3 +369,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*
 *Bug Fix initTradingOrchestrator (17/12/2025): Adicionada chamada de inicialização faltante em chat-service/index.ts*
 *Bug Fix Schema Import (17/12/2025): trading-orchestrator.ts usava db._.schema incorreto - corrigido para import * as schema*
+*Bug Fix CandleChart Wicks (17/12/2025): Wicks (sombras high/low) não eram renderizados - adicionado Bar para wick com barSize=1*

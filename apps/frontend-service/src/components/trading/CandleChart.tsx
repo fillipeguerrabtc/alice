@@ -449,7 +449,18 @@ export function CandleChart({
                 />
               )}
               
-              {/* Candle bodies (representado como bar) */}
+              {/* Candle wicks (sombras - linha fina mostrando high/low) */}
+              <Bar
+                yAxisId="price"
+                dataKey="wick"
+                barSize={1}
+              >
+                {chartData.map((entry, index) => (
+                  <Cell key={`wick-${index}`} fill={entry.color} />
+                ))}
+              </Bar>
+              
+              {/* Candle bodies (parte sólida open/close) */}
               <Bar
                 yAxisId="price"
                 dataKey="body"
