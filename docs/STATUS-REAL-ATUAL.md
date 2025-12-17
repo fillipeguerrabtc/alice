@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.95 - Bug Fix initTradingOrchestrator: Inicialização faltante corrigida (17/12/2025)
+> **Versão:** 3.96 - Bug Fix trading-orchestrator: Schema import corrigido (17/12/2025)
 
 ---
 
@@ -1020,7 +1020,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.95 - Bug Fix initTradingOrchestrator: Inicialização faltante corrigida (17/12/2025)*
+*Versão: 3.96 - Bug Fix trading-orchestrator: Schema import corrigido (17/12/2025)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -1035,6 +1035,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa contract.multiplier (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
 *Bug Fix NaN Bypass (17/12/2025): Validação defensiva contra NaN em preço/orderValue - evita bypass silencioso de risk limits*
 *Bug Fix initTradingOrchestrator (17/12/2025): Adicionada chamada de inicialização faltante em chat-service/index.ts - evita db undefined*
+*Bug Fix Schema Import (17/12/2025): trading-orchestrator.ts usava db._.schema incorreto - corrigido para import * as schema*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

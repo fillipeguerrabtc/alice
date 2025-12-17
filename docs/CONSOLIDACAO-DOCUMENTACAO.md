@@ -73,11 +73,11 @@
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 2.6 - Bug Fix initTradingOrchestrator + Pipeline 100% Enterprise*
+*Versão: 2.7 - Bug Fix Schema Import trading-orchestrator + Pipeline 100% Enterprise*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem 1024 dim OpenCLIP MIT (pgvector)*
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5/Linq-Embed/NV-Embed são CC BY-NC.*
-*Bug Fixes (17/12/2025): initTradingOrchestrator + embeddings texto → Qdrant + KuCoin sync 'active' + documents.embedding*
+*Bug Fixes (17/12/2025): Schema import corrigido + initTradingOrchestrator + embeddings texto → Qdrant + KuCoin sync 'active'*
 *Pipeline: Versionamento automático + Cache GHA + Auto-instalação requisitos + Scripts limpeza pós-deploy*
 *Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning*

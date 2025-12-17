@@ -19,6 +19,7 @@
 
 import { eq, and, desc } from '@alice/database';
 import { createLogger } from '@alice/logger';
+import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 
 const logger = createLogger('trading-orchestrator');
@@ -87,16 +88,16 @@ export async function getTradingControlState(tenantId: string): Promise<TradingC
   // Buscar configuração de risco que contém tradingEnabled e autoExecuteSignals
   const [config] = await db
     .select()
-    .from(db._.schema.tradingRiskConfig)
-    .where(eq(db._.schema.tradingRiskConfig.tenantId, tenantId))
+    .from(schema.tradingRiskConfig)
+    .where(eq(schema.tradingRiskConfig.tenantId, tenantId))
     .limit(1);
 
   // Buscar último histórico de controle
   const [lastHistory] = await db
     .select()
-    .from(db._.schema.tradingControlHistory)
-    .where(eq(db._.schema.tradingControlHistory.tenantId, tenantId))
-    .orderBy(desc(db._.schema.tradingControlHistory.criadoEm))
+    .from(schema.tradingControlHistory)
+    .where(eq(schema.tradingControlHistory.tenantId, tenantId))
+    .orderBy(desc(schema.tradingControlHistory.criadoEm))
     .limit(1);
 
   // Determinar modo atual
@@ -177,16 +178,16 @@ export async function initiateTradingTakeover(
 
     // Atualizar configuração para desabilitar auto-execute
     await db
-      .update(db._.schema.tradingRiskConfig)
+      .update(schema.tradingRiskConfig)
       .set({
         autoExecuteSignals: false,
         atualizadoEm: new Date(),
       })
-      .where(eq(db._.schema.tradingRiskConfig.tenantId, tenantId));
+      .where(eq(schema.tradingRiskConfig.tenantId, tenantId));
 
     // Registrar no histórico
     const [historyEntry] = await db
-      .insert(db._.schema.tradingControlHistory)
+      .insert(schema.tradingControlHistory)
       .values({
         tenantId,
         previousMode: 'alice',
@@ -256,16 +257,16 @@ export async function handbackTradingToAlice(
 
     // Atualizar configuração para habilitar auto-execute
     await db
-      .update(db._.schema.tradingRiskConfig)
+      .update(schema.tradingRiskConfig)
       .set({
         autoExecuteSignals: true,
         atualizadoEm: new Date(),
       })
-      .where(eq(db._.schema.tradingRiskConfig.tenantId, tenantId));
+      .where(eq(schema.tradingRiskConfig.tenantId, tenantId));
 
     // Registrar no histórico
     const [historyEntry] = await db
-      .insert(db._.schema.tradingControlHistory)
+      .insert(schema.tradingControlHistory)
       .values({
         tenantId,
         previousMode: 'manual',
@@ -330,9 +331,9 @@ export async function getTradingControlHistory(
 ): Promise<TradingControlHistoryEntry[]> {
   const entries = await db
     .select()
-    .from(db._.schema.tradingControlHistory)
-    .where(eq(db._.schema.tradingControlHistory.tenantId, tenantId))
-    .orderBy(desc(db._.schema.tradingControlHistory.criadoEm))
+    .from(schema.tradingControlHistory)
+    .where(eq(schema.tradingControlHistory.tenantId, tenantId))
+    .orderBy(desc(schema.tradingControlHistory.criadoEm))
     .limit(limit);
 
   return entries.map(entry => ({
