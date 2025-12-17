@@ -77,6 +77,7 @@ import {
   getImageGenerationStats,
   getImageGenBreakerStats,
 } from './image-generation-client.js';
+import { initTradingOrchestrator } from './trading-orchestrator.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -150,6 +151,7 @@ logger.info('Sistema de feature flags inicializado');
 
 initOrchestrator(db);
 initImageGeneration(db);
+initTradingOrchestrator(db);
 
 const app = express();
 
