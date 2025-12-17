@@ -1685,6 +1685,254 @@ export const tradingAuditLogRelations = relations(tradingAuditLog, ({ one }) => 
 }));
 
 // ============================================================================
+// TRADING LORA DATASET (FASE Trading Mixtral 8x7B - Fine-tuning)
+// Infraestrutura para coleta de dados e treinamento LoRA para trading BTC
+// ============================================================================
+
+// Enum para status do dataset
+export const tradingDatasetStatusEnum = pgEnum("trading_dataset_status", [
+  "pending",     // Aguardando revisão
+  "approved",    // Aprovado para treinamento
+  "rejected",    // Rejeitado por baixa qualidade
+  "used",        // Já usado em um job de treinamento
+]);
+
+// Enum para tipo de dado de mercado
+export const tradingMarketDataTypeEnum = pgEnum("trading_market_data_type", [
+  "candle_1m",   // Candle 1 minuto
+  "candle_5m",   // Candle 5 minutos
+  "candle_15m",  // Candle 15 minutos
+  "candle_1h",   // Candle 1 hora
+  "candle_4h",   // Candle 4 horas
+  "candle_1d",   // Candle 1 dia
+  "ticker",      // Ticker (preço instantâneo)
+  "orderbook",   // Snapshot do order book
+  "funding_rate", // Taxa de funding (perpetuals)
+  "open_interest", // Open interest
+]);
+
+// Enum para status do job LoRA
+export const tradingLoraJobStatusEnum = pgEnum("trading_lora_job_status", [
+  "queued",      // Na fila
+  "preparing",   // Preparando dataset
+  "training",    // Em treinamento
+  "validating",  // Validando modelo
+  "completed",   // Concluído com sucesso
+  "failed",      // Falhou
+  "cancelled",   // Cancelado
+]);
+
+// Zod schemas para JSONB
+export const TradingCandleDataSchema = z.object({
+  open: z.number(),
+  high: z.number(),
+  low: z.number(),
+  close: z.number(),
+  volume: z.number(),
+  turnover: z.number().optional(),
+});
+export type TradingCandleData = z.infer<typeof TradingCandleDataSchema>;
+
+export const TradingLoraHyperparamsSchema = z.object({
+  loraRank: z.number().default(16),          // Rank do LoRA (8-128)
+  loraAlpha: z.number().default(32),         // Alpha do LoRA
+  learningRate: z.number().default(2e-4),    // Learning rate
+  batchSize: z.number().default(4),          // Batch size
+  epochs: z.number().default(3),             // Número de epochs
+  warmupSteps: z.number().default(100),      // Warmup steps
+  maxSteps: z.number().optional(),           // Max steps (override epochs)
+  targetModules: z.array(z.string()).default(["q_proj", "v_proj"]), // Módulos alvo
+});
+export type TradingLoraHyperparams = z.infer<typeof TradingLoraHyperparamsSchema>;
+
+export const TradingLoraMetricsSchema = z.object({
+  trainLoss: z.number().optional(),
+  evalLoss: z.number().optional(),
+  accuracy: z.number().optional(),
+  f1Score: z.number().optional(),
+  precision: z.number().optional(),
+  recall: z.number().optional(),
+  profitFactor: z.number().optional(),       // Específico de trading
+  sharpeRatio: z.number().optional(),        // Específico de trading
+  maxDrawdown: z.number().optional(),        // Específico de trading
+  winRate: z.number().optional(),            // Específico de trading
+});
+export type TradingLoraMetrics = z.infer<typeof TradingLoraMetricsSchema>;
+
+// DADOS DE MERCADO HISTÓRICOS (Coleta automática via job scheduler)
+// Armazena candles, tickers, funding rates para treinamento
+export const tradingMarketData = pgTable(
+  "trading_market_data",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    dataType: tradingMarketDataTypeEnum("data_type").notNull(),
+    timestamp: timestamp("timestamp").notNull(),
+    data: jsonb("data").$type<TradingCandleData | Record<string, unknown>>().notNull(),
+    source: varchar("source", { length: 50 }).default("kucoin"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxMarketDataSymbol: index("idx_trading_market_data_symbol").on(table.symbol),
+    idxMarketDataType: index("idx_trading_market_data_type").on(table.dataType),
+    idxMarketDataTimestamp: index("idx_trading_market_data_timestamp").on(table.timestamp),
+    // Índice composto para queries de range por símbolo e tipo
+    idxMarketDataQuery: index("idx_trading_market_data_query").on(table.symbol, table.dataType, table.timestamp),
+    // Constraint de unicidade para evitar duplicatas
+    uniqueMarketData: uniqueIndex("unique_trading_market_data").on(table.symbol, table.dataType, table.timestamp),
+  })
+);
+
+// DATASET DE TREINAMENTO (Pares prompt/response para LoRA)
+// Estrutura de conversação para fine-tuning do Mixtral
+export const tradingDataset = pgTable(
+  "trading_dataset",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    
+    // Contexto de mercado (snapshot no momento da decisão)
+    marketContext: jsonb("market_context").$type<{
+      symbol: string;
+      timestamp: string;
+      price: number;
+      change24h: number;
+      volume24h: number;
+      fundingRate: number;
+      openInterest: number;
+      recentCandles: TradingCandleData[];
+      indicators?: Record<string, number>; // RSI, MACD, etc.
+    }>().notNull(),
+    
+    // Prompt (input para o LLM)
+    prompt: text("prompt").notNull(),
+    
+    // Resposta esperada (output ideal)
+    response: text("response").notNull(),
+    
+    // Ação de trading associada
+    actionType: tradingSignalTypeEnum("action_type").notNull(), // long, short, hold, etc.
+    
+    // Resultado real (feedback após trade)
+    actualOutcome: jsonb("actual_outcome").$type<{
+      profitLoss: number;
+      profitLossPercent: number;
+      duration: number;       // Duração em minutos
+      exitReason: string;     // stop_loss, take_profit, manual, signal
+    }>(),
+    
+    // Qualidade e status
+    qualityScore: real("quality_score"),    // 0-1, calculado automaticamente
+    status: tradingDatasetStatusEnum("status").default("pending"),
+    reviewedBy: uuid("reviewed_by").references(() => users.id),
+    reviewNotes: text("review_notes"),
+    
+    // Embedding do prompt para deduplicação
+    embedding: vector("embedding"),
+    semhash: varchar("semhash", { length: 64 }),
+    isDuplicate: boolean("is_duplicate").default(false),
+    
+    // Referências
+    signalId: uuid("signal_id").references(() => tradingSignals.id),
+    orderId: uuid("order_id").references(() => tradingOrders.id),
+    usedInJobId: uuid("used_in_job_id"),
+    
+    criadoEm: timestamp("criado_em").defaultNow(),
+    atualizadoEm: timestamp("atualizado_em").defaultNow(),
+  },
+  (table) => ({
+    idxDatasetTenant: index("idx_trading_dataset_tenant").on(table.tenantId),
+    idxDatasetStatus: index("idx_trading_dataset_status").on(table.status),
+    idxDatasetAction: index("idx_trading_dataset_action").on(table.actionType),
+    idxDatasetQuality: index("idx_trading_dataset_quality").on(table.qualityScore),
+    idxDatasetSemhash: index("idx_trading_dataset_semhash").on(table.semhash),
+  })
+);
+
+// JOBS DE TREINAMENTO LORA (Executados na Salad Cloud)
+// Gerencia ciclo de vida do treinamento LoRA para trading
+export const tradingLoraJobs = pgTable(
+  "trading_lora_jobs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").references(() => tenants.id),
+    
+    // Identificação
+    name: varchar("name", { length: 255 }).notNull(),
+    description: text("description"),
+    
+    // Modelo base e configuração
+    baseModel: varchar("base_model", { length: 255 }).notNull().default("TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ"),
+    hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({}),
+    
+    // Status e progresso
+    status: tradingLoraJobStatusEnum("status").default("queued"),
+    progress: integer("progress").default(0),
+    currentStep: integer("current_step").default(0),
+    totalSteps: integer("total_steps"),
+    
+    // Dados de treinamento
+    datasetCount: integer("dataset_count").default(0),
+    validationCount: integer("validation_count").default(0),
+    
+    // Métricas (atualizadas durante treinamento)
+    metrics: jsonb("metrics").$type<TradingLoraMetrics>().default({}),
+    
+    // Resultado
+    resultAdapterPath: varchar("result_adapter_path", { length: 500 }),  // Path do adapter LoRA
+    resultAdapterSize: integer("result_adapter_size"),                    // Tamanho em bytes
+    
+    // Salad Cloud
+    saladContainerGroupId: varchar("salad_container_group_id", { length: 255 }),
+    saladMachineId: varchar("salad_machine_id", { length: 255 }),
+    
+    // Erro
+    errorMessage: text("error_message"),
+    errorDetails: jsonb("error_details"),
+    
+    // Timestamps
+    queuedAt: timestamp("queued_at").defaultNow(),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxLoraJobsTenant: index("idx_trading_lora_jobs_tenant").on(table.tenantId),
+    idxLoraJobsStatus: index("idx_trading_lora_jobs_status").on(table.status),
+    idxLoraJobsCreated: index("idx_trading_lora_jobs_created").on(table.criadoEm),
+  })
+);
+
+// Relations de Trading LoRA
+export const tradingMarketDataRelations = relations(tradingMarketData, ({ }) => ({}));
+
+export const tradingDatasetRelations = relations(tradingDataset, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingDataset.tenantId],
+    references: [tenants.id],
+  }),
+  signal: one(tradingSignals, {
+    fields: [tradingDataset.signalId],
+    references: [tradingSignals.id],
+  }),
+  order: one(tradingOrders, {
+    fields: [tradingDataset.orderId],
+    references: [tradingOrders.id],
+  }),
+  reviewer: one(users, {
+    fields: [tradingDataset.reviewedBy],
+    references: [users.id],
+  }),
+}));
+
+export const tradingLoraJobsRelations = relations(tradingLoraJobs, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingLoraJobs.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+// ============================================================================
 // TAKEOVER/HANDOVER (FASE 6.5 - Controle de Conversas Humano/IA)
 // ============================================================================
 
@@ -2532,6 +2780,16 @@ export type InsertTradingRiskConfig = typeof tradingRiskConfig.$inferInsert;
 export type TradingAuditLog = typeof tradingAuditLog.$inferSelect;
 export type InsertTradingAuditLog = typeof tradingAuditLog.$inferInsert;
 
+// Trading LoRA Dataset Types (FASE Trading Mixtral 8x7B)
+export type TradingMarketData = typeof tradingMarketData.$inferSelect;
+export type InsertTradingMarketData = typeof tradingMarketData.$inferInsert;
+
+export type TradingDataset = typeof tradingDataset.$inferSelect;
+export type InsertTradingDataset = typeof tradingDataset.$inferInsert;
+
+export type TradingLoraJob = typeof tradingLoraJobs.$inferSelect;
+export type InsertTradingLoraJob = typeof tradingLoraJobs.$inferInsert;
+
 // Takeover/Handover Types (FASE 6.5)
 export type ConversationState = typeof conversationStates.$inferSelect;
 export type InsertConversationState = typeof conversationStates.$inferInsert;
@@ -2634,6 +2892,26 @@ export const insertTradingRiskConfigSchema: z.ZodType<unknown> = createInsertSch
 export const insertTradingAuditLogSchema: z.ZodType<unknown> = createInsertSchema(tradingAuditLog).omit({
   id: true,
   criadoEm: true,
+});
+
+// Trading LoRA Dataset Insert Schemas (FASE Trading Mixtral 8x7B)
+export const insertTradingMarketDataSchema: z.ZodType<unknown> = createInsertSchema(tradingMarketData).omit({
+  id: true,
+  criadoEm: true,
+});
+
+export const insertTradingDatasetSchema: z.ZodType<unknown> = createInsertSchema(tradingDataset).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+export const insertTradingLoraJobSchema: z.ZodType<unknown> = createInsertSchema(tradingLoraJobs).omit({
+  id: true,
+  criadoEm: true,
+  queuedAt: true,
+  startedAt: true,
+  completedAt: true,
 });
 
 // Takeover/Handover Insert Schemas (FASE 6.5)
