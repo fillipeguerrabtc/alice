@@ -155,8 +155,7 @@ alice/
 │   ├── rag-service/                # Embeddings + pgvector
 │   ├── training-service/           # Fine-tuning
 │   ├── integrations-service/       # Stripe, ERPNext, Twilio
-│   ├── observability-service/      # Prometheus, Grafana, Jaeger
-│   └── clip-inference-service/     # Python/PyTorch - Embeddings + Transcrição (100% LOCAL)
+│   └── observability-service/      # Prometheus, Grafana, Jaeger, Langfuse
 ├── packages/                       # Código compartilhado (5)
 │   ├── shared/                     # Schema Drizzle ORM
 │   ├── database/                   # PostgreSQL + pgvector

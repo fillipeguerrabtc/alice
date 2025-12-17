@@ -372,7 +372,7 @@ class VideoProcessorService {
       const imageProcessor = getImageProcessor();
       
       // Contrato padronizado: usar sempre isReadyAsync() para readiness (Promise<boolean>)
-      // IMPORTANTE: readiness pode falhar por indisponibilidade da dependência (ex: alice-clip-inference fora do ar).
+      // IMPORTANTE: readiness pode falhar por indisponibilidade da GPU (ex: EMBEDDINGS_GPU_URL Salad Cloud fora do ar).
       // Nunca propagar exceção: em falha, marcar como não pronto e manter serviço íntegro.
       let audioReady = false;
       let imageReady = false;

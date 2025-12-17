@@ -2230,11 +2230,11 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Processar documento: extrai texto e gera embeddings
           const documentProcessor = getDocumentProcessor();
           
-          // Prontidão REAL: document depende de text embeddings locais (alice-clip-inference)
+          // Prontidão REAL: document depende de embeddings GPU (Salad Cloud)
           // Evita falso-positivo de "ready" quando a dependência está indisponível.
           if (!(await documentProcessor.isReadyAsync())) {
             throw new Error(
-              'Document Processor não está pronto. Verifique conectividade com o serviço local de embeddings (alice-clip-inference).'
+              'Document Processor não está pronto. Verifique conectividade com EMBEDDINGS_GPU_URL (Salad Cloud).'
             );
           }
           

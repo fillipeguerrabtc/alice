@@ -134,10 +134,11 @@
 | `/ws/embeddings` | WebSocket | Notificações em tempo real |
 
 > **Nota (Readiness enterprise):** O `video-processor` valida prontidão real dos processadores (`audio-processor` e `image-processor`) usando `isReadyAsync()` (contrato explícito `Promise<boolean>`) e evita falso-positivo ao nunca tratar `Promise<boolean>` como boolean. Para compatibilidade, `image-processor.isReady()` voltou a ser **síncrono** (apenas “configurado”), e o readiness real fica em `isReadyAsync()`. Além disso, cada processor valida **apenas** as capabilities necessárias no `clip-inference-service`:
-> - `image-processor` → `GET /ready/clip`
-> - `audio-processor` → `GET /ready/whisper` + `GET /ready/text-embedding`
+> - `image-processor` → OpenCLIP ViT-H/14 GPU (1024 dim → pgvector)
+> - `audio-processor` → Whisper GPU + Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
+> - `document-processor` → Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
 >
-> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/video/document** (sem “pendente” hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com o `alice-clip-inference` via `GET /ready/text-embedding` (evita falso-positivo). Para **video**, o endpoint usa `await video-processor.getConfigAsync()` após `isReadyAsync()` para não reportar `configured=false` com `ready=true`.
+> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/video/document** (sem “pendente” hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com `EMBEDDINGS_GPU_URL` (Salad Cloud) (evita falso-positivo). Para **video**, o endpoint usa `await video-processor.getConfigAsync()` após `isReadyAsync()` para não reportar `configured=false` com `ready=true`.
 >
 > **Capacidades opcionais:** quando `WHISPER_REQUIRED=false`, **audio** e **video** são marcados como `required: false` no payload e não derrubam o `status` global (permite operar apenas com **image + document/text embeddings**).
 
@@ -151,24 +152,28 @@
 >
 > **Nota (Robustez normalizedText - enterprise):** no `combineVideoEmbeddingsForSearch`, após o slice de `textEmbedding`, há validação adicional para garantir que `normalizedText.length === CLIP_EMBEDDING_DIM` antes de acessar índices no loop de combinação. Isso previne `NaN` em edge cases de corrupção de dados. Além disso, cada valor de `normalizedText[i]` é validado como finito antes de ser usado na combinação (fallback seguro para 0 com log de warning).
 
-> **Nota (Fail-fast multimodal):** o `clip-inference-service` **não inicia** em produção se o Whisper falhar ao carregar (comportamento fail-fast). Para cenários excepcionais (ex: dev/diagnóstico), é possível iniciar com `WHISPER_REQUIRED=false` (serviço sobe sem transcrição).
+> **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via Salad Cloud GPUs (Container Groups).
 >
-> **Importante:** quando `WHISPER_REQUIRED=false`, o `GET /ready` **não exige** Whisper (para não ficar permanentemente `not_ready`), mas o `GET /ready/whisper` continua falhando — e por consequência `audio-processor.isReadyAsync()` ficará `false` (comportamento correto: áudio requer Whisper).
+> **Endpoints GPU Salad Cloud:**
+> - `SALAD_MIXTRAL_URL` - LLM Mixtral 8x7B vLLM (`/v1/chat/completions`)
+> - `SALAD_FLUX_URL` - FLUX.1 Schnell (`/generate`)
+> - `SALAD_WHISPER_URL` - Whisper large-v3 (`/transcribe`)
+> - `EMBEDDINGS_GPU_URL` - Qwen3 + OpenCLIP (`/embed/text`, `/embed/image`)
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
-> **Importante (consistência de configuração):** `WHISPER_REQUIRED` é lido **uma única vez** no startup do `clip-inference-service` e reutilizado em todos os handlers, evitando divergência de comportamento.
+> **Arquitetura Enterprise (17/12/2025):** Container Groups Salad Cloud gerenciados via Terraform (`deploy-salad-gpu.yml`).
 
-> **Nota (Readiness por capability):** além do `GET /ready` (prontidão do serviço como um todo), o `clip-inference-service` expõe probes por capacidade:
-> - `GET /ready/clip` (somente CLIP)
-> - `GET /ready/text-embedding` (somente embeddings de texto)
-> - `GET /ready/whisper` (somente transcrição)
->
-> Isso evita falso-negativo quando o serviço está `status: "degraded"` por uma capacidade não usada pelo consumer (ex: `image-processor` não depende de Whisper).
+> **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
+> - `EMBEDDINGS_GPU_URL/health` (embeddings)
+> - `SALAD_WHISPER_URL/health` (transcrição)
+> - `SALAD_MIXTRAL_URL/health` (LLM)
+> - `SALAD_FLUX_URL/health` (imagens)
 
 > **Nota (Robustez enterprise):**
-> - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (768) antes de acumular/médias, evitando corrupção silenciosa se a dependência retornar payload inconsistente.
-> - `clip-inference-service`: garante cleanup de arquivo temporário mesmo se ocorrer exceção ao escrever o áudio (atribui `tmp_path` antes do `write()`).
+> - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (4096 dim) antes de inserir no Qdrant.
+> - Embeddings de texto (4096 dim) → **Qdrant** (busca semântica HNSW)
+> - Embeddings de imagem (1024 dim) → **pgvector** (busca similar)
 
 ### 4. training-service (Porta 3004)
 
@@ -494,9 +499,9 @@ Retenção Arquivo:   30 dias
 | 11 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
 | 12 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
-| 14 | alice-clip-inference | python:3.11-slim | Legado (Embeddings GPU via Salad Cloud) |
+| 14 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim HNSW) |
 
-> **NOTA (17/12/2025):** O container `alice-clip-inference` está marcado como LEGADO. A plataforma agora usa **ARQUITETURA ENTERPRISE 100% GPU** via Salad Cloud:
+> **ARQUITETURA GPU ENTERPRISE (17/12/2025):** Embeddings 100% via Salad Cloud Container Groups:
 > - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
@@ -633,7 +638,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 ### Arquitetura do CI (trigger-release)
 
 O workflow CI usa dependência direta do GitHub Actions com validação explícita:
-- **trigger-release** depende de: `build-and-check`, `build-services`, `build-clip-inference`, `build-frontend`, `security-scan`, `compliance-checks`
+- **trigger-release** depende de: `build-and-check`, `build-services`, `build-frontend`, `security-scan`, `compliance-checks`
 - **CRÍTICO**: `needs` apenas cria ordem de execução, mas **não impede execução** se jobs upstream falharem
 - A condição `if` **verifica explicitamente** que todos os jobs upstream tiveram `result == 'success'`
 - Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `deploy-production.yml`)

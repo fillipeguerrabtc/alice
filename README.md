@@ -437,7 +437,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
-*Salad Cloud: LLM inference, image generation, fine-tuning, embeddings-gpu, trading-embeddings-gpu, whisper-gpu*
+*Salad Cloud: LLM (Mixtral vLLM), image generation (FLUX.1), fine-tuning, embeddings-gpu (Qwen3 + OpenCLIP), whisper-gpu (ASR)*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
 
 </div>

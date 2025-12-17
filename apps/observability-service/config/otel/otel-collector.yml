@@ -55,7 +55,7 @@ processors:
     actions:
       - key: llm.model
         action: upsert
-        value: "llama-4-maverick"
+        value: "mixtral-8x7b"
       - key: llm.provider
         action: upsert
         value: "salad-cloud"

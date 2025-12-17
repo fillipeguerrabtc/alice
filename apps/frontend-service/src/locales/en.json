@@ -206,7 +206,7 @@
     },
     "system": {
       "llm": "Mixtral 8x7B",
-      "llmParams": "400B parameters",
+      "llmParams": "MoE ~12B active parameters",
       "database": "PostgreSQL + pgvector",
       "databaseFeature": "Vector search",
       "rbac": "RBAC Enterprise",

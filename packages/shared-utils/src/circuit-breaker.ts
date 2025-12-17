@@ -150,7 +150,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
   },
   /** Mixtral 8x7B vLLM - LLM Trading (MoE ~12B ativos, otimizado para velocidade) */
   mixtralLLM: {
-    timeout: 45000, // Mais rápido que Maverick 400B
+    timeout: 45000, // Timeout otimizado para Mixtral 8x7B AWQ
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
