@@ -24,7 +24,7 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
-### Security Hardening (12/12/2025)
+### Security Hardening (17/12/2025)
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
@@ -33,6 +33,19 @@
 | Resource limits | ✅ | 43/43 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
+| **PostgreSQL RLS Trading** | ✅ | **7 tabelas com RLS** (migration 0007) |
+
+**Row Level Security (RLS) - Tabelas Trading (17/12/2025)**
+| Tabela | RLS | Policy |
+|--------|-----|--------|
+| `trading_signals` | ✅ | `trading_signals_tenant_isolation` |
+| `trading_orders` | ✅ | `trading_orders_tenant_isolation` |
+| `trading_positions` | ✅ | `trading_positions_tenant_isolation` |
+| `trading_risk_config` | ✅ | `trading_risk_config_tenant_isolation` |
+| `trading_audit_log` | ✅ | `trading_audit_log_tenant_isolation` |
+| `trading_dataset` | ✅ | `trading_dataset_tenant_isolation` |
+| `trading_lora_jobs` | ✅ | `trading_lora_jobs_tenant_isolation` |
+| `trading_market_data` | ❌ | Dados públicos de mercado (sem tenant) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
 - Prometheus 3.8.0 / Alertmanager 0.27.0  
@@ -435,15 +448,18 @@ Retenção Arquivo:   30 dias
 | `generated_images` | Imagens FLUX.1 |
 | `media_uploads` | Uploads multimodais |
 
-### Schema Trading (5 tabelas) - FASE Trading Mixtral 8x7B
+### Schema Trading (8 tabelas) - FASE Trading Mixtral 8x7B
 
-| Tabela | Propósito |
-|--------|-----------|
-| `trading_signals` | Sinais gerados pelo LLM Mixtral |
-| `trading_orders` | OMS - Order Management System |
-| `trading_positions` | EMS - Execution Management System |
-| `trading_risk_config` | Configuração de risco por tenant |
-| `trading_audit_log` | Auditoria completa para compliance |
+| Tabela | Propósito | RLS |
+|--------|-----------|-----|
+| `trading_signals` | Sinais gerados pelo LLM Mixtral | ✅ |
+| `trading_orders` | OMS - Order Management System | ✅ |
+| `trading_positions` | EMS - Execution Management System | ✅ |
+| `trading_risk_config` | Configuração de risco por tenant | ✅ |
+| `trading_audit_log` | Auditoria completa para compliance | ✅ |
+| `trading_market_data` | Candles, tickers históricos (1m/3m/5m scalping) | ❌ (dados públicos) |
+| `trading_dataset` | Dataset para fine-tuning LoRA | ✅ |
+| `trading_lora_jobs` | Jobs de treinamento LoRA para trading | ✅ |
 
 > **Arquitetura Trading:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
@@ -453,26 +469,47 @@ Retenção Arquivo:   30 dias
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
 > - **Cliente:** `kucoinClient.ts` - HMAC-SHA256, circuit breaker, rate limiting
 > - **Serviço:** `kucoinService.ts` - OMS/EMS, auditoria, gestão de risco
+> - **RLS:** 7/8 tabelas com Row Level Security (migration 0007)
+> - **RBAC:** 4 permissões `integrations:trading:{read,write,delete,manage}`
 
 ### API REST Trading (14 endpoints) - FASE Trading Mixtral 8x7B
 
-| Endpoint | Método | Propósito |
-|----------|--------|-----------|
-| `/api/integrations/trading/status` | GET | Status do serviço |
-| `/api/integrations/trading/market/:symbol` | GET | Dados de mercado |
-| `/api/integrations/trading/account` | GET | Visão geral da conta KuCoin |
-| `/api/integrations/trading/positions` | GET | Posições abertas |
-| `/api/integrations/trading/risk-config` | GET | Configuração de risco |
-| `/api/integrations/trading/risk-config` | PUT | Atualizar configuração |
-| `/api/integrations/trading/signals` | GET | Listar sinais ativos |
-| `/api/integrations/trading/signals` | POST | Criar sinal (Mixtral) |
-| `/api/integrations/trading/signals/:id` | DELETE | Desativar sinal |
-| `/api/integrations/trading/orders` | GET | Listar ordens |
-| `/api/integrations/trading/orders` | POST | Criar ordem |
-| `/api/integrations/trading/orders/:id` | DELETE | Cancelar ordem |
-| `/api/integrations/trading/orders/sync` | POST | Sincronizar com KuCoin |
+| Endpoint | Método | Propósito | Permissão RBAC |
+|----------|--------|-----------|----------------|
+| `/api/integrations/trading/status` | GET | Status do serviço | `trading:read` |
+| `/api/integrations/trading/market/:symbol` | GET | Dados de mercado | `trading:read` |
+| `/api/integrations/trading/account` | GET | Visão geral da conta KuCoin | `trading:read` |
+| `/api/integrations/trading/positions` | GET | Posições abertas | `trading:read` |
+| `/api/integrations/trading/risk-config` | GET | Configuração de risco | `trading:read` |
+| `/api/integrations/trading/risk-config` | PUT | Atualizar configuração | `trading:manage` |
+| `/api/integrations/trading/signals` | GET | Listar sinais ativos | `trading:read` |
+| `/api/integrations/trading/signals` | POST | Criar sinal (Mixtral) | `trading:write` |
+| `/api/integrations/trading/signals/:id` | DELETE | Desativar sinal | `trading:write` |
+| `/api/integrations/trading/orders` | GET | Listar ordens | `trading:read` |
+| `/api/integrations/trading/orders` | POST | Criar ordem | `trading:write` |
+| `/api/integrations/trading/orders/:id` | DELETE | Cancelar ordem | `trading:write` |
+| `/api/integrations/trading/orders/sync` | POST | Sincronizar com KuCoin | `trading:manage` |
 
-**Total: 37 tabelas**
+### Página Frontend Trading (17/12/2025)
+
+| Tab | Funcionalidade |
+|-----|----------------|
+| **Overview** | Preço BTC tempo real, Quick Trade, Account Summary, Sinais/Ordens recentes |
+| **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
+| **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
+| **Signals** | Sinais do Mixtral LLM com confidence, criar sinais manuais |
+| **History** | Histórico completo de operações com auditoria |
+
+> **Features Frontend:**
+> - i18n completo (PT-BR primário, EN secundário)
+> - TanStack Query com refetch automático (5s market, 10s account/positions)
+> - Framer Motion para animações
+> - shadcn/ui + Tailwind CSS
+> - Gestão de risco configurável (dialog modal)
+> - Métricas do circuit breaker visíveis
+> - Status sandbox/produção
+
+**Total: 40 tabelas** (32 core + 8 trading)
 
 ---
 
