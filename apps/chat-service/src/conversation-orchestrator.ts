@@ -121,7 +121,7 @@ export function detectEscalationKeywords(message: string): boolean {
  * Retorna confidence score estimado baseado em indicadores proxy
  * 
  * Usado para incrementar fallback counter quando LLM dá respostas evasivas
- * (Llama 4 não retorna confidence score diretamente)
+ * (Mixtral 8x7B não retorna confidence score diretamente)
  */
 export function analyzeLLMResponseConfidence(llmResponse: string): {
   estimatedConfidence: number;

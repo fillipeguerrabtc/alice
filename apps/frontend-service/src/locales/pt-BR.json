@@ -205,7 +205,7 @@
       "noData": "Sem dados para exibir"
     },
     "system": {
-      "llm": "Llama 4 Maverick",
+      "llm": "Mixtral 8x7B",
       "llmParams": "400B parâmetros",
       "database": "PostgreSQL + pgvector",
       "databaseFeature": "Busca vetorial",
@@ -236,7 +236,7 @@
       "operational": "Operacional",
       "synced": "Sincronizada",
       "connected": "Conectadas",
-      "llmModel": "Llama 4 Maverick",
+      "llmModel": "Mixtral 8x7B",
       "knowledgeBase": "Base de Conhecimento",
       "integrationsLabel": "Integrações"
     },
@@ -853,7 +853,7 @@
   },
   "training": {
     "title": "Fine-tuning & Treinamento",
-    "subtitle": "Gerencie dados e jobs de fine-tuning para o Llama 4 Maverick",
+    "subtitle": "Gerencie dados e jobs de fine-tuning para o Mixtral 8x7B",
     "newJob": "Novo Job",
     "status": {
       "pending": "Pendente",
@@ -911,7 +911,7 @@
     },
     "createJob": {
       "title": "Novo Job de Fine-tuning",
-      "description": "Configure um novo job de fine-tuning para o modelo Llama 4 Maverick.",
+      "description": "Configure um novo job de fine-tuning para o modelo Mixtral 8x7B.",
       "minDataWarning": "Você tem apenas {{count}} dados aprovados. Mínimo necessário: 10.",
       "nameLabel": "Nome do Job",
       "namePlaceholder": "ex: Fine-tune vendas Q4 2025",
@@ -1012,11 +1012,11 @@
         },
         "audio": {
           "title": "Áudios",
-          "desc": "Whisper large-v3 transcreve o áudio, BGE-M3 gera embeddings do texto"
+          "desc": "Whisper large-v3 transcreve o áudio, Qwen3-Embedding-8B gera embeddings do texto"
         },
         "video": {
           "title": "Vídeos",
-          "desc": "Combina extração de frames (OpenCLIP) com transcrição de áudio (Whisper + BGE-M3)"
+          "desc": "Combina extração de frames (OpenCLIP) com transcrição de áudio (Whisper + Qwen3)"
         },
         "gpu": {
           "title": "Processamento GPU Salad Cloud",

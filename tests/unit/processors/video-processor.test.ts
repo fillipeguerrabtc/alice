@@ -263,7 +263,7 @@ describe('Video Processor - Estrutura de Resultado', () => {
     const result: ProcessedVideo = {
       transcription: 'Transcrição do vídeo',
       transcriptionLanguage: 'pt',
-      textEmbedding: new Array(1024).fill(0), // BGE-M3 GPU (1024 dim)
+      textEmbedding: new Array(4096).fill(0), // Qwen3-Embedding-8B GPU (4096 dim)
       frameEmbeddings: [new Array(1024).fill(0), new Array(1024).fill(0)],
       combinedEmbedding: new Array(1024).fill(0),
       embeddingModel: 'OpenCLIP-ViT-H-14 (GPU)',
@@ -274,7 +274,7 @@ describe('Video Processor - Estrutura de Resultado', () => {
     };
 
     expect(result.transcription).toBeDefined();
-    expect(result.textEmbedding.length).toBe(1024); // BGE-M3 GPU (1024 dim)
+    expect(result.textEmbedding.length).toBe(4096); // Qwen3-Embedding-8B GPU (4096 dim)
     expect(result.frameEmbeddings.length).toBe(2);
     expect(result.framesExtracted).toBe(2);
   });

@@ -165,8 +165,8 @@ interface TextEmbeddingResponse {
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA 100% GPU (15/12/2025): BGE-M3 via Salad Cloud
-  // Embeddings de texto com 1024 dimensões para máxima qualidade
+  // ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B via Salad Cloud
+  // Embeddings de texto com 4096 dimensões para máxima qualidade
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   

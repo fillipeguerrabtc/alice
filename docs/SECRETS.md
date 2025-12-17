@@ -9,7 +9,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 
 **Total de Secrets:** 55 configurados no repositório (50 obrigatórios pré-deploy + 5 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 43 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
+**Total de Containers:** 43 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud GPUs
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
@@ -151,10 +151,10 @@ Estes são necessários para o deploy funcionar:
 
 | Secret | Onde Obter |
 |--------|------------|
-| `KUCOIN_API_KEY` | [kucoin.com/account/api](https://www.kucoin.com/account/api) |
-| `KUCOIN_API_SECRET` | kucoin.com/account/api (mostrado apenas 1 vez ao criar) |
-| `KUCOIN_API_PASSPHRASE` | Definido por você ao criar a API Key |
-| `KUCOIN_FUTURES_BASE_URL` | Opcional. Default: `https://api-futures.kucoin.com` |
+| `KUCOIN_PRO_API_KEY` | [kucoin.com/account/api](https://www.kucoin.com/account/api) |
+| `KUCOIN_PRO_API_SECRET` | kucoin.com/account/api (mostrado apenas 1 vez ao criar) |
+| `KUCOIN_PRO_API_PASSPHRASE` | Definido por você ao criar a API Key |
+| `KUCOIN_PRO_BASE_URL` | Opcional. Default: `https://api-futures.kucoin.com` |
 | `KUCOIN_SANDBOX_MODE` | `true` para sandbox, `false` para produção (default: `false`) |
 
 **Configuração:**
@@ -362,11 +362,11 @@ Estes são necessários para o deploy funcionar:
 
 | Secret | Status |
 |--------|--------|
-| `KUCOIN_API_KEY` | ⏳ Configurar quando trading estiver ativo |
-| `KUCOIN_API_SECRET` | ⏳ Configurar quando trading estiver ativo |
-| `KUCOIN_API_PASSPHRASE` | ⏳ Configurar quando trading estiver ativo |
+| `KUCOIN_PRO_API_KEY` | ✅ |
+| `KUCOIN_PRO_API_SECRET` | ✅ |
+| `KUCOIN_PRO_API_PASSPHRASE` | ✅ |
+| `KUCOIN_PRO_BASE_URL` | ✅ |
 | `KUCOIN_SANDBOX_MODE` | ⏳ Opcional (default: `false`) |
-| `KUCOIN_FUTURES_BASE_URL` | ⏳ Opcional (default aplicado) |
 
 ### Comunicação
 
@@ -407,6 +407,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
 | `LANGFUSE_DB_NAME` | ✅ |
+| `GRAFANA_ADMIN_USER` | ✅ |
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
 
@@ -500,7 +501,7 @@ openssl rand -hex 64
 *Documento atualizado em: 17 de Dezembro de 2025*  
 *Versão: 7.0*  
 *Total de Secrets: 55 configurados (50 obrigatórios + 5 opcionais/novos)*  
-*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
+*Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  

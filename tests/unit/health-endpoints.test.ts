@@ -105,7 +105,7 @@ const chatHealthSchema = baseHealthSchema.extend({
 // ARQUITETURA 100% GPU (15/12/2025)
 const ragHealthSchema = baseHealthSchema.extend({
   embeddingsProvider: z.literal('salad-gpu'),
-  model: z.literal('BAAI/bge-m3'),
+  model: z.literal('Qwen/Qwen3-Embedding-8B'),
   circuitBreaker: z.object({
     state: z.enum(['open', 'closed', 'half-open']),
     stats: circuitBreakerStatsSchema,
@@ -118,7 +118,7 @@ const ragHealthSchema = baseHealthSchema.extend({
 // ARQUITETURA 100% GPU (15/12/2025)
 const trainingHealthSchema = baseHealthSchema.extend({
   embeddingsProvider: z.literal('salad-gpu'),
-  model: z.literal('BAAI/bge-m3'),
+  model: z.literal('Qwen/Qwen3-Embedding-8B'),
   saladCloudAvailable: z.boolean(),
   circuitBreakers: z.object({
     embeddings: z.object({
@@ -244,7 +244,7 @@ const mockTrainingHealthResponse = {
   service: 'training-service',
   timestamp: FIXED_TIMESTAMP,
   embeddingsProvider: 'salad-gpu',
-  model: 'BAAI/bge-m3',
+  model: 'Qwen/Qwen3-Embedding-8B',
   saladCloudAvailable: true,
   circuitBreakers: {
     embeddings: {
@@ -382,8 +382,8 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockRagHealthResponse.embeddingsProvider).toBe('salad-gpu');
     });
 
-    it('deve usar modelo "BAAI/bge-m3" (GPU)', () => {
-      expect(mockRagHealthResponse.model).toBe('BAAI/bge-m3');
+    it('deve usar modelo "Qwen/Qwen3-Embedding-8B" (GPU)', () => {
+      expect(mockRagHealthResponse.model).toBe('Qwen/Qwen3-Embedding-8B');
     });
 
     it('deve ter circuit breaker para embeddings', () => {

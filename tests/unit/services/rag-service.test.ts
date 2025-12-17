@@ -84,7 +84,7 @@ describe('RAG Service - Dimensões de Embedding', () => {
     const textEmb = new Array(TEXT_EMBEDDING_DIM).fill(0);
     const clipEmb = new Array(CLIP_EMBEDDING_DIM).fill(0);
     
-    expect(textEmb.length).toBe(1024);
+    expect(textEmb.length).toBe(4096);
     expect(clipEmb.length).toBe(1024);
   });
 });
@@ -276,7 +276,7 @@ describe('RAG Service - Health Check', () => {
       service: 'rag-service',
       timestamp: new Date().toISOString(),
       embeddingsProvider: 'salad-gpu',
-      model: 'BAAI/bge-m3',
+      model: 'Qwen/Qwen3-Embedding-8B',
       circuitBreaker: {
         state: 'closed',
         stats: { failures: 0, successes: 100, timeouts: 0 },
@@ -285,7 +285,7 @@ describe('RAG Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.embeddingsProvider).toBe('salad-gpu');
-    expect(health.model).toBe('BAAI/bge-m3');
+    expect(health.model).toBe('Qwen/Qwen3-Embedding-8B');
   });
 });
 

@@ -167,7 +167,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     const result: ProcessedAudio = {
       transcription: 'Texto transcrito do áudio',
       embedding: [],
-      embeddingModel: 'BAAI/bge-m3 (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -180,7 +180,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Olá, como você está?',
       transcriptionLanguage: 'pt',
       embedding: [],
-      embeddingModel: 'BAAI/bge-m3 (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -193,7 +193,7 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
       transcription: 'Hello world',
       transcriptionConfidence: 0.95,
       embedding: [],
-      embeddingModel: 'BAAI/bge-m3 (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
@@ -202,21 +202,21 @@ describe('Audio Processor - Estrutura de Transcrição', () => {
     expect(result.transcriptionConfidence).toBeLessThanOrEqual(1);
   });
 
-  it('deve usar modelo de embedding BGE-M3 GPU', () => {
+  it('deve usar modelo de embedding Qwen3-Embedding-8B GPU', () => {
     const result: ProcessedAudio = {
       transcription: 'Test',
       embedding: new Array(TEXT_EMBEDDING_DIM).fill(0),
-      embeddingModel: 'BAAI/bge-m3 (GPU)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU)',
       metadata: { fileSize: 1000 },
       processedAt: new Date().toISOString(),
       processingTimeMs: 5000,
     };
-    expect(result.embeddingModel).toBe('BAAI/bge-m3 (GPU)');
+    expect(result.embeddingModel).toBe('Qwen/Qwen3-Embedding-8B (GPU)');
   });
 
-    it('deve ter embedding com dimensão 1024 (BGE-M3 GPU)', () => {
+  it('deve ter embedding com dimensão 4096 (Qwen3-Embedding-8B GPU)', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(1024);
+    expect(embedding.length).toBe(4096);
   });
 });
 

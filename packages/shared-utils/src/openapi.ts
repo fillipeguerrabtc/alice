@@ -59,7 +59,7 @@ export const baseOpenApiConfig = {
 # Alice Enterprise Platform
 
 Plataforma de IA Autônoma Enterprise com suporte a:
-- Chat em tempo real com LLM (Llama 4 Maverick)
+- Chat em tempo real com LLM (Mixtral 8x7B)
 - RAG (Retrieval-Augmented Generation)
 - Geração de imagens (FLUX.1 Schnell)
 - Fine-tuning automatizado

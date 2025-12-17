@@ -50,7 +50,7 @@ export interface CircuitBreakerConfig {
  * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM Salad Cloud - timeout alto para inferência Llama 4 Maverick */
+  /** Serviço LLM Salad Cloud - timeout alto para inferência Mixtral 8x7B */
   saladLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
@@ -148,7 +148,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  /** Mixtral 8x7B vLLM - LLM Trading (menor que Llama 4, mais rápido) */
+  /** Mixtral 8x7B vLLM - LLM Trading (MoE ~12B ativos, otimizado para velocidade) */
   mixtralLLM: {
     timeout: 45000, // Mais rápido que Maverick 400B
     errorThresholdPercentage: 50,

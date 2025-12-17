@@ -2435,8 +2435,8 @@ jobs:
             run_migration_idempotent "../../migrations/0004_multimodal_learning_and_crawler.sql" "0004_multimodal_learning_and_crawler"
             
             # Migration 0005: Update Embedding Dimensions to 1024 (ARQUITETURA 100% GPU)
-            # OBRIGATÓRIA: Atualiza vector(768) para vector(1024)
-            # Compatível com BGE-M3 (texto) e OpenCLIP ViT-H/14 (imagem) via GPU Salad Cloud
+            # OBRIGATÓRIA: Atualiza vector(768) para vector(1024) - IMAGENS apenas
+            # OpenCLIP ViT-H/14 (1024 dim) → pgvector | Texto usa Qdrant (4096 dim)
             run_migration_critical "../../migrations/0005_update_embedding_dimensions_1024.sql" "0005_update_embedding_dimensions_1024"
             
             echo "✅ Todas as migrações processadas"

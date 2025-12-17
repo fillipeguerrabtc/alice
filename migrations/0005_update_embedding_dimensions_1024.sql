@@ -1,14 +1,17 @@
 -- ============================================================================
--- MIGRAÇÃO: Atualizar dimensões de embeddings para 1024 (BGE-M3 + OpenCLIP ViT-H/14)
+-- MIGRAÇÃO: Atualizar dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14)
 -- Descrição: Migra colunas de embedding de vector(768) para vector(1024)
 -- 
--- ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025:
--- - Texto: BGE-M3 (1024 dim, multilíngue, 100+ idiomas) via GPU Salad Cloud
--- - Imagem: OpenCLIP ViT-H/14 (1024 dim) via GPU Salad Cloud
+-- ARQUITETURA ENTERPRISE (17/12/2025):
+-- - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant (não usa pgvector para texto)
+-- - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector (esta migration)
+-- 
+-- NOTA: Esta migration aplica-se APENAS a embeddings de IMAGEM (clip_embedding).
+-- Embeddings de TEXTO agora usam Qdrant com 4096 dimensões.
 -- 
 -- Author: Fillipe Guerra
--- Data: 15 de Dezembro de 2025
--- Versão: 1.0
+-- Data: 17 de Dezembro de 2025
+-- Versão: 1.1
 -- ============================================================================
 
 -- ============================================================================
@@ -155,7 +158,7 @@ BEGIN
         WITH (m = 16, ef_construction = 64);
     END IF;
     
-    -- text_embedding (BGE-M3 - 1024 dim)
+    -- text_embedding (LEGACY - texto agora usa Qdrant com 4096 dim; manter coluna apenas para compatibilidade)
     IF EXISTS (
       SELECT 1 
       FROM information_schema.columns 
@@ -238,8 +241,8 @@ END $$;
 -- MIGRAÇÃO CONCLUÍDA
 -- Todas as colunas de embedding agora são vector(1024)
 -- Compatível com:
--- - BGE-M3 (1024 dim, texto) via GPU Salad Cloud
--- - OpenCLIP ViT-H/14 (1024 dim, imagem) via GPU Salad Cloud
+-- - OpenCLIP ViT-H/14 (1024 dim, imagem) via GPU Salad Cloud → pgvector
+-- - NOTA: Texto usa Qwen3-Embedding-8B (4096 dim) → Qdrant (não pgvector)
 -- 
 -- ARQUITETURA 100% GPU (Opção B - Alta Qualidade)
 -- ============================================================================

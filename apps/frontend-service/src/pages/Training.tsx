@@ -2,7 +2,7 @@
  * Training - Gestão de Fine-tuning
  * 
  * Página para gerenciar dados de treinamento e jobs de fine-tuning
- * na Salad Cloud para o modelo Llama 4 Maverick.
+ * na Salad Cloud para o modelo Mixtral 8x7B.
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
@@ -480,8 +480,8 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 // COMPONENTE: MultimodalUploadTab - Upload de mídia multimodal para RAG
 // ARQUITETURA 100% GPU (15/12/2025):
 // - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim)
-// - Áudios: Whisper large-v3 transcrição + BGE-M3 embeddings (1024 dim)
-// - Vídeos: Frames OpenCLIP + transcrição BGE-M3
+// - Áudios: Whisper large-v3 transcrição + Qwen3-Embedding-8B embeddings (4096 dim)
+// - Vídeos: Frames OpenCLIP + transcrição Qwen3-Embedding-8B
 // REGRA 8: TypeScript strict, zero any
 // REGRA 16: Validação client-side, error handling, UX feedback
 // ============================================================================

@@ -33,7 +33,7 @@ describe('Chat Service - Configuração LLM', () => {
     expect(LLM_CONFIG.provider).toBe('salad-cloud');
   });
 
-  it('deve usar modelo Llama 4 Maverick', () => {
+  it('deve usar modelo Mixtral 8x7B', () => {
     expect(LLM_CONFIG.model).toBe('llama4-maverick');
   });
 

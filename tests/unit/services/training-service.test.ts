@@ -89,7 +89,7 @@ describe('Training Service - Deduplicação Semântica', () => {
   // ARQUITETURA 100% GPU (15/12/2025)
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
-    embeddingDim: 1024, // BGE-M3 GPU (Salad Cloud)
+    embeddingDim: 4096, // Qwen3-Embedding-8B GPU (Salad Cloud)
     batchSize: 100,
   };
 
@@ -302,7 +302,7 @@ describe('Training Service - Health Check', () => {
       service: 'training-service',
       timestamp: new Date().toISOString(),
       embeddingsProvider: 'salad-gpu',
-      model: 'BAAI/bge-m3',
+      model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
       saladCloudAvailable: true,
       circuitBreakers: {
         embeddings: { state: 'closed', stats: {} },

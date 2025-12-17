@@ -677,7 +677,7 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Llama 4 Maverick - Self-hosted)
+// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - Salad Cloud GPU)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {

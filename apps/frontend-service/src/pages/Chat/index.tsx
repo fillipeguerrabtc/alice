@@ -463,7 +463,7 @@ export default function Chat() {
           <div className="flex items-center gap-1">
             <Badge variant="secondary" className="hidden sm:flex gap-1">
               <Sparkles className="h-3 w-3" />
-              Llama 4
+              Mixtral 8x7B
             </Badge>
           </div>
         </div>

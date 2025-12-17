@@ -52,7 +52,7 @@ function setupPreviewChatEndpoint(app: express.Express) {
       previewMode: true,
       model: 'llama4-maverick-preview',
       provider: 'Preview (desenvolvimento)',
-      note: 'Em producao, conecta ao Salad Cloud com Llama 4 Maverick 400B'
+      note: 'Em producao, conecta ao Salad Cloud com Mixtral 8x7B'
     });
   });
 }
@@ -61,7 +61,7 @@ function generatePreviewResponse(userMessage: string): string {
   const lowerMessage = userMessage.toLowerCase();
   
   if (lowerMessage.includes('ola') || lowerMessage.includes('oi') || lowerMessage.includes('hello')) {
-    return 'Ola! Sou Alice, sua assistente de IA enterprise. Este e o modo preview de desenvolvimento. Em producao, estarei conectada ao Llama 4 Maverick (400B parametros) no Salad Cloud. Como posso ajudar?';
+    return 'Ola! Sou Alice, sua assistente de IA enterprise. Este e o modo preview de desenvolvimento. Em producao, estarei conectada ao Mixtral 8x7B no Salad Cloud. Como posso ajudar?';
   }
   
   if (lowerMessage.includes('quem') && lowerMessage.includes('voce')) {
@@ -69,10 +69,10 @@ function generatePreviewResponse(userMessage: string): string {
   }
 
   if (lowerMessage.includes('ajud') || lowerMessage.includes('help')) {
-    return 'Posso ajudar com diversas tarefas: responder perguntas, analisar documentos, gerar insights de negocios, e muito mais. Em producao, terei acesso ao modelo Llama 4 Maverick com 400B parametros.';
+    return 'Posso ajudar com diversas tarefas: responder perguntas, analisar documentos, gerar insights de negocios, e muito mais. Em producao, terei acesso ao modelo Mixtral 8x7B.';
   }
 
-  return `Recebi sua mensagem. Este e o modo preview de desenvolvimento. Em producao (Hetzner Cloud), estarei conectada ao Llama 4 Maverick no Salad Cloud para respostas completas e inteligentes.`;
+  return `Recebi sua mensagem. Este e o modo preview de desenvolvimento. Em producao (Hetzner Cloud), estarei conectada ao Mixtral 8x7B no Salad Cloud para respostas completas e inteligentes.`;
 }
 
 // ============================================================================

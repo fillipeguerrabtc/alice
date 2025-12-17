@@ -2205,7 +2205,7 @@ wss.on('connection', (ws, req) => {
         // ======================================================================
         // ANÁLISE PÓS-RESPOSTA: Verificar se LLM deu resposta de baixa confiança
         // Se sim, incrementa fallback counter e pode escalar automaticamente
-        // (Llama 4 não retorna confidence score - usamos indicadores proxy)
+        // (Mixtral 8x7B não retorna confidence score - usamos indicadores proxy)
         // ======================================================================
         const postResponseEscalation = await processLLMResponseForEscalation(
           message.conversationId,
@@ -2244,7 +2244,7 @@ wss.on('connection', (ws, req) => {
       
       // ========================================================================
       // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
-      // Llama 4 Maverick suporta imagens/vídeo como INPUT (não gera imagens)
+      // Mixtral 8x7B suporta imagens/vídeo como INPUT (não gera imagens)
       // ========================================================================
       else if (message.type === 'media') {
         const mediaMessage = message as {
@@ -2389,11 +2389,11 @@ wss.on('connection', (ws, req) => {
           processingStatus: uploadResult.processingStatus,
         }));
 
-        // Preparar prompt para Llama 4 Maverick (multimodal INPUT)
+        // Preparar prompt para Mixtral 8x7B (multimodal INPUT)
         const agent = conversation.agent as { instrucoes?: string } | null;
         let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
         
-        // Para imagens: Llama 4 Maverick entende imagens via base64 data URI
+        // Para imagens: Mixtral 8x7B entende imagens via base64 data URI
         // Para áudio: usar transcrição quando disponível
         let userContent = mediaMessage.content || '';
         
@@ -2430,7 +2430,7 @@ wss.on('connection', (ws, req) => {
         // Chamar LLM com streaming
         const llmStartTime = Date.now();
         
-        // Para imagens, construir mensagem multimodal (Llama 4 Maverick suporta)
+        // Para imagens, construir mensagem multimodal (Mixtral 8x7B suporta)
         interface _MultimodalContent {
           type: 'text' | 'image_url';
           text?: string;
@@ -2440,7 +2440,7 @@ wss.on('connection', (ws, req) => {
         let llmMessages: LLMMessage[];
         
         if (mediaType === 'image') {
-          // Formato multimodal para Llama 4 Maverick
+          // Formato multimodal para Mixtral 8x7B
           const imageDataUri = `data:${mediaMessage.media.mimeType};base64,${mediaMessage.media.file}`;
           llmMessages = [
             { role: 'system', content: systemPrompt },

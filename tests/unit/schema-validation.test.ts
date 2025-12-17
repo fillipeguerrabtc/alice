@@ -315,7 +315,7 @@ describe('Schema - Tabelas Principais', () => {
     });
   });
 
-  describe('llmConfig (Llama 4 Maverick)', () => {
+  describe('llmConfig (Mixtral 8x7B)', () => {
     it('deve ter configuração de modelo LLM', () => {
       const columns = Object.keys(llmConfig);
       expect(columns).toContain('modelo');

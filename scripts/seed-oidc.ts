@@ -55,7 +55,7 @@ const SYSTEM_MODULES = [
   {
     codigo: "chat",
     nome: "Chat IA",
-    descricao: "Interface de conversação com Alice (Llama 4 Maverick)",
+    descricao: "Interface de conversação com Alice (Mixtral 8x7B)",
     icone: "MessageSquare",
     categoria: "core",
     urlExterna: null,

@@ -92,7 +92,7 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | WebSocket tempo real | ✅ | `index.ts` |
-| LLM Salad Cloud (Llama 4) | ✅ | `index.ts` |
+| LLM Salad Cloud (Mixtral 8x7B) | ✅ | `index.ts` |
 | RAG Client (busca contexto) | ✅ | `rag-client.ts` |
 | Image Generation (FLUX.1 Schnell) | ✅ | `image-generation-client.ts` |
 | FLUX.1 Deployment Management | ✅ | `flux-deployment.ts` |

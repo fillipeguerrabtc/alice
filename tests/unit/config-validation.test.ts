@@ -623,7 +623,7 @@ describe('Config - Timeouts Padrão', () => {
       expect(DEFAULT_TIMEOUTS.http).toBe(30000);
     });
 
-    it('deve ter timeout LLM de 60 segundos (inferência Llama 4)', () => {
+    it('deve ter timeout LLM de 60 segundos (inferência Mixtral 8x7B)', () => {
       expect(DEFAULT_TIMEOUTS.llm).toBe(60000);
     });
 
@@ -696,7 +696,7 @@ describe('Config - RAG Chunk Configuration', () => {
       expect(RAG_CHUNK_CONFIG.chunkOverlap).toBe(200);
     });
 
-    it('deve ter dimensão de embeddings de 1024 (BGE-M3 GPU)', () => {
+    it('deve ter dimensão de embeddings de 4096 (Qwen3-Embedding-8B GPU)', () => {
       expect(RAG_CHUNK_CONFIG.embeddingDimensions).toBe(1024);
     });
 
