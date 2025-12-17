@@ -1,9 +1,15 @@
 /**
  * RAG Service - Alice Enterprise Platform
  * 
- * Serviço de Retrieval-Augmented Generation com pgvector para embeddings.
+ * Serviço de Retrieval-Augmented Generation com busca vetorial enterprise.
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
+ * - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -63,6 +69,17 @@ import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus }
 import { startLearningWorker } from './workers/learning-worker.js';
 import { startMediaWorker } from './workers/media-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
+// Cliente Qdrant para busca de texto (4096 dim - Qwen3-Embedding-8B)
+import {
+  searchPoints,
+  initTextCollection,
+  isQdrantConfigured,
+  healthCheck as qdrantHealthCheck,
+  getQdrantCircuitBreakerStatus,
+  TEXT_COLLECTION_NAME,
+  TEXT_EMBEDDING_DIM,
+  type QdrantSearchResult,
+} from '@alice/shared-utils';
 
 interface MulterRequest extends Request {
   file?: Express.Multer.File;
@@ -702,6 +719,128 @@ async function generateEmbedding(text: string): Promise<number[]> {
 }
 
 // ============================================================================
+// BUSCA QDRANT - Embeddings de texto (4096 dim - Qwen3-Embedding-8B)
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - Texto: Qdrant (4096 dim) - usa esta função
+// - Imagem: pgvector (1024 dim) - usa queries SQL diretas
+// ============================================================================
+
+interface QdrantDocumentResult {
+  id: string;
+  documentId: string;
+  conteudo: string;
+  posicao?: number;
+  metadata?: Record<string, unknown>;
+  criadoEm?: string;
+  similarity: number;
+  document?: {
+    id: string;
+    titulo: string | null;
+    nomeArquivo: string | null;
+    namespaceId: string | null;
+  } | null;
+}
+
+/**
+ * Busca documentos similares via Qdrant (4096 dim)
+ * 
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - Embeddings de texto com Qwen3-Embedding-8B (4096 dim)
+ * - Armazenamento e busca via Qdrant (suporta HNSW com 4096+ dim)
+ * - Multi-tenancy via filtro de payload (tenantId)
+ * 
+ * @param queryEmbedding - Embedding da query (4096 dim)
+ * @param tenantId - ID do tenant para isolamento
+ * @param options - Opções de busca (limit, threshold, namespaceId)
+ * @returns Array de documentos similares com score
+ */
+async function searchDocumentsInQdrant(
+  queryEmbedding: number[],
+  tenantId: string,
+  options: {
+    limit?: number;
+    threshold?: number;
+    namespaceId?: string;
+  } = {}
+): Promise<QdrantDocumentResult[]> {
+  const { limit = 10, threshold = 0.7, namespaceId } = options;
+
+  if (!isQdrantConfigured()) {
+    logger.warn('Qdrant não configurado - busca de texto indisponível');
+    return [];
+  }
+
+  // Construir filtro Qdrant (multi-tenancy + namespace opcional)
+  const mustConditions: Array<{ key: string; match: { value: string } }> = [
+    { key: 'tenantId', match: { value: tenantId } },
+    { key: 'type', match: { value: 'document_chunk' } },
+  ];
+
+  if (namespaceId) {
+    mustConditions.push({ key: 'namespaceId', match: { value: namespaceId } });
+  }
+
+  const filter = { must: mustConditions };
+
+  try {
+    const results = await searchPoints(TEXT_COLLECTION_NAME, queryEmbedding, {
+      limit: limit * 2, // Buscar mais para compensar filtro por threshold
+      scoreThreshold: threshold,
+      filter,
+      withPayload: true,
+    });
+
+    // Mapear resultados Qdrant para formato esperado pelo RAG
+    return results
+      .slice(0, limit)
+      .map((result: QdrantSearchResult): QdrantDocumentResult => {
+        const payload = result.payload || {};
+        return {
+          id: String(result.id),
+          documentId: String(payload.documentId || ''),
+          conteudo: String(payload.conteudo || ''),
+          posicao: typeof payload.posicao === 'number' ? payload.posicao : undefined,
+          metadata: typeof payload.metadata === 'object' ? payload.metadata as Record<string, unknown> : undefined,
+          criadoEm: typeof payload.criadoEm === 'string' ? payload.criadoEm : undefined,
+          similarity: Math.round(result.score * 10000) / 10000,
+          document: payload.document_id ? {
+            id: String(payload.document_id),
+            titulo: payload.document_titulo ? String(payload.document_titulo) : null,
+            nomeArquivo: payload.document_nomeArquivo ? String(payload.document_nomeArquivo) : null,
+            namespaceId: payload.document_namespaceId ? String(payload.document_namespaceId) : null,
+          } : null,
+        };
+      });
+  } catch (error) {
+    logger.error({ error, tenantId, namespaceId }, 'Erro na busca Qdrant');
+    throw error;
+  }
+}
+
+/**
+ * Busca documentos similares para contexto agentic via Qdrant
+ * Versão simplificada para uso no endpoint /api/rag/agentic
+ */
+async function searchDocumentsForContext(
+  queryEmbedding: number[],
+  tenantId: string,
+  options: {
+    limit?: number;
+    threshold?: number;
+    namespaceId?: string;
+  } = {}
+): Promise<Array<{ documentId: string; titulo?: string; conteudo: string; similarity: number }>> {
+  const results = await searchDocumentsInQdrant(queryEmbedding, tenantId, options);
+  
+  return results.map(r => ({
+    documentId: r.documentId,
+    titulo: r.document?.titulo || undefined,
+    conteudo: r.conteudo,
+    similarity: r.similarity,
+  }));
+}
+
+// ============================================================================
 // AGENTIC RAG - Web Search Integration (Regra 16 - Best Practices 2025)
 // ============================================================================
 
@@ -928,15 +1067,37 @@ function validateUploadToken(token: string, jobId: string, jobType: string, tena
   return token === expected;
 }
 
-app.get('/api/rag/health', (_req: Request, res: Response) => {
+app.get('/api/rag/health', async (_req: Request, res: Response) => {
   const circuitState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  
-  res.json({ 
-    status: 'ok', 
-    service: 'rag-service', 
+  const qdrantStatus = getQdrantCircuitBreakerStatus();
+
+  // Verificar saúde do Qdrant (assíncrono)
+  let qdrantHealthy = false;
+  if (isQdrantConfigured()) {
+    try {
+      const qdrantHealth = await qdrantHealthCheck();
+      qdrantHealthy = qdrantHealth.healthy;
+    } catch {
+      qdrantHealthy = false;
+    }
+  }
+
+  res.json({
+    status: 'ok',
+    service: 'rag-service',
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'gpu-salad-cloud', // 100% GPU via Salad Cloud (Qwen3-Embedding-8B + OpenCLIP ViT-H/14)
-    model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant) + OpenCLIP-ViT-H-14 (1024 dim → pgvector)',
+    architecture: {
+      text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+      image: 'OpenCLIP ViT-H/14 (1024 dim) → pgvector',
+    },
+    embeddingsProvider: 'gpu-salad-cloud',
+    qdrant: {
+      configured: isQdrantConfigured(),
+      healthy: qdrantHealthy,
+      collection: TEXT_COLLECTION_NAME,
+      dimension: TEXT_EMBEDDING_DIM,
+      circuitBreaker: qdrantStatus,
+    },
     circuitBreaker: {
       state: circuitState,
       stats: {
@@ -1201,92 +1362,35 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
   try {
     const body = searchSchema.parse(req.body);
 
+    // ============================================================================
+    // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
+    // ============================================================================
+    // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
+    // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+    // MULTI-TENANCY: Filtro via payload (tenantId) no Qdrant
+    // ============================================================================
+
+    // Verificar se Qdrant está configurado
+    if (!isQdrantConfigured()) {
+      logger.error('Qdrant não configurado - busca de texto indisponível');
+      return res.status(503).json({ 
+        error: 'Serviço de busca indisponível',
+        details: 'Qdrant não configurado. Verifique QDRANT_URL e QDRANT_API_KEY.',
+      });
+    }
+
+    // Gerar embedding da query (4096 dim via Qwen3-Embedding-8B)
     const queryEmbedding = await generateEmbedding(body.query);
     
-    // ============================================================================
-    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
-    // ============================================================================
-    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
-    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
-    // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
-    // MULTI-TENANCY: Filtro obrigatório por tenant_id (Regra 16)
-    // ============================================================================
-    
-    // Converter embedding para formato SQL pgvector (enterprise-grade)
-    const embeddingVector = toSql(queryEmbedding);
-    
-    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
-    const pool = getPool();
-    // MULTI-TENANCY: tenant_id é parâmetro obrigatório na busca
-    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2, tenantId];
-    const paramIndex = 4;
-    
-    let namespaceFilter = '';
-    if (body.namespaceId) {
-      namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
-      queryParams.push(body.namespaceId);
-    }
-    
-    const { rows: results } = await pool.query<{
-      id: string;
-      documentId: string;
-      conteudo: string;
-      posicao: number;
-      metadata: Record<string, unknown>;
-      criadoEm: Date;
-      doc_id: string | null;
-      doc_titulo: string | null;
-      doc_nomeArquivo: string | null;
-      doc_namespaceId: string | null;
-      similarity: number;
-    }>(`
-      SELECT 
-        dc.id,
-        dc.document_id as "documentId",
-        dc.conteudo,
-        dc.posicao,
-        dc.metadata,
-        dc.criado_em as "criadoEm",
-        d.id as "doc_id",
-        d.titulo as "doc_titulo",
-        d.nome_arquivo as "doc_nomeArquivo",
-        d.namespace_id as "doc_namespaceId",
-        -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
-        -- Esta query é para dados LEGADOS em pgvector (halfvec)
-        -- Novos embeddings de texto devem ser buscados via Qdrant
-        1 - (dc.embedding <=> $1) / 2 as similarity
-      FROM document_chunks dc
-      LEFT JOIN documents d ON dc.document_id = d.id
-      WHERE 
-        dc.embedding IS NOT NULL
-        AND d.tenant_id = $3
-        ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1
-      LIMIT $2
-    `, queryParams);
-    
-    // Filtrar por threshold e formatar resultados
-    const filteredResults = results
-      .filter(r => Number(r.similarity) >= body.threshold)
-      .slice(0, body.limit)
-      .map(r => ({
-        id: r.id,
-        documentId: r.documentId,
-        conteudo: r.conteudo,
-        posicao: r.posicao,
-        metadata: r.metadata,
-        criadoEm: r.criadoEm,
-        similarity: Math.round(Number(r.similarity) * 10000) / 10000,
-        document: r.doc_id ? {
-          id: r.doc_id,
-          titulo: r.doc_titulo,
-          nomeArquivo: r.doc_nomeArquivo,
-          namespaceId: r.doc_namespaceId,
-        } : null,
-      }));
+    // Buscar documentos similares via Qdrant
+    const results = await searchDocumentsInQdrant(queryEmbedding, tenantId, {
+      limit: body.limit,
+      threshold: body.threshold,
+      namespaceId: body.namespaceId,
+    });
 
-    logger.info({ query: body.query, results: filteredResults.length }, 'Busca concluída');
-    res.json({ results: filteredResults });
+    logger.info({ query: body.query, results: results.length, storage: 'qdrant' }, 'Busca concluída via Qdrant');
+    res.json({ results });
   } catch (error) {
     logger.error({ error }, 'Falha na busca');
     res.status(500).json({ error: 'Erro interno do servidor' });
@@ -1297,69 +1401,46 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
   try {
     const body = searchSchema.parse(req.body);
 
+    // ============================================================================
+    // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
+    // ============================================================================
+    // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
+    // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+    // ============================================================================
+
+    // Verificar se Qdrant está configurado
+    if (!isQdrantConfigured()) {
+      logger.error('Qdrant não configurado - contexto indisponível');
+      return res.status(503).json({ 
+        error: 'Serviço de contexto indisponível',
+        details: 'Qdrant não configurado. Verifique QDRANT_URL e QDRANT_API_KEY.',
+      });
+    }
+
+    // Gerar embedding da query (4096 dim via Qwen3-Embedding-8B)
     const queryEmbedding = await generateEmbedding(body.query);
     
-    // ============================================================================
-    // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
-    // ============================================================================
-    // SEGURANÇA: Prepared statement com embedding serializado como parâmetro
-    // PERFORMANCE: Índice HNSW (m=16, ef_construction=64) para O(log N)
-    // ÍNDICE: idx_document_chunks_embedding_hnsw (vector_cosine_ops)
-    // ============================================================================
+    // Obter tenantId do request (pode não estar presente em todas as rotas)
+    const tenantId = req.tenantId || 'default';
     
-    // Converter embedding para formato SQL pgvector (enterprise-grade)
-    const embeddingVector = toSql(queryEmbedding);
-    
-    // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
-    const pool = getPool();
-    const queryParams: (string | number)[] = [embeddingVector, body.limit * 2];
-    const paramIndex = 3;
-    
-    let namespaceFilter = '';
-    if (body.namespaceId) {
-      namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
-      queryParams.push(body.namespaceId);
-    }
-    
-    const { rows: dbResults } = await pool.query<{
-      id: string;
-      documentId: string;
-      conteudo: string;
-      doc_titulo: string | null;
-      similarity: number;
-    }>(`
-      SELECT 
-        dc.id,
-        dc.document_id as "documentId",
-        dc.conteudo,
-        d.titulo as "doc_titulo",
-        -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
-        -- Esta query é para dados LEGADOS em pgvector (halfvec)
-        1 - (dc.embedding <=> $1) / 2 as similarity
-      FROM document_chunks dc
-      LEFT JOIN documents d ON dc.document_id = d.id
-      WHERE 
-        dc.embedding IS NOT NULL
-        ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1
-      LIMIT $2
-    `, queryParams);
-    
-    // Filtrar por threshold
-    const results = dbResults
-      .filter(r => Number(r.similarity) >= body.threshold)
-      .slice(0, body.limit);
+    // Buscar documentos similares via Qdrant
+    const results = await searchDocumentsInQdrant(queryEmbedding, tenantId, {
+      limit: body.limit,
+      threshold: body.threshold,
+      namespaceId: body.namespaceId,
+    });
 
+    // Construir contexto formatado
     const context = results
-      .map(r => `[Fonte: ${r.doc_titulo || 'Desconhecido'}]\n${r.conteudo}`)
+      .map(r => `[Fonte: ${r.document?.titulo || 'Desconhecido'}]\n${r.conteudo}`)
       .join('\n\n---\n\n');
 
     res.json({ 
       context,
       sources: results.map(r => ({
         documentId: r.documentId,
-        titulo: r.doc_titulo,
-        similarity: Math.round(Number(r.similarity) * 10000) / 10000,
+        titulo: r.document?.titulo || null,
+        similarity: r.similarity,
       })),
     });
   } catch (error) {
@@ -1598,64 +1679,25 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
 
     if (classification.type === 'internal' || classification.type === 'hybrid') {
       // ============================================================================
-      // BUSCA VETORIAL NATIVA PGVECTOR COM ÍNDICE HNSW (Enterprise-Grade)
+      // BUSCA VETORIAL VIA QDRANT (Enterprise-Grade - 17/12/2025)
       // ============================================================================
-      // SEGURANÇA: Prepared statement + isolamento por tenant_id
-      // PERFORMANCE: Índice HNSW para O(log N)
-      // MULTI-TENANCY: Filtra por namespaces do tenant
+      // ARQUITETURA: Embeddings de texto com Qwen3-Embedding-8B (4096 dim) → Qdrant
+      // PERFORMANCE: Índice HNSW otimizado para 4096 dimensões
+      // MULTI-TENANCY: Filtro via payload (tenantId) no Qdrant
       // ============================================================================
       
-      const queryEmbedding = await generateEmbedding(body.query);
-      // Converter embedding para formato SQL pgvector (enterprise-grade)
-      const embeddingVector = toSql(queryEmbedding);
-      
-      // Query parametrizada para node-postgres (Regra 6 - Enterprise-grade)
-      const pool = getPool();
-      const queryParams: (string | number)[] = [embeddingVector, tenantId, body.limit * 2];
-      const paramIndex = 4;
-      
-      let namespaceFilter = '';
-      if (body.namespaceId) {
-        namespaceFilter = `AND d.namespace_id = $${paramIndex}`;
-        queryParams.push(body.namespaceId);
+      if (!isQdrantConfigured()) {
+        logger.warn('Qdrant não configurado - busca interna indisponível para agentic');
+      } else {
+        const queryEmbedding = await generateEmbedding(body.query);
+        
+        // Buscar documentos similares via Qdrant
+        results.internal = await searchDocumentsForContext(queryEmbedding, tenantId, {
+          limit: body.limit,
+          threshold: body.threshold,
+          namespaceId: body.namespaceId,
+        });
       }
-      
-      const { rows: dbResults } = await pool.query<{
-        documentId: string;
-        titulo: string | null;
-        conteudo: string;
-        similarity: number;
-      }>(`
-        SELECT 
-          dc.document_id as "documentId",
-          d.titulo,
-          dc.conteudo,
-          -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
-          -- Esta query é para dados LEGADOS em pgvector (halfvec)
-          1 - (dc.embedding <=> $1) / 2 as similarity
-        FROM document_chunks dc
-        INNER JOIN documents d ON dc.document_id = d.id
-        INNER JOIN namespaces n ON d.namespace_id = n.id
-        WHERE 
-          dc.embedding IS NOT NULL
-          AND n.tenant_id = $2
-          ${namespaceFilter}
-        ORDER BY dc.embedding <=> $1
-        LIMIT $3
-      `, queryParams);
-      
-      // Filtrar por threshold e formatar
-      const internalResults = dbResults
-        .filter(r => Number(r.similarity) >= body.threshold)
-        .slice(0, body.limit)
-        .map(r => ({
-          documentId: r.documentId as string,
-          titulo: r.titulo as string | undefined,
-          conteudo: r.conteudo as string,
-          similarity: Math.round(Number(r.similarity) * 10000) / 10000,
-        }));
-
-      results.internal = internalResults;
     }
 
     if ((classification.type === 'web' || classification.type === 'hybrid') && webSearchClient.isEnabled()) {
@@ -3257,17 +3299,42 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: true,
     embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
+    qdrantConfigured: isQdrantConfigured(),
+    qdrantUrl: process.env.QDRANT_URL || 'not_configured',
+    architecture: {
+      text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+      image: 'OpenCLIP (1024 dim) → pgvector',
+    },
     circuitBreaker: 'enabled',
     strategy: 'warm-on-demand',
-    keepWarmMinutes: 30,
-  }, 'RAG service iniciado - Arquitetura 100% GPU com Warm on Demand');
+  }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
 });
 
 // Inicializar WebSocket para notificações de embeddings
 initEmbeddingWebSocket(server);
 logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+
+// ============================================================================
+// INICIALIZAÇÃO QDRANT - Banco vetorial para texto (4096 dim)
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - Texto: Qdrant (Qwen3-Embedding-8B, 4096 dim)
+// - Imagem: pgvector (OpenCLIP, 1024 dim)
+// ============================================================================
+if (isQdrantConfigured()) {
+  initTextCollection()
+    .then(() => {
+      logger.info({ 
+        collection: TEXT_COLLECTION_NAME, 
+        dimension: TEXT_EMBEDDING_DIM 
+      }, 'Coleção Qdrant para embeddings de texto inicializada');
+    })
+    .catch((error) => {
+      logger.error({ error }, 'Falha ao inicializar coleção Qdrant - buscas de texto indisponíveis');
+    });
+} else {
+  logger.warn('Qdrant não configurado (QDRANT_URL/QDRANT_API_KEY) - buscas de texto indisponíveis');
+}
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
 server.timeout = 60000; // 60s para processamento de embeddings/uploads
