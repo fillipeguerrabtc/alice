@@ -957,14 +957,15 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.85 - Arquitetura Enterprise + Análise de Licenças Comerciais*
+*Versão: 3.86 - Arquitetura Enterprise + RBAC Trading Permissions*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
 *Upload Multimodal: Nova tab em /training para imagens/áudios/vídeos (15/12/2025)*
 *WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
-*Integrações: Verificadas em 14/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext - todas compatíveis*
+*RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
+*Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 
 ---
 

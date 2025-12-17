@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 55 configurados no repositório (50 obrigatórios pré-deploy + 5 opcionais/novos)
+**Total de Secrets:** 49 configurados no repositório GitHub (verificado em 17/12/2025)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 43 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)

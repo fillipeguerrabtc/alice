@@ -151,6 +151,14 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:resend:write': ['super_admin', 'admin'],
   'integrations:resend:delete': ['super_admin'],
   'integrations:resend:manage': ['super_admin', 'admin'],
+  
+  // ============================================================================
+  // TRADING MODULE - KuCoin Futures BTC Perpetuals (17/12/2025)
+  // ============================================================================
+  'integrations:trading:read': ['super_admin', 'admin', 'manager', 'operator'],
+  'integrations:trading:write': ['super_admin', 'admin', 'manager'],
+  'integrations:trading:delete': ['super_admin', 'admin'],
+  'integrations:trading:manage': ['super_admin', 'admin'],
 
   // ============================================================================
   // IMAGE GENERATION MODULE - FLUX.1 Schnell (FASE 6.5+)
