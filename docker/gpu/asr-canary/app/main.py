@@ -135,6 +135,9 @@ async def transcribe_audio(
     import time
     start_time = time.time()
     
+    # Bug fix: Declarar tmp_path fora do try para uso no finally
+    tmp_path = None
+    
     try:
         # Salvar arquivo temporário
         with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
@@ -143,8 +146,9 @@ async def transcribe_audio(
             tmp_path = tmp.name
         
         # Processar com o modelo
-        import whisper
         if hasattr(model, "transcribe"):
+            # Bug fix: Import whisper apenas quando necessário (não instalado por padrão)
+            import whisper
             # Modelo Whisper
             result = model.transcribe(
                 tmp_path,
@@ -169,9 +173,6 @@ async def transcribe_audio(
             text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
             detected_language = language
         
-        # Limpar arquivo temporário
-        os.unlink(tmp_path)
-        
         duration = time.time() - start_time
         
         TRANSCRIPTION_COUNTER.labels(status="success").inc()
@@ -190,6 +191,14 @@ async def transcribe_audio(
         TRANSCRIPTION_COUNTER.labels(status="error").inc()
         logger.error(f"Erro na transcrição: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+    finally:
+        # Bug fix: Garantir limpeza do arquivo temporário mesmo em caso de erro
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass  # Ignorar erros de limpeza
 
 
 @app.get("/metrics")
