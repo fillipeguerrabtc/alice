@@ -658,7 +658,19 @@ export async function syncOrdersStatus(
       // Referência: https://www.kucoin.com/docs/rest/futures-trading/orders/get-order-list
       let newStatus: 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired' = 'pending';
       if (kucoinOrder.status === 'done') {
-        newStatus = kucoinOrder.filledSize === kucoinOrder.size ? 'filled' : 'cancelled';
+        if (kucoinOrder.filledSize === kucoinOrder.size) {
+          // Ordem completamente preenchida
+          newStatus = 'filled';
+        } else if (kucoinOrder.cancelExist) {
+          // CORREÇÃO 17/12/2025: Usar cancelExist para distinguir cancelamento explícito
+          // cancelExist=true: cancelamento foi solicitado explicitamente
+          newStatus = 'cancelled';
+        } else {
+          // CORREÇÃO 17/12/2025: cancelExist=false significa que a ordem expirou
+          // por time-in-force (IOC, FOK) ou outra razão, não foi cancelamento explícito
+          // Isso melhora a precisão de auditoria e relatórios de histórico de ordens
+          newStatus = 'expired';
+        }
       } else if (kucoinOrder.status === 'active') {
         // KuCoin retorna 'active' para ordens ativas na order book
         newStatus = 'open';
