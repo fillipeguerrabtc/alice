@@ -332,8 +332,9 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.70 - 17 de Dezembro de 2025*
+*Versão: 3.71 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (8 tabelas) + API REST (14 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
@@ -341,6 +342,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme API KuCoin Futures*
+*Bug Fix orderValue (17/12/2025): Cálculo agora usa multiplier do contrato (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
+*Bug Fix Risk Config API (17/12/2025): Removidos campos inexistentes (maxDailyOrders, allowedSymbols) do schema Zod*
 *Análise de Licenças (17/12/2025): Qwen3-Embedding-8B (Apache 2.0) é ÚNICO modelo top-tier com licença comercial*
 *Modelos Non-Commercial Identificados: Fin-E5, Linq-Embed-Mistral, NV-Embed-v2 (todos CC BY-NC - PROIBIDO uso comercial)*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*

@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 49 configurados no repositório GitHub (verificado em 17/12/2025)
+**Total de Secrets:** 50 configurados no repositório GitHub (verificado em 17/12/2025)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 43 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -99,6 +99,7 @@ Estes são necessários para o deploy funcionar:
 |--------|------------|
 | `SALAD_API_KEY` | [portal.salad.com](https://portal.salad.com) → API Keys |
 | `SALAD_ORGANIZATION_ID` | portal.salad.com → Settings |
+| `SALAD_PROJECT_ID` | portal.salad.com → Projects → Project Name (ex: `default`) |
 | `SALAD_API_URL` | Use o default `https://api.salad.com/api/public` (defina em `Repository Variables` como var, não secret) |
 | `SALAD_MEDIA_PROJECT` | Nome do projeto de media jobs no Salad (ex.: `alice-media`) — configure como var |
 | `SALAD_TTS_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
@@ -320,8 +321,8 @@ Os seguintes secrets são **gerados automaticamente** pelo workflow `deploy-sala
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 14 de Dezembro de 2025  
-> **Resumo:** 49 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 17 de Dezembro de 2025  
+> **Resumo:** 50 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -345,12 +346,13 @@ Os seguintes secrets são **gerados automaticamente** pelo workflow `deploy-sala
 | `OAUTH_GITHUB_CLIENT_ID` | ✅ |
 | `OAUTH_GITHUB_CLIENT_SECRET` | ✅ |
 
-### Salad Cloud (LLM)
+### Salad Cloud (LLM + GPU)
 
 | Secret | Status |
 |--------|--------|
 | `SALAD_API_KEY` | ✅ |
 | `SALAD_ORGANIZATION_ID` | ✅ |
+| `SALAD_PROJECT_ID` | ✅ (adicionado 17/12/2025 - projeto: `default`) |
 | `HUGGINGFACE_TOKEN` | ✅ (opcional mas recomendado para downloads confiáveis) |
 
 ### Stripe (Pagamentos)
@@ -512,12 +514,13 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*  
-*Versão: 7.2*  
-*Total de Secrets: 55 configurados (50 obrigatórios + 5 opcionais/novos)*  
+*Versão: 7.3*  
+*Total de Secrets: 50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
+*SALAD_PROJECT_ID (17/12/2025): Adicionado para Terraform - projeto 'default' no Salad Cloud*  
 *ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
-*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido*
-*Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*
+*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido | Risk Config API | orderValue multiplier*  
+*Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*

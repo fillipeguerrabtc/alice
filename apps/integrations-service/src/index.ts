@@ -2877,14 +2877,24 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
       return;
     }
 
+    // CORREÇÃO 17/12/2025: Schema Zod alinhado com colunas reais do banco
+    // Bug: maxDailyOrders e allowedSymbols não existiam no tradingRiskConfig
+    // Removidos campos inexistentes que causariam erro no Drizzle ORM
     const configSchema = z.object({
-      maxPositionSize: z.string().optional(),
-      maxDailyLoss: z.string().optional(),
-      maxDailyOrders: z.number().optional(),
-      maxLeverage: z.number().optional(),
-      maxOrderValue: z.string().optional(),
-      allowedSymbols: z.array(z.string()).optional(),
+      // Limites de risco (valores numéricos como string para precisão decimal)
+      maxPositionSize: z.string().optional(),  // % do capital por posição
+      maxDailyLoss: z.string().optional(),     // % perda diária máxima
+      maxOrderValue: z.string().optional(),    // Valor máximo por ordem em USD
+      maxLeverage: z.number().optional(),      // Alavancagem máxima
+      maxOpenPositions: z.number().optional(), // Máximo de posições abertas
+      // Configurações de execução
+      defaultLeverage: z.number().optional(),
+      defaultStopLoss: z.string().optional(),
+      defaultTakeProfit: z.string().optional(),
+      // Controles
       tradingEnabled: z.boolean().optional(),
+      autoExecuteSignals: z.boolean().optional(),
+      minConfidenceToExecute: z.string().optional(),
     });
 
     const validated = configSchema.parse(req.body);

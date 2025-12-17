@@ -399,15 +399,21 @@ export async function createOrderFromSignal(
       return { success: false, error: `Símbolo inválido: ${symbol}. Use XBTUSDTM ou XBTUSDM.` };
     }
 
-    // Obter preço atual para validação
-    const ticker = await kucoinClient.getTicker(symbol);
+    // Obter preço atual e informações do contrato para validação
+    const [ticker, contractInfo] = await Promise.all([
+      kucoinClient.getTicker(symbol),
+      kucoinClient.getContractInfo(symbol),
+    ]);
     const currentPrice = parseFloat(ticker.price);
     
-    // CORREÇÃO 17/12/2025: Para ordens limite, usar params.price na validação de risco
-    // Bug: orderValue usava sempre currentPrice, permitindo ordens acima do limite
-    // quando limit price > current price (ex: limit buy a $200k quando BTC está a $100k)
+    // CORREÇÃO 17/12/2025: Usar multiplier do contrato no cálculo de orderValue
+    // Bug CRÍTICO: size está em contratos, não em BTC!
+    // Para XBTUSDTM, cada contrato = 0.001 BTC (multiplier = 0.001)
+    // Cálculo ERRADO: 100 contratos × $100,000 = $10,000,000
+    // Cálculo CERTO: 100 contratos × 0.001 BTC × $100,000 = $10,000
+    // Isso causava rejeição de ordens legítimas por exceder maxOrderValue
     const priceForValidation = params.price !== undefined ? params.price : currentPrice;
-    const orderValue = params.size * priceForValidation;
+    const orderValue = params.size * contractInfo.multiplier * priceForValidation;
 
     // Validar limites de risco
     const riskCheck = await validateTradingAllowed(authContext, params.size, orderValue);
