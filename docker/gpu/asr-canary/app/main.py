@@ -16,7 +16,8 @@ import torch
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import time as time_module
 from starlette.responses import Response
 
 # Configuração de logging
@@ -33,6 +34,14 @@ TRANSCRIPTION_DURATION = Histogram(
     "asr_transcription_duration_seconds",
     "Tempo de processamento de transcrições",
     buckets=[0.5, 1, 2, 5, 10, 30, 60]
+)
+LAST_REQUEST_TIME = Gauge(
+    "asr_last_request_timestamp",
+    "Timestamp do último request (para keep-warm)"
+)
+GPU_MEMORY_USED = Gauge(
+    "asr_gpu_memory_bytes",
+    "Memória GPU utilizada"
 )
 
 # Configuração
@@ -90,12 +99,25 @@ async def load_model():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    """Health check endpoint com métricas de keep-warm."""
+    LAST_REQUEST_TIME.set(time_module.time())
+    
+    gpu_info = {}
+    if torch.cuda.is_available():
+        memory_used = torch.cuda.memory_allocated()
+        GPU_MEMORY_USED.set(memory_used)
+        gpu_info = {
+            "name": torch.cuda.get_device_name(0),
+            "memory_allocated_gb": round(memory_used / 1024**3, 2),
+            "memory_total_gb": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2)
+        }
+    
     return {
         "status": "healthy",
         "model": MODEL_NAME,
         "device": DEVICE,
-        "gpu_available": torch.cuda.is_available()
+        "gpu_available": torch.cuda.is_available(),
+        "gpu": gpu_info
     }
 
 
@@ -125,8 +147,8 @@ async def transcribe_audio(
     if model is None:
         raise HTTPException(status_code=503, detail="Modelo não carregado")
     
-    import time
-    start_time = time.time()
+    LAST_REQUEST_TIME.set(time_module.time())
+    start_time = time_module.time()
     
     # Bug fix: Declarar tmp_path fora do try para uso no finally
     tmp_path = None
@@ -154,7 +176,7 @@ async def transcribe_audio(
         text = transcriptions[0] if transcriptions else ""
         detected_language = language
         
-        duration = time.time() - start_time
+        duration = time_module.time() - start_time
         
         TRANSCRIPTION_COUNTER.labels(status="success").inc()
         TRANSCRIPTION_DURATION.observe(duration)

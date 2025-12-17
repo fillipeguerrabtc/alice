@@ -332,7 +332,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.51 - 17 de Dezembro de 2025*
+*Versão: 3.52 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -345,6 +345,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(3584) gte-Qwen2-7B-instruct (nativo) | Imagem vector(1024) OpenCLIP ViT-H/14*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
-*Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + WebSocket para notificações*
+*Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus (last_request_timestamp)*
 *Salad Cloud: Mixtral 8x7B (vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-Qwen-2.5B (ASR)*
 *Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI*

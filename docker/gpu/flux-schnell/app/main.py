@@ -16,7 +16,8 @@ import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
+from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+import time as time_module
 from starlette.responses import Response
 from PIL import Image
 
@@ -26,6 +27,8 @@ logger = logging.getLogger(__name__)
 # Métricas
 IMAGE_GEN_COUNTER = Counter("flux_images_generated_total", "Total de imagens geradas", ["status"])
 IMAGE_GEN_DURATION = Histogram("flux_generation_duration_seconds", "Tempo de geração", buckets=[1, 2, 5, 10, 30, 60])
+LAST_REQUEST_TIME = Gauge("flux_last_request_timestamp", "Timestamp do último request (para keep-warm)")
+GPU_MEMORY_USED = Gauge("flux_gpu_memory_bytes", "Memória GPU utilizada")
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "black-forest-labs/FLUX.1-schnell")
 NUM_STEPS = int(os.environ.get("NUM_INFERENCE_STEPS", "4"))
@@ -90,11 +93,25 @@ async def load_model():
 
 @app.get("/health")
 async def health_check():
+    """Health check endpoint com métricas de keep-warm."""
+    LAST_REQUEST_TIME.set(time_module.time())
+    
+    gpu_info = {}
+    if torch.cuda.is_available():
+        memory_used = torch.cuda.memory_allocated()
+        GPU_MEMORY_USED.set(memory_used)
+        gpu_info = {
+            "name": torch.cuda.get_device_name(0),
+            "memory_allocated_gb": round(memory_used / 1024**3, 2),
+            "memory_total_gb": round(torch.cuda.get_device_properties(0).total_memory / 1024**3, 2)
+        }
+    
     return {
         "status": "healthy",
         "model": MODEL_NAME,
         "device": DEVICE,
-        "gpu_available": torch.cuda.is_available()
+        "gpu_available": torch.cuda.is_available(),
+        "gpu": gpu_info
     }
 
 
@@ -111,8 +128,8 @@ async def generate_image(request: ImageRequest):
     if pipe is None:
         raise HTTPException(status_code=503, detail="Modelo não carregado")
     
-    import time
-    start_time = time.time()
+    LAST_REQUEST_TIME.set(time_module.time())
+    start_time = time_module.time()
     
     try:
         # Configurar seed
@@ -143,7 +160,7 @@ async def generate_image(request: ImageRequest):
         image.save(buffer, format="PNG")
         image_base64 = base64.b64encode(buffer.getvalue()).decode()
         
-        generation_time_ms = int((time.time() - start_time) * 1000)
+        generation_time_ms = int((time_module.time() - start_time) * 1000)
         
         IMAGE_GEN_COUNTER.labels(status="success").inc()
         IMAGE_GEN_DURATION.observe(generation_time_ms / 1000)
