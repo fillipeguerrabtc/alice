@@ -1911,10 +1911,12 @@ wss.on('connection', (ws, req) => {
         return;
       }
       
+      // CORREÇÃO 17/12/2025: Type assertion alinhada com schema Zod
+      // content é opcional no schema (z.string().optional())
       const message = parseResult.data as {
         type: string;
-        conversationId: string;
-        content: string;
+        conversationId?: string;
+        content?: string;  // CORREÇÃO: era 'content: string' - causava TypeError quando undefined
         namespaceId?: string;
         // Trading fields (17/12/2025)
         channel?: string;
@@ -2269,8 +2271,11 @@ wss.on('connection', (ws, req) => {
         // Verifica se a mensagem é uma saudação simples que pode ser respondida
         // sem chamar o LLM GPU. Economiza custos e reduz latência.
         // Autor: Fillipe Guerra
+        // CORREÇÃO 17/12/2025: Validar content antes de verificar cache
+        // Schema define content como opcional (z.string().optional())
         // ========================================================================
-        const cacheResult = await checkResponseCache(safeTenantId, message.content);
+        const messageContent = message.content ?? '';
+        const cacheResult = await checkResponseCache(safeTenantId, messageContent);
         
         // Incrementar métricas Prometheus
         if (cacheResult.isGreeting) {

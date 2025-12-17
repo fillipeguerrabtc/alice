@@ -159,8 +159,15 @@ function detectLanguage(text: string): 'pt' | 'en' {
 
 /**
  * Verifica se a mensagem é uma saudação simples
+ * 
+ * CORREÇÃO 17/12/2025: Validação defensiva para text undefined/null
+ * Evita TypeError: Cannot read properties of undefined (reading 'trim')
  */
 export function isGreeting(text: string): boolean {
+  // Validação defensiva - se text for undefined/null/vazio, não é saudação
+  if (!text || typeof text !== 'string') {
+    return false;
+  }
   const normalizedText = text.trim().toLowerCase();
   return GREETING_PATTERNS.some(pattern => pattern.test(normalizedText));
 }
