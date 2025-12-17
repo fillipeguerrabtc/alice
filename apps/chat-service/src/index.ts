@@ -2430,8 +2430,21 @@ wss.on('connection', (ws, req) => {
             userContent = userContent || 'Recebi seu áudio. Estou processando a transcrição.';
           }
         } else if (mediaType === 'video') {
-          systemPrompt += '\n\nO usuário enviou um vídeo. Analise o conteúdo e responda de forma útil.';
-          userContent = userContent || 'Analise este vídeo e descreva o que você observa.';
+          // CORREÇÃO 17/12/2025: Mixtral é text-only - usar transcrição + contexto RAG via embeddings CLIP
+          // Vídeo: frames processados via OpenCLIP (1024 dim) + transcrição via Canary-1B
+          if (uploadResult.transcription) {
+            // Se temos transcrição, incluir no contexto
+            systemPrompt += '\n\nO usuário enviou um vídeo. A transcrição do áudio está incluída abaixo. ' +
+              'Frames do vídeo foram processados pelo sistema de visão computacional para busca por contexto similar. ' +
+              'Responda com base na transcrição e no contexto do RAG.';
+            userContent = `[Transcrição do vídeo]: ${uploadResult.transcription}\n\n${userContent || 'O que você pode me dizer sobre este vídeo?'}`;
+          } else {
+            // Sem transcrição ainda - informar limitações
+            systemPrompt += '\n\nO usuário enviou um vídeo que está sendo processado pelo sistema de visão computacional. ' +
+              'Use o contexto fornecido pelo RAG para responder. ' +
+              'Se não houver contexto suficiente, informe que a análise visual direta não está disponível no momento.';
+            userContent = userContent || 'O que você pode me dizer sobre este vídeo com base no contexto disponível?';
+          }
         }
 
         // Buscar contexto RAG
