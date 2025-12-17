@@ -425,9 +425,12 @@ export async function createOrderFromSignal(
     });
 
     // Salvar no banco
+    // Bug fix: UUID não aceita string vazia, usar null se signalId não for um UUID válido
+    const validSignalId = params.signalId && params.signalId.trim() !== '' ? params.signalId : null;
+    
     const orderData: InsertTradingOrder = {
       tenantId: authContext.tenantId,
-      signalId: params.signalId,
+      signalId: validSignalId,
       kucoinOrderId: kucoinOrder.orderId,
       clientOid,
       symbol,
@@ -496,9 +499,10 @@ export async function createManualOrder(
   authContext: TradingAuthContext,
   params: ManualOrderParams
 ): Promise<TradingOperationResult<TradingOrder>> {
-  // Criar ordem sem signalId
+  // Bug fix: UUID não aceita string vazia - passar string vazia que será
+  // convertida para null em createOrderFromSignal
   return createOrderFromSignal(authContext, {
-    signalId: '', // Será tratado como null no banco
+    signalId: '', // Convertido para null em createOrderFromSignal (validação de UUID)
     ...params,
   });
 }
