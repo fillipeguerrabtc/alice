@@ -1046,6 +1046,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix Stop Loss/Take Profit (17/12/2025): Extração de preço corrigida para usar grupos capturados do regex (evita preço incorreto)*
 *Suite de Testes: 24 arquivos, ~1286 casos de teste com Vitest + coverage v8 (thresholds mínimos 50%)*
 *Bug Fix WebSocket content undefined (17/12/2025): Type assertion corrigida (content: string → content?: string), validação defensiva*
+*Bug Fix Leverage igual Amount (17/12/2025): Lógica corrigida para aceitar leverage mesmo quando valor=amount (ex: "compre 10 BTC 10x")*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

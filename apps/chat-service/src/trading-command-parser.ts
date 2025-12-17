@@ -360,13 +360,16 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
           result.amount = extractAmountFromMatch(match);
           result.symbol = extractSymbol(text);
           
-          // Verificar alavancagem mencionada (buscar padrão Xx no texto)
-          // CORREÇÃO: Garantir que leverage não seja confundido com amount
+          // Verificar alavancagem mencionada (buscar padrão Nx onde N é número seguido de 'x')
+          // CORREÇÃO 17/12/2025: Removida verificação incorreta `leverageValue !== result.amount`
+          // O padrão "10x" ou "20x" É leverage - não importa se coincide com amount
+          // Exemplo: "compre 10 BTC 10x" deve resultar em amount=10 E leverage=10
+          // A verificação anterior descartava leverage válido quando valores coincidiam
           const leverageMatch = text.match(/(\d+)x\b/i);
           if (leverageMatch) {
             const leverageValue = parseInt(leverageMatch[1]);
-            // Só definir leverage se for diferente do amount (evitar confusão)
-            if (leverageValue !== result.amount) {
+            // Validar que leverage está em range razoável (1-125x para KuCoin Futures)
+            if (leverageValue >= 1 && leverageValue <= 125) {
               result.leverage = leverageValue;
             }
           }
