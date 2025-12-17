@@ -415,6 +415,15 @@ export async function createOrderFromSignal(
       return { success: false, error: riskCheck.reason };
     }
 
+    // CORREÇÃO 17/12/2025: Validar price obrigatório para ordens limite
+    // Bug: KuCoin retornava erro críptico quando limit order sem price
+    if (params.orderType === 'limit' && (params.price === undefined || params.price === null)) {
+      return { 
+        success: false, 
+        error: 'Preço é obrigatório para ordens do tipo "limit". Use orderType: "market" para ordens a mercado.' 
+      };
+    }
+
     // Gerar clientOid único
     const clientOid = kucoinClient.generateClientOid();
 
