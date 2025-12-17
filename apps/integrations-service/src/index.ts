@@ -35,6 +35,8 @@ import { z } from 'zod';
 import { wiseService } from './wiseService.js';
 import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBreakerStatus, validateWiseWebhook } from './wiseClient.js';
 import { initWiseSyncService } from './wiseSyncService.js';
+import * as kucoinClient from './kucoinClient.js';
+import * as kucoinService from './kucoinService.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -2746,6 +2748,401 @@ app.get('/api/integrations/twilio/status', (_req: Request, res: Response) => {
     accountSid: TWILIO_ACCOUNT_SID ? '***' + TWILIO_ACCOUNT_SID.slice(-4) : null,
     whatsappNumber: TWILIO_WHATSAPP_NUMBER ? TWILIO_WHATSAPP_NUMBER.slice(-4) : null,
   });
+});
+
+// ============================================================================
+// TRADING: KuCoin Futures BTC Perpetuals (FASE Trading Mixtral 8x7B)
+// Sistema enterprise-grade para trading automatizado
+// ============================================================================
+
+// Inicializar métricas do circuit breaker KuCoin
+kucoinClient.initKucoinMetrics(metrics);
+
+// GET /api/integrations/trading/status - Status do serviço de trading
+app.get('/api/integrations/trading/status', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const status = await kucoinService.getTradingServiceStatus({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+    });
+
+    res.json({
+      success: true,
+      data: status,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter status do trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/market/:symbol - Dados de mercado
+app.get('/api/integrations/trading/market/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    
+    if (!kucoinClient.isValidSymbol(symbol)) {
+      res.status(400).json({ error: `Símbolo inválido: ${symbol}. Use XBTUSDTM ou XBTUSDM.` });
+      return;
+    }
+
+    const marketData = await kucoinService.getMarketData(symbol);
+    
+    res.json({
+      success: true,
+      data: marketData,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter dados de mercado');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/account - Visão geral da conta KuCoin
+app.get('/api/integrations/trading/account', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'API KuCoin não configurada' });
+      return;
+    }
+
+    const account = await kucoinService.getAccountOverview();
+    
+    res.json({
+      success: true,
+      data: account,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter dados da conta');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/positions - Posições abertas na KuCoin
+app.get('/api/integrations/trading/positions', requirePermission('integrations:trading:read'), async (_req: Request, res: Response) => {
+  try {
+    const positions = await kucoinService.getKucoinPositions();
+    
+    res.json({
+      success: true,
+      data: positions,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter posições');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/risk-config - Configuração de risco do tenant
+app.get('/api/integrations/trading/risk-config', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const config = await kucoinService.getRiskConfig({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+    });
+
+    res.json({
+      success: true,
+      data: config,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter configuração de risco');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// PUT /api/integrations/trading/risk-config - Atualizar configuração de risco
+app.put('/api/integrations/trading/risk-config', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const configSchema = z.object({
+      maxPositionSize: z.string().optional(),
+      maxDailyLoss: z.string().optional(),
+      maxDailyOrders: z.number().optional(),
+      maxLeverage: z.number().optional(),
+      maxOrderValue: z.string().optional(),
+      allowedSymbols: z.array(z.string()).optional(),
+      tradingEnabled: z.boolean().optional(),
+    });
+
+    const validated = configSchema.parse(req.body);
+
+    const result = await kucoinService.upsertRiskConfig(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      validated
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao atualizar configuração de risco');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/signals - Lista sinais de trading ativos
+app.get('/api/integrations/trading/signals', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const limit = parseInt(req.query.limit as string) || 10;
+    const signals = await kucoinService.getActiveSignals(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      limit
+    );
+
+    res.json({
+      success: true,
+      data: signals,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter sinais');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/signals - Criar sinal de trading (do Mixtral LLM)
+app.post('/api/integrations/trading/signals', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const signalSchema = z.object({
+      signalType: z.enum(['long', 'short', 'close_long', 'close_short', 'hold']),
+      symbol: z.string().optional(),
+      confidence: z.number().min(0).max(1),
+      reasoning: z.string().optional(),
+      sourceModel: z.string().optional(),
+      metadata: z.record(z.unknown()).optional(),
+    });
+
+    const validated = signalSchema.parse(req.body);
+
+    const result = await kucoinService.createSignal(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      validated
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result.data,
+      auditLogId: result.auditLogId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/signals/:id - Desativar sinal
+app.delete('/api/integrations/trading/signals/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const { id } = req.params;
+    const result = await kucoinService.deactivateSignal(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      id
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao desativar sinal');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/orders - Lista ordens
+app.get('/api/integrations/trading/orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const status = req.query.status as string | undefined;
+    const limit = parseInt(req.query.limit as string) || 50;
+
+    const orders = await kucoinService.getOrders(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      { status, limit }
+    );
+
+    res.json({
+      success: true,
+      data: orders,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter ordens');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/orders - Criar ordem baseada em sinal
+app.post('/api/integrations/trading/orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const orderSchema = z.object({
+      signalId: z.string().uuid().optional(),
+      symbol: z.string().optional(),
+      side: z.enum(['buy', 'sell']),
+      orderType: z.enum(['limit', 'market']),
+      size: z.number().positive(),
+      price: z.number().positive().optional(),
+      leverage: z.number().min(1).max(100).optional(),
+      stopLoss: z.number().positive().optional(),
+      takeProfit: z.number().positive().optional(),
+    });
+
+    const validated = orderSchema.parse(req.body);
+
+    // Se tem signalId, criar ordem baseada no sinal
+    // Se não, criar ordem manual
+    const result = validated.signalId
+      ? await kucoinService.createOrderFromSignal(
+          { tenantId: authContext.tenantId, userId: authContext.userId },
+          validated as kucoinService.CreateOrderFromSignalParams
+        )
+      : await kucoinService.createManualOrder(
+          { tenantId: authContext.tenantId, userId: authContext.userId },
+          validated as kucoinService.ManualOrderParams
+        );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result.data,
+      auditLogId: result.auditLogId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/orders/:id - Cancelar ordem
+app.delete('/api/integrations/trading/orders/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const { id } = req.params;
+    const result = await kucoinService.cancelOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      id
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/orders/sync - Sincronizar ordens com KuCoin
+app.post('/api/integrations/trading/orders/sync', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const result = await kucoinService.syncOrdersStatus({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+    });
+
+    res.json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao sincronizar ordens');
+    res.status(500).json({ error: errorMessage });
+  }
 });
 
 // ============================================================================

@@ -332,12 +332,13 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.50 - 17 de Dezembro de 2025*
+*Versão: 3.51 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Trading: Schema completo (5 tabelas) - signals, orders, positions, risk_config, audit_log*
+*Trading: Schema completo (5 tabelas) + API REST completa (14 endpoints) + Cliente KuCoin Futures*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
+*KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
 *Versionamento Automático: 100% enterprise - Node.js LTS (API + .nvmrc), pnpm (package.json), Python (.python-version - fonte primária), componentes externos (GitHub API + fallback JSON)*
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*

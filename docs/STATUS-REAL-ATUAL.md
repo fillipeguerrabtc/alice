@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.74 - Schema Trading KuCoin Futures + Circuit Breakers GPU
+> **Versão:** 3.75 - API Trading KuCoin Futures Completa + Cliente Enterprise
 
 ---
 
@@ -438,6 +438,26 @@ Retenção Arquivo:   30 dias
 > - **Embeddings:** gte-Qwen2-7B-instruct (3584 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
+> - **Cliente:** `kucoinClient.ts` - HMAC-SHA256, circuit breaker, rate limiting
+> - **Serviço:** `kucoinService.ts` - OMS/EMS, auditoria, gestão de risco
+
+### API REST Trading (14 endpoints) - FASE Trading Mixtral 8x7B
+
+| Endpoint | Método | Propósito |
+|----------|--------|-----------|
+| `/api/integrations/trading/status` | GET | Status do serviço |
+| `/api/integrations/trading/market/:symbol` | GET | Dados de mercado |
+| `/api/integrations/trading/account` | GET | Visão geral da conta KuCoin |
+| `/api/integrations/trading/positions` | GET | Posições abertas |
+| `/api/integrations/trading/risk-config` | GET | Configuração de risco |
+| `/api/integrations/trading/risk-config` | PUT | Atualizar configuração |
+| `/api/integrations/trading/signals` | GET | Listar sinais ativos |
+| `/api/integrations/trading/signals` | POST | Criar sinal (Mixtral) |
+| `/api/integrations/trading/signals/:id` | DELETE | Desativar sinal |
+| `/api/integrations/trading/orders` | GET | Listar ordens |
+| `/api/integrations/trading/orders` | POST | Criar ordem |
+| `/api/integrations/trading/orders/:id` | DELETE | Cancelar ordem |
+| `/api/integrations/trading/orders/sync` | POST | Sincronizar com KuCoin |
 
 **Total: 37 tabelas**
 
@@ -729,7 +749,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim, vector) | ✅ |
 | Embeddings Texto (Trading/RAG) | gte-Qwen2-7B-instruct (3584 dim, halfvec) | ✅ |
-| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | 🔄 Em desenvolvimento |
+| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | ✅ API REST (14 endpoints) |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA DUAL-DIMENSION (16/12/2025)
 
