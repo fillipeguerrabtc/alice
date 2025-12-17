@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.79 - Arquitetura Embeddings Enterprise (Qwen3-Embedding-8B 4096 dim)
+> **Versão:** 3.85 - Arquitetura Enterprise + Análise de Licenças Comerciais + Fisher-Yates Shuffle
 
 ---
 
@@ -59,7 +59,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 8 | Multimodal Inference | `docker/embeddings-gpu` + `docker/whisper-gpu` | embeddings-gpu, whisper-gpu | 8080 | GPU Salad Cloud - Embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + Transcrição (Whisper large-v3) |
+| 8 | Multimodal Inference | `docker/gpu/embeddings-gpu` | embeddings-gpu | 8080 | GPU Salad Cloud - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
@@ -110,9 +110,9 @@
 |----------------|--------|---------|
 | pgvector (busca semântica) | ✅ | `index.ts` |
 | Image Processing (OpenCLIP ViT-H/14, 1024 dim) | ✅ | `image-processor.ts` |
-| Audio Processing (Whisper GPU, BGE-M3 1024 dim) | ✅ | `audio-processor.ts` |
+| Audio Processing (Canary-1B ASR, Qwen3-Embedding-8B 4096 dim → Qdrant) | ✅ | `audio-processor.ts` |
 | Video Processing (Whisper GPU + OpenCLIP GPU) | ✅ | `video-processor.ts` |
-| Document Processing (BGE-M3 GPU, 1024 dim) | ✅ | `document-processor.ts` |
+| Document Processing (Qwen3-Embedding-8B GPU, 4096 dim → Qdrant) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
 | Multer Upload | ✅ | `index.ts` |
@@ -145,7 +145,7 @@
 
 > **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor`, `document-processor` e `video-processor` **não** retornam mais embeddings “falsos” (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando “hardcoded”, “mock” ou “default falso”).
 
-> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (1024 para BGE-M3 GPU)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (OpenCLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente).
+> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (4096 para Qwen3-Embedding-8B GPU)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (OpenCLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente no Qdrant).
 >
 > **Nota (Robustez CLIP frames):** o `combinedEmbedding` nunca contém `NaN`: frames CLIP com dimensão incorreta ou valores não-finitos são ignorados antes do cálculo da média; se nenhum frame válido existir, `combinedEmbedding` é `[]` (persistido como `NULL`).
 >
@@ -240,6 +240,13 @@
 > - **ASR:** Canary-1B (NeMo) - GPU Salad Cloud
 > - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
 > - **LLM Trading:** Mixtral 8x7B (MoE ~12B ativos) via vLLM - Trading BTC Futures KuCoin
+>
+> **Justificativa Qwen3-Embedding-8B (Análise de Licenças 17/12/2025):**
+> - ✅ **Qwen3-Embedding-8B** (Apache 2.0) - ÚNICO modelo top-tier com licença comercial
+> - ❌ Fin-E5 (#1 FinMTEB) - CC BY-NC-ND 4.0 (Non-Commercial) - PROIBIDO uso comercial
+> - ❌ Linq-Embed-Mistral (#1 FinQA) - CC BY-NC 4.0 (Non-Commercial) - PROIBIDO uso comercial
+> - ❌ NV-Embed-v2 (NVIDIA) - CC BY-NC 4.0 (Non-Commercial) - PROIBIDO uso comercial
+> - **Performance Qwen3 em Trading:** 79.43% return, Sharpe 0.322 (NOF1 AI Arena)
 
 > **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio/vídeo).
 
@@ -489,7 +496,12 @@ Retenção Arquivo:   30 dias
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
 | 14 | alice-clip-inference | python:3.11-slim | Legado (Embeddings GPU via Salad Cloud) |
 
-> **NOTA (15/12/2025):** O container `alice-clip-inference` está marcado como LEGADO. A plataforma agora usa **ARQUITETURA 100% GPU** via Salad Cloud para embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) e transcrição (Whisper large-v3). O container permanece para compatibilidade durante a transição.
+> **NOTA (17/12/2025):** O container `alice-clip-inference` está marcado como LEGADO. A plataforma agora usa **ARQUITETURA ENTERPRISE 100% GPU** via Salad Cloud:
+> - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
+> - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
+> - **ASR:** Canary-1B (NeMo, Apache 2.0)
+> - **LLM:** Mixtral 8x7B (vLLM AWQ)
+> O container permanece para compatibilidade durante a transição.
 
 ### ERPNext Stack (12)
 
@@ -938,9 +950,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 15/12/2025*
+*Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.79 - Arquitetura Embeddings Enterprise (Qwen3-Embedding-8B 4096 dim)*
+*Versão: 3.85 - Arquitetura Enterprise + Análise de Licenças Comerciais*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

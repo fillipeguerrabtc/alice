@@ -48,6 +48,37 @@ const DEFAULT_HYPERPARAMS: TradingLoraHyperparams = {
 const MIN_DATASET_SIZE = 100;
 
 // ============================================================================
+// UTILITÁRIOS
+// ============================================================================
+
+/**
+ * Fisher-Yates (Knuth) Shuffle - Algoritmo de embaralhamento uniforme
+ * 
+ * Produz distribuição verdadeiramente uniforme, ao contrário de:
+ * - array.sort(() => Math.random() - 0.5) que é enviesado
+ * 
+ * Complexidade: O(n) tempo, O(1) espaço adicional (in-place)
+ * 
+ * IMPORTANTE para ML: Garante que train/validation splits sejam não-enviesados,
+ * resultando em métricas de validação confiáveis.
+ * 
+ * Referência: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
+ * 
+ * @param array - Array a ser embaralhado (modificado in-place)
+ * @returns O mesmo array, embaralhado
+ */
+function fisherYatesShuffle<T>(array: T[]): T[] {
+  // Iterar de trás para frente
+  for (let i = array.length - 1; i > 0; i--) {
+    // Gerar índice aleatório entre 0 e i (inclusive)
+    const j = Math.floor(Math.random() * (i + 1));
+    // Trocar elementos nas posições i e j
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+// ============================================================================
 // TIPOS
 // ============================================================================
 
@@ -153,7 +184,10 @@ export async function prepareDataset(
   }
 
   // Dividir em treinamento (90%) e validação (10%)
-  const shuffled = filtered.sort(() => Math.random() - 0.5);
+  // ENTERPRISE FIX: Usar Fisher-Yates shuffle para distribuição uniforme
+  // O sort(() => Math.random() - 0.5) é anti-pattern que produz distribuição enviesada
+  // Referência: https://en.wikipedia.org/wiki/Fisher%E2%80%93Yates_shuffle
+  const shuffled = fisherYatesShuffle([...filtered]);
   const splitIndex = Math.floor(shuffled.length * 0.9);
   const training = shuffled.slice(0, splitIndex);
   const validation = shuffled.slice(splitIndex);

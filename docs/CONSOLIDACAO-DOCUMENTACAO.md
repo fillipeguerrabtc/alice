@@ -73,8 +73,10 @@
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 2.2 - Arquitetura Enterprise (Qwen3-Embedding-8B 4096 dim)*
+*Versão: 2.3 - Arquitetura Enterprise + Análise de Licenças Comerciais*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
-*ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
-*Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning
+*ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem 1024 dim OpenCLIP MIT (pgvector)*
+*Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5/Linq-Embed/NV-Embed são CC BY-NC.*
+*Fisher-Yates Shuffle: Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*
+*Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning*

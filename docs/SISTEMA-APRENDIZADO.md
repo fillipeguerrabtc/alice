@@ -418,7 +418,7 @@ Acessíveis em `/dashboard/analytics`:
 - Drag & drop para áudios (MP3, WAV, OGG, WEBM até 100MB)
 - Drag & drop para vídeos (MP4, WebM, MOV até 100MB)
 - Fila de upload visual com status em tempo real
-- Processamento via GPU (BGE-M3 + OpenCLIP + Whisper)
+- Processamento via GPU (Qwen3-Embedding-8B + OpenCLIP + Canary-1B ASR)
 - Internacionalização PT-BR e EN
 
 **Arquivos modificados:**
@@ -444,8 +444,8 @@ Acessíveis em `/dashboard/analytics`:
 - Nova função `processWhatsAppMediaForRAG()` em `integrations-service`
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
 - Imagens: OpenCLIP embeddings (1024 dim)
-- Áudios: Whisper transcrição + BGE-M3 embeddings (1024 dim)
-- Vídeos: Frames OpenCLIP + transcrição BGE-M3
+- Áudios: Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant)
+- Vídeos: Frames OpenCLIP (1024 dim → pgvector) + transcrição Qwen3-Embedding-8B (4096 dim → Qdrant)
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
 - `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
 
@@ -493,9 +493,11 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*  
-*Versão 3.0 - 17 de Dezembro de 2025*  
+*Versão 3.2 - 17 de Dezembro de 2025*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
-*ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14, 1024 dim → pgvector)*
-*ASR: Canary-1B via NeMo Toolkit*
+*ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
+*ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
+*Análise de Licenças (17/12/2025): Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5, Linq-Embed-Mistral e NV-Embed-v2 são CC BY-NC (Non-Commercial).*
+*Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*  
 *Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications, Prometheus metrics*
