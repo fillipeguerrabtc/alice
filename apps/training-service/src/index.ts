@@ -542,7 +542,7 @@ app.get('/api/training/jobs', requirePermission('training:fine_tuning_jobs:read'
 const createJobSchema = z.object({
   tenantId: z.string().uuid().optional(),
   name: z.string().min(1),
-  baseModel: z.string().default('llama4-maverick'),
+  baseModel: z.string().default('Mixtral-8x7B'),
   hyperparameters: z.object({
     epochs: z.number().default(3),
     learningRate: z.number().default(0.0001),
@@ -710,7 +710,7 @@ function startStatusPolling(jobId: string, containerGroupName: string): void {
 
       if (mappedStatus === 'completed') {
         updateData.completadoEm = new Date();
-        updateData.resultModel = `llama4-maverick-ft-${jobId.slice(0, 8)}`;
+        updateData.resultModel = `Mixtral-8x7B-ft-${jobId.slice(0, 8)}`;
         updateData.metrics = {
           mode: 'production',
           containerGroupName,

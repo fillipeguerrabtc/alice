@@ -26,7 +26,9 @@ const logger = pino({
 
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const FLUX_ENDPOINT = process.env.FLUX_ENDPOINT || 'https://api.salad.com/api/public';
+// CORREÇÃO 17/12/2025: Usar SALAD_FLUX_URL (Container Group dedicado) ao invés de endpoint legado
+// REGRA 6: Sem fallback em produção - variável DEVE estar definida via deploy-salad-gpu.yml
+const SALAD_FLUX_URL = process.env.SALAD_FLUX_URL;
 
 let db: Database;
 
@@ -66,13 +68,19 @@ interface CLIPEmbeddingResponse {
 // ============================================================================
 
 async function generateImageInternal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-  if (!SALAD_API_KEY || !SALAD_ORGANIZATION_ID) {
-    throw new Error('SALAD_API_KEY ou SALAD_ORGANIZATION_ID não configurados');
+  // CORREÇÃO 17/12/2025: Validar SALAD_FLUX_URL (Container Group dedicado)
+  // REGRA 6: Fail-fast em produção se variáveis não configuradas
+  if (!SALAD_FLUX_URL) {
+    throw new Error('SALAD_FLUX_URL não configurado - execute deploy-salad-gpu.yml para criar Container Group');
+  }
+  if (!SALAD_API_KEY) {
+    throw new Error('SALAD_API_KEY não configurado');
   }
 
   const startTime = Date.now();
 
-  const response = await fetch(`${FLUX_ENDPOINT}/organizations/${SALAD_ORGANIZATION_ID}/inference-endpoints/flux-schnell/generate`, {
+  // Endpoint direto do Container Group (sem path /organizations/.../inference-endpoints/...)
+  const response = await fetch(`${SALAD_FLUX_URL}/generate`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

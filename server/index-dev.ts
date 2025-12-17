@@ -50,7 +50,7 @@ function setupPreviewChatEndpoint(app: express.Express) {
     res.json({
       available: true,
       previewMode: true,
-      model: 'llama4-maverick-preview',
+      model: 'Mixtral-8x7B-preview',
       provider: 'Preview (desenvolvimento)',
       note: 'Em producao, conecta ao Salad Cloud com Mixtral 8x7B'
     });

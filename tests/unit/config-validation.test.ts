@@ -721,8 +721,8 @@ describe('Config - Salad Cloud Configuration', () => {
       expect(SALAD_CONFIG.apiUrl).toBe('https://api.salad.com/api/public');
     });
 
-    it('deve ter modelo de chat configurado como llama4-maverick', () => {
-      expect(SALAD_CONFIG.models.chat).toBe('llama4-maverick');
+    it('deve ter modelo de chat configurado como Mixtral 8x7B AWQ', () => {
+      expect(SALAD_CONFIG.models.chat).toBe('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ');
     });
 
     it('deve ter maxTokens padrão de 4096', () => {

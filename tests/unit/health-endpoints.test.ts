@@ -89,7 +89,7 @@ const authHealthSchema = baseHealthSchema.extend({
  */
 const chatHealthSchema = baseHealthSchema.extend({
   llmProvider: z.literal('salad-cloud'),
-  model: z.literal('llama4-maverick'),
+  model: z.literal('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ'),
   circuitBreakers: z.object({
     llm: z.object({
       state: z.enum(['open', 'closed', 'half-open']),
@@ -210,7 +210,7 @@ const mockChatHealthResponse = {
   service: 'chat-service',
   timestamp: FIXED_TIMESTAMP,
   llmProvider: 'salad-cloud',
-  model: 'llama4-maverick',
+  model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
   circuitBreakers: {
     llm: {
       state: 'closed',
@@ -348,8 +348,8 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockChatHealthResponse.llmProvider).toBe('salad-cloud');
     });
 
-    it('deve usar modelo "llama4-maverick"', () => {
-      expect(mockChatHealthResponse.model).toBe('llama4-maverick');
+    it('deve usar modelo "Mixtral-8x7B-AWQ"', () => {
+      expect(mockChatHealthResponse.model).toBe('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ');
     });
 
     it('deve ter circuit breakers para LLM e RAG', () => {

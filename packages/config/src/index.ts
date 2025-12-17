@@ -35,7 +35,7 @@ const authConfigSchema = z.object({
 const llmConfigSchema = z.object({
   SALAD_API_KEY: z.string().optional(),
   SALAD_ORGANIZATION_ID: z.string().optional(),
-  LLM_MODEL: z.string().default('llama4-maverick'),
+  LLM_MODEL: z.string().default('Mixtral-8x7B'),
   LLM_MAX_TOKENS: z.coerce.number().default(4096),
   LLM_TEMPERATURE: z.coerce.number().default(0.7),
 });

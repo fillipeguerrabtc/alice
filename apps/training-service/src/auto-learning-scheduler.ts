@@ -223,7 +223,7 @@ export async function startProgressiveLoRA(
     tenantId,
     name: `alice-lora-v${newVersion}`,
     version: newVersion,
-    baseModel: 'llama4-maverick',
+    baseModel: 'Mixtral-8x7B',
     status: 'training',
     trainingDataCount: approvedData.length,
     imageDataCount: approvedImages.length,

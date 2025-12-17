@@ -324,7 +324,7 @@ describe('Training Service - Validação Zod', () => {
 
   const createJobSchema = z.object({
     name: z.string().min(1).max(100),
-    baseModel: z.string().default('llama4-maverick'),
+    baseModel: z.string().default('Mixtral-8x7B'),
     maxExamples: z.number().positive().max(10000).optional(),
     epochs: z.number().min(1).max(10).optional(),
     learningRate: z.number().positive().max(0.01).optional(),
@@ -339,7 +339,7 @@ describe('Training Service - Validação Zod', () => {
   it('deve validar criação de job', () => {
     const job = {
       name: 'Treinamento Q4 2025',
-      baseModel: 'llama4-maverick',
+      baseModel: 'Mixtral-8x7B',
       epochs: 3,
     };
 
@@ -350,7 +350,7 @@ describe('Training Service - Validação Zod', () => {
   it('deve rejeitar nome vazio', () => {
     const job = {
       name: '',
-      baseModel: 'llama4-maverick',
+      baseModel: 'Mixtral-8x7B',
     };
 
     const result = createJobSchema.safeParse(job);

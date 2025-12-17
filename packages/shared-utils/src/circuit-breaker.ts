@@ -436,7 +436,7 @@ export async function fetchWithAbort(
  * 
  * const response = await protectedFetch('https://api.salad.com/v1/chat', {
  *   method: 'POST',
- *   body: JSON.stringify({ model: 'llama4-maverick', messages: [] }),
+ *   body: JSON.stringify({ model: 'Mixtral-8x7B', messages: [] }),
  *   headers: { 'Authorization': 'Bearer xxx' },
  * });
  * ```

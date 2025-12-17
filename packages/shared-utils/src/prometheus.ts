@@ -770,7 +770,7 @@ export function instrumentCircuitBreaker(
  * ```typescript
  * const result = await measureDuration(
  *   metrics.llm.inferenceDuration,
- *   { model: 'llama4-maverick', type: 'chat' },
+ *   { model: 'Mixtral-8x7B', type: 'chat' },
  *   async () => llmClient.chat(messages)
  * );
  * ```

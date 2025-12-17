@@ -223,7 +223,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get("/api/llm/status", isAuthenticated, async (_req: Request, res: Response) => {
     res.json({
       available: llmClient.isAvailable(),
-      model: "llama4-maverick",
+      model: "Mixtral-8x7B",
       provider: "Salad Cloud",
     });
   });

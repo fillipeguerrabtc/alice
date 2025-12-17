@@ -109,6 +109,19 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 | `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 
+#### Container Groups GPU (Gerados pelo `deploy-salad-gpu.yml`)
+
+Os seguintes secrets são **gerados automaticamente** pelo workflow `deploy-salad-gpu.yml` via Terraform e salvos nos GitHub Secrets. Execute o workflow pelo menos uma vez para criar os Container Groups e obter os endpoints:
+
+| Secret | Descrição |
+|--------|-----------|
+| `SALAD_MIXTRAL_URL` | URL do Container Group vLLM Mixtral 8x7B (API OpenAI-compatible). Endpoint: `/v1/chat/completions` |
+| `SALAD_FLUX_URL` | URL do Container Group FLUX.1 Schnell para geração de imagens. Endpoint: `/generate` |
+| `SALAD_ASR_URL` | URL do Container Group Canary-1B para transcrição de áudio (ASR). Endpoint: `/transcribe` |
+| `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim). Endpoints: `/embed/text`, `/embed/image` |
+
+> **IMPORTANTE:** Após executar `deploy-salad-gpu.yml`, os endpoints são automaticamente adicionados ao `.env.prod` no Hetzner via SSH. Se preferir configurar manualmente, copie os outputs do Terraform para os GitHub Secrets.
+
 > **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). O token `HUGGINGFACE_TOKEN` é usado para garantir downloads confiáveis dos modelos ML (evita rate limits e permite acesso a repositórios gated/privados).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)

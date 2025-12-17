@@ -461,7 +461,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
       const validAgent = {
         nome: 'Agente Vendas',
         slug: 'agente-vendas',
-        modeloBase: 'llama4-maverick',
+        modeloBase: 'Mixtral-8x7B',
       };
       const result = insertAgentSchema.safeParse(validAgent);
       expect(result.success).toBe(true);
@@ -497,7 +497,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
 
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
-        modelo: 'llama4-maverick',
+        modelo: 'Mixtral-8x7B',
         endpoint: 'https://salad-cloud.example.com/v1/chat',
         maxTokens: 4096,
         temperatura: 0.7,

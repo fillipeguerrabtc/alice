@@ -107,7 +107,7 @@ export class MetricsCollector {
    *   tokensCompletion: 350,
    *   totalTokens: 500,
    *   responseTimeMs: 1234,
-   *   model: 'llama4-maverick',
+   *   model: 'Mixtral-8x7B',
    * });
    * ```
    */

@@ -85,7 +85,10 @@ const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
+// CORREÇÃO 17/12/2025: Usar SALAD_MIXTRAL_URL (Container Group vLLM) ao invés de endpoint legado
+// Container Group executa vLLM com API OpenAI-compatible (/v1/chat/completions)
+// REGRA 6: Sem fallback em produção - variável DEVE estar definida via deploy-salad-gpu.yml
+const SALAD_MIXTRAL_URL = process.env.SALAD_MIXTRAL_URL;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -730,6 +733,15 @@ interface LLMRequest {
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
+  // CORREÇÃO 17/12/2025: Validar SALAD_MIXTRAL_URL (Container Group vLLM)
+  // REGRA 6: Fail-fast em produção se variáveis não configuradas
+  if (!SALAD_MIXTRAL_URL) {
+    throw new Error('SALAD_MIXTRAL_URL não configurado - execute deploy-salad-gpu.yml para criar Container Group');
+  }
+  if (!SALAD_KEY) {
+    throw new Error('SALAD_API_KEY não configurado');
+  }
+
   // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
   // Streaming tem timeout maior pois resposta é progressiva
   const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
@@ -737,14 +749,16 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const response = await fetch(`${SALAD_API_URL}/organizations/${SALAD_ORG}/inference-endpoints/llama4-maverick/chat/completions`, {
+    // Container Group vLLM expõe API OpenAI-compatible em /v1/chat/completions
+    // Modelo: TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ (quantizado AWQ)
+    const response = await fetch(`${SALAD_MIXTRAL_URL}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Salad-Api-Key': SALAD_KEY,
       },
       body: JSON.stringify({
-        model: 'llama4-maverick',
+        model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
         messages: request.messages,
         max_tokens: 4096,
         temperature: 0.7,
@@ -1038,10 +1052,10 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
   
   res.json({ 
     status: overallStatus, 
-    service: 'chat-service', 
+    service: 'chat-service',
     timestamp: new Date().toISOString(),
     llmProvider: 'salad-cloud',
-    model: 'llama4-maverick',
+    model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
     circuitBreakers: {
       llm: {
         state: llmCircuitState,

@@ -692,6 +692,10 @@ services:
       # Embeddings GPU (Salad Cloud) - CORREÇÃO 17/12/2025
       # Removido alice-clip-inference legado - agora usa 100% GPU Salad Cloud
       EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
+      # LLM Mixtral 8x7B (Salad Cloud Container Group) - CORREÇÃO 17/12/2025
+      SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL:-}
+      # FLUX.1 Schnell Image Generation (Salad Cloud Container Group) - CORREÇÃO 17/12/2025
+      SALAD_FLUX_URL: ${SALAD_FLUX_URL:-}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379

@@ -372,12 +372,20 @@ export const RAG_CHUNK_CONFIG = {
 
 /**
  * Configuração Salad Cloud (LLM e Treinamento)
+ * CORREÇÃO 17/12/2025: Migrado para Container Groups vLLM (API OpenAI-compatible)
+ * Modelo: Mixtral 8x7B AWQ (quantizado para RTX 4090 24GB VRAM)
  */
 export const SALAD_CONFIG = {
+  // Container Group URLs (geradas pelo deploy-salad-gpu.yml via Terraform)
+  mixtralUrl: process.env.SALAD_MIXTRAL_URL || '',
+  fluxUrl: process.env.SALAD_FLUX_URL || '',
+  asrUrl: process.env.SALAD_ASR_URL || '',
+  embeddingsUrl: process.env.EMBEDDINGS_GPU_URL || '',
+  // Legacy (mantido para compatibilidade com código existente)
   apiUrl: process.env.SALAD_API_URL || 'https://api.salad.com/api/public',
   organizationId: process.env.SALAD_ORGANIZATION_ID || '',
   models: {
-    chat: 'llama4-maverick',
+    chat: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
   },
   defaults: {
     maxTokens: 4096,

@@ -333,8 +333,8 @@ jobs:
 
       - name: Atualizar .env no Hetzner
         env:
-          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_KEY }}
-          HETZNER_HOST: ${{ secrets.HETZNER_HOST }}
+          SSH_PRIVATE_KEY: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          HETZNER_HOST: ${{ secrets.HETZNER_VM_HOST }}
         run: |
           # Configurar SSH
           mkdir -p ~/.ssh

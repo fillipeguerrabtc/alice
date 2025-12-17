@@ -1721,6 +1721,12 @@ jobs:
             printf 'SALAD_WHISPER_URL=%s\n' "${{ secrets.SALAD_WHISPER_URL }}"
             # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim)
             printf 'EMBEDDINGS_GPU_URL=%s\n' "${{ secrets.EMBEDDINGS_GPU_URL }}"
+            # LLM Mixtral 8x7B (Container Group vLLM) - gerado pelo deploy-salad-gpu.yml
+            printf 'SALAD_MIXTRAL_URL=%s\n' "${{ secrets.SALAD_MIXTRAL_URL }}"
+            # FLUX.1 Schnell Image Generation (Container Group) - gerado pelo deploy-salad-gpu.yml
+            printf 'SALAD_FLUX_URL=%s\n' "${{ secrets.SALAD_FLUX_URL }}"
+            # ASR Canary-1B (Container Group) - gerado pelo deploy-salad-gpu.yml
+            printf 'SALAD_ASR_URL=%s\n' "${{ secrets.SALAD_ASR_URL }}"
             printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
             printf 'HUGGINGFACE_TOKEN=%s\n' "${{ secrets.HUGGINGFACE_TOKEN }}"
             printf '\n'

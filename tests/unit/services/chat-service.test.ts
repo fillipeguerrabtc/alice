@@ -23,7 +23,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
     provider: 'salad-cloud',
-    model: 'llama4-maverick',
+    model: 'Mixtral-8x7B',
     maxTokens: 4096,
     temperature: 0.7,
     topP: 0.9,
@@ -34,7 +34,7 @@ describe('Chat Service - Configuração LLM', () => {
   });
 
   it('deve usar modelo Mixtral 8x7B', () => {
-    expect(LLM_CONFIG.model).toBe('llama4-maverick');
+    expect(LLM_CONFIG.model).toBe('Mixtral-8x7B');
   });
 
   it('deve ter maxTokens de 4096', () => {
@@ -417,7 +417,7 @@ describe('Chat Service - Health Check', () => {
       service: 'chat-service',
       timestamp: new Date().toISOString(),
       llmProvider: 'salad-cloud',
-      model: 'llama4-maverick',
+      model: 'Mixtral-8x7B',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
         rag: { state: 'closed', stats: {} },
@@ -426,7 +426,7 @@ describe('Chat Service - Health Check', () => {
 
     expect(health.status).toBe('ok');
     expect(health.llmProvider).toBe('salad-cloud');
-    expect(health.model).toBe('llama4-maverick');
+    expect(health.model).toBe('Mixtral-8x7B');
   });
 });
 

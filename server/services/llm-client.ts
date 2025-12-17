@@ -47,7 +47,7 @@ export class LLMClient {
 
     const {
       messages,
-      model = "llama4-maverick",
+      model = "Mixtral-8x7B",
       temperature = 0.7,
       maxTokens = 4096,
     } = options;
@@ -108,7 +108,7 @@ export class LLMClient {
 
     const {
       messages,
-      model = "llama4-maverick",
+      model = "Mixtral-8x7B",
       temperature = 0.7,
       maxTokens = 4096,
     } = options;
