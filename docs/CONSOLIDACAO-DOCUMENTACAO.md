@@ -2,8 +2,8 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Dezembro de 2025  
-**Versão:** 2.2  
-**Atualizado:** 17 de Dezembro de 2025 (Response Cache / Greetings Gate + Bug Fixes Trading)
+**Versão:** 3.0  
+**Atualizado:** 17 de Dezembro de 2025 (Documento de Arquitetura Enterprise - arc42 + C4 + ADRs)
 
 ## Estrutura Atual da Documentação
 
@@ -19,6 +19,7 @@
 
 | Documento | Propósito | Status |
 |-----------|-----------|--------|
+| `ARQUITETURA.md` | **Arquitetura completa (arc42 + C4 + ADRs)** | ✅ **NOVO** |
 | `DEPLOYMENT.md` | Guia de deploy para produção (43 containers) | ✅ Ativo |
 | `SECRETS.md` | Guia completo de secrets e webhooks | ✅ Ativo |
 | `STATUS-REAL-ATUAL.md` | Status detalhado da plataforma | ✅ Ativo |
@@ -57,9 +58,9 @@
 
 ## Resumo da Documentação
 
-**Total de Documentos Ativos:** 12  
+**Total de Documentos Ativos:** 13  
 - Raiz: 3 (`CLAUDE.md`, `README.md`, `design_guidelines.md`)
-- `/docs`: 7 documentos técnicos
+- `/docs`: 8 documentos técnicos (incluindo novo `ARQUITETURA.md`)
 - `/infra`: 2 READMEs de SSO
 
 **Princípios Seguidos:**
@@ -73,13 +74,13 @@
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 2.9 - Response Cache (Greetings Gate) + Bug Fixes Trading*
+*Versão: 3.0 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Total de Documentos: 13 (8 docs técnicos + 3 raiz + 2 infra)*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem 1024 dim OpenCLIP MIT (pgvector)*
+*ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Response Cache (17/12/2025): Greetings Gate implementado - saudações respondidas via cache Redis (sem GPU)*
 *Bug Fixes Trading (17/12/2025): extractNumber (regex groups), WebSocket unsubscribe (oldSymbol), Orchestrator atomicity*
-*Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5/Linq-Embed/NV-Embed são CC BY-NC.*
-*Bug Fixes (17/12/2025): CandleChart wicks + Schema import + initTradingOrchestrator + embeddings texto → Qdrant + KuCoin*
 *Pipeline: Versionamento automático + Cache GHA + Auto-instalação requisitos + Scripts limpeza pós-deploy*
 *Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning*

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.98 - Response Cache (Greetings Gate) + Bug Fixes Trading (17/12/2025)
+> **Versão:** 3.99 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)
 
 ---
 
@@ -1020,7 +1020,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.98 - Response Cache (Greetings Gate) + Bug Fixes Trading (17/12/2025)*
+*Versão: 3.99 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
+*ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*

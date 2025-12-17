@@ -203,6 +203,7 @@ Permissões Enterprise (13/12/2025):
 ## Documentação Principal
 | Documento | Descrição |
 |-----------|-----------|
+| `docs/ARQUITETURA.md` | **Arquitetura completa (arc42 + C4 + ADRs)** |
 | `docs/STATUS-REAL-ATUAL.md` | Status completo da plataforma |
 | `docs/PLANO-100%-BASE.md` | Plano de gaps e correções |
 | `docs/DEPLOYMENT.md` | Guia de deploy para produção |
@@ -332,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.79 - 17 de Dezembro de 2025*
+*Versão: 3.80 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
