@@ -28,16 +28,21 @@ const logger = createLogger('kucoin-client');
 
 // ============================================================================
 // CONFIGURAÇÃO (via variáveis de ambiente - Regra 6: sem hardcoded)
+// CORREÇÃO 17/12/2025: Usar nomes corretos dos secrets GitHub (KUCOIN_PRO_*)
+// Elimina workaround de mapping no workflow deploy-production.yml
 // ============================================================================
 
 // URL base da API KuCoin Futures (sandbox ou produção)
-const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_FUTURES_BASE_URL || 'https://api-futures.kucoin.com';
+// NOTA: Secret no GitHub é KUCOIN_PRO_BASE_URL (não KUCOIN_FUTURES_BASE_URL)
+const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-futures.kucoin.com';
 const KUCOIN_SANDBOX_URL = 'https://api-sandbox-futures.kucoin.com';
 
-// Credenciais da API
-const KUCOIN_API_KEY = process.env.KUCOIN_API_KEY;
-const KUCOIN_API_SECRET = process.env.KUCOIN_API_SECRET;
-const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_API_PASSPHRASE;
+// Credenciais da API - Usando nomes corretos dos secrets GitHub
+// ANTES: KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE (workaround)
+// AGORA: KUCOIN_PRO_API_KEY, KUCOIN_PRO_API_SECRET, KUCOIN_PRO_API_PASSPHRASE (enterprise)
+const KUCOIN_API_KEY = process.env.KUCOIN_PRO_API_KEY;
+const KUCOIN_API_SECRET = process.env.KUCOIN_PRO_API_SECRET;
+const KUCOIN_API_PASSPHRASE = process.env.KUCOIN_PRO_API_PASSPHRASE;
 
 // Modo sandbox para testes (default: false em produção)
 const KUCOIN_SANDBOX_MODE = process.env.KUCOIN_SANDBOX_MODE === 'true';

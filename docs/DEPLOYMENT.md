@@ -27,18 +27,19 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.6 Alpine |
 | 6 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
-### Categoria 2: Microsserviços Alice (8 serviços)
+### Categoria 2: Microsserviços Alice (7 serviços)
 
 | # | Serviço | Container | Diretório | Descrição | Tecnologia |
 |---|---------|-----------|-----------|-----------|------------|
 | 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 5, shadcn/ui, i18n PT-BR |
 | 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
 | 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
-| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim), busca semântica pgvector, processamento de documentos. | Node.js, pgvector, GPU Salad Cloud |
+| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU Salad Cloud. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
 | 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
-| 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails). | Node.js, Stripe SDK, Wise API |
+| 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
-| 14 | **Embeddings GPU** | `embeddings-gpu` | `docker/embeddings-gpu` | Processamento multimodal 100% GPU: BGE-M3 (texto) + OpenCLIP ViT-H/14 (imagem), 1024 dim. | Python, PyTorch 2.5.1, FastAPI |
+
+> **NOTA (17/12/2025):** Container `embeddings-gpu` foi removido. Processamento multimodal agora usa EMBEDDINGS_GPU_URL (Salad Cloud) com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -224,7 +225,7 @@ Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice
 | Recurso | Custo |
 |---------|-------|
 | Horas GPU | $0.10-0.30/hora |
-| Llama 4 Maverick | Sob demanda |
+| Mixtral 8x7B (vLLM) | Sob demanda |
 | FLUX.1 Schnell | Sob demanda |
 
 ### DuckDNS (Gratuito)
@@ -513,9 +514,13 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 
 1. **0001_rls_security_enterprise.sql**: Configura RLS (Row Level Security), funções de tenant, índices e grants
 2. **0002_create_feature_flags.sql**: Cria tabela de feature flags enterprise
-3. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings para 1024 (BGE-M3 + OpenCLIP ViT-H/14 GPU) - **CRÍTICA**
+3. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14 → pgvector) - **CRÍTICA**
 
-**⚠️ IMPORTANTE:** A migration de embeddings é **OBRIGATÓRIA** e deve ser executada antes do deploy do código que usa `vector(1024)`. O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
+**⚠️ IMPORTANTE - Arquitetura de Embeddings (17/12/2025):**
+- **Texto**: Qwen3-Embedding-8B (4096 dim) → **Qdrant** (não usa migration SQL)
+- **Imagem**: OpenCLIP ViT-H/14 (1024 dim) → **pgvector** (migration 0003)
+
+O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 
 - ✅ Rollback automático se health checks falharem
 - ✅ Rastreabilidade completa de releases
@@ -982,13 +987,13 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 14 de Dezembro de 2025*
-*Versão: 6.6 - Correção tabelas de containers (43 total) + Observability Stack documentado*
+*Documento atualizado em: 17 de Dezembro de 2025*
+*Versão: 6.7 - Arquitetura Enterprise Qwen3-Embedding-8B + Qdrant + Remoção alice-clip-inference*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
-*Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only (14/12/2025)*
+*Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*Processamento Multimodal: Arquitetura 100% GPU - embeddings (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim) + transcrição (Whisper large-v3) via GPU Salad Cloud*
+*ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

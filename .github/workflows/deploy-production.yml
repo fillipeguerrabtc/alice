@@ -1765,10 +1765,12 @@ jobs:
             printf 'WISE_SANDBOX=%s\n' "${WISE_SANDBOX}"
             printf '\n'
             printf '# KuCoin Futures (Trading BTC Perpetuals)\n'
-            printf 'KUCOIN_API_KEY=%s\n' "${{ secrets.KUCOIN_PRO_API_KEY }}"
-            printf 'KUCOIN_API_SECRET=%s\n' "${{ secrets.KUCOIN_PRO_API_SECRET }}"
-            printf 'KUCOIN_API_PASSPHRASE=%s\n' "${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}"
-            printf 'KUCOIN_FUTURES_BASE_URL=%s\n' "${{ secrets.KUCOIN_PRO_BASE_URL }}"
+            # CORREÇÃO 17/12/2025: Usar nomes corretos dos secrets (KUCOIN_PRO_*)
+            # Elimina workaround de mapping - código usa KUCOIN_PRO_* diretamente
+            printf 'KUCOIN_PRO_API_KEY=%s\n' "${{ secrets.KUCOIN_PRO_API_KEY }}"
+            printf 'KUCOIN_PRO_API_SECRET=%s\n' "${{ secrets.KUCOIN_PRO_API_SECRET }}"
+            printf 'KUCOIN_PRO_API_PASSPHRASE=%s\n' "${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}"
+            printf 'KUCOIN_PRO_BASE_URL=%s\n' "${{ secrets.KUCOIN_PRO_BASE_URL }}"
             printf 'KUCOIN_SANDBOX_MODE=false\n'
             printf '\n'
             printf '# ERPNext Database\n'

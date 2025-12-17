@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE PLATFORM - DOCKER COMPOSE PRODUÇÃO
 # =============================================================================
-# Versão: 4.3
+# Versão: 4.4
 # Ambiente: Produção (Hetzner Cloud CX43)
 # Servidor: 8 vCPU, 16GB RAM, 160GB NVMe SSD
 # Volume Adicional: Hetzner Volume 100GB (alice-data) montado em /opt/alice
@@ -14,16 +14,24 @@
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
 # CONTAINERS: 43 total (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
+# INFRAESTRUTURA (7): dockerproxy, traefik-init, traefik, postgres, redis, qdrant, searxng
+# ALICE (7): frontend, auth, chat, rag, training, integrations, observability
 # - alice-qdrant: Banco vetorial para embeddings de texto 4096 dim (Qwen3-Embedding-8B)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
+#
+# ARQUITETURA ENTERPRISE (17/12/2025):
+# - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant | Licença Apache 2.0
+# - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector | Licença MIT
+# - LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090
+# - alice-clip-inference REMOVIDO - migrado para EMBEDDINGS_GPU_URL (Salad Cloud)
 #
 # SECURITY: 100% SHA256 digests em todas as 26 imagens externas (Supply Chain Security 2025)
 # ERPNEXT: Arquitetura unificada v15 - imagem única frappe/erpnext com comandos por serviço
 #
 # Autor: Fillipe Guerra
-# Data: 14 de Dezembro de 2025
-# Atualização: Correção SHA256 digests + migração ERPNext para arquitetura unificada v15
+# Data: 17 de Dezembro de 2025
+# Atualização: Remoção alice-clip-inference + migração 100% GPU Salad Cloud
 # =============================================================================
 
 # =============================================================================
@@ -681,9 +689,9 @@ services:
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
-      # CLIP Local (Autônomo - Regra 6)
-      # Serviço interno na rede Docker privada - não requer autenticação
-      CLIP_SERVICE_URL: http://alice-clip-inference:8080
+      # Embeddings GPU (Salad Cloud) - CORREÇÃO 17/12/2025
+      # Removido alice-clip-inference legado - agora usa 100% GPU Salad Cloud
+      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
@@ -691,8 +699,6 @@ services:
       postgres:
         condition: service_healthy
       alice-redis:
-        condition: service_healthy
-      alice-clip-inference:
         condition: service_healthy
     networks:
       - alice-network
@@ -729,9 +735,9 @@ services:
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Multimodal Processing + Storage Local
-  # ARQUITETURA 100% GPU (15/12/2025) via Salad Cloud:
-  # - Embeddings de texto: BGE-M3 (1024 dim) - GPU Salad Cloud
-  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud
+  # ARQUITETURA ENTERPRISE (17/12/2025) via Salad Cloud:
+  # - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
+  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
   # - Transcrição de áudio: Whisper large-v3 - GPU Salad Cloud
   # ===========================================================================
   alice-rag:
@@ -758,10 +764,10 @@ services:
       SERVICE_NAME: rag-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
-      # ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
-      # - Embeddings (texto + imagem): GPU Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14, 1024 dim)
-      # - Transcrição de áudio: GPU Salad Cloud (Whisper large-v3)
-      # - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
+      # ARQUITETURA ENTERPRISE (17/12/2025):
+      # - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant | Licença Apache 2.0
+      # - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector | Licença MIT
+      # - Transcrição: Whisper large-v3 via GPU Salad Cloud
       # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
       SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-}
       # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (1024 dim)
@@ -787,7 +793,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      alice-clip-inference:
+      alice-qdrant:
         condition: service_healthy
       alice-searxng:
         condition: service_healthy
@@ -842,16 +848,19 @@ services:
       SERVICE_NAME: training-service
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=prefer
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
-      # Salad Cloud GPUs para FINE-TUNING (treinamento de modelos) - NÃO para embeddings!
+      # Salad Cloud GPUs para FINE-TUNING (treinamento de modelos)
       SALAD_API_KEY: ${SALAD_API_KEY}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
-      # Embeddings são 100% LOCAIS via CPU no servidor Hetzner (multilingual-e5-base) - Regra 6
-      # Serviço interno na rede Docker privada - não requer autenticação
-      CLIP_SERVICE_URL: http://alice-clip-inference:8080
+      # Embeddings GPU (Salad Cloud) - CORREÇÃO 17/12/2025
+      # Removido alice-clip-inference legado - agora usa 100% GPU Salad Cloud
+      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
+      # Qdrant - Banco vetorial para texto (4096 dim)
+      QDRANT_URL: http://alice-qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
     depends_on:
       postgres:
         condition: service_healthy
-      alice-clip-inference:
+      alice-qdrant:
         condition: service_healthy
     networks:
       - alice-network
@@ -933,11 +942,12 @@ services:
       # Qdrant - Banco vetorial para texto (4096 dim) - 17/12/2025
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
-      # KuCoin Futures API (Trading BTC Perpetuals)
-      KUCOIN_API_KEY: ${KUCOIN_API_KEY:-}
-      KUCOIN_API_SECRET: ${KUCOIN_API_SECRET:-}
-      KUCOIN_API_PASSPHRASE: ${KUCOIN_API_PASSPHRASE:-}
-      KUCOIN_FUTURES_BASE_URL: ${KUCOIN_FUTURES_BASE_URL:-https://api-futures.kucoin.com}
+      # KuCoin Futures API (Trading BTC Perpetuals) - CORREÇÃO 17/12/2025
+      # Usar nomes corretos dos secrets GitHub (KUCOIN_PRO_*)
+      KUCOIN_PRO_API_KEY: ${KUCOIN_PRO_API_KEY:-}
+      KUCOIN_PRO_API_SECRET: ${KUCOIN_PRO_API_SECRET:-}
+      KUCOIN_PRO_API_PASSPHRASE: ${KUCOIN_PRO_API_PASSPHRASE:-}
+      KUCOIN_PRO_BASE_URL: ${KUCOIN_PRO_BASE_URL:-https://api-futures.kucoin.com}
       KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
     depends_on:
       postgres:
@@ -1055,70 +1065,14 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # ALICE MULTIMODAL INFERENCE SERVICE - LEGADO (será removido em versão futura)
-  # 
-  # IMPORTANTE: Este serviço CPU está OBSOLETO. A plataforma Alice agora usa
-  # ARQUITETURA 100% GPU (15/12/2025) via Salad Cloud:
-  # - Embeddings de texto: BGE-M3 (1024 dim) - GPU Salad Cloud
-  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud  
-  # - Transcrição de áudio: Whisper large-v3 - GPU Salad Cloud
-  #
-  # Este container permanece para compatibilidade durante transição.
-  # Novos desenvolvimentos devem usar EMBEDDINGS_GPU_URL e SALAD_WHISPER_URL.
-  # ===========================================================================
-  alice-clip-inference:
-    image: ${IMAGE_PREFIX}-clip-inference:${IMAGE_TAG:-latest}
-    platform: linux/amd64
-    container_name: alice-clip-inference
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=128M
-      - /app/.cache:mode=1777,size=512M
-    # Embeddings são 100% locais via CPU no Hetzner (não requer GPU)
-    # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
-    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
-    # para uso no código Python
-    env_file:
-      - .env.prod
-    environment:
-      PORT: 8080
-      MODEL_NAME: "ViT-L/14"
-      TORCH_HOME: /app/.cache
-      PYTHONUNBUFFERED: "1"
-    networks:
-      - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-clip.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/clip`)"
-      - "traefik.http.routers.alice-clip.entrypoints=websecure"
-      - "traefik.http.routers.alice-clip.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-clip.middlewares=security-headers@docker,rate-limit@docker"
-      - "traefik.http.services.alice-clip.loadbalancer.server.port=8080"
-    healthcheck:
-      # CORREÇÃO 15/12/2025: Aumentado start_period e retries para modelos ML pesados
-      # - CLIP ViT-L/14: ~2GB modelo
-      # - multilingual-e5-base: ~1GB modelo
-      # - faster-whisper medium: ~1.5GB modelo
-      # Em CPU (Hetzner CX43), carregamento pode levar 5+ minutos no cold start
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 300s
-    deploy:
-      resources:
-        limits:
-          memory: 8G
-          cpus: '4.0'
-        reservations:
-          memory: 4G
-          cpus: '2.0'
-
-  # ===========================================================================
   # ERPNEXT STACK - Baseado em frappe_docker oficial
+  # ===========================================================================
+  # NOTA (17/12/2025): Container alice-clip-inference foi REMOVIDO.
+  # Motivo: Arquitetura migrada para 100% GPU Salad Cloud:
+  # - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
+  # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
+  # - ASR: Canary-1B → Salad Cloud
+  # Serviços agora usam EMBEDDINGS_GPU_URL diretamente.
   # ===========================================================================
   
   # MariaDB - Banco de dados ERPNext

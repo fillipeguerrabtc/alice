@@ -70,8 +70,11 @@ import { startLearningWorker } from './workers/learning-worker.js';
 import { startMediaWorker } from './workers/media-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
 // Cliente Qdrant para busca de texto (4096 dim - Qwen3-Embedding-8B)
+// CORREÇÃO 17/12/2025: Adicionado upsertPoints para inserir documentos no Qdrant
+// Bug: Busca usava Qdrant mas inserção era apenas PostgreSQL - resultados sempre vazios
 import {
   searchPoints,
+  upsertPoints,
   initTextCollection,
   isQdrantConfigured,
   healthCheck as qdrantHealthCheck,
@@ -1253,18 +1256,48 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
 
     const chunks = chunkText(body.conteudo);
     
+    // CORREÇÃO 17/12/2025: Inserir chunks tanto no PostgreSQL quanto no Qdrant
+    // PostgreSQL: Persistência relacional e backup
+    // Qdrant: Busca semântica vetorial (4096 dim - Qwen3-Embedding-8B)
+    const qdrantPoints = [];
+    
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
       
       // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
-      await db.insert(schema.documentChunks).values({
+      // Inserir no PostgreSQL (persistência relacional)
+      const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
         embedding,
+      }).returning();
+      
+      // Preparar ponto para Qdrant (busca vetorial)
+      qdrantPoints.push({
+        id: chunk.id,
+        vector: embedding,
+        payload: {
+          type: 'document_chunk',
+          documentId: document.id,
+          conteudo: chunks[i],
+          posicao: i,
+          tenantId: tenantId,
+          namespaceId: body.namespaceId,
+          document_id: document.id,
+          document_titulo: body.titulo,
+          document_namespaceId: body.namespaceId,
+          criadoEm: new Date().toISOString(),
+        }
       });
+    }
+    
+    // Inserir todos os chunks no Qdrant em batch (performance enterprise)
+    if (qdrantPoints.length > 0 && isQdrantConfigured()) {
+      await upsertPoints(TEXT_COLLECTION_NAME, qdrantPoints);
+      logger.info({ documentId: document.id, pointsInserted: qdrantPoints.length }, 'Chunks inseridos no Qdrant');
     }
 
     await db.update(schema.documents)
@@ -1322,25 +1355,56 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
 
     const chunks = chunkText(content);
     
+    // CORREÇÃO 17/12/2025: Inserir chunks tanto no PostgreSQL quanto no Qdrant
+    // PostgreSQL: Persistência relacional e backup
+    // Qdrant: Busca semântica vetorial (4096 dim - Qwen3-Embedding-8B)
+    const qdrantPoints = [];
+    
     for (let i = 0; i < chunks.length; i++) {
       const embedding = await generateEmbedding(chunks[i]);
       
       // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
-      await db.insert(schema.documentChunks).values({
+      // Inserir no PostgreSQL (persistência relacional)
+      const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
         embedding,
+      }).returning();
+      
+      // Preparar ponto para Qdrant (busca vetorial)
+      qdrantPoints.push({
+        id: chunk.id,
+        vector: embedding,
+        payload: {
+          type: 'document_chunk',
+          documentId: document.id,
+          conteudo: chunks[i],
+          posicao: i,
+          tenantId: req.tenantId,
+          namespaceId: namespaceId,
+          document_id: document.id,
+          document_titulo: titulo,
+          document_nomeArquivo: req.file?.originalname,
+          document_namespaceId: namespaceId,
+          criadoEm: new Date().toISOString(),
+        }
       });
+    }
+    
+    // Inserir todos os chunks no Qdrant em batch (performance enterprise)
+    if (qdrantPoints.length > 0 && isQdrantConfigured()) {
+      await upsertPoints(TEXT_COLLECTION_NAME, qdrantPoints);
+      logger.info({ documentId: document.id, pointsInserted: qdrantPoints.length }, 'Chunks inseridos no Qdrant');
     }
 
     await db.update(schema.documents)
       .set({ processado: true })
       .where(eq(schema.documents.id, document.id));
 
-    logger.info({ documentId: document.id, filename: req.file.originalname }, 'Arquivo enviado e processado');
+    logger.info({ documentId: document.id, filename: req.file?.originalname }, 'Arquivo enviado e processado');
     res.json({ document, chunksCreated: chunks.length });
   } catch (error) {
     logger.error({ error }, 'Falha ao enviar documento');
