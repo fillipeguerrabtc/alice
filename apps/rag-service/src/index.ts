@@ -1267,15 +1267,17 @@ app.post('/api/rag/documents', requireAuth(), requirePermission('rag:documents:w
       // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
-      // Inserir no PostgreSQL (persistência relacional)
+      // Inserir no PostgreSQL (persistência relacional - SEM embedding)
+      // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão APENAS para Qdrant
+      // PostgreSQL documentChunks.embedding é DEPRECATED (halfvec(3584) incompatível)
       const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
-        embedding,
+        // embedding OMITIDO - texto usa Qdrant (4096 dim), não pgvector
       }).returning();
       
-      // Preparar ponto para Qdrant (busca vetorial)
+      // Preparar ponto para Qdrant (busca vetorial - 4096 dim)
       qdrantPoints.push({
         id: chunk.id,
         vector: embedding,
@@ -1366,15 +1368,17 @@ app.post('/api/rag/documents/upload', requireAuth(), requirePermission('rag:docu
       // Validar dimensão antes de salvar (Enterprise-Grade - Regra 6)
       validateEmbeddingDimension(embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
       
-      // Inserir no PostgreSQL (persistência relacional)
+      // Inserir no PostgreSQL (persistência relacional - SEM embedding)
+      // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão APENAS para Qdrant
+      // PostgreSQL documentChunks.embedding é DEPRECATED (halfvec(3584) incompatível)
       const [chunk] = await db.insert(schema.documentChunks).values({
         documentId: document.id,
         conteudo: chunks[i],
         posicao: i,
-        embedding,
+        // embedding OMITIDO - texto usa Qdrant (4096 dim), não pgvector
       }).returning();
       
-      // Preparar ponto para Qdrant (busca vetorial)
+      // Preparar ponto para Qdrant (busca vetorial - 4096 dim)
       qdrantPoints.push({
         id: chunk.id,
         vector: embedding,
