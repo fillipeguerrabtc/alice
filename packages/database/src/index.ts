@@ -373,20 +373,26 @@ export {
 export const toSql = pgvector.toSql;
 
 // Dimensões dos embeddings (conforme CLAUDE.md)
-// ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant (suporta HNSW com 4096+ dim)
+// - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 export const EMBEDDING_DIMENSIONS = {
-  TEXT: 1024,    // BGE-M3 (GPU Salad Cloud) - 100+ idiomas incluindo PT-BR e EN
-  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Salad Cloud) - embeddings multimodais (imagem)
+  TEXT: 4096,    // Qwen3-Embedding-8B (GPU Salad Cloud) → Qdrant
+  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Salad Cloud) → pgvector
 } as const;
 
 /**
- * Valida dimensão de embedding antes de salvar no database
+ * Valida dimensão de embedding antes de salvar no database/Qdrant
  * Lança erro se dimensão estiver incorreta (enterprise-grade - Regra 6)
  * 
  * @param embedding - Array de números representando o embedding
- * @param expectedDim - Dimensão esperada (1024 para BGE-M3/OpenCLIP GPU)
+ * @param expectedDim - Dimensão esperada (4096 para TEXT/Qdrant, 1024 para CLIP/pgvector)
  * @param type - Tipo de embedding ('TEXT' ou 'CLIP') para mensagem de erro
  * @throws Error se dimensão estiver incorreta
+ * 
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - TEXT: Qwen3-Embedding-8B (4096 dim) → Qdrant
+ * - CLIP: OpenCLIP ViT-H/14 (1024 dim) → pgvector
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -396,13 +402,14 @@ export function validateEmbeddingDimension(
   type: 'TEXT' | 'CLIP' = 'TEXT'
 ): void {
   if (!embedding || embedding.length === 0) {
-    throw new Error(`Embedding ${type} vazio ou nulo não pode ser salvo no database`);
+    throw new Error(`Embedding ${type} vazio ou nulo não pode ser salvo`);
   }
   
+  const storage = type === 'TEXT' ? 'Qdrant' : 'pgvector';
   if (embedding.length !== expectedDim) {
     throw new Error(
       `Embedding ${type} com dimensão incorreta: ${embedding.length} (esperado: ${expectedDim}). ` +
-      `Isso causará erro no PostgreSQL vector(1024). Verifique o serviço de embeddings GPU.`
+      `Isso causará erro no ${storage}. Verifique o serviço de embeddings GPU.`
     );
   }
   

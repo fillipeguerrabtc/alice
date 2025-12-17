@@ -123,12 +123,12 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
       throw new Error('Resposta de embedding GPU vazia');
     }
 
-    // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
+    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
     validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
     return {
       embedding: result.embedding,
-      model: result.model || 'BAAI/bge-m3',
+      model: result.model || 'Qwen/Qwen3-Embedding-8B',
     };
   } finally {
     clearTimeout(timeoutId);
@@ -279,7 +279,7 @@ class DocumentProcessorService {
           const result = await generateEmbedding(chunkText);
           embeddingModel = result.model;
 
-          // Enterprise-grade: garantir dimensão esperada (1024) antes de acumular.
+          // Enterprise-grade: garantir dimensão esperada (4096) antes de acumular.
           // Isso evita "corrupção silenciosa" do embedding médio caso a dependência retorne dimensão inesperada.
           validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
 
