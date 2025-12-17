@@ -76,6 +76,7 @@ interface JobProgress {
 interface PreparedDataset {
   trainingData: string[];    // JSONL para treinamento
   validationData: string[];  // JSONL para validação
+  datasetIds: string[];      // IDs dos datasets filtrados (para marcar como usados)
   stats: {
     total: number;
     training: number;
@@ -181,12 +182,16 @@ export async function prepareDataset(
   const trainingData = training.map(formatToJsonl);
   const validationData = validation.map(formatToJsonl);
 
+  // Extrair IDs dos datasets filtrados (para marcar como usados posteriormente)
+  const datasetIds = filtered.map(d => d.id);
+
   logger.info(
     {
       total: filtered.length,
       training: trainingData.length,
       validation: validationData.length,
       byActionType,
+      datasetIdsCount: datasetIds.length,
     },
     'Dataset preparado com sucesso'
   );
@@ -194,6 +199,7 @@ export async function prepareDataset(
   return {
     trainingData,
     validationData,
+    datasetIds,
     stats: {
       total: filtered.length,
       training: trainingData.length,
@@ -248,19 +254,9 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
     .values(jobData)
     .returning();
 
-  // Marcar datasets como usados
-  const datasetIds = await db
-    .select({ id: schema.tradingDataset.id })
-    .from(schema.tradingDataset)
-    .where(
-      and(
-        eq(schema.tradingDataset.tenantId, params.tenantId),
-        eq(schema.tradingDataset.status, 'approved'),
-        eq(schema.tradingDataset.isDuplicate, false)
-      )
-    );
-
-  if (datasetIds.length > 0) {
+  // Bug fix: Usar os IDs dos datasets FILTRADOS (retornados por prepareDataset)
+  // Antes marcava TODOS os datasets aprovados, ignorando os filtros aplicados
+  if (dataset.datasetIds.length > 0) {
     await db
       .update(schema.tradingDataset)
       .set({
@@ -271,9 +267,14 @@ export async function createLoraJob(params: CreateJobParams): Promise<TradingLor
       .where(
         inArray(
           schema.tradingDataset.id,
-          datasetIds.map(d => d.id)
+          dataset.datasetIds
         )
       );
+    
+    logger.info(
+      { jobId: job.id, markedAsUsed: dataset.datasetIds.length },
+      'Datasets marcados como usados'
+    );
   }
 
   logger.info(

@@ -352,11 +352,16 @@ jobs:
             # Backup do .env atual
             cp .env.prod .env.prod.backup.$(date +%Y%m%d_%H%M%S)
             
-            # Remover variáveis SALAD antigas
-            grep -v "^SALAD_" .env.prod > /tmp/.env.prod.tmp || true
+            # Bug fix: Remover APENAS as variáveis de endpoint Salad (não as credentials!)
+            # Mantém: SALAD_API_KEY, SALAD_ORGANIZATION_ID, SALAD_TTS_IMAGE, etc.
+            # Remove: SALAD_MIXTRAL_URL, SALAD_ASR_URL, SALAD_FLUX_URL, SALAD_EMBEDDINGS_URL
+            grep -v "^SALAD_MIXTRAL_URL=" .env.prod | \
+            grep -v "^SALAD_ASR_URL=" | \
+            grep -v "^SALAD_FLUX_URL=" | \
+            grep -v "^SALAD_EMBEDDINGS_URL=" > /tmp/.env.prod.tmp || true
             
-            # Adicionar novas variáveis
+            # Adicionar novas variáveis de endpoint
             cat /tmp/.env.prod.tmp /opt/alice/salad_endpoints.env > .env.prod
             
-            echo "✅ .env.prod atualizado com endpoints Salad Cloud"
+            echo "✅ .env.prod atualizado com endpoints Salad Cloud (credentials preservadas)"
           EOF

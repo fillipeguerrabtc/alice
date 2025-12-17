@@ -1731,9 +1731,6 @@ jobs:
             printf '# RAG Service (URLs públicas)\n'
             printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
             printf '\n'
-            printf '# CLIP Inference (multimodal embeddings)\n'
-            printf 'CLIP_API_TOKEN=%s\n' "${{ secrets.CLIP_API_TOKEN }}"
-            printf '\n'
             printf '# CORS (origens permitidas)\n'
             printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
             printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
