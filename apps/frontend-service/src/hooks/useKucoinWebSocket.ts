@@ -366,9 +366,11 @@ export function useKucoinWebSocket(
   useEffect(() => {
     if (state.connected) {
       // Unsubscribe from old channels
+      // CORREÇÃO 17/12/2025: Extrair oldSymbol da subscription para enviar unsubscribe correto
+      // Bug anterior: unsubscribe(channel) usava o novo símbolo via closure, deixando subscriptions órfãs
       subscriptionsRef.current.forEach(sub => {
-        const [channel] = sub.split(':');
-        unsubscribe(channel);
+        const [channel, oldSymbol] = sub.split(':');
+        unsubscribe(channel, oldSymbol);
       });
 
       // Subscribe to new channels
