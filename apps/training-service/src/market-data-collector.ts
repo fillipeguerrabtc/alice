@@ -227,21 +227,23 @@ async function saveCandles(
         source: 'kucoin',
       };
 
-      // Usar ON CONFLICT para evitar duplicatas
-      await db
+      // Bug fix: Usar RETURNING para verificar se registro foi realmente inserido
+      // onConflictDoNothing() não lança erro em duplicatas, apenas retorna vazio
+      const insertResult = await db
         .insert(schema.tradingMarketData)
         .values(marketData)
-        .onConflictDoNothing();
+        .onConflictDoNothing()
+        .returning({ id: schema.tradingMarketData.id });
 
-      result.inserted++;
-    } catch (error) {
-      // Verifica se é erro de duplicata
-      if ((error as Error).message?.includes('duplicate')) {
-        result.duplicates++;
+      // Se retornou registro, foi inserido; se vazio, foi duplicata
+      if (insertResult.length > 0) {
+        result.inserted++;
       } else {
-        result.errors++;
-        logger.error({ error, candle }, 'Erro ao salvar candle');
+        result.duplicates++;
       }
+    } catch (error) {
+      result.errors++;
+      logger.error({ error, candle }, 'Erro ao salvar candle');
     }
   }
 

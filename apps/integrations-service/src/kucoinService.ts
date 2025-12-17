@@ -653,9 +653,10 @@ export async function syncOrdersStatus(
           .set({
             status: newStatus,
             filledSize: kucoinOrder.filledSize?.toString(),
-            filledPrice: kucoinOrder.filledValue ? 
-              (parseFloat(kucoinOrder.filledValue) / kucoinOrder.filledSize).toString() : 
-              null,
+            // Bug fix: Verificar filledSize > 0 antes de dividir para evitar Infinity/NaN
+            filledPrice: kucoinOrder.filledValue && kucoinOrder.filledSize && kucoinOrder.filledSize > 0
+              ? (parseFloat(kucoinOrder.filledValue) / kucoinOrder.filledSize).toString()
+              : null,
             atualizadoEm: new Date(),
             metadata: {
               ...order.metadata,
