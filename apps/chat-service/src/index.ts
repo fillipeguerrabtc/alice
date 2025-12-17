@@ -2258,7 +2258,9 @@ wss.on('connection', (ws, req) => {
       
       // ========================================================================
       // HANDLER MULTIMODAL (FASE 9 - Upload de mídia via WebSocket)
-      // Mixtral 8x7B suporta imagens/vídeo como INPUT (não gera imagens)
+      // IMPORTANTE: Mixtral 8x7B é SOMENTE TEXTO - não processa imagens diretamente
+      // Para imagens: usa RAG com embeddings CLIP para busca semântica por contexto
+      // Para áudio/vídeo: usa transcrição (texto) + RAG
       // ========================================================================
       else if (message.type === 'media') {
         const mediaMessage = message as {
@@ -2403,18 +2405,22 @@ wss.on('connection', (ws, req) => {
           processingStatus: uploadResult.processingStatus,
         }));
 
-        // Preparar prompt para Mixtral 8x7B (multimodal INPUT)
+        // Preparar prompt para Mixtral 8x7B (SOMENTE TEXTO)
+        // CORREÇÃO 17/12/2025: Mixtral NÃO processa imagens - usar RAG com embeddings CLIP
         const agent = conversation.agent as { instrucoes?: string } | null;
         let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
         
-        // Para imagens: Mixtral 8x7B entende imagens via base64 data URI
+        // Para imagens: usa RAG com embeddings CLIP (1024 dim) para buscar contexto similar
         // Para áudio: usar transcrição quando disponível
         let userContent = mediaMessage.content || '';
         
         if (mediaType === 'image') {
-          // Adicionar instrução para análise de imagem
-          systemPrompt += '\n\nO usuário enviou uma imagem. Analise a imagem e responda de forma útil.';
-          userContent = userContent || 'Analise esta imagem e descreva o que você vê.';
+          // CORREÇÃO 17/12/2025: Mixtral é text-only - usar contexto RAG via embeddings CLIP
+          // A imagem foi processada e embedding CLIP gerado - busca RAG usa esse embedding
+          systemPrompt += '\n\nO usuário enviou uma imagem que foi processada pelo sistema de visão computacional. ' +
+            'Use o contexto fornecido pelo RAG para responder sobre a imagem. ' +
+            'Se não houver contexto suficiente, informe que a análise visual direta não está disponível no momento.';
+          userContent = userContent || 'O que você pode me dizer sobre esta imagem com base no contexto disponível?';
         } else if (mediaType === 'audio') {
           // Aguardar transcrição se disponível
           if (uploadResult.transcription) {
@@ -2444,34 +2450,13 @@ wss.on('connection', (ws, req) => {
         // Chamar LLM com streaming
         const llmStartTime = Date.now();
         
-        // Para imagens, construir mensagem multimodal (Mixtral 8x7B suporta)
-        interface _MultimodalContent {
-          type: 'text' | 'image_url';
-          text?: string;
-          image_url?: { url: string };
-        }
-        
-        let llmMessages: LLMMessage[];
-        
-        if (mediaType === 'image') {
-          // Formato multimodal para Mixtral 8x7B
-          const imageDataUri = `data:${mediaMessage.media.mimeType};base64,${mediaMessage.media.file}`;
-          llmMessages = [
-            { role: 'system', content: systemPrompt },
-            { 
-              role: 'user', 
-              content: [
-                { type: 'text', text: userContent },
-                { type: 'image_url', image_url: { url: imageDataUri } },
-              ] as unknown as string, // Type assertion para compatibilidade
-            },
-          ];
-        } else {
-          llmMessages = [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userContent },
-          ];
-        }
+        // CORREÇÃO 17/12/2025: Mixtral 8x7B é SOMENTE TEXTO
+        // NÃO envia imagens diretamente - usa contexto RAG via embeddings CLIP
+        // Formato multimodal removido (não funciona com Mixtral)
+        const llmMessages: LLMMessage[] = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userContent },
+        ];
 
         const stream = await callLlamaAPI(llmMessages, true) as AsyncGenerator<string>;
 
