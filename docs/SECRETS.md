@@ -25,7 +25,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
 | **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_WHISPER_URL, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
-| **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud - 3584 dim texto, 1024 dim imagem) |
+| **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud - 4096 dim texto → Qdrant, 1024 dim imagem → pgvector) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
@@ -175,7 +175,7 @@ Estes são necessários para o deploy funcionar:
 - `/api/integrations/trading/orders` - Gerenciamento de ordens
 - `/api/integrations/trading/signals` - Sinais do Mixtral LLM
 
-### FASE 5c: Qdrant - Banco Vetorial para Trading (8192 dimensões)
+### FASE 5c: Qdrant - Banco Vetorial para Texto (4096 dimensões)
 
 | Secret | Onde Obter |
 |--------|------------|
@@ -187,14 +187,13 @@ Estes são necessários para o deploy funcionar:
 3. O container `alice-qdrant` usa esta key para autenticação
 
 **Arquitetura de Embeddings:**
-- **Qdrant (8192 dim):** Qwen3-Embedding-8B para Trading (máxima qualidade semântica)
-- **PostgreSQL pgvector (3584 dim):** gte-Qwen2-7B-instruct para RAG/texto geral
+- **Qdrant (4096 dim):** Qwen3-Embedding-8B para texto (Trading + RAG)
 - **PostgreSQL pgvector (1024 dim):** OpenCLIP ViT-H/14 para imagens
 
 **Por que Qdrant para Trading:**
 - pgvector HNSW suporta máx 4000 dim (halfvec) / 2000 dim (vector)
-- Qdrant suporta até 32.768 dimensões com índice HNSW
-- Qwen3-Embedding-8B (8192 dim) oferece qualidade superior para análise financeira
+- Qdrant suporta HNSW com 4096+ dimensões (pgvector limita em 4000 para halfvec)
+- Qwen3-Embedding-8B (4096 dim, 8B params) oferece qualidade superior para texto
 
 **Portas:**
 - `6333`: REST API (usada pelo integrations-service)

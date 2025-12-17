@@ -1,19 +1,18 @@
 /**
  * Video Processor Service - Alice Enterprise Platform
  * 
- * ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
+ * ARQUITETURA 100% GPU (17/12/2025):
  * - Extração de áudio via FFmpeg (local)
- * - Transcrição via Whisper large-v3 GPU (Salad Cloud)
+ * - Transcrição via Canary-1B GPU (Salad Cloud)
  * - Extração de frames chave para embeddings (local FFmpeg)
- * - Image embeddings via OpenCLIP ViT-H/14 GPU (Salad Cloud, 1024 dim)
- * - Text embeddings via BGE-M3 GPU (Salad Cloud, 1024 dim)
+ * - Image embeddings via OpenCLIP ViT-H/14 GPU (Salad Cloud, 1024 dim → pgvector)
+ * - Text embeddings via Qwen3-Embedding-8B GPU (Salad Cloud, 4096 dim → Qdrant)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
  * GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6 - sem workarounds)
- * Schema usa vector(1024) - incompatível com CPU (768 dim)
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -35,8 +34,8 @@ const logger = createLogger('video-processor');
  * Combina embeddings para busca de VÍDEO.
  *
  * Contrato enterprise:
- * - Retorna SEMPRE embedding no espaço **CLIP** (para persistir em `clipEmbedding`).
- * - `textEmbedding` (BGE-M3 GPU) é persistido separadamente em `textEmbedding` e NÃO pode ser armazenado como CLIP.
+ * - Retorna SEMPRE embedding no espaço **CLIP** (para persistir em `clipEmbedding` pgvector).
+ * - `textEmbedding` (Qwen3-Embedding-8B, 4096 dim) é persistido em Qdrant separadamente.
  * - Se não houver frames, retorna `[]` (não há CLIP embedding de vídeo).
  */
 export function combineVideoEmbeddingsForSearch(
@@ -125,12 +124,12 @@ export function combineVideoEmbeddingsForSearch(
   const normalizedText =
     textEmbedding.length === TEXT_EMBEDDING_DIM ? textEmbedding : textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
 
-  // NOTA ARQUITETURAL (17/12/2025): ARQUITETURA DUAL-DIMENSION
-  // TEXT_EMBEDDING_DIM = 3584 (gte-Qwen2-7B-instruct para texto/transcrição)
-  // CLIP_EMBEDDING_DIM = 1024 (OpenCLIP ViT-H/14 para imagens/frames)
+  // NOTA ARQUITETURAL (17/12/2025): ARQUITETURA ENTERPRISE
+  // TEXT_EMBEDDING_DIM = 4096 (Qwen3-Embedding-8B para texto/transcrição → Qdrant)
+  // CLIP_EMBEDDING_DIM = 1024 (OpenCLIP ViT-H/14 para imagens/frames → pgvector)
   // DIMENSÕES SÃO DIFERENTES! Combinação direta não é possível.
   // O fallback abaixo retorna apenas frames quando dimensões são incompatíveis.
-  // Busca semântica usa colunas separadas: textEmbedding (3584) e clipEmbedding (1024).
+  // Busca semântica usa storages separados: texto (Qdrant 4096) e imagem (pgvector 1024).
 
   // Enterprise-grade: validar que normalizedText tem o comprimento esperado antes de acessar índices.
   // Isso previne NaN se o slice retornar um array menor que o esperado (edge case de corrupção de dados).
@@ -143,7 +142,7 @@ export function combineVideoEmbeddingsForSearch(
   }
 
   // Defesa: só é possível combinar embeddings se ambos estiverem no mesmo espaço dimensional.
-  // ARQUITETURA DUAL-DIMENSION: TEXT_EMBEDDING_DIM (3584) ≠ CLIP_EMBEDDING_DIM (1024)
+  // ARQUITETURA ENTERPRISE: TEXT_EMBEDDING_DIM (4096) ≠ CLIP_EMBEDDING_DIM (1024)
   // Combinação não é possível - retorna apenas CLIP (frames) para manter consistência.
   if (normalizedText.length !== avgFrameEmbedding.length) {
     logger.warn(

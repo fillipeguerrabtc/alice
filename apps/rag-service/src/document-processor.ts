@@ -6,17 +6,18 @@
  * - DOCX: Extração de texto via mammoth
  * - XLSX: Extração de texto via exceljs (CVE-2024-22363, CVE-2024-3766 corrigidos)
  * - TXT/MD: Leitura direta
- * - Text embeddings via GPU (BGE-M3, 1024 dim)
+ * - Text embeddings via GPU (Qwen3-Embedding-8B, 4096 dim)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
- * - Embeddings via GPU Salad Cloud (BGE-M3, 1024 dim)
+ * ARQUITETURA 100% GPU (17/12/2025):
+ * - Embeddings via GPU Salad Cloud (Qwen3-Embedding-8B, 4096 dim)
+ * - Embeddings de texto armazenados em Qdrant
  * - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  *
  * Autor: Fillipe Guerra
- * Data: 15 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  */
 
 import { createLogger } from '@alice/logger';
@@ -29,10 +30,10 @@ const logger = createLogger('document-processor');
 // Configuração - Embeddings via GPU (Salad Cloud) - ARQUITETURA 100% GPU
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings de texto - ARQUITETURA DUAL-DIMENSION (17/12/2025)
-// gte-Qwen2-7B-instruct: 3584 dim (dimensão NATIVA do modelo)
-// Armazenado como halfvec(3584) no PostgreSQL (limite HNSW: 4000)
-export const TEXT_EMBEDDING_DIM = 3584;
+// Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
+// Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
+// Armazenado em Qdrant (suporta HNSW com 4096+ dim)
+export const TEXT_EMBEDDING_DIM = 4096;
 
 // Limites de processamento
 const MAX_DOCUMENT_SIZE_MB = parseInt(process.env.MAX_DOCUMENT_SIZE_MB || '50', 10);

@@ -2,7 +2,11 @@
  * Cliente Qdrant - Alice Enterprise Platform
  * 
  * Cliente enterprise-grade para banco vetorial Qdrant.
- * Usado para embeddings de Trading com Qwen3-Embedding-8B (8192 dimensões).
+ * Usado para embeddings de texto com Qwen3-Embedding-8B (4096 dimensões).
+ * 
+ * Arquitetura (17/12/2025):
+ * - Texto: Qdrant (4096 dim) - Qwen3-Embedding-8B
+ * - Imagem: pgvector (1024 dim) - OpenCLIP ViT-H/14
  * 
  * Funcionalidades:
  * - Autenticação via API Key
@@ -28,11 +32,15 @@ const logger = createLogger('qdrant-client');
 const QDRANT_URL = process.env.QDRANT_URL || 'http://alice-qdrant:6333';
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY;
 
-// Dimensão dos embeddings de trading (Qwen3-Embedding-8B)
-export const TRADING_EMBEDDING_DIM = 8192;
+// Dimensão dos embeddings de texto (Qwen3-Embedding-8B - 4096 dim nativos)
+export const TEXT_EMBEDDING_DIM = 4096;
 
-// Nome da coleção de trading
-export const TRADING_COLLECTION_NAME = 'trading_embeddings';
+// Nome da coleção de texto (unificada para Trading + RAG)
+export const TEXT_COLLECTION_NAME = 'text_embeddings';
+
+// Aliases para compatibilidade (Trading usa mesma coleção)
+export const TRADING_EMBEDDING_DIM = TEXT_EMBEDDING_DIM;
+export const TRADING_COLLECTION_NAME = TEXT_COLLECTION_NAME;
 
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
@@ -219,11 +227,11 @@ export async function createCollection(config: QdrantCollectionConfig): Promise<
     },
     on_disk_payload: config.onDiskPayload ?? true,
     hnsw_config: config.hnswConfig || {
-      m: 16,              // Número de conexões (default: 16, recomendado para alta dimensão)
+      m: 16,              // Número de conexões (default: 16)
       ef_construct: 200,  // Qualidade da construção do índice
       full_scan_threshold: 10000, // Threshold para scan linear
     },
-    // Otimizações para 8192 dimensões
+    // Otimizações para 4096 dimensões (Qwen3-Embedding-8B)
     optimizers_config: {
       memmap_threshold: 20000,        // Usar mmap para coleções grandes
       indexing_threshold: 20000,      // Threshold para indexação
@@ -408,41 +416,44 @@ export async function deletePointsByFilter(
 // ============================================================================
 
 /**
- * Inicializa a coleção de trading se não existir
- * Cria com configuração otimizada para 8192 dimensões
+ * Inicializa a coleção de texto se não existir
+ * Cria com configuração otimizada para 4096 dimensões (Qwen3-Embedding-8B)
  */
-export async function initTradingCollection(): Promise<void> {
+export async function initTextCollection(): Promise<void> {
   if (!isQdrantConfigured()) {
-    logger.warn('Qdrant não configurado - coleção de trading não será criada');
+    logger.warn('Qdrant não configurado - coleção de texto não será criada');
     return;
   }
 
-  const exists = await collectionExists(TRADING_COLLECTION_NAME);
+  const exists = await collectionExists(TEXT_COLLECTION_NAME);
   
   if (!exists) {
     await createCollection({
-      name: TRADING_COLLECTION_NAME,
-      vectorSize: TRADING_EMBEDDING_DIM,
+      name: TEXT_COLLECTION_NAME,
+      vectorSize: TEXT_EMBEDDING_DIM,
       distance: 'Cosine',
       onDiskPayload: true,
       hnswConfig: {
-        m: 32,              // Mais conexões para alta dimensão (8192)
-        efConstruct: 400,   // Maior qualidade de construção
+        m: 16,              // Bom equilíbrio para 4096 dim
+        efConstruct: 200,   // Qualidade de construção
         fullScanThreshold: 10000,
       },
     });
     
     logger.info(
-      { collection: TRADING_COLLECTION_NAME, dim: TRADING_EMBEDDING_DIM },
-      'Coleção de trading criada no Qdrant'
+      { collection: TEXT_COLLECTION_NAME, dim: TEXT_EMBEDDING_DIM },
+      'Coleção de texto criada no Qdrant'
     );
   } else {
     logger.info(
-      { collection: TRADING_COLLECTION_NAME },
-      'Coleção de trading já existe no Qdrant'
+      { collection: TEXT_COLLECTION_NAME },
+      'Coleção de texto já existe no Qdrant'
     );
   }
 }
+
+// Alias para compatibilidade
+export const initTradingCollection = initTextCollection;
 
 // ============================================================================
 // OPERAÇÕES ESPECÍFICAS DE TRADING
@@ -621,15 +632,18 @@ export default {
   isQdrantConfigured,
   getQdrantUrl,
   getQdrantCircuitBreakerStatus,
-  TRADING_EMBEDDING_DIM,
-  TRADING_COLLECTION_NAME,
+  TEXT_EMBEDDING_DIM,
+  TEXT_COLLECTION_NAME,
+  TRADING_EMBEDDING_DIM, // Alias
+  TRADING_COLLECTION_NAME, // Alias
   
   // Coleções
   collectionExists,
   createCollection,
   getCollectionInfo,
   deleteCollection,
-  initTradingCollection,
+  initTextCollection,
+  initTradingCollection, // Alias
   
   // Pontos
   upsertPoints,

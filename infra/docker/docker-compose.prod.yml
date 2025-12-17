@@ -13,8 +13,8 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 44 total (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
-# - alice-qdrant: Banco vetorial para embeddings de Trading 8192 dim (Qwen3-Embedding-8B)
+# CONTAINERS: 43 total (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
+# - alice-qdrant: Banco vetorial para embeddings de texto 4096 dim (Qwen3-Embedding-8B)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
 #
@@ -151,7 +151,7 @@ volumes:
       o: bind
       device: /opt/alice/data/langfuse-db
 
-  # Qdrant - Banco vetorial para embeddings de Trading (8192 dim)
+  # Qdrant - Banco vetorial para embeddings de texto (4096 dim)
   qdrant_data:
     name: alice-qdrant-data
     driver: local
@@ -492,11 +492,11 @@ services:
           cpus: '0.1'
 
   # ===========================================================================
-  # QDRANT - Banco Vetorial para Trading (8192 dimensões)
+  # QDRANT - Banco Vetorial para Texto (4096 dimensões)
   # ===========================================================================
-  # Qdrant v1.16.2 - Suporta até 32.768 dimensões com índice HNSW
-  # Usado para embeddings de trading com Qwen3-Embedding-8B (8192 dim)
-  # PostgreSQL pgvector continua para embeddings gerais (texto 3584, imagem 1024)
+  # Qdrant v1.16.2 - Suporta HNSW com 4096+ dimensões
+  # Usado para embeddings de texto com Qwen3-Embedding-8B (4096 dim)
+  # PostgreSQL pgvector para imagens (1024 dim)
   # Docs: https://qdrant.tech/documentation/
   #
   # Autor: Fillipe Guerra
@@ -930,7 +930,7 @@ services:
       TRAINING_SERVICE_URL: http://alice-training:3004
       # RAG Service para indexação de mídia WhatsApp (15/12/2025)
       RAG_SERVICE_URL: http://alice-rag:3003
-      # Qdrant - Banco vetorial para Trading (8192 dim) - 17/12/2025
+      # Qdrant - Banco vetorial para texto (4096 dim) - 17/12/2025
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
       # KuCoin Futures API (Trading BTC Perpetuals)

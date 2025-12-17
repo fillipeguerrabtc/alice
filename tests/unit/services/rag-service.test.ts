@@ -68,12 +68,12 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
 // ============================================================================
 
 describe('RAG Service - Dimensões de Embedding', () => {
-  // ARQUITETURA 100% GPU (15/12/2025)
-  const TEXT_EMBEDDING_DIM = 3584;   // gte-Qwen2-7B-instruct (Salad Cloud)
-  const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (Salad Cloud)
+  // ARQUITETURA UNIFICADA (17/12/2025)
+  const TEXT_EMBEDDING_DIM = 4096;   // Qwen3-Embedding-8B (armazenado em Qdrant)
+  const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (pgvector)
 
-  it('deve ter text embedding de 1024 dimensões (BGE-M3 GPU)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(3584);
+  it('deve ter text embedding de 4096 dimensões (Qwen3-Embedding-8B)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(4096);
   });
 
   it('deve ter image embedding de 1024 dimensões (OpenCLIP ViT-H/14 GPU)', () => {

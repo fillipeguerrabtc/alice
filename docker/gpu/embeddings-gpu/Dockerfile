@@ -1,22 +1,23 @@
 # =============================================================================
-# Alice Enterprise Platform - Embeddings GPU (Dual-Dimension)
+# Alice Enterprise Platform - Embeddings GPU (Arquitetura Unificada)
 # =============================================================================
-# Dockerfile para embeddings com arquitetura dual-dimension:
-# - Texto: gte-Qwen2-7B-instruct (3584 dim nativo) - halfvec para Trading/RAG
-# - Imagem: OpenCLIP ViT-H/14 (1024 dim nativo) - vector para análise visual
+# Dockerfile para embeddings enterprise:
+# - Texto: Qwen3-Embedding-8B (4096 dim) - armazenado em Qdrant
+# - Imagem: OpenCLIP ViT-H/14 (1024 dim) - armazenado em pgvector
 # 
 # GPU: RTX 4090 (24GB VRAM)
+# VRAM estimado: ~16GB para Qwen3 + ~2GB para OpenCLIP
 # 
 # Autor: Fillipe Guerra
-# Data: 16 de Dezembro de 2025
+# Data: 17 de Dezembro de 2025
 # =============================================================================
 
 FROM nvidia/cuda:12.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Embeddings GPU Dual-Dimension (gte-Qwen2 3584 + OpenCLIP 1024)"
-LABEL version="1.0.0"
-LABEL architecture="dual-dimension"
+LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
+LABEL version="2.0.0"
+LABEL architecture="unified"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -55,15 +56,20 @@ COPY healthcheck.py /app/healthcheck.py
 RUN chown -R embeddings:embeddings /app
 USER embeddings
 
-# Configuração dual-dimension
-# Bug fix: gte-Qwen2-7B-instruct tem 3584 dimensões nativamente (não 4000)
-ENV TEXT_MODEL_NAME="Alibaba-NLP/gte-Qwen2-7B-instruct"
-ENV TEXT_EMBEDDING_DIM="3584"
+# Configuração Enterprise (17/12/2025)
+# Texto: Qwen3-Embedding-8B (8B params, 4096 dim) - melhor qualidade
+# Imagem: OpenCLIP ViT-H/14 (1024 dim) - dimensão nativa
+ENV TEXT_MODEL_NAME="Qwen/Qwen3-Embedding-8B"
+ENV TEXT_EMBEDDING_DIM="4096"
 ENV IMAGE_MODEL_NAME="laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 ENV IMAGE_EMBEDDING_DIM="1024"
 ENV DEVICE="cuda"
 ENV PORT="8000"
 ENV KEEP_WARM_MINUTES="30"
+
+# Huggingface cache
+ENV HF_HOME="/app/.cache/huggingface"
+ENV TRANSFORMERS_CACHE="/app/.cache/huggingface/transformers"
 
 EXPOSE 8000
 

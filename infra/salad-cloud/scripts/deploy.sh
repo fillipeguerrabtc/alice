@@ -191,7 +191,7 @@ generate_embeddings_config() {
     cat > /tmp/embeddings_config.json << EOF
 {
     "name": "alice-embeddings-gpu-${ENVIRONMENT}",
-    "display_name": "Alice Embeddings GPU Dual-Dimension",
+    "display_name": "Alice Embeddings GPU Enterprise",
     "container": {
         "image": "${EMBEDDINGS_IMAGE:-ghcr.io/alice-platform/embeddings-gpu:latest}",
         "resources": {
@@ -200,8 +200,8 @@ generate_embeddings_config() {
             "gpu_classes": ["rtx4090-24gb"]
         },
         "environment_variables": {
-            "TEXT_MODEL_NAME": "Alibaba-NLP/gte-Qwen2-7B-instruct",
-            "TEXT_EMBEDDING_DIM": "3584",
+            "TEXT_MODEL_NAME": "Qwen/Qwen3-Embedding-8B",
+            "TEXT_EMBEDDING_DIM": "4096",
             "IMAGE_MODEL_NAME": "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
             "IMAGE_EMBEDDING_DIM": "1024",
             "DEVICE": "cuda",

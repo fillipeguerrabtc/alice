@@ -1,16 +1,16 @@
 /**
  * Audio Processor Service - Alice Enterprise Platform
  * 
- * ARQUITETURA 100% GPU (Opção B - Alta Qualidade - 15/12/2025):
- * - Transcrição: Whisper large-v3 via GPU (Salad Cloud)
- * - Text embedding: BGE-M3 via GPU (Salad Cloud, 1024 dim)
+ * ARQUITETURA 100% GPU (17/12/2025):
+ * - Transcrição: Canary-1B via GPU (Salad Cloud)
+ * - Text embedding: Qwen3-Embedding-8B via GPU (Salad Cloud, 4096 dim)
  * - Extração de metadata (duração, formato, bitrate)
+ * - Embeddings de texto armazenados em Qdrant
  * 
  * GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
- * Schema usa vector(1024) - incompatível com CPU (768 dim)
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -23,10 +23,10 @@ const logger = createLogger('audio-processor');
 const SALAD_WHISPER_URL = process.env.SALAD_WHISPER_URL || '';
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings de texto - ARQUITETURA DUAL-DIMENSION (17/12/2025)
-// gte-Qwen2-7B-instruct: 3584 dim (dimensão NATIVA do modelo)
-// Armazenado como halfvec(3584) no PostgreSQL (limite HNSW: 4000)
-export const TEXT_EMBEDDING_DIM = 3584;
+// Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
+// Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
+// Armazenado em Qdrant (suporta HNSW com 4096+ dim)
+export const TEXT_EMBEDDING_DIM = 4096;
 
 // Timeouts
 const WHISPER_TIMEOUT_MS = 600000; // 10 min para GPU

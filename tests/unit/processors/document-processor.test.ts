@@ -571,10 +571,10 @@ describe('Document Processor - Metadados', () => {
 // ============================================================================
 
 describe('Document Processor - Estrutura de Embeddings', () => {
-  const TEXT_EMBEDDING_DIM = 3584; // gte-Qwen2-7B-instruct (dimensão nativa)
+  const TEXT_EMBEDDING_DIM = 4096; // Qwen3-Embedding-8B (armazenado em Qdrant)
 
-  it('deve ter dimensão de embedding de 1024 (BGE-M3 GPU)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(3584);
+  it('deve ter dimensão de embedding de 4096 (Qwen3-Embedding-8B)', () => {
+    expect(TEXT_EMBEDDING_DIM).toBe(4096);
   });
 
   it('deve criar array de embedding com dimensão correta', () => {

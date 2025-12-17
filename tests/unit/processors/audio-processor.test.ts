@@ -5,10 +5,10 @@
  * - Validação de MIME types
  * - Extração de metadata
  * - Estrutura de transcrição
- * - Configuração Whisper
+ * - Configuração Canary ASR
  * 
  * Author: Fillipe Guerra
- * Data: 04/12/2025
+ * Data: 17/12/2025
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
@@ -19,7 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 // CONSTANTES
 // ============================================================================
 
-const TEXT_EMBEDDING_DIM = 3584; // gte-Qwen2-7B-instruct (dimensão nativa)
+const TEXT_EMBEDDING_DIM = 4096; // Qwen3-Embedding-8B (armazenado em Qdrant)
 
 // ============================================================================
 // TESTES DE TIPOS DE ÁUDIO SUPORTADOS

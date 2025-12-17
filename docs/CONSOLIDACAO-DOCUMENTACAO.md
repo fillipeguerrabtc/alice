@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 17 de Dezembro de 2025  
 **Versão:** 2.1  
-**Atualizado:** 17 de Dezembro de 2025 (Arquitetura Tri-Dimension + Qdrant 8192 dim)
+**Atualizado:** 17 de Dezembro de 2025 (Arquitetura Enterprise - Qwen3-Embedding-8B 4096 dim)
 
 ## Estrutura Atual da Documentação
 
@@ -72,9 +72,9 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 17 de Dezembro de 2025*  
-*Versão: 2.1 - Arquitetura Tri-Dimension + Qdrant 8192 dim*  
-*Total de Containers: 44 (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*  
-*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*  
-*ARQUITETURA TRI-DIMENSION: Trading 8192 dim Qwen3-Embedding-8B (Qdrant) | Texto/RAG 3584 dim (pgvector) | Imagem 1024 dim (pgvector)*  
-*Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning + Qdrant
+*Documento atualizado em: 17 de Dezembro de 2025*
+*Versão: 2.2 - Arquitetura Enterprise (Qwen3-Embedding-8B 4096 dim)*
+*Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
+*ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
+*Trading: KuCoin Futures BTC Perpetuals (XBTUSDTM) + Scalping (1m/3m/5m) + LoRA Fine-tuning

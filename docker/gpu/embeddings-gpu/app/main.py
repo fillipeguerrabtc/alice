@@ -1,15 +1,15 @@
 """
-Alice Enterprise Platform - Embeddings GPU Service (Dual-Dimension)
-===================================================================
-Serviço de embeddings com arquitetura dual-dimension:
-- Texto (Trading/RAG): gte-Qwen2-7B-instruct → 3584 dimensões (halfvec, nativo)
-- Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (vector)
+Alice Enterprise Platform - Embeddings GPU Service (Arquitetura Unificada)
+==========================================================================
+Serviço de embeddings enterprise:
+- Texto (Trading/RAG): Qwen3-Embedding-8B → 4096 dimensões (Qdrant)
+- Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (pgvector)
 
-Decisão arquitetural: 16/12/2025
-+38% qualidade retrieval para texto com 4000 dim vs 1024 dim
+Qwen3-Embedding-8B: 8B parâmetros, Apache 2.0, máxima qualidade
+OpenCLIP ViT-H/14: 1024 dim nativos, MIT license
 
 Autor: Fillipe Guerra
-Data: 16 de Dezembro de 2025
+Data: 17 de Dezembro de 2025
 """
 
 import os
@@ -58,8 +58,8 @@ LAST_REQUEST_TIME = Gauge(
 # CONFIGURAÇÃO
 # =============================================================================
 
-TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Alibaba-NLP/gte-Qwen2-7B-instruct")
-TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "3584"))
+TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Qwen/Qwen3-Embedding-8B")
+TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
@@ -70,15 +70,15 @@ KEEP_WARM_MINUTES = int(os.environ.get("KEEP_WARM_MINUTES", "30"))
 # =============================================================================
 
 app = FastAPI(
-    title="Alice Embeddings GPU (Dual-Dimension)",
+    title="Alice Embeddings GPU (Enterprise)",
     description=f"""
-Serviço de embeddings enterprise com arquitetura dual-dimension:
-- **Texto (Trading/RAG)**: {TEXT_MODEL_NAME} → {TEXT_EMBEDDING_DIM} dim (halfvec)
-- **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (vector)
+Serviço de embeddings enterprise:
+- **Texto (Trading/RAG)**: {TEXT_MODEL_NAME} → {TEXT_EMBEDDING_DIM} dim (Qdrant)
+- **Imagem**: {IMAGE_MODEL_NAME} → {IMAGE_EMBEDDING_DIM} dim (pgvector)
 
-+38% qualidade retrieval vs arquitetura 1024 unificada.
+Qwen3-Embedding-8B: 8B params, máxima qualidade para trading/RAG.
     """,
-    version="1.0.0"
+    version="2.0.0"
 )
 
 # Modelos (carregados no startup)
@@ -128,7 +128,7 @@ async def load_models():
     global text_model, text_tokenizer, image_model, image_preprocess
     
     logger.info("=" * 60)
-    logger.info("Alice Embeddings GPU - Arquitetura Dual-Dimension")
+    logger.info("Alice Embeddings GPU - Arquitetura Enterprise")
     logger.info("=" * 60)
     logger.info(f"Dispositivo: {DEVICE}")
     logger.info(f"Texto: {TEXT_MODEL_NAME} ({TEXT_EMBEDDING_DIM} dim)")
@@ -209,11 +209,13 @@ async def health_check():
     
     return {
         "status": "healthy",
-        "architecture": "dual-dimension",
+        "architecture": "unified",
         "text_model": TEXT_MODEL_NAME,
         "text_dimensions": TEXT_EMBEDDING_DIM,
+        "text_storage": "qdrant",
         "image_model": IMAGE_MODEL_NAME,
         "image_dimensions": IMAGE_EMBEDDING_DIM,
+        "image_storage": "pgvector",
         "device": DEVICE,
         "gpu": gpu_info
     }
@@ -230,12 +232,14 @@ async def ready_check():
 @app.post("/embed/text", response_model=TextEmbeddingResponse)
 async def embed_text(request: TextEmbeddingRequest):
     """
-    Gera embeddings de texto (3584 dimensões - nativo gte-Qwen2-7B-instruct).
+    Gera embeddings de texto (4096 dimensões - Qwen3-Embedding-8B).
+    
+    Armazenamento: Qdrant (suporta HNSW com 4096+ dim)
     
     Usado para:
-    - Trading/RAG
-    - Busca semântica de documentos
-    - Análise de mercado
+    - Trading BTC Futures
+    - RAG documents
+    - Busca semântica
     """
     if text_model is None:
         raise HTTPException(status_code=503, detail="Modelo de texto não carregado")
@@ -343,31 +347,35 @@ async def metrics():
 async def model_info():
     """Informações detalhadas sobre os modelos."""
     return {
-        "architecture": "dual-dimension",
-        "decision_date": "2025-12-16",
-        "benefit": "+38% retrieval quality for text",
+        "architecture": "unified",
+        "decision_date": "2025-12-17",
+        "benefit": "Qwen3-Embedding-8B: 8B params, máxima qualidade",
         "models": {
             "text": {
                 "name": TEXT_MODEL_NAME,
+                "parameters": "8B",
                 "dimensions": TEXT_EMBEDDING_DIM,
-                "pgvector_type": "halfvec(3584)",
-                "use_case": "Trading, RAG, document search"
+                "storage": "Qdrant",
+                "license": "Apache 2.0",
+                "use_case": "Trading BTC, RAG, document search"
             },
             "image": {
                 "name": IMAGE_MODEL_NAME,
                 "dimensions": IMAGE_EMBEDDING_DIM,
+                "storage": "PostgreSQL pgvector",
                 "pgvector_type": "vector(1024)",
+                "license": "MIT",
                 "use_case": "Image similarity, multimodal RAG"
             }
         },
-        "tables_mapping": {
-            "halfvec_3584": [
-                "documents.embedding",
-                "documentChunks.embedding",
-                "trainingData.embedding",
-                "mediaUploads.textEmbedding"
+        "storage_mapping": {
+            "qdrant_4096": [
+                "text_embeddings collection",
+                "Trading signals",
+                "RAG documents",
+                "Market data"
             ],
-            "vector_1024": [
+            "pgvector_1024": [
                 "generatedImages.clipEmbedding",
                 "mediaUploads.clipEmbedding"
             ]

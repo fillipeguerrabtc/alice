@@ -15,12 +15,16 @@
  * - agents e conversations possuem tenantId para isolamento
  * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
  * 
- * ARQUITETURA DUAL-DIMENSION DE EMBEDDINGS (16/12/2025):
- * - Texto (Trading/RAG): halfvec(3584) - gte-Qwen2-7B-instruct (dimensão nativa)
- * - Imagem: vector(1024) - OpenCLIP ViT-H/14 (dimensão nativa)
+ * ARQUITETURA DE EMBEDDINGS (17/12/2025):
+ * - Texto (Trading/RAG): Qdrant (4096 dim) - Qwen3-Embedding-8B
+ * - Imagem: pgvector vector(1024) - OpenCLIP ViT-H/14
+ * 
+ * NOTA: Campos de embedding de texto neste schema estão DEPRECATED.
+ * Novos embeddings de texto são armazenados em Qdrant.
+ * Campos mantidos para compatibilidade com dados existentes.
  * 
  * Autor: Fillipe Guerra
- * Data: 16 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -42,36 +46,33 @@ import {
 } from "drizzle-orm/pg-core";
 
 // ============================================================================
-// PGVECTOR TYPES (Enterprise-Grade) - Arquitetura Dual-Dimension
+// PGVECTOR TYPES (Enterprise-Grade) - Arquitetura Unificada (17/12/2025)
 // ============================================================================
-// Decisão arquitetural 16/12/2025 - Dimensões otimizadas por caso de uso:
+// 
+// TEXTO (Trading/RAG): Qdrant (4096 dim) - Qwen3-Embedding-8B
+//   - Armazenado em Qdrant (suporta HNSW com 4096+ dim)
+//   - Campos abaixo DEPRECATED - mantidos para compatibilidade
 //
-// TEXTO (Trading/RAG): halfvec(3584) - gte-Qwen2-7B-instruct
-//   - Dimensão nativa do modelo (3584 dim)
-//   - Usado em: documents, documentChunks, trainingData, mediaUploads.textEmbedding
-//   - halfvec usa half-precision (2 bytes/valor) = storage eficiente
-//   - Dentro do limite HNSW (4000 dim máx para halfvec)
-//
-// IMAGEM: vector(1024) - OpenCLIP ViT-H/14
+// IMAGEM: pgvector vector(1024) - OpenCLIP ViT-H/14
 //   - Dimensão nativa do modelo (full precision para qualidade visual)
 //   - Usado em: generatedImages.clipEmbedding, mediaUploads.clipEmbedding
 //
 // Referência: https://github.com/pgvector/pgvector
-// Best Practices 2025: Google/Microsoft usam dimensões consistentes por modalidade
 // ============================================================================
 
-// TEXTO: halfvec(3584) - gte-Qwen2-7B-instruct para Trading/RAG
-// Bug fix: O modelo gte-Qwen2-7B-instruct tem 3584 dimensões nativamente
-// Half-precision (2 bytes/valor) - dentro do limite 4000 HNSW (pgvector)
+// TEXTO: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// Mantido para compatibilidade com dados existentes
+// Usar Qdrant para novos embeddings de texto
 const textVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
-    return 'halfvec(3584)';
+    return 'halfvec(3584)'; // DEPRECATED - manter para migração
   },
   // pgvector driver já faz a conversão automaticamente
 });
 
 // IMAGEM: vector(1024) - OpenCLIP ViT-H/14 para geração/análise de imagens
 // Full-precision (4 bytes/valor) para máxima qualidade visual
+// ATIVO - imagens continuam em pgvector
 const imageVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
     return 'vector(1024)';
@@ -79,8 +80,8 @@ const imageVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// Alias: vector = textVector para embeddings de texto (3584 dim)
-// Arquitetura dual-dimension: textVector(3584) para texto/trading, imageVector(1024) para imagens
+// Alias para compatibilidade
+// NOTA: Novos embeddings de texto devem ir para Qdrant (4096 dim)
 const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
@@ -898,9 +899,9 @@ export const messages = pgTable(
 
 // ============================================================================
 // DOCUMENTOS (Base de Conhecimento para RAG/Trading)
-// ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
-// - +38% qualidade retrieval para análises de trading
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
+// - Campo mantido para compatibilidade com dados existentes
 // ============================================================================
 
 export const documents = pgTable(
@@ -931,8 +932,8 @@ export const documents = pgTable(
 
 // ============================================================================
 // CHUNKS DE DOCUMENTOS (Para RAG/Trading)
-// ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
 // ============================================================================
 
 export const documentChunks = pgTable(
@@ -1202,8 +1203,8 @@ export const usageMetrics = pgTable(
 
 // ============================================================================
 // DADOS DE TREINAMENTO (Auto-evolução/Fine-tuning)
-// ARQUITETURA DUAL-DIMENSION (16/12/2025):
-// - embedding: textVector (halfvec 3584 dim) - gte-Qwen2-7B-instruct
+// ARQUITETURA ENTERPRISE (17/12/2025):
+// - embedding: DEPRECATED - Novos embeddings de texto vão para Qdrant (4096 dim)
 // ============================================================================
 
 export const trainingDataStatusEnum = pgEnum("training_data_status", [
@@ -2238,10 +2239,10 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
-    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud
+    // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
+    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud → pgvector
     clipEmbedding: imageVector("clip_embedding"),
-    // Texto/Transcrição: gte-Qwen2-7B-instruct (3584 dim nativo) - GPU Salad Cloud (+38% qualidade)
+    // Texto: DEPRECATED - Novos embeddings vão para Qdrant (Qwen3-Embedding-8B, 4096 dim)
     textEmbedding: textVector("text_embedding"),
     
     // Transcrição (para áudio/vídeo)

@@ -1,7 +1,7 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.0 - ARQUITETURA DUAL-DIMENSION + TRADING  
+**Versão:** 3.1 - ARQUITETURA ENTERPRISE + TRADING  
 **Data:** 17 de Dezembro de 2025
 
 ## Visão Geral
@@ -10,7 +10,7 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ---
 
-## ARQUITETURA DUAL-DIMENSION + TRADING (17/12/2025)
+## ARQUITETURA ENTERPRISE + TRADING (17/12/2025)
 
 ### Mudança Crítica
 
@@ -18,8 +18,8 @@ A partir de 17/12/2025, a Alice utiliza **arquitetura dual-dimension 100% GPU vi
 
 | Componente | Modelo | Dimensões | Infraestrutura |
 |------------|--------|-----------|----------------|
-| **Embeddings de Texto** | gte-Qwen2-7B-instruct | **3584 dim (nativo)** | GPU Salad Cloud RTX 4090 |
-| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | GPU Salad Cloud RTX 4090 |
+| **Embeddings de Texto** | Qwen3-Embedding-8B | **4096 dim** → Qdrant | GPU Salad Cloud RTX 4090 |
+| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | GPU Salad Cloud RTX 4090 |
 | **Transcrição de Áudio** | Canary-Qwen-2.5B (NeMo) | - | GPU Salad Cloud RTX 4090 |
 | **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Salad Cloud RTX 4090 |
 | **Geração de Imagens** | FLUX.1 Schnell | - | GPU Salad Cloud RTX 4090 |
@@ -78,8 +78,8 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 | Tipo | Processamento | Critério de Aprovação |
 |------|---------------|----------------------|
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
-| **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim) |
-| **Áudios** | Automático | Canary-Qwen-2.5B transcrição + gte-Qwen2 embeddings (3584 dim) |
+| **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector) |
+| **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant) |
 | **Vídeos** | Automático | Frames + transcrição |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
@@ -109,8 +109,8 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados via GPU Salad Cloud (gte-Qwen2-7B-instruct, 3584 dim)
-- Chunks ficam disponíveis IMEDIATAMENTE para busca semântica
+- Embeddings são gerados via GPU Salad Cloud (Qwen3-Embedding-8B, 4096 dim)
+- Chunks ficam disponíveis IMEDIATAMENTE para busca semântica no Qdrant
 
 ### 4. Dashboard Admin (Manual) ✅
 
@@ -157,10 +157,10 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │           PROCESSAMENTO MULTIMODAL (GPU Salad Cloud)        │
-│  • Texto: gte-Qwen2-7B-instruct (3584 dim nativo)           │
-│  • Imagem: OpenCLIP ViT-H/14 (1024 dim nativo)              │
-│  • Áudio: Canary-Qwen-2.5B + gte-Qwen2 (3584 dim)           │
-│  • Vídeo: Frames OpenCLIP + Transcrição gte-Qwen2           │
+│  • Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant            │
+│  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
+│  • Áudio: Canary-1B + Qwen3 (4096 dim) → Qdrant             │
+│  • Vídeo: Frames OpenCLIP + Transcrição Qwen3               │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -238,7 +238,7 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 |---------|-----------------|
 | **Modelo Transcrição** | Canary-Qwen-2.5B (NeMo) |
 | **Velocidade** | 7-9x realtime |
-| **Modelo Embeddings** | gte-Qwen2-7B-instruct (3584 dim) |
+| **Modelo Embeddings** | Qwen3-Embedding-8B (4096 dim) |
 | **Fallback CPU** | **NÃO EXISTE** (Regra 6) |
 
 ### Fluxo de Transcrição
@@ -260,7 +260,7 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │              GERAÇÃO DE EMBEDDING (GPU)                    │
-│  • gte-Qwen2-7B-instruct (3584 dim nativo)                 │
+│  • Qwen3-Embedding-8B (4096 dim) → Qdrant                  │
 │  • EMBEDDINGS_GPU_URL é OBRIGATÓRIO em produção            │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -287,15 +287,15 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 | Tipo | Modelo | Dimensões | Uso |
 |------|--------|-----------|-----|
 | **Imagem → Embedding** | OpenCLIP ViT-H/14 | 1024 dim (nativo) | Busca por imagem |
-| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim (nativo) | Busca texto→imagem |
-| **Texto genérico** | gte-Qwen2-7B-instruct | 3584 dim (nativo) | Documentos, chat, trading |
+| **Texto → Embedding (para buscar imagem)** | OpenCLIP Text Encoder | 1024 dim (pgvector) | Busca texto→imagem |
+| **Texto genérico** | Qwen3-Embedding-8B | 4096 dim (Qdrant) | Documentos, chat, trading |
 
 ### Endpoints GPU
 
 | Endpoint | Modelo | Uso |
 |----------|--------|-----|
-| `/embed/text` | gte-Qwen2-7B-instruct | Texto de documentos, transcrições (3584 dim) |
-| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens (1024 dim) |
+| `/embed/text` | Qwen3-Embedding-8B | Texto de documentos, transcrições (4096 dim → Qdrant) |
+| `/embed/image` | OpenCLIP ViT-H/14 | Embeddings de imagens (1024 dim → pgvector) |
 | `/embed/text-for-image` | OpenCLIP Text Encoder | Busca texto→imagem (1024 dim) |
 | `/embed/batch` | Ambos | Processamento em lote |
 
@@ -371,12 +371,12 @@ Acessíveis em `/dashboard/analytics`:
 
 ## ✅ IMPLEMENTADO CORRETAMENTE
 
-### 1. Arquitetura Dual-Dimension 100% GPU
-- ✅ Embeddings de texto (gte-Qwen2-7B-instruct, **3584 dim nativo**) via GPU Salad RTX 4090
-- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim nativo) via GPU Salad RTX 4090
-- ✅ Transcrição de áudio (Canary-Qwen-2.5B NeMo) via GPU Salad RTX 4090
+### 1. Arquitetura Enterprise 100% GPU
+- ✅ Embeddings de texto (Qwen3-Embedding-8B, **4096 dim**) via GPU Salad RTX 4090 → Qdrant
+- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Salad RTX 4090 → pgvector
+- ✅ Transcrição de áudio (Canary-1B NeMo) via GPU Salad RTX 4090
 - ✅ LLM Trading (Mixtral 8x7B vLLM AWQ) via GPU Salad RTX 4090
-- ✅ Schema PostgreSQL atualizado para `halfvec(3584)` texto + `vector(1024)` imagem
+- ✅ Qdrant para texto (4096 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
 
@@ -494,8 +494,8 @@ Acessíveis em `/dashboard/analytics`:
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*  
 *Versão 3.0 - 17 de Dezembro de 2025*  
-*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*  
-*ARQUITETURA DUAL-DIMENSION: Texto (gte-Qwen2-7B-instruct, 3584 dim) + Imagem (OpenCLIP ViT-H/14, 1024 dim)*  
-*ASR: Canary-Qwen-2.5B via NeMo Toolkit*  
+*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
+*ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14, 1024 dim → pgvector)*
+*ASR: Canary-1B via NeMo Toolkit*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*  
 *Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications, Prometheus metrics*

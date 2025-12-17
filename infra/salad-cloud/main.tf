@@ -3,12 +3,12 @@
  * 
  * Terraform configuration para Container Groups GPU no Salad Cloud:
  * - Mixtral 8x7B (vLLM) - LLM principal para chat e trading
- * - ASR Canary-Qwen-2.5B - Transcrição de áudio
+ * - ASR Canary-1B - Transcrição de áudio
  * - FLUX.1 Schnell - Geração de imagens
- * - Embeddings Dual-Dimension - Qwen3 (texto 4096) + OpenCLIP (imagem 1024)
+ * - Embeddings: Qwen3-Embedding-8B (texto 4096 → Qdrant) + OpenCLIP (imagem 1024 → pgvector)
  * 
  * Autor: Fillipe Guerra
- * Data: 16 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -330,14 +330,14 @@ resource "saladcloud_container_group" "flux_image" {
 }
 
 # ============================================================================
-# CONTAINER GROUP: EMBEDDINGS (Qwen3 + OpenCLIP) - Dual-Dimension
+# CONTAINER GROUP: EMBEDDINGS (Qwen3-Embedding-8B + OpenCLIP) - Enterprise
 # ============================================================================
 
 resource "saladcloud_container_group" "embeddings_gpu" {
   name             = "alice-embeddings-gpu-${var.environment}"
   organization_id  = var.salad_organization_id
   project_id       = var.salad_project_id
-  display_name     = "Alice Embeddings GPU Dual-Dimension (${var.environment})"
+  display_name     = "Alice Embeddings GPU Enterprise (${var.environment})"
 
   container {
     image = var.embeddings_image
@@ -349,11 +349,13 @@ resource "saladcloud_container_group" "embeddings_gpu" {
     }
 
     environment_variables = {
-      # Text Embeddings (3584 dim) - dimensão nativa do gte-Qwen2-7B-instruct
-      TEXT_MODEL_NAME         = "Alibaba-NLP/gte-Qwen2-7B-instruct"
-      TEXT_EMBEDDING_DIM      = "3584"
+      # Text Embeddings (4096 dim) - Qwen3-Embedding-8B (8B params, máxima qualidade)
+      # Armazenado em Qdrant (suporta HNSW com 4096+ dim)
+      TEXT_MODEL_NAME         = "Qwen/Qwen3-Embedding-8B"
+      TEXT_EMBEDDING_DIM      = "4096"
       
-      # Image Embeddings (1024 dim)
+      # Image Embeddings (1024 dim) - OpenCLIP ViT-H/14
+      # Armazenado em pgvector (suporta HNSW com 1024 dim)
       IMAGE_MODEL_NAME        = "laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
       IMAGE_EMBEDDING_DIM     = "1024"
       
@@ -389,7 +391,7 @@ resource "saladcloud_container_group" "embeddings_gpu" {
       path = "/health"
       port = 8000
     }
-    initial_delay_seconds = 90
+    initial_delay_seconds = 120  # Qwen3-8B demora mais a carregar
     period_seconds        = 30
     timeout_seconds       = 10
     failure_threshold     = 3
@@ -400,7 +402,7 @@ resource "saladcloud_container_group" "embeddings_gpu" {
       path = "/ready"
       port = 8000
     }
-    initial_delay_seconds = 90
+    initial_delay_seconds = 120
     period_seconds        = 10
     timeout_seconds       = 5
     failure_threshold     = 3
@@ -409,6 +411,6 @@ resource "saladcloud_container_group" "embeddings_gpu" {
   labels = merge(local.common_labels, {
     service = "embeddings-gpu"
     gpu     = "rtx4090"
-    architecture = "dual-dimension"
+    architecture = "unified"
   })
 }

@@ -123,9 +123,8 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 11 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
 | 12 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
 | 13 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 14 | Embeddings GPU | `embeddings-gpu` | 8080 | Embeddings Dual-Dimension: Texto (gte-Qwen2-7B-instruct, 3584 dim) + Imagem (OpenCLIP ViT-H/14, 1024 dim) via Salad Cloud |
-| 15 | Trading Embeddings | `trading-embeddings-gpu` | 8001 | Embeddings Trading: Qwen3-Embedding-8B (8192 dim) via Salad Cloud → Qdrant |
-| 16 | Qdrant | `alice-qdrant` | 6333 | Banco vetorial para Trading (8192 dim, HNSW index) |
+| 14 | Embeddings GPU | `embeddings-gpu` | 8080 | Embeddings Enterprise: Texto (Qwen3-Embedding-8B, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14, 1024 dim → pgvector) via Salad Cloud |
+| 15 | Qdrant | `alice-qdrant` | 6333 | Banco vetorial para texto (4096 dim, HNSW index) |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
 
@@ -435,8 +434,8 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
-*ARQUITETURA TRI-DIMENSION: Trading 8192 dim Qwen3-Embedding-8B (Qdrant) | Texto/RAG 3584 dim (pgvector) | Imagem 1024 dim (pgvector)*
-*Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning + Qdrant 8192 dim*
+*ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
+*Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *Salad Cloud: LLM inference, image generation, fine-tuning, embeddings-gpu, trading-embeddings-gpu, whisper-gpu*
 *Backup API: disk-usage, cleanup, delete (Retenção: 15d Full, 7d Incremental, 30d Archive)*
