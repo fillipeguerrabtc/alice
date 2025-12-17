@@ -377,9 +377,10 @@ export const RAG_CHUNK_CONFIG = {
  */
 export const SALAD_CONFIG = {
   // Container Group URLs (geradas pelo deploy-salad-gpu.yml via Terraform)
+  // IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
   mixtralUrl: process.env.SALAD_MIXTRAL_URL || '',
   fluxUrl: process.env.SALAD_FLUX_URL || '',
-  asrUrl: process.env.SALAD_ASR_URL || '',
+  whisperUrl: process.env.SALAD_WHISPER_URL || '',
   embeddingsUrl: process.env.EMBEDDINGS_GPU_URL || '',
   // Legacy (mantido para compatibilidade com código existente)
   apiUrl: process.env.SALAD_API_URL || 'https://api.salad.com/api/public',

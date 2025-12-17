@@ -81,9 +81,10 @@ output "environment_variables" {
   description = "Variáveis de ambiente para Hetzner (copiar para .env)"
   value = <<-EOT
     # Salad Cloud Endpoints (gerado por Terraform)
+    # IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
     SALAD_MIXTRAL_URL=${saladcloud_container_group.mixtral_llm.networking[0].dns}
-    SALAD_ASR_URL=${saladcloud_container_group.asr_canary.networking[0].dns}
+    SALAD_WHISPER_URL=${saladcloud_container_group.asr_canary.networking[0].dns}
     SALAD_FLUX_URL=${saladcloud_container_group.flux_image.networking[0].dns}
-    SALAD_EMBEDDINGS_URL=${saladcloud_container_group.embeddings_gpu.networking[0].dns}
+    EMBEDDINGS_GPU_URL=${saladcloud_container_group.embeddings_gpu.networking[0].dns}
   EOT
 }

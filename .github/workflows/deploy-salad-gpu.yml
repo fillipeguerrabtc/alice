@@ -324,10 +324,11 @@ jobs:
           echo "Gerando variáveis de ambiente para Hetzner..."
           cat > /tmp/salad_endpoints.env << EOF
           # Salad Cloud Endpoints (gerado por GitHub Actions)
+          # IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
           SALAD_MIXTRAL_URL=${MIXTRAL_ENDPOINT}
-          SALAD_ASR_URL=${ASR_ENDPOINT}
+          SALAD_WHISPER_URL=${ASR_ENDPOINT}
           SALAD_FLUX_URL=${FLUX_ENDPOINT}
-          SALAD_EMBEDDINGS_URL=${EMBEDDINGS_ENDPOINT}
+          EMBEDDINGS_GPU_URL=${EMBEDDINGS_ENDPOINT}
           EOF
           cat /tmp/salad_endpoints.env
 
@@ -354,11 +355,11 @@ jobs:
             
             # Bug fix: Remover APENAS as variáveis de endpoint Salad (não as credentials!)
             # Mantém: SALAD_API_KEY, SALAD_ORGANIZATION_ID, SALAD_TTS_IMAGE, etc.
-            # Remove: SALAD_MIXTRAL_URL, SALAD_ASR_URL, SALAD_FLUX_URL, SALAD_EMBEDDINGS_URL
+            # Remove: SALAD_MIXTRAL_URL, SALAD_WHISPER_URL, SALAD_FLUX_URL, EMBEDDINGS_GPU_URL
             grep -v "^SALAD_MIXTRAL_URL=" .env.prod | \
-            grep -v "^SALAD_ASR_URL=" | \
+            grep -v "^SALAD_WHISPER_URL=" | \
             grep -v "^SALAD_FLUX_URL=" | \
-            grep -v "^SALAD_EMBEDDINGS_URL=" > /tmp/.env.prod.tmp || true
+            grep -v "^EMBEDDINGS_GPU_URL=" > /tmp/.env.prod.tmp || true
             
             # Adicionar novas variáveis de endpoint
             cat /tmp/.env.prod.tmp /opt/alice/salad_endpoints.env > .env.prod
