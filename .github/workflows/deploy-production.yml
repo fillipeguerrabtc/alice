@@ -1708,7 +1708,7 @@ jobs:
             printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${{ secrets.OAUTH_GITHUB_CLIENT_ID }}"
             printf 'OAUTH_GITHUB_CLIENT_SECRET=%s\n' "${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}"
             printf '\n'
-            printf '# Salad Cloud (LLM)\n'
+            printf '# Salad Cloud (LLM + GPU Embeddings)\n'
             printf 'SALAD_API_KEY=%s\n' "${{ secrets.SALAD_API_KEY }}"
             printf 'SALAD_ORGANIZATION_ID=%s\n' "${{ secrets.SALAD_ORGANIZATION_ID }}"
             printf 'SALAD_API_URL=%s\n' "${SALAD_API_URL_VAR}"
@@ -1718,12 +1718,15 @@ jobs:
             printf 'SALAD_LIP_SYNC_IMAGE=%s\n' "${{ secrets.SALAD_LIP_SYNC_IMAGE }}"
             printf 'SALAD_LONG_VIDEO_IMAGE=%s\n' "${{ secrets.SALAD_LONG_VIDEO_IMAGE }}"
             # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
-            # Secret será criado após build da imagem whisper-gpu via workflow build-media-images
             printf 'SALAD_WHISPER_URL=%s\n' "${{ secrets.SALAD_WHISPER_URL }}"
-            # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (BGE-M3 + OpenCLIP ViT-H/14)
-            # Secret será criado após build da imagem embeddings-gpu via workflow build-media-images
+            # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim)
             printf 'EMBEDDINGS_GPU_URL=%s\n' "${{ secrets.EMBEDDINGS_GPU_URL }}"
             printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
+            printf 'HUGGINGFACE_TOKEN=%s\n' "${{ secrets.HUGGINGFACE_TOKEN }}"
+            printf '\n'
+            printf '# Qdrant - Banco Vetorial para Texto (4096 dim Qwen3-Embedding-8B)\n'
+            printf 'QDRANT_API_KEY=%s\n' "${{ secrets.QDRANT_API_KEY }}"
+            printf 'QDRANT_URL=http://alice-qdrant:6333\n'
             printf '\n'
             printf '# RAG Service (URLs públicas)\n'
             printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
@@ -1763,6 +1766,13 @@ jobs:
             printf 'WISE_PROFILE_ID=%s\n' "${{ secrets.WISE_PROFILE_ID }}"
             printf 'WISE_WEBHOOK_SECRET=%s\n' "${WISE_WEBHOOK_SECRET}"
             printf 'WISE_SANDBOX=%s\n' "${WISE_SANDBOX}"
+            printf '\n'
+            printf '# KuCoin Futures (Trading BTC Perpetuals)\n'
+            printf 'KUCOIN_API_KEY=%s\n' "${{ secrets.KUCOIN_PRO_API_KEY }}"
+            printf 'KUCOIN_API_SECRET=%s\n' "${{ secrets.KUCOIN_PRO_API_SECRET }}"
+            printf 'KUCOIN_API_PASSPHRASE=%s\n' "${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}"
+            printf 'KUCOIN_FUTURES_BASE_URL=%s\n' "${{ secrets.KUCOIN_PRO_BASE_URL }}"
+            printf 'KUCOIN_SANDBOX_MODE=false\n'
             printf '\n'
             printf '# ERPNext Database\n'
             printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'
