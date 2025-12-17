@@ -46,11 +46,11 @@ import {
 // ============================================================================
 // Decisão arquitetural 16/12/2025 - Dimensões otimizadas por caso de uso:
 //
-// TEXTO (Trading/RAG): halfvec(4096) - Qwen3-Embedding-8B
+// TEXTO (Trading/RAG): halfvec(4000) - Qwen3-Embedding-8B
 //   - +38% qualidade retrieval vs 1024 dimensões
 //   - Usado em: documents, documentChunks, trainingData, mediaUploads.textEmbedding
 //   - halfvec usa half-precision (2 bytes/valor) = storage eficiente
-//   - Limite HNSW: até 4000 dim (halfvec suporta até 4096)
+//   - Limite HNSW: máximo 4000 dim para halfvec (pgvector constraint)
 //
 // IMAGEM: vector(1024) - OpenCLIP ViT-H/14
 //   - Dimensão nativa do modelo (full precision para qualidade visual)
@@ -60,11 +60,11 @@ import {
 // Best Practices 2025: Google/Microsoft usam dimensões consistentes por modalidade
 // ============================================================================
 
-// TEXTO: halfvec(4096) - Qwen3-Embedding-8B para Trading/RAG
-// Half-precision (2 bytes/valor) permite indexar até 4000 dim com HNSW
+// TEXTO: halfvec(4000) - Qwen3-Embedding-8B para Trading/RAG
+// Half-precision (2 bytes/valor) - máximo 4000 dim para índices HNSW (pgvector constraint)
 const textVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
-    return 'halfvec(4096)';
+    return 'halfvec(4000)';
   },
   // pgvector driver já faz a conversão automaticamente
 });
@@ -78,8 +78,8 @@ const imageVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// Alias: vector = textVector para embeddings de texto (4096 dim)
-// Arquitetura dual-dimension: textVector(4096) para texto/trading, imageVector(1024) para imagens
+// Alias: vector = textVector para embeddings de texto (4000 dim)
+// Arquitetura dual-dimension: textVector(4000) para texto/trading, imageVector(1024) para imagens
 const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";

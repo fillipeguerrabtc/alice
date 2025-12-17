@@ -2,7 +2,7 @@
 # Alice Enterprise Platform - Embeddings GPU (Dual-Dimension)
 # =============================================================================
 # Dockerfile para embeddings com arquitetura dual-dimension:
-# - Texto: Qwen3-Embedding-8B (4096 dim) - halfvec para Trading/RAG
+# - Texto: Qwen3-Embedding-8B (4000 dim) - halfvec para Trading/RAG (máx HNSW)
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim) - vector para análise visual
 # 
 # GPU: RTX 4090 (24GB VRAM)
@@ -14,7 +14,7 @@
 FROM nvidia/cuda:12.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Embeddings GPU Dual-Dimension (Qwen3 4096 + OpenCLIP 1024)"
+LABEL description="Embeddings GPU Dual-Dimension (Qwen3 4000 + OpenCLIP 1024)"
 LABEL version="1.0.0"
 LABEL architecture="dual-dimension"
 
@@ -57,7 +57,7 @@ USER embeddings
 
 # Configuração dual-dimension
 ENV TEXT_MODEL_NAME="Alibaba-NLP/gte-Qwen2-7B-instruct"
-ENV TEXT_EMBEDDING_DIM="4096"
+ENV TEXT_EMBEDDING_DIM="4000"
 ENV IMAGE_MODEL_NAME="laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 ENV IMAGE_EMBEDDING_DIM="1024"
 ENV DEVICE="cuda"

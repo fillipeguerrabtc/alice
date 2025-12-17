@@ -2,11 +2,11 @@
 Alice Enterprise Platform - Embeddings GPU Service (Dual-Dimension)
 ===================================================================
 Serviço de embeddings com arquitetura dual-dimension:
-- Texto (Trading/RAG): Qwen3-Embedding-8B → 4096 dimensões (halfvec)
+- Texto (Trading/RAG): Qwen3-Embedding-8B → 4000 dimensões (halfvec, máx HNSW)
 - Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (vector)
 
 Decisão arquitetural: 16/12/2025
-+38% qualidade retrieval para texto com 4096 dim vs 1024 dim
++38% qualidade retrieval para texto com 4000 dim vs 1024 dim
 
 Autor: Fillipe Guerra
 Data: 16 de Dezembro de 2025
@@ -59,7 +59,7 @@ LAST_REQUEST_TIME = Gauge(
 # =============================================================================
 
 TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Alibaba-NLP/gte-Qwen2-7B-instruct")
-TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
+TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4000"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
@@ -230,7 +230,7 @@ async def ready_check():
 @app.post("/embed/text", response_model=TextEmbeddingResponse)
 async def embed_text(request: TextEmbeddingRequest):
     """
-    Gera embeddings de texto (4096 dimensões).
+    Gera embeddings de texto (4000 dimensões - máx HNSW pgvector).
     
     Usado para:
     - Trading/RAG
@@ -350,7 +350,7 @@ async def model_info():
             "text": {
                 "name": TEXT_MODEL_NAME,
                 "dimensions": TEXT_EMBEDDING_DIM,
-                "pgvector_type": "halfvec(4096)",
+                "pgvector_type": "halfvec(4000)",
                 "use_case": "Trading, RAG, document search"
             },
             "image": {
@@ -361,7 +361,7 @@ async def model_info():
             }
         },
         "tables_mapping": {
-            "halfvec_4096": [
+            "halfvec_4000": [
                 "documents.embedding",
                 "documentChunks.embedding",
                 "trainingData.embedding",
