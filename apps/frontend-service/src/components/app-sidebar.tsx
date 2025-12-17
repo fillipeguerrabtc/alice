@@ -17,6 +17,7 @@ import {
   FolderKanban,
   Shield,
   Boxes,
+  LineChart,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -52,6 +53,7 @@ const operationsItems = [
 
 const financeItems = [
   { title: 'Wise Pagamentos', url: '/wise', icon: Wallet },
+  { title: 'Trading BTC', url: '/trading', icon: LineChart },
 ];
 
 const adminExternalLinks = [

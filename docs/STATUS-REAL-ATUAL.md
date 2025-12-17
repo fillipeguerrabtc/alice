@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.91 - Bug Fix NaN Bypass em validação de risco (17/12/2025)
+> **Versão:** 3.92 - Página Trading BTC Futures completa (17/12/2025)
 
 ---
 
@@ -268,7 +268,7 @@
 
 ---
 
-## 📄 PÁGINAS DO FRONTEND (16 páginas)
+## 📄 PÁGINAS DO FRONTEND (17 páginas)
 
 | Página | Arquivo | Funcionalidade |
 |--------|---------|----------------|
@@ -282,6 +282,7 @@
 | **Training** | `Training.tsx` | **4 tabs: Dados + Jobs + Bulk Import + Upload Multimodal (15/12/2025)** |
 | Integrations | `Integrations.tsx` | Stripe, Wise, Twilio |
 | WisePayments | `WisePayments.tsx` | Transferências Wise |
+| **Trading** | `Trading.tsx` | **Trading BTC Futures KuCoin - 5 tabs: Overview + Orders + Positions + Signals + History (17/12/2025)** |
 | ImageGallery | `ImageGalleryPage.tsx` | Galeria FLUX.1 |
 | TakeoverPanel | `TakeoverPanel.tsx` | Takeover/Handover |
 | **BackupAdmin** | `BackupAdmin.tsx` | **Gestão backups enterprise** |

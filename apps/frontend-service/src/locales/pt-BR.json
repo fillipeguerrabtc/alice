@@ -1093,5 +1093,194 @@
     "useExternalLinks": "Use os links de acesso rápido para verificar os serviços diretamente",
     "apiUnavailable": "API de Observabilidade Indisponível",
     "apiUnavailableDesc": "Os dados de status não estão disponíveis. Use os links de acesso rápido para acessar as ferramentas diretamente."
+  },
+  "trading": {
+    "title": "Trading BTC Futures",
+    "subtitle": "Trading automatizado de BTC Perpetuals na KuCoin via Alice IA",
+    "notConfigured": "KuCoin não configurada",
+    "notConfiguredDesc": "Configure as credenciais da API KuCoin para ativar o trading. Adicione os secrets no GitHub:",
+    "status": {
+      "enabled": "Trading Ativo",
+      "disabled": "Trading Desativado",
+      "autoExecute": "Auto-execução"
+    },
+    "alerts": {
+      "tradingDisabled": "Trading desativado",
+      "tradingDisabledDesc": "O trading automático está desativado. Ative nas configurações de risco para permitir operações.",
+      "enableNow": "Ativar agora"
+    },
+    "market": {
+      "lastPrice": "Último Preço",
+      "live": "Tempo Real",
+      "high24h": "Máxima 24h",
+      "low24h": "Mínima 24h",
+      "volume24h": "Volume 24h"
+    },
+    "account": {
+      "title": "Conta KuCoin",
+      "subtitle": "Saldo e margens da sua conta de futuros",
+      "availableBalance": "Saldo Disponível",
+      "unrealisedPnl": "PnL Não Realizado",
+      "allPositions": "Todas as posições",
+      "equity": "Equity Total",
+      "marginBalance": "Saldo de Margem",
+      "positionMargin": "Margem de Posição",
+      "orderMargin": "Margem de Ordem",
+      "frozenFunds": "Fundos Congelados"
+    },
+    "stats": {
+      "activeSignals": "Sinais Ativos",
+      "pendingOrders": "Ordens Pendentes",
+      "openPositions": "Posições Abertas",
+      "fundingRate": "Taxa de Funding",
+      "maxLeverage": "Alavancagem Máx.",
+      "circuitBreaker": "Circuit Breaker"
+    },
+    "tabs": {
+      "overview": "Visão Geral",
+      "orders": "Ordens",
+      "positions": "Posições",
+      "signals": "Sinais IA",
+      "history": "Histórico"
+    },
+    "quickTrade": {
+      "title": "Trade Rápido",
+      "subtitle": "Execute ordens rapidamente",
+      "buy": "Comprar (Long)",
+      "sell": "Vender (Short)",
+      "bestBid": "Melhor Compra",
+      "bestAsk": "Melhor Venda",
+      "spread": "Spread"
+    },
+    "orders": {
+      "recent": "Ordens Recentes",
+      "subtitle": "Gerencie suas ordens na KuCoin",
+      "new": "Nova Ordem",
+      "sync": "Sincronizar",
+      "noOrders": "Nenhuma ordem encontrada",
+      "buy": "Comprar",
+      "sell": "Vender",
+      "buying": "Comprando",
+      "selling": "Vendendo",
+      "contracts": "contrato(s)",
+      "table": {
+        "id": "ID",
+        "symbol": "Par",
+        "side": "Lado",
+        "type": "Tipo",
+        "size": "Qtd.",
+        "price": "Preço",
+        "filled": "Preenchido",
+        "status": "Status",
+        "created": "Criada"
+      },
+      "newDialog": {
+        "title": "Nova Ordem",
+        "subtitle": "Criar ordem manual na KuCoin Futures"
+      },
+      "form": {
+        "orderType": "Tipo de Ordem",
+        "market": "Mercado",
+        "limit": "Limite",
+        "size": "Quantidade (contratos)",
+        "sizeHint": "1 contrato = 0.001 BTC para XBTUSDTM",
+        "price": "Preço",
+        "leverage": "Alavancagem",
+        "stopLoss": "Stop Loss",
+        "takeProfit": "Take Profit",
+        "optional": "Opcional",
+        "summary": "Resumo da Ordem",
+        "at": "a",
+        "marketPrice": "preço de mercado",
+        "withLeverage": "com alavancagem",
+        "submit": "Executar Ordem"
+      }
+    },
+    "positions": {
+      "subtitle": "Monitore suas posições abertas em tempo real",
+      "noPositions": "Nenhuma posição aberta",
+      "contracts": "contratos",
+      "entryPrice": "Preço de Entrada",
+      "markPrice": "Preço Mark",
+      "liquidationPrice": "Preço de Liquidação",
+      "margin": "Margem"
+    },
+    "signals": {
+      "recent": "Sinais Recentes",
+      "subtitle": "Sinais gerados pelo Mixtral 8x7B para trading autônomo",
+      "new": "Novo Sinal",
+      "noSignals": "Nenhum sinal ativo",
+      "confidence": "Confiança",
+      "noReasoning": "Sem justificativa",
+      "table": {
+        "type": "Tipo",
+        "symbol": "Par",
+        "confidence": "Confiança",
+        "source": "Fonte",
+        "reasoning": "Justificativa",
+        "created": "Criado"
+      },
+      "newDialog": {
+        "title": "Novo Sinal Manual",
+        "subtitle": "Criar sinal de trading manualmente (simulando análise IA)"
+      },
+      "form": {
+        "type": "Tipo de Sinal",
+        "confidence": "Nível de Confiança",
+        "reasoning": "Justificativa",
+        "reasoningPlaceholder": "Ex: RSI oversold, suporte forte em 42k...",
+        "reasoningHint": "Opcional. Descreva a análise que levou ao sinal.",
+        "submit": "Criar Sinal"
+      }
+    },
+    "history": {
+      "title": "Histórico de Operações",
+      "subtitle": "Todas as operações executadas com auditoria completa",
+      "table": {
+        "date": "Data",
+        "type": "Tipo",
+        "symbol": "Par",
+        "side": "Lado",
+        "size": "Qtd.",
+        "price": "Preço",
+        "status": "Status"
+      }
+    },
+    "riskConfig": {
+      "title": "Configurações de Risco",
+      "subtitle": "Configure limites e parâmetros de gestão de risco",
+      "controls": "Controles de Trading",
+      "tradingEnabled": "Trading Habilitado",
+      "tradingEnabledDesc": "Permite que ordens sejam enviadas à KuCoin",
+      "autoExecute": "Auto-execução de Sinais",
+      "autoExecuteDesc": "Executa ordens automaticamente quando a Alice gera sinais de alta confiança",
+      "limits": "Limites de Risco",
+      "maxPositionSize": "Tamanho Máx. Posição",
+      "maxDailyLoss": "Perda Diária Máxima",
+      "maxOrderValue": "Valor Máx. por Ordem",
+      "maxLeverage": "Alavancagem Máxima",
+      "maxOpenPositions": "Máx. Posições Abertas",
+      "minConfidence": "Confiança Mínima para Auto-execução",
+      "defaults": "Configurações Padrão",
+      "defaultLeverage": "Alavancagem Padrão"
+    },
+    "success": {
+      "orderCreated": "Ordem criada",
+      "orderCreatedDesc": "A ordem foi enviada para a KuCoin com sucesso",
+      "orderCancelled": "Ordem cancelada",
+      "ordersSynced": "Ordens sincronizadas",
+      "ordersSyncedDesc": "{{synced}} atualizadas, {{errors}} erros",
+      "riskConfigUpdated": "Configurações de risco atualizadas",
+      "signalCreated": "Sinal criado",
+      "signalDeactivated": "Sinal desativado"
+    },
+    "errors": {
+      "orderFailed": "Erro ao criar ordem",
+      "cancelFailed": "Erro ao cancelar ordem",
+      "syncFailed": "Erro ao sincronizar ordens",
+      "riskConfigFailed": "Erro ao atualizar configurações",
+      "signalFailed": "Erro ao criar sinal",
+      "signalDeactivateFailed": "Erro ao desativar sinal"
+    }
   }
 }
