@@ -58,6 +58,9 @@ import {
   Rocket,
   Brain,
   LineChart,
+  Layers,
+  Hand,
+  CandlestickChart,
 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -101,6 +104,8 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import { CandleChart, OrderBookViz, HandoverPanel } from '@/components/trading';
+import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry } from '@/components/trading';
 
 // ============================================================================
 // TIPOS (TypeScript strict - Regra 8)
@@ -403,6 +408,8 @@ export default function Trading() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [selectedSymbol, setSelectedSymbol] = useState('XBTUSDTM');
+  const [selectedInterval, setSelectedInterval] = useState('5');
+  const [controlMode, setControlMode] = useState<TradingControlMode>('alice');
   const [showNewOrderDialog, setShowNewOrderDialog] = useState(false);
   const [showRiskConfigDialog, setShowRiskConfigDialog] = useState(false);
   const [showNewSignalDialog, setShowNewSignalDialog] = useState(false);
@@ -481,6 +488,38 @@ export default function Trading() {
 
   const { data: riskConfigData, refetch: refetchRiskConfig } = useQuery<{ success: boolean; data: RiskConfig | null }>({
     queryKey: ['/api/integrations/trading/risk-config'],
+  });
+
+  // Query para Klines (gráfico de candlesticks)
+  const { data: klinesData, isLoading: isLoadingKlines, refetch: refetchKlines } = useQuery<{ success: boolean; data: KlineData[] }>({
+    queryKey: ['/api/integrations/trading/klines', selectedSymbol, selectedInterval],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/integrations/trading/klines/${selectedSymbol}?granularity=${selectedInterval}`);
+      return res.json();
+    },
+    refetchInterval: 60000, // Atualizar a cada 1 minuto
+    enabled: statusData?.data?.isConfigured,
+  });
+
+  // Query para Order Book
+  const { data: orderBookResponse, isLoading: isLoadingOrderBook } = useQuery<{ success: boolean; data: OrderBookData }>({
+    queryKey: ['/api/integrations/trading/orderbook', selectedSymbol],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/integrations/trading/orderbook/${selectedSymbol}`);
+      return res.json();
+    },
+    refetchInterval: 5000, // Atualizar a cada 5 segundos
+    enabled: statusData?.data?.isConfigured,
+  });
+
+  // Query para histórico de controle (handover/takeover)
+  const { data: controlHistoryData, isLoading: isLoadingControlHistory, refetch: refetchControlHistory } = useQuery<{ success: boolean; data: ControlHistoryEntry[] }>({
+    queryKey: ['/api/integrations/trading/control-history'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', '/api/integrations/trading/control-history');
+      return res.json();
+    },
+    enabled: statusData?.data?.isConfigured,
   });
 
   // Atualizar form de risco quando dados carregarem
@@ -686,6 +725,62 @@ export default function Trading() {
     refetchSignals();
     refetchOrders();
     refetchRiskConfig();
+    refetchKlines();
+    refetchControlHistory();
+  };
+
+  // Handler para mudança de intervalo do gráfico
+  const handleIntervalChange = (newInterval: string) => {
+    setSelectedInterval(newInterval);
+  };
+
+  // Handler para mudança de modo de controle (handover/takeover)
+  const handleModeChange = async (mode: TradingControlMode, reason: string) => {
+    try {
+      const res = await apiRequest('POST', '/api/integrations/trading/control', {
+        mode,
+        reason,
+        source: 'dashboard',
+      });
+      const data = await res.json();
+      if (data.success) {
+        setControlMode(mode);
+        refetchControlHistory();
+        toast({
+          title: t('trading.handover.modeChanged'),
+        });
+      }
+    } catch (error) {
+      toast({
+        title: t('trading.handover.modeChangeError'),
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  };
+
+  // Handler para toggle de trading
+  const handleTradingToggle = async (enabled: boolean) => {
+    try {
+      const res = await apiRequest('PUT', '/api/integrations/trading/risk-config', {
+        tradingEnabled: enabled,
+      });
+      const data = await res.json();
+      if (data.success) {
+        refetchRiskConfig();
+        toast({
+          title: enabled ? t('trading.handover.tradingEnabled') : t('trading.handover.tradingDisabled'),
+        });
+      }
+    } catch (error) {
+      toast({
+        title: t('trading.handover.tradingToggleError'),
+        description: error instanceof Error ? error.message : 'Erro desconhecido',
+        variant: 'destructive',
+      });
+      throw error;
+    }
   };
 
   // ============================================================================
@@ -743,6 +838,9 @@ export default function Trading() {
   const signals = signalsData?.data || [];
   const orders = ordersData?.data || [];
   const riskConfig = riskConfigData?.data;
+  const klines = klinesData?.data || [];
+  const orderBookData = orderBookResponse?.data || null;
+  const controlHistory = controlHistoryData?.data || [];
 
   const currentPrice = market?.contract?.lastTradePrice || 0;
   const priceChange = market?.contract?.priceChg || 0;
@@ -963,10 +1061,18 @@ export default function Trading() {
       {/* Main Tabs */}
       <motion.div variants={itemVariants}>
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-5">
+          <TabsList className="grid w-full grid-cols-8">
             <TabsTrigger value="overview" data-testid="tab-overview">
               <BarChart3 className="h-4 w-4 mr-2" />
               {t('trading.tabs.overview')}
+            </TabsTrigger>
+            <TabsTrigger value="chart" data-testid="tab-chart">
+              <CandlestickChart className="h-4 w-4 mr-2" />
+              {t('trading.tabs.chart')}
+            </TabsTrigger>
+            <TabsTrigger value="orderbook" data-testid="tab-orderbook">
+              <Layers className="h-4 w-4 mr-2" />
+              {t('trading.tabs.orderbook')}
             </TabsTrigger>
             <TabsTrigger value="orders" data-testid="tab-orders">
               <Activity className="h-4 w-4 mr-2" />
@@ -983,6 +1089,10 @@ export default function Trading() {
             <TabsTrigger value="history" data-testid="tab-history">
               <History className="h-4 w-4 mr-2" />
               {t('trading.tabs.history')}
+            </TabsTrigger>
+            <TabsTrigger value="control" data-testid="tab-control">
+              <Hand className="h-4 w-4 mr-2" />
+              {t('trading.tabs.control')}
             </TabsTrigger>
           </TabsList>
 
@@ -1575,6 +1685,46 @@ export default function Trading() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Chart Tab - Gráfico de Candlesticks */}
+          <TabsContent value="chart" className="space-y-4 mt-6">
+            <CandleChart
+              data={klines}
+              symbol={selectedSymbol}
+              interval={selectedInterval}
+              currentPrice={currentPrice}
+              isLoading={isLoadingKlines}
+              onIntervalChange={handleIntervalChange}
+              onRefresh={() => refetchKlines()}
+              height={500}
+              showVolume={true}
+            />
+          </TabsContent>
+
+          {/* Order Book Tab - Profundidade de Mercado */}
+          <TabsContent value="orderbook" className="space-y-4 mt-6">
+            <OrderBookViz
+              data={orderBookData}
+              symbol={selectedSymbol}
+              currentPrice={currentPrice}
+              isLoading={isLoadingOrderBook}
+              depth={20}
+              precision={2}
+            />
+          </TabsContent>
+
+          {/* Control Tab - Handover/Takeover */}
+          <TabsContent value="control" className="space-y-4 mt-6">
+            <HandoverPanel
+              currentMode={controlMode}
+              tradingEnabled={riskConfig?.tradingEnabled || false}
+              circuitBreakerOpen={status.circuitBreaker.state === 'open'}
+              history={controlHistory}
+              isLoading={isLoadingControlHistory}
+              onModeChange={handleModeChange}
+              onTradingToggle={handleTradingToggle}
+            />
           </TabsContent>
         </Tabs>
       </motion.div>

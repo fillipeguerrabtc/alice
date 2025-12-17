@@ -1138,10 +1138,13 @@
     },
     "tabs": {
       "overview": "Visão Geral",
+      "chart": "Gráfico",
+      "orderbook": "Order Book",
       "orders": "Ordens",
       "positions": "Posições",
       "signals": "Sinais IA",
-      "history": "Histórico"
+      "history": "Histórico",
+      "control": "Controle"
     },
     "quickTrade": {
       "title": "Trade Rápido",
@@ -1281,6 +1284,68 @@
       "riskConfigFailed": "Erro ao atualizar configurações",
       "signalFailed": "Erro ao criar sinal",
       "signalDeactivateFailed": "Erro ao desativar sinal"
+    },
+    "chart": {
+      "title": "Gráfico de Preços",
+      "noData": "Sem dados de klines disponíveis",
+      "bullish": "Alta",
+      "bearish": "Baixa",
+      "volume": "Volume",
+      "loading": "Carregando gráfico...",
+      "timeframes": {
+        "1m": "1 minuto",
+        "3m": "3 minutos",
+        "5m": "5 minutos",
+        "15m": "15 minutos",
+        "1h": "1 hora",
+        "4h": "4 horas",
+        "1d": "1 dia"
+      }
+    },
+    "orderbook": {
+      "title": "Order Book",
+      "noData": "Sem dados de order book disponíveis",
+      "price": "Preço",
+      "size": "Qtd.",
+      "total": "Total",
+      "spread": "Spread",
+      "bidTotal": "Total Compras",
+      "askTotal": "Total Vendas",
+      "depth": "Profundidade"
+    },
+    "handover": {
+      "title": "Controle de Trading",
+      "description": "Alterne entre controle manual e automático (Alice IA)",
+      "mode": {
+        "alice": "Alice (IA)",
+        "manual": "Manual"
+      },
+      "modeDescription": {
+        "alice": "Trading autônomo guiado por IA",
+        "manual": "Você controla todas as operações"
+      },
+      "takeover": "Assumir Controle",
+      "handback": "Devolver para Alice",
+      "confirmTakeover": "Assumir Controle Manual",
+      "confirmHandback": "Devolver Controle para Alice",
+      "takeoverWarning": "Ao assumir o controle, a Alice IA pausará operações automáticas. Você será responsável por todas as decisões de trading.",
+      "handbackWarning": "Ao devolver o controle, a Alice IA retomará operações automáticas baseadas nos sinais e configurações de risco.",
+      "reasonLabel": "Motivo (opcional)",
+      "reasonPlaceholder": "Ex: Quero operar manualmente durante alta volatilidade...",
+      "takeoverNote": "Posições abertas serão mantidas. Você pode fechar ou modificar manualmente.",
+      "handbackNote": "A Alice continuará de onde parou, respeitando as configurações de risco.",
+      "confirmTakeoverBtn": "Confirmar Takeover",
+      "confirmHandbackBtn": "Confirmar Handback",
+      "modeChanged": "Modo de controle alterado com sucesso",
+      "modeChangeError": "Erro ao alterar modo de controle",
+      "tradingStatus": "Status do Trading",
+      "tradingActive": "Trading ativo - ordens podem ser executadas",
+      "tradingInactive": "Trading pausado - ordens bloqueadas",
+      "tradingEnabled": "Trading habilitado",
+      "tradingDisabled": "Trading desabilitado",
+      "tradingToggleError": "Erro ao alterar status do trading",
+      "circuitBreakerOpen": "Circuit Breaker Aberto",
+      "history": "Histórico de Mudanças"
     }
   }
 }

@@ -332,15 +332,25 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.73 - 17 de Dezembro de 2025*
+*Versão: 3.74 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Trading: Schema completo (8 tabelas) + API REST (14 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
+*Trading: Schema completo (9 tabelas) + API REST (20 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
+*KuCoin WebSocket (17/12/2025): Cliente WebSocket com token management, canais públicos/privados, auto-reconnect*
+*Redis Pub/Sub Trading (17/12/2025): tradingBroadcast.ts para distribuição de dados entre serviços*
+*Chat Trading Commands (17/12/2025): trading-command-parser.ts reconhece comandos via linguagem natural (PT-BR/EN)*
+*Trading Orchestrator (17/12/2025): trading-orchestrator.ts para handover/takeover entre Alice IA e operador manual*
+*Trading Control History (17/12/2025): Tabela trading_control_history + migration RLS (0008)*
+*Página Trading (17/12/2025): Frontend completo - 8 tabs: Overview + Chart + OrderBook + Orders + Positions + Signals + History + Control*
+*Frontend Trading Components (17/12/2025): CandleChart.tsx, OrderBookViz.tsx, HandoverPanel.tsx, useKucoinWebSocket.ts*
+*Klines API (17/12/2025): GET /api/integrations/trading/klines/:symbol - candlesticks para gráfico*
+*OrderBook API (17/12/2025): GET /api/integrations/trading/orderbook/:symbol - profundidade de mercado*
+*Control API (17/12/2025): POST /api/integrations/trading/control - handover/takeover manual/Alice*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme API KuCoin Futures*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa multiplier do contrato (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
 *Bug Fix NaN Bypass (17/12/2025): Validação defensiva contra NaN em preço/orderValue - evita bypass silencioso de risk limits*
@@ -357,5 +367,3 @@ git commit -a -m "test: adiciona testes unitários"
 *Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI + Scripts auto-correção*
 *Code Review Enterprise (17/12/2025): 100% validado - zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks/stubs*
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*
-*Página Trading (17/12/2025): Frontend completo para Trading BTC Futures KuCoin - 5 tabs: Overview + Orders + Positions + Signals IA + History*
-*Frontend Trading Features: Dados de mercado em tempo real, Quick Trade, Gestão de risco, Ordens manuais, Sinais Mixtral LLM, Histórico com auditoria*

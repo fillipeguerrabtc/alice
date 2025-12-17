@@ -1687,6 +1687,47 @@ export const tradingAuditLogRelations = relations(tradingAuditLog, ({ one }) => 
 }));
 
 // ============================================================================
+// TRADING CONTROL HISTORY (17/12/2025)
+// Histórico de handover/takeover entre Alice (IA) e operador humano
+// ============================================================================
+
+// HISTÓRICO DE CONTROLE DE TRADING (Handover/Takeover)
+// Registro imutável de todas as mudanças de controle
+export const tradingControlHistory = pgTable(
+  "trading_control_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    previousMode: varchar("previous_mode", { length: 20 }).notNull(), // 'alice' | 'manual'
+    newMode: varchar("new_mode", { length: 20 }).notNull(),           // 'alice' | 'manual'
+    changedBy: uuid("changed_by").references(() => users.id),         // Usuário que fez a mudança
+    reason: text("reason"),                                           // Motivo da mudança
+    metadata: jsonb("metadata"),                                      // Dados adicionais
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxControlHistoryTenant: index("idx_trading_control_history_tenant").on(table.tenantId),
+    idxControlHistoryCreated: index("idx_trading_control_history_created").on(table.criadoEm),
+    idxControlHistoryChangedBy: index("idx_trading_control_history_changed_by").on(table.changedBy),
+  })
+);
+
+export const tradingControlHistoryRelations = relations(tradingControlHistory, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingControlHistory.tenantId],
+    references: [tenants.id],
+  }),
+  user: one(users, {
+    fields: [tradingControlHistory.changedBy],
+    references: [users.id],
+  }),
+}));
+
+// Tipos TypeScript para Trading Control History
+export type TradingControlHistory = typeof tradingControlHistory.$inferSelect;
+export type InsertTradingControlHistory = typeof tradingControlHistory.$inferInsert;
+
+// ============================================================================
 // TRADING LORA DATASET (FASE Trading Mixtral 8x7B - Fine-tuning)
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC
 // ============================================================================

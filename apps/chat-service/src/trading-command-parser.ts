@@ -1,0 +1,492 @@
+/**
+ * Trading Command Parser - Alice Enterprise Platform
+ * 
+ * Parser de comandos de trading para o chat. Reconhece intenções do usuário
+ * para comprar, vender, fechar posições, etc., via linguagem natural.
+ * 
+ * Comandos suportados:
+ * - "compre X BTC" / "buy X BTC"
+ * - "venda X BTC" / "sell X BTC"
+ * - "feche posição" / "close position"
+ * - "cancele ordem {id}"
+ * - "status trading" / "minhas posições"
+ * - "pare trading" / "pause trading"
+ * - "continue trading" / "resume trading"
+ * - "assumir controle" / "takeover"
+ * - "devolver para alice" / "handback"
+ * 
+ * Regra 6 - SEM MOCKS: Integração real com KuCoin via integrations-service
+ * Regra 8 - TypeScript strict, zero any
+ * Regra 13 - Suporte PT-BR e EN
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 17 de Dezembro de 2025
+ */
+
+import { createLogger } from '@alice/logger';
+
+const logger = createLogger('trading-command-parser');
+
+// ============================================================================
+// TIPOS
+// ============================================================================
+
+/** Tipos de comando de trading */
+export type TradingCommandType =
+  | 'buy'
+  | 'sell'
+  | 'close_position'
+  | 'cancel_order'
+  | 'status'
+  | 'positions'
+  | 'orders'
+  | 'pause_trading'
+  | 'resume_trading'
+  | 'takeover'
+  | 'handback'
+  | 'set_stop_loss'
+  | 'set_take_profit'
+  | 'unknown';
+
+/** Resultado do parse de comando */
+export interface ParsedTradingCommand {
+  type: TradingCommandType;
+  isTrading: boolean;
+  amount?: number;
+  symbol?: string;
+  orderId?: string;
+  price?: number;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  confidence: number;  // 0-1 confiança do parse
+  rawText: string;
+  matchedPattern?: string;
+}
+
+/** Padrão de regex para comando */
+interface CommandPattern {
+  type: TradingCommandType;
+  patterns: RegExp[];
+  extractors?: {
+    amount?: RegExp;
+    symbol?: RegExp;
+    orderId?: RegExp;
+    price?: RegExp;
+    leverage?: RegExp;
+  };
+}
+
+// ============================================================================
+// PADRÕES DE COMANDO (PT-BR e EN)
+// ============================================================================
+
+const COMMAND_PATTERNS: CommandPattern[] = [
+  // COMPRAR / BUY
+  {
+    type: 'buy',
+    patterns: [
+      /\b(compre?|comprar|buy|long)\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin|xbt|contratos?)?\b/i,
+      /\b(abrir?|abra|open)\s+(long|compra)\s+(\d+(?:\.\d+)?)\b/i,
+      /\b(quero|gostaria\s+de)\s+comprar\s+(\d+(?:\.\d+)?)\b/i,
+      /\bcompra\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin)?\b/i,
+    ],
+    extractors: {
+      amount: /(\d+(?:\.\d+)?)/,
+      symbol: /(btc|bitcoin|xbt|xbtusdtm)/i,
+    },
+  },
+
+  // VENDER / SELL
+  {
+    type: 'sell',
+    patterns: [
+      /\b(venda|vender|sell|short)\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin|xbt|contratos?)?\b/i,
+      /\b(abrir?|abra|open)\s+(short|venda)\s+(\d+(?:\.\d+)?)\b/i,
+      /\b(quero|gostaria\s+de)\s+vender\s+(\d+(?:\.\d+)?)\b/i,
+      /\bvende\s+(\d+(?:\.\d+)?)\s*(btc|bitcoin)?\b/i,
+    ],
+    extractors: {
+      amount: /(\d+(?:\.\d+)?)/,
+      symbol: /(btc|bitcoin|xbt|xbtusdtm)/i,
+    },
+  },
+
+  // FECHAR POSIÇÃO / CLOSE POSITION
+  {
+    type: 'close_position',
+    patterns: [
+      /\b(feche?|fechar|close)\s+(a\s+)?(posi[çc][ãa]o|position|todas?)\b/i,
+      /\b(encerr[ae]r?|encerre)\s+(a\s+)?(posi[çc][ãa]o|opera[çc][ãa]o)\b/i,
+      /\bsair?\s+(da\s+)?(posi[çc][ãa]o|opera[çc][ãa]o)\b/i,
+      /\b(zerar?|zere)\s+(a\s+)?(posi[çc][ãa]o)?\b/i,
+    ],
+  },
+
+  // CANCELAR ORDEM
+  {
+    type: 'cancel_order',
+    patterns: [
+      /\b(cancel[ae]r?|cancele)\s+(a\s+)?ordem\s*([a-f0-9-]+)?\b/i,
+      /\b(cancel)\s+(order)\s*([a-f0-9-]+)?\b/i,
+      /\bremov[ae]r?\s+(a\s+)?ordem\s*([a-f0-9-]+)?\b/i,
+    ],
+    extractors: {
+      orderId: /([a-f0-9]{8,}-[a-f0-9-]+)/i,
+    },
+  },
+
+  // STATUS
+  {
+    type: 'status',
+    patterns: [
+      /\b(status|situa[çc][ãa]o)\s+(do\s+)?(trading|opera[çc][õo]es?)\b/i,
+      /\bcomo\s+est[áa]\s+(o\s+)?(trading|mercado)\b/i,
+      /\b(mostrar?|mostre|ver|show)\s+(o\s+)?(status|resumo)\b/i,
+    ],
+  },
+
+  // POSIÇÕES
+  {
+    type: 'positions',
+    patterns: [
+      /\b(minhas?\s+)?posi[çc][õo]es?\b/i,
+      /\b(my\s+)?positions?\b/i,
+      /\b(mostrar?|mostre|ver)\s+(as\s+)?posi[çc][õo]es?\b/i,
+      /\bonde\s+estou\s+posicionado\b/i,
+    ],
+  },
+
+  // ORDENS
+  {
+    type: 'orders',
+    patterns: [
+      /\b(minhas?\s+)?ordens?\b/i,
+      /\b(my\s+)?orders?\b/i,
+      /\b(mostrar?|mostre|ver)\s+(as\s+)?ordens?\b/i,
+      /\blistar?\s+ordens?\b/i,
+    ],
+  },
+
+  // PAUSAR TRADING
+  {
+    type: 'pause_trading',
+    patterns: [
+      /\b(pausar?|pause|parar?|pare|stop)\s+(o\s+)?(trading|opera[çc][õo]es?|autom[áa]tico)\b/i,
+      /\b(desativ[ae]r?|desative)\s+(o\s+)?(trading|autom[áa]tico)\b/i,
+      /\bn[ãa]o\s+(opere|trade)\s+(mais|agora)\b/i,
+    ],
+  },
+
+  // CONTINUAR TRADING
+  {
+    type: 'resume_trading',
+    patterns: [
+      /\b(continuar?|continue|retomar?|retome|resume)\s+(o\s+)?(trading|opera[çc][õo]es?)\b/i,
+      /\b(ativ[ae]r?|ative)\s+(o\s+)?(trading|autom[áa]tico)\b/i,
+      /\bvoltar?\s+a\s+operar\b/i,
+      /\bpode\s+operar\s+(novamente|de\s+novo)\b/i,
+    ],
+  },
+
+  // TAKEOVER (Assumir Controle Manual)
+  {
+    type: 'takeover',
+    patterns: [
+      /\b(assumir?|assuma)\s+(o\s+)?controle\b/i,
+      /\b(quero|vou)\s+operar\s+(manualmente|eu\s+mesmo)\b/i,
+      /\btakeover\b/i,
+      /\bmodo\s+manual\b/i,
+      /\beu\s+(quero\s+)?operar\b/i,
+    ],
+  },
+
+  // HANDBACK (Devolver para Alice)
+  {
+    type: 'handback',
+    patterns: [
+      /\b(devolv[ae]r?|devolva)\s+(o\s+)?controle\s+(para\s+)?(alice|ia|bot)\b/i,
+      /\b(alice|ia|bot)\s+(pode\s+)?(assumir?|operar)\b/i,
+      /\bhandback\b/i,
+      /\bmodo\s+(autom[áa]tico|aut[ôo]nomo)\b/i,
+      /\bvolta\s+a\s+operar\s+(alice|ia)\b/i,
+    ],
+  },
+
+  // STOP LOSS
+  {
+    type: 'set_stop_loss',
+    patterns: [
+      /\b(coloca[re]?|colocar|set)\s+(um\s+)?stop\s*(loss)?\s*(em|at|@)?\s*\$?(\d+(?:\.\d+)?)\b/i,
+      /\bstop\s*(loss)?\s*(em|at|@|:)?\s*\$?(\d+(?:\.\d+)?)\b/i,
+    ],
+    extractors: {
+      price: /\$?(\d+(?:\.\d+)?)/,
+    },
+  },
+
+  // TAKE PROFIT
+  {
+    type: 'set_take_profit',
+    patterns: [
+      /\b(coloca[re]?|colocar|set)\s+(um\s+)?take\s*(profit)?\s*(em|at|@)?\s*\$?(\d+(?:\.\d+)?)\b/i,
+      /\btake\s*(profit)?\s*(em|at|@|:)?\s*\$?(\d+(?:\.\d+)?)\b/i,
+      /\b(alvo|target)\s*(em|at|@|:)?\s*\$?(\d+(?:\.\d+)?)\b/i,
+    ],
+    extractors: {
+      price: /\$?(\d+(?:\.\d+)?)/,
+    },
+  },
+];
+
+// ============================================================================
+// KEYWORDS DE CONTEXTO (para aumentar confiança)
+// ============================================================================
+
+const TRADING_CONTEXT_KEYWORDS = [
+  'btc', 'bitcoin', 'trading', 'trade', 'ordem', 'order',
+  'posição', 'position', 'compra', 'venda', 'buy', 'sell',
+  'long', 'short', 'futures', 'perpetual', 'alavancagem',
+  'leverage', 'stop', 'profit', 'loss', 'mercado', 'market',
+  'kucoin', 'exchange', 'crypto', 'cripto', 'dólar', 'dollar',
+];
+
+// ============================================================================
+// FUNÇÕES DE PARSE
+// ============================================================================
+
+/**
+ * Verifica se a mensagem tem contexto de trading
+ */
+function hasTradicngContext(text: string): boolean {
+  const lowerText = text.toLowerCase();
+  return TRADING_CONTEXT_KEYWORDS.some(keyword => lowerText.includes(keyword));
+}
+
+/**
+ * Extrai número de um texto
+ */
+function extractNumber(text: string, regex?: RegExp): number | undefined {
+  const pattern = regex || /(\d+(?:\.\d+)?)/;
+  const match = text.match(pattern);
+  return match ? parseFloat(match[1]) : undefined;
+}
+
+/**
+ * Extrai símbolo do texto
+ */
+function extractSymbol(text: string): string {
+  const match = text.match(/(xbtusdtm|xbtusdm|btc|bitcoin)/i);
+  if (match) {
+    const symbol = match[1].toLowerCase();
+    if (symbol === 'btc' || symbol === 'bitcoin') {
+      return 'XBTUSDTM'; // Default para BTC perpetual
+    }
+    return symbol.toUpperCase();
+  }
+  return 'XBTUSDTM'; // Default
+}
+
+/**
+ * Extrai ID de ordem do texto
+ */
+function extractOrderId(text: string): string | undefined {
+  const match = text.match(/([a-f0-9]{8,}-[a-f0-9-]+)/i);
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Parse principal - analisa texto e retorna comando identificado
+ */
+export function parseTradingCommand(text: string): ParsedTradingCommand {
+  const result: ParsedTradingCommand = {
+    type: 'unknown',
+    isTrading: false,
+    confidence: 0,
+    rawText: text,
+  };
+
+  const normalizedText = text.trim().toLowerCase();
+
+  // Verificar contexto de trading
+  const hasContext = hasTradicngContext(normalizedText);
+
+  // Tentar match com cada padrão
+  for (const pattern of COMMAND_PATTERNS) {
+    for (const regex of pattern.patterns) {
+      if (regex.test(normalizedText)) {
+        result.type = pattern.type;
+        result.isTrading = true;
+        result.matchedPattern = regex.source;
+
+        // Calcular confiança base
+        result.confidence = hasContext ? 0.9 : 0.7;
+
+        // Extrair dados adicionais baseado no tipo
+        if (pattern.type === 'buy' || pattern.type === 'sell') {
+          result.amount = extractNumber(text);
+          result.symbol = extractSymbol(text);
+          
+          // Verificar alavancagem mencionada
+          const leverageMatch = text.match(/(\d+)x/i);
+          if (leverageMatch) {
+            result.leverage = parseInt(leverageMatch[1]);
+          }
+
+          // Aumentar confiança se tiver amount
+          if (result.amount) {
+            result.confidence = Math.min(result.confidence + 0.1, 1);
+          }
+        }
+
+        if (pattern.type === 'cancel_order') {
+          result.orderId = extractOrderId(text);
+        }
+
+        if (pattern.type === 'set_stop_loss' || pattern.type === 'set_take_profit') {
+          const priceMatch = text.match(/\$?(\d+(?:[.,]\d+)?)/);
+          if (priceMatch) {
+            result.price = parseFloat(priceMatch[1].replace(',', '.'));
+            if (pattern.type === 'set_stop_loss') {
+              result.stopLoss = result.price;
+            } else {
+              result.takeProfit = result.price;
+            }
+          }
+        }
+
+        logger.debug({
+          type: result.type,
+          confidence: result.confidence,
+          amount: result.amount,
+          symbol: result.symbol,
+        }, 'Comando de trading identificado');
+
+        return result;
+      }
+    }
+  }
+
+  // Se não encontrou match mas tem contexto de trading, pode ser comando ambíguo
+  if (hasContext) {
+    result.confidence = 0.3;
+  }
+
+  return result;
+}
+
+/**
+ * Verifica se o texto é um comando de trading
+ */
+export function isTradingCommand(text: string): boolean {
+  const parsed = parseTradingCommand(text);
+  return parsed.isTrading && parsed.confidence >= 0.5;
+}
+
+/**
+ * Obtém descrição amigável do comando
+ */
+export function getCommandDescription(command: ParsedTradingCommand, language: 'pt' | 'en' = 'pt'): string {
+  const descriptions: Record<TradingCommandType, { pt: string; en: string }> = {
+    buy: {
+      pt: `Comprar ${command.amount || '?'} ${command.symbol || 'BTC'}`,
+      en: `Buy ${command.amount || '?'} ${command.symbol || 'BTC'}`,
+    },
+    sell: {
+      pt: `Vender ${command.amount || '?'} ${command.symbol || 'BTC'}`,
+      en: `Sell ${command.amount || '?'} ${command.symbol || 'BTC'}`,
+    },
+    close_position: {
+      pt: 'Fechar posição atual',
+      en: 'Close current position',
+    },
+    cancel_order: {
+      pt: `Cancelar ordem ${command.orderId || '(especifique o ID)'}`,
+      en: `Cancel order ${command.orderId || '(specify ID)'}`,
+    },
+    status: {
+      pt: 'Ver status do trading',
+      en: 'View trading status',
+    },
+    positions: {
+      pt: 'Ver posições abertas',
+      en: 'View open positions',
+    },
+    orders: {
+      pt: 'Ver ordens ativas',
+      en: 'View active orders',
+    },
+    pause_trading: {
+      pt: 'Pausar trading automático',
+      en: 'Pause auto trading',
+    },
+    resume_trading: {
+      pt: 'Retomar trading automático',
+      en: 'Resume auto trading',
+    },
+    takeover: {
+      pt: 'Assumir controle manual',
+      en: 'Take manual control',
+    },
+    handback: {
+      pt: 'Devolver controle para Alice',
+      en: 'Hand back control to Alice',
+    },
+    set_stop_loss: {
+      pt: `Definir stop loss em $${command.stopLoss || '?'}`,
+      en: `Set stop loss at $${command.stopLoss || '?'}`,
+    },
+    set_take_profit: {
+      pt: `Definir take profit em $${command.takeProfit || '?'}`,
+      en: `Set take profit at $${command.takeProfit || '?'}`,
+    },
+    unknown: {
+      pt: 'Comando não reconhecido',
+      en: 'Unknown command',
+    },
+  };
+
+  return descriptions[command.type][language];
+}
+
+/**
+ * Valida se o comando tem todos os dados necessários para execução
+ */
+export function validateCommand(command: ParsedTradingCommand): {
+  valid: boolean;
+  missingFields: string[];
+} {
+  const missingFields: string[] = [];
+
+  if (command.type === 'buy' || command.type === 'sell') {
+    if (!command.amount || command.amount <= 0) {
+      missingFields.push('amount');
+    }
+  }
+
+  if (command.type === 'cancel_order') {
+    if (!command.orderId) {
+      missingFields.push('orderId');
+    }
+  }
+
+  if (command.type === 'set_stop_loss' && !command.stopLoss) {
+    missingFields.push('stopLoss');
+  }
+
+  if (command.type === 'set_take_profit' && !command.takeProfit) {
+    missingFields.push('takeProfit');
+  }
+
+  return {
+    valid: missingFields.length === 0,
+    missingFields,
+  };
+}
+
+export default {
+  parseTradingCommand,
+  isTradingCommand,
+  getCommandDescription,
+  validateCommand,
+};

@@ -1138,10 +1138,13 @@
     },
     "tabs": {
       "overview": "Overview",
+      "chart": "Chart",
+      "orderbook": "Order Book",
       "orders": "Orders",
       "positions": "Positions",
       "signals": "AI Signals",
-      "history": "History"
+      "history": "History",
+      "control": "Control"
     },
     "quickTrade": {
       "title": "Quick Trade",
@@ -1281,6 +1284,68 @@
       "riskConfigFailed": "Error updating settings",
       "signalFailed": "Error creating signal",
       "signalDeactivateFailed": "Error deactivating signal"
+    },
+    "chart": {
+      "title": "Price Chart",
+      "noData": "No klines data available",
+      "bullish": "Bullish",
+      "bearish": "Bearish",
+      "volume": "Volume",
+      "loading": "Loading chart...",
+      "timeframes": {
+        "1m": "1 minute",
+        "3m": "3 minutes",
+        "5m": "5 minutes",
+        "15m": "15 minutes",
+        "1h": "1 hour",
+        "4h": "4 hours",
+        "1d": "1 day"
+      }
+    },
+    "orderbook": {
+      "title": "Order Book",
+      "noData": "No order book data available",
+      "price": "Price",
+      "size": "Size",
+      "total": "Total",
+      "spread": "Spread",
+      "bidTotal": "Bid Total",
+      "askTotal": "Ask Total",
+      "depth": "Depth"
+    },
+    "handover": {
+      "title": "Trading Control",
+      "description": "Switch between manual and automatic control (Alice AI)",
+      "mode": {
+        "alice": "Alice (AI)",
+        "manual": "Manual"
+      },
+      "modeDescription": {
+        "alice": "Autonomous AI-guided trading",
+        "manual": "You control all operations"
+      },
+      "takeover": "Take Control",
+      "handback": "Hand Back to Alice",
+      "confirmTakeover": "Take Manual Control",
+      "confirmHandback": "Hand Control Back to Alice",
+      "takeoverWarning": "By taking control, Alice AI will pause automatic operations. You will be responsible for all trading decisions.",
+      "handbackWarning": "By handing back control, Alice AI will resume automatic operations based on signals and risk settings.",
+      "reasonLabel": "Reason (optional)",
+      "reasonPlaceholder": "E.g.: I want to trade manually during high volatility...",
+      "takeoverNote": "Open positions will be maintained. You can close or modify them manually.",
+      "handbackNote": "Alice will continue from where it stopped, respecting risk settings.",
+      "confirmTakeoverBtn": "Confirm Takeover",
+      "confirmHandbackBtn": "Confirm Handback",
+      "modeChanged": "Control mode changed successfully",
+      "modeChangeError": "Error changing control mode",
+      "tradingStatus": "Trading Status",
+      "tradingActive": "Trading active - orders can be executed",
+      "tradingInactive": "Trading paused - orders blocked",
+      "tradingEnabled": "Trading enabled",
+      "tradingDisabled": "Trading disabled",
+      "tradingToggleError": "Error toggling trading status",
+      "circuitBreakerOpen": "Circuit Breaker Open",
+      "history": "Change History"
     }
   }
 }

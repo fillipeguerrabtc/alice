@@ -563,6 +563,8 @@ interface ExtendedWebSocket extends WebSocket {
   userId?: string;
   tenantId?: string;
   clientKey?: string;
+  // Trading subscriptions (17/12/2025)
+  tradingSubscriptions?: Set<string>;
 }
 
 // Heartbeat para detectar conexões mortas
@@ -1296,10 +1298,24 @@ app.get('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFro
 // SCHEMAS ZOD PARA WEBSOCKET (OWASP API3 - Input Validation Enterprise)
 // ============================================================================
 const wsMessageSchema = z.object({
-  type: z.enum(['chat', 'typing', 'ping', 'subscribe', 'unsubscribe']),
+  type: z.enum([
+    'chat', 
+    'typing', 
+    'ping', 
+    'subscribe', 
+    'unsubscribe',
+    // Trading messages (17/12/2025)
+    'trading:subscribe',
+    'trading:unsubscribe',
+    'trading:command',
+  ]),
   conversationId: z.string().uuid().optional(),
   content: z.string().max(10000).optional(),
   namespaceId: z.string().uuid().optional(),
+  // Trading fields (17/12/2025)
+  channel: z.enum(['ticker', 'orderbook', 'klines', 'orders', 'positions', 'control']).optional(),
+  symbol: z.string().max(20).optional(),
+  interval: z.string().max(10).optional(),
 });
 
 const _wsAgentMessageSchema = z.object({
@@ -1892,7 +1908,98 @@ wss.on('connection', (ws, req) => {
         conversationId: string;
         content: string;
         namespaceId?: string;
+        // Trading fields (17/12/2025)
+        channel?: string;
+        symbol?: string;
+        interval?: string;
       };
+
+      // ========================================================================
+      // TRADING WEBSOCKET HANDLERS (17/12/2025)
+      // Permite subscription para dados de trading em tempo real
+      // ========================================================================
+      
+      if (message.type === 'trading:subscribe') {
+        // Registrar subscription de trading para este cliente
+        const tradingChannel = message.channel || 'ticker';
+        const symbol = message.symbol || 'XBTUSDTM';
+        
+        // Armazenar subscription no extWs para broadcast posterior
+        if (!extWs.tradingSubscriptions) {
+          extWs.tradingSubscriptions = new Set();
+        }
+        extWs.tradingSubscriptions.add(`${tradingChannel}:${symbol}`);
+        
+        ws.send(JSON.stringify({
+          type: 'trading:subscribed',
+          channel: tradingChannel,
+          symbol,
+          timestamp: new Date().toISOString(),
+        }));
+        
+        logger.debug({ userId, tenantId, channel: tradingChannel, symbol }, 'Cliente inscrito em canal de trading');
+        return;
+      }
+      
+      if (message.type === 'trading:unsubscribe') {
+        const tradingChannel = message.channel || 'ticker';
+        const symbol = message.symbol || 'XBTUSDTM';
+        
+        if (extWs.tradingSubscriptions) {
+          extWs.tradingSubscriptions.delete(`${tradingChannel}:${symbol}`);
+        }
+        
+        ws.send(JSON.stringify({
+          type: 'trading:unsubscribed',
+          channel: tradingChannel,
+          symbol,
+        }));
+        
+        logger.debug({ userId, tenantId, channel: tradingChannel, symbol }, 'Cliente desinscrito de canal de trading');
+        return;
+      }
+      
+      if (message.type === 'trading:command') {
+        // Processar comando de trading via chat
+        // Importar parser dinamicamente para evitar circular deps
+        const { parseTradingCommand, isTradingCommand, getCommandDescription } = await import('./trading-command-parser.js');
+        const { getTradingControlMode, canExecuteTradingCommand } = await import('./trading-orchestrator.js');
+        
+        const content = message.content || '';
+        
+        if (!isTradingCommand(content)) {
+          ws.send(JSON.stringify({
+            type: 'trading:error',
+            error: 'Comando de trading não reconhecido',
+            hint: 'Tente: "compre 0.01 BTC", "venda 0.01 BTC", "status trading", "minhas posições"',
+          }));
+          return;
+        }
+        
+        const parsed = parseTradingCommand(content);
+        const canExecute = await canExecuteTradingCommand(tenantId, 'user');
+        
+        if (!canExecute.canExecute) {
+          ws.send(JSON.stringify({
+            type: 'trading:blocked',
+            reason: canExecute.reason,
+            command: getCommandDescription(parsed, 'pt'),
+          }));
+          return;
+        }
+        
+        // Encaminhar comando para processamento
+        // TODO: Integrar com integrations-service via HTTP ou Redis
+        ws.send(JSON.stringify({
+          type: 'trading:command_received',
+          command: parsed,
+          description: getCommandDescription(parsed, 'pt'),
+          status: 'processing',
+        }));
+        
+        logger.info({ userId, tenantId, command: parsed.type, confidence: parsed.confidence }, 'Comando de trading recebido via WebSocket');
+        return;
+      }
 
       if (message.type === 'chat') {
         const ragStartTime = Date.now();

@@ -640,6 +640,251 @@ export async function getAllPositions(): Promise<KucoinPosition[]> {
 }
 
 // ============================================================================
+// ENDPOINTS PÚBLICOS - DADOS DE MERCADO ADICIONAIS (17/12/2025)
+// ============================================================================
+
+/** Dados de Kline/Candle */
+export interface KucoinKline {
+  time: number;       // Timestamp em ms
+  open: string;       // Preço de abertura
+  close: string;      // Preço de fechamento
+  high: string;       // Preço máximo
+  low: string;        // Preço mínimo
+  volume: string;     // Volume em contratos
+  turnover: string;   // Volume em moeda base
+}
+
+/** Dados de Order Book */
+export interface KucoinOrderBook {
+  sequence: number;
+  asks: Array<[string, number]>;  // [price, size]
+  bids: Array<[string, number]>;  // [price, size]
+  ts: number;
+}
+
+/** Dados de Funding Rate */
+export interface KucoinFundingRate {
+  symbol: string;
+  granularity: number;
+  timePoint: number;
+  value: number;
+  predictedValue: number;
+}
+
+/** Dados de Mark Price */
+export interface KucoinMarkPrice {
+  symbol: string;
+  granularity: number;
+  timePoint: number;
+  value: number;
+  indexPrice: number;
+}
+
+/** Dados de Trade History */
+export interface KucoinTrade {
+  sequence: number;
+  tradeId: string;
+  takerOrderId: string;
+  makerOrderId: string;
+  price: string;
+  size: number;
+  side: string;
+  ts: number;
+}
+
+/** Dados de histórico de ordem */
+export interface KucoinOrderHistory {
+  id: string;
+  symbol: string;
+  type: string;
+  side: string;
+  price: string;
+  size: number;
+  value: string;
+  dealValue: string;
+  dealSize: number;
+  stp: string;
+  stop: string;
+  stopPriceType: string;
+  stopTriggered: boolean;
+  stopPrice: string | null;
+  timeInForce: string;
+  postOnly: boolean;
+  hidden: boolean;
+  iceberg: boolean;
+  leverage: string;
+  forceHold: boolean;
+  closeOrder: boolean;
+  visibleSize: number | null;
+  clientOid: string;
+  remark: string | null;
+  tags: string | null;
+  isActive: boolean;
+  cancelExist: boolean;
+  createdAt: number;
+  updatedAt: number;
+  endAt: number;
+  orderTime: number;
+  settleCurrency: string;
+  status: string;
+  filledSize: number;
+  filledValue: string;
+  reduceOnly: boolean;
+}
+
+/**
+ * Obtém dados de klines/candles
+ * GET /api/v1/kline/query
+ * @param symbol - Símbolo do contrato (ex: XBTUSDTM)
+ * @param granularity - Intervalo em minutos (1, 3, 5, 15, 30, 60, 120, 240, 480, 720, 1440, 10080)
+ * @param from - Timestamp inicial (ms)
+ * @param to - Timestamp final (ms)
+ */
+export async function getKlines(
+  symbol: string,
+  granularity: number,
+  from?: number,
+  to?: number
+): Promise<KucoinKline[]> {
+  let endpoint = `/api/v1/kline/query?symbol=${symbol}&granularity=${granularity}`;
+  
+  if (from) endpoint += `&from=${from}`;
+  if (to) endpoint += `&to=${to}`;
+
+  const response = await executeRequest<Array<[number, string, string, string, string, string, string]>>(
+    'GET',
+    endpoint,
+    undefined,
+    false // Endpoint público
+  );
+
+  // Converter array de arrays para objetos tipados
+  return response.data.map(([time, open, close, high, low, volume, turnover]) => ({
+    time,
+    open,
+    close,
+    high,
+    low,
+    volume,
+    turnover,
+  }));
+}
+
+/**
+ * Obtém order book (Level 2)
+ * GET /api/v1/level2/depth{depth}
+ * @param symbol - Símbolo do contrato
+ * @param depth - Profundidade (20 ou 100)
+ */
+export async function getOrderBook(symbol: string, depth: 20 | 100 = 20): Promise<KucoinOrderBook> {
+  const response = await executeRequest<KucoinOrderBook>(
+    'GET',
+    `/api/v1/level2/depth${depth}?symbol=${symbol}`,
+    undefined,
+    false // Endpoint público
+  );
+  return response.data;
+}
+
+/**
+ * Obtém funding rate atual
+ * GET /api/v1/funding-rate/{symbol}/current
+ */
+export async function getCurrentFundingRate(symbol: string): Promise<KucoinFundingRate> {
+  const response = await executeRequest<KucoinFundingRate>(
+    'GET',
+    `/api/v1/funding-rate/${symbol}/current`,
+    undefined,
+    false // Endpoint público
+  );
+  return response.data;
+}
+
+/**
+ * Obtém mark price atual
+ * GET /api/v1/mark-price/{symbol}/current
+ */
+export async function getMarkPrice(symbol: string): Promise<KucoinMarkPrice> {
+  const response = await executeRequest<KucoinMarkPrice>(
+    'GET',
+    `/api/v1/mark-price/${symbol}/current`,
+    undefined,
+    false // Endpoint público
+  );
+  return response.data;
+}
+
+/**
+ * Obtém histórico de trades recentes
+ * GET /api/v1/trade/history
+ * @param symbol - Símbolo do contrato
+ */
+export async function getTradeHistory(symbol: string): Promise<KucoinTrade[]> {
+  const response = await executeRequest<KucoinTrade[]>(
+    'GET',
+    `/api/v1/trade/history?symbol=${symbol}`,
+    undefined,
+    false // Endpoint público
+  );
+  return response.data;
+}
+
+// ============================================================================
+// ENDPOINTS PRIVADOS - HISTÓRICO DE ORDENS (17/12/2025)
+// ============================================================================
+
+/**
+ * Obtém histórico de ordens (filled, cancelled, etc.)
+ * GET /api/v1/orders (com status done)
+ * @param symbol - Símbolo opcional para filtrar
+ * @param pageSize - Número de resultados por página (max 100)
+ * @param currentPage - Página atual
+ */
+export async function getOrderHistory(
+  symbol?: string,
+  pageSize: number = 50,
+  currentPage: number = 1
+): Promise<{
+  currentPage: number;
+  pageSize: number;
+  totalNum: number;
+  totalPage: number;
+  items: KucoinOrderHistory[];
+}> {
+  let endpoint = `/api/v1/orders?status=done&pageSize=${pageSize}&currentPage=${currentPage}`;
+  if (symbol) endpoint += `&symbol=${symbol}`;
+
+  const response = await executeRequest<{
+    currentPage: number;
+    pageSize: number;
+    totalNum: number;
+    totalPage: number;
+    items: KucoinOrderHistory[];
+  }>(
+    'GET',
+    endpoint,
+    undefined,
+    true // Requer autenticação
+  );
+  return response.data;
+}
+
+/**
+ * Obtém detalhes de múltiplas ordens por IDs
+ * GET /api/v1/orders/byIds
+ * @param orderIds - Lista de IDs de ordens
+ */
+export async function getOrdersByIds(orderIds: string[]): Promise<KucoinOrder[]> {
+  const response = await executeRequest<KucoinOrder[]>(
+    'GET',
+    `/api/v1/orders/byIds?orderIds=${orderIds.join(',')}`,
+    undefined,
+    true
+  );
+  return response.data;
+}
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 
@@ -658,6 +903,48 @@ export function isValidSymbol(symbol: string): boolean {
   return validSymbols.includes(symbol.toUpperCase());
 }
 
+/**
+ * Converte granularidade em minutos para string de intervalo
+ */
+export function granularityToInterval(granularity: number): string {
+  const map: Record<number, string> = {
+    1: '1min',
+    3: '3min',
+    5: '5min',
+    15: '15min',
+    30: '30min',
+    60: '1hour',
+    120: '2hour',
+    240: '4hour',
+    480: '8hour',
+    720: '12hour',
+    1440: '1day',
+    10080: '1week',
+  };
+  return map[granularity] || '1min';
+}
+
+/**
+ * Converte string de intervalo para granularidade em minutos
+ */
+export function intervalToGranularity(interval: string): number {
+  const map: Record<string, number> = {
+    '1min': 1,
+    '3min': 3,
+    '5min': 5,
+    '15min': 15,
+    '30min': 30,
+    '1hour': 60,
+    '2hour': 120,
+    '4hour': 240,
+    '8hour': 480,
+    '12hour': 720,
+    '1day': 1440,
+    '1week': 10080,
+  };
+  return map[interval] || 1;
+}
+
 export default {
   // Verificação
   isKucoinConfigured,
@@ -665,10 +952,17 @@ export default {
   getKucoinCircuitBreakerStatus,
   initKucoinMetrics,
   
-  // Públicos
+  // Públicos - Básicos
   getTicker,
   getContractInfo,
   getActiveContracts,
+  
+  // Públicos - Dados de Mercado (17/12/2025)
+  getKlines,
+  getOrderBook,
+  getCurrentFundingRate,
+  getMarkPrice,
+  getTradeHistory,
   
   // Conta
   getAccountOverview,
@@ -680,6 +974,8 @@ export default {
   getOrder,
   getOrderByClientOid,
   getOpenOrders,
+  getOrderHistory,
+  getOrdersByIds,
   
   // Posições
   getPosition,
@@ -688,4 +984,6 @@ export default {
   // Helpers
   generateClientOid,
   isValidSymbol,
+  granularityToInterval,
+  intervalToGranularity,
 };

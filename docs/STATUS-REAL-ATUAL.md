@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.92 - Página Trading BTC Futures completa (17/12/2025)
+> **Versão:** 3.93 - Integração completa Trading KuCoin com WebSocket, Handover/Takeover e Componentes Frontend (17/12/2025)
 
 ---
 
@@ -33,7 +33,7 @@
 | Resource limits | ✅ | 43/43 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
-| **PostgreSQL RLS Trading** | ✅ | **7 tabelas com RLS** (migration 0007) |
+| **PostgreSQL RLS Trading** | ✅ | **8 tabelas com RLS** (migrations 0007 + 0008) |
 
 **Row Level Security (RLS) - Tabelas Trading (17/12/2025)**
 | Tabela | RLS | Policy |
@@ -45,6 +45,7 @@
 | `trading_audit_log` | ✅ | `trading_audit_log_tenant_isolation` |
 | `trading_dataset` | ✅ | `trading_dataset_tenant_isolation` |
 | `trading_lora_jobs` | ✅ | `trading_lora_jobs_tenant_isolation` |
+| `trading_control_history` | ✅ | `trading_control_history_tenant_isolation` |
 | `trading_market_data` | ❌ | Dados públicos de mercado (sem tenant) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
@@ -116,6 +117,9 @@
 | Circuit Breakers | ✅ | LLM + RAG |
 | Prometheus Metrics | ✅ | `/metrics` |
 | Origin Validation WebSocket | ✅ | `index.ts` |
+| **Trading Command Parser** | ✅ | `trading-command-parser.ts` - Reconhece comandos via NLP (PT-BR/EN) |
+| **Trading Orchestrator** | ✅ | `trading-orchestrator.ts` - Handover/Takeover Alice ↔ Manual |
+| **Trading WebSocket Messages** | ✅ | `index.ts` - tipos `trading:subscribe`, `trading:command` |
 
 ### 3. rag-service (Porta 3003)
 
@@ -219,8 +223,18 @@
 | ERPNext API Client | ✅ | `index.ts` |
 | Webhook Idempotency | ✅ | `webhookEvents` table |
 | Webhook Signature Validation | ✅ | Stripe, Wise, Twilio |
-| Circuit Breakers | ✅ | ERPNext + Wise + Stripe |
+| Circuit Breakers | ✅ | ERPNext + Wise + Stripe + KuCoin |
 | Prometheus Metrics | ✅ | `/metrics` |
+| **Trading BTC Futures KuCoin** | ✅ | `kucoinClient.ts`, `kucoinService.ts` |
+| Trading REST APIs (20 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data |
+| **KuCoin WebSocket Client** | ✅ | `kucoinWebSocket.ts` - Token management, canais públicos/privados |
+| **Trading Redis Broadcast** | ✅ | `tradingBroadcast.ts` - Pub/Sub entre serviços |
+| Klines API (Candlesticks) | ✅ | `GET /api/integrations/trading/klines/:symbol` |
+| OrderBook API | ✅ | `GET /api/integrations/trading/orderbook/:symbol` |
+| Funding Rate API | ✅ | `GET /api/integrations/trading/funding-rate/:symbol` |
+| Trade History API | ✅ | `GET /api/integrations/trading/trade-history/:symbol` |
+| Order History API | ✅ | `GET /api/integrations/trading/order-history` |
+| Control API (Handover/Takeover) | ✅ | `POST /api/integrations/trading/control` |
 
 ### 6. observability-service (Porta 3007)
 
@@ -295,7 +309,7 @@
 | **Training** | `Training.tsx` | **4 tabs: Dados + Jobs + Bulk Import + Upload Multimodal (15/12/2025)** |
 | Integrations | `Integrations.tsx` | Stripe, Wise, Twilio |
 | WisePayments | `WisePayments.tsx` | Transferências Wise |
-| **Trading** | `Trading.tsx` | **Trading BTC Futures KuCoin - 5 tabs: Overview + Orders + Positions + Signals + History (17/12/2025)** |
+| **Trading** | `Trading.tsx` | **Trading BTC Futures KuCoin - 8 tabs: Overview + Chart + OrderBook + Orders + Positions + Signals + History + Control (17/12/2025)** |
 | ImageGallery | `ImageGalleryPage.tsx` | Galeria FLUX.1 |
 | TakeoverPanel | `TakeoverPanel.tsx` | Takeover/Handover |
 | **BackupAdmin** | `BackupAdmin.tsx` | **Gestão backups enterprise** |

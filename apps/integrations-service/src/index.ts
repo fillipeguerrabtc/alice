@@ -3156,6 +3156,161 @@ app.post('/api/integrations/trading/orders/sync', requirePermission('integration
 });
 
 // ============================================================================
+// TRADING: DADOS DE MERCADO ADICIONAIS (17/12/2025)
+// Klines, Order Book, Funding Rate, Mark Price, Trade History
+// ============================================================================
+
+// GET /api/integrations/trading/klines/:symbol - Dados de candles
+app.get('/api/integrations/trading/klines/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const granularity = parseInt(req.query.granularity as string) || 5; // Default: 5 min
+    const from = req.query.from ? parseInt(req.query.from as string) : undefined;
+    const to = req.query.to ? parseInt(req.query.to as string) : undefined;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const klines = await kucoinClient.getKlines(symbol, granularity, from, to);
+
+    res.json({
+      success: true,
+      data: klines,
+      symbol,
+      granularity,
+      interval: kucoinClient.granularityToInterval(granularity),
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter klines');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/orderbook/:symbol - Order Book
+app.get('/api/integrations/trading/orderbook/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+    const depth = (parseInt(req.query.depth as string) || 20) as 20 | 100;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const orderbook = await kucoinClient.getOrderBook(symbol, depth);
+
+    res.json({
+      success: true,
+      data: orderbook,
+      symbol,
+      depth,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter order book');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/funding-rate/:symbol - Funding Rate
+app.get('/api/integrations/trading/funding-rate/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const fundingRate = await kucoinClient.getCurrentFundingRate(symbol);
+
+    res.json({
+      success: true,
+      data: fundingRate,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter funding rate');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/mark-price/:symbol - Mark Price
+app.get('/api/integrations/trading/mark-price/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const markPrice = await kucoinClient.getMarkPrice(symbol);
+
+    res.json({
+      success: true,
+      data: markPrice,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter mark price');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/trades/:symbol - Histórico de Trades
+app.get('/api/integrations/trading/trades/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const { symbol } = req.params;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const trades = await kucoinClient.getTradeHistory(symbol);
+
+    res.json({
+      success: true,
+      data: trades,
+      symbol,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de trades');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/orders/history - Histórico de Ordens
+app.get('/api/integrations/trading/orders/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const symbol = req.query.symbol as string | undefined;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const currentPage = parseInt(req.query.currentPage as string) || 1;
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    const history = await kucoinClient.getOrderHistory(symbol, pageSize, currentPage);
+
+    res.json({
+      success: true,
+      data: history,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de ordens');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
 // ============================================================================
 
