@@ -322,14 +322,16 @@ jobs:
           EMBEDDINGS_ENDPOINT: ${{ needs.deploy-salad-terraform.outputs.embeddings_endpoint }}
         run: |
           echo "Gerando variáveis de ambiente para Hetzner..."
+          # CORREÇÃO 17/12/2025: Heredoc sem indentação para evitar espaços literais
+          # Bug: << EOF com indentação gerava "          SALAD_MIXTRAL_URL=..." (inválido)
           cat > /tmp/salad_endpoints.env << EOF
-          # Salad Cloud Endpoints (gerado por GitHub Actions)
-          # IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
-          SALAD_MIXTRAL_URL=${MIXTRAL_ENDPOINT}
-          SALAD_WHISPER_URL=${ASR_ENDPOINT}
-          SALAD_FLUX_URL=${FLUX_ENDPOINT}
-          EMBEDDINGS_GPU_URL=${EMBEDDINGS_ENDPOINT}
-          EOF
+# Salad Cloud Endpoints (gerado por GitHub Actions)
+# IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
+SALAD_MIXTRAL_URL=${MIXTRAL_ENDPOINT}
+SALAD_WHISPER_URL=${ASR_ENDPOINT}
+SALAD_FLUX_URL=${FLUX_ENDPOINT}
+EMBEDDINGS_GPU_URL=${EMBEDDINGS_ENDPOINT}
+EOF
           cat /tmp/salad_endpoints.env
 
       - name: Atualizar .env no Hetzner
