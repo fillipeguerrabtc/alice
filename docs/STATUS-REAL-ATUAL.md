@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.93 - Integração completa Trading KuCoin com WebSocket, Handover/Takeover e Componentes Frontend (17/12/2025)
+> **Versão:** 3.94 - Code Review Enterprise: Endpoints control/control-history implementados (17/12/2025)
 
 ---
 
@@ -226,7 +226,7 @@
 | Circuit Breakers | ✅ | ERPNext + Wise + Stripe + KuCoin |
 | Prometheus Metrics | ✅ | `/metrics` |
 | **Trading BTC Futures KuCoin** | ✅ | `kucoinClient.ts`, `kucoinService.ts` |
-| Trading REST APIs (20 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data |
+| Trading REST APIs (22 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data, Control |
 | **KuCoin WebSocket Client** | ✅ | `kucoinWebSocket.ts` - Token management, canais públicos/privados |
 | **Trading Redis Broadcast** | ✅ | `tradingBroadcast.ts` - Pub/Sub entre serviços |
 | Klines API (Candlesticks) | ✅ | `GET /api/integrations/trading/klines/:symbol` |
@@ -486,7 +486,7 @@ Retenção Arquivo:   30 dias
 > - **RLS:** 7/8 tabelas com Row Level Security (migration 0007)
 > - **RBAC:** 4 permissões `integrations:trading:{read,write,delete,manage}`
 
-### API REST Trading (14 endpoints) - FASE Trading Mixtral 8x7B
+### API REST Trading (22 endpoints) - FASE Trading Mixtral 8x7B
 
 | Endpoint | Método | Propósito | Permissão RBAC |
 |----------|--------|-----------|----------------|
@@ -503,16 +503,27 @@ Retenção Arquivo:   30 dias
 | `/api/integrations/trading/orders` | POST | Criar ordem | `trading:write` |
 | `/api/integrations/trading/orders/:id` | DELETE | Cancelar ordem | `trading:write` |
 | `/api/integrations/trading/orders/sync` | POST | Sincronizar com KuCoin | `trading:manage` |
+| `/api/integrations/trading/klines/:symbol` | GET | Candlesticks para gráfico | `trading:read` |
+| `/api/integrations/trading/orderbook/:symbol` | GET | Profundidade de mercado | `trading:read` |
+| `/api/integrations/trading/funding-rate/:symbol` | GET | Funding rate atual | `trading:read` |
+| `/api/integrations/trading/mark-price/:symbol` | GET | Mark price | `trading:read` |
+| `/api/integrations/trading/trades/:symbol` | GET | Histórico de trades | `trading:read` |
+| `/api/integrations/trading/orders/history` | GET | Histórico de ordens KuCoin | `trading:read` |
+| `/api/integrations/trading/control` | POST | Handover/takeover controle | `trading:manage` |
+| `/api/integrations/trading/control-history` | GET | Histórico de mudanças de controle | `trading:read` |
 
-### Página Frontend Trading (17/12/2025)
+### Página Frontend Trading - 8 Tabs (17/12/2025)
 
 | Tab | Funcionalidade |
 |-----|----------------|
 | **Overview** | Preço BTC tempo real, Quick Trade, Account Summary, Sinais/Ordens recentes |
+| **Chart** | Gráfico de candlesticks (recharts), múltiplos timeframes, indicadores |
+| **OrderBook** | Visualização de profundidade de mercado, bids/asks, spread |
 | **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
 | **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
 | **Signals** | Sinais do Mixtral LLM com confidence, criar sinais manuais |
 | **History** | Histórico completo de operações com auditoria |
+| **Control** | Handover/takeover entre Alice (IA) e operador manual, histórico de controle |
 
 > **Features Frontend:**
 > - i18n completo (PT-BR primário, EN secundário)
@@ -818,7 +829,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim → pgvector) | ✅ |
 | Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B (4096 dim → Qdrant) | ✅ |
-| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | ✅ API REST (14 endpoints) |
+| Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | ✅ API REST (22 endpoints) |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA ENTERPRISE (17/12/2025)
 
@@ -1009,7 +1020,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.91 - Bug Fix NaN Bypass em validação de risco (17/12/2025)*
+*Versão: 3.94 - Code Review Enterprise: Endpoints control/control-history implementados (17/12/2025)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*

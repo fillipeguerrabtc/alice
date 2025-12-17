@@ -3311,6 +3311,166 @@ app.get('/api/integrations/trading/orders/history', requirePermission('integrati
 });
 
 // ============================================================================
+// TRADING CONTROL ENDPOINTS (Handover/Takeover - 17/12/2025)
+// Endpoints para gerenciar controle entre Alice (IA) e operador manual
+// Regra 6 - SEM MOCKS: Persistência real em PostgreSQL
+// ============================================================================
+
+// GET /api/integrations/trading/control-history - Histórico de handover/takeover
+app.get('/api/integrations/trading/control-history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const limit = parseInt(req.query.limit as string) || 50;
+    const db = getDatabase();
+
+    // Buscar histórico de controle ordenado por data descendente
+    const history = await db
+      .select()
+      .from(schema.tradingControlHistory)
+      .where(eq(schema.tradingControlHistory.tenantId, authContext.tenantId))
+      .orderBy(desc(schema.tradingControlHistory.criadoEm))
+      .limit(limit);
+
+    // Mapear para formato esperado pelo frontend
+    const formattedHistory = history.map(entry => ({
+      id: entry.id,
+      previousMode: entry.previousMode,
+      newMode: entry.newMode,
+      changedBy: entry.changedBy,
+      reason: entry.reason,
+      source: (entry.metadata as Record<string, unknown>)?.source || 'unknown',
+      createdAt: entry.criadoEm?.toISOString() || new Date().toISOString(),
+    }));
+
+    res.json({
+      success: true,
+      data: formattedHistory,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de controle de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// POST /api/integrations/trading/control - Mudar modo de controle (handover/takeover)
+app.post('/api/integrations/trading/control', requirePermission('integrations:trading:manage'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    // Validar body da requisição
+    const controlSchema = z.object({
+      mode: z.enum(['alice', 'manual']),
+      reason: z.string().max(500).optional(),
+      source: z.string().max(50).optional(),
+    });
+
+    const parsed = controlSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: 'Dados inválidos',
+        details: parsed.error.errors,
+      });
+      return;
+    }
+
+    const { mode, reason, source } = parsed.data;
+    const db = getDatabase();
+
+    // Buscar configuração atual de risco para determinar modo anterior
+    const [currentConfig] = await db
+      .select()
+      .from(schema.tradingRiskConfig)
+      .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId))
+      .limit(1);
+
+    if (!currentConfig) {
+      res.status(404).json({ error: 'Configuração de trading não encontrada para este tenant' });
+      return;
+    }
+
+    // Determinar modo anterior
+    const previousMode = currentConfig.autoExecuteSignals ? 'alice' : 'manual';
+
+    // Se já está no modo solicitado, retornar sem alteração
+    if (previousMode === mode) {
+      res.json({
+        success: true,
+        data: {
+          previousMode,
+          newMode: mode,
+          message: `Trading já está em modo ${mode}`,
+          changed: false,
+        },
+      });
+      return;
+    }
+
+    // Atualizar configuração de risco para refletir novo modo
+    await db
+      .update(schema.tradingRiskConfig)
+      .set({
+        autoExecuteSignals: mode === 'alice',
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId));
+
+    // Registrar mudança no histórico
+    const [historyEntry] = await db
+      .insert(schema.tradingControlHistory)
+      .values({
+        tenantId: authContext.tenantId,
+        previousMode,
+        newMode: mode,
+        changedBy: authContext.userId,
+        reason: reason || (mode === 'alice' ? 'Controle devolvido para Alice' : 'Takeover manual solicitado'),
+        metadata: {
+          source: source || 'api',
+          timestamp: new Date().toISOString(),
+          ipAddress: req.ip,
+          userAgent: req.get('User-Agent'),
+        },
+      })
+      .returning();
+
+    logger.info({
+      tenantId: authContext.tenantId,
+      userId: authContext.userId,
+      previousMode,
+      newMode: mode,
+      reason,
+      historyId: historyEntry?.id,
+    }, 'Modo de controle de trading alterado');
+
+    res.json({
+      success: true,
+      data: {
+        previousMode,
+        newMode: mode,
+        message: mode === 'alice' 
+          ? 'Controle devolvido para Alice com sucesso'
+          : 'Controle manual assumido com sucesso',
+        changed: true,
+        historyId: historyEntry?.id,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao alterar modo de controle de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
 // MIDDLEWARE: Not Found + Error Handler (Express.js 2025)
 // ============================================================================
 

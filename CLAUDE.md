@@ -332,12 +332,12 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.74 - 17 de Dezembro de 2025*
+*Versão: 3.75 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Trading: Schema completo (9 tabelas) + API REST (20 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
+*Trading: Schema completo (9 tabelas) + API REST (22 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
@@ -350,7 +350,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Frontend Trading Components (17/12/2025): CandleChart.tsx, OrderBookViz.tsx, HandoverPanel.tsx, useKucoinWebSocket.ts*
 *Klines API (17/12/2025): GET /api/integrations/trading/klines/:symbol - candlesticks para gráfico*
 *OrderBook API (17/12/2025): GET /api/integrations/trading/orderbook/:symbol - profundidade de mercado*
-*Control API (17/12/2025): POST /api/integrations/trading/control - handover/takeover manual/Alice*
+*Control API (17/12/2025): POST /api/integrations/trading/control + GET /control-history - handover/takeover manual/Alice*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme API KuCoin Futures*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa multiplier do contrato (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
 *Bug Fix NaN Bypass (17/12/2025): Validação defensiva contra NaN em preço/orderValue - evita bypass silencioso de risk limits*
