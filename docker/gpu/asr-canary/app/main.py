@@ -1,6 +1,6 @@
 """
 Alice Enterprise Platform - ASR Canary Service
-Serviço de transcrição de áudio usando Canary-Qwen ou NeMo.
+Serviço de transcrição de áudio usando NeMo Canary.
 
 Autor: Fillipe Guerra
 Data: 16 de Dezembro de 2025
@@ -41,13 +41,12 @@ DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu"
 
 app = FastAPI(
     title="Alice ASR Service",
-    description="Serviço de transcrição de áudio (Speech-to-Text)",
+    description="Serviço de transcrição de áudio (Speech-to-Text) usando NeMo Canary",
     version="1.0.0"
 )
 
-# Modelo (carregado no startup)
+# Modelo NeMo (carregado no startup)
 model = None
-processor = None
 
 
 class TranscriptionResponse(BaseModel):
@@ -60,32 +59,32 @@ class TranscriptionResponse(BaseModel):
 
 @app.on_event("startup")
 async def load_model():
-    """Carrega o modelo ASR no startup."""
-    global model, processor
+    """Carrega o modelo NeMo Canary no startup."""
+    global model
     
-    logger.info(f"Carregando modelo ASR: {MODEL_NAME}")
+    logger.info(f"Carregando modelo NeMo ASR: {MODEL_NAME}")
     logger.info(f"Dispositivo: {DEVICE}")
     
     try:
-        # Usar transformers para modelos HuggingFace
-        from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
+        # Bug fix: Usar NeMo toolkit para modelos nvidia/canary (não transformers)
+        # nvidia/canary-1b é um modelo NeMo, não HuggingFace transformers
+        from nemo.collections.asr.models import EncDecMultiTaskModel
         
-        processor = AutoProcessor.from_pretrained(MODEL_NAME)
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(
-            MODEL_NAME,
-            torch_dtype=torch.float16 if DEVICE == "cuda" else torch.float32,
-            device_map="auto" if DEVICE == "cuda" else None
-        )
+        # Carregar modelo NeMo Canary
+        model = EncDecMultiTaskModel.from_pretrained(MODEL_NAME)
         
-        if DEVICE == "cuda":
+        # Mover para GPU se disponível
+        if DEVICE == "cuda" and torch.cuda.is_available():
             model = model.to(DEVICE)
         
-        logger.info("✅ Modelo ASR carregado com sucesso")
+        # Modo de avaliação
+        model.eval()
+        
+        logger.info("✅ Modelo NeMo Canary carregado com sucesso")
         
     except Exception as e:
-        logger.error(f"❌ Erro ao carregar modelo ASR: {e}")
+        logger.error(f"❌ Erro ao carregar modelo NeMo ASR: {e}")
         logger.error("O serviço iniciará mas /transcribe retornará 503 até o modelo ser carregado")
-        # Nota: Não usamos fallback whisper pois não está instalado no container
         # O modelo será None e endpoints retornarão 503 (Service Unavailable)
 
 
@@ -111,14 +110,14 @@ async def ready_check():
 @app.post("/transcribe", response_model=TranscriptionResponse)
 async def transcribe_audio(
     file: UploadFile = File(...),
-    language: Optional[str] = None
+    language: Optional[str] = "pt"
 ):
     """
-    Transcreve áudio para texto.
+    Transcreve áudio para texto usando NeMo Canary.
     
     Args:
         file: Arquivo de áudio (wav, mp3, m4a, etc.)
-        language: Código do idioma (opcional, auto-detect se não especificado)
+        language: Código do idioma (default: pt para português)
     
     Returns:
         TranscriptionResponse com texto transcrito
@@ -139,20 +138,19 @@ async def transcribe_audio(
             tmp.write(content)
             tmp_path = tmp.name
         
-        # Processar com modelo HuggingFace/NeMo (único modelo suportado)
-        # Nota: Whisper não está instalado no container, apenas nemo_toolkit[asr] + transformers
-        import torchaudio
-        waveform, sample_rate = torchaudio.load(tmp_path)
-        inputs = processor(
-            waveform.squeeze().numpy(),
-            sampling_rate=sample_rate,
-            return_tensors="pt"
-        ).to(DEVICE)
-        
+        # Transcrever com NeMo Canary
+        # O modelo Canary usa transcribe() diretamente com path do arquivo
         with torch.no_grad():
-            generated_ids = model.generate(**inputs)
+            # NeMo Canary aceita lista de arquivos e retorna lista de transcrições
+            transcriptions = model.transcribe(
+                paths2audio_files=[tmp_path],
+                batch_size=1,
+                source_lang=language or "pt",
+                target_lang=language or "pt",
+            )
         
-        text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        # Extrair texto da transcrição
+        text = transcriptions[0] if transcriptions else ""
         detected_language = language
         
         duration = time.time() - start_time
@@ -163,9 +161,9 @@ async def transcribe_audio(
         logger.info(f"Transcrição concluída em {duration:.2f}s")
         
         return TranscriptionResponse(
-            text=text.strip(),
+            text=text.strip() if isinstance(text, str) else str(text).strip(),
             language=detected_language,
-            confidence=0.95,  # TODO: calcular confidence real
+            confidence=0.95,  # NeMo não retorna confidence diretamente
             duration_seconds=duration
         )
         
