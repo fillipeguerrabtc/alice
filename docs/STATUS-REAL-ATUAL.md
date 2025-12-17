@@ -225,17 +225,17 @@
 
 | Funcionalidade | Status | Tecnologia |
 |----------------|--------|------------|
-| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4000 dim, halfvec) - GPU Salad |
+| **Embeddings de Texto (Trading/RAG)** | ✅ | gte-Qwen2-7B-instruct (3584 dim, halfvec) - GPU Salad |
 | **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim, vector) - GPU Salad |
 | **ASR (Transcrição)** | ✅ | Canary-Qwen-2.5B - GPU Salad |
-| Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
+| Suporte Multilíngue (100+ idiomas) | ✅ | gte-Qwen2-7B-instruct |
 | Warm on Demand (30 min keep-warm) | ✅ | Estratégia enterprise |
 | Rate Limiting | ✅ | `serve.py` |
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
 > **ARQUITETURA DUAL-DIMENSION (16/12/2025):**
-> - **Embeddings de texto (Trading/RAG):** Qwen3-Embedding-8B (4000 dim, halfvec) - +38% qualidade retrieval
+> - **Embeddings de texto (Trading/RAG):** gte-Qwen2-7B-instruct (3584 dim, halfvec) - dimensão nativa
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
 > - **ASR:** Canary-Qwen-2.5B - GPU Salad Cloud
 > - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
@@ -435,7 +435,7 @@ Retenção Arquivo:   30 dias
 > **Arquitetura Trading:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
 > - **LLM:** Mixtral 8x7B (MoE ~12B ativos) via vLLM na Salad Cloud
-> - **Embeddings:** Qwen3-Embedding-8B (4000 dim) para análise de mercado
+> - **Embeddings:** gte-Qwen2-7B-instruct (3584 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
 
@@ -728,13 +728,13 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Chat Conversacional + Trading | Mixtral 8x7B (MoE ~12B, vLLM) | ✅ |
 | Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim, vector) | ✅ |
-| Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B (4096 dim, halfvec) | ✅ |
+| Embeddings Texto (Trading/RAG) | gte-Qwen2-7B-instruct (3584 dim, halfvec) | ✅ |
 | Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | 🔄 Em desenvolvimento |
 
 ### Processamento Multimodal (INPUT) - ARQUITETURA DUAL-DIMENSION (16/12/2025)
 
 > **ARQUITETURA DUAL-DIMENSION:**
-> - **Embeddings Texto (Trading/RAG):** Qwen3-Embedding-8B (4000 dim, halfvec) - +38% qualidade
+> - **Embeddings Texto (Trading/RAG):** gte-Qwen2-7B-instruct (3584 dim, halfvec) - nativo
 > - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
 > - **ASR:** Canary-Qwen-2.5B (GPU Salad Cloud)
 > - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
@@ -744,11 +744,11 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim (vector) |
 | Áudio | `audio-processor.ts` | Canary-Qwen-2.5B + Qwen3-Embedding-8B | Transcrição + 4000 dim (halfvec) |
 | Vídeo | `video-processor.ts` | FFmpeg + Canary + OpenCLIP | Dual-dimension |
-| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3-Embedding | 4000 dim (halfvec) |
+| Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + gte-Qwen2 | 3584 dim (halfvec) |
 
 **Serviços de Inferência (GPU Salad Cloud):**
 - **LLM:** Mixtral 8x7B (vLLM, quantizado 4/5-bit) - Chat e Trading
-- **Embeddings Texto:** Qwen3-Embedding-8B (4000 dim)
+- **Embeddings Texto:** gte-Qwen2-7B-instruct (3584 dim)
 - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim)
 - **ASR:** Canary-Qwen-2.5B (transcrição)
 - **Image Gen:** FLUX.1 Schnell

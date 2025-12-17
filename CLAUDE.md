@@ -60,7 +60,7 @@ Alice employs a microservices architecture with 43 containerized services orches
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
     - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Salad Cloud:
-        - Embeddings de texto: Qwen3-Embedding-8B (4000 dim, halfvec) - GPU OBRIGATÓRIO
+        - Embeddings de texto: gte-Qwen2-7B-instruct (3584 dim, halfvec) - GPU OBRIGATÓRIO
         - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim, vector) - GPU OBRIGATÓRIO
         - ASR: Canary-Qwen-2.5B - GPU OBRIGATÓRIO
         - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
@@ -81,7 +81,7 @@ Alice employs a microservices architecture with 43 containerized services orches
 - **LLM Inference**: Mixtral 8x7B (MoE ~12B ativos, quantizado 4/5-bit via vLLM) - chat, trading, geração de texto
 - **Image Generation**: FLUX.1 Schnell - geração de imagens
 - **Fine-tuning**: Treinamento de modelos customizados, LoRA para trading BTC
-- **Embeddings Texto**: Qwen3-Embedding-8B (4000 dim, halfvec) - +38% qualidade para Trading/RAG
+- **Embeddings Texto**: gte-Qwen2-7B-instruct (3584 dim, halfvec) - dimensão nativa do modelo
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
 - **ASR**: Canary-Qwen-2.5B - transcrição de áudio
 
@@ -90,7 +90,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 
 | Modalidade | Modelo | Dimensões | Tipo pgvector | Benefício |
 |------------|--------|-----------|---------------|-----------|
-| **Texto (Trading/RAG)** | Qwen3-Embedding-8B | **4000** | `halfvec` | +38% qualidade retrieval |
+| **Texto (Trading/RAG)** | gte-Qwen2-7B-instruct | **3584** | `halfvec` | Dimensão nativa |
 | **Imagem** | OpenCLIP ViT-H/14 | **1024** | `vector` | Dimensão nativa |
 | **Transcrição** | Canary-Qwen-2.5B | - | - | ASR dedicado |
 
@@ -342,7 +342,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(4000) Qwen3-Embedding-8B (+38% qualidade) | Imagem vector(1024) OpenCLIP ViT-H/14*
+*ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(3584) gte-Qwen2-7B-instruct (nativo) | Imagem vector(1024) OpenCLIP ViT-H/14*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + WebSocket para notificações*
 *Salad Cloud: Mixtral 8x7B (vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-Qwen-2.5B (ASR)*

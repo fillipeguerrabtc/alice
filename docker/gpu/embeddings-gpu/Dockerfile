@@ -56,8 +56,9 @@ RUN chown -R embeddings:embeddings /app
 USER embeddings
 
 # Configuração dual-dimension
+# Bug fix: gte-Qwen2-7B-instruct tem 3584 dimensões nativamente (não 4000)
 ENV TEXT_MODEL_NAME="Alibaba-NLP/gte-Qwen2-7B-instruct"
-ENV TEXT_EMBEDDING_DIM="4000"
+ENV TEXT_EMBEDDING_DIM="3584"
 ENV IMAGE_MODEL_NAME="laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 ENV IMAGE_EMBEDDING_DIM="1024"
 ENV DEVICE="cuda"

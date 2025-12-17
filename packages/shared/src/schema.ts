@@ -16,7 +16,7 @@
  * - Validação cross-tenant via validateTenantConsistency() de @alice/shared-utils
  * 
  * ARQUITETURA DUAL-DIMENSION DE EMBEDDINGS (16/12/2025):
- * - Texto (Trading/RAG): halfvec(4000) - Qwen3-Embedding-8B (+38% qualidade, máx HNSW)
+ * - Texto (Trading/RAG): halfvec(3584) - gte-Qwen2-7B-instruct (dimensão nativa)
  * - Imagem: vector(1024) - OpenCLIP ViT-H/14 (dimensão nativa)
  * 
  * Autor: Fillipe Guerra
@@ -46,11 +46,11 @@ import {
 // ============================================================================
 // Decisão arquitetural 16/12/2025 - Dimensões otimizadas por caso de uso:
 //
-// TEXTO (Trading/RAG): halfvec(4000) - Qwen3-Embedding-8B
-//   - +38% qualidade retrieval vs 1024 dimensões
+// TEXTO (Trading/RAG): halfvec(3584) - gte-Qwen2-7B-instruct
+//   - Dimensão nativa do modelo (3584 dim)
 //   - Usado em: documents, documentChunks, trainingData, mediaUploads.textEmbedding
 //   - halfvec usa half-precision (2 bytes/valor) = storage eficiente
-//   - Limite HNSW: máximo 4000 dim para halfvec (pgvector constraint)
+//   - Dentro do limite HNSW (4000 dim máx para halfvec)
 //
 // IMAGEM: vector(1024) - OpenCLIP ViT-H/14
 //   - Dimensão nativa do modelo (full precision para qualidade visual)
@@ -60,11 +60,12 @@ import {
 // Best Practices 2025: Google/Microsoft usam dimensões consistentes por modalidade
 // ============================================================================
 
-// TEXTO: halfvec(4000) - Qwen3-Embedding-8B para Trading/RAG
-// Half-precision (2 bytes/valor) - máximo 4000 dim para índices HNSW (pgvector constraint)
+// TEXTO: halfvec(3584) - gte-Qwen2-7B-instruct para Trading/RAG
+// Bug fix: O modelo gte-Qwen2-7B-instruct tem 3584 dimensões nativamente
+// Half-precision (2 bytes/valor) - dentro do limite 4000 HNSW (pgvector)
 const textVector = customType<{ data: number[]; driverData: number[] }>({
   dataType() {
-    return 'halfvec(4000)';
+    return 'halfvec(3584)';
   },
   // pgvector driver já faz a conversão automaticamente
 });
@@ -78,8 +79,8 @@ const imageVector = customType<{ data: number[]; driverData: number[] }>({
   // pgvector driver já faz a conversão automaticamente
 });
 
-// Alias: vector = textVector para embeddings de texto (4000 dim)
-// Arquitetura dual-dimension: textVector(4000) para texto/trading, imageVector(1024) para imagens
+// Alias: vector = textVector para embeddings de texto (3584 dim)
+// Arquitetura dual-dimension: textVector(3584) para texto/trading, imageVector(1024) para imagens
 const vector = textVector;
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";

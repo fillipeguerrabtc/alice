@@ -189,7 +189,7 @@ generate_embeddings_config() {
         },
         "environment_variables": {
             "TEXT_MODEL_NAME": "Alibaba-NLP/gte-Qwen2-7B-instruct",
-            "TEXT_EMBEDDING_DIM": "4000",
+            "TEXT_EMBEDDING_DIM": "3584",
             "IMAGE_MODEL_NAME": "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
             "IMAGE_EMBEDDING_DIM": "1024",
             "DEVICE": "cuda",

@@ -77,8 +77,9 @@ async def load_model():
         )
         
         if DEVICE == "cuda":
-            pipe = pipe.to(DEVICE)
-            pipe.enable_model_cpu_offload()  # Otimização de VRAM
+            # Bug fix: NÃO usar .to(DEVICE) junto com enable_model_cpu_offload()
+            # enable_model_cpu_offload() gerencia device automaticamente
+            pipe.enable_model_cpu_offload()  # Move componentes para GPU apenas durante forward pass
         
         logger.info("✅ Modelo FLUX carregado com sucesso")
         

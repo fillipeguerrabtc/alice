@@ -2,7 +2,7 @@
 Alice Enterprise Platform - Embeddings GPU Service (Dual-Dimension)
 ===================================================================
 Serviço de embeddings com arquitetura dual-dimension:
-- Texto (Trading/RAG): Qwen3-Embedding-8B → 4000 dimensões (halfvec, máx HNSW)
+- Texto (Trading/RAG): gte-Qwen2-7B-instruct → 3584 dimensões (halfvec, nativo)
 - Imagem: OpenCLIP ViT-H/14 → 1024 dimensões (vector)
 
 Decisão arquitetural: 16/12/2025
@@ -59,7 +59,7 @@ LAST_REQUEST_TIME = Gauge(
 # =============================================================================
 
 TEXT_MODEL_NAME = os.environ.get("TEXT_MODEL_NAME", "Alibaba-NLP/gte-Qwen2-7B-instruct")
-TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4000"))
+TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "3584"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
@@ -230,7 +230,7 @@ async def ready_check():
 @app.post("/embed/text", response_model=TextEmbeddingResponse)
 async def embed_text(request: TextEmbeddingRequest):
     """
-    Gera embeddings de texto (4000 dimensões - máx HNSW pgvector).
+    Gera embeddings de texto (3584 dimensões - nativo gte-Qwen2-7B-instruct).
     
     Usado para:
     - Trading/RAG
@@ -350,7 +350,7 @@ async def model_info():
             "text": {
                 "name": TEXT_MODEL_NAME,
                 "dimensions": TEXT_EMBEDDING_DIM,
-                "pgvector_type": "halfvec(4000)",
+                "pgvector_type": "halfvec(3584)",
                 "use_case": "Trading, RAG, document search"
             },
             "image": {
@@ -361,7 +361,7 @@ async def model_info():
             }
         },
         "tables_mapping": {
-            "halfvec_4000": [
+            "halfvec_3584": [
                 "documents.embedding",
                 "documentChunks.embedding",
                 "trainingData.embedding",

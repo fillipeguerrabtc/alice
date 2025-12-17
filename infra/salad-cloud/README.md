@@ -49,7 +49,7 @@ Este diretório contém a infraestrutura como código (IaC) para os Container Gr
 
 | Modalidade | Modelo | Dimensões | Tipo pgvector | Uso |
 |------------|--------|-----------|---------------|-----|
-| **Texto (Trading/RAG)** | Qwen3-Embedding-8B | 4000 | `halfvec` | +38% qualidade (máx HNSW) |
+| **Texto (Trading/RAG)** | gte-Qwen2-7B-instruct | 3584 | `halfvec` | Dimensão nativa do modelo |
 | **Imagem** | OpenCLIP ViT-H/14 | 1024 | `vector` | Dimensão nativa |
 
 ## Pré-requisitos
