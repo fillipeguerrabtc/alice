@@ -1698,14 +1698,23 @@ export const tradingDatasetStatusEnum = pgEnum("trading_dataset_status", [
 ]);
 
 // Enum para tipo de dado de mercado
+// Intervalos baseados na API KuCoin Futures (min: 1min, max: 1month)
+// Para scalping: 1m, 3m, 5m são essenciais
 export const tradingMarketDataTypeEnum = pgEnum("trading_market_data_type", [
-  "candle_1m",   // Candle 1 minuto
-  "candle_5m",   // Candle 5 minutos
+  "candle_1m",   // Candle 1 minuto (SCALPING - menor intervalo disponível)
+  "candle_3m",   // Candle 3 minutos (SCALPING - curto prazo)
+  "candle_5m",   // Candle 5 minutos (SCALPING/SWING)
   "candle_15m",  // Candle 15 minutos
+  "candle_30m",  // Candle 30 minutos
   "candle_1h",   // Candle 1 hora
+  "candle_2h",   // Candle 2 horas
   "candle_4h",   // Candle 4 horas
+  "candle_6h",   // Candle 6 horas
+  "candle_8h",   // Candle 8 horas
+  "candle_12h",  // Candle 12 horas
   "candle_1d",   // Candle 1 dia
-  "ticker",      // Ticker (preço instantâneo)
+  "candle_1w",   // Candle 1 semana
+  "ticker",      // Ticker (preço instantâneo) - pode simular sub-minuto
   "orderbook",   // Snapshot do order book
   "funding_rate", // Taxa de funding (perpetuals)
   "open_interest", // Open interest

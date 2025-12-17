@@ -30,14 +30,23 @@ const KUCOIN_FUTURES_API = process.env.KUCOIN_FUTURES_BASE_URL || 'https://api-f
 // Símbolo padrão (BTC/USDT Perpetual)
 const DEFAULT_SYMBOL = 'XBTUSDTM';
 
-// Intervalos de candles suportados
+// Intervalos de candles suportados pela KuCoin Futures API
+// Granularidade em minutos - mínimo 1 minuto (API não suporta 30 segundos)
+// Para scalping: 1min, 3min, 5min são essenciais
 const CANDLE_INTERVALS = {
-  '1min': 1,
-  '5min': 5,
+  '1min': 1,      // SCALPING - menor intervalo disponível
+  '3min': 3,      // SCALPING - curto prazo
+  '5min': 5,      // SCALPING/SWING
   '15min': 15,
+  '30min': 30,
   '1hour': 60,
+  '2hour': 120,
   '4hour': 240,
+  '6hour': 360,
+  '8hour': 480,
+  '12hour': 720,
   '1day': 1440,
+  '1week': 10080,
 } as const;
 
 type CandleInterval = keyof typeof CANDLE_INTERVALS;
@@ -172,13 +181,25 @@ async function saveCandles(
   const result: CollectionResult = { inserted: 0, duplicates: 0, errors: 0 };
 
   // Mapear intervalo para tipo enum
-  const dataTypeMap: Record<number, 'candle_1m' | 'candle_5m' | 'candle_15m' | 'candle_1h' | 'candle_4h' | 'candle_1d'> = {
-    1: 'candle_1m',
-    5: 'candle_5m',
+  // Todos os intervalos suportados pela API KuCoin Futures
+  type CandleDataType = 'candle_1m' | 'candle_3m' | 'candle_5m' | 'candle_15m' | 'candle_30m' | 
+    'candle_1h' | 'candle_2h' | 'candle_4h' | 'candle_6h' | 'candle_8h' | 'candle_12h' | 
+    'candle_1d' | 'candle_1w';
+  
+  const dataTypeMap: Record<number, CandleDataType> = {
+    1: 'candle_1m',      // SCALPING
+    3: 'candle_3m',      // SCALPING
+    5: 'candle_5m',      // SCALPING/SWING
     15: 'candle_15m',
+    30: 'candle_30m',
     60: 'candle_1h',
+    120: 'candle_2h',
     240: 'candle_4h',
+    360: 'candle_6h',
+    480: 'candle_8h',
+    720: 'candle_12h',
     1440: 'candle_1d',
+    10080: 'candle_1w',
   };
 
   const dataType = dataTypeMap[intervalMinutes];
@@ -345,14 +366,36 @@ export async function collectAllMarketData(
   };
 
   // Coletar candles de diferentes intervalos
-  const intervals: CandleInterval[] = ['1min', '5min', '15min', '1hour', '4hour'];
+  // SCALPING: 1min, 3min, 5min são essenciais para operações rápidas
+  // SWING: 15min, 30min, 1hour para médio prazo
+  // POSITION: 4hour, 1day para análise de tendência
+  const intervals: CandleInterval[] = [
+    '1min',   // SCALPING - essencial
+    '3min',   // SCALPING - essencial
+    '5min',   // SCALPING/SWING
+    '15min',
+    '30min',
+    '1hour',
+    '4hour',
+  ];
+  
+  // Quantidade de horas de histórico a coletar por intervalo
+  // Intervalos menores = menos histórico (mais frequente)
+  // Intervalos maiores = mais histórico (menos frequente)
   const hoursBackMap: Record<CandleInterval, number> = {
-    '1min': 2,      // 2 horas de 1min candles
-    '5min': 6,      // 6 horas de 5min candles
-    '15min': 12,    // 12 horas de 15min candles
+    '1min': 1,      // 1 hora de 1min candles (60 candles) - SCALPING
+    '3min': 2,      // 2 horas de 3min candles (40 candles) - SCALPING
+    '5min': 4,      // 4 horas de 5min candles (48 candles)
+    '15min': 8,     // 8 horas de 15min candles (32 candles)
+    '30min': 12,    // 12 horas de 30min candles (24 candles)
     '1hour': 24,    // 24 horas de 1h candles
+    '2hour': 48,    // 2 dias de 2h candles
     '4hour': 96,    // 4 dias de 4h candles
-    '1day': 720,    // 30 dias de 1d candles (não coletado no job regular)
+    '6hour': 144,   // 6 dias de 6h candles
+    '8hour': 192,   // 8 dias de 8h candles
+    '12hour': 360,  // 15 dias de 12h candles
+    '1day': 720,    // 30 dias de 1d candles
+    '1week': 2160,  // ~3 meses de weekly candles
   };
 
   for (const interval of intervals) {
@@ -378,6 +421,86 @@ export async function collectAllMarketData(
   }
 
   logger.info({ symbol, results }, 'Coleta completa de market data concluída');
+
+  return results;
+}
+
+/**
+ * Coleta dados de alta frequência para SCALPING
+ * Foco em candles de 1min, 3min e 5min com histórico curto
+ * Ideal para rodar a cada 1-5 minutos via scheduler
+ */
+export async function collectScalpingData(
+  symbol: string = DEFAULT_SYMBOL
+): Promise<{
+  candles: Record<string, CollectionResult>;
+  ticker: boolean;
+}> {
+  logger.info({ symbol }, 'Iniciando coleta de dados de scalping');
+
+  const results = {
+    candles: {} as Record<string, CollectionResult>,
+    ticker: false,
+  };
+
+  // Intervalos essenciais para scalping
+  const scalpingIntervals: CandleInterval[] = ['1min', '3min', '5min'];
+  const scalpingHoursBack: Record<string, number> = {
+    '1min': 0.5,    // 30 minutos de candles de 1min (30 candles)
+    '3min': 1,      // 1 hora de candles de 3min (20 candles)
+    '5min': 2,      // 2 horas de candles de 5min (24 candles)
+  };
+
+  for (const interval of scalpingIntervals) {
+    results.candles[interval] = await collectCandles(
+      symbol,
+      interval,
+      scalpingHoursBack[interval]
+    );
+    // Delay mínimo para scalping (200ms)
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+
+  // Coletar ticker atual para preço em tempo real
+  try {
+    const tickerUrl = `${KUCOIN_FUTURES_API}/api/v1/ticker?symbol=${symbol}`;
+    const response = await fetch(tickerUrl);
+    const data = await response.json() as { 
+      code: string; 
+      data: { 
+        price: string; 
+        bestBidPrice: string; 
+        bestAskPrice: string;
+        size: number;
+        ts: number;
+      } 
+    };
+
+    if (data.code === '200000' && data.data) {
+      const db = getDatabase();
+      await db
+        .insert(schema.tradingMarketData)
+        .values({
+          symbol,
+          dataType: 'ticker',
+          timestamp: new Date(data.data.ts),
+          data: {
+            price: parseFloat(data.data.price),
+            bestBid: parseFloat(data.data.bestBidPrice),
+            bestAsk: parseFloat(data.data.bestAskPrice),
+            size: data.data.size,
+          },
+          source: 'kucoin',
+        })
+        .onConflictDoNothing();
+      
+      results.ticker = true;
+    }
+  } catch (error) {
+    logger.error({ error, symbol }, 'Erro ao coletar ticker para scalping');
+  }
+
+  logger.info({ symbol, results }, 'Coleta de dados de scalping concluída');
 
   return results;
 }
@@ -441,5 +564,6 @@ export async function getMarketDataStats(symbol: string = DEFAULT_SYMBOL): Promi
 export default {
   collectCandles,
   collectAllMarketData,
+  collectScalpingData,  // Alta frequência para scalping
   getMarketDataStats,
 };
