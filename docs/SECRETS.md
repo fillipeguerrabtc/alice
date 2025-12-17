@@ -1,17 +1,18 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 15 de Dezembro de 2025
+**Data:** 17 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 49 configurados no repositório (44 obrigatórios pré-deploy + 5 opcionais/novos)
+**Total de Secrets:** 55 configurados no repositório (50 obrigatórios pré-deploy + 5 opcionais/novos)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 43 em produção (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
-**LLM:** Llama 4 Maverick (400B parâmetros) via Salad Cloud GPUs
+**LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud GPUs
+**Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
 **IP:** 46.224.46.93
@@ -24,8 +25,9 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
 | **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_WHISPER_URL, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
-| **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud para embeddings 1024 dim) |
-| **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_* |
+| **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud - 3584 dim texto, 1024 dim imagem) |
+| **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
+| **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **Web Search (SearXNG)** | alice-searxng | SEARXNG_SECRET_KEY |
 | **ERPNext** | erpnext-* | ERPNEXT_*, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD |
@@ -144,6 +146,34 @@ Estes são necessários para o deploy funcionar:
 3. Profile ID está na URL quando você acessa sua conta
 
 **Nota:** Use `WISE_SANDBOX=false` em produção.
+
+### FASE 5b: Trading KuCoin Futures (BTC Perpetuals)
+
+| Secret | Onde Obter |
+|--------|------------|
+| `KUCOIN_API_KEY` | [kucoin.com/account/api](https://www.kucoin.com/account/api) |
+| `KUCOIN_API_SECRET` | kucoin.com/account/api (mostrado apenas 1 vez ao criar) |
+| `KUCOIN_API_PASSPHRASE` | Definido por você ao criar a API Key |
+| `KUCOIN_FUTURES_BASE_URL` | Opcional. Default: `https://api-futures.kucoin.com` |
+| `KUCOIN_SANDBOX_MODE` | `true` para sandbox, `false` para produção (default: `false`) |
+
+**Configuração:**
+1. KuCoin → Profile → API Management → Create API
+2. Permissions necessárias: `Futures Trading`, `General`
+3. IP Whitelist: Adicionar IP do servidor Hetzner (46.224.46.93)
+4. Importante: **Guarde o API Secret imediatamente** - só é mostrado 1 vez
+
+**Sandbox para Testes:**
+- URL: `https://api-sandbox-futures.kucoin.com`
+- Criar conta separada em sandbox: [sandbox-futures.kucoin.com](https://sandbox-futures.kucoin.com)
+- Definir `KUCOIN_SANDBOX_MODE=true` para usar sandbox
+
+**Endpoints Implementados (integrations-service):**
+- `/api/integrations/trading/status` - Status do serviço
+- `/api/integrations/trading/market/:symbol` - Dados de mercado
+- `/api/integrations/trading/account` - Saldo da conta
+- `/api/integrations/trading/orders` - Gerenciamento de ordens
+- `/api/integrations/trading/signals` - Sinais do Mixtral LLM
 
 ### FASE 6: Comunicação (WhatsApp/SMS/Email)
 
@@ -303,6 +333,16 @@ Estes são necessários para o deploy funcionar:
 | `WISE_PROFILE_ID` | ✅ |
 | `WISE_WEBHOOK_SECRET` | ⏳ Opcional (gerar após configurar webhook no Wise Dashboard) |
 | `WISE_SANDBOX` | ⏳ Opcional (default aplicado: `false`) |
+
+### KuCoin Futures (Trading BTC)
+
+| Secret | Status |
+|--------|--------|
+| `KUCOIN_API_KEY` | ⏳ Configurar quando trading estiver ativo |
+| `KUCOIN_API_SECRET` | ⏳ Configurar quando trading estiver ativo |
+| `KUCOIN_API_PASSPHRASE` | ⏳ Configurar quando trading estiver ativo |
+| `KUCOIN_SANDBOX_MODE` | ⏳ Opcional (default: `false`) |
+| `KUCOIN_FUTURES_BASE_URL` | ⏳ Opcional (default aplicado) |
 
 ### Comunicação
 
