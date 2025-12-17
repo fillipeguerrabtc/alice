@@ -2229,7 +2229,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
                 processingTimeMs: result.processingTimeMs,
-                qdrantPointId: result.embedding.length > 0 ? `media-audio-${mediaUploadRecord.id}` : null,
+                // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
+                // (condição deve coincidir com a do upsert para evitar referência a ponto inexistente)
+                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? `media-audio-${mediaUploadRecord.id}` : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
@@ -2239,6 +2241,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             transcriptionLength: result.transcription.length,
             language: result.transcriptionLanguage,
             embeddingDim: result.embedding.length,
+            qdrantConfigured: isQdrantConfigured(),
           }, 'Áudio processado com sucesso');
         } else if (mediaType === 'video') {
           // Processar vídeo: extrai áudio para transcrição + frames para CLIP
@@ -2305,7 +2308,9 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 framesExtracted: result.framesExtracted,
                 frameEmbeddingsCount: result.frameEmbeddings.length,
                 processingTimeMs: result.processingTimeMs,
-                qdrantPointId: result.textEmbedding.length > 0 ? `media-video-${mediaUploadRecord.id}` : null,
+                // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
+                // (condição deve coincidir com a do upsert para evitar referência a ponto inexistente)
+                qdrantPointId: result.textEmbedding.length > 0 && isQdrantConfigured() ? `media-video-${mediaUploadRecord.id}` : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
@@ -2316,6 +2321,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             framesExtracted: result.framesExtracted,
             textEmbeddingDim: result.textEmbedding.length,
             combinedEmbeddingDim: result.combinedEmbedding.length,
+            qdrantConfigured: isQdrantConfigured(),
           }, 'Vídeo processado com sucesso');
         } else if (mediaType === 'document') {
           // Processar documento: extrai texto e gera embeddings
