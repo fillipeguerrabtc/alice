@@ -66,13 +66,25 @@ deploy_service() {
         url_suffix="/${name}"
     fi
     
-    curl -s -X ${method} \
+    # Bug fix: Verificar HTTP status code (curl retorna 0 mesmo para erros HTTP)
+    local response_file="/tmp/salad_response_${name}.json"
+    local http_code
+    http_code=$(curl -s -w "%{http_code}" -o "${response_file}" -X ${method} \
         -H "Salad-Api-Key: ${SALAD_API_KEY}" \
         -H "Content-Type: application/json" \
         -d @"${config_file}" \
-        "${API_BASE}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_ID}/containers${url_suffix}"
+        "${API_BASE}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_ID}/containers${url_suffix}")
     
-    echo -e "${GREEN}✓ ${name} deployed${NC}"
+    # Verificar se HTTP status é 2xx (sucesso)
+    if [[ ! "${http_code}" =~ ^2[0-9][0-9]$ ]]; then
+        echo -e "${RED}✗ ${name} deployment failed (HTTP ${http_code})${NC}"
+        echo "Response: $(cat ${response_file})"
+        rm -f "${response_file}"
+        return 1
+    fi
+    
+    rm -f "${response_file}"
+    echo -e "${GREEN}✓ ${name} deployed (HTTP ${http_code})${NC}"
 }
 
 # Gerar configuração JSON para Mixtral
