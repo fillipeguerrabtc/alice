@@ -834,14 +834,37 @@ logger.info({
 | PostgreSQL disk full | Baixa | Alto | Alertas, backup rotation |
 | Token limit LLM excedido | Média | Baixo | Truncation, context management |
 
-### 12.2 Dívida Técnica
+### 12.2 Cobertura de Testes
+
+A plataforma possui uma **suite de testes unitários completa** usando **Vitest**:
+
+| Categoria | Arquivos | Cobertura |
+|-----------|----------|-----------|
+| **Services** | 7 | auth, chat, rag, training, integrations, observability, learning-orchestrator |
+| **Processors** | 5 | image, audio, video, document, video-combine-embeddings |
+| **Packages** | 2 | database, shutdown-manager |
+| **Security** | 3 | security-fixes, rbac-validation, rbac-cache |
+| **Config/Schema** | 3 | config-validation, schema-validation, feature-flags |
+| **Health** | 1 | health-endpoints (6 microsserviços) |
+| **Logger** | 2 | frontend-logger, logger-proxy |
+| **TOTAL** | **24 arquivos** | **~1286 casos de teste** |
+
+**Configuração Enterprise:**
+- **Framework**: Vitest 3.2+ com coverage v8
+- **Thresholds mínimos**: 50% (statements, branches, functions, lines)
+- **Setup global**: `tests/setup.ts` com Pino logger
+- **Execução**: `pnpm test` ou `pnpm test:coverage`
+
+### 12.3 Dívida Técnica
 
 | Item | Prioridade | Esforço | Status |
 |------|------------|---------|--------|
-| Testes E2E | Alta | Grande | Planejado |
-| Documentação API (OpenAPI) | Média | Médio | Parcial |
-| Load testing | Média | Médio | Planejado |
+| Testes E2E (Playwright/Cypress) | Alta | Grande | Planejado |
+| Load testing (k6/Artillery) | Média | Médio | Planejado |
 | Disaster recovery drill | Alta | Grande | Planejado |
+| Documentação API (OpenAPI) | - | - | ✅ **Completo** |
+
+**Nota**: Documentação OpenAPI está 100% implementada em todos os microsserviços via `@alice/shared-utils/openapi`.
 
 ---
 

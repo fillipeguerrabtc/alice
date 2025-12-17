@@ -102,7 +102,15 @@ interface CacheEntry {
 
 /** Resultado do check de cache */
 export interface CacheCheckResult {
-  hit: boolean;
+  /** 
+   * CORREÇÃO 17/12/2025: Separação clara entre cache hit e resposta disponível
+   * - cacheHit: true apenas se resposta veio do Redis (cache real)
+   * - hasResponse: true se tem resposta (seja do cache ou gerada)
+   * Antes: campo "hit" era ambíguo, causando métricas inconsistentes
+   */
+  cacheHit: boolean;
+  /** Indica se uma resposta está disponível (do cache ou gerada) */
+  hasResponse: boolean;
   response?: string;
   cacheKey?: string;
   isGreeting: boolean;
@@ -271,8 +279,10 @@ export async function checkResponseCache(
 ): Promise<CacheCheckResult> {
   const startTime = Date.now();
   
+  // CORREÇÃO 17/12/2025: Separação clara entre cache hit e resposta disponível
   const result: CacheCheckResult = {
-    hit: false,
+    cacheHit: false,  // true apenas se veio do Redis
+    hasResponse: false, // true se tem resposta (cache ou gerada)
     isGreeting: false,
     latencyMs: 0,
   };
@@ -300,7 +310,7 @@ export async function checkResponseCache(
   
   // Se não for saudação, não usar cache (mensagens complexas precisam de LLM)
   if (!greetingDetected) {
-    metricsState.misses++;
+    // Não é saudação = não conta como miss (vai para LLM)
     result.latencyMs = Date.now() - startTime;
     updateLatencyMetrics(result.latencyMs);
     return result;
@@ -314,26 +324,30 @@ export async function checkResponseCache(
   const cached = await getFromCache(tenantId, messageHash);
   
   if (cached) {
-    // Cache HIT
+    // CACHE HIT REAL - resposta veio do Redis
     metricsState.hits++;
-    result.hit = true;
+    result.cacheHit = true;
+    result.hasResponse = true;
     result.response = cached.response;
     
     logger.info({
       tenantId,
       hitCount: cached.hitCount,
       language: cached.language,
-    }, 'Response cache HIT - saudação');
+    }, 'Response cache HIT - saudação do Redis');
   } else {
-    // Cache MISS para saudação - gerar e salvar
+    // CACHE MISS - saudação detectada mas não estava no cache
+    // Gerar resposta e salvar para próximas vezes
     metricsState.misses++;
+    result.cacheHit = false;  // NÃO veio do cache
+    result.hasResponse = true; // MAS tem resposta gerada
+    
     const language = detectLanguage(message);
     const response = generateGreetingResponse(language);
     
     // Salvar no cache para próximas vezes
     await saveToCache(tenantId, messageHash, response, language);
     
-    result.hit = true; // Consideramos hit porque temos resposta
     result.response = response;
     
     logger.info({

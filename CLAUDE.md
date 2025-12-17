@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.80 - 17 de Dezembro de 2025*
+*Versão: 3.81 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -376,3 +376,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Trading Parser (17/12/2025): extractNumber corrigido para usar grupos capturados do regex (evita amount incorreto)*
 *Bug Fix WebSocket Unsubscribe (17/12/2025): useKucoinWebSocket.ts passa oldSymbol explícito ao desinscrever (evita subscriptions órfãs)*
 *Bug Fix Trading Orchestrator Atomicity (17/12/2025): handover/takeover agora são atômicos via db.transaction()*
+*Bug Fix Stop Loss/Take Profit (17/12/2025): Extração de preço corrigida para usar grupos capturados do regex (evita preço incorreto)*
+*Suite de Testes (17/12/2025): 24 arquivos de teste, ~1286 casos de teste com Vitest + coverage v8 (thresholds 50%)*

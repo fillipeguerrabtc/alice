@@ -382,9 +382,12 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
         }
 
         if (pattern.type === 'set_stop_loss' || pattern.type === 'set_take_profit') {
-          const priceMatch = text.match(/\$?(\d+(?:[.,]\d+)?)/);
-          if (priceMatch) {
-            result.price = parseFloat(priceMatch[1].replace(',', '.'));
+          // CORREÇÃO 17/12/2025: Usar grupos capturados do regex, não primeiro número do texto
+          // Para "10x alavancagem, stop em 45000", antes retornava 10, agora retorna 45000
+          // Mesma correção aplicada para buy/sell amounts
+          const price = extractAmountFromMatch(match);
+          if (price !== undefined) {
+            result.price = price;
             if (pattern.type === 'set_stop_loss') {
               result.stopLoss = result.price;
             } else {

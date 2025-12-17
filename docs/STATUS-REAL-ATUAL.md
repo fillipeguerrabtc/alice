@@ -1043,6 +1043,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix Trading Parser (17/12/2025): extractNumber corrigido para usar grupos capturados do regex (evita amount incorreto)*
 *Bug Fix WebSocket Unsubscribe (17/12/2025): useKucoinWebSocket.ts passa oldSymbol explícito ao desinscrever (evita subscriptions órfãs)*
 *Bug Fix Trading Orchestrator Atomicity (17/12/2025): handover/takeover agora são atômicos via db.transaction()*
+*Bug Fix Stop Loss/Take Profit (17/12/2025): Extração de preço corrigida para usar grupos capturados do regex (evita preço incorreto)*
+*Suite de Testes: 24 arquivos, ~1286 casos de teste com Vitest + coverage v8 (thresholds mínimos 50%)*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

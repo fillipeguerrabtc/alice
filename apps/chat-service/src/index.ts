@@ -2277,9 +2277,15 @@ wss.on('connection', (ws, req) => {
           metrics.responseCache.greetingsDetected.inc({ tenant_id: safeTenantId });
         }
         
-        if (cacheResult.hit && cacheResult.response) {
-          // CACHE HIT - responder sem chamar LLM
-          metrics.responseCache.hitsTotal.inc({ tenant_id: safeTenantId });
+        // CORREÇÃO 17/12/2025: Métricas separadas para cache hit e miss
+        // cacheHit = resposta veio do Redis | hasResponse = tem resposta disponível
+        if (cacheResult.hasResponse && cacheResult.response) {
+          // Incrementar métrica correta baseado em se veio do cache ou foi gerada
+          if (cacheResult.cacheHit) {
+            metrics.responseCache.hitsTotal.inc({ tenant_id: safeTenantId });
+          } else {
+            metrics.responseCache.missesTotal.inc({ tenant_id: safeTenantId });
+          }
           metrics.responseCache.checkDuration.observe(
             { tenant_id: safeTenantId }, 
             cacheResult.latencyMs / 1000
@@ -2308,7 +2314,7 @@ wss.on('connection', (ws, req) => {
             type: 'complete', 
             data: cachedMsg,
             metrics: {
-              cacheHit: true,
+              cacheHit: cacheResult.cacheHit,  // true se veio do Redis, false se foi gerada
               cacheLatencyMs: cacheLatency,
               source: 'response-cache',
             },
@@ -2319,17 +2325,15 @@ wss.on('connection', (ws, req) => {
             tenantId: safeTenantId,
             cacheLatencyMs: cacheLatency,
             isGreeting: true,
-          }, 'Resposta servida do cache (Greetings Gate) - sem GPU');
+            cacheHit: cacheResult.cacheHit,
+          }, cacheResult.cacheHit 
+            ? 'Resposta servida do cache Redis (Greetings Gate) - sem GPU'
+            : 'Saudação gerada e cacheada (Greetings Gate) - sem GPU');
           
           return; // Não continuar para LLM
-        } else {
-          // CACHE MISS - registrar métrica e continuar para LLM
-          metrics.responseCache.missesTotal.inc({ tenant_id: safeTenantId });
-          metrics.responseCache.checkDuration.observe(
-            { tenant_id: safeTenantId }, 
-            cacheResult.latencyMs / 1000
-          );
         }
+        // Se não tem resposta do cache (não é saudação), continuar para LLM
+        // Métricas já foram registradas no bloco acima quando hasResponse=true
 
         const agent = conversation?.agent as { instrucoes?: string } | null;
         let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
