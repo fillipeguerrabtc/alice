@@ -50,7 +50,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 Alice employs a microservices architecture with 43 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
-- **Infrastructure Core (6 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**.
+- **Infrastructure Core (7 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for semantic search and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para Trading 8192 dim)**.
 - **Alice Microservices (8 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
@@ -85,18 +85,20 @@ Alice employs a microservices architecture with 43 containerized services orches
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
 - **ASR**: Canary-Qwen-2.5B - transcrição de áudio
 
-### Processamento Multimodal - ARQUITETURA DUAL-DIMENSION (16/12/2025)
+### Processamento Multimodal - ARQUITETURA TRI-DIMENSION (17/12/2025)
 Embeddings otimizados por caso de uso para máxima qualidade:
 
-| Modalidade | Modelo | Dimensões | Tipo pgvector | Benefício |
-|------------|--------|-----------|---------------|-----------|
-| **Texto (Trading/RAG)** | gte-Qwen2-7B-instruct | **3584** | `halfvec` | Dimensão nativa |
-| **Imagem** | OpenCLIP ViT-H/14 | **1024** | `vector` | Dimensão nativa |
+| Modalidade | Modelo | Dimensões | Storage | Benefício |
+|------------|--------|-----------|---------|-----------|
+| **Trading** | Qwen3-Embedding-8B | **8192** | **Qdrant** | Máxima qualidade para análise financeira |
+| **Texto (RAG)** | gte-Qwen2-7B-instruct | **3584** | PostgreSQL `halfvec` | Dimensão nativa |
+| **Imagem** | OpenCLIP ViT-H/14 | **1024** | PostgreSQL `vector` | Dimensão nativa |
 | **Transcrição** | Canary-Qwen-2.5B | - | - | ASR dedicado |
 
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
+- **Qdrant para Trading**: Suporta até 32.768 dim com HNSW index (pgvector limita em 4000)
 - **Estratégia "Warm on Demand"**: GPUs mantidas quentes por 30 minutos após último uso
-- **Sem conflito**: Colunas separadas por tipo, índices HNSW independentes
+- **Sem conflito**: Cada modalidade em storage dedicado com índices independentes
 
 ### Estratégia de GPU "Warm on Demand" (15/12/2025)
 Otimização de custos para GPUs Salad Cloud:
@@ -332,8 +334,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.55 - 17 de Dezembro de 2025*
-*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Versão: 3.58 - 17 de Dezembro de 2025*
+*Total de Containers: 44 (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (8 tabelas) + API REST (14 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles)*
@@ -343,7 +345,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Langfuse v3: Arquitetura atualizada com worker container + variáveis SALT e ENCRYPTION_KEY obrigatórias*
 *Atualização Periódica: 100% automática - dependências npm/pnpm (PR automático semanal), pacotes do sistema Hetzner (issue automática semanal)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
-*ARQUITETURA DUAL-DIMENSION (16/12/2025): Texto/Trading halfvec(3584) gte-Qwen2-7B-instruct (nativo) | Imagem vector(1024) OpenCLIP ViT-H/14*
+*ARQUITETURA TRI-DIMENSION (17/12/2025): Trading 8192 dim Qwen3-Embedding-8B (Qdrant) | Texto/RAG halfvec(3584) gte-Qwen2-7B-instruct (pgvector) | Imagem vector(1024) OpenCLIP ViT-H/14 (pgvector)*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus (last_request_timestamp)*
 *Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, gte-Qwen2-7B-instruct (embeddings), OpenCLIP ViT-H/14, Canary-Qwen-2.5B (ASR)*

@@ -13,7 +13,8 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 43 total (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
+# CONTAINERS: 44 total (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)
+# - alice-qdrant: Banco vetorial para embeddings de Trading 8192 dim (Qwen3-Embedding-8B)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
 #
@@ -149,6 +150,15 @@ volumes:
       type: none
       o: bind
       device: /opt/alice/data/langfuse-db
+
+  # Qdrant - Banco vetorial para embeddings de Trading (8192 dim)
+  qdrant_data:
+    name: alice-qdrant-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/qdrant
 
 # =============================================================================
 # SERVICES
@@ -480,6 +490,55 @@ services:
         reservations:
           memory: 128M
           cpus: '0.1'
+
+  # ===========================================================================
+  # QDRANT - Banco Vetorial para Trading (8192 dimensões)
+  # ===========================================================================
+  # Qdrant v1.16.2 - Suporta até 32.768 dimensões com índice HNSW
+  # Usado para embeddings de trading com Qwen3-Embedding-8B (8192 dim)
+  # PostgreSQL pgvector continua para embeddings gerais (texto 3584, imagem 1024)
+  # Docs: https://qdrant.tech/documentation/
+  #
+  # Autor: Fillipe Guerra
+  # Data: 17 de Dezembro de 2025
+  # ===========================================================================
+  alice-qdrant:
+    # ATUALIZADO 17/12/2025: Qdrant v1.16.2 com SHA256 digest (Supply Chain Security 2025)
+    image: qdrant/qdrant:v1.16.2@sha256:975b390833f6c0b2fc032bb962254c1733a88b7fd0e879b4642cd11c84f7c6d7
+    platform: linux/amd64
+    container_name: alice-qdrant
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    environment:
+      # API Key para autenticação (Regra 6 - sem acesso anônimo em produção)
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
+      # Configuração de performance
+      QDRANT__STORAGE__PERFORMANCE__MAX_SEARCH_THREADS: 4
+      QDRANT__STORAGE__ON_DISK_PAYLOAD: true
+      # Telemetria desabilitada (privacidade)
+      QDRANT__TELEMETRY_DISABLED: true
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:6333/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
 
   # ===========================================================================
   # ALICE FRONTEND SERVICE - React/Nginx
@@ -871,12 +930,23 @@ services:
       TRAINING_SERVICE_URL: http://alice-training:3004
       # RAG Service para indexação de mídia WhatsApp (15/12/2025)
       RAG_SERVICE_URL: http://alice-rag:3003
+      # Qdrant - Banco vetorial para Trading (8192 dim) - 17/12/2025
+      QDRANT_URL: http://alice-qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY}
+      # KuCoin Futures API (Trading BTC Perpetuals)
+      KUCOIN_API_KEY: ${KUCOIN_API_KEY:-}
+      KUCOIN_API_SECRET: ${KUCOIN_API_SECRET:-}
+      KUCOIN_API_PASSPHRASE: ${KUCOIN_API_PASSPHRASE:-}
+      KUCOIN_FUTURES_BASE_URL: ${KUCOIN_FUTURES_BASE_URL:-https://api-futures.kucoin.com}
+      KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
     depends_on:
       postgres:
         condition: service_healthy
       alice-chat:
         condition: service_healthy
       alice-rag:
+        condition: service_healthy
+      alice-qdrant:
         condition: service_healthy
     networks:
       - alice-network

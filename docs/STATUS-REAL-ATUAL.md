@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.75 - API Trading KuCoin Futures Completa + Cliente Enterprise
+> **Versão:** 3.78 - Qdrant 8192 dim para Trading + Correção Bugs KuCoin
 
 ---
 
@@ -234,8 +234,9 @@
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-> **ARQUITETURA DUAL-DIMENSION (16/12/2025):**
-> - **Embeddings de texto (Trading/RAG):** gte-Qwen2-7B-instruct (3584 dim, halfvec) - dimensão nativa
+> **ARQUITETURA TRI-DIMENSION (17/12/2025):**
+> - **Embeddings de Trading:** Qwen3-Embedding-8B (8192 dim) - **Qdrant** (máxima qualidade)
+> - **Embeddings de texto (RAG):** gte-Qwen2-7B-instruct (3584 dim, halfvec) - pgvector
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim, vector) - dimensão nativa
 > - **ASR:** Canary-Qwen-2.5B - GPU Salad Cloud
 > - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
@@ -940,8 +941,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 15/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.73 - Upload Multimodal UI + WhatsApp Mídia → RAG + Limpeza código obsoleto*
-*Total de Containers: 43 (6 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Versão: 3.78 - Qdrant 8192 dim para Trading + Correção Bugs KuCoin*
+*Total de Containers: 44 (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*

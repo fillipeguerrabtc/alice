@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
-> **Versão:** 1.1.0
+> **Versão:** 1.2.0
 
 ## Visão Geral
 
@@ -21,11 +21,11 @@ Este diretório contém a infraestrutura como código (IaC) para os Container Gr
 │  │  RTX 4090       │  │  RTX 4090       │  │  RTX 4090       │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────────┘ │
 │                                                                 │
-│  ┌─────────────────────────────────────────────────────────────┐│
-│  │              Embeddings GPU (Dual-Dimension)                ││
-│  │  gte-Qwen2-7B-instruct (3584 dim) + OpenCLIP (1024 dim)    ││
-│  │  RTX 4090 (24GB VRAM)                                       ││
-│  └─────────────────────────────────────────────────────────────┘│
+│  ┌───────────────────────────────┐  ┌───────────────────────────┐│
+│  │  Embeddings GPU (RAG)        │  │  Trading Embeddings       ││
+│  │  gte-Qwen2 (3584) + CLIP     │  │  Qwen3-Embedding-8B       ││
+│  │  RTX 4090                    │  │  8192 dim → Qdrant        ││
+│  └───────────────────────────────┘  └───────────────────────────┘│
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -43,14 +43,21 @@ Este diretório contém a infraestrutura como código (IaC) para os Container Gr
 | **Mixtral 8x7B** | RTX 4090 | 24GB | vLLM quantizado 4-bit | LLM para chat e trading |
 | **ASR Canary** | RTX 4090 | 24GB | Canary-Qwen-2.5B | Transcrição de áudio |
 | **FLUX.1 Schnell** | RTX 4090 | 24GB | FLUX.1 Schnell | Geração de imagens |
-| **Embeddings GPU** | RTX 4090 | 24GB | gte-Qwen2 + OpenCLIP | Embeddings dual-dimension |
+| **Embeddings GPU** | RTX 4090 | 24GB | gte-Qwen2 + OpenCLIP | Embeddings RAG/imagem |
+| **Trading Embeddings** | RTX 4090 | 24GB | Qwen3-Embedding-8B | Embeddings trading 8192 dim |
 
-## Arquitetura de Embeddings (Dual-Dimension)
+## Arquitetura de Embeddings (Tri-Dimension)
 
-| Modalidade | Modelo | Dimensões | Tipo pgvector | Uso |
-|------------|--------|-----------|---------------|-----|
-| **Texto (Trading/RAG)** | gte-Qwen2-7B-instruct | 3584 | `halfvec` | Dimensão nativa do modelo |
-| **Imagem** | OpenCLIP ViT-H/14 | 1024 | `vector` | Dimensão nativa |
+| Modalidade | Modelo | Dimensões | Storage | Uso |
+|------------|--------|-----------|---------|-----|
+| **Trading** | Qwen3-Embedding-8B | 8192 | **Qdrant** | Máxima qualidade para análise financeira |
+| **Texto (RAG)** | gte-Qwen2-7B-instruct | 3584 | PostgreSQL `halfvec` | Dimensão nativa do modelo |
+| **Imagem** | OpenCLIP ViT-H/14 | 1024 | PostgreSQL `vector` | Dimensão nativa |
+
+> **Por que Qdrant para Trading:**
+> - pgvector HNSW suporta máx 4000 dim (halfvec) / 2000 dim (vector)
+> - Qdrant suporta até 32.768 dimensões com índice HNSW
+> - Qwen3-Embedding-8B (8192 dim) oferece qualidade superior para análise financeira
 
 ## Pré-requisitos
 

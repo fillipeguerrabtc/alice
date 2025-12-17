@@ -26,6 +26,7 @@ export * from './shutdown-manager.js';
 export * from './redis-cache-adapter.js';
 export * from './openapi.js';
 export * from './multi-tenant-validation.js';
+export * from './qdrant-client.js';
 
 export * as rbac from './rbac/index.js';
 export { 

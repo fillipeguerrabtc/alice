@@ -175,6 +175,31 @@ Estes são necessários para o deploy funcionar:
 - `/api/integrations/trading/orders` - Gerenciamento de ordens
 - `/api/integrations/trading/signals` - Sinais do Mixtral LLM
 
+### FASE 5c: Qdrant - Banco Vetorial para Trading (8192 dimensões)
+
+| Secret | Onde Obter |
+|--------|------------|
+| `QDRANT_API_KEY` | Gerar com `openssl rand -hex 32` |
+
+**Configuração:**
+1. Gerar API Key: `openssl rand -hex 32`
+2. Adicionar como GitHub Secret: `QDRANT_API_KEY`
+3. O container `alice-qdrant` usa esta key para autenticação
+
+**Arquitetura de Embeddings:**
+- **Qdrant (8192 dim):** Qwen3-Embedding-8B para Trading (máxima qualidade semântica)
+- **PostgreSQL pgvector (3584 dim):** gte-Qwen2-7B-instruct para RAG/texto geral
+- **PostgreSQL pgvector (1024 dim):** OpenCLIP ViT-H/14 para imagens
+
+**Por que Qdrant para Trading:**
+- pgvector HNSW suporta máx 4000 dim (halfvec) / 2000 dim (vector)
+- Qdrant suporta até 32.768 dimensões com índice HNSW
+- Qwen3-Embedding-8B (8192 dim) oferece qualidade superior para análise financeira
+
+**Portas:**
+- `6333`: REST API (usada pelo integrations-service)
+- `6334`: gRPC (não exposta externamente)
+
 ### FASE 6: Comunicação (WhatsApp/SMS/Email)
 
 **Twilio:**

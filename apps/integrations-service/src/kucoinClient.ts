@@ -254,9 +254,17 @@ export interface KucoinAccountOverview {
 // CIRCUIT BREAKER (Regra 16 - Resiliência)
 // ============================================================================
 
-const kucoinCircuitBreaker = createCircuitBreaker<Response>(
-  CIRCUIT_BREAKER_PRESETS.kucoinFutures
-);
+// Função wrapper para circuit breaker - segue padrão wiseClient.ts
+// Bug fix: createCircuitBreaker requer função de ação + config com nome
+async function executeKucoinRequest(fetchFn: () => Promise<Response>): Promise<Response> {
+  return fetchFn();
+}
+
+// Circuit breaker seguindo padrão enterprise de wiseClient.ts
+const kucoinCircuitBreaker = createCircuitBreaker(executeKucoinRequest, {
+  name: 'kucoin-futures',
+  ...CIRCUIT_BREAKER_PRESETS.kucoinFutures,
+});
 
 // Instrumentar métricas do circuit breaker
 // Será inicializado quando o serviço principal criar as métricas
@@ -383,7 +391,7 @@ async function executeRequest<T>(
     return response;
   };
 
-  // Executar via circuit breaker
+  // Executar via circuit breaker (passa função como parâmetro - padrão wiseClient.ts)
   const response = await kucoinCircuitBreaker.fire(fetchFn);
   const data = await response.json() as KucoinApiResponse<T>;
 

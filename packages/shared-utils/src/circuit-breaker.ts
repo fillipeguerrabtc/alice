@@ -155,6 +155,13 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
+  /** Qdrant - Banco vetorial para Trading (8192 dim) */
+  qdrantTrading: {
+    timeout: 10000, // Busca vetorial é rápida
+    errorThresholdPercentage: 50,
+    resetTimeout: 20000,
+    volumeThreshold: 5,
+  },
   /** Resend API - emails transacionais */
   resendAPI: {
     timeout: 10000,
