@@ -2344,7 +2344,8 @@ wss.on('connection', (ws, req) => {
         let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
 
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
-        const ragResult = await buscarContextoRAG(message.content, namespaceId);
+        // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
+        const ragResult = await buscarContextoRAG(messageContent, namespaceId);
         const ragLatency = Date.now() - ragStartTime;
         
         if (ragResult && ragResult.context) {
@@ -2365,9 +2366,10 @@ wss.on('connection', (ws, req) => {
         }
 
         const llmStartTime = Date.now();
+        // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content
         const stream = await callLlamaAPI([
           { role: 'system', content: systemPrompt },
-          { role: 'user', content: message.content },
+          { role: 'user', content: messageContent },
         ], true) as AsyncGenerator<string>;
 
         let fullResponse = '';
