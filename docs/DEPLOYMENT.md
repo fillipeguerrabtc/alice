@@ -988,12 +988,13 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 6.7 - Arquitetura Enterprise Qwen3-Embedding-8B + Qdrant + Remoção alice-clip-inference*
+*Versão: 6.8 - Bug Fixes Enterprise (Embeddings Áudio/Vídeo → Qdrant + KuCoin Status)*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
+*Bug Fixes (17/12/2025): Embeddings texto áudio/vídeo → Qdrant (não PostgreSQL halfvec) | KuCoin sync status 'active'*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

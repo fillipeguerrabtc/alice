@@ -2151,19 +2151,41 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
           }
           
-          // Atualizar registro com transcrição, embedding de texto e metadata
+          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
+          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
+          // Armazenar no Qdrant com metadata para busca semântica
+          if (result.embedding.length > 0 && isQdrantConfigured()) {
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-audio-${mediaUploadRecord.id}`,
+              vector: result.embedding,
+              payload: {
+                type: 'media_audio',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'audio',
+                tenantId: req.tenantId,
+                transcription: result.transcription.slice(0, 10000), // Limitar para payload
+                transcriptionLanguage: result.transcriptionLanguage,
+                embeddingModel: result.embeddingModel,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de áudio inserido no Qdrant');
+          }
+          
+          // Atualizar registro com transcrição e metadata (SEM embedding - vai para Qdrant)
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 4096 dim (Qwen3-Embedding-8B GPU → Qdrant)
+              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
                 processingTimeMs: result.processingTimeMs,
+                qdrantPointId: result.embedding.length > 0 ? `media-audio-${mediaUploadRecord.id}` : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
@@ -2199,14 +2221,38 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
           }
           
-          // Atualizar registro com embeddings combinados e transcrição
+          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
+          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
+          // Apenas clipEmbedding (1024 dim OpenCLIP) permanece em pgvector
+          if (result.textEmbedding.length > 0 && isQdrantConfigured()) {
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-video-${mediaUploadRecord.id}`,
+              vector: result.textEmbedding,
+              payload: {
+                type: 'media_video',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'video',
+                tenantId: req.tenantId,
+                transcription: result.transcription.slice(0, 10000), // Limitar para payload
+                transcriptionLanguage: result.transcriptionLanguage,
+                embeddingModel: result.embeddingModel,
+                framesExtracted: result.framesExtracted,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de texto de vídeo inserido no Qdrant');
+          }
+          
+          // Atualizar registro com embedding de imagem (CLIP) e transcrição
+          // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
+          // clipEmbedding (1024 dim OpenCLIP) permanece em pgvector para busca de imagens
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.textEmbedding.length > 0 ? result.textEmbedding : null,
+              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant
               clipEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
@@ -2215,6 +2261,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
                 framesExtracted: result.framesExtracted,
                 frameEmbeddingsCount: result.frameEmbeddings.length,
                 processingTimeMs: result.processingTimeMs,
+                qdrantPointId: result.textEmbedding.length > 0 ? `media-video-${mediaUploadRecord.id}` : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));

@@ -957,7 +957,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.86 - Arquitetura Enterprise + RBAC Trading Permissions*
+*Versão: 3.87 - Bug Fixes Enterprise (Embeddings + KuCoin)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -965,6 +965,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Upload Multimodal: Nova tab em /training para imagens/áudios/vídeos (15/12/2025)*
 *WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
+*Bug Fix Embeddings (17/12/2025): Embeddings de texto de áudio/vídeo agora vão para Qdrant (4096 dim), não PostgreSQL halfvec(3584)*
+*Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme documentação API KuCoin Futures*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 
 ---

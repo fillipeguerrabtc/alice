@@ -332,7 +332,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.66 - 17 de Dezembro de 2025*
+*Versão: 3.67 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -340,11 +340,13 @@ git commit -a -m "test: adiciona testes unitários"
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
+*Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme API KuCoin Futures*
 *Análise de Licenças (17/12/2025): Qwen3-Embedding-8B (Apache 2.0) é ÚNICO modelo top-tier com licença comercial*
 *Modelos Non-Commercial Identificados: Fin-E5, Linq-Embed-Mistral, NV-Embed-v2 (todos CC BY-NC - PROIBIDO uso comercial)*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem vector(1024) OpenCLIP MIT (pgvector)*
+*Bug Fix Embeddings (17/12/2025): Embeddings de texto de áudio/vídeo agora vão para Qdrant (4096 dim), não PostgreSQL halfvec(3584)*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus*
 *Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR)*

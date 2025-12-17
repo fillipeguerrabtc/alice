@@ -640,10 +640,13 @@ export async function syncOrdersStatus(
       const kucoinOrder = await kucoinClient.getOrder(order.kucoinOrderId);
       
       // Mapear status da KuCoin para nosso schema
+      // CORREÇÃO 17/12/2025: KuCoin Futures API retorna 'active' para ordens na order book, não 'open'
+      // Referência: https://www.kucoin.com/docs/rest/futures-trading/orders/get-order-list
       let newStatus: 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired' = 'pending';
       if (kucoinOrder.status === 'done') {
         newStatus = kucoinOrder.filledSize === kucoinOrder.size ? 'filled' : 'cancelled';
-      } else if (kucoinOrder.status === 'open') {
+      } else if (kucoinOrder.status === 'active') {
+        // KuCoin retorna 'active' para ordens ativas na order book
         newStatus = 'open';
       }
 
