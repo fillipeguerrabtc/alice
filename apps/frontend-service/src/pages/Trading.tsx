@@ -906,12 +906,15 @@ export default function Trading() {
           />
 
           {/* PnL Não Realizado */}
+          {/* BUG FIX 17/12/2025: Corrigido tratamento de PNL = 0 (falsy em JS) */}
+          {/* Antes: account?.unrealisedPNL && >= 0 falhava quando PNL era exatamente 0 */}
+          {/* Agora: usa nullish coalescing (??) para tratar undefined/null como 0 */}
           <StatCard
             title={t('trading.account.unrealisedPnl')}
-            value={isLoadingAccount ? '-' : `$${account?.unrealisedPNL?.toFixed(2) || '0'}`}
+            value={isLoadingAccount ? '-' : `$${account?.unrealisedPNL?.toFixed(2) ?? '0.00'}`}
             subtitle={t('trading.account.allPositions')}
-            icon={account?.unrealisedPNL && account.unrealisedPNL >= 0 ? TrendingUp : TrendingDown}
-            trend={account?.unrealisedPNL && account.unrealisedPNL >= 0 ? 'up' : 'down'}
+            icon={(account?.unrealisedPNL ?? 0) >= 0 ? TrendingUp : TrendingDown}
+            trend={(account?.unrealisedPNL ?? 0) >= 0 ? 'up' : 'down'}
             isLoading={isLoadingAccount}
           />
         </div>
