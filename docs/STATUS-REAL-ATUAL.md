@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.90 - Bug Fix Trading Risk Config + orderValue (17/12/2025)
+> **Versão:** 3.91 - Bug Fix NaN Bypass em validação de risco (17/12/2025)
 
 ---
 
@@ -957,7 +957,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.90 - Bug Fix Trading Risk Config + orderValue (17/12/2025)*
+*Versão: 3.91 - Bug Fix NaN Bypass em validação de risco (17/12/2025)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -970,6 +970,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme documentação API KuCoin Futures*
 *Bug Fix Risk Config API (17/12/2025): Removidos maxDailyOrders e allowedSymbols (campos inexistentes) do schema Zod*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa contract.multiplier (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
+*Bug Fix NaN Bypass (17/12/2025): Validação defensiva contra NaN em preço/orderValue - evita bypass silencioso de risk limits*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 

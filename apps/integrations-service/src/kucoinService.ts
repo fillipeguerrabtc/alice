@@ -214,12 +214,32 @@ export async function upsertRiskConfig(
 
 /**
  * Verifica se trading está habilitado e dentro dos limites de risco
+ * 
+ * CORREÇÃO 17/12/2025: Adicionada validação defensiva contra NaN
+ * Bug: Se orderSize ou orderValue forem NaN, comparações como `NaN > X` retornam false
+ * Isso permitia bypass silencioso da validação de risco
  */
 export async function validateTradingAllowed(
   authContext: TradingAuthContext,
   orderSize: number,
   orderValue: number
 ): Promise<{ allowed: boolean; reason?: string }> {
+  // CORREÇÃO 17/12/2025: Validação defensiva contra NaN/Infinity
+  // Garante que valores inválidos não passem silenciosamente pela validação
+  if (!Number.isFinite(orderSize) || orderSize <= 0) {
+    return { 
+      allowed: false, 
+      reason: `Tamanho da ordem inválido: ${orderSize}. Deve ser um número positivo.` 
+    };
+  }
+  
+  if (!Number.isFinite(orderValue) || orderValue <= 0) {
+    return { 
+      allowed: false, 
+      reason: `Valor da ordem inválido: ${orderValue}. Deve ser um número positivo.` 
+    };
+  }
+
   const config = await getRiskConfig(authContext);
   
   if (!config) {
@@ -230,17 +250,35 @@ export async function validateTradingAllowed(
     return { allowed: false, reason: 'Trading desabilitado para este tenant.' };
   }
 
-  if (orderSize > Number(config.maxPositionSize)) {
+  // Validar maxPositionSize com proteção contra NaN
+  const maxPositionSize = Number(config.maxPositionSize);
+  if (!Number.isFinite(maxPositionSize)) {
     return { 
       allowed: false, 
-      reason: `Tamanho da ordem (${orderSize}) excede limite máximo (${config.maxPositionSize}).` 
+      reason: `Configuração maxPositionSize inválida: ${config.maxPositionSize}. Contate administrador.` 
+    };
+  }
+  
+  if (orderSize > maxPositionSize) {
+    return { 
+      allowed: false, 
+      reason: `Tamanho da ordem (${orderSize}) excede limite máximo (${maxPositionSize}).` 
     };
   }
 
-  if (orderValue > Number(config.maxOrderValue)) {
+  // Validar maxOrderValue com proteção contra NaN
+  const maxOrderValue = Number(config.maxOrderValue);
+  if (!Number.isFinite(maxOrderValue)) {
     return { 
       allowed: false, 
-      reason: `Valor da ordem (${orderValue}) excede limite máximo (${config.maxOrderValue}).` 
+      reason: `Configuração maxOrderValue inválida: ${config.maxOrderValue}. Contate administrador.` 
+    };
+  }
+  
+  if (orderValue > maxOrderValue) {
+    return { 
+      allowed: false, 
+      reason: `Valor da ordem (${orderValue.toFixed(2)} USD) excede limite máximo (${maxOrderValue.toFixed(2)} USD).` 
     };
   }
 
@@ -406,6 +444,25 @@ export async function createOrderFromSignal(
     ]);
     const currentPrice = parseFloat(ticker.price);
     
+    // CORREÇÃO 17/12/2025: Validar que currentPrice é um número válido
+    // Bug CRÍTICO: Se ticker.price for inválido (vazio, não-numérico), parseFloat retorna NaN
+    // NaN propaga para orderValue, e comparação `NaN > X` sempre retorna false
+    // Isso faz a validação de risco passar silenciosamente (bypass completo!)
+    if (!Number.isFinite(currentPrice) || currentPrice <= 0) {
+      return { 
+        success: false, 
+        error: `Preço de mercado inválido recebido da API KuCoin: "${ticker.price}". Tente novamente.` 
+      };
+    }
+    
+    // CORREÇÃO 17/12/2025: Validar que multiplier do contrato é válido
+    if (!Number.isFinite(contractInfo.multiplier) || contractInfo.multiplier <= 0) {
+      return { 
+        success: false, 
+        error: `Multiplicador do contrato inválido para ${symbol}: ${contractInfo.multiplier}. Contate suporte.` 
+      };
+    }
+    
     // CORREÇÃO 17/12/2025: Usar multiplier do contrato no cálculo de orderValue
     // Bug CRÍTICO: size está em contratos, não em BTC!
     // Para XBTUSDTM, cada contrato = 0.001 BTC (multiplier = 0.001)
@@ -414,6 +471,15 @@ export async function createOrderFromSignal(
     // Isso causava rejeição de ordens legítimas por exceder maxOrderValue
     const priceForValidation = params.price !== undefined ? params.price : currentPrice;
     const orderValue = params.size * contractInfo.multiplier * priceForValidation;
+    
+    // CORREÇÃO 17/12/2025: Validar que orderValue é um número válido
+    // Proteção adicional contra NaN/Infinity propagados de params.size ou params.price
+    if (!Number.isFinite(orderValue) || orderValue <= 0) {
+      return { 
+        success: false, 
+        error: `Valor da ordem calculado é inválido (${orderValue}). Verifique size=${params.size}, price=${priceForValidation}.` 
+      };
+    }
 
     // Validar limites de risco
     const riskCheck = await validateTradingAllowed(authContext, params.size, orderValue);

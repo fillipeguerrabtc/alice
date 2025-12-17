@@ -332,7 +332,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.71 - 17 de Dezembro de 2025*
+*Versão: 3.72 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -343,6 +343,7 @@ git commit -a -m "test: adiciona testes unitários"
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme API KuCoin Futures*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa multiplier do contrato (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
+*Bug Fix NaN Bypass (17/12/2025): Validação defensiva contra NaN em preço/orderValue - evita bypass silencioso de risk limits*
 *Bug Fix Risk Config API (17/12/2025): Removidos campos inexistentes (maxDailyOrders, allowedSymbols) do schema Zod*
 *Análise de Licenças (17/12/2025): Qwen3-Embedding-8B (Apache 2.0) é ÚNICO modelo top-tier com licença comercial*
 *Modelos Non-Commercial Identificados: Fin-E5, Linq-Embed-Mistral, NV-Embed-v2 (todos CC BY-NC - PROIBIDO uso comercial)*
