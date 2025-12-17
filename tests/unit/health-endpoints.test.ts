@@ -230,8 +230,9 @@ const mockRagHealthResponse = {
   status: 'ok',
   service: 'rag-service',
   timestamp: FIXED_TIMESTAMP,
-  embeddingsProvider: 'local',
-  model: 'intfloat/multilingual-e5-base',
+  // ARQUITETURA ENTERPRISE (17/12/2025): Embeddings via Salad Cloud GPU
+  embeddingsProvider: 'salad-gpu',
+  model: 'Qwen/Qwen3-Embedding-8B',
   circuitBreaker: {
     state: 'closed',
     stats: { failures: 0, successes: 200, timeouts: 0 },

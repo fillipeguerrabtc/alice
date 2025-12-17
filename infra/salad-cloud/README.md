@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
-> **Versão:** 1.2.0
+> **Versão:** 2.0.0 (Integração completa com GitHub Actions)
 
 ## Visão Geral
 
@@ -203,9 +203,38 @@ infra/salad-cloud/
 - Todos os endpoints requerem autenticação (`auth: true`)
 - HuggingFace token com escopo mínimo (read-only)
 
+## Pipeline GitHub Actions (100% Automatizado)
+
+O workflow `.github/workflows/deploy-salad-gpu.yml` automatiza:
+
+1. **Build de imagens GPU** (GHCR)
+2. **Terraform Plan/Apply** (Container Groups)
+3. **Captura de endpoints** (outputs)
+4. **Atualização de `.env.prod`** no Hetzner via SSH
+
+### Secrets Necessários no GitHub
+
+| Secret | Descrição |
+|--------|-----------|
+| `SALAD_API_KEY` | API Key do Salad Cloud |
+| `SALAD_ORGANIZATION_ID` | ID da organização |
+| `SALAD_PROJECT_ID` | ID do projeto |
+| `HUGGINGFACE_TOKEN` | Token HuggingFace (read) |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH para deploy |
+| `HETZNER_VM_HOST` | IP do servidor Hetzner |
+
+### Endpoints Gerados (salvos em GitHub Secrets)
+
+| Secret | Descrição |
+|--------|-----------|
+| `SALAD_MIXTRAL_URL` | vLLM Mixtral 8x7B (`/v1/chat/completions`) |
+| `SALAD_FLUX_URL` | FLUX.1 Schnell (`/generate`) |
+| `SALAD_ASR_URL` | Canary ASR (`/transcribe`) |
+| `EMBEDDINGS_GPU_URL` | Embeddings (`/embed/text`, `/embed/image`) |
+
 ## Próximos Passos
 
-1. [ ] Integrar com GitHub Actions para deploy automático
+1. [x] ~~Integrar com GitHub Actions para deploy automático~~ ✅ Implementado
 2. [ ] Configurar alertas de custo no Salad Cloud
 3. [ ] Implementar autoscaling baseado em métricas
-4. [ ] Adicionar backup de state Terraform em S3
+4. [ ] Adicionar backup de state Terraform remoto (S3/Terraform Cloud)

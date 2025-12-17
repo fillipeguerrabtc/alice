@@ -203,9 +203,17 @@ export async function generateImage(
 // Embeddings de imagem com 1024 dimensões para máxima qualidade
 // ============================================================================
 
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || 'http://localhost:8080';
+// CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
+// CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
+// GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)
+const CLIP_EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
 async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
+  // REGRA 6: Fail-fast se GPU não configurada
+  if (!CLIP_EMBEDDINGS_GPU_URL) {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)');
+  }
+  
   // ARQUITETURA 100% GPU (15/12/2025): OpenCLIP ViT-H/14 via Salad Cloud
   // Embeddings de imagem com 1024 dimensões para máxima qualidade
   // NOTA: imageBase64 pode vir com ou sem prefixo data:image/...;base64,
@@ -215,7 +223,7 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
     ? imageBase64 
     : `data:image/png;base64,${imageBase64}`;
   
-  const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
+  const response = await fetch(`${CLIP_EMBEDDINGS_GPU_URL}/embed/image`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -579,7 +579,7 @@ describe('Document Processor - Estrutura de Embeddings', () => {
 
   it('deve criar array de embedding com dimensão correta', () => {
     const embedding = new Array(TEXT_EMBEDDING_DIM).fill(0);
-    expect(embedding.length).toBe(1024);
+    expect(embedding.length).toBe(4096);
   });
 
   it('deve calcular média de embeddings corretamente', () => {
