@@ -130,5 +130,5 @@ docker logs alice-grafana -f --tail 100
 
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro*  
-*Atualizado: 14 de Dezembro de 2025*  
-*Total de Containers: 43 (6 infraestrutura + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Atualizado: 17 de Dezembro de 2025*  
+*Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*

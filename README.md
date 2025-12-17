@@ -101,7 +101,7 @@
 
 A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
 
-#### Categoria 1: Infraestrutura Core (6 serviços)
+#### Categoria 1: Infraestrutura Core (7 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
@@ -110,23 +110,22 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
 | 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
 | 5 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
-| 6 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
+| 6 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
+| 7 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
 
-#### Categoria 2: Microsserviços Alice (8 serviços)
+#### Categoria 2: Microsserviços Alice (7 serviços)
 
 | # | Serviço | Container | Porta | Descrição |
 |---|---------|-----------|-------|-----------|
-| 7 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
-| 8 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
-| 9 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
-| 10 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
-| 11 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
-| 12 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend |
-| 13 | Observability | `alice-observability` | 3010 | Prometheus, Grafana, Jaeger, Backup |
-| 14 | Embeddings GPU | `embeddings-gpu` | 8080 | Embeddings Enterprise: Texto (Qwen3-Embedding-8B, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14, 1024 dim → pgvector) via Salad Cloud |
-| 15 | Qdrant | `alice-qdrant` | 6333 | Banco vetorial para texto (4096 dim, HNSW index) |
+| 8 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
+| 9 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
+| 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
+| 11 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
+| 12 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
+| 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend, KuCoin Futures |
+| 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
 
-> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção.
+> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via Salad Cloud (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
 
 #### Categoria 3: ERPNext Stack (15 serviços)
 
@@ -141,9 +140,9 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 21 | Frontend | `erpnext-frontend` | Frontend NGINX |
 | 22 | WebSocket | `erpnext-websocket` | Socket.io real-time |
 | 23 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
-| 24 | Worker Default | `erpnext-worker-default` | Jobs normais (instância 1) |
-| 25 | Worker Short | `erpnext-worker-short` | Jobs rápidos (instância 1) |
-| 26 | Worker Long | `erpnext-worker-long` | Jobs longos (instância 1) |
+| 24 | Worker Default 1 | `erpnext-worker-default` | Jobs normais (instância 1) |
+| 25 | Worker Short 1 | `erpnext-worker-short` | Jobs rápidos (instância 1) |
+| 26 | Worker Long 1 | `erpnext-worker-long` | Jobs longos (instância 1) |
 | 27 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
 | 28 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
 | 29 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
@@ -154,7 +153,7 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 |---|---------|-----------|-----------|
 | 30 | Langfuse Web | `langfuse` | LLM observability e analytics |
 | 31 | Langfuse Worker | `langfuse-worker` | Processamento assíncrono (migrations/jobs) |
-| 32 | Langfuse DB | `alice-langfuse-db` | PostgreSQL para Langfuse |
+| 32 | Langfuse DB | `alice-langfuse-db` | PostgreSQL dedicado Langfuse |
 | 33 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
 | 34 | Grafana | `grafana` | Dashboards e visualizações |
 | 35 | Loki | `loki` | Agregação e armazenamento de logs |
@@ -430,7 +429,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *Autor: Fillipe Guerra*
 *Versão 3.58.0 - 17 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 44 (7 infra + 8 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
