@@ -2092,10 +2092,10 @@ async function processMessageWithLLM(
 /**
  * Processa mídia recebida via WhatsApp e indexa no RAG
  * 
- * ARQUITETURA 100% GPU (15/12/2025):
- * - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim)
- * - Áudios: Whisper large-v3 transcrição + BGE-M3 embeddings (1024 dim)
- * - Vídeos: Frames OpenCLIP + transcrição BGE-M3
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector)
+ * - Áudios: Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant)
+ * - Vídeos: Frames OpenCLIP + transcrição Qwen3-Embedding-8B
  * 
  * @param mediaUrl - URL do Twilio para baixar a mídia
  * @param mediaContentType - MIME type da mídia

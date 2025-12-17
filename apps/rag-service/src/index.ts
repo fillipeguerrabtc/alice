@@ -499,23 +499,28 @@ if (!DATABASE_URL) {
 }
 
 // ==============================================================================
-// ARQUITETURA MULTIMODAL 100% GPU (Opção B - Alta Qualidade - 15/12/2025)
+// ARQUITETURA MULTIMODAL ENTERPRISE (17/12/2025)
 // ==============================================================================
 // TODOS os processamentos multimodais via GPU Salad Cloud:
-// - Text embeddings: BGE-M3 (1024 dim)
-// - Image embeddings: OpenCLIP ViT-H/14 (1024 dim)
-// - Transcrição de áudio: Whisper large-v3
+// - Text embeddings: Qwen3-Embedding-8B (4096 dim) → Qdrant
+// - Image embeddings: OpenCLIP ViT-H/14 (1024 dim) → pgvector
+// - Transcrição de áudio: Canary-1B (NeMo)
+// - LLM: Mixtral 8x7B (vLLM AWQ)
 // 
 // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
-// Schema usa vector(1024) - incompatível com CPU (768 dim)
 // ==============================================================================
 //
+// ARQUITETURA DE STORAGE:
+// - Texto (4096 dim): Qdrant (suporta HNSW com 4096+ dim)
+// - Imagem (1024 dim): pgvector vector(1024)
+// - Dados legados texto: pgvector halfvec(3584) - DEPRECATED
+//
 // SALAD CLOUD é usado para:
-// - chat-service: LLM inference (Llama 4 Maverick 400B)
-// - training-service: fine-tuning de modelos
+// - chat-service: LLM inference (Mixtral 8x7B vLLM)
+// - training-service: fine-tuning de modelos (LoRA)
 // - image-generation: FLUX.1 Schnell
-// - embeddings-gpu: BGE-M3 + OpenCLIP ViT-H/14 (1024 dim)
-// - whisper-gpu: Whisper large-v3 (transcrição)
+// - embeddings-gpu: Qwen3-Embedding-8B (4096) + OpenCLIP (1024)
+// - asr-canary: Canary-1B (NeMo) para transcrição
 
 function normalizeBaseUrl(raw?: string): string {
   const base = (raw && raw.trim()) || 'http://alice-searxng:8080/';
@@ -618,8 +623,8 @@ const saladUpload = multer({
 });
 
 // ============================================================================
-// CIRCUIT BREAKER - Text Embeddings GPU (ARQUITETURA 100% GPU - 15/12/2025)
-// Usa serviço GPU embeddings-gpu via Salad Cloud (BGE-M3, 1024 dim)
+// CIRCUIT BREAKER - Text Embeddings GPU (ARQUITETURA ENTERPRISE - 17/12/2025)
+// Usa serviço GPU embeddings-gpu via Salad Cloud (Qwen3-Embedding-8B, 4096 dim → Qdrant)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -634,10 +639,10 @@ interface TextEmbeddingResponse {
 }
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA 100% GPU (15/12/2025): BGE-M3 via Salad Cloud (1024 dim)
-  // GPU é OBRIGATÓRIO - schema usa vector(1024)
+  // ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B via Salad Cloud (4096 dim)
+  // GPU é OBRIGATÓRIO - embeddings armazenados em Qdrant
   if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim)');
   }
 
   const controller = new AbortController();
@@ -665,7 +670,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error('Serviço GPU de embeddings retornou resultado vazio');
   }
   
-    // Validar dimensão (deve ser 1024 para BGE-M3) - Enterprise-Grade
+    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
   // Lança erro se dimensão estiver incorreta (não apenas warning)
   validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
   
@@ -930,8 +935,8 @@ app.get('/api/rag/health', (_req: Request, res: Response) => {
     status: 'ok', 
     service: 'rag-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'gpu-salad-cloud', // 100% GPU via Salad Cloud (BGE-M3 + OpenCLIP ViT-H/14)
-    model: 'BAAI/bge-m3 + OpenCLIP-ViT-H-14 (GPU - Salad Cloud, 1024 dim)',
+    embeddingsProvider: 'gpu-salad-cloud', // 100% GPU via Salad Cloud (Qwen3-Embedding-8B + OpenCLIP ViT-H/14)
+    model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant) + OpenCLIP-ViT-H-14 (1024 dim → pgvector)',
     circuitBreaker: {
       state: circuitState,
       stats: {
@@ -1246,16 +1251,17 @@ app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read
         d.titulo as "doc_titulo",
         d.nome_arquivo as "doc_nomeArquivo",
         d.namespace_id as "doc_namespaceId",
-        -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
-        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
-        1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
+        -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
+        -- Esta query é para dados LEGADOS em pgvector (halfvec)
+        -- Novos embeddings de texto devem ser buscados via Qdrant
+        1 - (dc.embedding <=> $1) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         AND d.tenant_id = $3
         ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1::vector(1024)
+      ORDER BY dc.embedding <=> $1
       LIMIT $2
     `, queryParams);
     
@@ -1327,15 +1333,15 @@ app.post('/api/rag/context', requireAuth(), async (req: Request, res: Response) 
         dc.document_id as "documentId",
         dc.conteudo,
         d.titulo as "doc_titulo",
-        -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
-        -- GPU é OBRIGATÓRIO - schema usa vector(1024)
-        1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
+        -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
+        -- Esta query é para dados LEGADOS em pgvector (halfvec)
+        1 - (dc.embedding <=> $1) / 2 as similarity
       FROM document_chunks dc
       LEFT JOIN documents d ON dc.document_id = d.id
       WHERE 
         dc.embedding IS NOT NULL
         ${namespaceFilter}
-      ORDER BY dc.embedding <=> $1::vector(1024)
+      ORDER BY dc.embedding <=> $1
       LIMIT $2
     `, queryParams);
     
@@ -1624,9 +1630,9 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.document_id as "documentId",
           d.titulo,
           dc.conteudo,
-          -- Embeddings via GPU Salad Cloud (BGE-M3 - 1024 dim)
-          -- GPU é OBRIGATÓRIO - schema usa vector(1024)
-          1 - (dc.embedding <=> $1::vector(1024)) / 2 as similarity
+          -- NOTA: Buscas de texto agora usam Qdrant (Qwen3-Embedding-8B 4096 dim)
+          -- Esta query é para dados LEGADOS em pgvector (halfvec)
+          1 - (dc.embedding <=> $1) / 2 as similarity
         FROM document_chunks dc
         INNER JOIN documents d ON dc.document_id = d.id
         INNER JOIN namespaces n ON d.namespace_id = n.id
@@ -1634,7 +1640,7 @@ app.post('/api/rag/agentic', requireAuth(), requireSameTenant(getTenantIdFromReq
           dc.embedding IS NOT NULL
           AND n.tenant_id = $2
           ${namespaceFilter}
-        ORDER BY dc.embedding <=> $1::vector(1024)
+        ORDER BY dc.embedding <=> $1
         LIMIT $3
       `, queryParams);
       
@@ -2038,7 +2044,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 1024 dim (BGE-M3 GPU)
+              textEmbedding: result.embedding.length > 0 ? result.embedding : null, // Text embedding 4096 dim (Qwen3-Embedding-8B GPU → Qdrant)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -2125,7 +2131,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           );
 
           // IMPORTANTE: no document-processor, `combinedEmbedding` é a MÉDIA dos embeddings de TEXTO
-          // (BGE-M3 GPU, 1024 dim). Portanto, a validação correta aqui é `TEXT` (não CLIP).
+          // (Qwen3-Embedding-8B GPU, 4096 dim → Qdrant). Portanto, a validação correta aqui é `TEXT` (não CLIP).
           // (Enterprise-Grade - Regra 6)
           // 
           // Regra 6: Validar que combinedEmbedding não está vazio antes de persistir.
@@ -2202,19 +2208,19 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
     const processingInfo: Record<string, { message: string; features: string[] }> = {
       image: {
         message: 'Upload recebido. Processamento GPU iniciado.',
-        features: ['OpenCLIP embedding (1024 dim GPU)', 'thumbnail', 'metadata extraction'],
+        features: ['OpenCLIP embedding (1024 dim GPU → pgvector)', 'thumbnail', 'metadata extraction'],
       },
       audio: {
         message: 'Upload recebido. Transcrição GPU iniciada.',
-        features: ['Whisper large-v3 GPU', 'BGE-M3 embedding (1024 dim GPU)', 'metadata extraction'],
+        features: ['Canary-1B ASR GPU', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant)', 'metadata extraction'],
       },
       video: {
         message: 'Upload recebido. Processamento pendente.',
-        features: ['Frame extraction (pendente)', 'Whisper large-v3 GPU (pendente)'],
+        features: ['Frame extraction (pendente)', 'Canary-1B ASR GPU (pendente)'],
       },
       document: {
         message: 'Upload recebido. Processamento pendente.',
-        features: ['Text extraction (pendente)', 'BGE-M3 embedding (1024 dim GPU) (pendente)'],
+        features: ['Text extraction (pendente)', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant) (pendente)'],
       },
     };
 

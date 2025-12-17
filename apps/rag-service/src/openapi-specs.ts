@@ -218,7 +218,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Embedding (1024 dim - BGE-M3 GPU via Salad Cloud)',
+          description: 'Embedding (4096 dim - Qwen3-Embedding-8B GPU via Salad Cloud → Qdrant)',
           content: {
             'application/json': {
               schema: {

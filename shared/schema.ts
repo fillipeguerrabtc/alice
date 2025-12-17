@@ -1239,9 +1239,9 @@ export const mediaUploads = pgTable(
     processingError: text("processing_error"),
     processingTimeMs: integer("processing_time_ms"),
     
-    // Embeddings para RAG multimodal - ARQUITETURA 100% GPU (15/12/2025)
-    clipEmbedding: real("clip_embedding").array(), // OpenCLIP ViT-H/14 para imagens (1024 dim)
-    textEmbedding: real("text_embedding").array(), // BGE-M3 para transcrição de áudio (1024 dim)
+    // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
+    clipEmbedding: real("clip_embedding").array(), // OpenCLIP ViT-H/14 para imagens (1024 dim → pgvector)
+    textEmbedding: real("text_embedding").array(), // Qwen3-Embedding-8B para transcrição de áudio (4096 dim → Qdrant)
     
     // Transcrição (para áudio/vídeo)
     transcription: text("transcription"),

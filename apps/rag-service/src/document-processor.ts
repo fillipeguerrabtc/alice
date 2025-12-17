@@ -91,7 +91,7 @@ interface EmbeddingParams {
 }
 
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
-  // ARQUITETURA 100% GPU - BGE-M3 via Salad Cloud (1024 dim)
+  // ARQUITETURA ENTERPRISE (17/12/2025) - Qwen3-Embedding-8B via Salad Cloud (4096 dim → Qdrant)
   // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
   if (!EMBEDDINGS_GPU_URL) {
     throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings');
@@ -152,14 +152,14 @@ class DocumentProcessorService {
   private isConfigured: boolean;
 
   constructor() {
-    // ARQUITETURA 100% GPU - BGE-M3 via Salad Cloud
+    // ARQUITETURA ENTERPRISE (17/12/2025) - Qwen3-Embedding-8B via Salad Cloud → Qdrant
     this.isConfigured = typeof EMBEDDINGS_GPU_URL === 'string' && EMBEDDINGS_GPU_URL.length > 0;
     
     if (!this.isConfigured) {
       logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de documento não funcionarão');
     } else {
       logger.info({ gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: TEXT_EMBEDDING_DIM }, 
-        'Document Processor - ARQUITETURA 100% GPU (BGE-M3, 1024 dim)');
+        'Document Processor - ARQUITETURA ENTERPRISE (Qwen3-Embedding-8B, 4096 dim → Qdrant)');
     }
   }
 

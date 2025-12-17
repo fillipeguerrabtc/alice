@@ -364,8 +364,8 @@ export const RAG_CHUNK_CONFIG = {
   chunkSize: 1000,
   /** Sobreposição entre chunks */
   chunkOverlap: 200,
-  /** Dimensão dos embeddings (BGE-M3 GPU - 1024 dim) - ARQUITETURA 100% GPU */
-  embeddingDimensions: 1024,
+  /** Dimensão dos embeddings (Qwen3-Embedding-8B GPU - 4096 dim) - ARQUITETURA ENTERPRISE (17/12/2025) */
+  embeddingDimensions: 4096,
   /** Threshold de similaridade para busca */
   similarityThreshold: 0.7,
 };

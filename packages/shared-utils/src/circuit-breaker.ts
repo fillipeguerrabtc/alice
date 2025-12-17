@@ -204,7 +204,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
-  /** BGE-M3 Text Embeddings - ARQUITETURA 100% GPU (Salad Cloud) - 100+ idiomas */
+  /** Qwen3-Embedding-8B Text Embeddings - ARQUITETURA ENTERPRISE (17/12/2025) - 4096 dim → Qdrant */
   /** Timeout ajustado para GPU com estratégia Warm on Demand */
   textEmbeddings: {
     timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)

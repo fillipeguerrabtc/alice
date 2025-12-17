@@ -10,12 +10,12 @@
  * - Keep-warm de 30 minutos após último processamento
  * - Circuit breaker para resiliência (Regra 16)
  * 
- * ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025:
- * - BGE-M3: 1024 dim (texto/documentos)
- * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image)
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant)
+ * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector)
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 

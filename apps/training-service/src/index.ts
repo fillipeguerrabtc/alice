@@ -4,12 +4,12 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA 100% GPU (15/12/2025):
- * - Embeddings de texto: BGE-M3 (1024 dim, GPU Salad Cloud)
+ * ARQUITETURA ENTERPRISE (17/12/2025):
+ * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Salad Cloud → Qdrant)
  * - Fine-tuning: Salad Cloud (GPUs externas) - SALAD_API_KEY obrigatória
  * 
  * Autor: Fillipe Guerra
- * Data: 15 de Dezembro de 2025
+ * Data: 17 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -143,7 +143,7 @@ app.set('trust proxy', 1);
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings GPU (Salad Cloud)
-// ARQUITETURA 100% GPU (15/12/2025): BGE-M3 (1024 dim) via Salad Cloud
+// ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B (4096 dim) via Salad Cloud → Qdrant
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -194,7 +194,7 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
       throw new Error('Serviço de embeddings GPU retornou resultado vazio');
     }
     
-    // Validar dimensão (deve ser 1024 para BGE-M3 GPU) - Enterprise-Grade
+    // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B GPU) - Enterprise-Grade
     // Lança erro se dimensão estiver incorreta (não apenas warning) - Regra 6
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
@@ -292,8 +292,8 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'salad-gpu', // ARQUITETURA 100% GPU (15/12/2025)
-    model: 'BAAI/bge-m3',
+    embeddingsProvider: 'salad-gpu', // ARQUITETURA ENTERPRISE (17/12/2025)
+    model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
     saladCloudAvailable: saladAvailable,
     circuitBreakers: {
       embeddings: {

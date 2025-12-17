@@ -59,10 +59,10 @@ export interface AudioProcessorOptions {
 }
 
 /**
- * Audio Processor Service - ARQUITETURA 100% GPU
+ * Audio Processor Service - ARQUITETURA ENTERPRISE (17/12/2025)
  * 
- * - Transcrição: Whisper large-v3 GPU (Salad Cloud)
- * - Embeddings: BGE-M3 GPU (Salad Cloud, 1024 dim)
+ * - Transcrição: Canary-1B GPU (Salad Cloud)
+ * - Embeddings: Qwen3-Embedding-8B GPU (Salad Cloud, 4096 dim → Qdrant)
  * 
  * GPU é OBRIGATÓRIO - sem fallback (Regra 6)
  */
@@ -87,7 +87,7 @@ class AudioProcessorService {
       whisperConfigured: this.whisperConfigured,
       embeddingsConfigured: this.embeddingsConfigured,
       embeddingDim: TEXT_EMBEDDING_DIM,
-    }, 'Audio Processor - ARQUITETURA 100% GPU (Whisper + BGE-M3)');
+    }, 'Audio Processor - ARQUITETURA ENTERPRISE (Canary-1B + Qwen3-Embedding-8B → Qdrant)');
   }
 
   /**
@@ -130,7 +130,7 @@ class AudioProcessorService {
       transcription = '[Transcrição não disponível - GPU não configurado]';
     }
 
-    // Gerar embedding via GPU (BGE-M3)
+    // Gerar embedding via GPU (Qwen3-Embedding-8B → Qdrant)
     let embedding: number[] = [];
     let embeddingModel = 'none';
 
@@ -237,7 +237,7 @@ class AudioProcessorService {
   }
 
   /**
-   * Gera embedding de texto via GPU (BGE-M3, 1024 dim)
+   * Gera embedding de texto via GPU (Qwen3-Embedding-8B, 4096 dim → Qdrant)
    */
   private async generateTextEmbedding(
     text: string
@@ -272,7 +272,7 @@ class AudioProcessorService {
 
       return {
         embedding: result.embedding,
-        model: result.model || 'BAAI/bge-m3',
+        model: result.model || 'Qwen/Qwen3-Embedding-8B',
       };
     } finally {
       clearTimeout(timeoutId);
@@ -445,8 +445,8 @@ class AudioProcessorService {
     return {
       configured: this.isReady(),
       embeddingDim: TEXT_EMBEDDING_DIM,
-      transcriptionModel: 'faster-whisper large-v3 (GPU - Salad Cloud)',
-      embeddingModel: 'BAAI/bge-m3 (GPU - Salad Cloud)',
+      transcriptionModel: 'Canary-1B (GPU - Salad Cloud)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU - Salad Cloud, 4096 dim → Qdrant)',
       whisperUrl: SALAD_WHISPER_URL,
       embeddingsUrl: EMBEDDINGS_GPU_URL,
     };

@@ -26,11 +26,11 @@ const logger = pino({
   }
 }).child({ service: 'image-processor' });
 
-// Configuração Embeddings GPU (Salad Cloud) - ARQUITETURA 100% GPU
-// GPU é OBRIGATÓRIO - schema usa vector(1024)
+// Configuração Embeddings GPU (Salad Cloud) - ARQUITETURA ENTERPRISE (17/12/2025)
+// GPU é OBRIGATÓRIO - OpenCLIP ViT-H/14 (1024 dim) → pgvector
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings (OpenCLIP ViT-H/14 - 1024 dim)
+// Dimensão dos embeddings de imagem (OpenCLIP ViT-H/14 - 1024 dim → pgvector)
 export const CLIP_EMBEDDING_DIM = 1024;
 
 // ============================================================================
@@ -56,7 +56,7 @@ interface TextForImageApiParams {
  */
 async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
   if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)');
   }
 
   const controller = new AbortController();
@@ -94,20 +94,20 @@ async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Prom
  * Chama API GPU para embedding de TEXTO para busca de imagens (OpenCLIP text encoder)
  * 
  * IMPORTANTE: Usa /embed/text-for-image que gera embeddings no MESMO espaço vetorial
- * das imagens (OpenCLIP), permitindo busca semântica correta text-to-image.
+ * das imagens (OpenCLIP 1024 dim), permitindo busca semântica correta text-to-image.
  * 
- * NÃO confundir com /embed/text que usa BGE-M3 (espaço vetorial diferente!)
+ * NÃO confundir com /embed/text que usa Qwen3-Embedding-8B (4096 dim - espaço vetorial diferente!)
  */
 async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
   if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (schema vector(1024))');
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings text-to-image (OpenCLIP 1024 dim)');
   }
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
 
   try {
-    // IMPORTANTE: Usar /embed/text-for-image (OpenCLIP) e NÃO /embed/text (BGE-M3)
+    // IMPORTANTE: Usar /embed/text-for-image (OpenCLIP 1024) e NÃO /embed/text (Qwen3 4096)
     const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text-for-image`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,7 +272,7 @@ class ImageProcessorService {
    * - Permite busca semântica correta text-to-image
    * - Protegido por circuit breaker (Regra 16)
    * 
-   * NÃO confundir com embeddings de documentos que usam BGE-M3!
+   * NÃO confundir com embeddings de documentos que usam Qwen3-Embedding-8B (4096 dim → Qdrant)!
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
     if (!this.isConfigured) {

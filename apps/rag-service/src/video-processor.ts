@@ -215,8 +215,8 @@ export interface ProcessedVideo {
   transcriptionConfidence?: number;
   
   // Embeddings (100% GPU via Salad Cloud)
-  textEmbedding: number[]; // 1024 dim - da transcrição (BGE-M3 GPU)
-  frameEmbeddings: number[][]; // Array de image embeddings (1024 dim cada) dos frames (OpenCLIP ViT-H/14 GPU)
+  textEmbedding: number[]; // 4096 dim - da transcrição (Qwen3-Embedding-8B GPU → Qdrant)
+  frameEmbeddings: number[][]; // Array de image embeddings (1024 dim cada) dos frames (OpenCLIP ViT-H/14 GPU → pgvector)
   combinedEmbedding: number[]; // Embedding CLIP combinado para busca (frames ± sinal de texto). Se não houver frames, retorna [].
   
   // Metadados
@@ -391,7 +391,7 @@ class VideoProcessorService {
       
       if (audioReady && imageReady) {
         this.isConfigured = true;
-        logger.info('Video Processor - ARQUITETURA 100% GPU (Whisper large-v3 + BGE-M3 + OpenCLIP ViT-H/14)');
+        logger.info('Video Processor - ARQUITETURA ENTERPRISE (Canary-1B + Qwen3-Embedding-8B + OpenCLIP ViT-H/14)');
       } else {
         logger.warn({ audioReady, imageReady }, 'Dependências não configuradas - processamento de vídeo indisponível');
         this.isConfigured = false;
