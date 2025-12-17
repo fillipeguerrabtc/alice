@@ -139,33 +139,21 @@ async def transcribe_audio(
             tmp.write(content)
             tmp_path = tmp.name
         
-        # Processar com o modelo
-        if hasattr(model, "transcribe"):
-            # Bug fix: Import whisper apenas quando necessário (não instalado por padrão)
-            import whisper
-            # Modelo Whisper
-            result = model.transcribe(
-                tmp_path,
-                language=language,
-                task="transcribe"
-            )
-            text = result["text"]
-            detected_language = result.get("language", language)
-        else:
-            # Modelo HuggingFace
-            import torchaudio
-            waveform, sample_rate = torchaudio.load(tmp_path)
-            inputs = processor(
-                waveform.squeeze().numpy(),
-                sampling_rate=sample_rate,
-                return_tensors="pt"
-            ).to(DEVICE)
-            
-            with torch.no_grad():
-                generated_ids = model.generate(**inputs)
-            
-            text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
-            detected_language = language
+        # Processar com modelo HuggingFace/NeMo (único modelo suportado)
+        # Nota: Whisper não está instalado no container, apenas nemo_toolkit[asr] + transformers
+        import torchaudio
+        waveform, sample_rate = torchaudio.load(tmp_path)
+        inputs = processor(
+            waveform.squeeze().numpy(),
+            sampling_rate=sample_rate,
+            return_tensors="pt"
+        ).to(DEVICE)
+        
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs)
+        
+        text = processor.batch_decode(generated_ids, skip_special_tokens=True)[0]
+        detected_language = language
         
         duration = time.time() - start_time
         
