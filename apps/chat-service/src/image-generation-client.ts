@@ -204,7 +204,6 @@ export async function generateImage(
 // ============================================================================
 
 // CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
-// CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
 // GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)
 const CLIP_EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
