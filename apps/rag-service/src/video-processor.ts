@@ -125,9 +125,12 @@ export function combineVideoEmbeddingsForSearch(
   const normalizedText =
     textEmbedding.length === TEXT_EMBEDDING_DIM ? textEmbedding : textEmbedding.slice(0, TEXT_EMBEDDING_DIM);
 
-  // NOTA ARQUITETURAL: TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM são ambas 1024 (BGE-M3 e OpenCLIP ViT-H/14 via GPU).
-  // Se no futuro essas dimensões divergirem, o código precisará ser atualizado para lidar com a incompatibilidade.
-  // A validação abaixo (normalizedText.length) já protege contra edge cases de corrupção de dados.
+  // NOTA ARQUITETURAL (17/12/2025): ARQUITETURA DUAL-DIMENSION
+  // TEXT_EMBEDDING_DIM = 3584 (gte-Qwen2-7B-instruct para texto/transcrição)
+  // CLIP_EMBEDDING_DIM = 1024 (OpenCLIP ViT-H/14 para imagens/frames)
+  // DIMENSÕES SÃO DIFERENTES! Combinação direta não é possível.
+  // O fallback abaixo retorna apenas frames quando dimensões são incompatíveis.
+  // Busca semântica usa colunas separadas: textEmbedding (3584) e clipEmbedding (1024).
 
   // Enterprise-grade: validar que normalizedText tem o comprimento esperado antes de acessar índices.
   // Isso previne NaN se o slice retornar um array menor que o esperado (edge case de corrupção de dados).
@@ -139,9 +142,9 @@ export function combineVideoEmbeddingsForSearch(
     return avgFrameEmbedding;
   }
 
-  // Defesa extra: só é possível combinar embeddings se ambos estiverem no mesmo espaço dimensional.
-  // Se no futuro TEXT_EMBEDDING_DIM e CLIP_EMBEDDING_DIM divergirem, essa checagem evita acesso fora do array (NaN) e
-  // preserva a qualidade da busca retornando apenas CLIP (frames).
+  // Defesa: só é possível combinar embeddings se ambos estiverem no mesmo espaço dimensional.
+  // ARQUITETURA DUAL-DIMENSION: TEXT_EMBEDDING_DIM (3584) ≠ CLIP_EMBEDDING_DIM (1024)
+  // Combinação não é possível - retorna apenas CLIP (frames) para manter consistência.
   if (normalizedText.length !== avgFrameEmbedding.length) {
     logger.warn(
       { normalizedTextLength: normalizedText.length, frameEmbeddingDim: avgFrameEmbedding.length },

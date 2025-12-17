@@ -19,7 +19,7 @@ import { describe, it, expect, vi } from 'vitest';
 // CONSTANTES
 // ============================================================================
 
-const TEXT_EMBEDDING_DIM = 1024; // BGE-M3 GPU
+const TEXT_EMBEDDING_DIM = 3584; // gte-Qwen2-7B-instruct (dimensão nativa)
 
 // ============================================================================
 // TESTES DE TIPOS DE ÁUDIO SUPORTADOS

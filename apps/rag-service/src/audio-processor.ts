@@ -23,8 +23,10 @@ const logger = createLogger('audio-processor');
 const SALAD_WHISPER_URL = process.env.SALAD_WHISPER_URL || '';
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings de texto (BGE-M3: 1024 dim) - ARQUITETURA 100% GPU
-export const TEXT_EMBEDDING_DIM = 1024;
+// Dimensão dos embeddings de texto - ARQUITETURA DUAL-DIMENSION (17/12/2025)
+// gte-Qwen2-7B-instruct: 3584 dim (dimensão NATIVA do modelo)
+// Armazenado como halfvec(3584) no PostgreSQL (limite HNSW: 4000)
+export const TEXT_EMBEDDING_DIM = 3584;
 
 // Timeouts
 const WHISPER_TIMEOUT_MS = 600000; // 10 min para GPU

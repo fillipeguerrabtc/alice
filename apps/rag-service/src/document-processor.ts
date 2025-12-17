@@ -29,8 +29,10 @@ const logger = createLogger('document-processor');
 // Configuração - Embeddings via GPU (Salad Cloud) - ARQUITETURA 100% GPU
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 
-// Dimensão dos embeddings de texto (BGE-M3: 1024 dim) - ARQUITETURA 100% GPU
-export const TEXT_EMBEDDING_DIM = 1024;
+// Dimensão dos embeddings de texto - ARQUITETURA DUAL-DIMENSION (17/12/2025)
+// gte-Qwen2-7B-instruct: 3584 dim (dimensão NATIVA do modelo)
+// Armazenado como halfvec(3584) no PostgreSQL (limite HNSW: 4000)
+export const TEXT_EMBEDDING_DIM = 3584;
 
 // Limites de processamento
 const MAX_DOCUMENT_SIZE_MB = parseInt(process.env.MAX_DOCUMENT_SIZE_MB || '50', 10);

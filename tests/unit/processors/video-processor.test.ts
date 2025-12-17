@@ -173,11 +173,11 @@ describe('Video Processor - Metadata', () => {
 // ============================================================================
 
 describe('Video Processor - Dimensões de Embedding', () => {
-  const TEXT_EMBEDDING_DIM = 1024;  // BGE-M3 GPU (transcrição)
+  const TEXT_EMBEDDING_DIM = 3584;  // gte-Qwen2-7B-instruct (transcrição)
   const CLIP_EMBEDDING_DIM = 1024;   // OpenCLIP ViT-H/14 GPU (frames)
 
   it('deve ter text embedding de 1024 dimensões (BGE-M3 GPU)', () => {
-    expect(TEXT_EMBEDDING_DIM).toBe(1024);
+    expect(TEXT_EMBEDDING_DIM).toBe(3584);
   });
 
   it('deve ter image embedding de 1024 dimensões por frame (OpenCLIP ViT-H/14 GPU)', () => {
