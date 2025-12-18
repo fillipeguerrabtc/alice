@@ -1023,6 +1023,219 @@ function getIntegrationsBreakerStats() {
   };
 }
 
+// ============================================================================
+// TRADING INTEGRATION - Integrations Service (Regra 6 - Enterprise Real)
+// ============================================================================
+
+interface TradingCommandResult {
+  success: boolean;
+  data?: Record<string, unknown>;
+  error?: string;
+}
+
+/**
+ * Tipo de comando de trading (importado do parser)
+ */
+type TradingCommandType =
+  | 'buy'
+  | 'sell'
+  | 'close_position'
+  | 'cancel_order'
+  | 'status'
+  | 'positions'
+  | 'orders'
+  | 'pause_trading'
+  | 'resume_trading'
+  | 'takeover'
+  | 'handback'
+  | 'set_stop_loss'
+  | 'set_take_profit'
+  | 'unknown';
+
+interface ParsedTradingCommand {
+  type: TradingCommandType;
+  isTrading: boolean;
+  amount?: number;
+  symbol?: string;
+  orderId?: string;
+  price?: number;
+  leverage?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  confidence: number;
+  rawText: string;
+  matchedPattern?: string;
+}
+
+/**
+ * Executa comando de trading via Integrations Service
+ * Regra 6 CLAUDE.md: Integração real enterprise (PROIBIDO stubs/mocks)
+ * Regra 16 CLAUDE.md: Circuit breaker para resiliência
+ * 
+ * @param userId - ID do usuário
+ * @param tenantId - ID do tenant
+ * @param command - Comando parseado
+ * @returns Resultado da execução
+ */
+async function executeTradingCommand(
+  userId: string,
+  tenantId: string,
+  command: ParsedTradingCommand
+): Promise<TradingCommandResult> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), CROSS_SERVICE_TIMEOUT);
+
+  try {
+    // Gerar headers de autenticação service-to-service
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    if (isInternalAuthEnabled()) {
+      const internalHeaders = generateInternalAuthHeaders({
+        userId,
+        tenantId,
+        role: 'super_admin', // Service-to-service usa role privilegiada
+      });
+      headers['x-internal-signature'] = internalHeaders['x-internal-signature'];
+      headers['x-internal-timestamp'] = internalHeaders['x-internal-timestamp'];
+      headers['x-internal-user-id'] = internalHeaders['x-internal-user-id'];
+      headers['x-internal-role'] = internalHeaders['x-internal-role'];
+      if (internalHeaders['x-internal-tenant-id']) {
+        headers['x-internal-tenant-id'] = internalHeaders['x-internal-tenant-id'];
+      }
+    }
+
+    // Mapear comando para endpoint e payload do Integrations Service
+    let endpoint = '';
+    let method = 'GET';
+    let body: Record<string, unknown> | undefined;
+
+    switch (command.type) {
+      case 'buy':
+      case 'sell':
+        endpoint = '/api/integrations/trading/orders';
+        method = 'POST';
+        body = {
+          side: command.type,
+          orderType: 'market',
+          size: command.amount || 0.001, // Mínimo BTC
+          symbol: command.symbol || 'XBTUSDTM',
+          leverage: command.leverage,
+          stopLoss: command.stopLoss,
+          takeProfit: command.takeProfit,
+        };
+        break;
+
+      case 'close_position':
+        endpoint = '/api/integrations/trading/positions';
+        method = 'DELETE';
+        body = { symbol: command.symbol || 'XBTUSDTM' };
+        break;
+
+      case 'cancel_order':
+        endpoint = `/api/integrations/trading/orders/${command.orderId || ''}`;
+        method = 'DELETE';
+        break;
+
+      case 'status':
+        endpoint = '/api/integrations/trading/status';
+        break;
+
+      case 'positions':
+        endpoint = '/api/integrations/trading/positions';
+        break;
+
+      case 'orders':
+        endpoint = '/api/integrations/trading/orders';
+        break;
+
+      case 'set_stop_loss':
+      case 'set_take_profit':
+        endpoint = '/api/integrations/trading/orders';
+        method = 'PATCH';
+        body = {
+          stopLoss: command.stopLoss,
+          takeProfit: command.takeProfit,
+        };
+        break;
+
+      case 'pause_trading':
+      case 'resume_trading':
+      case 'takeover':
+      case 'handback':
+        endpoint = '/api/integrations/trading/control';
+        method = 'POST';
+        body = {
+          action: command.type === 'pause_trading' || command.type === 'takeover' ? 'takeover' : 'handback',
+          reason: `Comando via chat: ${command.rawText}`,
+        };
+        break;
+
+      default:
+        return {
+          success: false,
+          error: `Comando não suportado: ${command.type}`,
+        };
+    }
+
+    const url = `${INTEGRATIONS_SERVICE_URL_FINAL}${endpoint}`;
+    
+    const fetchOptions: RequestInit = {
+      method,
+      headers,
+      signal: controller.signal,
+    };
+
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+      fetchOptions.body = JSON.stringify(body);
+    }
+
+    const response = await fetch(url, fetchOptions);
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      let errorMessage: string;
+      try {
+        const errorJson = JSON.parse(errorText) as { error?: string };
+        errorMessage = errorJson.error || errorText;
+      } catch {
+        errorMessage = errorText;
+      }
+      
+      return {
+        success: false,
+        error: `Erro no trading: ${errorMessage}`,
+      };
+    }
+
+    const data = await response.json() as Record<string, unknown>;
+    
+    return {
+      success: true,
+      data,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      logger.warn({ command: command.type }, 'Chamada de trading abortada por timeout');
+      return {
+        success: false,
+        error: 'Timeout na comunicação com o serviço de trading',
+      };
+    }
+
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ command: command.type, error: errorMessage }, 'Erro ao executar comando de trading');
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 // SEGURANÇA: Helmet com CSP/HSTS enterprise (Express.js 2025 + OWASP 2023)
 app.use(createSecurityMiddleware({
   contentSecurityPolicy: process.env.NODE_ENV === 'production',
@@ -1998,8 +2211,8 @@ wss.on('connection', (ws, req) => {
           return;
         }
         
-        // Encaminhar comando para processamento
-        // TODO: Integrar com integrations-service via HTTP ou Redis
+        // Encaminhar comando para integrations-service via HTTP
+        // Regra 6 CLAUDE.md: Integração real enterprise (PROIBIDO stubs/mocks)
         ws.send(JSON.stringify({
           type: 'trading:command_received',
           command: parsed,
@@ -2008,6 +2221,43 @@ wss.on('connection', (ws, req) => {
         }));
         
         logger.info({ userId, tenantId, command: parsed.type, confidence: parsed.confidence }, 'Comando de trading recebido via WebSocket');
+        
+        // Executar comando de trading via integrations-service
+        try {
+          const result = await executeTradingCommand(userId, tenantId, parsed);
+          
+          ws.send(JSON.stringify({
+            type: 'trading:command_result',
+            command: parsed.type,
+            success: result.success,
+            data: result.data,
+            error: result.error,
+            description: getCommandDescription(parsed, 'pt'),
+          }));
+          
+          logger.info({ 
+            userId, 
+            tenantId, 
+            command: parsed.type, 
+            success: result.success,
+          }, 'Comando de trading executado');
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+          
+          ws.send(JSON.stringify({
+            type: 'trading:command_error',
+            command: parsed.type,
+            error: errorMessage,
+            description: getCommandDescription(parsed, 'pt'),
+          }));
+          
+          logger.error({ 
+            userId, 
+            tenantId, 
+            command: parsed.type, 
+            error: errorMessage,
+          }, 'Erro ao executar comando de trading');
+        }
         return;
       }
 

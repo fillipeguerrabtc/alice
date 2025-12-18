@@ -410,6 +410,10 @@ export async function updateJobProgress(
 
 /**
  * Cancela um job
+ * 
+ * Regra 6 CLAUDE.md: Integração real enterprise com Salad Cloud
+ * Se job estiver rodando na Salad Cloud, cancela o container group
+ * para evitar custos desnecessários de GPU
  */
 export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
   const db = getDatabase();
@@ -428,6 +432,27 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
     throw new Error(`Job já está ${job.status}, não pode ser cancelado`);
   }
 
+  // Se job estiver preparando ou treinando, cancelar container group na Salad Cloud
+  // Regra 6: Integração real enterprise (PROIBIDO deixar recursos órfãos)
+  if (job.status === 'preparing' || job.status === 'training') {
+    try {
+      const containerGroupName = `alice-ft-${jobId.slice(0, 8)}`;
+      const { cancelJob: cancelSaladJob } = await import('./salad-client.js');
+      
+      logger.info({ jobId, containerGroupName }, 'Cancelando container group na Salad Cloud');
+      await cancelSaladJob(containerGroupName);
+      logger.info({ jobId, containerGroupName }, 'Container group cancelado com sucesso');
+    } catch (error) {
+      // Log erro mas continua com cancelamento local
+      // Container pode não existir se job falhou antes de criar
+      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+      logger.warn({ 
+        jobId, 
+        error: errorMessage,
+      }, 'Aviso: Não foi possível cancelar container group na Salad Cloud (pode não existir)');
+    }
+  }
+
   const [updated] = await db
     .update(schema.tradingLoraJobs)
     .set({
@@ -436,8 +461,6 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
     })
     .where(eq(schema.tradingLoraJobs.id, jobId))
     .returning();
-
-  // TODO: Se estiver rodando na Salad Cloud, cancelar container group
 
   logger.info({ jobId }, 'Job cancelado');
 

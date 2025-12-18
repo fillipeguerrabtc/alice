@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.90 - 17 de Dezembro de 2025*
+*Versão: 3.91 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -389,3 +389,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Health Check Completo (17/12/2025): Health check agora verifica Hetzner (6 serviços) + GPU Salad Cloud (4 Container Groups) - tolerância zero para falhas*
 *Rollback Enterprise Unificado (17/12/2025): Rollback integrado Hetzner + Salad Cloud GPU - cleanup completo de todos os recursos*
 *Rollback Script Salad Cloud (17/12/2025): infra/salad-cloud/rollback.py - cleanup de Container Groups via SDK/REST API*
+*Learning Worker Enterprise (17/12/2025): learning-worker.ts corrigido - lógica real para rag_update, auto_indexing, incremental/complete fine-tuning, embedding_generation*
+*Trading Commands Integration (17/12/2025): chat-service integrado com integrations-service via HTTP para execução real de comandos de trading*
+*LoRA Job Cancel GPU (17/12/2025): lora-job-manager.ts agora cancela container group na Salad Cloud ao cancelar job (evita custos órfãos)*
+*Code Review Auditoria (17/12/2025): Removidos 3 TODOs/stubs críticos - 100% enterprise compliance (Regra 6)*
