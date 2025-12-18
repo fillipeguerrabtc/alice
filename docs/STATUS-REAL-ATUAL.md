@@ -94,6 +94,10 @@
 | Identity Provisioning → Grafana | ✅ | `identity-provisioning/grafana-client.ts` |
 | Identity Provisioning → ERPNext | ✅ | `identity-provisioning/erpnext-client.ts` |
 | Outbox Pattern (eventos) | ✅ | `identity-provisioning/event-processor.ts` |
+
+> **NOTA (17/12/2025):** **AUDITORIA COMPLEMENTAR - 2 bugs corrigidos**:
+> - **grafana-client.ts**: fetch() sem timeout → `AbortSignal.timeout(30s)` (Best Practices 2025)
+> - **erpnext-client.ts**: fetch() sem timeout → `AbortSignal.timeout(30s)` (Best Practices 2025)
 | RBAC 6 níveis | ✅ | `@alice/shared-utils/rbac/` |
 | Sessions PostgreSQL | ✅ | `connect-pg-simple` |
 | Feature Flags (PostgreSQL) | ✅ | `@alice/shared-utils` |

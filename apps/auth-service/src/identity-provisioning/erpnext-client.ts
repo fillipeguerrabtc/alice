@@ -15,6 +15,10 @@ import crypto from 'crypto';
 
 const logger = createLogger('erpnext-client');
 
+// CORREÇÃO AUDITORIA 17/12/2025: Timeout para chamadas à API externa
+// Bug: fetch() sem timeout pode travar o serviço indefinidamente
+const ERPNEXT_API_TIMEOUT_MS = 30000; // 30 segundos
+
 // Role mapping Alice → ERPNext (Tarefa 9)
 const ROLE_MAPPING: Record<string, string[]> = {
   super_admin: ['System Manager', 'Administrator'],
@@ -81,6 +85,7 @@ export class ERPNextClient {
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
     const options: RequestInit = {
       method,
       headers: {
@@ -88,6 +93,7 @@ export class ERPNextClient {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
       },
+      signal: AbortSignal.timeout(ERPNEXT_API_TIMEOUT_MS),
     };
 
     if (body) {
