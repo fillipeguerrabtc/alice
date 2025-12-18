@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.00 - 17 de Dezembro de 2025*
+*Versão: 4.01 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -413,4 +413,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Símbolos Hardcoded (17/12/2025): kucoinClient.ts isValidSymbol() agora aceita KUCOIN_ALLOWED_SYMBOLS via env - expansível sem modificar código*
 *Bug Fix command.side Stop Orders (17/12/2025): ParsedTradingCommand agora tem side/positionType - infere LONG→sell, SHORT→buy automaticamente via consulta posição*
 *Bug Fix Word Boundary (17/12/2025): trading-command-parser.ts usava includes() - "along" matchava "long" incorretamente - agora usa regex \blong\b*
+*Bug Fix CandleChart Interval Sync (17/12/2025): selectedInterval não sincronizava com prop interval - adicionado useEffect + selectedInterval como fonte única*
 *Auditoria Final Completa (17/12/2025): FASE 7 (packages ~6500 linhas), FASE 8 (frontend 73 arquivos), FASE 9 (CI/CD ~5087 linhas) - 0 bugs encontrados*

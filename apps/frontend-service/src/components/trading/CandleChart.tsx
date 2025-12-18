@@ -20,7 +20,7 @@
  * Data: 17 de Dezembro de 2025
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ComposedChart,
@@ -232,7 +232,16 @@ export function CandleChart({
   const { t } = useTranslation();
   const [selectedInterval, setSelectedInterval] = useState(interval);
   
+  // BUG FIX 17/12/2025: Sincronizar selectedInterval quando prop interval mudar externamente
+  // Cenário: pai muda interval via prop mas selectedInterval local ficava dessincronizado
+  // Isso causava botão errado destacado enquanto gráfico mostrava dados corretos
+  useEffect(() => {
+    setSelectedInterval(interval);
+  }, [interval]);
+  
   // Processar dados para o gráfico
+  // BUG FIX 17/12/2025: Usar selectedInterval (sincronizado) ao invés de interval (prop)
+  // Garante que formatação de tempo e estado dos botões usem mesma fonte de verdade
   const chartData = useMemo(() => {
     if (!data || data.length === 0) return [];
     
@@ -248,7 +257,7 @@ export function CandleChart({
       const isUp = close >= open;
       
       return {
-        time: formatTime(kline.time, interval),
+        time: formatTime(kline.time, selectedInterval),
         timestamp: kline.time,
         open,
         high,
@@ -263,7 +272,7 @@ export function CandleChart({
         sma: smaValues[index],
       } as ChartDataPoint;
     });
-  }, [data, interval, showSMA, smaLength]);
+  }, [data, selectedInterval, showSMA, smaLength]);
   
   // Calcular domínio do eixo Y
   const yDomain = useMemo(() => {
