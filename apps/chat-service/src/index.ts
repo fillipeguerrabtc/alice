@@ -1068,6 +1068,70 @@ interface ParsedTradingCommand {
 }
 
 /**
+ * Gera hint amigável para campos faltando em comandos de trading
+ * 
+ * CORREÇÃO 17/12/2025: Adicionado para ajudar usuário quando comando está incompleto
+ * Ex: "cancele ordem" sem orderId → sugere formato correto
+ * 
+ * @param commandType - Tipo do comando
+ * @param missingFields - Campos que faltam
+ * @param language - Idioma da resposta
+ * @returns String com dica para o usuário
+ */
+function getValidationHint(
+  commandType: string, 
+  missingFields: string[], 
+  language: 'pt' | 'en'
+): string {
+  const hints: Record<string, Record<string, { pt: string; en: string }>> = {
+    buy: {
+      amount: {
+        pt: 'Especifique a quantidade. Ex: "compre 0.01 BTC"',
+        en: 'Specify the amount. Ex: "buy 0.01 BTC"',
+      },
+    },
+    sell: {
+      amount: {
+        pt: 'Especifique a quantidade. Ex: "venda 0.01 BTC"',
+        en: 'Specify the amount. Ex: "sell 0.01 BTC"',
+      },
+    },
+    cancel_order: {
+      orderId: {
+        pt: 'Especifique o ID da ordem. Ex: "cancele ordem abc12345-..."',
+        en: 'Specify the order ID. Ex: "cancel order abc12345-..."',
+      },
+    },
+    set_stop_loss: {
+      stopLoss: {
+        pt: 'Especifique o preço. Ex: "stop loss em 45000"',
+        en: 'Specify the price. Ex: "stop loss at 45000"',
+      },
+    },
+    set_take_profit: {
+      takeProfit: {
+        pt: 'Especifique o preço. Ex: "take profit em 50000"',
+        en: 'Specify the price. Ex: "take profit at 50000"',
+      },
+    },
+  };
+
+  // Tentar encontrar hint específico para o campo faltando
+  for (const field of missingFields) {
+    if (hints[commandType]?.[field]) {
+      return hints[commandType][field][language];
+    }
+  }
+
+  // Hint genérico
+  const generic = {
+    pt: `Campos necessários: ${missingFields.join(', ')}`,
+    en: `Required fields: ${missingFields.join(', ')}`,
+  };
+  return generic[language];
+}
+
+/**
  * Executa comando de trading via Integrations Service
  * Regra 6 CLAUDE.md: Integração real enterprise (PROIBIDO stubs/mocks)
  * Regra 16 CLAUDE.md: Circuit breaker para resiliência
@@ -2185,7 +2249,7 @@ wss.on('connection', (ws, req) => {
       if (message.type === 'trading:command') {
         // Processar comando de trading via chat
         // Importar parser dinamicamente para evitar circular deps
-        const { parseTradingCommand, isTradingCommand, getCommandDescription } = await import('./trading-command-parser.js');
+        const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
         const { getTradingControlMode, canExecuteTradingCommand } = await import('./trading-orchestrator.js');
         
         const content = message.content || '';
@@ -2200,6 +2264,28 @@ wss.on('connection', (ws, req) => {
         }
         
         const parsed = parseTradingCommand(content);
+        
+        // CORREÇÃO 17/12/2025: Validar campos obrigatórios ANTES de executar
+        // Bug: comandos sem dados obrigatórios (ex: "cancele a ordem" sem orderId)
+        // chegavam ao backend causando requests inválidos (DELETE /orders/)
+        const validation = validateCommand(parsed);
+        if (!validation.valid) {
+          ws.send(JSON.stringify({
+            type: 'trading:validation_error',
+            error: 'Comando incompleto - dados obrigatórios faltando',
+            missingFields: validation.missingFields,
+            command: getCommandDescription(parsed, 'pt'),
+            hint: getValidationHint(parsed.type, validation.missingFields, 'pt'),
+          }));
+          logger.warn({ 
+            userId, 
+            tenantId, 
+            commandType: parsed.type, 
+            missingFields: validation.missingFields 
+          }, 'Comando de trading rejeitado por validação - campos obrigatórios faltando');
+          return;
+        }
+        
         const canExecute = await canExecuteTradingCommand(tenantId, 'user');
         
         if (!canExecute.canExecute) {
