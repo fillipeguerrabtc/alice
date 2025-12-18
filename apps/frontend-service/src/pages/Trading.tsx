@@ -537,6 +537,10 @@ export default function Trading() {
         autoExecuteSignals: config.autoExecuteSignals || false,
         minConfidenceToExecute: config.minConfidenceToExecute || '0.8',
       });
+      // CORREÇÃO AUDITORIA 17/12/2025: Sincronizar controlMode com autoExecuteSignals do servidor
+      // Bug: controlMode era inicializado como 'alice' e nunca atualizado, fazendo HandoverPanel
+      // mostrar modo incorreto se servidor estivesse em modo manual (autoExecuteSignals=false)
+      setControlMode(config.autoExecuteSignals ? 'alice' : 'manual');
     }
   }, [riskConfigData]);
 

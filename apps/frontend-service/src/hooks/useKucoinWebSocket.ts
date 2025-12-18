@@ -19,6 +19,7 @@
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { frontendLogger } from '@/lib/logger';
 
 // ============================================================================
 // TIPOS
@@ -228,7 +229,8 @@ export function useKucoinWebSocket(
           break;
       }
     } catch (err) {
-      console.error('Erro ao processar mensagem WebSocket:', err);
+      // CORREÇÃO AUDITORIA 17/12/2025: Usar frontendLogger ao invés de console.error (Regra 8)
+      frontendLogger.error('Erro ao processar mensagem WebSocket', { error: err instanceof Error ? err.message : String(err) });
     }
   }, [onTicker, onOrderBook, onKline, onCommandResult, onError]);
 
