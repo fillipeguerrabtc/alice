@@ -191,6 +191,12 @@
 > - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (4096 dim) antes de inserir no Qdrant.
 > - Embeddings de texto (4096 dim) → **Qdrant** (busca semântica HNSW)
 > - Embeddings de imagem (1024 dim) → **pgvector** (busca similar)
+>
+> **Bug Fix (17/12/2025):** Endpoint `/api/media/upload/json` corrigido para ficar consistente com endpoint FormData:
+> - **Áudio**: Embeddings de texto (4096 dim) agora vão para Qdrant (antes ia para PostgreSQL incompatível)
+> - **Vídeo**: Processamento completo agora (FFmpeg + transcrição + frames CLIP) - antes ficava apenas `pending`
+> - **Documento**: Processamento completo agora (extração de texto + embeddings) - antes ficava apenas `pending`
+> - **Validação de dimensão**: Adicionada para todos os tipos de mídia (Enterprise-Grade - Regra 6)
 
 ### 4. training-service (Porta 3004)
 

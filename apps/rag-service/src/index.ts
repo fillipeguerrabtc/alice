@@ -2631,7 +2631,10 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
       processingTimeMs: Date.now() - startTime,
     }, 'Upload JSON de mídia salvo');
 
-    // Processar assíncrono (mesmo código do endpoint FormData)
+    // Processar assíncrono (ALINHADO com endpoint FormData - CORREÇÃO 17/12/2025)
+    // ARQUITETURA ENTERPRISE:
+    // - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
+    // - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
     const processMediaAsync = async () => {
       try {
         if (mediaType === 'image') {
@@ -2652,10 +2655,13 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             thumbnailUrl = thumbStored.fileUrl;
           }
 
+          // Validar dimensão CLIP antes de salvar (Enterprise-Grade - Regra 6)
+          validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
-              clipEmbedding: result.embedding,
+              clipEmbedding: result.embedding, // CLIP embedding 1024 dim para imagens (OpenCLIP ViT-H/14 GPU)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
@@ -2668,28 +2674,202 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
 
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            embeddingDim: result.embedding.length,
+            embeddingModel: result.embeddingModel,
+            hasThumbnail: !!thumbnailPath,
+          }, 'Imagem processada com sucesso (JSON upload)');
+
         } else if (mediaType === 'audio') {
           const audioProcessor = getAudioProcessor();
           const result = await audioProcessor.processAudio(fileBuffer, body.mimeType);
 
+          // Validar dimensão de texto antes de salvar (Enterprise-Grade - Regra 6)
+          if (result.embedding.length > 0) {
+            validateEmbeddingDimension(result.embedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          }
+          
+          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
+          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
+          // Armazenar no Qdrant com metadata para busca semântica
+          if (result.embedding.length > 0 && isQdrantConfigured()) {
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-audio-${mediaUploadRecord.id}`,
+              vector: result.embedding,
+              payload: {
+                type: 'media_audio',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'audio',
+                tenantId: tenantId,
+                transcription: result.transcription.slice(0, 10000), // Limitar para payload
+                transcriptionLanguage: result.transcriptionLanguage,
+                embeddingModel: result.embeddingModel,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de áudio inserido no Qdrant (JSON upload)');
+          }
+          
+          // Atualizar registro com transcrição e metadata (SEM embedding - vai para Qdrant)
           await db.update(schema.mediaUploads)
             .set({
               processingStatus: 'completed',
               transcription: result.transcription,
               transcriptionLanguage: result.transcriptionLanguage,
               transcriptionConfidence: result.transcriptionConfidence,
-              textEmbedding: result.embedding.length > 0 ? result.embedding : null,
+              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
               extractedMetadata: {
                 ...mediaUploadRecord.extractedMetadata as object,
                 ...result.metadata,
                 embeddingModel: result.embeddingModel,
                 processingTimeMs: result.processingTimeMs,
+                // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
+                qdrantPointId: result.embedding.length > 0 && isQdrantConfigured() ? `media-audio-${mediaUploadRecord.id}` : null,
               },
             })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
-        } else {
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            transcriptionLength: result.transcription.length,
+            language: result.transcriptionLanguage,
+            embeddingDim: result.embedding.length,
+            qdrantConfigured: isQdrantConfigured(),
+          }, 'Áudio processado com sucesso (JSON upload)');
+
+        } else if (mediaType === 'video') {
+          // CORREÇÃO 17/12/2025: Processar vídeo como no endpoint FormData
+          const videoProcessor = getVideoProcessor();
+          
+          if (!(await videoProcessor.isReadyAsync())) {
+            throw new Error(
+              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com os serviços GPU.'
+            );
+          }
+          
+          const result = await videoProcessor.processVideo(
+            fileBuffer,
+            body.mimeType,
+            { language: 'auto', extractFrames: true, generateTranscription: true }
+          );
+
+          // Validar dimensões antes de salvar (Enterprise-Grade - Regra 6)
+          if (result.textEmbedding.length > 0) {
+            validateEmbeddingDimension(result.textEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          }
+          if (result.combinedEmbedding.length > 0) {
+            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
+          }
+          
+          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
+          if (result.textEmbedding.length > 0 && isQdrantConfigured()) {
+            await upsertPoints(TEXT_COLLECTION_NAME, [{
+              id: `media-video-${mediaUploadRecord.id}`,
+              vector: result.textEmbedding,
+              payload: {
+                type: 'media_video',
+                mediaUploadId: mediaUploadRecord.id,
+                mediaType: 'video',
+                tenantId: tenantId,
+                transcription: result.transcription.slice(0, 10000),
+                transcriptionLanguage: result.transcriptionLanguage,
+                embeddingModel: result.embeddingModel,
+                framesExtracted: result.framesExtracted,
+                criadoEm: new Date().toISOString(),
+              },
+            }]);
+            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de texto de vídeo inserido no Qdrant (JSON upload)');
+          }
+          
           await db.update(schema.mediaUploads)
-            .set({ processingStatus: 'pending' })
+            .set({
+              processingStatus: 'completed',
+              transcription: result.transcription,
+              transcriptionLanguage: result.transcriptionLanguage,
+              transcriptionConfidence: result.transcriptionConfidence,
+              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant
+              clipEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                framesExtracted: result.framesExtracted,
+                frameEmbeddingsCount: result.frameEmbeddings.length,
+                processingTimeMs: result.processingTimeMs,
+                qdrantPointId: result.textEmbedding.length > 0 && isQdrantConfigured() ? `media-video-${mediaUploadRecord.id}` : null,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            transcriptionLength: result.transcription.length,
+            framesExtracted: result.framesExtracted,
+            textEmbeddingDim: result.textEmbedding.length,
+            combinedEmbeddingDim: result.combinedEmbedding.length,
+            qdrantConfigured: isQdrantConfigured(),
+          }, 'Vídeo processado com sucesso (JSON upload)');
+
+        } else if (mediaType === 'document') {
+          // CORREÇÃO 17/12/2025: Processar documento como no endpoint FormData
+          const documentProcessor = getDocumentProcessor();
+          
+          if (!(await documentProcessor.isReadyAsync())) {
+            throw new Error(
+              'Document Processor não está pronto. Verifique conectividade com EMBEDDINGS_GPU_URL (Salad Cloud).'
+            );
+          }
+          
+          const result = await documentProcessor.processDocument(
+            fileBuffer,
+            body.mimeType,
+            { extractMetadata: true, generateEmbeddings: true }
+          );
+
+          // Validar embedding (Regra 6 - Enterprise-Grade)
+          if (result.combinedEmbedding.length > 0) {
+            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+          } else {
+            throw new Error('combinedEmbedding vazio recebido do document-processor (estado inválido)');
+          }
+          
+          await db.update(schema.mediaUploads)
+            .set({
+              processingStatus: 'completed',
+              transcription: result.fullText.slice(0, 65000),
+              textEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                ...result.metadata,
+                embeddingModel: result.embeddingModel,
+                chunksCount: result.chunks.length,
+                processingTimeMs: result.processingTimeMs,
+              },
+            })
+            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
+
+          logger.info({
+            uploadId: mediaUploadRecord.id,
+            format: result.metadata.format,
+            pageCount: result.metadata.pageCount,
+            wordCount: result.metadata.wordCount,
+            chunksCount: result.chunks.length,
+            embeddingDim: result.combinedEmbedding.length,
+          }, 'Documento processado com sucesso (JSON upload)');
+
+        } else {
+          // Tipo de mídia não suportado para processamento
+          logger.warn({ uploadId: mediaUploadRecord.id, mediaType }, 'Tipo de mídia não suportado para processamento (JSON upload)');
+          
+          await db.update(schema.mediaUploads)
+            .set({ 
+              processingStatus: 'failed',
+              extractedMetadata: {
+                ...mediaUploadRecord.extractedMetadata as object,
+                processingError: `Tipo de mídia não suportado: ${mediaType}`,
+              },
+            })
             .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
         }
       } catch (error) {
