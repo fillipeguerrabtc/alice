@@ -301,14 +301,18 @@
 | **Disk Usage Monitor** | ✅ | `backup-orchestrator.ts` |
 | **Backup Cleanup (Retenção)** | ✅ | `backup-orchestrator.ts` |
 | **Backup Delete** | ✅ | `backup-orchestrator.ts` |
+| **Qdrant Backup** | ✅ | `backup-orchestrator.ts` - Snapshot por coleção (embeddings RAG) |
+| **Qdrant Restore** | ✅ | `backup-orchestrator.ts` - Upload snapshot via API REST |
 | Frontend Log Collector | ✅ | `/api/observability/logs` |
 | Circuit Breakers Status | ✅ | `/api/observability/circuit-breakers` |
 | Prometheus Metrics | ✅ | `/metrics` |
 
-> **NOTA (17/12/2025):** **AUDITORIA COMPLETA FASE 6 - 2 bugs corrigidos**:
+> **NOTA (17/12/2025):** **AUDITORIA COMPLETA FASE 6 - 2 bugs corrigidos + Qdrant backup enterprise**:
 > - **index.ts**: Logger não padronizado (pino direto) → `createLogger()` (Regra 2)
 > - **backup-orchestrator.ts**: Logger não padronizado (pino direto) → `createLogger()` (Regra 2)
-> - **Total**: 2 bugs corrigidos, 3 arquivos auditados (~2500 linhas)
+> - **backup-orchestrator.ts**: Qdrant backup/restore adicionado (snapshot por coleção, upload via API REST)
+> - **BackupAdmin.tsx**: Frontend atualizado para exibir Qdrant nos componentes monitorados
+> - **Total**: 2 bugs corrigidos + feature Qdrant backup, 4 arquivos auditados (~3500 linhas)
 
 ### 7. Embeddings GPU Service - Multimodal Inference (Salad Cloud)
 

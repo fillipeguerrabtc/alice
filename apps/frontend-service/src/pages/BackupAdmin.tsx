@@ -113,6 +113,12 @@ interface BackupManifest {
     mariadb?: ComponentStatus;
     redis?: ComponentStatus;
   };
+  qdrant?: {
+    status: 'completed' | 'failed' | 'skipped';
+    snapshotName?: string;
+    collections?: string[];
+    size?: string;
+  };
   storage: {
     type: 'local';
     path: string;
@@ -500,7 +506,7 @@ export default function BackupAdmin() {
                   Executar Backup
                 </CardTitle>
                 <CardDescription>
-                  Backup unificado de PostgreSQL, MariaDB, Redis e uploads
+                  Backup unificado de PostgreSQL, MariaDB, Redis, Qdrant e uploads
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -858,6 +864,7 @@ export default function BackupAdmin() {
                   { name: 'PostgreSQL', icon: Database, desc: 'pgBackRest + WAL + PITR', color: 'text-blue-500' },
                   { name: 'MariaDB', icon: Server, desc: 'Mariabackup + GTID', color: 'text-orange-500' },
                   { name: 'Redis', icon: HardDrive, desc: 'RDB Snapshot', color: 'text-red-500' },
+                  { name: 'Qdrant', icon: Database, desc: 'Snapshots embeddings (RAG)', color: 'text-purple-500' },
                   { name: 'Volume Local', icon: Archive, desc: '/opt/alice/backups', color: 'text-green-500' },
                 ].map((comp) => (
                   <div

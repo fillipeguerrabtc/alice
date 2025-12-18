@@ -998,6 +998,7 @@ async function runUnifiedRestore(
         postgresql: manifest.components.postgresql?.status || 'skip',
         mariadb: manifest.components.mariadb?.status || 'skip',
         redis: manifest.components.redis?.status || 'skip',
+        qdrant: manifest.qdrant?.status || 'skip',
       },
     };
   }
@@ -1043,6 +1044,55 @@ async function runUnifiedRestore(
       const err = error as Error;
       details.redis = `failed: ${err.message}`;
       hasErrors = true;
+    }
+  }
+
+  // 4. Restore Qdrant (embeddings texto - crítico para RAG)
+  // ADICIONADO 17/12/2025: Restore de snapshots via API REST Qdrant
+  if (!skipComponents.includes('qdrant') && manifest.qdrant?.status === 'completed') {
+    try {
+      const qdrantBackupDir = path.join(BACKUPS_BASE_PATH, backupId, 'qdrant');
+      const collections = manifest.qdrant.collections || [];
+      
+      logger.info({ collections: collections.length, backupDir: qdrantBackupDir }, 'Restaurando Qdrant');
+      
+      for (const collectionName of collections) {
+        const snapshotFile = path.join(qdrantBackupDir, `${collectionName}.snapshot`);
+        
+        // Verificar se arquivo existe
+        if (!fs.existsSync(snapshotFile)) {
+          logger.warn({ collectionName, snapshotFile }, 'Arquivo de snapshot não encontrado, ignorando coleção');
+          continue;
+        }
+        
+        // Upload snapshot para Qdrant via API REST
+        // POST /collections/{collection_name}/snapshots/upload
+        const snapshotData = await readFile(snapshotFile);
+        
+        const uploadResponse = await fetch(
+          `${QDRANT_URL}/collections/${collectionName}/snapshots/upload`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: snapshotData,
+            signal: AbortSignal.timeout(600000), // 10 min por coleção
+          }
+        );
+        
+        if (!uploadResponse.ok) {
+          const errorText = await uploadResponse.text();
+          throw new Error(`Falha ao restaurar coleção ${collectionName}: ${uploadResponse.status} - ${errorText}`);
+        }
+        
+        logger.info({ collectionName }, 'Coleção Qdrant restaurada');
+      }
+      
+      details.qdrant = `restored (${collections.length} collections)`;
+    } catch (error) {
+      const err = error as Error;
+      details.qdrant = `failed: ${err.message}`;
+      hasErrors = true;
+      logger.error({ error: err.message }, 'Erro ao restaurar Qdrant');
     }
   }
   
