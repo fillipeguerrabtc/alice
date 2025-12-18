@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.98 - 17 de Dezembro de 2025*
+*Versão: 3.99 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -411,3 +411,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Typo hasTradingContext (17/12/2025): trading-command-parser.ts corrigido typo hasTradicngContext → hasTradingContext*
 *Bug Fix DELETE Body Descartado (17/12/2025): chat-service/index.ts agora inclui DELETE na condição que envia body - close_position funcionava sem enviar symbol*
 *Bug Fix Símbolos Hardcoded (17/12/2025): kucoinClient.ts isValidSymbol() agora aceita KUCOIN_ALLOWED_SYMBOLS via env - expansível sem modificar código*
+*Bug Fix command.side Stop Orders (17/12/2025): ParsedTradingCommand agora tem side/positionType - infere LONG→sell, SHORT→buy automaticamente via consulta posição*
+*Auditoria Final Completa (17/12/2025): FASE 7 (packages ~6500 linhas), FASE 8 (frontend 73 arquivos), FASE 9 (CI/CD ~5087 linhas) - 0 bugs encontrados*

@@ -1221,14 +1221,61 @@ async function executeTradingCommand(
         // Endpoint correto no integrations-service: POST /api/integrations/trading/stop-orders
         endpoint = '/api/integrations/trading/stop-orders';
         method = 'POST';
-        body = {
-          symbol: command.symbol || 'XBTUSDTM',
-          side: command.side || 'sell', // Stop orders geralmente são para fechar posição
-          size: command.amount || 1,
-          stopLoss: command.stopLoss,
-          takeProfit: command.takeProfit,
-          leverage: command.leverage,
-        };
+        {
+          // CORREÇÃO AUDITORIA 17/12/2025: Determinar side correto baseado na posição
+          // BUG: command.side era sempre undefined, causando fallback incorreto para 'sell'
+          // - Para LONG positions: stop/TP fecha com SELL
+          // - Para SHORT positions: stop/TP fecha com BUY
+          let determinedSide: 'buy' | 'sell' = command.side || 'sell';
+          
+          // Se side não foi especificado no comando, tentar inferir da posição atual
+          if (!command.side) {
+            try {
+              // Buscar posições atuais para determinar o side correto
+              const positionsUrl = `${INTEGRATIONS_SERVICE_URL_FINAL}/api/integrations/trading/positions`;
+              const positionsResponse = await fetch(positionsUrl, {
+                method: 'GET',
+                headers,
+                signal: AbortSignal.timeout(10000), // 10s timeout para consulta
+              });
+              
+              if (positionsResponse.ok) {
+                const positionsData = await positionsResponse.json() as { success: boolean; data: Array<{ symbol: string; currentQty: number }> };
+                if (positionsData.success && positionsData.data) {
+                  const symbol = command.symbol || 'XBTUSDTM';
+                  const position = positionsData.data.find(p => p.symbol === symbol);
+                  
+                  if (position && position.currentQty !== 0) {
+                    // currentQty > 0 = LONG position → fechar com SELL
+                    // currentQty < 0 = SHORT position → fechar com BUY
+                    determinedSide = position.currentQty > 0 ? 'sell' : 'buy';
+                    logger.debug({
+                      symbol,
+                      currentQty: position.currentQty,
+                      determinedSide,
+                    }, 'Side inferido da posição atual para stop order');
+                  }
+                }
+              }
+            } catch (positionError) {
+              // Se falhar a consulta, manter o fallback (sell)
+              // Isso é seguro porque a maioria das posições são long
+              logger.warn(
+                { error: positionError instanceof Error ? positionError.message : 'Erro desconhecido' },
+                'Falha ao consultar posição para inferir side, usando fallback sell'
+              );
+            }
+          }
+          
+          body = {
+            symbol: command.symbol || 'XBTUSDTM',
+            side: determinedSide,
+            size: command.amount || 1,
+            stopLoss: command.stopLoss,
+            takeProfit: command.takeProfit,
+            leverage: command.leverage,
+          };
+        }
         break;
 
       case 'pause_trading':

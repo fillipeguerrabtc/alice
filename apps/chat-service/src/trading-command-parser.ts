@@ -59,6 +59,19 @@ export interface ParsedTradingCommand {
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
+  /**
+   * Direção da ordem (buy/sell)
+   * CORREÇÃO AUDITORIA 17/12/2025: Campo adicionado para stop orders
+   * - Para LONG positions: side='sell' (fechar vendendo)
+   * - Para SHORT positions: side='buy' (fechar comprando)
+   * Se não especificado, deve ser inferido da posição atual
+   */
+  side?: 'buy' | 'sell';
+  /**
+   * Tipo de posição mencionado no comando (long/short)
+   * Usado para inferir o side correto se não especificado explicitamente
+   */
+  positionType?: 'long' | 'short';
   confidence: number;  // 0-1 confiança do parse
   rawText: string;
   matchedPattern?: string;
@@ -402,6 +415,21 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
               result.takeProfit = result.price;
             }
           }
+          
+          // CORREÇÃO AUDITORIA 17/12/2025: Detectar tipo de posição mencionado (long/short)
+          // Isso permite inferir o side correto:
+          // - LONG position: stop/TP fecha com SELL
+          // - SHORT position: stop/TP fecha com BUY
+          // Se não mencionado, o executeTradingCommand deve consultar a posição atual
+          const lowerText = text.toLowerCase();
+          if (lowerText.includes('long') || lowerText.includes('compra')) {
+            result.positionType = 'long';
+            result.side = 'sell'; // Fechar long = vender
+          } else if (lowerText.includes('short') || lowerText.includes('venda')) {
+            result.positionType = 'short';
+            result.side = 'buy'; // Fechar short = comprar
+          }
+          // Se não especificado, side permanece undefined e será inferido da posição atual
         }
 
         logger.debug({
