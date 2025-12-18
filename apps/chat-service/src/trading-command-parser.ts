@@ -421,15 +421,22 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
           // - LONG position: stop/TP fecha com SELL
           // - SHORT position: stop/TP fecha com BUY
           // Se não mencionado, o executeTradingCommand deve consultar a posição atual
+          //
+          // BUG FIX 17/12/2025: Usar word boundaries (\b) para evitar falsos positivos
+          // Exemplo: "along" contém "long" mas NÃO é uma posição long
+          // Regex: \blong\b match "long" isolado, não "along", "belong", etc.
           const lowerText = text.toLowerCase();
-          if (lowerText.includes('long') || lowerText.includes('compra')) {
+          const isLongPosition = /\blong\b/.test(lowerText) || /\bcompra(r|do|da)?\b/.test(lowerText);
+          const isShortPosition = /\bshort\b/.test(lowerText) || /\bvend(a|er|ido|ida)?\b/.test(lowerText);
+          
+          if (isLongPosition && !isShortPosition) {
             result.positionType = 'long';
             result.side = 'sell'; // Fechar long = vender
-          } else if (lowerText.includes('short') || lowerText.includes('venda')) {
+          } else if (isShortPosition && !isLongPosition) {
             result.positionType = 'short';
             result.side = 'buy'; // Fechar short = comprar
           }
-          // Se não especificado, side permanece undefined e será inferido da posição atual
+          // Se ambos ou nenhum, side permanece undefined e será inferido da posição atual
         }
 
         logger.debug({
