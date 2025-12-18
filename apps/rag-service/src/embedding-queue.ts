@@ -251,7 +251,22 @@ export async function dequeueEmbeddingJob(): Promise<EmbeddingJob | null> {
     return null;
   }
   
-  const job: EmbeddingJob = JSON.parse(jobData);
+  let job: EmbeddingJob;
+  try {
+    job = JSON.parse(jobData) as EmbeddingJob;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+    logger.error({
+      jobId,
+      error: (parseError as Error).message,
+      dataLength: jobData.length,
+    }, 'DADOS CORROMPIDOS: Falha ao parsear job do Redis. Job descartado.');
+    
+    // Decrementar pending e remover job corrompido
+    await client.hIncrBy(STATS_KEY, 'pending', -1);
+    await client.del(`${JOBS_KEY}:${jobId}`);
+    return null;
+  }
   
   // Marcar como processing
   job.status = 'processing';
@@ -292,7 +307,17 @@ export async function completeEmbeddingJob(
     throw new Error(`Job ${jobId} não encontrado`);
   }
   
-  const job: EmbeddingJob = JSON.parse(jobData);
+  let job: EmbeddingJob;
+  try {
+    job = JSON.parse(jobData) as EmbeddingJob;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+    logger.error({
+      jobId,
+      error: (parseError as Error).message,
+    }, 'DADOS CORROMPIDOS: Falha ao parsear job para completion');
+    throw new Error(`Job ${jobId} corrompido no Redis`);
+  }
   job.status = 'completed';
   job.completedAt = new Date().toISOString();
   job.result = result;
@@ -341,7 +366,17 @@ export async function failEmbeddingJob(
     throw new Error(`Job ${jobId} não encontrado`);
   }
   
-  const job: EmbeddingJob = JSON.parse(jobData);
+  let job: EmbeddingJob;
+  try {
+    job = JSON.parse(jobData) as EmbeddingJob;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+    logger.error({
+      jobId,
+      error: (parseError as Error).message,
+    }, 'DADOS CORROMPIDOS: Falha ao parsear job para failure');
+    throw new Error(`Job ${jobId} corrompido no Redis`);
+  }
   job.status = 'failed';
   job.completedAt = new Date().toISOString();
   job.error = error;
@@ -378,7 +413,16 @@ export async function getEmbeddingJobStatus(jobId: string): Promise<EmbeddingJob
     return null;
   }
   
-  return JSON.parse(jobData) as EmbeddingJob;
+  try {
+    return JSON.parse(jobData) as EmbeddingJob;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+    logger.error({
+      jobId,
+      error: (parseError as Error).message,
+    }, 'DADOS CORROMPIDOS: Falha ao parsear job status');
+    return null;
+  }
 }
 
 /**
@@ -455,7 +499,15 @@ export async function getBatchJobs(maxSize: number = MAX_BATCH_SIZE): Promise<Em
   for (const jobId of jobIds) {
     const jobData = await client.get(`${JOBS_KEY}:${jobId}`);
     if (jobData) {
-      jobs.push(JSON.parse(jobData));
+      try {
+        jobs.push(JSON.parse(jobData) as EmbeddingJob);
+      } catch (parseError) {
+        // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+        logger.warn({
+          jobId,
+          error: (parseError as Error).message,
+        }, 'Job corrompido ignorado em getBatchJobs');
+      }
     }
   }
   
@@ -482,7 +534,20 @@ export async function cleanupOldJobs(maxAgeMs: number = 24 * 60 * 60 * 1000): Pr
     const jobData = await client.get(key);
     if (!jobData) continue;
     
-    const job: EmbeddingJob = JSON.parse(jobData);
+    let job: EmbeddingJob;
+    try {
+      job = JSON.parse(jobData) as EmbeddingJob;
+    } catch (parseError) {
+      // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se dados corrompidos
+      // Job corrompido - deletar para não acumular lixo
+      logger.warn({
+        key,
+        error: (parseError as Error).message,
+      }, 'Job corrompido encontrado durante cleanup - deletando');
+      await client.del(key);
+      cleaned++;
+      continue;
+    }
     
     // Remover apenas jobs completados ou falhos antigos
     if (['completed', 'failed'].includes(job.status)) {

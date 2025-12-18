@@ -465,7 +465,13 @@ async function probeVideo(filePath: string): Promise<{
     maxBuffer: 10 * 1024 * 1024, // 10MB para arquivos grandes
   });
 
-  const data: FfprobeOutput = JSON.parse(stdout);
+  let data: FfprobeOutput;
+  try {
+    data = JSON.parse(stdout) as FfprobeOutput;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se ffprobe retornar output inválido
+    throw new Error(`Falha ao parsear output do ffprobe: ${(parseError as Error).message}`);
+  }
   const formatName = data.format?.format_name;
   const mimeType = guessMime(formatName);
   const durationSeconds = data.format?.duration ? Number(data.format.duration) : null;

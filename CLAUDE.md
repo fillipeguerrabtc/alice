@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.93 - 17 de Dezembro de 2025*
+*Versão: 3.94 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -395,3 +395,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Code Review Auditoria (17/12/2025): Removidos 3 TODOs/stubs críticos - 100% enterprise compliance (Regra 6)*
 *Bug Fix TOCTOU Race Condition (17/12/2025): trading-orchestrator.ts - initiateTradingTakeover e handbackTradingToAlice agora usam SELECT FOR UPDATE dentro da transação*
 *Bug Fix validateCommand Missing (17/12/2025): chat-service/index.ts agora chama validateCommand antes de executeTradingCommand - evita requests inválidos (ex: DELETE /orders/ sem orderId)*
+*Bug Fix JSON.parse Sem Try/Catch (17/12/2025): embedding-queue.ts (6 ocorrências), backup-orchestrator.ts (3 ocorrências), media-worker.ts (1 ocorrência) - evita crash do serviço se dados corrompidos*
+*Auditoria Profunda (17/12/2025): Auditoria REAL de 8 módulos - JSON.parse, NaN guards, division by zero, setInterval cleanup - 10 bugs críticos corrigidos*

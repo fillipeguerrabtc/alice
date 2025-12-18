@@ -324,8 +324,18 @@ async function loadManifest(backupId: string): Promise<BackupManifest | null> {
   const filePath = path.join(MANIFESTS_DIR, `${backupId}.json`);
   if (!existsSync(filePath)) return null;
   
-  const content = await readFile(filePath, 'utf-8');
-  return JSON.parse(content) as BackupManifest;
+  try {
+    const content = await readFile(filePath, 'utf-8');
+    return JSON.parse(content) as BackupManifest;
+  } catch (parseError) {
+    // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se arquivo corrompido
+    logger.error({
+      backupId,
+      filePath,
+      error: (parseError as Error).message,
+    }, 'MANIFESTO CORROMPIDO: Falha ao parsear manifesto de backup');
+    return null;
+  }
 }
 
 /** Listar todos os manifestos */
@@ -337,8 +347,16 @@ async function listManifests(): Promise<BackupManifest[]> {
   
   for (const file of files) {
     if (file.endsWith('.json')) {
-      const content = await readFile(path.join(MANIFESTS_DIR, file), 'utf-8');
-      manifests.push(JSON.parse(content) as BackupManifest);
+      try {
+        const content = await readFile(path.join(MANIFESTS_DIR, file), 'utf-8');
+        manifests.push(JSON.parse(content) as BackupManifest);
+      } catch (parseError) {
+        // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se arquivo corrompido
+        logger.warn({
+          file,
+          error: (parseError as Error).message,
+        }, 'Manifesto corrompido ignorado durante listagem');
+      }
     }
   }
   
@@ -385,7 +403,17 @@ async function backupPostgreSQL(type: 'full' | 'diff' | 'incr'): Promise<Compone
       `docker exec alice-pgbackrest pgbackrest info --stanza=alice_prod --output=json`
     );
     
-    const info = JSON.parse(infoOutput);
+    let info: Array<{ backup?: Array<{ lsn?: { start?: string }; label?: string }> }>;
+    try {
+      info = JSON.parse(infoOutput);
+    } catch (parseError) {
+      // CORREÇÃO 17/12/2025: JSON.parse sem try/catch pode crashar serviço se output inesperado
+      logger.warn({
+        error: (parseError as Error).message,
+        outputLength: infoOutput.length,
+      }, 'Falha ao parsear output do pgBackRest info - usando defaults');
+      info = [];
+    }
     const lastBackup = info[0]?.backup?.[0];
     
     component.status = 'completed';
