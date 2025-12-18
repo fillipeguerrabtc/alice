@@ -11,16 +11,12 @@
  * @module training-service/salad-client
  */
 
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'salad-client' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado (Regra 2 - Não Duplicar)
+// Bug: pino direto com pino-pretty não segue padrão enterprise
+const logger = createLogger('salad-client');
 
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const SALAD_API_KEY = process.env.SALAD_API_KEY || '';
@@ -102,6 +98,10 @@ export interface GPUClass {
 
 // Usa CIRCUIT_BREAKER_PRESETS.saladDeployment centralizado (Regra 2 - Não Duplicar)
 
+// CORREÇÃO AUDITORIA 17/12/2025: Timeout para chamadas à API Salad Cloud
+// Bug: fetch() sem timeout podia travar o serviço indefinidamente
+const SALAD_API_TIMEOUT_MS = 30000; // 30 segundos
+
 /**
  * Headers padrão para API Salad Cloud
  */
@@ -143,6 +143,7 @@ async function createContainerGroupInternal(
     method: 'POST',
     headers: getHeaders(),
     body: JSON.stringify(body),
+    signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -164,6 +165,7 @@ async function getContainerGroupStatusInternal(
   const response = await fetch(url, {
     method: 'GET',
     headers: getHeaders(),
+    signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -185,6 +187,7 @@ async function deleteContainerGroupInternal(
   const response = await fetch(url, {
     method: 'DELETE',
     headers: getHeaders(),
+    signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
   });
 
   if (!response.ok && response.status !== 404) {
@@ -204,6 +207,7 @@ async function stopContainerGroupInternal(
   const response = await fetch(url, {
     method: 'POST',
     headers: getHeaders(),
+    signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -221,6 +225,7 @@ async function listGPUClassesInternal(): Promise<GPUClass[]> {
   const response = await fetch(url, {
     method: 'GET',
     headers: getHeaders(),
+    signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
   });
 
   if (!response.ok) {

@@ -83,9 +83,16 @@ interface CollectionResult {
 // FUNÇÕES DE COLETA (KuCoin API pública - sem autenticação)
 // ============================================================================
 
+// RESILIÊNCIA: Timeout para chamadas à API externa (Best Practices 2025)
+// Evita que o serviço trave se a API KuCoin não responder
+const KUCOIN_API_TIMEOUT_MS = 15000; // 15 segundos
+
 /**
  * Coleta candles históricos da KuCoin
  * GET /api/v1/kline/query
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
+ * Bug: fetch() sem timeout podia travar o serviço indefinidamente
  */
 async function fetchCandles(
   symbol: string,
@@ -96,7 +103,9 @@ async function fetchCandles(
   const url = `${KUCOIN_FUTURES_API}/api/v1/kline/query?symbol=${symbol}&granularity=${granularity}&from=${from}&to=${to}`;
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(KUCOIN_API_TIMEOUT_MS),
+    });
     const data = await response.json() as { code: string; data: number[][] };
     
     if (data.code !== '200000' || !data.data) {
@@ -115,7 +124,11 @@ async function fetchCandles(
       turnover: candle[6]?.toString() || '0',
     }));
   } catch (error) {
-    logger.error({ error, symbol, granularity }, 'Erro na requisição de candles');
+    // Distinguir timeout de outros erros para melhor diagnóstico
+    const errorMessage = error instanceof Error && error.name === 'TimeoutError'
+      ? 'Timeout ao buscar candles da KuCoin'
+      : 'Erro na requisição de candles';
+    logger.error({ error, symbol, granularity }, errorMessage);
     return [];
   }
 }
@@ -123,12 +136,16 @@ async function fetchCandles(
 /**
  * Coleta taxa de funding atual
  * GET /api/v1/funding-rate/{symbol}/current
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
  */
 async function fetchFundingRate(symbol: string): Promise<KucoinFundingRate | null> {
   const url = `${KUCOIN_FUTURES_API}/api/v1/funding-rate/${symbol}/current`;
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(KUCOIN_API_TIMEOUT_MS),
+    });
     const data = await response.json() as { code: string; data: KucoinFundingRate };
     
     if (data.code !== '200000' || !data.data) {
@@ -138,7 +155,10 @@ async function fetchFundingRate(symbol: string): Promise<KucoinFundingRate | nul
 
     return data.data;
   } catch (error) {
-    logger.error({ error, symbol }, 'Erro na requisição de funding rate');
+    const errorMessage = error instanceof Error && error.name === 'TimeoutError'
+      ? 'Timeout ao buscar funding rate da KuCoin'
+      : 'Erro na requisição de funding rate';
+    logger.error({ error, symbol }, errorMessage);
     return null;
   }
 }
@@ -146,12 +166,16 @@ async function fetchFundingRate(symbol: string): Promise<KucoinFundingRate | nul
 /**
  * Coleta open interest atual
  * GET /api/v1/contracts/active
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
  */
 async function fetchOpenInterest(symbol: string): Promise<number | null> {
   const url = `${KUCOIN_FUTURES_API}/api/v1/contracts/${symbol}`;
   
   try {
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      signal: AbortSignal.timeout(KUCOIN_API_TIMEOUT_MS),
+    });
     const data = await response.json() as { code: string; data: { openInterest: string } };
     
     if (data.code !== '200000' || !data.data) {
@@ -160,7 +184,10 @@ async function fetchOpenInterest(symbol: string): Promise<number | null> {
 
     return parseFloat(data.data.openInterest);
   } catch (error) {
-    logger.error({ error, symbol }, 'Erro na requisição de open interest');
+    const errorMessage = error instanceof Error && error.name === 'TimeoutError'
+      ? 'Timeout ao buscar open interest da KuCoin'
+      : 'Erro na requisição de open interest';
+    logger.error({ error, symbol }, errorMessage);
     return null;
   }
 }
@@ -464,9 +491,12 @@ export async function collectScalpingData(
   }
 
   // Coletar ticker atual para preço em tempo real
+  // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
   try {
     const tickerUrl = `${KUCOIN_FUTURES_API}/api/v1/ticker?symbol=${symbol}`;
-    const response = await fetch(tickerUrl);
+    const response = await fetch(tickerUrl, {
+      signal: AbortSignal.timeout(KUCOIN_API_TIMEOUT_MS),
+    });
     const data = await response.json() as { 
       code: string; 
       data: { 

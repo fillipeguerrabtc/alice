@@ -1014,9 +1014,28 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
     return res.status(503).json({ error: 'Webhook não configurado. Configure TRAINING_WEBHOOK_SECRET.' });
   }
 
-  if (!webhookSecret || webhookSecret !== expectedSecret) {
-    logger.warn({ hasSecret: !!webhookSecret }, 'Tentativa de webhook com secret inválido');
-    return res.status(401).json({ error: 'Webhook secret inválido ou ausente' });
+  // SEGURANÇA: Usar timing-safe comparison para evitar timing attacks (OWASP)
+  // crypto.timingSafeEqual() previne que atacantes descubram o secret via análise de tempo de resposta
+  if (!webhookSecret) {
+    logger.warn({ hasSecret: false }, 'Tentativa de webhook sem secret');
+    return res.status(401).json({ error: 'Webhook secret ausente' });
+  }
+  
+  // Converter para Buffer para timing-safe comparison
+  const secretBuffer = Buffer.from(webhookSecret, 'utf-8');
+  const expectedBuffer = Buffer.from(expectedSecret, 'utf-8');
+  
+  // Se tamanhos diferentes, ainda precisamos fazer comparação para manter tempo constante
+  // Mas retornamos erro após a comparação
+  const lengthsMatch = secretBuffer.length === expectedBuffer.length;
+  const isValid = lengthsMatch && crypto.timingSafeEqual(
+    secretBuffer,
+    lengthsMatch ? expectedBuffer : Buffer.alloc(secretBuffer.length)
+  );
+  
+  if (!isValid) {
+    logger.warn({ hasSecret: true }, 'Tentativa de webhook com secret inválido');
+    return res.status(401).json({ error: 'Webhook secret inválido' });
   }
 
   const tenantId = req.headers['x-tenant-id'] as string | undefined;

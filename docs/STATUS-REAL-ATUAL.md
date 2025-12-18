@@ -213,6 +213,13 @@
 | Circuit Breakers | ✅ | Salad Cloud |
 | Prometheus Metrics | ✅ | `/metrics` |
 
+> **Bug Fix AUDITORIA (17/12/2025):** Correções Enterprise identificadas na auditoria completa linha-a-linha:
+> - **index.ts**: Webhook secret comparison agora usa `crypto.timingSafeEqual()` (OWASP - evita timing attacks)
+> - **salad-client.ts**: Logger agora usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
+> - **salad-client.ts**: 5 chamadas `fetch()` agora têm timeout de 30s via `AbortSignal.timeout()` (Best Practices 2025)
+> - **market-data-collector.ts**: 4 chamadas `fetch()` agora têm timeout de 15s (corrigido antes desta fase)
+> - **Total**: 7 bugs corrigidos, 3496 linhas auditadas
+
 ### 5. integrations-service (Porta 3005)
 
 | Funcionalidade | Status | Arquivo |
