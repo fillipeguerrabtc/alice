@@ -257,8 +257,11 @@ const TRADING_CONTEXT_KEYWORDS = [
 
 /**
  * Verifica se a mensagem tem contexto de trading
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Corrigido typo no nome da função
+ * (hasTradicngContext -> hasTradingContext)
  */
-function hasTradicngContext(text: string): boolean {
+function hasTradingContext(text: string): boolean {
   const lowerText = text.toLowerCase();
   return TRADING_CONTEXT_KEYWORDS.some(keyword => lowerText.includes(keyword));
 }
@@ -414,7 +417,7 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
   }
 
   // Se não encontrou match mas tem contexto de trading, pode ser comando ambíguo
-  if (hasContext) {
+  if (hasTradingContext(normalizedText)) {
     result.confidence = 0.3;
   }
 

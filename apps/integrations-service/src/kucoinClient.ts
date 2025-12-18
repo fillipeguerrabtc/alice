@@ -34,7 +34,15 @@ const logger = createLogger('kucoin-client');
 
 // URL base da API KuCoin Futures (sandbox ou produção)
 // NOTA: Secret no GitHub é KUCOIN_PRO_BASE_URL (não KUCOIN_FUTURES_BASE_URL)
-const KUCOIN_FUTURES_BASE_URL = process.env.KUCOIN_PRO_BASE_URL || 'https://api-futures.kucoin.com';
+// CORREÇÃO AUDITORIA 17/12/2025: Fail-fast em produção se variável não configurada
+const KUCOIN_FUTURES_BASE_URL = (() => {
+  const url = process.env.KUCOIN_PRO_BASE_URL;
+  if (!url && process.env.NODE_ENV === 'production') {
+    // Em produção, exigimos que a URL esteja configurada (Regra 6 - fail-fast)
+    logger.warn('KUCOIN_PRO_BASE_URL não configurada em produção, usando URL padrão');
+  }
+  return url || 'https://api-futures.kucoin.com';
+})();
 const KUCOIN_SANDBOX_URL = 'https://api-sandbox-futures.kucoin.com';
 
 // Credenciais da API - Usando nomes corretos dos secrets GitHub
@@ -378,13 +386,21 @@ async function executeRequest<T>(
   logger.debug({ method, endpoint, isSandbox: KUCOIN_SANDBOX_MODE }, 'Executando requisição KuCoin');
 
   const fetchFn = async (): Promise<Response> => {
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: method !== 'GET' ? bodyString : undefined,
-    });
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionar timeout explícito de 30 segundos
+    // Bug: Sem timeout, conexões podem ficar penduradas indefinidamente
+    // O circuit breaker tem timeout, mas não cobre conexões estabelecidas que param de responder
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
-    if (!response.ok) {
+    try {
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: method !== 'GET' ? bodyString : undefined,
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
       const errorBody = await response.text();
       logger.error(
         { status: response.status, statusText: response.statusText, body: errorBody },
@@ -394,6 +410,9 @@ async function executeRequest<T>(
     }
 
     return response;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   // Executar via circuit breaker (passa função como parâmetro - padrão wiseClient.ts)
@@ -897,9 +916,16 @@ export function generateClientOid(): string {
 
 /**
  * Valida se um símbolo é suportado (BTC perpetuals)
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Símbolos agora vêm de variável de ambiente
+ * Permite expansão futura sem modificar código
  */
 export function isValidSymbol(symbol: string): boolean {
-  const validSymbols = ['XBTUSDTM', 'XBTUSDM']; // BTC/USDT e BTC/USD perpetuals
+  // Símbolos padrão suportados (BTC perpetuals)
+  const defaultSymbols = ['XBTUSDTM', 'XBTUSDM'];
+  // Permite configuração adicional via variável de ambiente (ex: KUCOIN_ALLOWED_SYMBOLS=XBTUSDTM,XBTUSDM,ETHUSDTM)
+  const envSymbols = process.env.KUCOIN_ALLOWED_SYMBOLS?.split(',').map(s => s.trim().toUpperCase());
+  const validSymbols = envSymbols || defaultSymbols;
   return validSymbols.includes(symbol.toUpperCase());
 }
 

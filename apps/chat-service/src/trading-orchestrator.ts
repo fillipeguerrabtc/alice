@@ -24,11 +24,27 @@ import type { Database } from '@alice/database';
 
 const logger = createLogger('trading-orchestrator');
 
-let db: Database;
+let db: Database | null = null;
 
 // ============================================================================
 // INICIALIZAÇÃO
 // ============================================================================
+
+/**
+ * Obtém conexão ao banco com verificação de inicialização
+ * 
+ * CORREÇÃO AUDITORIA 17/12/2025: Fail-fast se db não inicializado
+ * Bug: Se qualquer função for chamada antes de initTradingOrchestrator(),
+ * db será null/undefined e causará crash silencioso sem mensagem clara
+ */
+function getDb(): Database {
+  if (!db) {
+    const error = 'Trading orchestrator não inicializado - chame initTradingOrchestrator() primeiro';
+    logger.fatal(error);
+    throw new Error(error);
+  }
+  return db;
+}
 
 /**
  * Inicializa o orchestrator com conexão ao banco
@@ -85,15 +101,16 @@ export interface TradingControlHistoryEntry {
  * Obtém o estado atual de controle de trading para um tenant
  */
 export async function getTradingControlState(tenantId: string): Promise<TradingControlState> {
+  const database = getDb();
   // Buscar configuração de risco que contém tradingEnabled e autoExecuteSignals
-  const [config] = await db
+  const [config] = await database
     .select()
     .from(schema.tradingRiskConfig)
     .where(eq(schema.tradingRiskConfig.tenantId, tenantId))
     .limit(1);
 
   // Buscar último histórico de controle
-  const [lastHistory] = await db
+  const [lastHistory] = await database
     .select()
     .from(schema.tradingControlHistory)
     .where(eq(schema.tradingControlHistory.tenantId, tenantId))
@@ -162,7 +179,8 @@ export async function initiateTradingTakeover(
   try {
     // CORREÇÃO TOCTOU: Toda a lógica agora está dentro da transação
     // SELECT FOR UPDATE garante que nenhuma outra transação pode modificar a linha
-    const result = await db.transaction(async (tx) => {
+    const database = getDb();
+    const result = await database.transaction(async (tx) => {
       // Buscar estado atual COM LOCK para evitar race condition
       // FOR UPDATE bloqueia a linha até o fim da transação
       const [config] = await tx
@@ -278,7 +296,8 @@ export async function handbackTradingToAlice(
   try {
     // CORREÇÃO TOCTOU: Toda a lógica agora está dentro da transação
     // SELECT FOR UPDATE garante que nenhuma outra transação pode modificar a linha
-    const result = await db.transaction(async (tx) => {
+    const database = getDb();
+    const result = await database.transaction(async (tx) => {
       // Buscar estado atual COM LOCK para evitar race condition
       // FOR UPDATE bloqueia a linha até o fim da transação
       const [config] = await tx
@@ -403,7 +422,8 @@ export async function getTradingControlHistory(
   tenantId: string,
   limit: number = 50
 ): Promise<TradingControlHistoryEntry[]> {
-  const entries = await db
+  const database = getDb();
+  const entries = await database
     .select()
     .from(schema.tradingControlHistory)
     .where(eq(schema.tradingControlHistory.tenantId, tenantId))

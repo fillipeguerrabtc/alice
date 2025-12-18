@@ -327,6 +327,11 @@ export class KucoinWebSocketClient extends EventEmitter {
       const bulletData = await this.getToken(isPrivate);
       this.token = bulletData.data.token;
       
+      // CORREÇÃO AUDITORIA 17/12/2025: Validar instanceServers antes de acessar
+      // Bug: Se array estiver vazio, server será undefined e causará erro ao acessar .endpoint
+      if (!bulletData.data.instanceServers || bulletData.data.instanceServers.length === 0) {
+        throw new Error('KuCoin WebSocket: Nenhum servidor disponível no bullet response');
+      }
       const server = bulletData.data.instanceServers[0];
       this.endpoint = server.endpoint;
       this.pingInterval = server.pingInterval;
@@ -504,8 +509,17 @@ export class KucoinWebSocketClient extends EventEmitter {
 
   /**
    * Inicia ping periódico
+   * 
+   * CORREÇÃO AUDITORIA 17/12/2025: Verifica se pingTimer já existe antes de criar novo
+   * Bug: Se startPing() for chamado múltiplas vezes (ex: em refatoração), cria múltiplos
+   * intervalos e apenas o último é referenciado, causando memory leak e ping duplicados
    */
   private startPing(): void {
+    // Limpar interval existente para evitar duplicatas
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
     this.pingTimer = setInterval(() => {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         const pingId = `ping-${Date.now()}`;

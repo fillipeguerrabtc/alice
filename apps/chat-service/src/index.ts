@@ -1251,7 +1251,11 @@ async function executeTradingCommand(
       signal: controller.signal,
     };
 
-    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    // CORREÇÃO AUDITORIA 17/12/2025: Incluir DELETE na lista de métodos que enviam body
+    // Bug: close_position usava DELETE com body mas body era descartado silenciosamente
+    // porque a condição só permitia POST, PUT, PATCH. O servidor nunca recebia o symbol
+    // da posição a fechar. DELETE com body é suportado por APIs modernas (RFC 7231 não proíbe).
+    if (body && (method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE')) {
       fetchOptions.body = JSON.stringify(body);
     }
 

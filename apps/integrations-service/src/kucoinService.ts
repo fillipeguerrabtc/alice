@@ -756,9 +756,18 @@ export async function syncOrdersStatus(
             filledSize: kucoinOrder.filledSize?.toString(),
             // Bug fix: Campo correto é avgFilledPrice (não filledPrice) - conforme schema.ts linha 1521
             // Bug fix: Verificar filledSize > 0 antes de dividir para evitar Infinity/NaN
-            avgFilledPrice: kucoinOrder.filledValue && kucoinOrder.filledSize && kucoinOrder.filledSize > 0
-              ? (parseFloat(kucoinOrder.filledValue) / kucoinOrder.filledSize).toString()
-              : null,
+            // CORREÇÃO AUDITORIA 17/12/2025: Validar parseFloat para evitar salvar "NaN" no banco
+            // Bug: Se filledValue for string vazia ou inválida, parseFloat("") = NaN, e NaN.toString() = "NaN"
+            avgFilledPrice: (() => {
+              if (!kucoinOrder.filledValue || !kucoinOrder.filledSize || kucoinOrder.filledSize <= 0) {
+                return null;
+              }
+              const parsedValue = parseFloat(kucoinOrder.filledValue);
+              if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
+                return null; // Evita salvar "NaN" ou "Infinity" no banco
+              }
+              return (parsedValue / kucoinOrder.filledSize).toString();
+            })(),
             atualizadoEm: new Date(),
             metadata: {
               ...order.metadata,

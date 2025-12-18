@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.95 - 17 de Dezembro de 2025*
+*Versão: 3.96 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -400,3 +400,12 @@ git commit -a -m "test: adiciona testes unitários"
 *Auditoria Enterprise Completa (17/12/2025): Code review de 10 fases (~210 arquivos TS/TSX) - 2 bugs corrigidos: console.error→frontendLogger, controlMode sync*
 *Bug Fix controlMode Sync (17/12/2025): Trading.tsx agora sincroniza controlMode com autoExecuteSignals do servidor - HandoverPanel mostrava modo incorreto*
 *Bug Fix console.error (17/12/2025): useKucoinWebSocket.ts agora usa frontendLogger ao invés de console.error (Regra 8)*
+*AUDITORIA PROFUNDA ENTERPRISE (17/12/2025): Leitura linha-a-linha de 8 arquivos críticos (~5500 linhas de código Trading/KuCoin)*
+*Bug Fix Fetch Timeout (17/12/2025): kucoinClient.ts agora usa AbortController com timeout de 30s - evita conexões penduradas*
+*Bug Fix instanceServers Vazio (17/12/2025): kucoinWebSocket.ts valida bulletData.instanceServers antes de acessar - evita crash se array vazio*
+*Bug Fix Ping Timer Duplicado (17/12/2025): kucoinWebSocket.ts limpa pingTimer existente antes de criar novo - evita memory leak e pings duplicados*
+*Bug Fix avgFilledPrice NaN (17/12/2025): kucoinService.ts valida parseFloat(filledValue) - evita salvar "NaN" no banco se string inválida*
+*Bug Fix DB Não Inicializado (17/12/2025): trading-orchestrator.ts usa getDb() com fail-fast - crash claro se initTradingOrchestrator() não chamado*
+*Bug Fix Typo hasTradingContext (17/12/2025): trading-command-parser.ts corrigido typo hasTradicngContext → hasTradingContext*
+*Bug Fix DELETE Body Descartado (17/12/2025): chat-service/index.ts agora inclui DELETE na condição que envia body - close_position funcionava sem enviar symbol*
+*Bug Fix Símbolos Hardcoded (17/12/2025): kucoinClient.ts isValidSymbol() agora aceita KUCOIN_ALLOWED_SYMBOLS via env - expansível sem modificar código*
