@@ -32,6 +32,10 @@ import * as kucoinClient from './kucoinClient.js';
 
 const logger = createLogger('kucoin-service');
 
+// Símbolo padrão para trading BTC Futures
+// XBTUSDTM = BTC/USDT perpétuo (margem USDT)
+const DEFAULT_SYMBOL = 'XBTUSDTM';
+
 // ============================================================================
 // TIPOS ESPECÍFICOS DO SERVIÇO
 // ============================================================================
@@ -593,6 +597,178 @@ export async function createManualOrder(
   });
 }
 
+// ============================================================================
+// STOP ORDERS (TP/SL) - KuCoin API 2025
+// POST /api/v1/st-orders conforme documentação oficial
+// Referência: https://www.kucoin.com/docs-new/rest/futures-trading/orders/add-take-profit-and-stop-loss-order
+// ============================================================================
+
+/** Parâmetros para criar ordem stop (TP/SL) */
+export interface CreateStopOrderParams {
+  symbol?: string;
+  side: 'buy' | 'sell';
+  size: number;
+  stopLoss?: number;        // Preço de stop loss (triggerStopDownPrice)
+  takeProfit?: number;      // Preço de take profit (triggerStopUpPrice)
+  leverage?: number;
+  orderType?: 'limit' | 'market';
+  price?: number;           // Preço limite (se orderType = limit)
+}
+
+/**
+ * Cria ordem stop (Take Profit / Stop Loss) - KuCoin API 2025
+ * Usa endpoint POST /api/v1/st-orders conforme documentação oficial
+ * 
+ * @param authContext - Contexto de autenticação
+ * @param params - Parâmetros da ordem stop
+ * @returns Resultado da operação
+ */
+export async function createStopOrder(
+  authContext: TradingAuthContext,
+  params: CreateStopOrderParams
+): Promise<TradingOperationResult<{ orderId: string; clientOid: string }>> {
+  const db = getDatabase();
+  
+  // Validar que pelo menos um trigger está definido
+  if (!params.stopLoss && !params.takeProfit) {
+    return { 
+      success: false, 
+      error: 'Pelo menos stopLoss ou takeProfit deve ser definido.' 
+    };
+  }
+
+  try {
+    const symbol = params.symbol || DEFAULT_SYMBOL;
+    
+    // Verificar configuração de risco
+    const [riskConfig] = await db
+      .select()
+      .from(schema.tradingRiskConfig)
+      .where(eq(schema.tradingRiskConfig.tenantId, authContext.tenantId))
+      .limit(1);
+
+    // CORREÇÃO AUDITORIA 17/12/2025: Campo correto é tradingEnabled (não enabled)
+    // Bug: enabled não existe no schema tradingRiskConfig, causava false positivo
+    if (!riskConfig?.tradingEnabled) {
+      return { success: false, error: 'Trading não está habilitado para este tenant.' };
+    }
+
+    // Verificar se KuCoin está configurada
+    if (!kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin não configurada.' };
+    }
+
+    const clientOid = kucoinClient.generateClientOid();
+
+    // Criar ordem stop na KuCoin
+    const kucoinResponse = await kucoinClient.createStopOrder({
+      clientOid,
+      symbol,
+      side: params.side,
+      type: params.orderType || 'market',
+      leverage: params.leverage || riskConfig.defaultLeverage || 1,
+      size: params.size,
+      price: params.price?.toString(),
+      triggerStopUpPrice: params.takeProfit?.toString(),
+      triggerStopDownPrice: params.stopLoss?.toString(),
+      stopPriceType: 'TP', // Trade Price - mais comum
+      reduceOnly: true, // Stop orders geralmente são para reduzir posição
+    });
+
+    // Registrar no audit log
+    await logTradingAction(
+      authContext,
+      'CREATE_STOP_ORDER',
+      'stop_order',
+      kucoinResponse.orderId,
+      {
+        clientOid,
+        symbol,
+        side: params.side,
+        size: params.size,
+        stopLoss: params.stopLoss,
+        takeProfit: params.takeProfit,
+        leverage: params.leverage,
+        kucoinOrderId: kucoinResponse.orderId,
+      }
+    );
+
+    logger.info({
+      orderId: kucoinResponse.orderId,
+      clientOid,
+      symbol,
+      stopLoss: params.stopLoss,
+      takeProfit: params.takeProfit,
+    }, 'Ordem stop (TP/SL) criada com sucesso');
+
+    return {
+      success: true,
+      data: {
+        orderId: kucoinResponse.orderId,
+        clientOid,
+      },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, params }, 'Erro ao criar ordem stop');
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Cancela uma ordem stop
+ */
+export async function cancelStopOrder(
+  authContext: TradingAuthContext,
+  orderId: string
+): Promise<TradingOperationResult<{ cancelledOrderIds: string[] }>> {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin não configurada.' };
+    }
+
+    const result = await kucoinClient.cancelStopOrder(orderId);
+
+    await logTradingAction(
+      authContext,
+      'CANCEL_STOP_ORDER',
+      'stop_order',
+      orderId,
+      { cancelledOrderIds: result.cancelledOrderIds }
+    );
+
+    logger.info({ orderId }, 'Ordem stop cancelada');
+
+    return { success: true, data: result };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage, orderId }, 'Erro ao cancelar ordem stop');
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Lista ordens stop abertas
+ */
+export async function getOpenStopOrders(
+  authContext: TradingAuthContext,
+  symbol?: string
+): Promise<TradingOperationResult<kucoinClient.KucoinOrder[]>> {
+  try {
+    if (!kucoinClient.isKucoinConfigured()) {
+      return { success: false, error: 'API KuCoin não configurada.' };
+    }
+
+    const result = await kucoinClient.getOpenStopOrders(symbol || DEFAULT_SYMBOL);
+
+    return { success: true, data: result.items };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar ordens stop');
+    return { success: false, error: errorMessage };
+  }
+}
+
 /**
  * Cancela uma ordem
  */
@@ -897,6 +1073,12 @@ export default {
   cancelOrder,
   getOrders,
   syncOrdersStatus,
+  
+  // Stop Orders (TP/SL) - KuCoin API 2025
+  // CORREÇÃO AUDITORIA 17/12/2025: Funções estavam definidas mas não exportadas
+  createStopOrder,
+  cancelStopOrder,
+  getOpenStopOrders,
   
   // Market Data
   getMarketData,

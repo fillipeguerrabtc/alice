@@ -904,6 +904,123 @@ export async function getOrdersByIds(orderIds: string[]): Promise<KucoinOrder[]>
 }
 
 // ============================================================================
+// ENDPOINTS PRIVADOS - STOP ORDERS (TP/SL) - Documentação Oficial KuCoin 2025
+// POST /api/v1/st-orders - Criar ordem com Take Profit e Stop Loss
+// Referência: https://www.kucoin.com/docs-new/rest/futures-trading/orders/add-take-profit-and-stop-loss-order
+// ============================================================================
+
+/** Parâmetros para criar ordem stop (TP/SL) - KuCoin API 2025 */
+export interface CreateStopOrderParams {
+  clientOid: string;              // ID único do cliente
+  symbol: string;                 // Símbolo do contrato (ex: XBTUSDTM)
+  side: 'buy' | 'sell';           // Direção
+  type: 'limit' | 'market';       // Tipo de ordem
+  leverage?: number;              // Alavancagem
+  size?: number;                  // Quantidade em contratos
+  price?: string;                 // Preço (obrigatório para limit)
+  timeInForce?: 'GTC' | 'IOC';    // Validade
+  triggerStopUpPrice?: string;    // Preço de take profit (trigger para fechar com lucro)
+  triggerStopDownPrice?: string;  // Preço de stop loss (trigger para fechar com perda)
+  stopPriceType?: 'TP' | 'IP' | 'MP'; // Tipo: Trade Price, Index Price, Mark Price
+  reduceOnly?: boolean;           // Apenas reduzir posição
+  closeOrder?: boolean;           // Fechar posição inteira
+  forceHold?: boolean;            // Forçar hold de margem
+  qty?: number;                   // Quantidade (novo parâmetro KuCoin 2025)
+  valueQty?: number;              // Valor da quantidade (novo parâmetro KuCoin 2025)
+}
+
+/** Resposta de criação de ordem stop */
+export interface CreateStopOrderResponse {
+  orderId: string;
+  clientOid: string;
+}
+
+/**
+ * Cria ordem com Take Profit e/ou Stop Loss
+ * POST /api/v1/st-orders
+ * 
+ * Documentação oficial KuCoin 2025:
+ * - triggerStopUpPrice: Preço acima do qual a ordem TP é disparada
+ * - triggerStopDownPrice: Preço abaixo do qual a ordem SL é disparada
+ * - stopPriceType: TP (Trade Price), IP (Index Price), MP (Mark Price)
+ * 
+ * @param params - Parâmetros da ordem stop
+ * @returns Resposta com orderId e clientOid
+ */
+export async function createStopOrder(params: CreateStopOrderParams): Promise<CreateStopOrderResponse> {
+  // Validar que pelo menos um trigger está definido
+  if (!params.triggerStopUpPrice && !params.triggerStopDownPrice) {
+    throw new Error('Pelo menos triggerStopUpPrice (TP) ou triggerStopDownPrice (SL) deve ser definido');
+  }
+
+  const response = await executeRequest<CreateStopOrderResponse>(
+    'POST',
+    '/api/v1/st-orders',
+    params as unknown as Record<string, unknown>,
+    true
+  );
+  
+  logger.info(
+    { 
+      orderId: response.data.orderId, 
+      clientOid: params.clientOid, 
+      symbol: params.symbol,
+      tp: params.triggerStopUpPrice,
+      sl: params.triggerStopDownPrice,
+    },
+    'Ordem stop (TP/SL) criada com sucesso'
+  );
+  
+  return response.data;
+}
+
+/**
+ * Cancela uma ordem stop
+ * DELETE /api/v1/st-orders/{orderId}
+ */
+export async function cancelStopOrder(orderId: string): Promise<{ cancelledOrderIds: string[] }> {
+  const response = await executeRequest<{ cancelledOrderIds: string[] }>(
+    'DELETE',
+    `/api/v1/st-orders/${orderId}`,
+    undefined,
+    true
+  );
+  
+  logger.info({ orderId }, 'Ordem stop cancelada');
+  return response.data;
+}
+
+/**
+ * Lista ordens stop abertas
+ * GET /api/v1/st-orders
+ */
+export async function getOpenStopOrders(symbol?: string): Promise<{
+  currentPage: number;
+  pageSize: number;
+  totalNum: number;
+  totalPage: number;
+  items: KucoinOrder[];
+}> {
+  const endpoint = symbol 
+    ? `/api/v1/st-orders?symbol=${symbol}` 
+    : '/api/v1/st-orders';
+  
+  const response = await executeRequest<{
+    currentPage: number;
+    pageSize: number;
+    totalNum: number;
+    totalPage: number;
+    items: KucoinOrder[];
+  }>(
+    'GET',
+    endpoint,
+    undefined,
+    true
+  );
+  return response.data;
+}
+
+// ============================================================================
 // HELPERS
 // ============================================================================
 
@@ -1002,6 +1119,11 @@ export default {
   getOpenOrders,
   getOrderHistory,
   getOrdersByIds,
+  
+  // Stop Orders (TP/SL) - KuCoin API 2025
+  createStopOrder,
+  cancelStopOrder,
+  getOpenStopOrders,
   
   // Posições
   getPosition,

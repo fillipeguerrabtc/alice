@@ -333,12 +333,12 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.96 - 17 de Dezembro de 2025*
+*Versão: 3.97 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
-*Trading: Schema completo (9 tabelas) + API REST (22 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões*
+*Trading: Schema completo (9 tabelas) + API REST (25 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões + Stop Orders (st-orders)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestão de risco*
@@ -384,6 +384,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
 *Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml, workflow deploy-salad-gpu.yml excluído, Terraform obsoleto removido, Python SDK*
+*Auditoria KuCoin Completa (17/12/2025): 3 bugs corrigidos - DEFAULT_SYMBOL não definido, riskConfig.enabled→tradingEnabled, stop orders não exportadas*
 *Bug Fix Health-Check always() (17/12/2025): Job health-check agora usa always() para executar mesmo quando deploy-salad-gpu falha (GPU é opcional)*
 *GPU OBRIGATÓRIO Enterprise (17/12/2025): Deploy GPU Salad Cloud agora é OBRIGATÓRIO - GPUs são o coração da IA, plataforma não funciona sem eles*
 *Health Check Completo (17/12/2025): Health check agora verifica Hetzner (6 serviços) + GPU Salad Cloud (4 Container Groups) - tolerância zero para falhas*

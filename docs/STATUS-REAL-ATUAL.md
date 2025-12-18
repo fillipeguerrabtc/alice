@@ -251,7 +251,7 @@
 | Circuit Breakers | ✅ | ERPNext + Wise + Stripe + KuCoin |
 | Prometheus Metrics | ✅ | `/metrics` |
 | **Trading BTC Futures KuCoin** | ✅ | `kucoinClient.ts`, `kucoinService.ts` |
-| Trading REST APIs (22 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data, Control |
+| Trading REST APIs (25 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data, Control, Stop Orders |
 | **KuCoin WebSocket Client** | ✅ | `kucoinWebSocket.ts` - Token management, canais públicos/privados |
 | **Trading Redis Broadcast** | ✅ | `tradingBroadcast.ts` - Pub/Sub entre serviços |
 | Klines API (Candlesticks) | ✅ | `GET /api/integrations/trading/klines/:symbol` |
@@ -260,8 +260,22 @@
 | Trade History API | ✅ | `GET /api/integrations/trading/trade-history/:symbol` |
 | Order History API | ✅ | `GET /api/integrations/trading/order-history` |
 | Control API (Handover/Takeover) | ✅ | `POST /api/integrations/trading/control` |
+| **Stop Orders API (TP/SL)** | ✅ | `POST/GET/DELETE /api/integrations/trading/stop-orders` |
 
-> **Bug Fix AUDITORIA (17/12/2025):** Correções Enterprise identificadas na auditoria completa linha-a-linha (3540+ linhas):
+> **AUDITORIA COMPLETA KUCOIN (17/12/2025):** Verificação linha-a-linha de todos os arquivos KuCoin (~5000 linhas):
+> - **kucoinService.ts (3 bugs corrigidos)**:
+>   - `DEFAULT_SYMBOL` não estava definido → Adicionada constante `'XBTUSDTM'`
+>   - `riskConfig?.enabled` incorreto → Corrigido para `riskConfig?.tradingEnabled`
+>   - Stop order functions não exportadas → Adicionadas ao `export default`
+> - **kucoinClient.ts**: 1138 linhas auditadas - OK (circuit breaker, timeout 30s, HMAC-SHA256)
+> - **kucoinWebSocket.ts**: 883 linhas auditadas - OK (timeout, validação instanceServers, cleanup pingTimer)
+> - **tradingBroadcast.ts**: 498 linhas auditadas - OK (Redis Pub/Sub, fail-fast, reconnect)
+> - **trading-command-parser.ts**: 544 linhas auditadas - OK (bugs anteriores já corrigidos)
+> - **useKucoinWebSocket.ts**: 482 linhas auditadas - OK (connection ID, intentional disconnect flag)
+> - **CandleChart.tsx**: 500 linhas auditadas - OK (wick/body rendering)
+> - **OrderBookViz.tsx**: 361 linhas auditadas - OK (profundidade de mercado)
+
+> **Bug Fix AUDITORIA ANTERIOR (17/12/2025):** Correções Enterprise identificadas na auditoria completa linha-a-linha (3540+ linhas):
 > - **index.ts**: 4 endpoints REST agora validam `req.params.id` com Zod (OWASP API3 - Security Misconfiguration)
 >   - `GET /api/integrations/wise/batch-groups/:id` - adicionado `batchGroupIdParamSchema`
 >   - `POST /api/integrations/wise/batch-groups/:id/complete` - adicionado `batchGroupIdParamSchema`
@@ -529,7 +543,7 @@ Retenção Arquivo:   30 dias
 > - **RLS:** 7/8 tabelas com Row Level Security (migration 0007)
 > - **RBAC:** 4 permissões `integrations:trading:{read,write,delete,manage}`
 
-### API REST Trading (22 endpoints) - FASE Trading Mixtral 8x7B
+### API REST Trading (25 endpoints) - FASE Trading Mixtral 8x7B
 
 | Endpoint | Método | Propósito | Permissão RBAC |
 |----------|--------|-----------|----------------|
@@ -546,6 +560,9 @@ Retenção Arquivo:   30 dias
 | `/api/integrations/trading/orders` | POST | Criar ordem | `trading:write` |
 | `/api/integrations/trading/orders/:id` | DELETE | Cancelar ordem | `trading:write` |
 | `/api/integrations/trading/orders/sync` | POST | Sincronizar com KuCoin | `trading:manage` |
+| `/api/integrations/trading/stop-orders` | POST | **Criar ordem stop TP/SL (KuCoin st-orders)** | `trading:write` |
+| `/api/integrations/trading/stop-orders` | GET | **Listar ordens stop abertas** | `trading:read` |
+| `/api/integrations/trading/stop-orders/:id` | DELETE | **Cancelar ordem stop** | `trading:write` |
 | `/api/integrations/trading/klines/:symbol` | GET | Candlesticks para gráfico | `trading:read` |
 | `/api/integrations/trading/orderbook/:symbol` | GET | Profundidade de mercado | `trading:read` |
 | `/api/integrations/trading/funding-rate/:symbol` | GET | Funding rate atual | `trading:read` |
@@ -554,6 +571,14 @@ Retenção Arquivo:   30 dias
 | `/api/integrations/trading/orders/history` | GET | Histórico de ordens KuCoin | `trading:read` |
 | `/api/integrations/trading/control` | POST | Handover/takeover controle | `trading:manage` |
 | `/api/integrations/trading/control-history` | GET | Histórico de mudanças de controle | `trading:read` |
+
+> **AUDITORIA KUCOIN 17/12/2025:** Implementado endpoint `/api/v1/st-orders` conforme documentação oficial KuCoin 2025:
+> - **Referência:** https://www.kucoin.com/docs-new/rest/futures-trading/orders/add-take-profit-and-stop-loss-order
+> - **Parâmetros:** `triggerStopUpPrice` (take profit), `triggerStopDownPrice` (stop loss), `stopPriceType` (TP/IP/MP)
+> - **Novos parâmetros 2025:** `qty`, `valueQty` para maior precisão
+> - **kucoinClient.ts:** Adicionadas funções `createStopOrder`, `cancelStopOrder`, `getOpenStopOrders`
+> - **kucoinService.ts:** Adicionadas funções `createStopOrder`, `cancelStopOrder`, `getOpenStopOrders` com auditoria
+> - **chat-service:** Comandos `set_stop_loss`, `set_take_profit` agora usam endpoint correto
 
 ### Página Frontend Trading - 8 Tabs (17/12/2025)
 

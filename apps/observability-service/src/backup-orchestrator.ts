@@ -47,7 +47,7 @@ const logger = createLogger('backup-orchestrator');
 
 /** Status de cada componente no backup */
 interface ComponentBackupStatus {
-  component: 'postgresql' | 'mariadb' | 'redis' | 'uploads';
+  component: 'postgresql' | 'mariadb' | 'redis' | 'qdrant' | 'uploads';
   status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
   startedAt?: string;
   completedAt?: string;
@@ -83,6 +83,12 @@ interface BackupManifest {
     redis?: {
       status: 'completed' | 'failed' | 'skipped';
       rdbChecksum?: string;
+      size?: string;
+    };
+    qdrant?: {
+      status: 'completed' | 'failed' | 'skipped';
+      snapshotName?: string;
+      collections?: string[];
       size?: string;
     };
   };
@@ -131,6 +137,8 @@ const MANIFESTS_DIR = path.join(BACKUP_DIR, 'manifests');
 const _POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER || 'alice-postgres';
 const MARIADB_CONTAINER = process.env.MARIADB_CONTAINER || 'erpnext-mariadb';
 const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'erpnext-redis-cache';
+const QDRANT_CONTAINER = process.env.QDRANT_CONTAINER || 'alice-qdrant';
+const QDRANT_URL = process.env.QDRANT_URL || 'http://alice-qdrant:6333';
 
 // Re-exportar para uso futuro em funções de health check
 export { _POSTGRES_CONTAINER as POSTGRES_CONTAINER };
@@ -569,6 +577,152 @@ async function backupRedis(): Promise<ComponentBackupStatus> {
     
     logger.error({ error: err.message }, 'Falha no backup Redis');
   }
+
+  return component;
+}
+
+/**
+ * Backup Qdrant via API de Snapshots
+ * Qdrant armazena embeddings de texto (4096 dim) críticos para RAG
+ * Usa API REST: POST /collections/{collection_name}/snapshots
+ * Retorna: snapshot name, collections backed up
+ * 
+ * ADICIONADO AUDITORIA 17/12/2025: Qdrant era o único DB sem backup
+ * Embeddings de texto são críticos e não podem ser regenerados sem reprocessar documentos
+ */
+async function backupQdrant(): Promise<ComponentBackupStatus> {
+  const startTime = Date.now();
+  const component: ComponentBackupStatus = {
+    component: 'qdrant',
+    status: 'running',
+    startedAt: new Date().toISOString(),
+  };
+  
+  logger.info('Iniciando backup Qdrant (snapshots de collections)');
+  
+  try {
+    // Obter lista de collections
+    const collectionsResponse = await fetch(`${QDRANT_URL}/collections`, {
+      signal: AbortSignal.timeout(30000),
+    });
+    
+    if (!collectionsResponse.ok) {
+      throw new Error(`Falha ao listar collections: ${collectionsResponse.status}`);
+    }
+    
+    const collectionsData = await collectionsResponse.json() as {
+      result: { collections: Array<{ name: string }> };
+    };
+    const collections = collectionsData.result.collections.map(c => c.name);
+    
+    if (collections.length === 0) {
+      logger.warn('Nenhuma collection encontrada no Qdrant');
+      component.status = 'skipped';
+      component.completedAt = new Date().toISOString();
+      component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
+      component.metadata = { reason: 'Nenhuma collection' };
+      return component;
+    }
+    
+    // Criar diretório de backup
+    const backupPath = path.join(BACKUP_DIR, 'qdrant');
+    const timestamp = new Date().toISOString().replace(/[-:]/g, '').split('.')[0];
+    await mkdir(backupPath, { recursive: true });
+    
+    const snapshotNames: string[] = [];
+    let totalSize = 0;
+    
+    // Criar snapshot de cada collection
+    for (const collectionName of collections) {
+      logger.info({ collection: collectionName }, 'Criando snapshot da collection');
+      
+      // Criar snapshot via API
+      const snapshotResponse = await fetch(
+        `${QDRANT_URL}/collections/${collectionName}/snapshots`,
+        {
+          method: 'POST',
+          signal: AbortSignal.timeout(300000), // 5 min timeout para snapshots grandes
+        }
+      );
+      
+      if (!snapshotResponse.ok) {
+        logger.error({ collection: collectionName, status: snapshotResponse.status }, 'Falha ao criar snapshot');
+        continue;
+      }
+      
+      const snapshotData = await snapshotResponse.json() as {
+        result: { name: string };
+      };
+      const snapshotName = snapshotData.result.name;
+      snapshotNames.push(snapshotName);
+      
+      // Baixar snapshot
+      const downloadResponse = await fetch(
+        `${QDRANT_URL}/collections/${collectionName}/snapshots/${snapshotName}`,
+        {
+          signal: AbortSignal.timeout(600000), // 10 min timeout para download
+        }
+      );
+      
+      if (!downloadResponse.ok) {
+        logger.error({ collection: collectionName, snapshot: snapshotName }, 'Falha ao baixar snapshot');
+        continue;
+      }
+      
+      // Salvar snapshot em arquivo
+      const snapshotFile = path.join(backupPath, `${collectionName}_${timestamp}.snapshot`);
+      const arrayBuffer = await downloadResponse.arrayBuffer();
+      await writeFile(snapshotFile, Buffer.from(arrayBuffer));
+      
+      // Obter tamanho
+      const stats = await stat(snapshotFile);
+      totalSize += stats.size;
+      
+      logger.info({
+        collection: collectionName,
+        snapshot: snapshotName,
+        size: formatBytes(stats.size),
+      }, 'Snapshot da collection salvo');
+      
+      // Deletar snapshot do servidor Qdrant (já temos cópia local)
+      await fetch(
+        `${QDRANT_URL}/collections/${collectionName}/snapshots/${snapshotName}`,
+        {
+          method: 'DELETE',
+          signal: AbortSignal.timeout(30000),
+        }
+      ).catch(err => {
+        // Não falhar se não conseguir deletar do servidor
+        logger.warn({ collection: collectionName, error: err.message }, 'Falha ao deletar snapshot do servidor');
+      });
+    }
+    
+    component.status = snapshotNames.length > 0 ? 'completed' : 'failed';
+    component.completedAt = new Date().toISOString();
+    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    component.size = formatBytes(totalSize);
+    component.metadata = {
+      snapshotCount: snapshotNames.length.toString(),
+      collections: collections.join(','),
+      timestamp,
+    };
+    
+    logger.info({
+      durationSeconds: component.durationSeconds,
+      size: component.size,
+      collectionsCount: collections.length,
+      snapshotsCount: snapshotNames.length,
+    }, 'Backup Qdrant concluído');
+    
+  } catch (error) {
+    const err = error as Error;
+    component.status = 'failed';
+    component.completedAt = new Date().toISOString();
+    component.durationSeconds = Math.round((Date.now() - startTime) / 1000);
+    component.error = err.message;
+    
+    logger.error({ error: err.message }, 'Falha no backup Qdrant');
+  }
   
   return component;
 }
@@ -695,23 +849,45 @@ async function runUnifiedBackup(
     
     // 3. Redis
     if (!skipComponents.includes('redis')) {
-      await updateBackupJob(backupId, { currentComponent: 'redis', progress: 70 });
-      
+      await updateBackupJob(backupId, { currentComponent: 'redis', progress: 60 });
+
       const redisResult = await backupRedis();
       componentResults.push(redisResult as BackupComponentDetail);
       await updateBackupJob(backupId, { components: componentResults });
-      
+
       manifest.components.redis = {
         status: redisResult.status === 'completed' ? 'completed' : 'failed',
         rdbChecksum: redisResult.metadata?.rdbChecksum,
         size: redisResult.size,
       };
-      
+
       if (redisResult.status === 'failed') hasFailures = true;
     }
-    
+
+    await updateBackupJob(backupId, { progress: 70 });
+
+    // 4. Qdrant (embeddings de texto - crítico para RAG)
+    // ADICIONADO AUDITORIA 17/12/2025: Qdrant era o único DB sem backup
+    if (!skipComponents.includes('qdrant')) {
+      await updateBackupJob(backupId, { currentComponent: 'qdrant', progress: 80 });
+
+      const qdrantResult = await backupQdrant();
+      componentResults.push(qdrantResult as BackupComponentDetail);
+      await updateBackupJob(backupId, { components: componentResults });
+
+      manifest.components.qdrant = {
+        status: qdrantResult.status === 'completed' ? 'completed' : 
+                qdrantResult.status === 'skipped' ? 'skipped' : 'failed',
+        snapshotName: qdrantResult.metadata?.timestamp,
+        collections: qdrantResult.metadata?.collections?.split(','),
+        size: qdrantResult.size,
+      };
+
+      if (qdrantResult.status === 'failed') hasFailures = true;
+    }
+
     await updateBackupJob(backupId, { progress: 95 });
-    
+
     // NOTA: Uploads NÃO são incluídos no backup automatizado
     // Os uploads estão em /opt/alice/uploads (volume local) e devem ser
     // gerenciados separadamente pelo admin (rsync, download manual, etc.)
@@ -889,16 +1065,17 @@ async function runUnifiedRestore(
 const router: ReturnType<typeof Router> = Router();
 
 // Schema de validação para backup (Zod - Regra 8)
+// ATUALIZADO 17/12/2025: Adicionado 'qdrant' (embeddings texto - crítico para RAG)
 const BackupRequestSchema = z.object({
   type: z.enum(['full', 'incremental']).default('full'),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'qdrant'])).optional(),
   notes: z.string().max(500).optional(),
 });
 
 // Schema de validação para restore
 const RestoreRequestSchema = z.object({
   backupId: z.string().min(1),
-  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis'])).optional(),
+  skipComponents: z.array(z.enum(['postgresql', 'mariadb', 'redis', 'qdrant'])).optional(),
   dryRun: z.boolean().default(false),
   confirm: z.literal(true, { message: 'Confirmação obrigatória para restore' }),
 });
@@ -1556,10 +1733,12 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
       }
     };
 
-    const [postgresqlSize, mariadbSize, redisSize, manifestsSize] = await Promise.all([
+    // ATUALIZADO 17/12/2025: Adicionado Qdrant (embeddings texto - crítico para RAG)
+    const [postgresqlSize, mariadbSize, redisSize, qdrantSize, manifestsSize] = await Promise.all([
       getDirSize(path.join(BACKUP_DIR, 'postgresql')),
       getDirSize(path.join(BACKUP_DIR, 'mariadb')),
       getDirSize(path.join(BACKUP_DIR, 'redis')),
+      getDirSize(path.join(BACKUP_DIR, 'qdrant')),
       getDirSize(MANIFESTS_DIR),
     ]);
 
@@ -1578,13 +1757,14 @@ router.get('/disk-usage', async (_req: Request, res: Response) => {
       // Fallback se df falhar
     }
 
-    const totalBackupSize = postgresqlSize + mariadbSize + redisSize + manifestsSize;
+    const totalBackupSize = postgresqlSize + mariadbSize + redisSize + qdrantSize + manifestsSize;
 
     res.json({
       backups: {
         postgresql: formatBytes(postgresqlSize),
         mariadb: formatBytes(mariadbSize),
         redis: formatBytes(redisSize),
+        qdrant: formatBytes(qdrantSize),
         manifests: formatBytes(manifestsSize),
         total: formatBytes(totalBackupSize),
       },

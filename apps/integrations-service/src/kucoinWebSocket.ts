@@ -289,9 +289,12 @@ export class KucoinWebSocketClient extends EventEmitter {
 
     logger.debug({ isPrivate, endpoint, isSandbox: KUCOIN_SANDBOX_MODE }, 'Obtendo token WebSocket');
 
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionar timeout de 30s conforme best practices
+    // Bug: fetch sem timeout pode travar indefinidamente se servidor não responder
     const response = await fetch(url, {
       method: 'POST',
       headers,
+      signal: AbortSignal.timeout(30000), // 30 segundos
     });
 
     if (!response.ok) {

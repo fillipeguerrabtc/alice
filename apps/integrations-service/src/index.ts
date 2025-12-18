@@ -3192,6 +3192,130 @@ app.post('/api/integrations/trading/orders/sync', requirePermission('integration
 });
 
 // ============================================================================
+// TRADING: STOP ORDERS (TP/SL) - KuCoin API 2025
+// POST /api/v1/st-orders conforme documentação oficial
+// Referência: https://www.kucoin.com/docs-new/rest/futures-trading/orders/add-take-profit-and-stop-loss-order
+// ============================================================================
+
+// POST /api/integrations/trading/stop-orders - Criar ordem stop (TP/SL)
+app.post('/api/integrations/trading/stop-orders', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const stopOrderSchema = z.object({
+      symbol: z.string().optional(),
+      side: z.enum(['buy', 'sell']),
+      size: z.number().positive(),
+      stopLoss: z.number().positive().optional(),
+      takeProfit: z.number().positive().optional(),
+      leverage: z.number().int().min(1).max(100).optional(),
+      orderType: z.enum(['limit', 'market']).optional(),
+      price: z.number().positive().optional(),
+    }).refine(
+      data => data.stopLoss || data.takeProfit,
+      { message: 'Pelo menos stopLoss ou takeProfit deve ser definido' }
+    );
+
+    const parsed = stopOrderSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+      return;
+    }
+
+    const result = await kucoinService.createStopOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      parsed.data
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.status(201).json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao criar ordem stop');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/stop-orders - Listar ordens stop abertas
+app.get('/api/integrations/trading/stop-orders', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const symbol = req.query.symbol as string | undefined;
+    const result = await kucoinService.getOpenStopOrders(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      symbol
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao listar ordens stop');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// DELETE /api/integrations/trading/stop-orders/:id - Cancelar ordem stop
+app.delete('/api/integrations/trading/stop-orders/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId || !authContext?.userId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const orderIdSchema = z.object({ id: z.string().min(1) });
+    const paramResult = orderIdSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID de ordem inválido' });
+      return;
+    }
+
+    const result = await kucoinService.cancelStopOrder(
+      { tenantId: authContext.tenantId, userId: authContext.userId },
+      paramResult.data.id
+    );
+
+    if (!result.success) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: result.data,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao cancelar ordem stop');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
 // TRADING: DADOS DE MERCADO ADICIONAIS (17/12/2025)
 // Klines, Order Book, Funding Rate, Mark Price, Trade History
 // ============================================================================
