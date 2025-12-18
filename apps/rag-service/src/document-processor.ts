@@ -35,10 +35,57 @@ const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
 // Armazenado em Qdrant (suporta HNSW com 4096+ dim)
 export const TEXT_EMBEDDING_DIM = 4096;
 
-// Limites de processamento
-const MAX_DOCUMENT_SIZE_MB = parseInt(process.env.MAX_DOCUMENT_SIZE_MB || '50', 10);
-const MAX_TEXT_LENGTH = parseInt(process.env.MAX_TEXT_LENGTH || '100000', 10); // 100k caracteres
-const CHUNK_SIZE = parseInt(process.env.DOCUMENT_CHUNK_SIZE || '8000', 10); // Tamanho de cada chunk para embedding
+// ============================================================================
+// VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
+// Bug: parseInt sem validação de NaN causava:
+// - sizeMB > NaN = false → bypass de limite de tamanho (vulnerabilidade)
+// - fullText.length > NaN = false → texto ilimitado (DoS)
+// - end - NaN = NaN → loop infinito em splitIntoChunks (crash)
+// ============================================================================
+
+/**
+ * Parseia variável de ambiente como inteiro com validação robusta
+ * CORREÇÃO AUDITORIA 17/12/2025: parseInt sem validação de NaN é anti-pattern
+ * 
+ * @param envValue - Valor da variável de ambiente
+ * @param defaultValue - Valor padrão se inválido
+ * @param varName - Nome da variável para logging
+ * @returns Inteiro válido ou throw em produção se inválido
+ */
+function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  
+  // Regra 6: Rejeitar valores parciais como "50MB" (parseInt aceitaria como 50)
+  if (!/^\d+$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  const parsed = parseInt(trimmed, 10);
+  
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  return parsed;
+}
+
+// Limites de processamento - VALIDADOS contra NaN (CORREÇÃO AUDITORIA 17/12/2025)
+const MAX_DOCUMENT_SIZE_MB = parseEnvInt(process.env.MAX_DOCUMENT_SIZE_MB, 50, 'MAX_DOCUMENT_SIZE_MB');
+const MAX_TEXT_LENGTH = parseEnvInt(process.env.MAX_TEXT_LENGTH, 100000, 'MAX_TEXT_LENGTH'); // 100k caracteres
+const CHUNK_SIZE = parseEnvInt(process.env.DOCUMENT_CHUNK_SIZE, 8000, 'DOCUMENT_CHUNK_SIZE'); // Tamanho de cada chunk para embedding
 
 export interface DocumentMetadata {
   pageCount?: number;

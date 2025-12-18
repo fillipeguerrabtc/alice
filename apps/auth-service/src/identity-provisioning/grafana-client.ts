@@ -11,6 +11,7 @@
  */
 
 import { createLogger } from '@alice/logger';
+import crypto from 'crypto';
 
 const logger = createLogger('grafana-client');
 
@@ -240,12 +241,16 @@ export class GrafanaClient {
   /**
    * Gerar senha aleatória para novos usuários
    * Usuários SSO não precisam de senha, mas Grafana requer
+   * 
+   * CORREÇÃO AUDITORIA 17/12/2025: Math.random() não é criptograficamente seguro
+   * Usando crypto.randomBytes() para geração segura de senhas
    */
   private generateRandomPassword(): string {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+    const randomBytes = crypto.randomBytes(32);
     let password = '';
     for (let i = 0; i < 32; i++) {
-      password += chars.charAt(Math.floor(Math.random() * chars.length));
+      password += chars.charAt(randomBytes[i] % chars.length);
     }
     return password;
   }

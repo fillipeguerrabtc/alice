@@ -29,8 +29,43 @@ const logger = createLogger('response-cache');
 // CONFIGURAÇÃO
 // ============================================================================
 
-/** TTL do cache em ms (default: 24 horas) */
-const CACHE_TTL_MS = parseInt(process.env.RESPONSE_CACHE_TTL_MS || '86400000');
+/**
+ * Parseia variável de ambiente como inteiro com validação robusta
+ * CORREÇÃO AUDITORIA 17/12/2025: parseInt sem radix e sem validação de NaN
+ * Bug original: parseInt('86400000') sem radix 10 pode interpretar errado em engines antigas
+ */
+function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  
+  // Regra 6: Rejeitar valores parciais
+  if (!/^\d+$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  const parsed = parseInt(trimmed, 10);
+  
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  return parsed;
+}
+
+/** TTL do cache em ms (default: 24 horas) - CORREÇÃO AUDITORIA 17/12/2025 */
+const CACHE_TTL_MS = parseEnvInt(process.env.RESPONSE_CACHE_TTL_MS, 86400000, 'RESPONSE_CACHE_TTL_MS');
 
 /** Prefixo para chaves Redis */
 const CACHE_PREFIX = 'alice:response-cache';

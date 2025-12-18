@@ -30,6 +30,45 @@ import crypto from 'crypto';
 
 const logger = createLogger('video-processor');
 
+// ============================================================================
+// VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
+// Bug: parseInt sem validação de NaN causava bypass de limites de vídeo
+// ============================================================================
+
+/**
+ * Parseia variável de ambiente como inteiro com validação robusta
+ * CORREÇÃO AUDITORIA 17/12/2025: parseInt sem validação de NaN é anti-pattern
+ */
+function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  
+  // Regra 6: Rejeitar valores parciais como "600s" (parseInt aceitaria como 600)
+  if (!/^\d+$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  const parsed = parseInt(trimmed, 10);
+  
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  return parsed;
+}
+
 /**
  * Combina embeddings para busca de VÍDEO.
  *
@@ -191,9 +230,10 @@ export function combineVideoEmbeddingsForSearch(
 // Configuração
 const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
 const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
-const MAX_VIDEO_DURATION_SECONDS = parseInt(process.env.MAX_VIDEO_DURATION_SECONDS || '600', 10); // 10 minutos
-const FRAMES_PER_MINUTE = parseInt(process.env.FRAMES_PER_MINUTE || '6', 10); // 6 frames por minuto = 1 a cada 10s
-const MAX_FRAMES = parseInt(process.env.MAX_FRAMES || '30', 10); // Máximo de frames para processar
+// CORREÇÃO AUDITORIA 17/12/2025: Usar parseEnvInt com validação de NaN
+const MAX_VIDEO_DURATION_SECONDS = parseEnvInt(process.env.MAX_VIDEO_DURATION_SECONDS, 600, 'MAX_VIDEO_DURATION_SECONDS'); // 10 minutos
+const FRAMES_PER_MINUTE = parseEnvInt(process.env.FRAMES_PER_MINUTE, 6, 'FRAMES_PER_MINUTE'); // 6 frames por minuto = 1 a cada 10s
+const MAX_FRAMES = parseEnvInt(process.env.MAX_FRAMES, 30, 'MAX_FRAMES'); // Máximo de frames para processar
 
 export interface VideoMetadata {
   duration?: number; // segundos
