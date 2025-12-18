@@ -748,6 +748,11 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > - **chat-service trading TODO**: Comandos de trading eram reconhecidos mas NÃO executados. Corrigido com integração real via HTTP com integrations-service para execução de buy/sell/status/positions/orders.
 > - **lora-job-manager.ts TODO**: Ao cancelar job, o container group na Salad Cloud NÃO era cancelado (custo órfão!). Corrigido para chamar `salad-client.cancelJob()` ao cancelar jobs em status `preparing` ou `training`.
 
+> **NOTA (17/12/2025):** **CORREÇÃO TOCTOU RACE CONDITION** em `trading-orchestrator.ts`:
+> - **Problema**: `initiateTradingTakeover` e `handbackTradingToAlice` liam estado FORA da transação e usavam valores hardcoded (`'alice'` ou `'manual'`) para `previousMode` DENTRO da transação.
+> - **Vulnerabilidade**: Duas requisições concorrentes podiam passar pela verificação inicial e a segunda gravaria `previousMode` incorreto no histórico.
+> - **Solução**: Toda a lógica (verificação + atualização) agora está dentro da transação com `SELECT ... FOR UPDATE` para bloquear a linha durante a operação, garantindo isolamento total e valores de `previousMode` corretos.
+
 > **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Secrets Faltantes no .env.prod**: Identificado e corrigido bug crítico onde 3 secrets obrigatórios NÃO estavam sendo escritos no `.env.prod` durante deploy: (1) `LANGFUSE_SALT` - obrigatório Langfuse v3, (2) `LANGFUSE_ENCRYPTION_KEY` - obrigatório Langfuse v3, (3) `SEARXNG_SECRET_KEY` - obrigatório SearXNG. O `docker-compose.prod.yml` referenciava estes secrets mas o workflow não os exportava. Corrigido em `deploy-production.yml` linhas 1787-1797.
 
 > **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Checkout Versionado no Deploy**: Corrigido bug onde script SSH sempre fazia `git checkout main` hardcoded, ignorando a versão/TAG passada pelo `release.yml`. Agora o script usa `DEPLOY_VERSION` para checkout da TAG específica (ex: `v1.0.0`) ou branch, garantindo reprodutibilidade total: código deployado = código das imagens Docker buildadas da mesma TAG.

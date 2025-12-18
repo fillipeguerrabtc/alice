@@ -145,10 +145,14 @@ export async function isTradingEnabled(tenantId: string): Promise<boolean> {
 
 /**
  * Operador assume controle manual do trading (takeover)
- * 
+ *
  * CORREÇÃO 17/12/2025: Operações de update config e insert history agora são atômicas
  * usando transação. Se qualquer operação falhar, toda a transação é revertida (rollback).
- * Isso evita inconsistência onde o banco está em modo 'manual' mas o erro retorna 'alice'.
+ * 
+ * CORREÇÃO 17/12/2025 (TOCTOU Race Condition): Verificação e atualização agora são
+ * feitas DENTRO da mesma transação com SELECT FOR UPDATE para garantir isolamento.
+ * Antes, o estado era lido FORA da transação, permitindo race conditions onde duas
+ * requisições concorrentes poderiam passar pela verificação e gravar previousMode incorreto.
  */
 export async function initiateTradingTakeover(
   tenantId: string,
@@ -156,33 +160,44 @@ export async function initiateTradingTakeover(
   reason?: string
 ): Promise<TradingControlResult> {
   try {
-    const currentState = await getTradingControlState(tenantId);
-
-    // Verificar se já está em modo manual
-    if (currentState.mode === 'manual') {
-      return {
-        success: false,
-        previousMode: 'manual',
-        newMode: 'manual',
-        message: 'Trading já está em modo manual',
-        error: 'already_manual',
-      };
-    }
-
-    // Verificar se trading está habilitado
-    if (!currentState.tradingEnabled) {
-      return {
-        success: false,
-        previousMode: currentState.mode,
-        newMode: currentState.mode,
-        message: 'Trading não está habilitado para este tenant',
-        error: 'trading_disabled',
-      };
-    }
-
-    // CORREÇÃO: Usar transação para garantir atomicidade
-    // Se qualquer operação falhar, toda a transação é revertida
+    // CORREÇÃO TOCTOU: Toda a lógica agora está dentro da transação
+    // SELECT FOR UPDATE garante que nenhuma outra transação pode modificar a linha
     const result = await db.transaction(async (tx) => {
+      // Buscar estado atual COM LOCK para evitar race condition
+      // FOR UPDATE bloqueia a linha até o fim da transação
+      const [config] = await tx
+        .select()
+        .from(schema.tradingRiskConfig)
+        .where(eq(schema.tradingRiskConfig.tenantId, tenantId))
+        .for('update')
+        .limit(1);
+
+      // Determinar modo atual DENTRO da transação (não hardcoded!)
+      const currentMode: TradingControlMode = config?.autoExecuteSignals ? 'alice' : 'manual';
+      const tradingEnabled = config?.tradingEnabled || false;
+
+      // Verificar se já está em modo manual
+      if (currentMode === 'manual') {
+        return {
+          success: false,
+          previousMode: 'manual' as TradingControlMode,
+          newMode: 'manual' as TradingControlMode,
+          message: 'Trading já está em modo manual',
+          error: 'already_manual',
+        };
+      }
+
+      // Verificar se trading está habilitado
+      if (!tradingEnabled) {
+        return {
+          success: false,
+          previousMode: currentMode,
+          newMode: currentMode,
+          message: 'Trading não está habilitado para este tenant',
+          error: 'trading_disabled',
+        };
+      }
+
       // Atualizar configuração para desabilitar auto-execute
       await tx
         .update(schema.tradingRiskConfig)
@@ -192,12 +207,12 @@ export async function initiateTradingTakeover(
         })
         .where(eq(schema.tradingRiskConfig.tenantId, tenantId));
 
-      // Registrar no histórico
+      // Registrar no histórico com previousMode REAL (não hardcoded)
       const [historyEntry] = await tx
         .insert(schema.tradingControlHistory)
         .values({
           tenantId,
-          previousMode: 'alice',
+          previousMode: currentMode, // Usa valor real da transação
           newMode: 'manual',
           changedBy: userId,
           reason: reason || 'Takeover manual solicitado pelo operador',
@@ -208,21 +223,22 @@ export async function initiateTradingTakeover(
         })
         .returning();
 
-      return historyEntry;
+      return {
+        success: true,
+        previousMode: currentMode, // Usa valor real da transação
+        newMode: 'manual' as TradingControlMode,
+        message: 'Controle de trading assumido com sucesso',
+        historyId: historyEntry?.id,
+      };
     });
 
-    logger.info({ tenantId, userId, reason }, 'Takeover de trading realizado');
+    if (result.success) {
+      logger.info({ tenantId, userId, reason, previousMode: result.previousMode }, 'Takeover de trading realizado');
+    }
 
-    return {
-      success: true,
-      previousMode: 'alice',
-      newMode: 'manual',
-      message: 'Controle de trading assumido com sucesso',
-      historyId: result?.id,
-    };
+    return result;
   } catch (error) {
-    // CORREÇÃO: Em caso de erro, consultar estado real do banco para retornar modo correto
-    // Isso garante que o resultado reflita o estado atual, não um valor hardcoded
+    // Em caso de erro, consultar estado real do banco para retornar modo correto
     logger.error({ tenantId, userId, error: (error as Error).message }, 'Erro no takeover de trading');
     
     let actualMode: TradingControlMode = 'alice';
@@ -248,7 +264,11 @@ export async function initiateTradingTakeover(
  * 
  * CORREÇÃO 17/12/2025: Operações de update config e insert history agora são atômicas
  * usando transação. Se qualquer operação falhar, toda a transação é revertida (rollback).
- * Isso evita inconsistência onde o banco está em modo 'alice' mas o erro retorna 'manual'.
+ * 
+ * CORREÇÃO 17/12/2025 (TOCTOU Race Condition): Verificação e atualização agora são
+ * feitas DENTRO da mesma transação com SELECT FOR UPDATE para garantir isolamento.
+ * Antes, o estado era lido FORA da transação, permitindo race conditions onde duas
+ * requisições concorrentes poderiam passar pela verificação e gravar previousMode incorreto.
  */
 export async function handbackTradingToAlice(
   tenantId: string,
@@ -256,33 +276,44 @@ export async function handbackTradingToAlice(
   reason?: string
 ): Promise<TradingControlResult> {
   try {
-    const currentState = await getTradingControlState(tenantId);
-
-    // Verificar se já está em modo alice
-    if (currentState.mode === 'alice') {
-      return {
-        success: false,
-        previousMode: 'alice',
-        newMode: 'alice',
-        message: 'Alice já está no controle do trading',
-        error: 'already_alice',
-      };
-    }
-
-    // Verificar se trading está habilitado
-    if (!currentState.tradingEnabled) {
-      return {
-        success: false,
-        previousMode: currentState.mode,
-        newMode: currentState.mode,
-        message: 'Trading não está habilitado para este tenant',
-        error: 'trading_disabled',
-      };
-    }
-
-    // CORREÇÃO: Usar transação para garantir atomicidade
-    // Se qualquer operação falhar, toda a transação é revertida
+    // CORREÇÃO TOCTOU: Toda a lógica agora está dentro da transação
+    // SELECT FOR UPDATE garante que nenhuma outra transação pode modificar a linha
     const result = await db.transaction(async (tx) => {
+      // Buscar estado atual COM LOCK para evitar race condition
+      // FOR UPDATE bloqueia a linha até o fim da transação
+      const [config] = await tx
+        .select()
+        .from(schema.tradingRiskConfig)
+        .where(eq(schema.tradingRiskConfig.tenantId, tenantId))
+        .for('update')
+        .limit(1);
+
+      // Determinar modo atual DENTRO da transação (não hardcoded!)
+      const currentMode: TradingControlMode = config?.autoExecuteSignals ? 'alice' : 'manual';
+      const tradingEnabled = config?.tradingEnabled || false;
+
+      // Verificar se já está em modo alice
+      if (currentMode === 'alice') {
+        return {
+          success: false,
+          previousMode: 'alice' as TradingControlMode,
+          newMode: 'alice' as TradingControlMode,
+          message: 'Alice já está no controle do trading',
+          error: 'already_alice',
+        };
+      }
+
+      // Verificar se trading está habilitado
+      if (!tradingEnabled) {
+        return {
+          success: false,
+          previousMode: currentMode,
+          newMode: currentMode,
+          message: 'Trading não está habilitado para este tenant',
+          error: 'trading_disabled',
+        };
+      }
+
       // Atualizar configuração para habilitar auto-execute
       await tx
         .update(schema.tradingRiskConfig)
@@ -292,12 +323,12 @@ export async function handbackTradingToAlice(
         })
         .where(eq(schema.tradingRiskConfig.tenantId, tenantId));
 
-      // Registrar no histórico
+      // Registrar no histórico com previousMode REAL (não hardcoded)
       const [historyEntry] = await tx
         .insert(schema.tradingControlHistory)
         .values({
           tenantId,
-          previousMode: 'manual',
+          previousMode: currentMode, // Usa valor real da transação
           newMode: 'alice',
           changedBy: userId,
           reason: reason || 'Controle devolvido para Alice',
@@ -308,21 +339,22 @@ export async function handbackTradingToAlice(
         })
         .returning();
 
-      return historyEntry;
+      return {
+        success: true,
+        previousMode: currentMode, // Usa valor real da transação
+        newMode: 'alice' as TradingControlMode,
+        message: 'Controle devolvido para Alice com sucesso',
+        historyId: historyEntry?.id,
+      };
     });
 
-    logger.info({ tenantId, userId, reason }, 'Handback de trading para Alice realizado');
+    if (result.success) {
+      logger.info({ tenantId, userId, reason, previousMode: result.previousMode }, 'Handback de trading para Alice realizado');
+    }
 
-    return {
-      success: true,
-      previousMode: 'manual',
-      newMode: 'alice',
-      message: 'Controle devolvido para Alice com sucesso',
-      historyId: result?.id,
-    };
+    return result;
   } catch (error) {
-    // CORREÇÃO: Em caso de erro, consultar estado real do banco para retornar modo correto
-    // Isso garante que o resultado reflita o estado atual, não um valor hardcoded
+    // Em caso de erro, consultar estado real do banco para retornar modo correto
     logger.error({ tenantId, userId, error: (error as Error).message }, 'Erro no handback de trading');
     
     let actualMode: TradingControlMode = 'manual';
