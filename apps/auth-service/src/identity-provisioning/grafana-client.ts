@@ -163,7 +163,8 @@ export class GrafanaClient {
    * Atualizar usuário existente
    */
   async updateUser(userId: number, updates: GrafanaUpdateUserRequest): Promise<void> {
-    logger.info({ userId, updates }, 'Atualizando usuário no Grafana');
+    // CORREÇÃO AUDITORIA 17/12/2025: Não logar conteúdo de updates (dados sensíveis)
+    logger.info({ userId, fieldsUpdated: Object.keys(updates) }, 'Atualizando usuário no Grafana');
     
     await this.request<{ message: string }>('PUT', `/api/users/${userId}`, updates);
   }

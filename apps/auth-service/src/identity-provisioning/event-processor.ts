@@ -116,13 +116,21 @@ export class IdentityProvisioningProcessor {
 
   /**
    * Processar lote de eventos pendentes
+   * 
+   * CORREÇÃO AUDITORIA 17/12/2025: Adiciona recuperação de eventos presos
+   * Eventos em "processing" há mais de 5 minutos são considerados travados
    */
   async processEvents(): Promise<void> {
     const db = getDatabase();
 
     try {
-      // Buscar eventos pendentes ou para retry
       const now = new Date();
+      
+      // CORREÇÃO AUDITORIA 17/12/2025: Também recuperar eventos "presos" em processing
+      // Se um evento está em processing há mais de 5 minutos (sem processadoEm),
+      // provavelmente travou e precisa ser reprocessado
+      const stuckThreshold = new Date(Date.now() - 5 * 60 * 1000);
+      
       const events = await db.select()
         .from(identityProvisioningEvents)
         .where(
@@ -135,6 +143,12 @@ export class IdentityProvisioningProcessor {
                   isNull(identityProvisioningEvents.proximaTentativa),
                   lt(identityProvisioningEvents.proximaTentativa, now),
                 ),
+              ),
+              // Eventos "presos" em processing: criados há mais de 5 min sem processadoEm
+              and(
+                eq(identityProvisioningEvents.status, 'processing'),
+                isNull(identityProvisioningEvents.processadoEm),
+                lt(identityProvisioningEvents.criadoEm, stuckThreshold),
               ),
             ),
             lt(identityProvisioningEvents.retryCount, identityProvisioningEvents.maxRetries),

@@ -13,7 +13,6 @@
 
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import pino from 'pino';
 import CircuitBreaker from 'opossum';
 import {
   createSecurityMiddleware,
@@ -25,18 +24,13 @@ import {
   setupSwaggerUI,
   OBSERVABILITY_SERVICE_TAGS,
 } from '@alice/shared-utils';
+import { createLogger } from '@alice/logger';
 import { observabilityServicePaths, observabilityServiceSchemas } from './openapi-specs.js';
 import { backupRouter } from './backup-orchestrator.js';
 
-// Logger estruturado - JSON em produção (Regra 8 CLAUDE.md)
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('observability-health');
 const isProduction = process.env.NODE_ENV === 'production';
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: isProduction ? undefined : {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'observability-health' });
 
 // Token de autenticação para endpoints internos (Regra 16 - Segurança)
 const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN;

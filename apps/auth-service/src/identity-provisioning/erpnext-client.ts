@@ -169,7 +169,8 @@ export class ERPNextClient {
    * Atualizar usuário existente
    */
   async updateUser(email: string, updates: ERPNextUpdateUserRequest): Promise<ERPNextUser> {
-    logger.info({ email, updates }, 'Atualizando usuário no ERPNext');
+    // CORREÇÃO AUDITORIA 17/12/2025: Não logar conteúdo de updates (dados sensíveis)
+    logger.info({ email, fieldsUpdated: Object.keys(updates) }, 'Atualizando usuário no ERPNext');
     
     return this.request<ERPNextUser>(
       'PUT',

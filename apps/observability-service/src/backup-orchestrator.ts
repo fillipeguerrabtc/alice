@@ -31,22 +31,15 @@ import { promisify } from 'util';
 import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'node:path';
-import pino from 'pino';
 import { z } from 'zod';
 import { getDatabase, schema, eq, desc } from '@alice/database';
+import { createLogger } from '@alice/logger';
 import type { BackupComponentDetail, BackupManifestData, BackupJob } from '@alice/shared';
 
 const execAsync = promisify(exec);
 
-// Logger estruturado (Regra 8)
-const isProduction = process.env.NODE_ENV === 'production';
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: isProduction ? undefined : {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'backup-orchestrator' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('backup-orchestrator');
 
 // =============================================================================
 // TIPOS E INTERFACES (TypeScript strict - Regra 8)
