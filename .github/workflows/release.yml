@@ -48,6 +48,8 @@ jobs:
   create-release:
     name: Criar Release
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 10
     outputs:
       version: ${{ inputs.version }}
       changelog: ${{ steps.changelog.outputs.changes }}
@@ -168,9 +170,11 @@ jobs:
   build-images:
     name: Build Docker Images
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck (builds Docker podem ser lentos)
+    timeout-minutes: 30
     needs: create-release
     if: ${{ !inputs.prerelease }}
-    
+
     permissions:
       contents: read
       packages: write
@@ -269,6 +273,8 @@ jobs:
   trigger-deploy:
     name: Disparar Deploy Automático
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 5
     needs: [create-release, build-images]
     # Dispara automaticamente se não for prerelease e builds passaram
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}

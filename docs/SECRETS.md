@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 17 de Dezembro de 2025
+**Data:** 18 de Dezembro de 2025
 
 ## Visão Geral
 

@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.01 - 17 de Dezembro de 2025*
+*Versão: 4.02 - 18 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -415,3 +415,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Word Boundary (17/12/2025): trading-command-parser.ts usava includes() - "along" matchava "long" incorretamente - agora usa regex \blong\b*
 *Bug Fix CandleChart Interval Sync (17/12/2025): selectedInterval não sincronizava com prop interval - adicionado useEffect + selectedInterval como fonte única*
 *Auditoria Final Completa (17/12/2025): FASE 7 (packages ~6500 linhas), FASE 8 (frontend 73 arquivos), FASE 9 (CI/CD ~5087 linhas) - 0 bugs encontrados*
+*GitHub Actions Timeouts (18/12/2025): Adicionado timeout-minutes a TODOS os jobs de TODOS os workflows (ci.yml, release.yml, deploy-production.yml, update-system-packages.yml) - evita jobs stuck*

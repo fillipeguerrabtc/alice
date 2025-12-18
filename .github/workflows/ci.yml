@@ -42,6 +42,8 @@ jobs:
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 10
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -81,6 +83,8 @@ jobs:
   build-and-check:
     name: Build & Typecheck
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 20
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -266,6 +270,8 @@ jobs:
   build-services:
     name: Build ${{ matrix.service }}
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 15
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -429,6 +435,8 @@ jobs:
   build-clip-inference:
     name: Build clip-inference-service (Python)
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck (PyTorch é grande, precisa de mais tempo)
+    timeout-minutes: 25
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -529,6 +537,8 @@ jobs:
   build-frontend:
     name: Build Frontend
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 15
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -653,6 +663,8 @@ jobs:
   security-scan:
     name: Security Scan
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck (instala PyTorch, precisa de mais tempo)
+    timeout-minutes: 25
     # GAP-GHACTIONS-003: Least privilege - permissões para upload de SARIF
     permissions:
       contents: read
@@ -941,6 +953,8 @@ jobs:
   compliance-checks:
     name: Enterprise Compliance
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 10
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
     permissions:
       contents: read
@@ -1062,6 +1076,8 @@ jobs:
   trigger-release:
     name: Trigger Release
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 5
     # GAP-GHACTIONS-003: Least privilege - permissões para disparar workflow dispatch
     permissions:
       contents: read

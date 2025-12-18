@@ -68,6 +68,8 @@ jobs:
   code-quality:
     name: Análise de Qualidade
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 20
 
     permissions:
       contents: read
@@ -225,6 +227,8 @@ jobs:
   security-scan:
     name: Security Scanning
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 15
     needs: code-quality
     if: always() && (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped')
     
@@ -353,6 +357,8 @@ jobs:
   build-docker:
     name: Build Docker Images
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para builds Docker (podem ser lentos com cache miss)
+    timeout-minutes: 45
     needs: [code-quality, security-scan]
     if: always() && (needs.code-quality.result == 'success' || needs.code-quality.result == 'skipped')
     
@@ -1127,6 +1133,8 @@ jobs:
   image-security-scan:
     name: Container Image Security
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 20
     needs: build-docker
     if: always() && needs.build-docker.result == 'success'
     
@@ -1428,6 +1436,8 @@ jobs:
   deploy:
     name: Deploy Hetzner Cloud
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em deploy
+    timeout-minutes: 30
     needs: [build-docker, image-security-scan]
     # Deploy automático se build e security scan passarem
     if: needs.build-docker.result == 'success' && needs.image-security-scan.result == 'success'
@@ -2499,6 +2509,8 @@ jobs:
   deploy-salad-gpu:
     name: Deploy GPU Services (Salad Cloud)
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em deploy GPU
+    timeout-minutes: 15
     needs: deploy
     if: needs.deploy.result == 'success'
     
@@ -2567,6 +2579,8 @@ jobs:
   health-check:
     name: Health Check
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em health checks
+    timeout-minutes: 10
     needs: [deploy, deploy-salad-gpu]
     # ENTERPRISE: GPU é OBRIGATÓRIO - ambos deploys devem passar
     # GPUs são o coração da IA - plataforma não funciona sem eles
@@ -2783,6 +2797,8 @@ jobs:
   rollback:
     name: Rollback Automático
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em rollback
+    timeout-minutes: 20
     needs: [deploy, deploy-salad-gpu, health-check]
     # ENTERPRISE: Rollback se QUALQUER componente crítico falhar
     # - Deploy Hetzner falhou
@@ -3156,6 +3172,8 @@ jobs:
   register-success:
     name: Registrar Sucesso
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck
+    timeout-minutes: 5
     needs: [deploy, deploy-salad-gpu, health-check]
     # ENTERPRISE (17/12/2025): Registrar sucesso APENAS se TODOS os componentes passaram
     # - Deploy Hetzner: OBRIGATÓRIO

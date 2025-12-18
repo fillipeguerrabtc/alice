@@ -39,6 +39,8 @@ jobs:
   check-updates:
     name: Verificar Atualizações no Servidor
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 10
     outputs:
       has_updates: ${{ steps.parse-status.outputs.has_updates }}
       updates_count: ${{ steps.parse-status.outputs.updates_count }}
@@ -148,6 +150,8 @@ jobs:
     name: Criar Issue com Resumo
     needs: check-updates
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
+    timeout-minutes: 5
     # REGRA 6: Enterprise-grade - criar issue apenas se houver atualizações
     # REGRA 5: NÃO MENTIR - só criar issue se realmente houver atualizações disponíveis
     if: needs.check-updates.result == 'success' && needs.check-updates.outputs.has_updates == 'true'
@@ -321,6 +325,8 @@ jobs:
       needs.check-updates.result == 'success' &&
       needs.check-updates.outputs.has_updates == 'true'
     runs-on: ubuntu-latest
+    # CRÍTICO: timeout para evitar jobs stuck em atualizações lentas
+    timeout-minutes: 30
     
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security (Regra 11)
