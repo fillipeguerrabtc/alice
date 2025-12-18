@@ -1,10 +1,9 @@
-# Terraform
-*.tfstate
-*.tfstate.*
-.terraform/
-.terraform.lock.hcl
-terraform.tfvars
-*.auto.tfvars
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
 
 # Secrets
 *.pem

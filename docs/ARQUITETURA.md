@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
-> **Versão:** 1.0.0  
+> **Versão:** 1.1.0 - Pipeline Unificada  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -102,7 +102,7 @@ alice/
 │   └── shared-utils/        # Utilities enterprise
 ├── infra/                   # Infraestrutura
 │   ├── docker/              # Docker Compose
-│   ├── salad-cloud/         # Terraform GPU
+│   ├── salad-cloud/         # Python SDK GPU (deploy.py)
 │   └── scripts/             # Automação
 └── docs/                    # Documentação
 ```
@@ -475,7 +475,7 @@ C4Deployment
 └── logs/                           # Logs de serviços
 ```
 
-### 7.3 Pipeline CI/CD
+### 7.3 Pipeline CI/CD Unificada (17/12/2025)
 
 ```mermaid
 flowchart LR
@@ -492,17 +492,20 @@ flowchart LR
     
     subgraph CD
         F --> G[Create Release]
-        G --> H[Deploy to Hetzner]
-        H --> I[Health Checks]
-        I --> J[Rollback if failed]
+        G --> H[Deploy Hetzner]
+        H --> I[Deploy Salad GPU]
+        I --> J[Health Checks]
+        J --> K[Rollback if failed]
     end
     
     subgraph Production
-        J --> K[43 Containers Running]
-        K --> L[Prometheus Monitoring]
-        L --> M[Alertmanager]
+        K --> L[43 Containers Hetzner]
+        L --> M[4 GPU Salad Cloud]
+        M --> N[Prometheus Monitoring]
     end
 ```
+
+> **Pipeline Unificada (17/12/2025):** GPU deploy integrado em `deploy-production.yml` via Python SDK (`salad-cloud-sdk`).
 
 ---
 

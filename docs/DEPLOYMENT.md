@@ -427,11 +427,11 @@ O deploy é **100% automático** via GitHub Actions:
 
 **Tag única e determinística:** a pipeline de deploy agora usa a versão recebida pelo `release.yml` (`inputs.version`) como tag principal das imagens; se a versão não for informada, usa-se `GITHUB_SHA` como fallback. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
 
-### Pipeline Automatizado
+### Pipeline Unificada (17/12/2025)
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│                     FLUXO CI/CD ALICE                            │
+│                     FLUXO CI/CD ALICE - PIPELINE UNIFICADA       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  Push para main                                                  │
@@ -458,9 +458,10 @@ O deploy é **100% automático** via GitHub Actions:
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │                                        │
+│  │ • SSH para Hetzner  │   43 containers                        │
 │  │ • Docker Compose up │                                        │
-│  │ • Health checks     │                                        │
+│  │ • Deploy Salad GPU  │   4 Container Groups (Python SDK)      │
+│  │ • Health checks     │   RTX 4090 (Mixtral, FLUX, ASR, Emb.)  │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -473,9 +474,11 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Production** | Release passa | 100% automático (sem aprovação) |
+| **Deploy Hetzner** | Release passa | 43 containers via Docker Compose |
+| **Deploy Salad GPU** | Deploy Hetzner passa | 4 Container Groups via Python SDK |
+| **Health Check** | Todos deploys passam | Validação e rollback automático |
 
-Pipeline totalmente automático: push para `main` vai direto para produção.
+Pipeline totalmente automático: push para `main` deploya Hetzner + Salad GPU.
 
 ### Versionamento Automático
 
@@ -988,14 +991,14 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 6.9 - Pipeline 100% Enterprise (Versionamento Automático + Auto-Correção)*
+*Versão: 7.0 - Pipeline Unificada (Hetzner + Salad GPU)*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido*
-*Pipeline: Versionamento automático de TODAS dependências + Cache GHA + Auto-instalação de requisitos no servidor*
+*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
+*GPU: RTX 4090 (24GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

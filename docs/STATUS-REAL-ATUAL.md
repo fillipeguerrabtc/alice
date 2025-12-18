@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 17 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 3.99 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)
+> **Versão:** 4.0 - Pipeline Unificada + Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)
 
 ---
 
@@ -179,7 +179,7 @@
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
-> **Arquitetura Enterprise (17/12/2025):** Container Groups Salad Cloud gerenciados via Terraform (`deploy-salad-gpu.yml`).
+> **Arquitetura Enterprise (17/12/2025):** Container Groups Salad Cloud gerenciados via Python SDK (`deploy-production.yml` job `deploy-salad-gpu`). RTX 4090 (24GB VRAM).
 
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
 > - `EMBEDDINGS_GPU_URL/health` (embeddings)
@@ -1020,7 +1020,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 17/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 3.99 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
+*Versão: 4.0 - Pipeline Unificada + Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
+*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*

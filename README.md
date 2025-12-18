@@ -217,10 +217,10 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | `/opt/alice/uploads` | Uploads RAG (imagens, áudios, vídeos, docs) |
 | `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) |
 
-### Pipeline CI/CD (Best Practices 2025)
+### Pipeline CI/CD Unificada (Best Practices 2025)
 
 ```
-Push → CI (auto) → Release (auto) → Deploy (auto)
+Push → CI (auto) → Release (auto) → Deploy Hetzner + Salad GPU (auto)
 
 1. Push para branch main
 2. CI - Build & Test (automático):
@@ -234,11 +234,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Security scan (Trivy) das imagens
-   └── Health checks + Rollback automático
+   ├── Deploy Hetzner (43 containers)
+   ├── Deploy Salad Cloud GPU (4 Container Groups via Python SDK)
+   ├── Health checks + Rollback automático
+   └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings
 ```
 
-**Pipeline 100% Automático:** Push para `main` vai direto para produção após todas as validações passarem.
+**Pipeline 100% Automático:** Push para `main` deploya Hetzner + Salad GPU após todas as validações passarem.
 
 ### Acesso SSH à Hetzner (Produção)
 
@@ -298,8 +300,11 @@ alice/
 │   ├── SECRETS.md                  # Guia de secrets
 │   └── SISTEMA-APRENDIZADO.md      # Sistema de auto-aprendizado
 │
-├── .github/workflows/              # CI/CD
-│   └── deploy-production.yml       # Deploy automatizado
+├── .github/workflows/              # CI/CD (4 workflows)
+│   ├── ci.yml                      # Build & Test
+│   ├── release.yml                 # Versionamento semântico
+│   ├── deploy-production.yml       # Deploy Hetzner + Salad GPU
+│   └── update-system-packages.yml  # Manutenção semanal
 │
 ├── client/                         # Frontend React
 │   └── src/
@@ -427,7 +432,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.62.0 - 17 de Dezembro de 2025*
+*Versão 3.63.0 - 17 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
@@ -436,9 +441,10 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Response Cache (17/12/2025): Greetings Gate - saudações respondidas via cache Redis (sem GPU)*
 *Bug Fixes Trading (17/12/2025): extractNumber (regex groups), WebSocket unsubscribe, Orchestrator atomicity*
+*Bug Fix WebSocket (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos*
 *Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning + RBAC*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
-*Salad Cloud: LLM (Mixtral vLLM), image generation (FLUX.1), fine-tuning, embeddings-gpu (Qwen3 + OpenCLIP), whisper-gpu (ASR)*
-*Pipeline: Versionamento automático + Cache + Auto-correção de requisitos + Scripts de limpeza*
+*Salad Cloud: LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR)*
+*Pipeline Unificada (17/12/2025): GPU deploy integrado via Python SDK (salad-cloud-sdk) - Terraform removido*
 
 </div>

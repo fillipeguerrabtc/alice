@@ -110,9 +110,9 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 | `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 
-#### Container Groups GPU (Gerados pelo `deploy-salad-gpu.yml`)
+#### Container Groups GPU (Gerados pelo `deploy-production.yml`)
 
-Os seguintes secrets são **gerados automaticamente** pelo workflow `deploy-salad-gpu.yml` via Terraform e salvos nos GitHub Secrets. Execute o workflow pelo menos uma vez para criar os Container Groups e obter os endpoints:
+Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu` no workflow `deploy-production.yml` via Python SDK e salvos nos GitHub Secrets. Os Container Groups são criados automaticamente durante o deploy de produção:
 
 | Secret | Descrição |
 |--------|-----------|
@@ -121,7 +121,7 @@ Os seguintes secrets são **gerados automaticamente** pelo workflow `deploy-sala
 | `SALAD_ASR_URL` | URL do Container Group Canary-1B para transcrição de áudio (ASR). Endpoint: `/transcribe` |
 | `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim). Endpoints: `/embed/text`, `/embed/image` |
 
-> **IMPORTANTE:** Após executar `deploy-salad-gpu.yml`, os endpoints são automaticamente adicionados ao `.env.prod` no Hetzner via SSH. Se preferir configurar manualmente, copie os outputs do Terraform para os GitHub Secrets.
+> **IMPORTANTE:** O deploy de GPU está integrado no `deploy-production.yml`. Os endpoints são automaticamente configurados via Python SDK (salad-cloud-sdk) durante o deploy de produção.
 
 > **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). O token `HUGGINGFACE_TOKEN` é usado para garantir downloads confiáveis dos modelos ML (evita rate limits e permite acesso a repositórios gated/privados).
 
@@ -519,7 +519,8 @@ openssl rand -hex 64
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
-*SALAD_PROJECT_ID (17/12/2025): Adicionado para Terraform - projeto 'default' no Salad Cloud*  
+*SALAD_PROJECT_ID (17/12/2025): Adicionado para Python SDK - projeto no Salad Cloud*
+*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*  
 *ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
 *Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido | Risk Config API | orderValue multiplier*  
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*  

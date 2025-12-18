@@ -144,6 +144,14 @@ export function useKucoinWebSocket(
   // quando connected=true, enviando subscriptions duplicadas porque subscriptionsRef está vazio
   const initialSubscriptionSentRef = useRef(false);
   const previousSymbolRef = useRef<string>(symbol);
+  // CORREÇÃO 17/12/2025: Flag para suprimir auto-reconnect quando disconnect() é chamado explicitamente
+  // Bug: clearReconnect() roda ANTES de ws.close(), mas onclose dispara ASSINCRONAMENTE
+  // e cria um NOVO timeout que não é limpo, causando reconexão indesejada e memory leaks
+  const isIntentionalDisconnectRef = useRef(false);
+  // CORREÇÃO 17/12/2025: Connection ID para invalidar callbacks de WebSockets antigos
+  // Bug: Quando symbol muda rápido, disconnect()->connect() deixa o onclose antigo com flag=false
+  // O WebSocket órfão continua recebendo dados via handleMessage, corrompendo estado
+  const connectionIdRef = useRef(0);
 
   // Get WebSocket URL
   const getWsUrl = useCallback(() => {
@@ -226,9 +234,21 @@ export function useKucoinWebSocket(
 
   // Connect to WebSocket
   const connect = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    // CORREÇÃO 17/12/2025: Verificar CONNECTING além de OPEN para evitar conexões duplicadas
+    // Bug: Quando symbol muda rápido, connect() era chamado enquanto WebSocket ainda estava CONNECTING
+    // Isso criava múltiplas conexões simultâneas, todas atualizando o mesmo estado
+    if (wsRef.current?.readyState === WebSocket.OPEN || 
+        wsRef.current?.readyState === WebSocket.CONNECTING) {
       return;
     }
+
+    // CORREÇÃO 17/12/2025: Resetar flag de disconnect intencional ao iniciar nova conexão
+    // Isso permite que auto-reconnect funcione corretamente em conexões subsequentes
+    isIntentionalDisconnectRef.current = false;
+
+    // CORREÇÃO 17/12/2025: Incrementar connection ID para invalidar callbacks de WebSockets antigos
+    // Cada nova conexão tem um ID único; callbacks verificam se o ID ainda é válido
+    const currentConnectionId = ++connectionIdRef.current;
 
     clearReconnect();
     setState(prev => ({ ...prev, connecting: true, error: null }));
@@ -238,6 +258,11 @@ export function useKucoinWebSocket(
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // CORREÇÃO 17/12/2025: Ignorar se este WebSocket já foi substituído por uma nova conexão
+        if (connectionIdRef.current !== currentConnectionId) {
+          ws.close();
+          return;
+        }
         setState({
           connected: true,
           connecting: false,
@@ -270,9 +295,21 @@ export function useKucoinWebSocket(
         previousSymbolRef.current = symbol;
       };
 
-      ws.onmessage = handleMessage;
+      ws.onmessage = (event: MessageEvent) => {
+        // CORREÇÃO 17/12/2025: Ignorar mensagens de WebSockets antigos/órfãos
+        // Bug: WebSocket órfão continua recebendo dados e atualizando estado compartilhado
+        // via handleMessage, causando dados inconsistentes de ticker/orderbook
+        if (connectionIdRef.current !== currentConnectionId) {
+          return;
+        }
+        handleMessage(event);
+      };
 
       ws.onerror = () => {
+        // CORREÇÃO 17/12/2025: Ignorar erros de WebSockets antigos
+        if (connectionIdRef.current !== currentConnectionId) {
+          return;
+        }
         setState(prev => ({
           ...prev,
           error: 'Erro na conexão WebSocket',
@@ -280,6 +317,14 @@ export function useKucoinWebSocket(
       };
 
       ws.onclose = () => {
+        // CORREÇÃO 17/12/2025: Ignorar onclose de WebSockets antigos/órfãos
+        // Bug: Quando symbol muda rápido, disconnect()->connect() deixa o onclose antigo pendente
+        // O onclose antigo vê isIntentionalDisconnectRef=false (já resetado pelo novo connect)
+        // e agenda um reconnect duplicado, criando conexões órfãs que corrompem estado
+        if (connectionIdRef.current !== currentConnectionId) {
+          return;
+        }
+
         setState(prev => ({
           ...prev,
           connected: false,
@@ -288,7 +333,11 @@ export function useKucoinWebSocket(
         clearPing();
 
         // Auto-reconnect com backoff exponencial
-        if (autoConnect) {
+        // CORREÇÃO 17/12/2025: NÃO reconectar se disconnect() foi chamado explicitamente
+        // Bug: onclose dispara ASSINCRONAMENTE após ws.close(), então clearReconnect()
+        // já rodou quando chegamos aqui. Se não verificarmos a flag, criamos um NOVO
+        // timeout que causa reconexão indesejada e memory leaks em componentes desmontados
+        if (autoConnect && !isIntentionalDisconnectRef.current) {
           const delay = RECONNECT_DELAYS[
             Math.min(reconnectAttemptRef.current, RECONNECT_DELAYS.length - 1)
           ];
@@ -311,6 +360,11 @@ export function useKucoinWebSocket(
 
   // Disconnect from WebSocket
   const disconnect = useCallback(() => {
+    // CORREÇÃO 17/12/2025: Setar flag ANTES de fechar para suprimir auto-reconnect no onclose
+    // Bug: clearReconnect() roda antes de ws.close(), mas onclose dispara ASSINCRONAMENTE
+    // e cria um NOVO timeout se autoConnect=true, causando reconexão indesejada
+    isIntentionalDisconnectRef.current = true;
+
     clearReconnect();
     clearPing();
 

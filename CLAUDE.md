@@ -164,7 +164,7 @@ alice/
 │   └── logger/                     # Pino singleton
 ├── infra/docker/                   # Docker Compose prod
 ├── docs/                           # Documentação completa
-└── .github/workflows/              # CI/CD (3 workflows)
+└── .github/workflows/              # CI/CD (4 workflows: ci, release, deploy-production, update-system-packages)
 ```
 
 ## Estrutura do Volume Hetzner (Produção)
@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.85 - 17 de Dezembro de 2025*
+*Versão: 3.86 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -365,7 +365,7 @@ git commit -a -m "test: adiciona testes unitários"
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus*
 *Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR)*
-*Pipeline CI/CD: 3 workflows separados (CI → Release → Deploy) + IaC Terraform/Salad CLI + Scripts auto-correção*
+*Pipeline CI/CD Unificada (17/12/2025): 4 workflows (CI → Release → Deploy) + GPU deploy integrado via Python SDK (salad-cloud-sdk)*
 *Code Review Enterprise (17/12/2025): 100% validado - zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks/stubs*
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*
 *Bug Fix initTradingOrchestrator (17/12/2025): Adicionada chamada de inicialização faltante em chat-service/index.ts*
@@ -382,3 +382,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Leverage igual Amount (17/12/2025): Removida verificação incorreta que descartava leverage quando valor=amount (ex: "compre 10 BTC 10x")*
 *Bug Fix messageContent Inconsistente (17/12/2025): buscarContextoRAG e callLlamaAPI agora usam messageContent (com fallback) ao invés de message.content*
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
+*Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
+*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml, workflow deploy-salad-gpu.yml excluído, Terraform obsoleto removido, Python SDK*

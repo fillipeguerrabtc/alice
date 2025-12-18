@@ -2489,12 +2489,80 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 
   # ===========================================================================
-  # Job 6: Health Check Pós-Deploy (com trigger de rollback)
+  # Job 6: Deploy Salad Cloud GPU Services
+  # ===========================================================================
+  # PIPELINE UNIFICADA (17/12/2025): GPU deploy integrado na pipeline principal
+  # - 4 Container Groups: Mixtral 8x7B, ASR Canary, FLUX.1 Schnell, Embeddings
+  # - Usa Python SDK oficial (salad-cloud-sdk)
+  # - RTX 4090 (24GB VRAM) para todos os servicos
+  # ===========================================================================
+  deploy-salad-gpu:
+    name: Deploy GPU Services (Salad Cloud)
+    runs-on: ubuntu-latest
+    needs: deploy
+    if: needs.deploy.result == 'success'
+    
+    permissions:
+      contents: read
+      packages: read
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Salad Cloud SDK
+        run: |
+          pip install --upgrade pip
+          pip install salad-cloud-sdk || echo "SDK alpha, continuando com REST API fallback"
+
+      - name: Deploy Container Groups
+        env:
+          SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
+          SALAD_ORG: ${{ secrets.SALAD_ORGANIZATION_ID }}
+          SALAD_PROJECT: ${{ secrets.SALAD_PROJECT_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+          GHCR_TOKEN: ${{ secrets.GH_PAT }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          echo "=============================================="
+          echo "DEPLOY SALAD CLOUD GPU SERVICES"
+          echo "=============================================="
+          echo "Organization: $SALAD_ORG"
+          echo "Project: $SALAD_PROJECT"
+          echo "Image Tag: $IMAGE_TAG"
+          echo "=============================================="
+          
+          cd infra/salad-cloud
+          python deploy.py
+
+      - name: Resumo Deploy GPU
+        if: always()
+        run: |
+          echo "=============================================="
+          echo "SALAD CLOUD GPU DEPLOY CONCLUIDO"
+          echo "=============================================="
+          echo "Container Groups:"
+          echo "  - alice-mixtral-vllm (Mixtral 8x7B)"
+          echo "  - alice-asr-canary (ASR Canary-1B)"
+          echo "  - alice-flux-schnell (FLUX.1 Schnell)"
+          echo "  - alice-embeddings-gpu (Qwen3 + OpenCLIP)"
+          echo "GPU: RTX 4090 (24GB VRAM)"
+          echo "=============================================="
+
+  # ===========================================================================
+  # Job 7: Health Check Pós-Deploy (com trigger de rollback)
   # ===========================================================================
   health-check:
     name: Health Check
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [deploy, deploy-salad-gpu]
     if: needs.deploy.result == 'success'
     
     permissions:
@@ -2556,7 +2624,7 @@ jobs:
           echo "=============================================="
 
   # ===========================================================================
-  # Job 7: ROLLBACK AUTOMÁTICO - Enterprise-Grade
+  # Job 8: ROLLBACK AUTOMÁTICO - Enterprise-Grade
   # ===========================================================================
   # Regra 6: Sem workarounds - rollback real com cleanup completo
   # Regra 16: Melhores práticas - health checks, cleanup, notificação
@@ -2565,10 +2633,11 @@ jobs:
   rollback:
     name: Rollback Automático
     runs-on: ubuntu-latest
-    needs: [deploy, health-check]
+    needs: [deploy, deploy-salad-gpu, health-check]
     # CRÍTICO: always() garante execução mesmo se jobs anteriores foram pulados
     # Condição: deploy falhou OU health-check falhou/pulado OU health_status == 'failed'
     # NOTA: Quando deploy falha, health-check é 'skipped' (não 'failure')
+    # NOTA: deploy-salad-gpu pode falhar sem afetar Hetzner (opcional)
     if: |
       always() && (
         needs.deploy.result == 'failure' ||
@@ -2872,12 +2941,12 @@ jobs:
           echo "Verifique os logs para diagnosticar o problema."
 
   # ===========================================================================
-  # Job 8: Registrar Deploy Bem-Sucedido
+  # Job 9: Registrar Deploy Bem-Sucedido
   # ===========================================================================
   register-success:
     name: Registrar Sucesso
     runs-on: ubuntu-latest
-    needs: [deploy, health-check]
+    needs: [deploy, deploy-salad-gpu, health-check]
     if: success() && needs.health-check.outputs.health_status == 'success'
     
     permissions:
