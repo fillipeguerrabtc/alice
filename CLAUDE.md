@@ -417,3 +417,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Auditoria Final Completa (17/12/2025): FASE 7 (packages ~6500 linhas), FASE 8 (frontend 73 arquivos), FASE 9 (CI/CD ~5087 linhas) - 0 bugs encontrados*
 *GitHub Actions Timeouts (18/12/2025): Adicionado timeout-minutes a TODOS os jobs de TODOS os workflows (ci.yml, release.yml, deploy-production.yml, update-system-packages.yml) - evita jobs stuck*
 *Bug Fix TradingLoraHyperparams Default (18/12/2025): Corrigido default vazio em hyperparameters - agora usa objeto completo com valores do schema Zod (loraRank:16, loraAlpha:32, etc)*
+*Bug Fix Qdrant Circuit Breaker Type (18/12/2025): Corrigido TS2322 em qdrant-client.ts - fire() retorna unknown, adicionado type assertion seguro para Promise<T>*

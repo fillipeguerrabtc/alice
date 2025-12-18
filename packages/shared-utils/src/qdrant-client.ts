@@ -190,7 +190,8 @@ async function request<T>(
     return response.json() as Promise<T>;
   };
 
-  return qdrantCircuitBreaker.fire(fetchFn);
+  // Type assertion seguro: fetchFn retorna Promise<T>, circuit breaker apenas executa
+  return qdrantCircuitBreaker.fire(fetchFn) as Promise<T>;
 }
 
 // ============================================================================
