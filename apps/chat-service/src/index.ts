@@ -1216,13 +1216,16 @@ async function executeTradingCommand(
 
       case 'set_stop_loss':
       case 'set_take_profit':
-        endpoint = '/api/integrations/trading/orders';
-        method = 'PATCH';
-        body = {
-          stopLoss: command.stopLoss,
-          takeProfit: command.takeProfit,
+        // CORREÇÃO AUDITORIA 17/12/2025: Endpoint PATCH /orders não existe no integrations-service
+        // Bug: Comandos falhavam com 404 pois backend não implementa modificação de stop/take profit
+        // Funcionalidade requer criar ordens stop separadas via API KuCoin (não implementado)
+        // Solução temporária: Retornar erro explícito ao invés de falha silenciosa
+        return {
+          success: false,
+          error: 'Modificar stop loss/take profit de ordens existentes ainda não está implementado. ' +
+                 'Use o comando de criação de ordem com stopLoss/takeProfit definidos: ' +
+                 '"compre 0.01 BTC a 95000 com stop loss em 94000 e take profit em 98000"',
         };
-        break;
 
       case 'pause_trading':
       case 'resume_trading':
