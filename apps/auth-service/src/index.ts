@@ -46,7 +46,7 @@ import {
   createCircuitBreaker,
   CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
-import { eq, or } from '@alice/database';
+import { eq, or, and } from '@alice/database';
 import { z } from 'zod';
 import { 
   getDatabase, 
@@ -1707,9 +1707,13 @@ app.post('/api/auth/modules/assign', requireAuth(), requireRole('admin'), asyncH
 
   const db = getDatabase();
   
-  // Verificar se já existe atribuição
+  // CORREÇÃO AUDITORIA 17/12/2025: Verificar combinação userId + moduleId
+  // Bug: Buscava apenas por userId, causando atualização incorreta de módulos
   const existing = await db.query.userModules.findFirst({
-    where: eq(schema.userModules.userId, result.data.userId),
+    where: and(
+      eq(schema.userModules.userId, result.data.userId),
+      eq(schema.userModules.moduleId, result.data.moduleId)
+    ),
   });
 
   if (existing) {
@@ -1781,9 +1785,13 @@ app.post('/api/auth/modules/role/assign', requireAuth(), requireRole('super_admi
 
   const db = getDatabase();
   
-  // Verificar se já existe atribuição
+  // CORREÇÃO AUDITORIA 17/12/2025: Verificar combinação role + moduleId
+  // Bug: Buscava apenas por role, causando atualização incorreta de módulos
   const existing = await db.query.roleModules.findFirst({
-    where: eq(schema.roleModules.role, result.data.role),
+    where: and(
+      eq(schema.roleModules.role, result.data.role),
+      eq(schema.roleModules.moduleId, result.data.moduleId)
+    ),
   });
 
   if (existing) {
