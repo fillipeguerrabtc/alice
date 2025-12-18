@@ -249,6 +249,19 @@
 | Order History API | ✅ | `GET /api/integrations/trading/order-history` |
 | Control API (Handover/Takeover) | ✅ | `POST /api/integrations/trading/control` |
 
+> **Bug Fix AUDITORIA (17/12/2025):** Correções Enterprise identificadas na auditoria completa linha-a-linha (3540+ linhas):
+> - **index.ts**: 4 endpoints REST agora validam `req.params.id` com Zod (OWASP API3 - Security Misconfiguration)
+>   - `GET /api/integrations/wise/batch-groups/:id` - adicionado `batchGroupIdParamSchema`
+>   - `POST /api/integrations/wise/batch-groups/:id/complete` - adicionado `batchGroupIdParamSchema`
+>   - `DELETE /api/integrations/trading/signals/:id` - adicionado `tradingUuidParamSchema`
+>   - `DELETE /api/integrations/trading/orders/:id` - adicionado `tradingUuidParamSchema`
+> - **stripeClient.ts**: Logger agora usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
+> - **wiseClient.ts**: Logger agora usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
+> - **wiseClient.ts**: `fetch()` agora tem timeout de 30s via `AbortSignal.timeout()` (Best Practices 2025)
+> - **wiseService.ts**: Import corrigido de `{ logger }` para `createLogger()` (TypeScript strict)
+> - **wiseSyncService.ts**: Logger agora usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
+> - **Total**: 9 bugs corrigidos, 12 arquivos auditados (~5000 linhas)
+
 ### 6. observability-service (Porta 3007)
 
 | Funcionalidade | Status | Arquivo |

@@ -1593,13 +1593,24 @@ app.post('/api/integrations/wise/batch-groups', requirePermission('integrations:
 });
 
 // Obter batch group por ID
+// NOTA: Batch groups usam UUID, não ID numérico
+const batchGroupIdParamSchema = z.object({
+  id: z.string().min(1).max(100), // UUID ou ID string
+});
+
 app.get('/api/integrations/wise/batch-groups/:id', requirePermission('integrations:wise:read'), async (req: Request, res: Response) => {
   if (!isWiseConfigured()) {
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = batchGroupIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   try {
-    const batchGroup = await wiseService.getBatchGroup(req.params.id);
+    const batchGroup = await wiseService.getBatchGroup(paramResult.data.id);
     res.json({ batchGroup });
   } catch (error) {
     logger.error({ error }, 'Falha ao obter batch group Wise');
@@ -1613,10 +1624,16 @@ app.post('/api/integrations/wise/batch-groups/:id/complete', requirePermission('
     return res.status(503).json({ error: 'Wise não configurado' });
   }
 
+  // OWASP API3: Validação de parâmetro de rota
+  const paramResult = batchGroupIdParamSchema.safeParse(req.params);
+  if (!paramResult.success) {
+    return res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+  }
+
   const { version } = req.body;
 
   try {
-    const batchGroup = await wiseService.completeBatchGroup(req.params.id, version);
+    const batchGroup = await wiseService.completeBatchGroup(paramResult.data.id, version);
     res.json({ batchGroup });
   } catch (error) {
     logger.error({ error }, 'Falha ao completar batch group Wise');
@@ -2988,6 +3005,11 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
   }
 });
 
+// Schema para ID UUID de trading (sinais, ordens, etc.)
+const tradingUuidParamSchema = z.object({
+  id: z.string().uuid('ID deve ser UUID válido'),
+});
+
 // DELETE /api/integrations/trading/signals/:id - Desativar sinal
 app.delete('/api/integrations/trading/signals/:id', requirePermission('integrations:trading:write'), async (req: Request, res: Response) => {
   try {
@@ -2997,7 +3019,14 @@ app.delete('/api/integrations/trading/signals/:id', requirePermission('integrati
       return;
     }
 
-    const { id } = req.params;
+    // OWASP API3: Validação de parâmetro de rota
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+
+    const { id } = paramResult.data;
     const result = await kucoinService.deactivateSignal(
       { tenantId: authContext.tenantId, userId: authContext.userId },
       id
@@ -3108,7 +3137,14 @@ app.delete('/api/integrations/trading/orders/:id', requirePermission('integratio
       return;
     }
 
-    const { id } = req.params;
+    // OWASP API3: Validação de parâmetro de rota
+    const paramResult = tradingUuidParamSchema.safeParse(req.params);
+    if (!paramResult.success) {
+      res.status(400).json({ error: 'ID inválido', details: paramResult.error.format() });
+      return;
+    }
+
+    const { id } = paramResult.data;
     const result = await kucoinService.cancelOrder(
       { tenantId: authContext.tenantId, userId: authContext.userId },
       id

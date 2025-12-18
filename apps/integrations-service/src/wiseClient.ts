@@ -4,15 +4,15 @@
 // Padrões Enterprise: Circuit Breaker, Retry, Timeout (Regra 16)
 // SEGURANÇA: WISE_SANDBOX deve ser explicitamente configurado (sem fallback NODE_ENV)
 
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import crypto from 'crypto';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
-// Logger usando pino diretamente (evita dependência circular)
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  name: 'wise-client',
-});
+// Logger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('wise-client');
+
+// RESILIÊNCIA: Timeout para chamadas à API Wise (Best Practices 2025)
+const WISE_API_TIMEOUT_MS = 30000; // 30 segundos
 
 // URLs da API Wise
 const WISE_API_URL = process.env.WISE_API_URL || 'https://api.transferwise.com';
@@ -104,24 +104,34 @@ interface WiseRequestParams {
 }
 
 // Função interna de requisição HTTP
+// CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
 async function executeWiseRequest<T>(params: WiseRequestParams): Promise<T> {
   const { method, endpoint, body } = params;
   const baseUrl = getBaseUrl();
   const url = `${baseUrl}${endpoint}`;
   const headers = getHeaders();
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(WISE_API_TIMEOUT_MS),
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Wise API error: ${response.status} - ${errorText}`);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Wise API error: ${response.status} - ${errorText}`);
+    }
+
+    return response.json() as Promise<T>;
+  } catch (error) {
+    // Distinguir timeout de outros erros para melhor diagnóstico
+    if (error instanceof Error && error.name === 'TimeoutError') {
+      throw new Error(`Timeout ao chamar Wise API: ${endpoint} (${WISE_API_TIMEOUT_MS}ms)`);
+    }
+    throw error;
   }
-
-  return response.json() as Promise<T>;
 }
 
 // Circuit Breaker para requisições Wise API

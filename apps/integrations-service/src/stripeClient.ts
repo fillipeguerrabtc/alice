@@ -2,13 +2,10 @@
 // Produção: Hetzner Cloud com variáveis de ambiente padrão
 // Documentação: https://docs.stripe.com/api/versioning
 import Stripe from 'stripe';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 
-// Logger usando pino diretamente (evita dependência circular com @alice/logger)
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  name: 'stripe-client',
-});
+// Logger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('stripe-client');
 
 // STRIPE API VERSION: Versão estável atual (Novembro 2025)
 // Referência: https://docs.stripe.com/changelog

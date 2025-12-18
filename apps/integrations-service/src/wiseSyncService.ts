@@ -9,28 +9,11 @@
 
 import { eq, and, lt, desc } from '@alice/database';
 import { schema, type Database } from '@alice/database';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
-// Logger configurado para produção (JSON) ou desenvolvimento (pretty)
-// Segue padrão @alice/logger - JSON em produção para observabilidade enterprise
-const isDevelopment = process.env.NODE_ENV !== 'production';
-
-const logger = isDevelopment
-  ? pino({
-      level: process.env.LOG_LEVEL || 'info',
-      transport: {
-        target: 'pino-pretty',
-        options: { colorize: true }
-      }
-    }).child({ module: 'wise-sync' })
-  : pino({
-      level: process.env.LOG_LEVEL || 'info',
-      formatters: {
-        level: (label) => ({ level: label }),
-      },
-      timestamp: pino.stdTimeFunctions.isoTime,
-    }).child({ module: 'wise-sync' });
+// Logger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('wise-sync');
 
 const ERPNEXT_URL = process.env.ERPNEXT_URL;
 const ERPNEXT_API_KEY = process.env.ERPNEXT_API_KEY;

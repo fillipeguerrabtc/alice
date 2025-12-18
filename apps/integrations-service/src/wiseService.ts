@@ -3,7 +3,10 @@
 // Documentação: https://docs.wise.com/api-docs/
 
 import { wiseRequest, getWiseProfileId, isWiseSandbox } from './wiseClient.js';
-import { logger } from '@alice/logger';
+import { createLogger } from '@alice/logger';
+
+// Logger padronizado (Regra 2 - Não Duplicar)
+const logger = createLogger('wise-service');
 
 // Tipos para a API Wise
 
