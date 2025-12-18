@@ -2951,7 +2951,10 @@ jobs:
     name: Registrar Sucesso
     runs-on: ubuntu-latest
     needs: [deploy, deploy-salad-gpu, health-check]
-    if: success() && needs.health-check.outputs.health_status == 'success'
+    # CRÍTICO: always() é OBRIGATÓRIO quando há dependências opcionais (deploy-salad-gpu)
+    # Sem always(), GitHub Actions pula o job ANTES de avaliar o if quando qualquer needs falha
+    # Queremos registrar sucesso se Hetzner + health-check passaram, independente do GPU
+    if: always() && needs.deploy.result == 'success' && needs.health-check.result == 'success' && needs.health-check.outputs.health_status == 'success'
     
     permissions:
       contents: read
