@@ -552,10 +552,46 @@ function normalizeBaseUrl(raw?: string): string {
 const SEARXNG_URL = normalizeBaseUrl(process.env.SEARXNG_URL);
 const SEARXNG_SECRET_KEY = process.env.SEARXNG_SECRET_KEY;
 
-// Workers (defaults seguros e configuráveis)
-const WORKER_POLL_MS = Number(process.env.WORKER_POLL_MS || 3000);
-const WORKER_CONCURRENCY = Number(process.env.WORKER_CONCURRENCY || 2);
-const WORKER_MAX_ATTEMPTS = Number(process.env.WORKER_MAX_ATTEMPTS || 3);
+// ============================================================================
+// VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
+// Bug: Number() sem validação de NaN causava:
+// - setInterval(fn, NaN) → delay 0 → loop infinito (DoS)
+// - Worker concurrency NaN → comportamento indefinido
+// ============================================================================
+function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  
+  // Regra 6: Rejeitar valores parciais - só dígitos são aceitos
+  if (!/^\d+$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  const parsed = parseInt(trimmed, 10);
+  
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  return parsed;
+}
+
+// Workers (defaults seguros e configuráveis) - CORREÇÃO AUDITORIA 17/12/2025
+const WORKER_POLL_MS = parseEnvInt(process.env.WORKER_POLL_MS, 3000, 'WORKER_POLL_MS');
+const WORKER_CONCURRENCY = parseEnvInt(process.env.WORKER_CONCURRENCY, 2, 'WORKER_CONCURRENCY');
+const WORKER_MAX_ATTEMPTS = parseEnvInt(process.env.WORKER_MAX_ATTEMPTS, 3, 'WORKER_MAX_ATTEMPTS');
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();

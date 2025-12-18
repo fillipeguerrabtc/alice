@@ -56,7 +56,42 @@ import {
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('training-service');
 
-const PORT = parseInt(process.env.PORT || '3004', 10);
+// ============================================================================
+// VALIDAÇÃO DE VARIÁVEIS DE AMBIENTE - CORREÇÃO AUDITORIA 17/12/2025
+// Bug: parseInt sem validação de NaN causava:
+// - app.listen(NaN) → comportamento indefinido
+// ============================================================================
+function parseEnvInt(envValue: string | undefined, defaultValue: number, varName: string): number {
+  const raw = envValue ?? String(defaultValue);
+  const trimmed = raw.trim();
+  
+  // Regra 6: Rejeitar valores parciais - só dígitos são aceitos
+  if (!/^\d+$/.test(trimmed)) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  const parsed = parseInt(trimmed, 10);
+  
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    const errorMsg = `${varName} inválido: "${raw}". Deve ser número inteiro positivo.`;
+    if (process.env.NODE_ENV === 'production') {
+      logger.error({ varName, rawValue: raw, parsed }, errorMsg);
+      throw new Error(errorMsg);
+    }
+    logger.warn({ varName, rawValue: raw, parsed, defaultValue }, `${errorMsg} Usando valor padrão.`);
+    return defaultValue;
+  }
+  
+  return parsed;
+}
+
+const PORT = parseEnvInt(process.env.PORT, 3004, 'PORT');
 const DATABASE_URL = process.env.DATABASE_URL;
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {

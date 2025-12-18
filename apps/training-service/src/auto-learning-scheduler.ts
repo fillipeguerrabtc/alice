@@ -12,18 +12,14 @@
  * @module training-service/auto-learning-scheduler
  */
 
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { eq, and, lt, desc, isNull } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ module: 'auto-learning-scheduler' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
+// Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
+const logger = createLogger('auto-learning-scheduler');
 
 let db: Database;
 
