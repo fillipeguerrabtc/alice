@@ -1915,7 +1915,16 @@ export const tradingLoraJobs = pgTable(
     
     // Modelo base e configuração
     baseModel: varchar("base_model", { length: 255 }).notNull().default("TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ"),
-    hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({}),
+    // NOTA: Valores default devem corresponder ao TradingLoraHyperparamsSchema
+    hyperparameters: jsonb("hyperparameters").$type<TradingLoraHyperparams>().default({
+      loraRank: 16,
+      loraAlpha: 32,
+      learningRate: 2e-4,
+      batchSize: 4,
+      epochs: 3,
+      warmupSteps: 100,
+      targetModules: ["q_proj", "v_proj"],
+    }),
     
     // Status e progresso
     status: tradingLoraJobStatusEnum("status").default("queued"),
