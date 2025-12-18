@@ -476,7 +476,32 @@ O deploy é **100% automático** via GitHub Actions:
 | **Release & Tag** | CI passa | Versionamento semântico automático |
 | **Deploy Hetzner** | Release passa | 43 containers via Docker Compose |
 | **Deploy Salad GPU** | Deploy Hetzner passa | 4 Container Groups via Python SDK |
-| **Health Check** | Todos deploys passam | Validação e rollback automático |
+| **Health Check** | Deploy Hetzner passa | Validação e rollback automático |
+
+### Comportamento de Jobs com Dependências Opcionais (17/12/2025)
+
+**⚠️ CRÍTICO:** Quando um job tem múltiplas dependências (`needs`) e uma delas é **opcional** (ex: `deploy-salad-gpu`), é **OBRIGATÓRIO** usar `always()` na condição `if`:
+
+```yaml
+# CORRETO: Health-check executa se Hetzner passou, independente do GPU
+needs: [deploy, deploy-salad-gpu]
+if: always() && needs.deploy.result == 'success'
+
+# INCORRETO: Health-check é PULADO se GPU falhar (antes de avaliar o if!)
+needs: [deploy, deploy-salad-gpu]
+if: needs.deploy.result == 'success'  # ← GitHub Actions pula ANTES de avaliar isso
+```
+
+**Por que isso acontece?**
+- GitHub Actions avalia `needs` **ANTES** de avaliar `if`
+- Se qualquer job no `needs` falha ou é pulado, o job dependente é **automaticamente pulado**
+- A condição `if` só é avaliada se todos os `needs` tiverem `success`
+- `always()` força a avaliação do `if` mesmo quando dependências falham
+
+**Padrão Enterprise para Jobs Opcionais:**
+- Deploy GPU é opcional (não deve bloquear Hetzner)
+- Usar `always()` + verificação explícita do job obrigatório
+- Documentar claramente a intenção no código (comentários)
 
 Pipeline totalmente automático: push para `main` deploya Hetzner + Salad GPU.
 

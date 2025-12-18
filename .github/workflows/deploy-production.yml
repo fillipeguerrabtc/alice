@@ -2563,7 +2563,11 @@ jobs:
     name: Health Check
     runs-on: ubuntu-latest
     needs: [deploy, deploy-salad-gpu]
-    if: needs.deploy.result == 'success'
+    # CRÍTICO: always() é OBRIGATÓRIO quando há múltiplas dependências onde uma é opcional
+    # Sem always(), GitHub Actions pula o job ANTES de avaliar o if quando qualquer needs falha
+    # deploy-salad-gpu pode falhar sem afetar Hetzner (GPU é opcional)
+    # Queremos que health-check execute se deploy Hetzner passou, independente do GPU
+    if: always() && needs.deploy.result == 'success'
     
     permissions:
       contents: read
