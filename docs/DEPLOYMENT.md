@@ -478,32 +478,38 @@ O deploy é **100% automático** via GitHub Actions:
 | **Deploy Salad GPU** | Deploy Hetzner passa | 4 Container Groups via Python SDK |
 | **Health Check** | Deploy Hetzner passa | Validação e rollback automático |
 
-### Comportamento de Jobs com Dependências Opcionais (17/12/2025)
+### GPU é OBRIGATÓRIO - Enterprise-Grade (17/12/2025)
 
-**⚠️ CRÍTICO:** Quando um job tem múltiplas dependências (`needs`) e uma delas é **opcional** (ex: `deploy-salad-gpu`), é **OBRIGATÓRIO** usar `always()` na condição `if`:
+**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU Salad Cloud são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona:
 
+| Serviço GPU | Função | Impacto se Falhar |
+|-------------|--------|-------------------|
+| **Mixtral 8x7B** | LLM (chat, trading) | Chat não funciona |
+| **Embeddings GPU** | Qwen3 + OpenCLIP (RAG) | RAG não funciona |
+| **FLUX.1 Schnell** | Geração de imagens | Imagens não funcionam |
+| **ASR Canary-1B** | Transcrição de áudio | Áudio não funciona |
+
+**Best Practices 2025 - Fail-Fast:**
 ```yaml
-# CORRETO: Health-check executa se Hetzner passou, independente do GPU
+# CORRETO: GPU é OBRIGATÓRIO - ambos devem passar
 needs: [deploy, deploy-salad-gpu]
-if: always() && needs.deploy.result == 'success'
+if: needs.deploy.result == 'success' && needs.deploy-salad-gpu.result == 'success'
 
-# INCORRETO: Health-check é PULADO se GPU falhar (antes de avaliar o if!)
-needs: [deploy, deploy-salad-gpu]
-if: needs.deploy.result == 'success'  # ← GitHub Actions pula ANTES de avaliar isso
+# INCORRETO: Tratar GPU como opcional (deploy parcial = plataforma quebrada)
+if: always() && needs.deploy.result == 'success'
 ```
 
-**Por que isso acontece?**
-- GitHub Actions avalia `needs` **ANTES** de avaliar `if`
-- Se qualquer job no `needs` falha ou é pulado, o job dependente é **automaticamente pulado**
-- A condição `if` só é avaliada se todos os `needs` tiverem `success`
-- `always()` força a avaliação do `if` mesmo quando dependências falham
+**Health Check Completo:**
+- Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
+- Verifica **4 Container Groups GPU**: Mixtral, Embeddings, FLUX, ASR
+- **Tolerância zero**: Qualquer falha dispara rollback automático
 
-**Padrão Enterprise para Jobs Opcionais:**
-- Deploy GPU é opcional (não deve bloquear Hetzner)
-- Usar `always()` + verificação explícita do job obrigatório
-- Documentar claramente a intenção no código (comentários)
+**Rollback Enterprise:**
+- Dispara se Hetzner **OU** GPU falhar
+- Não registra deploys parciais como sucesso
+- Reverte para última versão estável automaticamente
 
-Pipeline totalmente automático: push para `main` deploya Hetzner + Salad GPU.
+Pipeline totalmente automático: push para `main` deploya Hetzner + Salad GPU (ambos obrigatórios).
 
 ### Versionamento Automático
 

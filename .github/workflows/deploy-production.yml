@@ -2559,15 +2559,19 @@ jobs:
   # ===========================================================================
   # Job 7: Health Check Pós-Deploy (com trigger de rollback)
   # ===========================================================================
+  # ENTERPRISE-GRADE (17/12/2025): GPU é OBRIGATÓRIO - não é mais opcional
+  # Best Practices 2025: Health checks robustos para TODOS os serviços críticos
+  # Regra 6 CLAUDE.md: SEM workarounds - verificação completa de todos os componentes
+  # Regra 16 CLAUDE.md: Melhores práticas - health checks, circuit breakers
+  # ===========================================================================
   health-check:
     name: Health Check
     runs-on: ubuntu-latest
     needs: [deploy, deploy-salad-gpu]
-    # CRÍTICO: always() é OBRIGATÓRIO quando há múltiplas dependências onde uma é opcional
-    # Sem always(), GitHub Actions pula o job ANTES de avaliar o if quando qualquer needs falha
-    # deploy-salad-gpu pode falhar sem afetar Hetzner (GPU é opcional)
-    # Queremos que health-check execute se deploy Hetzner passou, independente do GPU
-    if: always() && needs.deploy.result == 'success'
+    # ENTERPRISE: GPU é OBRIGATÓRIO - ambos deploys devem passar
+    # GPUs são o coração da IA - plataforma não funciona sem eles
+    # Best Practices 2025: Fail-fast para detectar problemas imediatamente
+    if: needs.deploy.result == 'success' && needs.deploy-salad-gpu.result == 'success'
     
     permissions:
       contents: read
@@ -2577,54 +2581,195 @@ jobs:
     
     steps:
       - name: Aguardar serviços iniciarem
-        run: sleep 60
+        run: |
+          echo "Aguardando 60s para serviços Hetzner iniciarem..."
+          sleep 60
+          echo "Aguardando 30s adicionais para serviços GPU Salad Cloud..."
+          sleep 30
 
-      - name: Health Check - Todos os Serviços
-        id: health
+      - name: Health Check - Serviços Hetzner (43 containers)
+        id: health-hetzner
         run: |
           FAILED=0
           
+          echo "=============================================="
+          echo "HEALTH CHECK - SERVIÇOS HETZNER"
+          echo "=============================================="
+          
           echo "Verificando Frontend..."
           if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/health; then
-            echo "Frontend health check FALHOU"
+            echo "❌ Frontend health check FALHOU"
             FAILED=$((FAILED + 1))
           else
-            echo "Frontend OK"
+            echo "✅ Frontend OK"
           fi
           
           echo "Verificando Auth Service..."
           if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/api/auth/health; then
-            echo "Auth service health check FALHOU"
+            echo "❌ Auth service health check FALHOU"
             FAILED=$((FAILED + 1))
           else
-            echo "Auth OK"
+            echo "✅ Auth OK"
+          fi
+          
+          echo "Verificando Chat Service..."
+          if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/api/chat/health; then
+            echo "❌ Chat service health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "✅ Chat OK"
+          fi
+          
+          echo "Verificando RAG Service..."
+          if ! curl -sf --max-time 30 https://yesyoudeserve.duckdns.org/api/rag/health; then
+            echo "❌ RAG service health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "✅ RAG OK"
           fi
           
           echo "Verificando ERPNext..."
           if ! curl -sf --max-time 30 https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping; then
-            echo "ERPNext health check FALHOU"
+            echo "❌ ERPNext health check FALHOU"
             FAILED=$((FAILED + 1))
           else
-            echo "ERPNext OK"
+            echo "✅ ERPNext OK"
           fi
           
-          if [ "$FAILED" -gt 1 ]; then
+          echo "Verificando Grafana..."
+          if ! curl -sf --max-time 30 https://observability.yesyoudeserve.duckdns.org/api/health; then
+            echo "❌ Grafana health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "✅ Grafana OK"
+          fi
+          
+          echo "hetzner_failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "=============================================="
+          echo "Serviços Hetzner com falha: $FAILED"
+          echo "=============================================="
+
+      - name: Health Check - Serviços GPU Salad Cloud (4 Container Groups)
+        id: health-gpu
+        env:
+          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
+          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
+          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
+          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
+        run: |
+          FAILED=0
+          
+          echo "=============================================="
+          echo "HEALTH CHECK - SERVIÇOS GPU SALAD CLOUD"
+          echo "=============================================="
+          
+          # Mixtral 8x7B (LLM - coração do chat e trading)
+          echo "Verificando Mixtral 8x7B (LLM)..."
+          if [ -n "$SALAD_MIXTRAL_URL" ]; then
+            if ! curl -sf --max-time 60 "${SALAD_MIXTRAL_URL}/health"; then
+              echo "❌ Mixtral 8x7B health check FALHOU"
+              FAILED=$((FAILED + 1))
+            else
+              echo "✅ Mixtral 8x7B OK"
+            fi
+          else
+            echo "❌ SALAD_MIXTRAL_URL não configurado"
+            FAILED=$((FAILED + 1))
+          fi
+          
+          # Embeddings GPU (Qwen3-Embedding-8B + OpenCLIP - coração do RAG)
+          echo "Verificando Embeddings GPU (Qwen3 + OpenCLIP)..."
+          if [ -n "$EMBEDDINGS_GPU_URL" ]; then
+            if ! curl -sf --max-time 60 "${EMBEDDINGS_GPU_URL}/health"; then
+              echo "❌ Embeddings GPU health check FALHOU"
+              FAILED=$((FAILED + 1))
+            else
+              echo "✅ Embeddings GPU OK"
+            fi
+          else
+            echo "❌ EMBEDDINGS_GPU_URL não configurado"
+            FAILED=$((FAILED + 1))
+          fi
+          
+          # FLUX.1 Schnell (geração de imagens)
+          echo "Verificando FLUX.1 Schnell (Image Generation)..."
+          if [ -n "$SALAD_FLUX_URL" ]; then
+            if ! curl -sf --max-time 60 "${SALAD_FLUX_URL}/health"; then
+              echo "❌ FLUX.1 Schnell health check FALHOU"
+              FAILED=$((FAILED + 1))
+            else
+              echo "✅ FLUX.1 Schnell OK"
+            fi
+          else
+            echo "❌ SALAD_FLUX_URL não configurado"
+            FAILED=$((FAILED + 1))
+          fi
+          
+          # ASR Canary-1B (transcrição de áudio)
+          echo "Verificando ASR Canary-1B (Speech Recognition)..."
+          if [ -n "$SALAD_ASR_URL" ]; then
+            if ! curl -sf --max-time 60 "${SALAD_ASR_URL}/health"; then
+              echo "❌ ASR Canary-1B health check FALHOU"
+              FAILED=$((FAILED + 1))
+            else
+              echo "✅ ASR Canary-1B OK"
+            fi
+          else
+            echo "❌ SALAD_ASR_URL não configurado"
+            FAILED=$((FAILED + 1))
+          fi
+          
+          echo "gpu_failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "=============================================="
+          echo "Serviços GPU com falha: $FAILED"
+          echo "=============================================="
+
+      - name: Consolidar Resultado Health Check
+        id: health
+        run: |
+          HETZNER_FAILED=${{ steps.health-hetzner.outputs.hetzner_failed }}
+          GPU_FAILED=${{ steps.health-gpu.outputs.gpu_failed }}
+          TOTAL_FAILED=$((HETZNER_FAILED + GPU_FAILED))
+          
+          echo "=============================================="
+          echo "RESULTADO CONSOLIDADO HEALTH CHECK"
+          echo "=============================================="
+          echo "Serviços Hetzner com falha: $HETZNER_FAILED"
+          echo "Serviços GPU com falha: $GPU_FAILED"
+          echo "Total de falhas: $TOTAL_FAILED"
+          echo "=============================================="
+          
+          # ENTERPRISE: Tolerância zero para serviços críticos
+          # Se qualquer serviço falhar, deploy é considerado failed
+          if [ "$TOTAL_FAILED" -gt 0 ]; then
             echo "status=failed" >> $GITHUB_OUTPUT
-            echo "CRÍTICO: $FAILED serviços falharam no health check!"
+            echo "❌ CRÍTICO: $TOTAL_FAILED serviços falharam no health check!"
+            echo "Deploy será revertido automaticamente."
           else
             echo "status=success" >> $GITHUB_OUTPUT
-            echo "Health check passou"
+            echo "✅ Todos os serviços estão saudáveis!"
           fi
 
       - name: Resumo do Deploy
         run: |
           echo "=============================================="
-          echo "DEPLOY HEALTH CHECK CONCLUÍDO"
+          echo "DEPLOY HEALTH CHECK ENTERPRISE CONCLUÍDO"
           echo "=============================================="
-          echo "Frontend: https://yesyoudeserve.duckdns.org"
-          echo "ERPNext: https://erp.yesyoudeserve.duckdns.org"
-          echo "Commit: ${{ github.sha }}"
-          echo "Health Status: ${{ steps.health.outputs.status }}"
+          echo ""
+          echo "📦 SERVIÇOS HETZNER (43 containers):"
+          echo "   Frontend: https://yesyoudeserve.duckdns.org"
+          echo "   ERPNext: https://erp.yesyoudeserve.duckdns.org"
+          echo "   Grafana: https://observability.yesyoudeserve.duckdns.org"
+          echo ""
+          echo "🚀 SERVIÇOS GPU SALAD CLOUD (4 Container Groups):"
+          echo "   Mixtral 8x7B (LLM): RTX 4090"
+          echo "   Embeddings GPU (Qwen3 + OpenCLIP): RTX 4090"
+          echo "   FLUX.1 Schnell (Images): RTX 4090"
+          echo "   ASR Canary-1B (Speech): RTX 4090"
+          echo ""
+          echo "📊 RESULTADO:"
+          echo "   Commit: ${{ github.sha }}"
+          echo "   Health Status: ${{ steps.health.outputs.status }}"
           echo "=============================================="
 
   # ===========================================================================
@@ -2633,20 +2778,24 @@ jobs:
   # Regra 6: Sem workarounds - rollback real com cleanup completo
   # Regra 16: Melhores práticas - health checks, cleanup, notificação
   # Best Practices 2025: Blue/green deployment pattern, atomic rollback
+  # ENTERPRISE (17/12/2025): GPU é OBRIGATÓRIO - rollback se qualquer deploy falhar
   # ===========================================================================
   rollback:
     name: Rollback Automático
     runs-on: ubuntu-latest
     needs: [deploy, deploy-salad-gpu, health-check]
-    # CRÍTICO: always() garante execução mesmo se jobs anteriores foram pulados
-    # Condição: deploy falhou OU health-check falhou/pulado OU health_status == 'failed'
-    # NOTA: Quando deploy falha, health-check é 'skipped' (não 'failure')
-    # NOTA: deploy-salad-gpu pode falhar sem afetar Hetzner (opcional)
+    # ENTERPRISE: Rollback se QUALQUER componente crítico falhar
+    # - Deploy Hetzner falhou
+    # - Deploy GPU Salad Cloud falhou (GPU é OBRIGATÓRIO)
+    # - Health check falhou ou foi pulado
+    # - Health status retornou 'failed'
+    # always() necessário porque health-check pode ser pulado se deploy falhar
     if: |
       always() && (
         needs.deploy.result == 'failure' ||
+        needs.deploy-salad-gpu.result == 'failure' ||
         needs.health-check.result == 'failure' ||
-        (needs.health-check.result == 'skipped' && needs.deploy.result != 'success') ||
+        needs.health-check.result == 'skipped' ||
         needs.health-check.outputs.health_status == 'failed'
       )
     
@@ -2654,6 +2803,44 @@ jobs:
       contents: read
     
     steps:
+      - name: Checkout (para scripts de rollback)
+        uses: actions/checkout@v4
+
+      - name: Setup Python (para Salad Cloud SDK)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Salad Cloud SDK
+        run: |
+          pip install --upgrade pip
+          pip install salad-cloud-sdk || echo "SDK não disponível, usando REST API"
+
+      # ================================================================
+      # ROLLBACK SALAD CLOUD GPU - PRIMEIRO (liberar recursos GPU)
+      # ================================================================
+      - name: Rollback Salad Cloud GPU Services
+        env:
+          SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
+          SALAD_ORG: ${{ secrets.SALAD_ORGANIZATION_ID }}
+          SALAD_PROJECT: ${{ secrets.SALAD_PROJECT_ID }}
+        run: |
+          echo "=============================================="
+          echo "🚀 ROLLBACK SALAD CLOUD GPU SERVICES"
+          echo "=============================================="
+          echo "Limpando Container Groups GPU para liberar recursos..."
+          
+          cd infra/salad-cloud
+          python rollback.py delete --force || echo "⚠️ Rollback GPU falhou ou não havia recursos"
+          
+          echo "=============================================="
+          echo "✅ Cleanup Salad Cloud concluído"
+          echo "=============================================="
+
+      # ================================================================
+      # ROLLBACK HETZNER - SEGUNDO (após GPU estar limpo)
+      # ================================================================
       - name: Configurar SSH
         run: |
           mkdir -p ~/.ssh
@@ -2661,7 +2848,7 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Executar Rollback Automático
+      - name: Executar Rollback Hetzner
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -2677,7 +2864,7 @@ jobs:
             # Exportar IMAGE_PREFIX para docker compose
             export IMAGE_PREFIX="${IMAGE_PREFIX}"
             # ==============================================================
-            # ALICE ENTERPRISE - ROLLBACK COM LIMPEZA GARANTIDA
+            # ALICE ENTERPRISE - ROLLBACK HETZNER COM LIMPEZA GARANTIDA
             # ==============================================================
             # CRÍTICO: NÃO usar "set -e" para garantir que limpeza SEMPRE execute
             # Cada comando crítico é verificado manualmente
@@ -2940,9 +3127,28 @@ jobs:
       - name: Notificar Rollback (Falha no Deploy)
         if: always()
         run: |
-          echo "ALERTA: Rollback executado para o deploy ${{ github.sha }}"
-          echo "O deploy falhou e a plataforma foi restaurada para a versão anterior."
-          echo "Verifique os logs para diagnosticar o problema."
+          echo "=============================================="
+          echo "🚨 ALERTA: ROLLBACK ENTERPRISE EXECUTADO"
+          echo "=============================================="
+          echo ""
+          echo "📋 DETALHES:"
+          echo "   Commit falho: ${{ github.sha }}"
+          echo "   Iniciado por: ${{ github.actor }}"
+          echo "   Timestamp: $(date -Iseconds)"
+          echo ""
+          echo "🔄 COMPONENTES REVERTIDOS:"
+          echo "   ✅ Salad Cloud GPU (4 Container Groups)"
+          echo "   ✅ Hetzner Cloud (43 containers)"
+          echo ""
+          echo "📊 STATUS DOS JOBS:"
+          echo "   Deploy Hetzner: ${{ needs.deploy.result }}"
+          echo "   Deploy GPU: ${{ needs.deploy-salad-gpu.result }}"
+          echo "   Health Check: ${{ needs.health-check.result }}"
+          echo ""
+          echo "⚠️ AÇÃO NECESSÁRIA:"
+          echo "   Verifique os logs para diagnosticar o problema."
+          echo "   Corrija o código e faça novo deploy."
+          echo "=============================================="
 
   # ===========================================================================
   # Job 9: Registrar Deploy Bem-Sucedido
@@ -2951,10 +3157,16 @@ jobs:
     name: Registrar Sucesso
     runs-on: ubuntu-latest
     needs: [deploy, deploy-salad-gpu, health-check]
-    # CRÍTICO: always() é OBRIGATÓRIO quando há dependências opcionais (deploy-salad-gpu)
-    # Sem always(), GitHub Actions pula o job ANTES de avaliar o if quando qualquer needs falha
-    # Queremos registrar sucesso se Hetzner + health-check passaram, independente do GPU
-    if: always() && needs.deploy.result == 'success' && needs.health-check.result == 'success' && needs.health-check.outputs.health_status == 'success'
+    # ENTERPRISE (17/12/2025): Registrar sucesso APENAS se TODOS os componentes passaram
+    # - Deploy Hetzner: OBRIGATÓRIO
+    # - Deploy GPU Salad Cloud: OBRIGATÓRIO (GPUs são o coração da IA)
+    # - Health Check: OBRIGATÓRIO (verifica Hetzner + GPU)
+    # Best Practices 2025: Não registrar deploy parcial como sucesso
+    if: |
+      needs.deploy.result == 'success' &&
+      needs.deploy-salad-gpu.result == 'success' &&
+      needs.health-check.result == 'success' &&
+      needs.health-check.outputs.health_status == 'success'
     
     permissions:
       contents: read

@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 3.88 - 17 de Dezembro de 2025*
+*Versão: 3.90 - 17 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -385,4 +385,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml, workflow deploy-salad-gpu.yml excluído, Terraform obsoleto removido, Python SDK*
 *Bug Fix Health-Check always() (17/12/2025): Job health-check agora usa always() para executar mesmo quando deploy-salad-gpu falha (GPU é opcional)*
-*Bug Fix Register-Success always() (17/12/2025): Job register-success também precisa de always() para registrar deploys bem-sucedidos quando GPU falha*
+*GPU OBRIGATÓRIO Enterprise (17/12/2025): Deploy GPU Salad Cloud agora é OBRIGATÓRIO - GPUs são o coração da IA, plataforma não funciona sem eles*
+*Health Check Completo (17/12/2025): Health check agora verifica Hetzner (6 serviços) + GPU Salad Cloud (4 Container Groups) - tolerância zero para falhas*
+*Rollback Enterprise Unificado (17/12/2025): Rollback integrado Hetzner + Salad Cloud GPU - cleanup completo de todos os recursos*
+*Rollback Script Salad Cloud (17/12/2025): infra/salad-cloud/rollback.py - cleanup de Container Groups via SDK/REST API*
