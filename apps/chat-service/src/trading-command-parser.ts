@@ -342,7 +342,9 @@ export function parseTradingCommand(text: string): ParsedTradingCommand {
   const normalizedText = text.trim().toLowerCase();
 
   // Verificar contexto de trading
-  const hasContext = hasTradicngContext(normalizedText);
+  // CORREÇÃO AUDITORIA 17/12/2025: Corrigido typo hasTradicngContext -> hasTradingContext
+  // Bug CRÍTICO: ReferenceError em runtime - função não existia com esse nome
+  const hasContext = hasTradingContext(normalizedText);
 
   // Tentar match com cada padrão
   for (const pattern of COMMAND_PATTERNS) {

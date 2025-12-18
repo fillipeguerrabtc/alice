@@ -120,6 +120,14 @@
 | **Trading Command Parser** | ✅ | `trading-command-parser.ts` - Reconhece comandos via NLP (PT-BR/EN) |
 | **Trading Orchestrator** | ✅ | `trading-orchestrator.ts` - Handover/Takeover Alice ↔ Manual |
 | **Trading WebSocket Messages** | ✅ | `index.ts` - tipos `trading:subscribe`, `trading:command` |
+| **Response Cache (Greetings Gate)** | ✅ | `response-cache.ts` - Cache Redis para saudações (sem GPU) |
+
+> **NOTA (17/12/2025):** **AUDITORIA COMPLETA FASE 5 - 7 bugs corrigidos**:
+> - **trading-command-parser.ts**: Typo crítico `hasTradicngContext` → `hasTradingContext` (ReferenceError em runtime)
+> - **flux-deployment.ts**: Logger não padronizado - agora usa `createLogger()` (Regra 2 - Não Duplicar)
+> - **flux-deployment.ts**: 5 chamadas `fetch()` sem timeout - agora têm `AbortSignal.timeout(30s)` (Best Practices 2025)
+>   - `getFluxDeploymentStatus()`, `stopFluxDeployment()`, `restartFluxDeployment()`, `scaleFluxDeployment()`, `listFluxDeployments()`
+> - **Total**: 7 bugs corrigidos, 9 arquivos auditados (~5500 linhas)
 
 ### 3. rag-service (Porta 3003)
 

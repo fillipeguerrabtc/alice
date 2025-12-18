@@ -16,15 +16,15 @@
  */
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ module: 'flux-deployment' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
+// Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
+const logger = createLogger('flux-deployment');
+
+// CORREÇÃO AUDITORIA 17/12/2025: Timeout para chamadas à API externa
+// Bug: fetch() sem timeout pode travar o serviço indefinidamente
+const SALAD_API_TIMEOUT_MS = 30000; // 30 segundos
 
 const SALAD_API_URL = process.env.SALAD_API_URL || 'https://api.salad.com/api/public';
 const SALAD_API_KEY = process.env.SALAD_API_KEY || '';
@@ -281,9 +281,11 @@ export async function stopFluxDeployment(containerName: string): Promise<boolean
   const url = `${SALAD_API_URL}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_NAME}/containers/${containerName}/stop`;
 
   try {
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
     const response = await fetch(url, {
       method: 'POST',
       headers: getHeaders(),
+      signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -305,9 +307,11 @@ export async function restartFluxDeployment(containerName: string): Promise<bool
   const url = `${SALAD_API_URL}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_NAME}/containers/${containerName}/start`;
 
   try {
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
     const response = await fetch(url, {
       method: 'POST',
       headers: getHeaders(),
+      signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -373,9 +377,11 @@ export async function listFluxDeployments(): Promise<ContainerGroupStatus[]> {
   const url = `${SALAD_API_URL}/organizations/${SALAD_ORGANIZATION_ID}/projects/${SALAD_PROJECT_NAME}/containers`;
 
   try {
+    // CORREÇÃO AUDITORIA 17/12/2025: Adicionado timeout via AbortSignal
     const response = await fetch(url, {
       method: 'GET',
       headers: getHeaders(),
+      signal: AbortSignal.timeout(SALAD_API_TIMEOUT_MS),
     });
 
     if (!response.ok) {
