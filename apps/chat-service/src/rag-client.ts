@@ -9,15 +9,11 @@
  */
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'chat-rag-client' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
+// Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
+const logger = createLogger('chat-rag-client');
 
 // REGRA 6: Sem fallbacks localhost em produção - variável DEVE estar definida
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL;

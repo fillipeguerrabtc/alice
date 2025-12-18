@@ -11,18 +11,14 @@
  */
 
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
-import pino from 'pino';
+import { createLogger } from '@alice/logger';
 import { eq, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ module: 'image-generation' });
+// CORREÇÃO AUDITORIA 17/12/2025: Usar createLogger padronizado da plataforma
+// Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
+const logger = createLogger('image-generation');
 
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
