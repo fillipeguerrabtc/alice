@@ -1,6 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
-@config "../../tailwind.config.ts";
+@config "../tailwind.config.ts";
 
 :root {
   --background: 0 0% 100%;
