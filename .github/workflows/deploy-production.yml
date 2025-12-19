@@ -2999,34 +2999,86 @@ jobs:
             }
             
             # ==============================================================
-            # LIMPEZA TOTAL - Sem versão anterior (Best Practices 2025)
-            # CORREÇÃO 19/12/2025: Comandos robustos que não falham com lista vazia
+            # LIMPEZA TOTAL ENTERPRISE - Primeiro Deploy ou Rollback Crítico
+            # ATUALIZAÇÃO 19/12/2025: Limpeza robusta e completa
+            # - Remove TODOS containers, imagens e volumes órfãos
+            # - Preserva volumes nomeados apenas se HAS_PREVIOUS_DEPLOY=true
+            # - Recria networks e estrutura de diretórios com permissões corretas
             # ==============================================================
             full_system_cleanup() {
-              echo "🔥 LIMPEZA TOTAL - Removendo TODOS containers e imagens"
+              local PRESERVE_DATA="${1:-false}"
               
-              # Parar containers (robusto - não falha se lista vazia)
-              if [ -n "$(docker ps -aq 2>/dev/null)" ]; then
-                docker stop $(docker ps -aq) 2>/dev/null || true
-                docker rm -f $(docker ps -aq) 2>/dev/null || true
+              echo ""
+              echo "=============================================="
+              echo "🔥 LIMPEZA TOTAL ENTERPRISE"
+              echo "=============================================="
+              echo "Modo: $([ \"$PRESERVE_DATA\" = \"true\" ] && echo 'PRESERVAR DADOS' || echo 'LIMPAR TUDO')"
+              echo ""
+              
+              # FASE 1: Parar todos os containers
+              echo "[1/7] Parando TODOS os containers..."
+              CONTAINERS=$(docker ps -aq 2>/dev/null)
+              if [ -n "$CONTAINERS" ]; then
+                echo "$CONTAINERS" | xargs -r docker stop 2>/dev/null || true
+                echo "   ✓ Containers parados"
+              else
+                echo "   ✓ Nenhum container em execução"
               fi
               
-              # Remover imagens (robusto - não falha se lista vazia)
-              if [ -n "$(docker images -aq 2>/dev/null)" ]; then
-                docker rmi -f $(docker images -aq) 2>/dev/null || true
+              # FASE 2: Remover todos os containers
+              echo "[2/7] Removendo TODOS os containers..."
+              CONTAINERS=$(docker ps -aq 2>/dev/null)
+              if [ -n "$CONTAINERS" ]; then
+                echo "$CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
+                echo "   ✓ Containers removidos"
+              else
+                echo "   ✓ Nenhum container para remover"
               fi
               
-              # Limpeza geral
-              docker system prune -af --volumes 2>/dev/null || true
+              # FASE 3: Remover imagens não utilizadas
+              echo "[3/7] Removendo imagens não utilizadas..."
+              docker image prune -af 2>/dev/null || true
               
-              # Recriar networks necessárias
+              # Se não preservar dados, remover TODAS as imagens
+              if [ "$PRESERVE_DATA" != "true" ]; then
+                IMAGES=$(docker images -aq 2>/dev/null)
+                if [ -n "$IMAGES" ]; then
+                  echo "$IMAGES" | xargs -r docker rmi -f 2>/dev/null || true
+                  echo "   ✓ Todas as imagens removidas"
+                fi
+              else
+                echo "   ✓ Imagens preservadas para rollback rápido"
+              fi
+              
+              # FASE 4: Limpar volumes órfãos
+              echo "[4/7] Limpando volumes órfãos..."
+              if [ "$PRESERVE_DATA" != "true" ]; then
+                # Primeiro deploy: remover TODOS os volumes não nomeados
+                docker volume prune -f 2>/dev/null || true
+                echo "   ✓ Volumes órfãos removidos"
+              else
+                # Rollback: preservar volumes com dados
+                docker volume prune -f 2>/dev/null || true
+                echo "   ✓ Volumes órfãos removidos (nomeados preservados)"
+              fi
+              
+              # FASE 5: Limpar sistema Docker
+              echo "[5/7] Limpando sistema Docker..."
+              docker system prune -f 2>/dev/null || true
+              docker builder prune -f 2>/dev/null || true
+              echo "   ✓ Sistema Docker limpo"
+              
+              # FASE 6: Recriar networks
+              echo "[6/7] Recriando networks Docker..."
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
+              sleep 1
               docker network create --driver bridge --subnet 172.28.0.0/16 alice-network 2>/dev/null || true
               docker network create --driver bridge erpnext-network 2>/dev/null || true
+              echo "   ✓ Networks alice-network e erpnext-network criadas"
               
-              # Recriar diretórios com permissões corretas (Enterprise 2025)
-              echo "📁 Recriando estrutura de diretórios com permissões corretas..."
+              # FASE 7: Recriar estrutura de diretórios com permissões corretas
+              echo "[7/7] Configurando estrutura de diretórios..."
               
               # Grafana (UID 472)
               mkdir -p /opt/alice/data/grafana
@@ -3053,7 +3105,7 @@ jobs:
               chown -R 70:70 /opt/alice/data/langfuse-db
               chmod -R 755 /opt/alice/data/langfuse-db
               
-              # Qdrant (UID root - container usa root)
+              # Qdrant (UID root)
               mkdir -p /opt/alice/data/qdrant
               chmod -R 755 /opt/alice/data/qdrant
               
@@ -3062,12 +3114,58 @@ jobs:
               chown -R 999:999 /opt/alice/data/postgres
               chmod -R 700 /opt/alice/data/postgres
               
-              # Redis (UID 999)
+              # Redis Alice (UID 999)
               mkdir -p /opt/alice/data/redis-alice
               chown -R 999:999 /opt/alice/data/redis-alice
               chmod -R 755 /opt/alice/data/redis-alice
               
-              echo "✅ Servidor 100% limpo e pronto para próximo deploy"
+              # Traefik ACME (UID 1001)
+              mkdir -p /opt/alice/data/traefik-acme
+              chown -R 1001:1001 /opt/alice/data/traefik-acme
+              chmod -R 700 /opt/alice/data/traefik-acme
+              
+              # SearXNG (UID 977)
+              mkdir -p /opt/alice/data/searxng-config
+              chown -R 977:977 /opt/alice/data/searxng-config
+              chmod -R 755 /opt/alice/data/searxng-config
+              
+              # ERPNext MariaDB (UID 999)
+              mkdir -p /opt/alice/data/erpnext-mariadb
+              chown -R 999:999 /opt/alice/data/erpnext-mariadb
+              chmod -R 755 /opt/alice/data/erpnext-mariadb
+              
+              # ERPNext Redis (UID 999)
+              mkdir -p /opt/alice/data/erpnext-redis-cache
+              mkdir -p /opt/alice/data/erpnext-redis-queue
+              chown -R 999:999 /opt/alice/data/erpnext-redis-cache
+              chown -R 999:999 /opt/alice/data/erpnext-redis-queue
+              chmod -R 755 /opt/alice/data/erpnext-redis-cache
+              chmod -R 755 /opt/alice/data/erpnext-redis-queue
+              
+              # ERPNext Sites (UID 1000)
+              mkdir -p /opt/alice/data/erpnext-sites
+              chown -R 1000:1000 /opt/alice/data/erpnext-sites
+              chmod -R 755 /opt/alice/data/erpnext-sites
+              
+              # Vector (UID root)
+              mkdir -p /opt/alice/data/vector
+              chmod -R 755 /opt/alice/data/vector
+              
+              echo "   ✓ Estrutura de diretórios configurada"
+              
+              # Relatório final
+              echo ""
+              echo "=============================================="
+              echo "✅ LIMPEZA ENTERPRISE CONCLUÍDA"
+              echo "=============================================="
+              echo "Containers: $(docker ps -aq 2>/dev/null | wc -l)"
+              echo "Imagens: $(docker images -q 2>/dev/null | wc -l)"
+              echo "Volumes: $(docker volume ls -q 2>/dev/null | wc -l)"
+              echo "Networks: $(docker network ls --format '{{.Name}}' 2>/dev/null | wc -l)"
+              echo ""
+              echo "📁 Estrutura /opt/alice/data:"
+              ls -la /opt/alice/data/ 2>/dev/null || echo "   Diretório não existe"
+              echo "=============================================="
             }
             
             # ==============================================================
@@ -3142,9 +3240,10 @@ jobs:
               echo "=============================================="
               echo "Nenhuma versão anterior registrada."
               echo "Executando LIMPEZA TOTAL para ambiente 100% limpo..."
-              
-              # Best Practices 2025: Limpar TUDO quando não há versão anterior
-              full_system_cleanup
+
+              # Best Practices 2025: Limpar TUDO quando não há versão anterior (primeiro deploy)
+              # Parâmetro false = não preservar dados (servidor deve ficar 100% limpo)
+              full_system_cleanup false
               
               echo ""
               echo "Próximo passo: corrigir código e fazer novo deploy."
@@ -3179,9 +3278,10 @@ jobs:
               echo "=============================================="
               echo "Não foi possível restaurar versão anterior."
               echo "Executando limpeza total para próxima tentativa..."
-              
-              # Limpeza total quando rollback falha
-              full_system_cleanup
+
+              # Rollback falhou - preservar dados existentes se possível
+              # Parâmetro true = preservar dados para não perder informações
+              full_system_cleanup true
               
               exit 1
             fi
@@ -3190,7 +3290,7 @@ jobs:
             if ! cd /opt/alice/app/infra/docker; then
               echo "❌ ERRO: Não foi possível acessar /opt/alice/app/infra/docker"
               echo "Executando limpeza total..."
-              full_system_cleanup
+              full_system_cleanup true
               exit 1
             fi
             
@@ -3198,7 +3298,7 @@ jobs:
             if [ ! -f "docker-compose.prod.yml" ]; then
               echo "❌ ERRO: docker-compose.prod.yml não encontrado"
               echo "Executando limpeza total..."
-              full_system_cleanup
+              full_system_cleanup true
               exit 1
             fi
             
@@ -3229,7 +3329,7 @@ jobs:
             if [ "$RUNNING" -lt 3 ]; then
               echo "⚠️ Rollback pode ter falhado - apenas $RUNNING containers rodando"
               echo "Executando limpeza total..."
-              full_system_cleanup
+              full_system_cleanup true
               exit 1
             fi
             

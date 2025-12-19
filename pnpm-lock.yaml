@@ -501,6 +501,9 @@ importers:
       openid-client:
         specifier: 6.8.1
         version: 6.8.1
+      opossum:
+        specifier: 9.0.0
+        version: 9.0.0
       passport:
         specifier: 0.7.0
         version: 0.7.0
@@ -598,6 +601,9 @@ importers:
       helmet:
         specifier: 8.1.0
         version: 8.1.0
+      opossum:
+        specifier: 9.0.0
+        version: 9.0.0
       pg:
         specifier: 8.16.3
         version: 8.16.3
@@ -819,6 +825,9 @@ importers:
       helmet:
         specifier: 8.1.0
         version: 8.1.0
+      opossum:
+        specifier: 9.0.0
+        version: 9.0.0
       pg:
         specifier: 8.16.3
         version: 8.16.3
@@ -968,6 +977,9 @@ importers:
       multer:
         specifier: 2.0.2
         version: 2.0.2
+      opossum:
+        specifier: 9.0.0
+        version: 9.0.0
       p-limit:
         specifier: ^6.1.0
         version: 6.2.0
@@ -1050,6 +1062,9 @@ importers:
       helmet:
         specifier: 8.1.0
         version: 8.1.0
+      opossum:
+        specifier: 9.0.0
+        version: 9.0.0
       pg:
         specifier: 8.16.3
         version: 8.16.3

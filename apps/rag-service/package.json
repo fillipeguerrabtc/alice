@@ -24,6 +24,7 @@
     "cheerio": "1.0.0",
     "compression": "1.8.1",
     "cors": "2.8.5",
+    "opossum": "9.0.0",
     "file-type": "^18.7.0",
     "express": "5.2.1",
     "ffprobe-static": "^3.1.0",

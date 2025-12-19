@@ -448,3 +448,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Permissões Servidor Hetzner (19/12/2025): Corrigidas permissões langfuse-db (1777→755), removidos diretórios legados vazios (mariadb, redis)*
 *Bug Fix compression Dependência (19/12/2025): Adicionada compression 1.8.1 explicitamente em 5 microsserviços (auth, chat, rag, training, integrations) - estava apenas no package.json raiz e não era externalizada pelo esbuild*
 *Bug Fix dockerproxy Healthcheck (19/12/2025): Corrigido healthcheck de nc -z (não disponível) para wget --spider /_ping - imagem Alpine do HAProxy não tem netcat*
+*Bug Fix dockerproxy tmpfs /run (19/12/2025): Adicionado tmpfs /run:mode=1777 - HAProxy precisa escrever /run/haproxy.pid com read_only: true*
+*Bug Fix opossum Dependência (19/12/2025): Adicionada opossum 9.0.0 em 5 microsserviços - causava "Dynamic require of events" em runtime*
+*Rollback Enterprise Completo (19/12/2025): Função full_system_cleanup() reescrita com 7 fases, parâmetro PRESERVE_DATA para diferenciar primeiro deploy de rollback, limpeza 100% funcional*

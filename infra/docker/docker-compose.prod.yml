@@ -227,6 +227,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=16M
+      # CORREÇÃO 19/12/2025: HAProxy precisa escrever /run/haproxy.pid
+      - /run:mode=1777,size=16M
     environment:
       - CONTAINERS=1
       - SERVICES=1
