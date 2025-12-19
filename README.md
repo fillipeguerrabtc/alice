@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.09-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.10-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -322,7 +322,7 @@ alice/
 
 ### Backend
 - Node.js 22 LTS (versão automática via API + fallback .nvmrc), Express 5.2
-- TypeScript 5.9.3, pnpm 10.25.0 (versão automática via package.json)
+- TypeScript 5.9.3, pnpm 10.26.1 (versão automática via package.json)
 - Drizzle ORM, PostgreSQL 16 + pgvector
 - WebSocket (ws), Pino (logging estruturado)
 - Passport.js, openid-client
@@ -425,7 +425,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.09 - 19 de Dezembro de 2025*
+*Versão 4.10 - 19 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*

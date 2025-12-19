@@ -1,7 +1,7 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.1 - ARQUITETURA ENTERPRISE + TRADING  
+**Versão:** 3.5 - ARQUITETURA ENTERPRISE + TRADING  
 **Data:** 19 de Dezembro de 2025
 
 ## Visão Geral

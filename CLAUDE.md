@@ -122,7 +122,7 @@ Otimização de custos para GPUs Salad Cloud:
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
-- **Docker**: 29.1.2, Docker Compose v5.0.0
+- **Docker**: 29.1.3, Docker Compose v5.0.0
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ## URLs de Produção
@@ -200,10 +200,9 @@ Permissões Enterprise (13/12/2025):
 |-----------|-----------|
 | `docs/ARQUITETURA.md` | **Arquitetura completa (arc42 + C4 + ADRs)** |
 | `docs/STATUS-REAL-ATUAL.md` | Status completo da plataforma |
-| `docs/PLANO-100%-BASE.md` | Plano de gaps e correções |
+| `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 | `docs/DEPLOYMENT.md` | Guia de deploy para produção |
 | `docs/SECRETS.md` | Guia de secrets e webhooks |
-| `docs/SISTEMA-APRENDIZADO.md` | Sistema de auto-aprendizado |
 
 ## Contas Administrativas (Acesso Inicial)
 - **Alice/Auth (admin global)**: `ADMIN_USER` + `ADMIN_PWD` (semeados no auth-service; role `super_admin`).
@@ -328,7 +327,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.09 - 19 de Dezembro de 2025*
+*Versão: 4.10 - 19 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -436,3 +435,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Rollback Enterprise Robusto (19/12/2025): full_system_cleanup() corrigido - comandos não falham com lista vazia, recria diretórios com permissões corretas*
 *Permissões Enterprise Deploy (19/12/2025): Deploy configura UIDs corretos por serviço - Grafana(472), Prometheus(65534), Loki(10001), PostgreSQL(999), etc.*
 *Primeiro Deploy Hetzner (19/12/2025): Servidor 100% configurado - todas dependências instaladas, estrutura de diretórios com permissões enterprise, networks Docker criadas*
+*Auditoria Documentação (19/12/2025): Docker 29.1.3 corrigido, referência obsoleta PLANO-100%-BASE.md removida, versões pnpm corrigidas*

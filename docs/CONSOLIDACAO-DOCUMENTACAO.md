@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Dezembro de 2025  
-**Versão:** 3.0  
+**Versão:** 3.2  
 **Atualizado:** 17 de Dezembro de 2025 (Documento de Arquitetura Enterprise - arc42 + C4 + ADRs)
 
 ## Estrutura Atual da Documentação
