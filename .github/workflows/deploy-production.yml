@@ -3015,8 +3015,8 @@ jobs:
             # ==============================================================
             # LIMPEZA TOTAL ENTERPRISE - Primeiro Deploy ou Rollback Crítico
             # ATUALIZAÇÃO 19/12/2025: Limpeza robusta e completa
-            # - Remove TODOS containers, imagens e volumes órfãos
-            # - Preserva volumes nomeados apenas se HAS_PREVIOUS_DEPLOY=true
+            # - Remove TODOS containers, imagens e volumes
+            # - Preserva volumes nomeados APENAS se PRESERVE_DATA=true E há dados reais
             # - Recria networks e estrutura de diretórios com permissões corretas
             # ==============================================================
             full_system_cleanup() {
@@ -3026,11 +3026,15 @@ jobs:
               echo "=============================================="
               echo "🔥 LIMPEZA TOTAL ENTERPRISE"
               echo "=============================================="
-              echo "Modo: $([ \"$PRESERVE_DATA\" = \"true\" ] && echo 'PRESERVAR DADOS' || echo 'LIMPAR TUDO')"
+              if [ "$PRESERVE_DATA" = "true" ]; then
+                echo "Modo: PRESERVAR DADOS (rollback com dados reais)"
+              else
+                echo "Modo: LIMPAR TUDO (primeiro deploy ou sem dados reais)"
+              fi
               echo ""
               
               # FASE 1: Parar todos os containers
-              echo "[1/7] Parando TODOS os containers..."
+              echo "[1/8] Parando TODOS os containers..."
               CONTAINERS=$(docker ps -aq 2>/dev/null)
               if [ -n "$CONTAINERS" ]; then
                 echo "$CONTAINERS" | xargs -r docker stop 2>/dev/null || true
@@ -3040,7 +3044,7 @@ jobs:
               fi
               
               # FASE 2: Remover todos os containers
-              echo "[2/7] Removendo TODOS os containers..."
+              echo "[2/8] Removendo TODOS os containers..."
               CONTAINERS=$(docker ps -aq 2>/dev/null)
               if [ -n "$CONTAINERS" ]; then
                 echo "$CONTAINERS" | xargs -r docker rm -f 2>/dev/null || true
@@ -3050,7 +3054,7 @@ jobs:
               fi
               
               # FASE 3: Remover imagens não utilizadas
-              echo "[3/7] Removendo imagens não utilizadas..."
+              echo "[3/8] Removendo imagens não utilizadas..."
               docker image prune -af 2>/dev/null || true
               
               # Se não preservar dados, remover TODAS as imagens
@@ -3064,26 +3068,35 @@ jobs:
                 echo "   ✓ Imagens preservadas para rollback rápido"
               fi
               
-              # FASE 4: Limpar volumes órfãos
-              echo "[4/7] Limpando volumes órfãos..."
+              # FASE 4: Limpar volumes
+              echo "[4/8] Limpando volumes..."
               if [ "$PRESERVE_DATA" != "true" ]; then
-                # Primeiro deploy: remover TODOS os volumes não nomeados
+                # PRIMEIRO DEPLOY: Remover TODOS os volumes (incluindo nomeados)
+                # Não há dados de produção para preservar
+                echo "   → Removendo TODOS os volumes (primeiro deploy - sem dados reais)..."
+                
+                # Listar e remover volumes nomeados Alice/ERPNext
+                for vol in $(docker volume ls -q 2>/dev/null | grep -E "^alice-|^erpnext-" || true); do
+                  docker volume rm -f "$vol" 2>/dev/null && echo "   ✓ Removido: $vol" || true
+                done
+                
+                # Remover volumes órfãos/anônimos
                 docker volume prune -f 2>/dev/null || true
-                echo "   ✓ Volumes órfãos removidos"
+                echo "   ✓ Todos os volumes removidos (servidor 100% limpo)"
               else
-                # Rollback: preservar volumes com dados
+                # ROLLBACK: preservar volumes com dados reais
                 docker volume prune -f 2>/dev/null || true
-                echo "   ✓ Volumes órfãos removidos (nomeados preservados)"
+                echo "   ✓ Volumes órfãos removidos (nomeados preservados para rollback)"
               fi
               
               # FASE 5: Limpar sistema Docker
-              echo "[5/7] Limpando sistema Docker..."
+              echo "[5/8] Limpando sistema Docker..."
               docker system prune -f 2>/dev/null || true
               docker builder prune -f 2>/dev/null || true
               echo "   ✓ Sistema Docker limpo"
               
               # FASE 6: Recriar networks
-              echo "[6/7] Recriando networks Docker..."
+              echo "[6/8] Recriando networks Docker..."
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
               sleep 1
@@ -3092,7 +3105,7 @@ jobs:
               echo "   ✓ Networks alice-network e erpnext-network criadas"
               
               # FASE 7: Recriar estrutura de diretórios com permissões corretas
-              echo "[7/7] Configurando estrutura de diretórios..."
+              echo "[7/8] Configurando estrutura de diretórios..."
               
               # Grafana (UID 472)
               mkdir -p /opt/alice/data/grafana
@@ -3175,19 +3188,69 @@ jobs:
               
               echo "   ✓ Estrutura de diretórios configurada"
               
+              # FASE 8: Limpar manifesto de deploy se não há dados reais
+              echo "[8/8] Verificando manifesto de deploy..."
+              if [ "$PRESERVE_DATA" != "true" ]; then
+                # Primeiro deploy: remover manifesto obsoleto
+                rm -f /opt/alice/backups/manifests/last-successful-deploy.txt 2>/dev/null || true
+                echo "   ✓ Manifesto de deploy anterior removido (primeiro deploy)"
+              else
+                echo "   ✓ Manifesto preservado para rollback"
+              fi
+              
               # Relatório final
               echo ""
               echo "=============================================="
               echo "✅ LIMPEZA ENTERPRISE CONCLUÍDA"
               echo "=============================================="
-              echo "Containers: $(docker ps -aq 2>/dev/null | wc -l)"
-              echo "Imagens: $(docker images -q 2>/dev/null | wc -l)"
-              echo "Volumes: $(docker volume ls -q 2>/dev/null | wc -l)"
-              echo "Networks: $(docker network ls --format '{{.Name}}' 2>/dev/null | wc -l)"
+              echo "Containers: $(docker ps -aq 2>/dev/null | wc -l || echo 0)"
+              echo "Imagens: $(docker images -q 2>/dev/null | wc -l || echo 0)"
+              echo "Volumes: $(docker volume ls -q 2>/dev/null | wc -l || echo 0)"
+              echo "Networks: $(docker network ls --format '{{.Name}}' 2>/dev/null | wc -l || echo 0)"
               echo ""
               echo "📁 Estrutura /opt/alice/data:"
               ls -la /opt/alice/data/ 2>/dev/null || echo "   Diretório não existe"
               echo "=============================================="
+            }
+            
+            # ==============================================================
+            # VERIFICAÇÃO DE DADOS REAIS DE PRODUÇÃO
+            # Função inteligente para determinar se há deploy anterior funcional
+            # ENTERPRISE (19/12/2025): Evita preservar lixo de deploys falhados
+            # ==============================================================
+            has_real_production_data() {
+              local MANIFEST_FILE="/opt/alice/backups/manifests/last-successful-deploy.txt"
+              
+              # Verificação 1: Existe manifesto de deploy bem-sucedido?
+              if [ ! -f "$MANIFEST_FILE" ]; then
+                echo "   → Nenhum manifesto de deploy encontrado"
+                return 1
+              fi
+              
+              # Verificação 2: Manifesto tem conteúdo válido (SHA de 40 caracteres)?
+              local PREVIOUS_SHA=$(cat "$MANIFEST_FILE" 2>/dev/null)
+              if [ -z "$PREVIOUS_SHA" ] || [ ${#PREVIOUS_SHA} -lt 7 ]; then
+                echo "   → Manifesto vazio ou inválido"
+                return 1
+              fi
+              
+              # Verificação 3: Há pelo menos 1 container Alice/ERPNext rodando e healthy?
+              local HEALTHY_COUNT=$(docker ps --filter "name=alice-" --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l || echo 0)
+              local ERPNEXT_COUNT=$(docker ps --filter "name=erpnext-" --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l || echo 0)
+              
+              if [ "$HEALTHY_COUNT" -eq 0 ] && [ "$ERPNEXT_COUNT" -eq 0 ]; then
+                echo "   → Nenhum container healthy encontrado (containers fantasmas)"
+                return 1
+              fi
+              
+              # Verificação 4: Volume PostgreSQL existe e tem dados?
+              if ! docker volume inspect alice-postgres-data >/dev/null 2>&1; then
+                echo "   → Volume PostgreSQL não existe"
+                return 1
+              fi
+              
+              echo "   ✓ Dados reais de produção detectados (SHA: ${PREVIOUS_SHA:0:8}...)"
+              return 0
             }
             
             # ==============================================================
@@ -3253,17 +3316,33 @@ jobs:
             echo "Containers removidos."
             
             # ==============================================================
-            # PASSO 4: Tentar rollback SE existir versão anterior
+            # PASSO 4: Verificar se há dados REAIS de produção
+            # ENTERPRISE (19/12/2025): Diferencia entre dados reais e lixo de deploy falhado
             # ==============================================================
-            if [ -z "$PREVIOUS_SHA" ]; then
+            echo "[4/5] Verificando dados de produção..."
+            
+            HAS_REAL_DATA=false
+            if has_real_production_data; then
+              HAS_REAL_DATA=true
+              echo "✅ Dados reais de produção encontrados"
+            else
+              echo "❌ Nenhum dado real de produção"
+            fi
+            
+            if [ -z "$PREVIOUS_SHA" ] || [ "$HAS_REAL_DATA" = false ]; then
               echo ""
               echo "=============================================="
-              echo "⚠️ ROLLBACK NÃO POSSÍVEL (Primeiro Deploy)"
+              echo "⚠️ ROLLBACK NÃO POSSÍVEL"
               echo "=============================================="
-              echo "Nenhuma versão anterior registrada."
+              if [ -z "$PREVIOUS_SHA" ]; then
+                echo "Motivo: Nenhuma versão anterior registrada (primeiro deploy)"
+              else
+                echo "Motivo: Nenhum dado real de produção (containers fantasmas de deploy falhado)"
+              fi
+              echo ""
               echo "Executando LIMPEZA TOTAL para ambiente 100% limpo..."
 
-              # Best Practices 2025: Limpar TUDO quando não há versão anterior (primeiro deploy)
+              # Best Practices 2025: Limpar TUDO quando não há dados reais de produção
               # Parâmetro false = não preservar dados (servidor deve ficar 100% limpo)
               full_system_cleanup false
               
@@ -3272,7 +3351,7 @@ jobs:
               exit 1
             fi
             
-            echo "[4/5] Tentando restaurar versão anterior: $PREVIOUS_SHA"
+            echo "[5/6] Tentando restaurar versão anterior: $PREVIOUS_SHA"
             
             # Tentar checkout (mas não falhar se não conseguir)
             CHECKOUT_SUCCESS=false
@@ -3339,9 +3418,9 @@ jobs:
               up -d --no-build --remove-orphans 2>/dev/null || true
             
             # ==============================================================
-            # PASSO 5: Verificar rollback e registrar
+            # PASSO 6: Verificar rollback e registrar
             # ==============================================================
-            echo "[5/5] Verificando rollback..."
+            echo "[6/6] Verificando rollback..."
             
             sleep 30
             
