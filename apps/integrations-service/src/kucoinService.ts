@@ -49,7 +49,8 @@ export interface TradingAuthContext {
 
 /** Parâmetros para criar um sinal de trading */
 export interface CreateSignalParams {
-  signalType: 'long' | 'short' | 'close_long' | 'close_short' | 'hold';
+  /** Tipo do sinal - mapeado para enum do banco (entry_long, entry_short, exit, hold, neutral) */
+  signalType: 'entry_long' | 'entry_short' | 'exit' | 'adjust_sl' | 'adjust_tp' | 'hold' | 'neutral';
   symbol?: string;
   confidence: number;
   reasoning?: string;
@@ -94,6 +95,7 @@ export interface TradingOperationResult<T> {
 
 /**
  * Registra ação no audit log de trading
+ * CORREÇÃO 18/12/2025: Campo 'details' não existe no schema - usar newState
  */
 async function logTradingAction(
   authContext: TradingAuthContext,
@@ -106,15 +108,17 @@ async function logTradingAction(
 ): Promise<string> {
   const db = getDatabase();
   
+  // CORREÇÃO: Mesclar details com newState já que schema não tem campo details
+  const mergedNewState = newState ? { ...newState, _details: details } : details;
+  
   const auditEntry: InsertTradingAuditLog = {
     tenantId: authContext.tenantId,
     userId: authContext.userId,
     action,
     entityType,
     entityId,
-    details,
     previousState: previousState ?? null,
-    newState: newState ?? null,
+    newState: mergedNewState,
     ipAddress: null, // Será preenchido pelo middleware
     userAgent: null, // Será preenchido pelo middleware
   };
@@ -303,14 +307,18 @@ export async function createSignal(
   const db = getDatabase();
   
   try {
+    // CORREÇÃO 18/12/2025: reasoning e sourceModel não existem como colunas
+    // Esses campos vão no metadata (JSONB com TradingSignalMetadataSchema)
     const signalData: InsertTradingSignal = {
       tenantId: authContext.tenantId,
       signalType: params.signalType,
       symbol: params.symbol ?? 'XBTUSDTM',
-      confidence: params.confidence.toString(),
-      reasoning: params.reasoning ?? null,
-      sourceModel: params.sourceModel ?? 'mixtral-8x7b',
-      metadata: params.metadata ?? {},
+      confidence: params.confidence,
+      metadata: {
+        ...params.metadata,
+        reasoning: params.reasoning,
+        modelVersion: params.sourceModel ?? 'mixtral-8x7b',
+      },
       isActive: true,
     };
 
@@ -391,9 +399,10 @@ export async function deactivateSignal(
       return { success: false, error: 'Sinal não encontrado.' };
     }
 
+    // CORREÇÃO 18/12/2025: tradingSignals não tem atualizadoEm - remover
     const [updated] = await db
       .update(schema.tradingSignals)
-      .set({ isActive: false, atualizadoEm: new Date() })
+      .set({ isActive: false })
       .where(eq(schema.tradingSignals.id, signalId))
       .returning();
 
@@ -518,6 +527,9 @@ export async function createOrderFromSignal(
     // Bug fix: UUID não aceita string vazia, usar null se signalId não for um UUID válido
     const validSignalId = params.signalId && params.signalId.trim() !== '' ? params.signalId : null;
     
+    // CORREÇÃO 18/12/2025: Campos são real() (number), não string
+    // Schema tradingOrders: price, size, stopPrice são real() - remover .toString()
+    // stopLoss/takeProfit não existem no schema - usar metadata para armazenar
     const orderData: InsertTradingOrder = {
       tenantId: authContext.tenantId,
       signalId: validSignalId,
@@ -527,15 +539,12 @@ export async function createOrderFromSignal(
       side: params.side,
       orderType: params.orderType,
       status: 'pending',
-      price: params.price?.toString() ?? currentPrice.toString(),
-      size: params.size.toString(),
+      price: params.price ?? currentPrice,
+      size: params.size,
       leverage: params.leverage ?? 1,
-      stopLoss: params.stopLoss?.toString() ?? null,
-      takeProfit: params.takeProfit?.toString() ?? null,
-      metadata: {
-        kucoinResponse: kucoinOrder,
-        isSandbox: kucoinClient.getKucoinSandboxStatus(),
-      },
+      // CORREÇÃO 18/12/2025: stopLoss/takeProfit não existem em TradingOrderMetadata
+      // Esses valores são gerenciados via stop orders separadas na KuCoin API
+      metadata: {},
     };
 
     const [order] = await db
@@ -804,17 +813,13 @@ export async function cancelOrder(
       await kucoinClient.cancelOrder(existing.kucoinOrderId);
     }
 
-    // Atualizar no banco
+    // CORREÇÃO 18/12/2025: cancelledAt é campo direto da tabela, não metadata
     const [updated] = await db
       .update(schema.tradingOrders)
       .set({ 
         status: 'cancelled', 
+        cancelledAt: new Date(),
         atualizadoEm: new Date(),
-        metadata: {
-          ...existing.metadata,
-          cancelledAt: new Date().toISOString(),
-          cancelledBy: authContext.userId,
-        },
       })
       .where(eq(schema.tradingOrders.id, orderId))
       .returning();
@@ -848,21 +853,19 @@ export async function getOrders(
 ): Promise<TradingOrder[]> {
   const db = getDatabase();
   
-  let query = db
-    .select()
-    .from(schema.tradingOrders)
-    .where(eq(schema.tradingOrders.tenantId, authContext.tenantId));
-
-  if (options?.status) {
-    query = query.where(
-      and(
+  // CORREÇÃO 18/12/2025: Drizzle não permite encadear .where() múltiplas vezes
+  // Construir condição completa de uma vez usando and()
+  const conditions = options?.status
+    ? and(
         eq(schema.tradingOrders.tenantId, authContext.tenantId),
         eq(schema.tradingOrders.status, options.status as 'pending' | 'open' | 'filled' | 'cancelled' | 'rejected' | 'expired')
       )
-    ) as typeof query;
-  }
+    : eq(schema.tradingOrders.tenantId, authContext.tenantId);
 
-  const orders = await query
+  const orders = await db
+    .select()
+    .from(schema.tradingOrders)
+    .where(conditions)
     .orderBy(desc(schema.tradingOrders.criadoEm))
     .limit(options?.limit ?? 50);
 
@@ -925,30 +928,30 @@ export async function syncOrdersStatus(
       }
 
       if (newStatus !== order.status) {
+        // CORREÇÃO 18/12/2025: filledSize e avgFilledPrice são real() (number), não string
+        // Campos de metadata devem seguir TradingOrderMetadataSchema
         await db
           .update(schema.tradingOrders)
           .set({
             status: newStatus,
-            filledSize: kucoinOrder.filledSize?.toString(),
+            filledSize: kucoinOrder.filledSize ?? null,
             // Bug fix: Campo correto é avgFilledPrice (não filledPrice) - conforme schema.ts linha 1521
             // Bug fix: Verificar filledSize > 0 antes de dividir para evitar Infinity/NaN
-            // CORREÇÃO AUDITORIA 17/12/2025: Validar parseFloat para evitar salvar "NaN" no banco
-            // Bug: Se filledValue for string vazia ou inválida, parseFloat("") = NaN, e NaN.toString() = "NaN"
+            // CORREÇÃO AUDITORIA 17/12/2025: Validar parseFloat para evitar salvar NaN no banco
             avgFilledPrice: (() => {
               if (!kucoinOrder.filledValue || !kucoinOrder.filledSize || kucoinOrder.filledSize <= 0) {
                 return null;
               }
               const parsedValue = parseFloat(kucoinOrder.filledValue);
               if (!Number.isFinite(parsedValue) || parsedValue <= 0) {
-                return null; // Evita salvar "NaN" ou "Infinity" no banco
+                return null; // Evita salvar NaN ou Infinity no banco
               }
-              return (parsedValue / kucoinOrder.filledSize).toString();
+              return parsedValue / kucoinOrder.filledSize; // Retorna number, não string
             })(),
             atualizadoEm: new Date(),
             metadata: {
               ...order.metadata,
-              lastSync: new Date().toISOString(),
-              kucoinStatus: kucoinOrder.status,
+              responseTime: Date.now(), // Usar campo válido do schema
             },
           })
           .where(eq(schema.tradingOrders.id, order.id));

@@ -1505,7 +1505,11 @@ const searchSchema = z.object({
 
 app.post('/api/rag/search', requireAuth(), requirePermission('rag:documents:read'), requireSameTenant(getTenantIdFromRequest), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware (RLS Enterprise)
+  // CORREÇÃO 18/12/2025: Validar que tenantId existe após middleware
   const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
   
   try {
     const body = searchSchema.parse(req.body);
@@ -1550,7 +1554,11 @@ app.post('/api/rag/context', requireAuth(), requirePermission('rag:documents:rea
   // - requirePermission: Verifica se usuário tem permissão para leitura
   // - requireSameTenant: Valida tenant_id do request (RLS enterprise)
   // - Sem fallback para 'default' (OWASP API1 - Broken Object Level Authorization)
+  // CORREÇÃO 18/12/2025: Validar que tenantId existe após middleware
   const tenantId = req.tenantId;
+  if (!tenantId) {
+    return res.status(401).json({ error: 'Tenant não identificado' });
+  }
 
   try {
     const body = searchSchema.parse(req.body);

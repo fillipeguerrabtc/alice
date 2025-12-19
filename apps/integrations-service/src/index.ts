@@ -2916,9 +2916,25 @@ app.put('/api/integrations/trading/risk-config', requirePermission('integrations
 
     const validated = configSchema.parse(req.body);
 
+    // CORREÇÃO 18/12/2025: Converter strings para numbers onde necessário
+    // Schema Zod usa string para precisão decimal, mas DB usa number
+    const configForDb = {
+      maxPositionSize: validated.maxPositionSize ? Number(validated.maxPositionSize) : undefined,
+      maxDailyLoss: validated.maxDailyLoss ? Number(validated.maxDailyLoss) : undefined,
+      maxOrderValue: validated.maxOrderValue ? Number(validated.maxOrderValue) : undefined,
+      maxLeverage: validated.maxLeverage,
+      maxOpenPositions: validated.maxOpenPositions,
+      defaultLeverage: validated.defaultLeverage,
+      defaultStopLoss: validated.defaultStopLoss ? Number(validated.defaultStopLoss) : undefined,
+      defaultTakeProfit: validated.defaultTakeProfit ? Number(validated.defaultTakeProfit) : undefined,
+      tradingEnabled: validated.tradingEnabled,
+      autoExecuteSignals: validated.autoExecuteSignals,
+      minConfidenceToExecute: validated.minConfidenceToExecute ? Number(validated.minConfidenceToExecute) : undefined,
+    };
+
     const result = await kucoinService.upsertRiskConfig(
       { tenantId: authContext.tenantId, userId: authContext.userId },
-      validated
+      configForDb
     );
 
     if (!result.success) {
@@ -2972,8 +2988,9 @@ app.post('/api/integrations/trading/signals', requirePermission('integrations:tr
       return;
     }
 
+    // CORREÇÃO 18/12/2025: signalType alinhado com enum do banco de dados
     const signalSchema = z.object({
-      signalType: z.enum(['long', 'short', 'close_long', 'close_short', 'hold']),
+      signalType: z.enum(['entry_long', 'entry_short', 'exit', 'adjust_sl', 'adjust_tp', 'hold', 'neutral']),
       symbol: z.string().optional(),
       confidence: z.number().min(0).max(1),
       reasoning: z.string().optional(),

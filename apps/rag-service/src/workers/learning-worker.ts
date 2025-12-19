@@ -159,20 +159,32 @@ async function processRagUpdate(
 
   logger.info({ taskId: task.id, namespaceId, forceReindex }, 'Iniciando RAG update');
 
-  // Buscar documentos que precisam de reindexação
-  const whereConditions = [
-    eq(schema.documents.tenantId, task.tenantId),
-  ];
+  // CORREÇÃO 18/12/2025: Schema documents não tem tenantId nem status
+  // Multi-tenancy é via namespaceId, status via campo 'processado' (boolean)
+  // Buscar namespace do tenant para filtrar documentos corretamente
+  const tenantNamespaces = await db.query.namespaces.findMany({
+    where: eq(schema.namespaces.tenantId, task.tenantId),
+  });
+  const tenantNamespaceIds = tenantNamespaces.map(ns => ns.id);
 
-  if (namespaceId) {
-    whereConditions.push(eq(schema.documents.namespaceId, namespaceId));
-  }
+  // Buscar documentos que precisam de reindexação
+  const whereConditions = tenantNamespaceIds.length > 0
+    ? namespaceId
+      ? and(
+          eq(schema.documents.namespaceId, namespaceId),
+          // Verificar que namespace pertence ao tenant
+          sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`
+        )
+      : sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`
+    : undefined;
 
   // Documentos sem embedding ou modificados após embedding
-  const documents = await db.query.documents.findMany({
-    where: and(...whereConditions),
-    limit: 100, // Processar em batches
-  });
+  const documents = whereConditions 
+    ? await db.query.documents.findMany({
+        where: whereConditions,
+        limit: 100, // Processar em batches
+      })
+    : [];
 
   let processedCount = 0;
   let errorCount = 0;
@@ -187,10 +199,10 @@ async function processRagUpdate(
       if (chunks.length === 0 || forceReindex) {
         // Documento precisa de processamento
         // O processamento real de embeddings é feito pelo embedding-worker via Qdrant
-        // Aqui apenas marcamos para reprocessamento
+        // Aqui marcamos como não processado para reprocessamento
         await db.update(schema.documents)
           .set({
-            status: 'pending',
+            processado: false, // Usa processado ao invés de status
             atualizadoEm: sql`NOW()`,
           })
           .where(eq(schema.documents.id, doc.id));
@@ -216,6 +228,7 @@ async function processRagUpdate(
 /**
  * Processa tarefa de auto-indexação
  * Indexação automática de novos documentos
+ * CORREÇÃO 18/12/2025: Schema documents usa processado (boolean) não status
  */
 async function processAutoIndexing(
   db: Database,
@@ -223,54 +236,49 @@ async function processAutoIndexing(
 ): Promise<TaskResult> {
   logger.info({ taskId: task.id }, 'Iniciando auto-indexação');
 
-  // Buscar documentos pendentes de indexação
-  const pendingDocs = await db.query.documents.findMany({
-    where: and(
-      eq(schema.documents.tenantId, task.tenantId),
-      eq(schema.documents.status, 'pending')
-    ),
-    limit: 50, // Processar em batches menores para auto-indexação
+  // Buscar namespaces do tenant para filtrar documentos
+  const tenantNamespaces = await db.query.namespaces.findMany({
+    where: eq(schema.namespaces.tenantId, task.tenantId),
   });
+  const tenantNamespaceIds = tenantNamespaces.map(ns => ns.id);
+
+  // Buscar documentos pendentes de indexação (processado = false)
+  const pendingDocs = tenantNamespaceIds.length > 0
+    ? await db.query.documents.findMany({
+        where: and(
+          sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`,
+          eq(schema.documents.processado, false)
+        ),
+        limit: 50, // Processar em batches menores para auto-indexação
+      })
+    : [];
 
   let processedCount = 0;
   let errorCount = 0;
 
   for (const doc of pendingDocs) {
     try {
-      // Marcar como processando
-      await db.update(schema.documents)
-        .set({ status: 'processing' })
-        .where(eq(schema.documents.id, doc.id));
-
       // Verificar se já tem chunks (pode ter sido processado parcialmente)
       const existingChunks = await db.query.documentChunks.findMany({
         where: eq(schema.documentChunks.documentId, doc.id),
       });
 
       if (existingChunks.length > 0) {
-        // Já tem chunks, marcar como completo
+        // Já tem chunks, marcar como processado
         await db.update(schema.documents)
           .set({
-            status: 'completed',
+            processado: true,
             atualizadoEm: sql`NOW()`,
           })
           .where(eq(schema.documents.id, doc.id));
         processedCount++;
       } else {
         // Precisa de processamento - será feito pelo embedding-worker
-        // Aqui apenas deixamos em status 'processing' para o worker pegar
+        // Documento permanece com processado=false para o worker pegar
         processedCount++;
       }
     } catch (error) {
       logger.error({ docId: doc.id, error: (error as Error).message }, 'Erro na auto-indexação');
-      
-      // Marcar como erro
-      await db.update(schema.documents)
-        .set({
-          status: 'error',
-          atualizadoEm: sql`NOW()`,
-        })
-        .where(eq(schema.documents.id, doc.id));
       errorCount++;
     }
   }
@@ -461,13 +469,11 @@ async function processEmbeddingGeneration(
 
   let textsToProcess: string[] = [];
 
-  // Se tem documentIds, buscar textos dos documentos
+  // CORREÇÃO 18/12/2025: documentChunks não tem tenantId
+  // Buscar chunks diretamente pelos documentIds (já filtrados por tenant)
   if (documentIds && documentIds.length > 0) {
     const chunks = await db.query.documentChunks.findMany({
-      where: and(
-        eq(schema.documentChunks.tenantId, task.tenantId),
-        sql`${schema.documentChunks.documentId} = ANY(${documentIds})`
-      ),
+      where: sql`${schema.documentChunks.documentId} = ANY(ARRAY[${documentIds.map(id => `'${id}'::uuid`).join(',')}])`,
     });
     textsToProcess = chunks.map(c => c.conteudo).filter(Boolean);
   } else if (texts && texts.length > 0) {

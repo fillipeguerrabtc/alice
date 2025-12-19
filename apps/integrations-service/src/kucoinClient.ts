@@ -285,7 +285,8 @@ let metricsInitialized = false;
 
 export function initKucoinMetrics(prometheusMetrics: ReturnType<typeof createAlicePrometheus>['metrics']): void {
   if (!metricsInitialized) {
-    instrumentCircuitBreaker(kucoinCircuitBreaker, prometheusMetrics, 'kucoin_futures');
+    // CORREÇÃO 18/12/2025: Ordem correta dos argumentos (metrics, name, opossum)
+    instrumentCircuitBreaker(prometheusMetrics, 'kucoin_futures', kucoinCircuitBreaker);
     metricsInitialized = true;
     logger.info('Métricas do circuit breaker KuCoin inicializadas');
   }

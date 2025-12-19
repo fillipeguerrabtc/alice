@@ -1062,6 +1062,10 @@ interface ParsedTradingCommand {
   leverage?: number;
   stopLoss?: number;
   takeProfit?: number;
+  /** Direção da ordem (buy/sell) - CORREÇÃO 18/12/2025: Campo adicionado para stop orders */
+  side?: 'buy' | 'sell';
+  /** Tipo de posição (long/short) */
+  positionType?: 'long' | 'short';
   confidence: number;
   rawText: string;
   matchedPattern?: string;
@@ -2408,6 +2412,23 @@ wss.on('connection', (ws, req) => {
       if (message.type === 'chat') {
         const ragStartTime = Date.now();
         
+        // VALIDAÇÃO OBRIGATÓRIA: conversationId é necessário para mensagens de chat
+        // CORREÇÃO 18/12/2025: Garantir que conversationId existe antes de usar
+        if (!message.conversationId) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            error: 'conversationId é obrigatório para mensagens de chat',
+          }));
+          return;
+        }
+        
+        // Variável validada como string (não undefined)
+        const conversationId = message.conversationId;
+        
+        // CORREÇÃO 18/12/2025: Definir messageContent cedo (antes de shouldEscalate)
+        // message.content é opcional no schema, usar fallback vazio
+        const messageContent = message.content ?? '';
+        
         // ========================================================================
         // FASE 1: VERIFICAÇÕES PRÉ-INSERT (CRÍTICO para handover correto!)
         // Verificar conversa, tenant, estado e escalação ANTES de persistir mensagem
@@ -2416,7 +2437,7 @@ wss.on('connection', (ws, req) => {
         
         // Buscar conversa e validar tenant
         const conversation = await db.query.conversations.findFirst({
-          where: eq(schema.conversations.id, message.conversationId),
+          where: eq(schema.conversations.id, conversationId),
           with: { 
             agent: {
               with: {
@@ -2440,7 +2461,7 @@ wss.on('connection', (ws, req) => {
         
         if (!conversationTenantId) {
           logger.warn({ 
-            conversationId: message.conversationId,
+            conversationId,
             hasAgent: !!conversation.agent,
             hasNamespace: !!conversation.agent?.namespace,
           }, 'Conversa sem namespace/tenant configurado - operação bloqueada');
@@ -2455,7 +2476,7 @@ wss.on('connection', (ws, req) => {
           logger.warn({ 
             tenantId, 
             conversationTenantId, 
-            conversationId: message.conversationId,
+            conversationId,
           }, 'Tentativa de envio cross-tenant bloqueada');
           ws.send(JSON.stringify({ 
             type: 'error', 
@@ -2468,15 +2489,15 @@ wss.on('connection', (ws, req) => {
         const safeTenantId = conversationTenantId;
         
         // Verificar estado da conversa ANTES de inserir mensagem
-        const conversationState = await getOrCreateConversationState(message.conversationId);
+        const conversationState = await getOrCreateConversationState(conversationId);
         
         // Se já está em modo humano, apenas encaminhar para agente (sem LLM)
         if (conversationState.controlMode === 'human') {
           // Salvar mensagem do usuário com metadata indicando modo humano
           const [userMsg] = await db.insert(schema.messages).values({
-            conversationId: message.conversationId,
+            conversationId,
             userId,
-            conteudo: message.content,
+            conteudo: messageContent,
             tipo: 'text',
             isFromUser: true,
             metadata: { 
@@ -2494,9 +2515,9 @@ wss.on('connection', (ws, req) => {
           
           // Notificar agente sobre nova mensagem (usando tenantId derivado da conversa)
           notifyAgentsAboutEvent('new_message', {
-            conversationId: message.conversationId,
+            conversationId,
             tenantId: safeTenantId,
-            message: message.content,
+            message: messageContent,
             from: 'websocket',
           });
           
@@ -2507,7 +2528,7 @@ wss.on('connection', (ws, req) => {
         // VERIFICAÇÃO DE HANDOVER AUTOMÁTICO (ANTES de inserir mensagem!)
         // Verifica se mensagem deve triggerar escalação para agente humano
         // ========================================================================
-        const escalationContext = await shouldEscalate(message.conversationId, message.content);
+        const escalationContext = await shouldEscalate(conversationId, messageContent);
         
         if (escalationContext) {
           // Processar escalação automática
@@ -2515,9 +2536,9 @@ wss.on('connection', (ws, req) => {
           
           // Salvar mensagem do usuário com metadata indicando escalação
           const [userMsg] = await db.insert(schema.messages).values({
-            conversationId: message.conversationId,
+            conversationId,
             userId,
-            conteudo: message.content,
+            conteudo: messageContent,
             tipo: 'text',
             isFromUser: true,
             metadata: { 
@@ -2530,7 +2551,7 @@ wss.on('connection', (ws, req) => {
           ws.send(JSON.stringify({ type: 'message', data: userMsg }));
           
           logger.info({
-            conversationId: message.conversationId,
+            conversationId,
             trigger: escalationContext.trigger,
             userId,
             tenantId: safeTenantId,
@@ -2548,16 +2569,16 @@ wss.on('connection', (ws, req) => {
           
           // Notificar agentes conectados em tempo real (usando tenantId derivado)
           notifyAgentsAboutEvent('new_handoff', {
-            conversationId: message.conversationId,
+            conversationId,
             tenantId: safeTenantId,
-            message: message.content,
+            message: messageContent,
             trigger: escalationContext.trigger,
             priority: 'high',
           });
           
           // Salvar mensagem do sistema informando escalação
           await db.insert(schema.messages).values({
-            conversationId: message.conversationId,
+            conversationId,
             conteudo: `[Sistema] Conversa escalada automaticamente. Trigger: ${escalationContext.trigger}`,
             tipo: 'text',
             isFromUser: false,
@@ -2579,9 +2600,9 @@ wss.on('connection', (ws, req) => {
         
         // Agora é seguro inserir a mensagem do usuário (será processada pelo bot)
         const [userMsg] = await db.insert(schema.messages).values({
-          conversationId: message.conversationId,
+          conversationId,
           userId,
-          conteudo: message.content,
+          conteudo: messageContent,
           tipo: 'text',
           isFromUser: true,
           metadata: { handledBy: 'bot' },
@@ -2589,11 +2610,11 @@ wss.on('connection', (ws, req) => {
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
-        const imageDetection = detectImageGenerationRequest(message.content);
+        const imageDetection = detectImageGenerationRequest(messageContent);
         
         if (imageDetection.isImageRequest && imageDetection.prompt) {
           logger.info({
-            conversationId: message.conversationId,
+            conversationId,
             prompt: imageDetection.prompt,
             confidence: imageDetection.confidence,
             reason: imageDetection.reason,
@@ -2609,7 +2630,7 @@ wss.on('connection', (ws, req) => {
               { prompt: imageDetection.prompt },
               {
                 tenantId: safeTenantId, // Usar tenantId derivado da conversa
-                conversationId: message.conversationId,
+                conversationId,
                 messageId: userMsg.id,
                 createdBy: userId,
               }
@@ -2623,7 +2644,7 @@ wss.on('connection', (ws, req) => {
             }));
 
             const [imageMsg] = await db.insert(schema.messages).values({
-              conversationId: message.conversationId,
+              conversationId,
               agentId: conversation?.agentId,
               conteudo: `Imagem gerada com sucesso para: "${imageDetection.prompt}"`,
               tipo: 'image',
@@ -2645,7 +2666,7 @@ wss.on('connection', (ws, req) => {
             }));
 
             logger.info({
-              conversationId: message.conversationId,
+              conversationId,
               imageId: imageResult.imageId,
               generationTimeMs: imageResult.generationTimeMs,
             }, 'Imagem gerada e enviada via WebSocket');
@@ -2667,8 +2688,8 @@ wss.on('connection', (ws, req) => {
         // Autor: Fillipe Guerra
         // CORREÇÃO 17/12/2025: Validar content antes de verificar cache
         // Schema define content como opcional (z.string().optional())
+        // CORREÇÃO 18/12/2025: messageContent já definido no início do bloco
         // ========================================================================
-        const messageContent = message.content ?? '';
         const cacheResult = await checkResponseCache(safeTenantId, messageContent);
         
         // Incrementar métricas Prometheus
@@ -2694,7 +2715,7 @@ wss.on('connection', (ws, req) => {
           
           // Salvar resposta no banco
           const [cachedMsg] = await db.insert(schema.messages).values({
-            conversationId: message.conversationId,
+            conversationId,
             agentId: conversation?.agentId,
             conteudo: cacheResult.response,
             tipo: 'text',
@@ -2720,7 +2741,7 @@ wss.on('connection', (ws, req) => {
           }));
           
           logger.info({
-            conversationId: message.conversationId,
+            conversationId,
             tenantId: safeTenantId,
             cacheLatencyMs: cacheLatency,
             isGreeting: true,
@@ -2752,7 +2773,7 @@ wss.on('connection', (ws, req) => {
           }));
           
           logger.info({ 
-            conversationId: message.conversationId,
+            conversationId,
             ragChunks: ragResult.sources.length,
             ragLatencyMs: ragLatency,
             namespaceId,
@@ -2775,7 +2796,7 @@ wss.on('connection', (ws, req) => {
         const totalLatency = Date.now() - ragStartTime;
 
         const [assistantMsg] = await db.insert(schema.messages).values({
-          conversationId: message.conversationId,
+          conversationId,
           agentId: conversation?.agentId,
           conteudo: fullResponse,
           tipo: 'text',
@@ -2796,7 +2817,7 @@ wss.on('connection', (ws, req) => {
         }));
         
         logger.info({
-          conversationId: message.conversationId,
+          conversationId,
           ragLatencyMs: ragLatency,
           llmLatencyMs: llmLatency,
           totalLatencyMs: totalLatency,
@@ -2809,7 +2830,7 @@ wss.on('connection', (ws, req) => {
         // (Mixtral 8x7B não retorna confidence score - usamos indicadores proxy)
         // ======================================================================
         const postResponseEscalation = await processLLMResponseForEscalation(
-          message.conversationId,
+          conversationId,
           fullResponse
         );
         
@@ -2827,7 +2848,7 @@ wss.on('connection', (ws, req) => {
           
           // Notificar agentes conectados
           notifyAgentsAboutEvent('new_handoff', {
-            conversationId: message.conversationId,
+            conversationId,
             tenantId: safeTenantId,
             trigger: postResponseEscalation.trigger,
             priority: 'medium',
@@ -2835,7 +2856,7 @@ wss.on('connection', (ws, req) => {
           });
           
           logger.info({
-            conversationId: message.conversationId,
+            conversationId,
             trigger: postResponseEscalation.trigger,
             fallbackCount: postResponseEscalation.fallbackCount,
             confidence: postResponseEscalation.confidence,

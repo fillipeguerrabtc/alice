@@ -998,7 +998,8 @@ async function runUnifiedRestore(
         postgresql: manifest.components.postgresql?.status || 'skip',
         mariadb: manifest.components.mariadb?.status || 'skip',
         redis: manifest.components.redis?.status || 'skip',
-        qdrant: manifest.qdrant?.status || 'skip',
+        // CORREÇÃO 18/12/2025: qdrant está em components, não na raiz do manifest
+        qdrant: manifest.components.qdrant?.status || 'skip',
       },
     };
   }
@@ -1049,10 +1050,11 @@ async function runUnifiedRestore(
 
   // 4. Restore Qdrant (embeddings texto - crítico para RAG)
   // ADICIONADO 17/12/2025: Restore de snapshots via API REST Qdrant
-  if (!skipComponents.includes('qdrant') && manifest.qdrant?.status === 'completed') {
+  // CORREÇÃO 18/12/2025: qdrant está em components, usar BACKUP_DIR, usar existsSync importado
+  if (!skipComponents.includes('qdrant') && manifest.components.qdrant?.status === 'completed') {
     try {
-      const qdrantBackupDir = path.join(BACKUPS_BASE_PATH, backupId, 'qdrant');
-      const collections = manifest.qdrant.collections || [];
+      const qdrantBackupDir = path.join(BACKUP_DIR, backupId, 'qdrant');
+      const collections = manifest.components.qdrant.collections || [];
       
       logger.info({ collections: collections.length, backupDir: qdrantBackupDir }, 'Restaurando Qdrant');
       
@@ -1060,7 +1062,7 @@ async function runUnifiedRestore(
         const snapshotFile = path.join(qdrantBackupDir, `${collectionName}.snapshot`);
         
         // Verificar se arquivo existe
-        if (!fs.existsSync(snapshotFile)) {
+        if (!existsSync(snapshotFile)) {
           logger.warn({ collectionName, snapshotFile }, 'Arquivo de snapshot não encontrado, ignorando coleção');
           continue;
         }

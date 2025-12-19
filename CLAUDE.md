@@ -418,3 +418,12 @@ git commit -a -m "test: adiciona testes unitários"
 *GitHub Actions Timeouts (18/12/2025): Adicionado timeout-minutes a TODOS os jobs de TODOS os workflows (ci.yml, release.yml, deploy-production.yml, update-system-packages.yml) - evita jobs stuck*
 *Bug Fix TradingLoraHyperparams Default (18/12/2025): Corrigido default vazio em hyperparameters - agora usa objeto completo com valores do schema Zod (loraRank:16, loraAlpha:32, etc)*
 *Bug Fix Qdrant Circuit Breaker Type (18/12/2025): Corrigido TS2322 em qdrant-client.ts - fire() retorna unknown, adicionado type assertion seguro para Promise<T>*
+*Bug Fix TypeScript Tipos (18/12/2025): Corrigidos 40+ erros TS em 8 arquivos - chat-service, integrations-service (kucoinClient, kucoinService, index), observability-service, rag-service, training-service*
+*Bug Fix ParsedTradingCommand (18/12/2025): Adicionados campos side/positionType à interface duplicada em chat-service/index.ts*
+*Bug Fix conversationId undefined (18/12/2025): Validação obrigatória de conversationId no início do bloco de chat - evita erros TS2769*
+*Bug Fix signalType Enum (18/12/2025): CreateSignalParams e Zod schema alinhados com enum do banco (entry_long, entry_short, exit, adjust_sl, adjust_tp, hold, neutral)*
+*Bug Fix Drizzle .where() Encadeado (18/12/2025): Corrigido em kucoinService.getOrders() e lora-job-manager - Drizzle não suporta .where() múltiplos*
+*Bug Fix Campos Inexistentes (18/12/2025): Removidos details de audit log, atualizadoEm de tradingSignals, cancelledAt/stopLoss/takeProfit de metadata incorreto*
+*Bug Fix learning-worker.ts (18/12/2025): Schema documents não tem tenantId/status - corrigido para usar namespaceId e processado (boolean)*
+*Bug Fix backup-orchestrator.ts (18/12/2025): qdrant está em manifest.components.qdrant, BACKUPS_BASE_PATH→BACKUP_DIR, fs→existsSync*
+*Bug Fix Tipos Number/String (18/12/2025): Campos real() (price, size, confidence, filledSize, avgFilledPrice) agora usam number, não string*

@@ -350,20 +350,23 @@ export async function listJobs(
 
   let query = db
     .select()
-    .from(schema.tradingLoraJobs)
-    .where(eq(schema.tradingLoraJobs.tenantId, tenantId))
-    .orderBy(desc(schema.tradingLoraJobs.criadoEm));
+    .from(schema.tradingLoraJobs);
 
-  if (options?.status) {
-    query = query.where(
-      and(
+  // CORREÇÃO 18/12/2025: Drizzle não permite encadear .where() múltiplas vezes
+  // Construir condição completa de uma vez
+  const conditions = options?.status
+    ? and(
         eq(schema.tradingLoraJobs.tenantId, tenantId),
         eq(schema.tradingLoraJobs.status, options.status as 'queued' | 'preparing' | 'training' | 'validating' | 'completed' | 'failed' | 'cancelled')
       )
-    ) as typeof query;
-  }
+    : eq(schema.tradingLoraJobs.tenantId, tenantId);
 
-  const jobs = await query.limit(options?.limit ?? 50);
+  const jobs = await db
+    .select()
+    .from(schema.tradingLoraJobs)
+    .where(conditions)
+    .orderBy(desc(schema.tradingLoraJobs.criadoEm))
+    .limit(options?.limit ?? 50);
 
   return jobs;
 }
@@ -571,7 +574,10 @@ export async function getJobStats(tenantId: string): Promise<{
 
   const byStatus: Record<string, number> = {};
   for (const row of statusResults) {
-    byStatus[row.status] = Number(row.count);
+    // CORREÇÃO 18/12/2025: status pode ser null (ignorar nesse caso)
+    if (row.status) {
+      byStatus[row.status] = Number(row.count);
+    }
   }
 
   // Tempo médio de treinamento
