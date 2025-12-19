@@ -442,3 +442,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Auditoria Documentação (19/12/2025): Docker 29.1.3 corrigido, referência obsoleta PLANO-100%-BASE.md removida, versões pnpm corrigidas*
 *Cache Enterprise CI/CD (19/12/2025): ci.yml migrado de cache: 'pnpm' (built-in setup-node) para actions/cache explícito com restore-keys - elimina warnings "Cache service responded with 400"*
 *URLs Produção Auditoria (19/12/2025): Corrigidas URLs em 8 arquivos - Prometheus(metrics.), Jaeger(traces.), Langfuse(langfuse.), Alertmanager adicionado. Código e docs 100% consistentes com Traefik*
+*Bug Fix langfuse-db Conflito (19/12/2025): Removido env_file do langfuse-db - POSTGRES_PASSWORD (env_file) conflitava com POSTGRES_PASSWORD_FILE (são mutuamente exclusivos)*
+*Bug Fix OTel Collector Config (19/12/2025): service.telemetry.metrics.address deprecado em OTel 0.123+ - corrigido para usar readers com prometheus exporter*
+*Bug Fix compression Órfã (19/12/2025): Removidas dependências órfãs compression/@types/compression do package.json raiz - causava "Dynamic require of buffer" em todos serviços Node.js*
+*Permissões Servidor Hetzner (19/12/2025): Corrigidas permissões langfuse-db (1777→755), removidos diretórios legados vazios (mariadb, redis)*
