@@ -82,6 +82,6 @@
     "typescript": "^5.9.3"
   },
   "peerDependencies": {
-    "express": "^4.22.1"
+    "express": "^4.22.1 || ^5.0.0"
   }
 }

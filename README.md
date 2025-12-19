@@ -3,7 +3,7 @@
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-2.0.0-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.0.0-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -117,7 +117,7 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 
 | # | Serviço | Container | Porta | Descrição |
 |---|---------|-----------|-------|-----------|
-| 8 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 5 + shadcn/ui |
+| 8 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 7.3 + shadcn/ui |
 | 9 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
 | 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
 | 11 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
@@ -276,7 +276,7 @@ Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 ```
 alice/
 ├── apps/                           # Microserviços independentes
-│   ├── frontend-service/           # React + Vite SPA
+│   ├── frontend-service/           # React 18 + Vite 7.3 SPA
 │   ├── api-gateway/                # Traefik v3.6.4 config (dev only)
 │   ├── auth-service/               # OAuth/SAML/Local + RBAC
 │   ├── chat-service/               # LLM Proxy + WebSocket
@@ -323,23 +323,24 @@ alice/
 ## Tecnologias
 
 ### Frontend
-- React 18, TypeScript 5, Vite 5
+- React 18, TypeScript 5.9.3, Vite 7.3
 - TanStack Query, Wouter
-- shadcn/ui, Tailwind CSS 4
+- shadcn/ui, Tailwind CSS 4.1
 - Framer Motion, react-i18next
 
 ### Backend
-- Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22
-- TypeScript 5.9.3, pnpm (versão automática via package.json)
+- Node.js 22 LTS (versão automática via API + fallback .nvmrc), Express 5.2
+- TypeScript 5.9.3, pnpm 10.25.0 (versão automática via package.json)
 - Drizzle ORM, PostgreSQL 16 + pgvector
-- WebSocket (ws), Pino (logging)
+- WebSocket (ws), Pino (logging estruturado)
 - Passport.js, openid-client
+- HTTP Compression (gzip level 6)
 
 ### Infraestrutura
-- Docker, Traefik v3.6.4
+- Docker, Traefik v3.6.4 (HTTP/2 habilitado)
 - **Google Distroless** (6 serviços Node.js)
 - nginx:1.27-alpine (frontend)
-- GitHub Actions CI/CD
+- GitHub Actions CI/CD (95%+ SHA pinning)
 - Hetzner Cloud (Nuremberg)
 
 ### Observabilidade
@@ -432,19 +433,17 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 3.63.0 - 17 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.25.0, TypeScript 5.9.3, Google Distroless*
+*Versão 4.0.0 - 19 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, pnpm 10.25.0, TypeScript 5.9.3*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
+*Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
+*PostgreSQL (19/12/2025): HNSW indexes otimizados (m=24, ef_construction=128) + 8 índices compostos*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
-*Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
-*Response Cache (17/12/2025): Greetings Gate - saudações respondidas via cache Redis (sem GPU)*
-*Bug Fixes Trading (17/12/2025): extractNumber (regex groups), WebSocket unsubscribe, Orchestrator atomicity*
-*Bug Fix WebSocket (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos*
 *Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning + RBAC*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *Salad Cloud: LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR)*
-*Pipeline Unificada (17/12/2025): GPU deploy integrado via Python SDK (salad-cloud-sdk) - Terraform removido*
+*Pipeline Unificada: GPU deploy integrado via Python SDK (salad-cloud-sdk) - 100% automático*
 
 </div>

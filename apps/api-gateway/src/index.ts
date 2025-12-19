@@ -14,7 +14,8 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express, { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { createProxyMiddleware, Options } from 'http-proxy-middleware';
@@ -203,7 +204,11 @@ app.disable('x-powered-by');
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 
+// PERFORMANCE: Compression para respostas HTTP (Express.js 2025 Best Practices)
+app.use(compression({ level: 6, threshold: 1024 }));
+
 // SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
+// Express 5: usar type assertion para middleware de segurança
 app.use(createSecurityMiddleware({
   contentSecurityPolicy: config.NODE_ENV === 'production',
   isDevelopment: config.NODE_ENV === 'development',
@@ -222,12 +227,13 @@ app.use(cors({
 }));
 
 // Rate limiting global com suporte multi-tenant (módulo @alice/shared-utils)
+// Express 5: usar type assertion para rate limiter
 app.use(createRateLimiter({
   windowMs: config.RATE_LIMIT_WINDOW_MS,
   max: config.RATE_LIMIT_MAX_REQUESTS,
   serviceName: 'api-gateway',
   skipRoutes: ['/health', '/api/health', '/metrics'],
-}));
+}) as RequestHandler);
 
 // Rate limiting mais restrito para autenticação
 const authLimiter = rateLimit({
@@ -477,8 +483,9 @@ const createServiceProxy = (service: ServiceConfig): Options => ({
 });
 
 // Rate limiter especial para login
-app.use('/api/auth/login', authLimiter);
-app.use('/api/auth/register', authLimiter);
+// Express 5: usar type assertion para rate limiter
+app.use('/api/auth/login', authLimiter as RequestHandler);
+app.use('/api/auth/register', authLimiter as RequestHandler);
 
 // Configurar proxies para cada serviço
 services.forEach(service => {
@@ -488,15 +495,17 @@ services.forEach(service => {
 });
 
 // Rota 404 para paths não encontrados (módulo @alice/shared-utils)
-app.use(createNotFoundHandler({ serviceName: 'api-gateway' }));
+// Express 5: usar type assertion para 404 handler
+app.use(createNotFoundHandler({ serviceName: 'api-gateway' }) as RequestHandler);
 
 // Error handler global (módulo @alice/shared-utils)
+// Express 5: usar type assertion para error handler
 app.use(createErrorHandler({
   serviceName: 'api-gateway',
   logger: {
     error: (obj: object, msg: string) => logger.error(obj, msg),
   },
-}));
+}) as ErrorRequestHandler);
 
 // Iniciar servidor
 const PORT = config.PORT;

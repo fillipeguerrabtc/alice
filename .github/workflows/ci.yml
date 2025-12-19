@@ -7,6 +7,10 @@
 # REGRA 6 (CLAUDE.md): PROIBIDO continue-on-error em steps críticos
 # REGRA 8: Qualidade obrigatória - TypeScript strict, zero any
 # REGRA 9: Validação contínua - pipeline DEVE falhar em qualquer erro
+#
+# SEGURANÇA (Best Practices 2025):
+#   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
+#   - GAP-GHACTIONS-003: Least privilege permissions
 # =============================================================================
 
 name: CI - Build & Test
@@ -53,8 +57,10 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       infra: ${{ steps.filter.outputs.infra }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      # SHA: dorny/paths-filter@v3.0.2 - Supply Chain Security
+      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
         id: filter
         with:
           filters: |
@@ -90,7 +96,8 @@ jobs:
       contents: read
     needs: detect-changes
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
       # Regra 16: Melhores práticas - resiliência com fallback automático
@@ -175,13 +182,15 @@ jobs:
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
+      # pnpm/action-setup - organização oficial pnpm (verificada)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
 
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
@@ -241,9 +250,9 @@ jobs:
           
           echo "Todos os packages buildados com sucesso!"
 
-      # Upload artefatos dos packages para jobs subsequentes
+      # SHA: actions/upload-artifact@v4.6.0 (2024-12-18) - Supply Chain Security
       - name: Upload packages dist
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
           name: packages-dist
           path: |
@@ -289,7 +298,8 @@ jobs:
       # CRÍTICO: fail-fast: true para parar imediatamente em erro
       fail-fast: true
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
       - name: Configure npm registry fallback
@@ -366,13 +376,15 @@ jobs:
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
+      # pnpm/action-setup - organização oficial pnpm (verificada)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
 
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
@@ -388,8 +400,9 @@ jobs:
       # NOTA: upload-artifact@v4 remove o prefixo comum (packages/) então baixamos em packages/
       # Estrutura no artefato: shared/dist/, shared-utils/dist/, etc.
       # Após download em packages/: packages/shared/dist/, packages/shared-utils/dist/, etc.
+      # SHA: actions/download-artifact@v4.1.8 (2024-09-08) - Supply Chain Security
       - name: Download packages dist
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           name: packages-dist
           path: packages
@@ -442,7 +455,8 @@ jobs:
       contents: read
     needs: build-and-check
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # CRÍTICO: Limpar espaço em disco ANTES de instalar PyTorch (~2GB)
       - name: Free disk space before install
@@ -483,8 +497,9 @@ jobs:
           echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
           echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
 
+      # SHA: actions/setup-python@v5.3.0 (2024-11-14) - Supply Chain Security
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
         with:
           python-version: ${{ steps.python-version.outputs.version }}
           cache: 'pip'
@@ -544,7 +559,8 @@ jobs:
       contents: read
     needs: build-and-check
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
       - name: Configure npm registry fallback
@@ -621,13 +637,15 @@ jobs:
           echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
           echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
 
+      # pnpm/action-setup - organização oficial pnpm (verificada)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
 
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
@@ -645,8 +663,9 @@ jobs:
         env:
           VITE_API_URL: ""
 
+      # SHA: actions/upload-artifact@v4.6.0 (2024-12-18) - Supply Chain Security
       - name: Upload frontend artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         with:
           name: frontend-dist
           path: |
@@ -671,7 +690,8 @@ jobs:
       security-events: write
     needs: build-and-check
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # CRÍTICO: Limpar espaço em disco ANTES de instalar dependências
       # GitHub Actions runners têm ~14GB livres, mas caches podem consumir muito
@@ -769,13 +789,15 @@ jobs:
           echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
           echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
 
+      # pnpm/action-setup - organização oficial pnpm (verificada)
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: ${{ steps.pnpm-version.outputs.version }}
 
+      # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
           cache: 'pnpm'
@@ -814,8 +836,9 @@ jobs:
           echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
           echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
 
+      # SHA: actions/setup-python@v5.3.0 (2024-11-14) - Supply Chain Security
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
         with:
           python-version: ${{ steps.python-version.outputs.version }}
           cache: 'pip'
@@ -852,8 +875,9 @@ jobs:
           set -e
           df -h /
 
+      # SHA: aquasecurity/trivy-action@v0.28.0 (2024-10-15) - Supply Chain Security
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
         with:
           scan-type: 'fs'
           scan-ref: '.'
@@ -880,10 +904,11 @@ jobs:
 
       # Verificar se Code Scanning (Advanced Security) está habilitado para este repo
       # GitHub Advanced Security requer plano Enterprise ou repo público
+      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security
       - name: Check if Code Scanning is enabled
         id: check-code-scanning
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
@@ -939,8 +964,9 @@ jobs:
 
       # CRÍTICO: Salvar trivy-results.sarif como artifact para debug
       # Isso permite baixar e analisar as vulnerabilidades exatas detectadas
+      # SHA: actions/upload-artifact@v4.6.0 (2024-12-18) - Supply Chain Security
       - name: Upload Trivy results as artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
         if: always()
         with:
           name: trivy-security-scan
@@ -960,7 +986,8 @@ jobs:
       contents: read
     needs: build-and-check
     steps:
-      - uses: actions/checkout@v4
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Check for hardcoded secrets
         run: |
@@ -1089,8 +1116,9 @@ jobs:
     # Padrão usado em release.yml e deploy-production.yml: needs.{job}.result == 'success'
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-services.result == 'success' && needs.build-clip-inference.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
     steps:
+      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
       - name: Checkout codigo
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           fetch-depth: 0
 
@@ -1141,8 +1169,9 @@ jobs:
           echo "Nova versao: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
+      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security
       - name: Disparar Release Workflow
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |

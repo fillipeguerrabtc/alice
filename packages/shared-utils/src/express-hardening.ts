@@ -15,7 +15,7 @@
  * @module @alice/shared-utils/express-hardening
  */
 
-import { Request, Response, NextFunction, Express, RequestHandler } from 'express';
+import { Request, Response, NextFunction, Express, RequestHandler, ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import rateLimit, { Options as RateLimitOptions, Store, ipKeyGenerator } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';
@@ -336,12 +336,7 @@ export interface ErrorHandlerOptions {
   includeStackInDev?: boolean;
 }
 
-export function createErrorHandler(options?: ErrorHandlerOptions): (
-  err: Error & { status?: number; statusCode?: number },
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => void {
+export function createErrorHandler(options?: ErrorHandlerOptions): ErrorRequestHandler {
   const {
     serviceName = 'unknown',
     logger,
@@ -351,7 +346,8 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
   const isProduction = process.env.NODE_ENV === 'production';
   const showStackTrace = !isProduction && includeStackInDev;
 
-  return (err, req, res, _next) => {
+  // Express 5: ErrorRequestHandler espera (err, req, res, next)
+  return ((err: Error & { status?: number; statusCode?: number }, req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const correlationId = req.headers['x-correlation-id'] || 'unknown';
     const tenantId = req.tenantId || (req.headers['x-tenant-id'] as string) || 'unknown';
@@ -394,7 +390,7 @@ export function createErrorHandler(options?: ErrorHandlerOptions): (
     if (!res.headersSent) {
       res.status(status).json(response);
     }
-  };
+  }) as ErrorRequestHandler;
 }
 
 /**

@@ -12,6 +12,7 @@
  */
 
 import express, { Request, Response, NextFunction } from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import CircuitBreaker from 'opossum';
 import {
@@ -324,6 +325,9 @@ app.disable('x-powered-by');
 // SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
+
+// PERFORMANCE: Compression para respostas HTTP (Express.js 2025 Best Practices)
+app.use(compression({ level: 6, threshold: 1024 }));
 
 // SEGURANÇA: Helmet centralizado com CSP (módulo @alice/shared-utils)
 app.use(createSecurityMiddleware({

@@ -328,6 +328,8 @@ services:
       - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
       - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
       - "--entrypoints.websecure.address=:443"
+      # HTTP/2 para melhor performance (Traefik 2025 Best Practices)
+      - "--entrypoints.websecure.http2.maxConcurrentStreams=250"
       
       # SSL/TLS Let's Encrypt
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"

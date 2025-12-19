@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 19 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.0 - Pipeline Unificada + Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)
+> **Versão:** 4.1 - Otimização de Performance + SHA Pinning Enterprise + Express 5.2 + Vite 7.3
 
 ---
 
@@ -66,7 +66,7 @@
 
 | # | Serviço | Diretório | Container Prod | Porta | Tecnologia |
 |---|---------|-----------|----------------|-------|------------|
-| 1 | Frontend | `apps/frontend-service` | alice-frontend | 5000 | React 18, Vite 5, shadcn/ui |
+| 1 | Frontend | `apps/frontend-service` | alice-frontend | 5000 | React 18, Vite 7.3, shadcn/ui |
 | 2 | Auth | `apps/auth-service` | alice-auth | 3001 | Node.js, OIDC, OAuth, SAML |
 | 3 | Chat | `apps/chat-service` | alice-chat | 3002 | Node.js, WebSocket, LLM |
 | 4 | RAG | `apps/rag-service` | alice-rag | 3003 | Node.js, pgvector, multimodal |
@@ -349,7 +349,7 @@
 
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
-| React 18 + Vite 5 | ✅ | - |
+| React 18 + Vite 7.3 | ✅ | - |
 | shadcn/ui + Tailwind CSS | ✅ | - |
 | i18n (PT-BR primário, EN secundário) | ✅ | `locales/` |
 | WebSocket Chat | ✅ | `hooks/use-websocket-chat.ts` |
@@ -1109,7 +1109,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 19/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.1 - Bug Fix SQL IN Clause (learning-worker.ts)*
+*Versão: 4.2 - Otimização de Performance + SHA Pinning Enterprise*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
@@ -1142,6 +1142,11 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() que parametrizava string inteira como único valor. Corrigido para usar inArray() do Drizzle ORM (3 ocorrências: processRagUpdate, processAutoIndexing, processEmbeddingGeneration)*
+*Performance Otimização (19/12/2025): Express 5.2.1 (breaking changes mitigados), Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6)*
+*HTTP/2 Enterprise (19/12/2025): Habilitado no Traefik via maxConcurrentStreams=250 para melhor multiplexing*
+*SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, deploy-production.yml*
+*PostgreSQL Indexes (19/12/2025): Migration 0009 (HNSW m=24, ef_construction=128) + Migration 0010 (8 índices compostos/parciais)*
+*Vite Build Chunks (19/12/2025): manualChunks otimizado (vendor-react, vendor-ui, vendor-charts, vendor-i18n, vendor-query, vendor-motion)*
 
 ---
 

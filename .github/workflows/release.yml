@@ -235,15 +235,17 @@ jobs:
       # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
       # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
       # Mais seguro que PAT: não requer secret manual, expira automaticamente, permissões mínimas
+      # SHA: docker/login-action@v3.3.0 (2024-07-31) - Supply Chain Security
       - name: Login no GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # SHA: docker/setup-buildx-action@v3.7.1 (2024-10-22) - Supply Chain Security
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
       # ===========================================================================
       # CACHE OTIMIZADO (Best Practices 2025):
@@ -252,8 +254,9 @@ jobs:
       # - Hash SHA256 invalida cache automaticamente quando arquivos mudam
       # - pnpm-lock.yaml garante versões exatas
       # ===========================================================================
+      # SHA: docker/build-push-action@v6.9.0 (2024-10-22) - Supply Chain Security
       - name: Build e Push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
           context: .
           file: ./apps/${{ matrix.service }}/Dockerfile
@@ -280,8 +283,9 @@ jobs:
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:
+      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security
       - name: Disparar workflow de deploy
-        uses: actions/github-script@v7
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
           # IMPORTANTE: GITHUB_TOKEN não pode disparar workflows
           # Precisa de PAT com permissão 'workflow' (GH_PAT)

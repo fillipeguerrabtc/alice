@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 19 de Dezembro de 2025  
-> **Versão:** 1.1.0 - Pipeline Unificada  
+> **Versão:** 1.2.0 - Otimização de Performance + SHA Pinning Enterprise  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -163,7 +163,7 @@ C4Container
     
     Container_Boundary(alice, "Alice Platform") {
         Container(traefik, "Traefik", "API Gateway", "Roteamento, SSL, Rate Limiting")
-        Container(frontend, "Frontend", "React 18 + Vite", "SPA, shadcn/ui, i18n")
+        Container(frontend, "Frontend", "React 18 + Vite 7.3", "SPA, shadcn/ui, i18n")
         Container(auth, "Auth Service", "Node.js", "OAuth, SAML, RBAC")
         Container(chat, "Chat Service", "Node.js", "WebSocket, LLM, Trading Commands")
         Container(rag, "RAG Service", "Node.js", "Embeddings, Busca Semântica")
@@ -208,7 +208,7 @@ C4Container
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
-| 8 | `alice-frontend` | React 18 + Vite | 5000 | SPA, UI/UX |
+| 8 | `alice-frontend` | React 18 + Vite 7.3 | 5000 | SPA, UI/UX |
 | 9 | `alice-auth` | Node.js | 3001 | OAuth, SAML, RBAC |
 | 10 | `alice-chat` | Node.js | 3002 | WebSocket, LLM, Trading |
 | 11 | `alice-rag` | Node.js | 3003 | RAG, Embeddings |
@@ -893,10 +893,12 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 17 de Dezembro de 2025*  
-*Versão: 1.0.0*  
+*Data: 19 de Dezembro de 2025*  
+*Versão: 1.2.0*  
 *Total de Containers: 43*  
+*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  
+*Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*  
 *Framework: arc42 + C4 Model + ADRs*  
 *Compliance: 18 Regras CLAUDE.md ✅ | 12-Factor App ✅*

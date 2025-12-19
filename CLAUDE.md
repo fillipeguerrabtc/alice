@@ -323,8 +323,8 @@ git commit -a -m "test: adiciona testes unitários"
 ```
 
 ## Technical Stack
-- **Frontend**: React 18, TypeScript 5.9.3, Vite 5, shadcn/ui, Tailwind CSS 4
-- **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 4.22, pnpm (versão automática via package.json)
+- **Frontend**: React 18, TypeScript 5.9.3, Vite 7.3, shadcn/ui, Tailwind CSS 4.1
+- **Backend**: Node.js (versão LTS automática via API + fallback .nvmrc), Express 5.2, pnpm (versão automática via package.json)
 - **Database**: PostgreSQL 16 + pgvector, Drizzle ORM
 - **Python**: Python 3.13 (via .python-version - fonte primária para garantir compatibilidade), PyTorch 2.9.1 (versão mais recente - Nov 2025, corrige CVE-2025-32434)
 - **CI/CD**: GitHub Actions (100% automático)
@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.03 - 19 de Dezembro de 2025*
+*Versão: 4.05 - 19 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -429,3 +429,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Tipos Number/String (18/12/2025): Campos real() (price, size, confidence, filledSize, avgFilledPrice) agora usam number, não string*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() - parametrizava string inteira. Corrigido para usar inArray() do Drizzle (3 ocorrências)*
 *ESLint Cleanup (19/12/2025): Corrigidos 1 erro + 23 warnings - no-empty-pattern, no-unused-vars, prefer-const em 12 arquivos*
+*Performance Otimização (19/12/2025): Express 5.2.1, Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6), HTTP/2 habilitado no Traefik*
+*SHA Pinning Enterprise (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo (supply chain security) - ci.yml, release.yml, deploy-production.yml*
+*PostgreSQL Indexes (19/12/2025): Migration 0009 (HNSW m=24, ef_construction=128) + Migration 0010 (8 índices compostos/parciais para queries frequentes)*
+*Vite Build Otimizado (19/12/2025): manualChunks (vendor-react, vendor-ui, vendor-charts, vendor-i18n, vendor-query, vendor-motion), chunkSizeWarningLimit 500*
