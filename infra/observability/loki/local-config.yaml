@@ -9,6 +9,7 @@
 # - Atualizado schema para v13 (recomendado para novas instalações)
 # - Removido boltdb-shipper (deprecated), usando tsdb
 # - CORREÇÃO: ingester_rf1 não existe! WAL configurado em ingester.wal (docs oficiais)
+# - CORREÇÃO: retention_period obrigatório em limits_config para compactor funcionar
 #
 # Documentação: https://grafana.com/docs/loki/latest/configure/
 #
@@ -66,6 +67,11 @@ limits_config:
   # Limites adicionais para produção
   reject_old_samples: true
   reject_old_samples_max_age: 168h
+  # OBRIGATÓRIO: retention_period para o compactor funcionar (mínimo 24h)
+  # Sem isso, retention_enabled: true no compactor não faz nada (default 0 = forever)
+  # 744h = 31 dias - valor enterprise padrão para logs
+  # Documentação: https://grafana.com/docs/loki/latest/operations/storage/retention/
+  retention_period: 744h
 
 # Schema v13 com TSDB (recomendado para Loki 3.0+)
 # NOTA: boltdb-shipper foi deprecated, usando tsdb
