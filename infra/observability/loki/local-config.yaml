@@ -3,11 +3,12 @@
 # =============================================================================
 # Configuração para Loki v3.6+ (Grafana Stack 2025)
 #
-# CORREÇÃO 19/12/2025:
+# CORREÇÕES 19/12/2025:
 # - Removido max_transfer_retries (deprecated em Loki 3.0+)
 # - Removido shared_store do boltdb_shipper (deprecated em Loki 3.0+)
 # - Atualizado schema para v13 (recomendado para novas instalações)
 # - Removido boltdb-shipper (deprecated), usando tsdb
+# - CORREÇÃO: ingester_rf1 não existe! WAL configurado em ingester.wal (docs oficiais)
 #
 # Documentação: https://grafana.com/docs/loki/latest/configure/
 #
@@ -22,7 +23,7 @@ server:
   grpc_listen_port: 9096
   log_level: info
 
-# Configuração do ingester (Loki 3.0+)
+# Configuração do ingester (Loki 3.6+ Best Practices)
 ingester:
   lifecycler:
     ring:
@@ -31,12 +32,15 @@ ingester:
       replication_factor: 1
   chunk_idle_period: 5m
   chunk_retain_period: 1m
-  # REMOVIDO: max_transfer_retries (deprecated em Loki 3.0+)
-  # Transfer foi substituído por WAL (Write-Ahead Log) recovery
-
-# Configuração do WAL para recuperação de dados
-ingester_rf1:
-  enabled: true
+  # WAL (Write-Ahead Log) - habilitado por padrão no Loki 3.6+
+  # Garante durabilidade dos dados gravando no filesystem antes de processar
+  # Documentação: https://grafana.com/docs/loki/latest/operations/storage/wal/
+  wal:
+    enabled: true
+    dir: /loki/wal
+    flush_on_shutdown: true
+    checkpoint_duration: 5m
+    replay_memory_ceiling: 4GB
 
 memberlist:
   join_members:
