@@ -1953,10 +1953,9 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # REGRA 6: env_file para consistência com outros serviços
-    # Garante que variáveis do .env.prod estejam disponíveis para o container
-    env_file:
-      - .env.prod
+    # CORREÇÃO 19/12/2025: Removido env_file que carregava POSTGRES_PASSWORD
+    # POSTGRES_PASSWORD e POSTGRES_PASSWORD_FILE são mutuamente exclusivos
+    # Usando apenas POSTGRES_PASSWORD_FILE (mais seguro - arquivo de secret)
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
       POSTGRES_PASSWORD_FILE: /run/secrets/langfuse_db_password
