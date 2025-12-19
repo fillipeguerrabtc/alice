@@ -523,7 +523,10 @@ services:
       - no-new-privileges:true
     read_only: true
     tmpfs:
+      # CORREÇÃO 19/12/2025: Qdrant precisa escrever em /tmp E /qdrant/snapshots
+      # Erro anterior: "Failed to create snapshots temp directory at ./snapshots/tmp: ReadOnlyFilesystem"
       - /tmp:mode=1777,size=64M
+      - /qdrant/snapshots:mode=1777,size=256M
     environment:
       # API Key para autenticação (Regra 6 - sem acesso anônimo em produção)
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
@@ -537,11 +540,13 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://localhost:6333/healthz || exit 1"]
+      # CORREÇÃO 19/12/2025: Usar timeout nativo do bash com /dev/tcp
+      # Endpoint /readyz verifica se Qdrant está pronto para receber requests
+      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 60s
     deploy:
       resources:
         limits:

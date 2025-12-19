@@ -328,7 +328,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.08 - 19 de Dezembro de 2025*
+*Versão: 4.09 - 19 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -431,3 +431,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Atualização Total Dependências (19/12/2025): React 19.2.3, pnpm 10.26.1, drizzle-orm 0.45.1, drizzle-kit 0.31.8, drizzle-zod 0.8.3, pg 8.16.3, framer-motion 12.23.26, wouter 3.9.0, i18next 25.7.3, react-day-picker 9.13.0*
 *Mais Atualizações (19/12/2025): lucide-react 0.562.0, stripe 20.1.0, esbuild 0.27.2, vitest 4.0.16, @vitest/coverage-v8 4.0.16*
 *Servidor Hetzner Hardening (19/12/2025): fail2ban instalado (13 IPs banidos), Docker daemon.json enterprise configurado, Kernel hardening 43 regras em /etc/sysctl.d/99-security.conf*
+*Bug Fix Qdrant ReadOnlyFilesystem (19/12/2025): Adicionado tmpfs /qdrant/snapshots - Qdrant precisa escrever em /qdrant/snapshots mesmo com read_only: true*
+*Bug Fix Qdrant Healthcheck (19/12/2025): Substituído wget por timeout + /dev/tcp - imagem oficial Qdrant não tem wget/curl*
+*Rollback Enterprise Robusto (19/12/2025): full_system_cleanup() corrigido - comandos não falham com lista vazia, recria diretórios com permissões corretas*
+*Permissões Enterprise Deploy (19/12/2025): Deploy configura UIDs corretos por serviço - Grafana(472), Prometheus(65534), Loki(10001), PostgreSQL(999), etc.*
+*Primeiro Deploy Hetzner (19/12/2025): Servidor 100% configurado - todas dependências instaladas, estrutura de diretórios com permissões enterprise, networks Docker criadas*

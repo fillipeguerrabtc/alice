@@ -2087,8 +2087,10 @@ jobs:
             echo "📁 Criando estrutura de diretórios para bind mounts..."
             
             # Subdiretórios de data (volumes Docker bind mounts)
+            # CORREÇÃO 19/12/2025: Adicionado /opt/alice/data/qdrant (faltava - causava falha no container)
             mkdir -p /opt/alice/data/postgres
             mkdir -p /opt/alice/data/redis-alice
+            mkdir -p /opt/alice/data/qdrant
             mkdir -p /opt/alice/data/traefik-acme
             mkdir -p /opt/alice/data/searxng-config
             mkdir -p /opt/alice/data/erpnext-sites
@@ -2109,14 +2111,74 @@ jobs:
             mkdir -p /opt/alice/backups/postgresql
             mkdir -p /opt/alice/backups/postgresql/logs
             
-            # Permissões enterprise (750 para diretórios de dados, logs, backups)
-            # NOTA: /opt/alice/secrets já tem permissões 700 aplicadas na ETAPA 1
-            chmod -R 750 /opt/alice/data
+            # ==============================================================
+            # PERMISSÕES ENTERPRISE POR SERVIÇO (Best Practices 2025)
+            # CORREÇÃO 19/12/2025: Cada serviço precisa de UID específico
+            # ==============================================================
+            echo "🔐 Configurando permissões enterprise por serviço..."
+            
+            # Grafana (UID 472) - container roda como usuário grafana
+            chown -R 472:472 /opt/alice/data/grafana
+            chmod -R 755 /opt/alice/data/grafana
+            
+            # Prometheus (UID 65534/nobody) - container roda como nobody
+            chown -R 65534:65534 /opt/alice/data/prometheus
+            chmod -R 755 /opt/alice/data/prometheus
+            
+            # Loki (UID 10001) - container roda como loki
+            chown -R 10001:10001 /opt/alice/data/loki
+            chmod -R 755 /opt/alice/data/loki
+            
+            # Alertmanager (UID 65534/nobody) - container roda como nobody
+            chown -R 65534:65534 /opt/alice/data/alertmanager
+            chmod -R 755 /opt/alice/data/alertmanager
+            
+            # Langfuse DB PostgreSQL (UID 70) - container roda como postgres
+            chown -R 70:70 /opt/alice/data/langfuse-db
+            chmod -R 755 /opt/alice/data/langfuse-db
+            
+            # PostgreSQL principal (UID 999) - pgvector container
+            chown -R 999:999 /opt/alice/data/postgres
+            chmod -R 700 /opt/alice/data/postgres
+            
+            # Redis Alice (UID 999) - redis container
+            chown -R 999:999 /opt/alice/data/redis-alice
+            chmod -R 755 /opt/alice/data/redis-alice
+            
+            # Qdrant (UID root) - container usa root internamente
+            chmod -R 755 /opt/alice/data/qdrant
+            
+            # Vector (UID root) - container usa root
+            chmod -R 755 /opt/alice/data/vector
+            
+            # Traefik ACME (UID 1001) - certificados SSL
+            chown -R 1001:1001 /opt/alice/data/traefik-acme
+            chmod -R 700 /opt/alice/data/traefik-acme
+            
+            # SearXNG (UID 977) - metabusca
+            chown -R 977:977 /opt/alice/data/searxng-config
+            chmod -R 755 /opt/alice/data/searxng-config
+            
+            # ERPNext sites (UID 1000) - frappe user
+            chown -R 1000:1000 /opt/alice/data/erpnext-sites
+            chmod -R 755 /opt/alice/data/erpnext-sites
+            
+            # ERPNext MariaDB (UID 999) - mysql user
+            chown -R 999:999 /opt/alice/data/erpnext-mariadb
+            chmod -R 755 /opt/alice/data/erpnext-mariadb
+            
+            # ERPNext Redis (UID 999) - redis user
+            chown -R 999:999 /opt/alice/data/erpnext-redis-cache
+            chown -R 999:999 /opt/alice/data/erpnext-redis-queue
+            chmod -R 755 /opt/alice/data/erpnext-redis-cache
+            chmod -R 755 /opt/alice/data/erpnext-redis-queue
+            
+            # Permissões gerais para logs, backups e uploads
             chmod -R 750 /opt/alice/logs
             chmod -R 750 /opt/alice/backups
             chmod -R 750 /opt/alice/uploads
             
-            echo "✅ Estrutura de diretórios criada"
+            echo "✅ Estrutura de diretórios criada com permissões enterprise"
             
             cd /opt/alice
 
@@ -2938,17 +3000,74 @@ jobs:
             
             # ==============================================================
             # LIMPEZA TOTAL - Sem versão anterior (Best Practices 2025)
+            # CORREÇÃO 19/12/2025: Comandos robustos que não falham com lista vazia
             # ==============================================================
             full_system_cleanup() {
-              echo "🔥 LIMPEZA TOTAL - Removendo TODAS imagens"
-              docker stop $(docker ps -aq) 2>/dev/null || true
-              docker rm -f $(docker ps -aq) 2>/dev/null || true
-              docker rmi -f $(docker images -aq) 2>/dev/null || true
-              docker system prune -af 2>/dev/null || true
-              docker volume prune -f 2>/dev/null || true
+              echo "🔥 LIMPEZA TOTAL - Removendo TODOS containers e imagens"
+              
+              # Parar containers (robusto - não falha se lista vazia)
+              if [ -n "$(docker ps -aq 2>/dev/null)" ]; then
+                docker stop $(docker ps -aq) 2>/dev/null || true
+                docker rm -f $(docker ps -aq) 2>/dev/null || true
+              fi
+              
+              # Remover imagens (robusto - não falha se lista vazia)
+              if [ -n "$(docker images -aq 2>/dev/null)" ]; then
+                docker rmi -f $(docker images -aq) 2>/dev/null || true
+              fi
+              
+              # Limpeza geral
+              docker system prune -af --volumes 2>/dev/null || true
+              
+              # Recriar networks necessárias
+              docker network rm alice-network 2>/dev/null || true
+              docker network rm erpnext-network 2>/dev/null || true
               docker network create --driver bridge --subnet 172.28.0.0/16 alice-network 2>/dev/null || true
               docker network create --driver bridge erpnext-network 2>/dev/null || true
-              echo "✅ Servidor 100% limpo"
+              
+              # Recriar diretórios com permissões corretas (Enterprise 2025)
+              echo "📁 Recriando estrutura de diretórios com permissões corretas..."
+              
+              # Grafana (UID 472)
+              mkdir -p /opt/alice/data/grafana
+              chown -R 472:472 /opt/alice/data/grafana
+              chmod -R 755 /opt/alice/data/grafana
+              
+              # Prometheus (UID 65534/nobody)
+              mkdir -p /opt/alice/data/prometheus
+              chown -R 65534:65534 /opt/alice/data/prometheus
+              chmod -R 755 /opt/alice/data/prometheus
+              
+              # Loki (UID 10001)
+              mkdir -p /opt/alice/data/loki
+              chown -R 10001:10001 /opt/alice/data/loki
+              chmod -R 755 /opt/alice/data/loki
+              
+              # Alertmanager (UID 65534/nobody)
+              mkdir -p /opt/alice/data/alertmanager
+              chown -R 65534:65534 /opt/alice/data/alertmanager
+              chmod -R 755 /opt/alice/data/alertmanager
+              
+              # Langfuse DB (UID 70/postgres)
+              mkdir -p /opt/alice/data/langfuse-db
+              chown -R 70:70 /opt/alice/data/langfuse-db
+              chmod -R 755 /opt/alice/data/langfuse-db
+              
+              # Qdrant (UID root - container usa root)
+              mkdir -p /opt/alice/data/qdrant
+              chmod -R 755 /opt/alice/data/qdrant
+              
+              # PostgreSQL (UID 999)
+              mkdir -p /opt/alice/data/postgres
+              chown -R 999:999 /opt/alice/data/postgres
+              chmod -R 700 /opt/alice/data/postgres
+              
+              # Redis (UID 999)
+              mkdir -p /opt/alice/data/redis-alice
+              chown -R 999:999 /opt/alice/data/redis-alice
+              chmod -R 755 /opt/alice/data/redis-alice
+              
+              echo "✅ Servidor 100% limpo e pronto para próximo deploy"
             }
             
             # ==============================================================
