@@ -190,7 +190,7 @@ C4Container
     Rel(auth, redis, "TCP", "Sessions")
 ```
 
-### 4.2 Catálogo de Containers (43 Total)
+### 4.2 Catálogo de Containers (44 Total)
 
 #### Infraestrutura Core (7)
 
@@ -222,17 +222,17 @@ C4Container
 |---|-----------|-----------|
 | 15-29 | ERPNext | MariaDB, Redis x2, Backend, Frontend, WebSocket, Scheduler, 9 Workers |
 
-#### Observability Stack (13)
+#### Observability Stack (14)
 
 | # | Container | Descrição |
 |---|-----------|-----------|
-| 30-42 | Observability | Prometheus, Grafana, Loki, Promtail, Jaeger, Langfuse x2, Vector, Alertmanager, OTel, Node-Exporter, cAdvisor |
+| 30-43 | Observability | Prometheus, Grafana, Loki, Promtail, Jaeger, Langfuse x2, **ClickHouse**, Vector, Alertmanager, OTel, Node-Exporter, cAdvisor |
 
 #### Backup (1)
 
 | # | Container | Descrição |
 |---|-----------|-----------|
-| 43 | `alice-pgbackrest` | Backup enterprise PostgreSQL |
+| 44 | `alice-pgbackrest` | Backup enterprise PostgreSQL |
 
 ---
 
@@ -568,9 +568,9 @@ CREATE POLICY "tenant_isolation" ON conversations
 
 | Medida | Cobertura | Status |
 |--------|-----------|--------|
-| `no-new-privileges` | 43/43 containers | ✅ 100% |
-| `read_only: true` | 24/43 containers | ✅ Onde aplicável |
-| Resource limits | 43/43 containers | ✅ 100% |
+| `no-new-privileges` | 44/44 containers | ✅ 100% |
+| `read_only: true` | 25/44 containers | ✅ Onde aplicável |
+| Resource limits | 44/44 containers | ✅ 100% |
 | SHA256 digests | 26 imagens | ✅ 100% |
 | Healthchecks | 38/38 containers | ✅ 100% |
 
@@ -894,8 +894,8 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 
 *Autor: Fillipe Guerra*  
 *Data: 19 de Dezembro de 2025*  
-*Versão: 1.2.0*  
-*Total de Containers: 43*  
+*Versão: 1.3.0*  
+*Total de Containers: 44*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  

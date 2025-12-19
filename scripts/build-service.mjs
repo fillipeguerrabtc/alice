@@ -5,16 +5,23 @@
  * Usa esbuild para criar bundles que incluem pacotes @alice/* inline,
  * mantendo dependências externas (express, pg, etc.) separadas.
  * 
+ * CORREÇÃO 19/12/2025: Externaliza Node.js builtins para evitar erro
+ * "Dynamic require of node:crypto is not supported" do pacote redis v5+
+ * 
  * Uso: node scripts/build-service.mjs <service-name>
  * Exemplo: node scripts/build-service.mjs auth-service
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ * 
+ * Autor: Fillipe Guerra
+ * Data: 19 de Dezembro de 2025
  */
 
 import * as esbuild from 'esbuild';
 import { readFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { builtinModules } from 'module';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = join(__dirname, '..');
@@ -42,20 +49,37 @@ const allDependencies = {
   ...pkg.devDependencies,
 };
 
-const externalPackages = Object.keys(allDependencies).filter(
+// Dependências externas (não começam com @alice/)
+const externalDependencies = Object.keys(allDependencies).filter(
   (dep) => !dep.startsWith('@alice/')
 );
 
+// CORREÇÃO 19/12/2025: Node.js builtins devem ser externalizados
+// O pacote redis v5+ usa require('node:crypto') dinamicamente
+// esbuild não consegue bundlar isso em ESM, então externalizamos todos os builtins
+// Inclui tanto 'crypto' quanto 'node:crypto' (Node.js 16+ prefix)
+const nodeBuiltins = [
+  ...builtinModules,
+  ...builtinModules.map(mod => `node:${mod}`),
+];
+
+// Lista completa de externals
+const externalPackages = [
+  ...externalDependencies,
+  ...nodeBuiltins,
+];
+
 console.log(`\n🔨 Building ${serviceName}...`);
 console.log(`📦 Pacotes @alice/* serão incluídos no bundle`);
-console.log(`📤 Dependências externas: ${externalPackages.length} pacotes`);
+console.log(`📤 Dependências externas: ${externalDependencies.length} pacotes`);
+console.log(`📤 Node.js builtins: ${builtinModules.length} módulos (com e sem prefixo node:)`);
 
 try {
   await esbuild.build({
     entryPoints: [join(serviceDir, 'src', 'index.ts')],
     bundle: true,
     platform: 'node',
-    target: 'node20',
+    target: 'node22',  // Atualizado para Node.js 22 LTS (Best Practices 2025)
     format: 'esm',
     outfile: join(serviceDir, 'dist', 'bundle.js'),
     external: externalPackages,

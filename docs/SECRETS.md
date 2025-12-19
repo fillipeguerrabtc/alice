@@ -7,9 +7,9 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 50 configurados no repositório GitHub (verificado em 17/12/2025)
+**Total de Secrets:** 52 configurados no repositório GitHub (verificado em 19/12/2025)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 43 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
+**Total de Containers:** 44 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud GPUs
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
@@ -276,11 +276,14 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
 | `SMTP_PASSWORD` (arquivo) | **API Key do Resend** para relay SMTP do Alertmanager | O workflow escreve a `RESEND_API_KEY` em `/opt/alice/secrets/alertmanager/smtp_password` |
 
-**⚠️ IMPORTANTE - Langfuse v3 (Atualizado 14/12/2025):**
+**⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
 - Langfuse foi atualizado para v3.139.0 que requer novas variáveis obrigatórias:
   - `LANGFUSE_SALT`: String aleatória para hashing (gerar com `openssl rand -base64 16`)
   - `LANGFUSE_ENCRYPTION_KEY`: Chave 256-bit hex (gerar com `openssl rand -hex 32`)
 - Nova arquitetura v3 inclui container `langfuse-worker` para processamento assíncrono
+- **ClickHouse 24.8** é backend OLAP obrigatório para Langfuse v3:
+  - `CLICKHOUSE_USER`: Usuário do ClickHouse (ex: `langfuse`)
+  - `CLICKHOUSE_PASSWORD`: Senha segura (gerar com `openssl rand -base64 32`)
 
 **Observação sobre Alertmanager + Resend:**
 - O Alertmanager usa o relay SMTP do Resend (`smtp.resend.com:587`) para enviar alertas por email
@@ -314,8 +317,8 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 17 de Dezembro de 2025  
-> **Resumo:** 50 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 19 de Dezembro de 2025  
+> **Resumo:** 52 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -419,6 +422,13 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 | `GRAFANA_ADMIN_PASSWORD` | ✅ |
 | `ACME_EMAIL` | ✅ |
 
+### ClickHouse (Langfuse v3 OLAP Backend)
+
+| Secret | Status |
+|--------|--------|
+| `CLICKHOUSE_USER` | ✅ **OBRIGATÓRIO Langfuse v3** (adicionado 19/12/2025) |
+| `CLICKHOUSE_PASSWORD` | ✅ **OBRIGATÓRIO Langfuse v3** (adicionado 19/12/2025) |
+
 ### Web Search (SearXNG)
 
 | Secret | Status |
@@ -507,9 +517,9 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 19 de Dezembro de 2025*
-*Versão: 7.4*
-*Total de Secrets: 50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
+*Versão: 7.5*
+*Total de Secrets: 52 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
+*Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *SALAD_PROJECT_ID (17/12/2025): Adicionado para Python SDK - projeto no Salad Cloud*

@@ -47,11 +47,11 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 43 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 44 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
 - **Infrastructure Core (7 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**.
-- **Alice Microservices (8 serviços)**:
+- **Alice Microservices (7 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
     - **Chat Service**: Real-time LLM token streaming via WebSockets.
@@ -65,7 +65,7 @@ Alice employs a microservices architecture with 43 containerized services orches
         - ASR: Canary-1B (NeMo) - GPU OBRIGATÓRIO
         - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
-- **Observability Stack (13 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
+- **Observability Stack (14 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
 
 **Shared Packages (`packages/`):**
@@ -214,10 +214,10 @@ Permissões Enterprise (13/12/2025):
 - **ERPNext**: usuário fixo `Administrator` + `ERPNEXT_ADMIN_PASSWORD` (pode usar a mesma senha do admin global).
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
-## Security Hardening (14 de Dezembro de 2025)
-- **43 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
-- **24 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **43 containers** = 100% com resource limits ✅ COMPLETO
+## Security Hardening (19 de Dezembro de 2025)
+- **44 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+- **25 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
+- **44 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
@@ -331,9 +331,9 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.10 - 19 de Dezembro de 2025*
-*Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
-*GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
+*Versão: 4.11 - 19 de Dezembro de 2025*
+*Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*GitHub Secrets: 52 configurados (CLICKHOUSE_USER, CLICKHOUSE_PASSWORD adicionados 19/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (9 tabelas) + API REST (25 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões + Stop Orders (st-orders)*
@@ -451,3 +451,9 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix dockerproxy tmpfs /run (19/12/2025): Adicionado tmpfs /run:mode=1777 - HAProxy precisa escrever /run/haproxy.pid com read_only: true*
 *Bug Fix opossum Dependência (19/12/2025): Adicionada opossum 9.0.0 em 5 microsserviços - causava "Dynamic require of events" em runtime*
 *Rollback Enterprise Completo (19/12/2025): Função full_system_cleanup() reescrita com 7 fases, parâmetro PRESERVE_DATA para diferenciar primeiro deploy de rollback, limpeza 100% funcional*
+*Langfuse v3 ClickHouse (19/12/2025): Adicionado ClickHouse 24.8-alpine como OLAP backend obrigatório para Langfuse v3. Novo container clickhouse com 1GB RAM limit*
+*ClickHouse Secrets (19/12/2025): Novos secrets CLICKHOUSE_USER e CLICKHOUSE_PASSWORD adicionados ao deploy workflow e .env.prod*
+*Loki 3.6+ Config Fix (19/12/2025): Corrigida configuração obsoleta - removido max_transfer_retries, boltdb-shipper→tsdb, schema v13*
+*pgBackRest Libs Fix (19/12/2025): Corrigidas dependências runtime - lz4→lz4-libs, zstd→zstd-libs, bzip2→libbz2+libpq*
+*esbuild Node Builtins (19/12/2025): Externalizados todos builtins Node.js para evitar "Dynamic require of node:crypto" error*
+*Alertmanager Secrets Leak Fix (19/12/2025): Removido env_file para evitar vazamento de secrets em logs Docker*

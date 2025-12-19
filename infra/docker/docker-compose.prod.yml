@@ -13,7 +13,7 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 43 total (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)
+# CONTAINERS: 44 total (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)
 # INFRAESTRUTURA (7): dockerproxy, traefik-init, traefik, postgres, redis, qdrant, searxng
 # ALICE (7): frontend, auth, chat, rag, training, integrations, observability
 # - alice-qdrant: Banco vetorial para embeddings de texto 4096 dim (Qwen3-Embedding-8B)
@@ -158,6 +158,23 @@ volumes:
       type: none
       o: bind
       device: /opt/alice/data/langfuse-db
+
+  # ClickHouse - OLAP database para Langfuse v3 (arquitetura oficial 2025)
+  clickhouse_data:
+    name: alice-clickhouse-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/clickhouse
+
+  clickhouse_logs:
+    name: alice-clickhouse-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/clickhouse
 
   # Qdrant - Banco vetorial para embeddings de texto (4096 dim)
   qdrant_data:
@@ -1854,40 +1871,78 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # LANGFUSE v3 - LLM Observability (Web + Worker - Arquitetura v3)
+  # CLICKHOUSE - OLAP Database para Langfuse v3 (Arquitetura Oficial 2025)
+  # Documentação: https://clickhouse.com/docs/en/operations/server-configuration-parameters
+  # NOTA: ClickHouse é OBRIGATÓRIO para Langfuse v3 - não é opcional
+  # ===========================================================================
+  clickhouse:
+    # ClickHouse 24.x LTS (última versão estável enterprise)
+    image: clickhouse/clickhouse-server:24.8-alpine
+    platform: linux/amd64
+    container_name: alice-clickhouse
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_DB: ${CLICKHOUSE_DB:-langfuse}
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - clickhouse_logs:/var/log/clickhouse-server
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8123/ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '0.75'
+        reservations:
+          memory: 512M
+          cpus: '0.25'
+
+  # ===========================================================================
+  # LANGFUSE v3 - LLM Observability (Arquitetura Completa 2025)
   # Documentação v3: https://langfuse.com/docs/deployment/v3/overview
-  # NOTA: v3 requer SALT + ENCRYPTION_KEY + NEXTAUTH_URL obrigatórios
+  # REQUISITOS v3: PostgreSQL + ClickHouse + Redis (alice-redis)
   # ===========================================================================
   langfuse:
-    # ATUALIZADO 14/12/2025: Langfuse v3.139.0 (Dec 10, 2025) - última versão estável
-    # Langfuse v3 arquitetura minimal (sem ClickHouse/Redis/S3 - apenas PostgreSQL)
+    # Langfuse v3.139.0 (Dec 2025) - última versão estável com ClickHouse
     image: langfuse/langfuse:3.139.0@sha256:708cd9b4906b4882091ddda7bd071fa55e3e59bd3314da62be47adca7500e819
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # NOTA: env_file é carregado ANTES da expansão de variáveis em environment:
-    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
-    # para expansão em DATABASE_URL e outras variáveis de environment:
-    env_file:
-      - .env.prod
     environment:
       # === VARIÁVEIS OBRIGATÓRIAS v3 ===
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
-      # SALT: String aleatória para hashing (gerar com: openssl rand -base64 16)
       SALT: ${LANGFUSE_SALT}
-      # ENCRYPTION_KEY: Chave 256-bit hex (gerar com: openssl rand -hex 32)
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      # === DATABASE ===
-      # REGRA 6: Senha no DATABASE_URL - workflow DEVE validar que não contém caracteres especiais de URL
-      # Caracteres problemáticos: @ : / ? # % [ ] - se presentes, URL fica malformada
-      # NOTA: Docker Compose não suporta :? com mensagem customizada - validação no workflow garante fail-fast
+      # === DATABASE (PostgreSQL para metadados) ===
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
-      # === CONFIG v3 MINIMAL (sem ClickHouse/Redis/S3) ===
-      # Langfuse v3 pode rodar minimal com apenas PostgreSQL para ambientes menores
+      # === CLICKHOUSE (OLAP para traces - OBRIGATÓRIO v3) ===
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://${CLICKHOUSE_USER:-langfuse}:${CLICKHOUSE_PASSWORD}@clickhouse:9000/${CLICKHOUSE_DB:-langfuse}
+      # === REDIS (Queue - usa alice-redis existente) ===
+      REDIS_HOST: alice-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_PASSWORD}
+      # === S3/MEDIA (Desabilitado - usamos RAG service para uploads) ===
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
+      # === CONFIG v3 ===
       LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS: "true"
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
     networks:
       - alice-network
     healthcheck:
@@ -1895,9 +1950,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
     depends_on:
       langfuse-db:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
@@ -1908,14 +1967,14 @@ services:
     deploy:
       resources:
         limits:
-          memory: 768M
+          memory: 1G
           cpus: '0.75'
         reservations:
-          memory: 384M
+          memory: 512M
           cpus: '0.35'
 
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
-  # Processa traces, scores e eventos em background
+  # Processa traces, scores e eventos em background via ClickHouse
   langfuse-worker:
     image: langfuse/langfuse:3.139.0@sha256:708cd9b4906b4882091ddda7bd071fa55e3e59bd3314da62be47adca7500e819
     platform: linux/amd64
@@ -1924,18 +1983,26 @@ services:
     security_opt:
       - no-new-privileges:true
     command: ["node", "packages/shared/dist/src/server/background-migrations/run.js"]
-    env_file:
-      - .env.prod
     environment:
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://${CLICKHOUSE_USER:-langfuse}:${CLICKHOUSE_PASSWORD}@clickhouse:9000/${CLICKHOUSE_DB:-langfuse}
+      REDIS_HOST: alice-redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_PASSWORD}
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
     networks:
       - alice-network
     depends_on:
       langfuse-db:
+        condition: service_healthy
+      clickhouse:
         condition: service_healthy
       langfuse:
         condition: service_healthy
@@ -2217,53 +2284,42 @@ services:
   # ===========================================================================
   # ALERTMANAGER - Notificações Prometheus
   # ===========================================================================
+  # CORREÇÃO 19/12/2025: REMOVIDO env_file que vazava secrets nos logs
+  # O env_file carregava TODAS as variáveis do .env.prod (incluindo secrets),
+  # que eram logadas pelo Docker quando o container falhava. Agora passamos
+  # apenas as variáveis necessárias via environment (princípio do mínimo privilégio).
+  # ===========================================================================
   alertmanager:
-    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
-    # Digest será adicionado quando imagem for incluída no versionamento automático
     image: prom/alertmanager:v0.27.0
     platform: linux/amd64
     container_name: alice-alertmanager
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # REGRA 6: env_file carrega variáveis SMTP e emails do .env.prod (obrigatório em produção)
-    # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
-    # para expansão em environment: e uso no envsubst do entrypoint
-    env_file:
-      - .env.prod
     entrypoint: ["/bin/sh", "-c"]
     # NOTA: $$ é escape para $ no Docker Compose (evita interpolação de variáveis shell)
     command: |
       set -e
-      apk add --no-cache gettext || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
-      # REGRA 6: Validação explícita de variáveis obrigatórias antes de envsubst (fail-fast)
-      # envsubst não falha se variável não estiver definida - deixa literal $${VAR} no arquivo
-      # Validação garante que todas as variáveis estão definidas antes de processar template
-      # NOTA: Usar eval para compatibilidade POSIX shell (Alpine usa /bin/sh, não bash)
-      # $${!VAR} é sintaxe BASH-only e não funciona em POSIX shell
+      # Suprimir output do apk para não logar informações desnecessárias
+      apk add --no-cache gettext > /dev/null 2>&1 || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
+      # REGRA 6: Validação explícita de variáveis obrigatórias (fail-fast)
       REQUIRED_VARS="SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USERNAME ALERT_EMAIL CRITICAL_EMAIL ONCALL_EMAIL"
       for VAR in $$REQUIRED_VARS; do
         eval "value=\$${$$VAR}"
         if [ -z "$$value" ]; then
-          echo "ERRO: Variável obrigatória $$VAR não está definida (Regra 6 - fail-fast)" >&2
+          echo "ERRO: Variável obrigatória $$VAR não definida" >&2
           exit 1
         fi
       done
-      # REGRA 6: envsubst com lista específica garante que apenas variáveis definidas sejam substituídas
-      # Template usa $${VAR} format, então lista deve usar $${VAR} também (não $$VAR)
+      # Processar template com variáveis (sem logar valores)
       envsubst '$${SMTP_HOST} $${SMTP_PORT} $${SMTP_FROM} $${SMTP_USERNAME} $${ALERT_EMAIL} $${CRITICAL_EMAIL} $${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
       exec /bin/alertmanager \
         --config.file=/tmp/alertmanager.yml \
         --storage.path=/alertmanager \
         --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org
-      # NOTA: --cluster.listen-address removido - ambiente single-node não requer clustering
-      # Se necessário no futuro, usar: --cluster.listen-address=0.0.0.0:9094
     environment:
-      # INTEGRAÇÃO RESEND SIMPLIFICADA (API Key como senha SMTP):
-      # - Resend oferece relay SMTP que aceita API Key como senha
-      # - Não requer domínio verificado para usar onboarding@resend.dev
-      # - Senha (API Key) lida de arquivo /run/secrets/smtp_password
-      # REGRA 6: envsubst não suporta ${VAR:-default} no template - defaults aqui garantem valores
+      # APENAS variáveis necessárias para o Alertmanager (princípio do mínimo privilégio)
+      # Nenhuma outra variável do .env.prod é carregada, evitando vazamento de secrets
       SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
       SMTP_PORT: ${SMTP_PORT:-587}
       SMTP_FROM: ${SMTP_FROM:-onboarding@resend.dev}

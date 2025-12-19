@@ -1,9 +1,28 @@
+# =============================================================================
+# Alice Enterprise Platform - Loki Configuration
+# =============================================================================
+# Configuração para Loki v3.6+ (Grafana Stack 2025)
+#
+# CORREÇÃO 19/12/2025:
+# - Removido max_transfer_retries (deprecated em Loki 3.0+)
+# - Removido shared_store do boltdb_shipper (deprecated em Loki 3.0+)
+# - Atualizado schema para v13 (recomendado para novas instalações)
+# - Removido boltdb-shipper (deprecated), usando tsdb
+#
+# Documentação: https://grafana.com/docs/loki/latest/configure/
+#
+# Autor: Fillipe Guerra
+# Data: 19 de Dezembro de 2025
+# =============================================================================
+
 auth_enabled: false
 
 server:
   http_listen_port: 3100
   grpc_listen_port: 9096
+  log_level: info
 
+# Configuração do ingester (Loki 3.0+)
 ingester:
   lifecycler:
     ring:
@@ -12,7 +31,12 @@ ingester:
       replication_factor: 1
   chunk_idle_period: 5m
   chunk_retain_period: 1m
-  max_transfer_retries: 0
+  # REMOVIDO: max_transfer_retries (deprecated em Loki 3.0+)
+  # Transfer foi substituído por WAL (Write-Ahead Log) recovery
+
+# Configuração do WAL para recuperação de dados
+ingester_rf1:
+  enabled: true
 
 memberlist:
   join_members:
@@ -23,25 +47,42 @@ limits_config:
   ingestion_burst_size_mb: 20
   max_streams_per_user: 0
   max_global_streams_per_user: 0
+  # Limites adicionais para produção
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
 
+# Schema v13 com TSDB (recomendado para Loki 3.0+)
+# NOTA: boltdb-shipper foi deprecated, usando tsdb
 schema_config:
   configs:
+    # Schema legado para dados existentes (se houver)
     - from: 2020-10-24
-      store: boltdb-shipper
+      store: tsdb
       object_store: filesystem
-      schema: v11
+      schema: v13
       index:
         prefix: index_
         period: 24h
 
+# Storage usando TSDB (Loki 3.0+ Best Practices)
 storage_config:
-  boltdb_shipper:
-    active_index_directory: /loki/boltdb-shipper-active
-    cache_location: /loki/boltdb-shipper-cache
-    shared_store: filesystem
+  tsdb_shipper:
+    active_index_directory: /loki/tsdb-shipper-active
+    cache_location: /loki/tsdb-shipper-cache
+    cache_ttl: 24h
   filesystem:
     directory: /loki/chunks
 
+# Compactor para otimização de índices
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
+
+# Ruler para alertas
 ruler:
   storage:
     type: local
@@ -49,4 +90,17 @@ ruler:
       directory: /loki/rules
   rule_path: /tmp/rules
   alertmanager_url: http://alice-alertmanager:9093
+  ring:
+    kvstore:
+      store: memberlist
+
+# Query frontend para melhor performance
+query_range:
+  align_queries_with_step: true
+  cache_results: true
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
 

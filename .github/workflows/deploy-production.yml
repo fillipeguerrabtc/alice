@@ -1813,6 +1813,11 @@ jobs:
             printf 'LANGFUSE_DB_PASSWORD=%s\n' "${LANGFUSE_DB_PASSWORD}"
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
             printf '\n'
+            printf '# ClickHouse (Obrigatório para Langfuse v3 - Arquitetura 2025)\n'
+            printf 'CLICKHOUSE_USER=%s\n' "${{ secrets.CLICKHOUSE_USER }}"
+            printf 'CLICKHOUSE_PASSWORD=%s\n' "${{ secrets.CLICKHOUSE_PASSWORD }}"
+            printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB:-langfuse}"
+            printf '\n'
             printf '# SearXNG (Metabusca interna - Web Search)\n'
             printf 'SEARXNG_SECRET_KEY=%s\n' "${{ secrets.SEARXNG_SECRET_KEY }}"
           } > .env.prod
@@ -2088,6 +2093,7 @@ jobs:
             
             # Subdiretórios de data (volumes Docker bind mounts)
             # CORREÇÃO 19/12/2025: Adicionado /opt/alice/data/qdrant (faltava - causava falha no container)
+            # CORREÇÃO 19/12/2025: Adicionado /opt/alice/data/clickhouse (Langfuse v3 requer ClickHouse)
             mkdir -p /opt/alice/data/postgres
             mkdir -p /opt/alice/data/redis-alice
             mkdir -p /opt/alice/data/qdrant
@@ -2100,12 +2106,14 @@ jobs:
             mkdir -p /opt/alice/data/vector
             mkdir -p /opt/alice/data/alertmanager
             mkdir -p /opt/alice/data/langfuse-db
+            mkdir -p /opt/alice/data/clickhouse
             mkdir -p /opt/alice/data/prometheus
             mkdir -p /opt/alice/data/grafana
             mkdir -p /opt/alice/data/loki
-            
+
             # Subdiretórios de logs
             mkdir -p /opt/alice/logs/erpnext
+            mkdir -p /opt/alice/logs/clickhouse
             
             # Subdiretórios de backups (pgBackRest)
             mkdir -p /opt/alice/backups/postgresql
@@ -2136,7 +2144,13 @@ jobs:
             # Langfuse DB PostgreSQL (UID 70) - container roda como postgres
             chown -R 70:70 /opt/alice/data/langfuse-db
             chmod -R 755 /opt/alice/data/langfuse-db
-            
+
+            # ClickHouse (UID 101) - Langfuse v3 OLAP database
+            chown -R 101:101 /opt/alice/data/clickhouse
+            chmod -R 755 /opt/alice/data/clickhouse
+            chown -R 101:101 /opt/alice/logs/clickhouse
+            chmod -R 755 /opt/alice/logs/clickhouse
+
             # PostgreSQL principal (UID 999) - pgvector container
             chown -R 999:999 /opt/alice/data/postgres
             chmod -R 700 /opt/alice/data/postgres
@@ -3104,7 +3118,15 @@ jobs:
               mkdir -p /opt/alice/data/langfuse-db
               chown -R 70:70 /opt/alice/data/langfuse-db
               chmod -R 755 /opt/alice/data/langfuse-db
-              
+
+              # ClickHouse (UID 101) - Langfuse v3 OLAP
+              mkdir -p /opt/alice/data/clickhouse
+              mkdir -p /opt/alice/logs/clickhouse
+              chown -R 101:101 /opt/alice/data/clickhouse
+              chown -R 101:101 /opt/alice/logs/clickhouse
+              chmod -R 755 /opt/alice/data/clickhouse
+              chmod -R 755 /opt/alice/logs/clickhouse
+
               # Qdrant (UID root)
               mkdir -p /opt/alice/data/qdrant
               chmod -R 755 /opt/alice/data/qdrant

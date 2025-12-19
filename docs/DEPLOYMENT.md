@@ -3,9 +3,9 @@
 **Autor:** Fillipe Guerra  
 **Data:** 19 de Dezembro de 2025
 
-## Visão Geral da Arquitetura - 43 Containers em Produção
+## Visão Geral da Arquitetura - 44 Containers em Produção
 
-A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **44 containers** organizados em 6 categorias:
 
 ### Categoria 1: Infraestrutura Core (7 serviços)
 
@@ -55,29 +55,30 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 28 | **Worker Short 2** | `erpnext-worker-short-2` | Worker para jobs rápidos (< 5 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
 | 29 | **Worker Long 2** | `erpnext-worker-long-2` | Worker para jobs longos (> 60 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
 
-### Categoria 4: Observability Stack (13 serviços)
+### Categoria 4: Observability Stack (14 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
 | 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.139.0 |
 | 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.139.0 |
 | 32 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
-| 33 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.0 |
-| 34 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 11.6.2 |
-| 35 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
-| 36 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
-| 37 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 1.76.0 |
-| 38 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
-| 39 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
-| 40 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.141.0 |
-| 41 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.8.2 |
-| 42 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.49.1 |
+| 33 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 24.8-alpine |
+| 34 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.0 |
+| 35 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 11.6.2 |
+| 36 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
+| 37 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
+| 38 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 1.76.0 |
+| 39 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
+| 40 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
+| 41 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.141.0 |
+| 42 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.8.2 |
+| 43 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.49.1 |
 
 ### Categoria 5: Backup (1 serviço)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 43 | **pgBackRest** | `alice-pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving, criptografia AES-256. | pgBackRest 2.56.0 |
+| 44 | **pgBackRest** | `alice-pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving, criptografia AES-256. | pgBackRest 2.56.0 |
 
 ### Diagrama de Arquitetura
 
@@ -109,7 +110,7 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 43 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 44 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -1050,9 +1051,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 43/43 containers (100%) |
-| **resource limits** | ✅ | 43/43 containers (100%) |
-| **read_only: true** | ✅ | 24/43 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 44/44 containers (100%) |
+| **resource limits** | ✅ | 44/44 containers (100%) |
+| **read_only: true** | ✅ | 25/44 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -1100,10 +1101,10 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 19 de Dezembro de 2025*
-*Versão: 7.1 - Bug Fix SQL IN Clause (learning-worker.ts)*
+*Versão: 7.2 - Langfuse v3 ClickHouse + Secrets Atualizados*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
-*Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only*
+*Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Security Hardening: 100% completo - 44/44 containers com no-new-privileges, 44/44 com resource limits, 25/44 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*

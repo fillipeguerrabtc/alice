@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 19 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.3 - Auditoria Documentação Completa
+> **Versão:** 4.4 - Langfuse v3 ClickHouse + Secrets Atualizados
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 43 (produção) |
+| **Total de Containers** | 44 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -24,13 +24,13 @@
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
 
-### Security Hardening (17/12/2025)
+### Security Hardening (19/12/2025)
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 43/43 containers (100%) |
-| `read_only: true` | ✅ | 24/43 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 43/43 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 44/44 containers (100%) |
+| `read_only: true` | ✅ | 25/44 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 44/44 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **PostgreSQL RLS Trading** | ✅ | **8 tabelas com RLS** (migrations 0007 + 0008) |
@@ -612,7 +612,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (43 containers)
+## 🐳 INFRAESTRUTURA DOCKER (44 containers)
 
 ### Core Infra (6)
 
@@ -677,10 +677,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 43/43 containers (100% COMPLETO) |
-| read_only: true | ✅ | 24/43 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 43/43 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 43/43 containers |
+| no-new-privileges | ✅ | 44/44 containers (100% COMPLETO) |
+| read_only: true | ✅ | 25/44 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 44/44 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 44/44 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
@@ -882,6 +882,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Jaeger 1.76.0 | Tracing | traces.yesyoudeserve.duckdns.org |
 | Langfuse 3.139.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | Langfuse Worker | Processamento Assíncrono | (interno) |
+| **ClickHouse 24.8** | **OLAP Backend Langfuse v3** | (interno) |
 | Alertmanager 0.27.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
 | OTel Collector 0.141.0 | Instrumentação | (interno) |
 | Vector 0.51.1 | Log Aggregation | (interno) |
@@ -1082,8 +1083,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Versão: 4.2 - Otimização de Performance + SHA Pinning Enterprise*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
-*GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
+*Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*GitHub Secrets: 52 configurados (CLICKHOUSE_USER, CLICKHOUSE_PASSWORD adicionados 19/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*

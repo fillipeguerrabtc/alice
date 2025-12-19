@@ -1,0 +1,19 @@
+# =============================================================================
+# Alice Enterprise Platform - Salad Cloud Python Dependencies
+# =============================================================================
+# Dependências para scripts de deploy e rollback de Container Groups GPU
+#
+# IMPORTANTE: Este arquivo é usado pelo GitHub Actions para instalar deps Python
+# O erro "No file matched [**/requirements.txt]" acontece quando este arquivo falta
+#
+# Autor: Fillipe Guerra
+# Data: 19 de Dezembro de 2025
+# =============================================================================
+
+# Salad Cloud SDK oficial para gerenciar Container Groups
+# NOTA: SDK pode estar em alpha/beta, fallback para REST API se falhar
+salad-cloud-sdk>=0.9.0
+
+# Requisitos implícitos (já incluídos no SDK, listados para documentação)
+# requests - HTTP client para REST API fallback
+# typing-extensions - Para type hints compatíveis

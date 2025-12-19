@@ -70,6 +70,11 @@ COPY --from=builder /usr/local/bin/pgbackrest /usr/local/bin/pgbackrest
 # Instalar apenas dependências de runtime (sem build tools)
 USER root
 # Atualizar índice e pacotes para versões mais recentes (mitiga CVEs em zlib/libretls/busybox)
+# CORREÇÃO 19/12/2025: Instalar pacotes de LIBS runtime ao invés de dev headers
+# O binário pgbackrest foi linkado contra essas libs no build stage
+# Erro anterior: "Error relocating pgbackrest: ZSTD_initCStream: symbol not found"
+# Causa: pacotes lz4, zstd, bzip2 são metapacotes ou headers, não as libs runtime
+# Solução: usar lz4-libs, zstd-libs, libbz2 (nomes corretos no Alpine)
 RUN apk update && apk upgrade --no-cache && \
     apk add --no-cache \
     bash \
@@ -79,11 +84,12 @@ RUN apk update && apk upgrade --no-cache && \
     tzdata \
     postgresql-client \
     libxml2 \
-    lz4 \
-    zstd \
-    bzip2 \
+    lz4-libs \
+    zstd-libs \
+    libbz2 \
     yaml \
-    libssh2
+    libssh2 \
+    libpq
 
 # Configurar timezone Brasil
 ENV TZ=America/Sao_Paulo
