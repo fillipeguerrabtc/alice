@@ -457,3 +457,5 @@ git commit -a -m "test: adiciona testes unitários"
 *pgBackRest Libs Fix (19/12/2025): Corrigidas dependências runtime - lz4→lz4-libs, zstd→zstd-libs, bzip2→libbz2+libpq*
 *esbuild Node Builtins (19/12/2025): Externalizados todos builtins Node.js para evitar "Dynamic require of node:crypto" error*
 *Alertmanager Secrets Leak Fix (19/12/2025): Removido env_file para evitar vazamento de secrets em logs Docker*
+*ClickHouse IPv4 Only Fix (19/12/2025): Forçado listen_host 0.0.0.0 via override.xml - IPv6 não funciona em Docker/Hetzner, causava "Address family not supported"*
+*Loki WAL Fix (19/12/2025): Corrigido ingester_rf1 (não existe) para ingester.wal, replay_memory_ceiling 4GB→750MB (dentro do limite 1G), retention_period 744h*

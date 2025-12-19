@@ -1891,6 +1891,10 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
+      # CORREÇÃO 19/12/2025: Override para forçar IPv4 only
+      # Hetzner/Docker não suporta IPv6 corretamente dentro de containers
+      # Sem isso, ClickHouse falha com "Address family not supported"
+      - ../observability/clickhouse/override.xml:/etc/clickhouse-server/config.d/override.xml:ro
     networks:
       - alice-network
     healthcheck:

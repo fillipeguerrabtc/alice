@@ -1,0 +1,32 @@
+<?xml version="1.0"?>
+<!--
+Alice Enterprise Platform - ClickHouse Configuration Override
+============================================================
+Configuração para forçar IPv4 e desabilitar IPv6
+
+PROBLEMA 19/12/2025:
+- Host Hetzner não suporta IPv6 corretamente dentro de containers Docker
+- ClickHouse tenta fazer bind em IPv6 (::) e falha com "Address family not supported"
+- Resultado: ClickHouse não consegue fazer listen em nenhuma porta
+
+SOLUÇÃO:
+- Forçar listen_host para 0.0.0.0 (IPv4 only)
+- Este arquivo é montado em /etc/clickhouse-server/config.d/ e faz override das configs padrão
+
+Documentação: https://clickhouse.com/docs/en/operations/configuration-files
+Autor: Fillipe Guerra
+Data: 19 de Dezembro de 2025
+-->
+<clickhouse>
+    <!-- Força IPv4 only - desabilita IPv6 que não funciona no ambiente Docker/Hetzner -->
+    <listen_host>0.0.0.0</listen_host>
+    
+    <!-- Log level para produção -->
+    <logger>
+        <level>warning</level>
+    </logger>
+    
+    <!-- Otimizações para container com 1GB de RAM -->
+    <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+    <max_thread_pool_size>100</max_thread_pool_size>
+</clickhouse>
