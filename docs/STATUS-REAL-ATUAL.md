@@ -16,7 +16,7 @@
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
-| **Docker** | 29.1.2 + Compose v5.0.0 |
+| **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 46.224.46.93 |
 | **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud + Trading BTC |
@@ -1273,6 +1273,42 @@ body = {
 
 ---
 
+---
+
+## 🔧 CORREÇÕES RECENTES (19/12/2025)
+
+### Bug Fix Qdrant ReadOnlyFilesystem
+- **Problema:** Container falhava com `Failed to create snapshots temp directory: ReadOnlyFilesystem`
+- **Solução:** Adicionado `tmpfs` para `/qdrant/snapshots` no docker-compose.prod.yml
+- **Healthcheck:** Substituído `wget` por `/dev/tcp` (imagem oficial não tem wget/curl)
+
+### Rollback Enterprise Robusto
+- **Problema:** `full_system_cleanup()` falhava com lista de containers vazia
+- **Solução:** Comandos agora verificam se há containers antes de executar stop/rm
+- **Bonus:** Recria diretórios com permissões corretas após limpeza
+
+### Permissões Enterprise por Serviço
+| Serviço | UID | Permissão |
+|---------|-----|-----------|
+| Grafana | 472 | 755 |
+| Prometheus | 65534 | 755 |
+| Loki | 10001 | 755 |
+| Alertmanager | 65534 | 755 |
+| PostgreSQL | 999 | 700 |
+| Langfuse DB | 70 | 755 |
+| Redis | 999 | 755 |
+| Traefik ACME | 1001 | 700 |
+| SearXNG | 977 | 755 |
+| ERPNext | 999/1000 | 755 |
+
+### Primeiro Deploy Hetzner Preparado
+- Servidor 100% configurado com todas dependências
+- Estrutura de diretórios com permissões enterprise
+- Networks Docker criadas (alice-network, erpnext-network)
+- Ubuntu 24.04.3 LTS, Docker 29.1.3, Python 3.12.3
+
+---
+
 *Documento gerado automaticamente pela auditoria completa da plataforma*  
 *Autor: Fillipe Guerra*  
-*Data: 17 de Dezembro de 2025*
+*Data: 19 de Dezembro de 2025*

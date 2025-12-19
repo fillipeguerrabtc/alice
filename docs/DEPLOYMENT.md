@@ -7,16 +7,17 @@
 
 A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
 
-### Categoria 1: Infraestrutura Core (6 serviços)
+### Categoria 1: Infraestrutura Core (7 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
 | 1 | **Docker Socket Proxy** | `dockerproxy` | Proxy seguro para API Docker. Expõe apenas endpoints necessários para Traefik, sem acesso de escrita. | Tecnativa Docker Socket Proxy |
 | 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.37 |
-| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting e load balancing. | Traefik v3.6.4 |
+| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting, HTTP/2. | Traefik v3.6.5 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.6 Alpine |
-| 6 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
+| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.7 Alpine |
+| 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
+| 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
 ### Categoria 2: Microsserviços Alice (7 serviços)
 
@@ -1039,13 +1040,30 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
-### Compatibilidade do Stack de Observabilidade (pins atuais)
+### Compatibilidade do Stack de Observabilidade (pins atuais - 19/12/2025)
 
-- Prometheus 3.0.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes; manter atenção em mudanças de métricas deprecated (consultar release notes v3.0/v0.27).
-- Grafana 11.1.4: atualização menor; dashboards e datasources preservados.
-- Loki/Promtail 3.1.0: versão alinhada; labels e pipeline existentes compatíveis.
-- Jaeger 1.58: estável; OTLP habilitado.
-- OTel Collector 0.114.0: configurações atuais (receivers/exporters) compatíveis; revisar changelog se adicionar novos pipelines.
+- Prometheus 3.8.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes.
+- Grafana 12.3.1: atualização maior; dashboards e datasources preservados.
+- Loki/Promtail 3.6.3: versão alinhada; labels e pipeline existentes compatíveis.
+- Jaeger 1.76.0: estável; OTLP habilitado.
+- OTel Collector 0.141.0: configurações atuais (receivers/exporters) compatíveis.
+
+### Permissões Enterprise por Serviço (19/12/2025)
+
+| Serviço | UID | Permissão | Diretório |
+|---------|-----|-----------|-----------|
+| Grafana | 472 | 755 | /opt/alice/data/grafana |
+| Prometheus | 65534 | 755 | /opt/alice/data/prometheus |
+| Loki | 10001 | 755 | /opt/alice/data/loki |
+| Alertmanager | 65534 | 755 | /opt/alice/data/alertmanager |
+| PostgreSQL | 999 | 700 | /opt/alice/data/postgres |
+| Langfuse DB | 70 | 755 | /opt/alice/data/langfuse-db |
+| Redis | 999 | 755 | /opt/alice/data/redis-alice |
+| Qdrant | root | 755 | /opt/alice/data/qdrant |
+| Traefik ACME | 1001 | 700 | /opt/alice/data/traefik-acme |
+| SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
+
+> **NOTA:** Workflow deploy-production.yml configura automaticamente todas essas permissões.
 - Vector 0.43.1: sink Loki ativo; sem mudanças de breaking para docker_logs.
 
 ### Notas Importantes
