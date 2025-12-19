@@ -1215,6 +1215,9 @@ importers:
         specifier: 3.25.67
         version: 3.25.67
     devDependencies:
+      '@types/compression':
+        specifier: ^1.8.1
+        version: 1.8.1
       '@types/node':
         specifier: ^22.19.1
         version: 22.19.1
