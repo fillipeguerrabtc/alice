@@ -71,13 +71,14 @@ docker-compose down
 
 ## URLs de Acesso (Produção)
 
-| Serviço | URL |
-|---------|-----|
-| Grafana | https://observability.yesyoudeserve.duckdns.org |
-| Prometheus | https://prometheus.yesyoudeserve.duckdns.org |
-| Jaeger | https://tracing.yesyoudeserve.duckdns.org |
-| Langfuse | https://llm-metrics.yesyoudeserve.duckdns.org |
-| Health API | https://yesyoudeserve.duckdns.org/observability/health |
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| Grafana | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
+| Prometheus | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
+| Jaeger | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
+| Langfuse | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
+| Alertmanager | https://alertmanager.yesyoudeserve.duckdns.org | Alertas e notificações |
+| Health API | https://yesyoudeserve.duckdns.org/api/observability/health | Health check endpoint |
 
 ## Configuração do API Gateway (Traefik)
 

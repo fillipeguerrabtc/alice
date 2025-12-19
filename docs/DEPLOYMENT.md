@@ -651,12 +651,25 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 
 ### Aplicação Principal
 
-| Serviço | URL |
-|---------|-----|
-| Alice Frontend | <https://yesyoudeserve.duckdns.org> |
-| Alice Chat | <https://yesyoudeserve.duckdns.org/chat> |
-| Alice Dashboard | <https://yesyoudeserve.duckdns.org/dashboard> |
-| Alice API | <https://yesyoudeserve.duckdns.org/api> |
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| Alice Frontend | <https://yesyoudeserve.duckdns.org> | SPA React principal |
+| Alice Chat | <https://yesyoudeserve.duckdns.org/chat> | Interface de chat (SPA route) |
+| Alice Dashboard | <https://yesyoudeserve.duckdns.org/dashboard> | Painel administrativo (SPA route) |
+| Alice Trading | <https://yesyoudeserve.duckdns.org/trading> | Interface de trading BTC (SPA route) |
+| Alice WebSocket | <wss://yesyoudeserve.duckdns.org/ws> | WebSocket para streaming em tempo real |
+
+### APIs REST (Microsserviços)
+
+| API | URL | Descrição |
+|-----|-----|-----------|
+| Auth API | <https://yesyoudeserve.duckdns.org/api/auth> | Autenticação OAuth/SAML, sessões, RBAC |
+| Chat API | <https://yesyoudeserve.duckdns.org/api/chat> | Conversas com LLM, histórico |
+| RAG API | <https://yesyoudeserve.duckdns.org/api/rag> | Embeddings, busca semântica, documentos |
+| Training API | <https://yesyoudeserve.duckdns.org/api/training> | Fine-tuning LoRA, jobs |
+| Integrations API | <https://yesyoudeserve.duckdns.org/api/integrations> | Trading, Stripe, Twilio, Wise |
+| Observability API | <https://yesyoudeserve.duckdns.org/api/observability> | Health checks, métricas internas |
+| Webhook | <https://yesyoudeserve.duckdns.org/webhook> | Webhooks externos (Stripe, etc) |
 
 ### ERPNext
 
@@ -669,16 +682,19 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 | Serviço | URL | Descrição |
 |---------|-----|-----------|
 | Grafana | <https://observability.yesyoudeserve.duckdns.org> | Dashboards e alertas |
-| Prometheus | <https://prometheus.yesyoudeserve.duckdns.org> | Métricas e consultas |
-| Jaeger | <https://tracing.yesyoudeserve.duckdns.org> | Distributed tracing |
-| Langfuse | <https://llm-metrics.yesyoudeserve.duckdns.org> | Métricas LLM |
-| Health Check | <https://yesyoudeserve.duckdns.org/observability/health> | Status do stack |
+| Prometheus | <https://metrics.yesyoudeserve.duckdns.org> | Métricas e consultas |
+| Jaeger | <https://traces.yesyoudeserve.duckdns.org> | Distributed tracing |
+| Langfuse | <https://langfuse.yesyoudeserve.duckdns.org> | LLM observability |
+| Alertmanager | <https://alertmanager.yesyoudeserve.duckdns.org> | Alertas e notificações |
+| Health Check | <https://yesyoudeserve.duckdns.org/api/observability/health> | Status do stack |
 
 ### Infraestrutura
 
-| Serviço | URL |
-|---------|-----|
-| Traefik Dashboard | <https://traefik.yesyoudeserve.duckdns.org> (protegido) |
+| Serviço | URL | Status |
+|---------|-----|--------|
+| Traefik Dashboard | N/A | Desabilitado em produção (segurança) |
+
+> **NOTA:** O Traefik Dashboard está desabilitado em produção por motivos de segurança. Para debug, acesse via SSH e `docker logs alice-traefik`.
 
 ---
 

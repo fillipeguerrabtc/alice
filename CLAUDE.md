@@ -126,14 +126,18 @@ Otimização de custos para GPUs Salad Cloud:
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ## URLs de Produção
-| Serviço | URL |
-|---------|-----|
-| Alice Frontend | https://yesyoudeserve.duckdns.org |
-| Alice Chat | https://yesyoudeserve.duckdns.org/chat |
-| ERPNext | https://erp.yesyoudeserve.duckdns.org |
-| Grafana | https://observability.yesyoudeserve.duckdns.org |
-| Prometheus | https://prometheus.yesyoudeserve.duckdns.org |
-| Jaeger | https://tracing.yesyoudeserve.duckdns.org |
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| Alice Frontend | https://yesyoudeserve.duckdns.org | SPA React principal |
+| Alice Chat | https://yesyoudeserve.duckdns.org/chat | Interface de chat (SPA route) |
+| Alice API | https://yesyoudeserve.duckdns.org/api/* | APIs REST dos microsserviços |
+| Alice WebSocket | wss://yesyoudeserve.duckdns.org/ws | WebSocket para streaming em tempo real |
+| ERPNext | https://erp.yesyoudeserve.duckdns.org | ERP/CRM Frappe |
+| Grafana | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
+| Prometheus | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
+| Jaeger | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
+| Langfuse | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
+| Alertmanager | https://alertmanager.yesyoudeserve.duckdns.org | Alertas e notificações |
 
 ## Conexão SSH ao Servidor
 ```bash
@@ -436,3 +440,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Permissões Enterprise Deploy (19/12/2025): Deploy configura UIDs corretos por serviço - Grafana(472), Prometheus(65534), Loki(10001), PostgreSQL(999), etc.*
 *Primeiro Deploy Hetzner (19/12/2025): Servidor 100% configurado - todas dependências instaladas, estrutura de diretórios com permissões enterprise, networks Docker criadas*
 *Auditoria Documentação (19/12/2025): Docker 29.1.3 corrigido, referência obsoleta PLANO-100%-BASE.md removida, versões pnpm corrigidas*
+*Cache Enterprise CI/CD (19/12/2025): ci.yml migrado de cache: 'pnpm' (built-in setup-node) para actions/cache explícito com restore-keys - elimina warnings "Cache service responded with 400"*
+*URLs Produção Auditoria (19/12/2025): Corrigidas URLs em 8 arquivos - Prometheus(metrics.), Jaeger(traces.), Langfuse(langfuse.), Alertmanager adicionado. Código e docs 100% consistentes com Traefik*

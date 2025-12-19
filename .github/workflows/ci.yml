@@ -188,11 +188,29 @@ jobs:
           version: ${{ steps.pnpm-version.outputs.version }}
 
       # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
+      # NOTA: Removido cache: 'pnpm' - usamos actions/cache explícito para melhor controle
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
+
+      # Enterprise: Configurar store path explícito para cache consistente
+      - name: Configurar pnpm store path
+        id: pnpm_store_path
+        run: |
+          STORE_DIR="$HOME/.pnpm-store"
+          echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
+          pnpm config set store-dir "$STORE_DIR"
+
+      # SHA: actions/cache@v4.2.0 - Cache explícito com restore-keys para fallback
+      - name: Restaurar cache do pnpm
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-
+            pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -382,11 +400,29 @@ jobs:
           version: ${{ steps.pnpm-version.outputs.version }}
 
       # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
+      # NOTA: Removido cache: 'pnpm' - usamos actions/cache explícito para melhor controle
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
+
+      # Enterprise: Configurar store path explícito para cache consistente
+      - name: Configurar pnpm store path
+        id: pnpm_store_path
+        run: |
+          STORE_DIR="$HOME/.pnpm-store"
+          echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
+          pnpm config set store-dir "$STORE_DIR"
+
+      # SHA: actions/cache@v4.2.0 - Cache explícito com restore-keys para fallback
+      - name: Restaurar cache do pnpm
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-
+            pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -541,11 +577,29 @@ jobs:
           version: ${{ steps.pnpm-version.outputs.version }}
 
       # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
+      # NOTA: Removido cache: 'pnpm' - usamos actions/cache explícito para melhor controle
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
+
+      # Enterprise: Configurar store path explícito para cache consistente
+      - name: Configurar pnpm store path
+        id: pnpm_store_path
+        run: |
+          STORE_DIR="$HOME/.pnpm-store"
+          echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
+          pnpm config set store-dir "$STORE_DIR"
+
+      # SHA: actions/cache@v4.2.0 - Cache explícito com restore-keys para fallback
+      - name: Restaurar cache do pnpm
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-
+            pnpm-store-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -693,11 +747,29 @@ jobs:
           version: ${{ steps.pnpm-version.outputs.version }}
 
       # SHA: actions/setup-node@v4.1.0 (2024-10-24) - Supply Chain Security
+      # NOTA: Removido cache: 'pnpm' - usamos actions/cache explícito para melhor controle
       - name: Setup Node.js
         uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
         with:
           node-version: ${{ steps.node-version.outputs.version }}
-          cache: 'pnpm'
+
+      # Enterprise: Configurar store path explícito para cache consistente
+      - name: Configurar pnpm store path
+        id: pnpm_store_path
+        run: |
+          STORE_DIR="$HOME/.pnpm-store"
+          echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
+          pnpm config set store-dir "$STORE_DIR"
+
+      # SHA: actions/cache@v4.2.0 - Cache explícito com restore-keys para fallback
+      - name: Restaurar cache do pnpm
+        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+        with:
+          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-
+            pnpm-store-${{ runner.os }}-
 
       - name: Install Node.js dependencies
         run: pnpm install --frozen-lockfile

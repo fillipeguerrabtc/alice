@@ -213,7 +213,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://langfuse:${LANGFUSE_DB_PASSWORD:-langfuse2025}@langfuse-db:5432/langfuse
       - NEXTAUTH_SECRET=${LANGFUSE_AUTH_SECRET:-alice-langfuse-secret-2025}
-      - NEXTAUTH_URL=https://llm-metrics.yesyoudeserve.duckdns.org
+      - NEXTAUTH_URL=https://langfuse.yesyoudeserve.duckdns.org
       - SALT=${LANGFUSE_SALT:-alice-langfuse-salt-2025}
       - TELEMETRY_ENABLED=false
       - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=true
@@ -305,11 +305,11 @@ services:
       - GRAFANA_URL=http://grafana:3000
       - JAEGER_URL=http://jaeger:16686
       - LANGFUSE_URL=http://langfuse:3000
-      # URLs externas (para resposta da API /urls)
-      - PROMETHEUS_EXTERNAL_URL=${PROMETHEUS_EXTERNAL_URL:-https://prometheus.yesyoudeserve.duckdns.org}
+      # URLs externas (para resposta da API /urls) - DEVEM corresponder às rotas do Traefik
+      - PROMETHEUS_EXTERNAL_URL=${PROMETHEUS_EXTERNAL_URL:-https://metrics.yesyoudeserve.duckdns.org}
       - GRAFANA_EXTERNAL_URL=${GRAFANA_EXTERNAL_URL:-https://observability.yesyoudeserve.duckdns.org}
-      - JAEGER_EXTERNAL_URL=${JAEGER_EXTERNAL_URL:-https://tracing.yesyoudeserve.duckdns.org}
-      - LANGFUSE_EXTERNAL_URL=${LANGFUSE_EXTERNAL_URL:-https://llm-metrics.yesyoudeserve.duckdns.org}
+      - JAEGER_EXTERNAL_URL=${JAEGER_EXTERNAL_URL:-https://traces.yesyoudeserve.duckdns.org}
+      - LANGFUSE_EXTERNAL_URL=${LANGFUSE_EXTERNAL_URL:-https://langfuse.yesyoudeserve.duckdns.org}
     networks:
       - observability
     depends_on:

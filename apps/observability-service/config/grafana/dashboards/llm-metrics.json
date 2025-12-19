@@ -38,7 +38,7 @@
       "targetBlank": true,
       "title": "Langfuse",
       "type": "link",
-      "url": "https://llm-metrics.yesyoudeserve.duckdns.org"
+      "url": "https://langfuse.yesyoudeserve.duckdns.org"
     }
   ],
   "panels": [

@@ -248,16 +248,19 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner + Salad GPU (auto)
 
 ### URLs de Produção
 
-| Serviço | URL |
-|---------|-----|
-| **Alice Frontend** | https://yesyoudeserve.duckdns.org |
-| **Alice Chat** | https://yesyoudeserve.duckdns.org/chat |
-| **Alice Dashboard** | https://yesyoudeserve.duckdns.org/dashboard |
-| **ERPNext** | https://erp.yesyoudeserve.duckdns.org |
-| **Grafana** | https://observability.yesyoudeserve.duckdns.org |
-| **Prometheus** | https://prometheus.yesyoudeserve.duckdns.org |
-| **Jaeger** | https://tracing.yesyoudeserve.duckdns.org |
-| **Langfuse** | https://llm-metrics.yesyoudeserve.duckdns.org |
+| Serviço | URL | Descrição |
+|---------|-----|-----------|
+| **Alice Frontend** | https://yesyoudeserve.duckdns.org | SPA React principal |
+| **Alice Chat** | https://yesyoudeserve.duckdns.org/chat | Interface de chat (SPA route) |
+| **Alice Dashboard** | https://yesyoudeserve.duckdns.org/dashboard | Painel administrativo |
+| **Alice Trading** | https://yesyoudeserve.duckdns.org/trading | Interface trading BTC |
+| **Alice WebSocket** | wss://yesyoudeserve.duckdns.org/ws | Streaming em tempo real |
+| **ERPNext** | https://erp.yesyoudeserve.duckdns.org | ERP/CRM Frappe |
+| **Grafana** | https://observability.yesyoudeserve.duckdns.org | Dashboards e alertas |
+| **Prometheus** | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
+| **Jaeger** | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
+| **Langfuse** | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
+| **Alertmanager** | https://alertmanager.yesyoudeserve.duckdns.org | Alertas e notificações |
 
 Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 

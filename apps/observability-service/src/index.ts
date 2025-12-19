@@ -73,11 +73,11 @@ const GRAFANA_URL = process.env.GRAFANA_URL || 'http://grafana:3000';
 const JAEGER_URL = process.env.JAEGER_URL || 'http://jaeger:16686';
 const LANGFUSE_URL = process.env.LANGFUSE_URL || 'http://langfuse:3000';
 
-// URLs externas (para API /urls)
-const PROMETHEUS_EXTERNAL = process.env.PROMETHEUS_EXTERNAL_URL || 'https://prometheus.yesyoudeserve.duckdns.org';
+// URLs externas (para API /urls) - DEVEM corresponder às rotas do Traefik em docker-compose.prod.yml
+const PROMETHEUS_EXTERNAL = process.env.PROMETHEUS_EXTERNAL_URL || 'https://metrics.yesyoudeserve.duckdns.org';
 const GRAFANA_EXTERNAL = process.env.GRAFANA_EXTERNAL_URL || 'https://observability.yesyoudeserve.duckdns.org';
-const JAEGER_EXTERNAL = process.env.JAEGER_EXTERNAL_URL || 'https://tracing.yesyoudeserve.duckdns.org';
-const LANGFUSE_EXTERNAL = process.env.LANGFUSE_EXTERNAL_URL || 'https://llm-metrics.yesyoudeserve.duckdns.org';
+const JAEGER_EXTERNAL = process.env.JAEGER_EXTERNAL_URL || 'https://traces.yesyoudeserve.duckdns.org';
+const LANGFUSE_EXTERNAL = process.env.LANGFUSE_EXTERNAL_URL || 'https://langfuse.yesyoudeserve.duckdns.org';
 
 interface ServiceStatus {
   name: string;

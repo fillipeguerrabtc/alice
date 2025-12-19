@@ -877,11 +877,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Serviço | Função | URL Externa |
 |---------|--------|-------------|
-| Prometheus 3.8.0 | Métricas | prometheus.yesyoudeserve.duckdns.org |
+| Prometheus 3.8.0 | Métricas | metrics.yesyoudeserve.duckdns.org |
 | Grafana OSS 11.6.2 | Dashboards | observability.yesyoudeserve.duckdns.org |
-| Jaeger 1.76.0 | Tracing | tracing.yesyoudeserve.duckdns.org |
-| Langfuse 3.139.0 (Web) | LLM Metrics | llm-metrics.yesyoudeserve.duckdns.org |
+| Jaeger 1.76.0 | Tracing | traces.yesyoudeserve.duckdns.org |
+| Langfuse 3.139.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | Langfuse Worker | Processamento Assíncrono | (interno) |
+| Alertmanager 0.27.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
 | OTel Collector 0.141.0 | Instrumentação | (interno) |
 | Vector 0.51.1 | Log Aggregation | (interno) |
 
