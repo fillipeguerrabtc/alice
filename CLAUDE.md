@@ -446,3 +446,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix OTel Collector Config (19/12/2025): service.telemetry.metrics.address deprecado em OTel 0.123+ - corrigido para usar readers com prometheus exporter*
 *Bug Fix compression Órfã (19/12/2025): Removidas dependências órfãs compression/@types/compression do package.json raiz - causava "Dynamic require of buffer" em todos serviços Node.js*
 *Permissões Servidor Hetzner (19/12/2025): Corrigidas permissões langfuse-db (1777→755), removidos diretórios legados vazios (mariadb, redis)*
+*Bug Fix compression Dependência (19/12/2025): Adicionada compression 1.8.1 explicitamente em 5 microsserviços (auth, chat, rag, training, integrations) - estava apenas no package.json raiz e não era externalizada pelo esbuild*
