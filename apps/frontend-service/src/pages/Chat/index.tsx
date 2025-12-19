@@ -54,13 +54,13 @@ const containerVariants = {
     opacity: 1,
     transition: { staggerChildren: 0.05 },
   },
-};
+} as const;
 
 const sidebarVariants = {
   hidden: { x: -300, opacity: 0 },
-  visible: { x: 0, opacity: 1, transition: { type: 'spring', stiffness: 100 } },
+  visible: { x: 0, opacity: 1, transition: { type: 'spring' as const, stiffness: 100 } },
   exit: { x: -300, opacity: 0 },
-};
+} as const;
 
 export default function Chat() {
   const { t } = useTranslation();

@@ -42,7 +42,7 @@ export function WelcomeScreen({ onSuggestionClick }: WelcomeScreenProps) {
       <motion.div
         initial={{ scale: 0.8 }}
         animate={{ scale: 1 }}
-        transition={{ type: 'spring', stiffness: 100 }}
+        transition={{ type: 'spring' as const, stiffness: 100 }}
         className="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/80 text-primary-foreground mb-6 shadow-lg"
       >
         <Bot className="h-10 w-10" />

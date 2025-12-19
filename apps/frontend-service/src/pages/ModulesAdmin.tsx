@@ -98,16 +98,16 @@ const containerVariants = {
     opacity: 1,
     transition: { staggerChildren: 0.05 },
   },
-};
+} as const;
 
 const itemVariants = {
   hidden: { y: 20, opacity: 0 },
   visible: {
     y: 0,
     opacity: 1,
-    transition: { type: 'spring', stiffness: 100, damping: 12 },
+    transition: { type: 'spring' as const, stiffness: 100, damping: 12 },
   },
-};
+} as const;
 
 /**
  * Interface explícita para dados do formulário de módulos

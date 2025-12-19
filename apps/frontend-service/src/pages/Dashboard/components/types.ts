@@ -111,7 +111,7 @@ export const containerVariants = {
       staggerChildren: 0.1,
     },
   },
-};
+} as const;
 
 export const itemVariants = {
   hidden: { y: 20, opacity: 0 },
@@ -119,9 +119,9 @@ export const itemVariants = {
     y: 0,
     opacity: 1,
     transition: {
-      type: 'spring',
+      type: 'spring' as const,
       stiffness: 100,
       damping: 12,
     },
   },
-};
+} as const;
