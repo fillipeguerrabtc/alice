@@ -359,7 +359,7 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 | Recurso | Valor |
 |---------|-------|
 | **SO** | Ubuntu 24.04.3 LTS (Noble Numbat) |
-| **Docker** | 29.1.2 |
+| **Docker** | 29.1.3 |
 | **Docker Compose** | v5.0.0 |
 | **CPU** | 8 vCPUs (AMD EPYC) |
 | **RAM** | 16GB |
@@ -392,6 +392,56 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw enable
 
+# Configurar Docker daemon.json (Enterprise - 19/12/2025)
+cat > /etc/docker/daemon.json << 'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "5"
+  },
+  "storage-driver": "overlay2",
+  "live-restore": true,
+  "userland-proxy": false,
+  "no-new-privileges": true,
+  "default-ulimits": {
+    "nofile": {
+      "Name": "nofile",
+      "Hard": 65536,
+      "Soft": 65536
+    }
+  }
+}
+EOF
+systemctl restart docker
+
+# Hardening do kernel (segurança de rede - 19/12/2025)
+cat > /etc/sysctl.d/99-security.conf << 'EOF'
+# Security hardening - Alice Enterprise Platform
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
+net.ipv4.icmp_echo_ignore_broadcasts = 1
+net.ipv4.conf.all.accept_source_route = 0
+net.ipv4.conf.default.accept_source_route = 0
+net.ipv4.conf.all.send_redirects = 0
+net.ipv4.conf.default.send_redirects = 0
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_max_syn_backlog = 2048
+net.ipv4.tcp_synack_retries = 2
+net.ipv4.tcp_syn_retries = 5
+net.ipv4.conf.all.log_martians = 1
+net.ipv4.icmp_ignore_bogus_error_responses = 1
+net.ipv4.conf.all.accept_redirects = 0
+net.ipv4.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_redirects = 0
+net.ipv6.conf.default.accept_redirects = 0
+net.ipv6.conf.all.accept_ra = 0
+net.ipv6.conf.default.accept_ra = 0
+fs.file-max = 65535
+net.core.somaxconn = 65535
+EOF
+sysctl -p /etc/sysctl.d/99-security.conf
+
 # Verificar se volume Hetzner está montado
 df -h | grep alice-data
 
@@ -404,6 +454,14 @@ ls -la /mnt/
 
 # Verificar estrutura de diretórios (criada automaticamente pelo deploy)
 ls -la /opt/alice/
+
+# Instalar e configurar fail2ban (proteção contra brute-force)
+apt install -y fail2ban
+systemctl enable fail2ban
+systemctl start fail2ban
+
+# Verificar IPs banidos
+fail2ban-client status sshd
 ```
 
 ### 6. Primeiro Deploy
@@ -1026,7 +1084,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Security Hardening: 100% completo - 43/43 containers com no-new-privileges, 43/43 com resource limits, 24/43 com read_only*
-*Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.2, Docker Compose v5.0.0*
+*Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
