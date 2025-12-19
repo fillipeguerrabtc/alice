@@ -35,12 +35,14 @@ ingester:
   # WAL (Write-Ahead Log) - habilitado por padrão no Loki 3.6+
   # Garante durabilidade dos dados gravando no filesystem antes de processar
   # Documentação: https://grafana.com/docs/loki/latest/operations/storage/wal/
+  # IMPORTANTE: replay_memory_ceiling deve ser menor que o limite de memória do container (1G)
+  # Valor 750MB deixa margem (~250MB) para outras operações do Loki
   wal:
     enabled: true
     dir: /loki/wal
     flush_on_shutdown: true
     checkpoint_duration: 5m
-    replay_memory_ceiling: 4GB
+    replay_memory_ceiling: 750MB
 
 memberlist:
   join_members:
