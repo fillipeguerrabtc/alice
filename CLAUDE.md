@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.06 - 19 de Dezembro de 2025*
+*Versão: 4.07 - 19 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -434,3 +434,4 @@ git commit -a -m "test: adiciona testes unitários"
 *PostgreSQL Indexes (19/12/2025): Migration 0009 (HNSW m=24, ef_construction=128) + Migration 0010 (8 índices compostos/parciais para queries frequentes)*
 *Vite Build Otimizado (19/12/2025): manualChunks (vendor-react, vendor-ui, vendor-charts, vendor-i18n, vendor-query, vendor-motion), chunkSizeWarningLimit 500*
 *Atualização Total Dependências (19/12/2025): React 19.2.3, pnpm 10.26.1, drizzle-orm 0.45.1, drizzle-kit 0.31.8, drizzle-zod 0.8.3, pg 8.16.3, framer-motion 12.23.26, wouter 3.9.0, i18next 25.7.3, react-day-picker 9.13.0*
+*Mais Atualizações (19/12/2025): lucide-react 0.562.0, stripe 20.1.0, esbuild 0.27.2, vitest 4.0.16, @vitest/coverage-v8 4.0.16*
