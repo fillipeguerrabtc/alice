@@ -17,15 +17,14 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
+// CORREÇÃO 19/12/2025: Remover tipos não utilizados (no-unused-vars)
+// TradingPosition, TradingAuditLog, InsertTradingPosition removidos
 import {
   type TradingSignal,
   type TradingOrder,
-  type TradingPosition,
   type TradingRiskConfig,
-  type TradingAuditLog,
   type InsertTradingSignal,
   type InsertTradingOrder,
-  type InsertTradingPosition,
   type InsertTradingAuditLog,
 } from '@alice/shared';
 import * as kucoinClient from './kucoinClient.js';

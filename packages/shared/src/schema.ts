@@ -1965,7 +1965,8 @@ export const tradingLoraJobs = pgTable(
 );
 
 // Relations de Trading LoRA
-export const tradingMarketDataRelations = relations(tradingMarketData, ({ }) => ({}));
+// CORREÇÃO 19/12/2025: Usar _ para argumento não utilizado (no-empty-pattern)
+export const tradingMarketDataRelations = relations(tradingMarketData, (_) => ({}));
 
 export const tradingDatasetRelations = relations(tradingDataset, ({ one }) => ({
   tenant: one(tenants, {

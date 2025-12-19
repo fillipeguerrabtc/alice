@@ -52,8 +52,7 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Loader2,
-  Eye,
-  Edit,
+  // CORREÇÃO 19/12/2025: Remover Eye, Edit não utilizados (no-unused-vars)
   Trash2,
   Rocket,
   Brain,
@@ -62,7 +61,8 @@ import {
   Hand,
   CandlestickChart,
 } from 'lucide-react';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
+// CORREÇÃO 19/12/2025: Remover CardFooter não utilizado (no-unused-vars)
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -79,6 +79,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+// CORREÇÃO 19/12/2025: Remover DialogTrigger não utilizado (no-unused-vars)
 import {
   Dialog,
   DialogContent,
@@ -86,7 +87,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from '@/components/ui/dialog';
 import {
   Table,
@@ -103,7 +103,8 @@ import {
 } from '@/components/ui/tooltip';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+// CORREÇÃO 19/12/2025: Remover queryClient não utilizado (no-unused-vars)
+import { apiRequest } from '@/lib/queryClient';
 import { CandleChart, OrderBookViz, HandoverPanel } from '@/components/trading';
 import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry } from '@/components/trading';
 

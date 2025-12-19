@@ -137,7 +137,8 @@ const MANIFESTS_DIR = path.join(BACKUP_DIR, 'manifests');
 const _POSTGRES_CONTAINER = process.env.POSTGRES_CONTAINER || 'alice-postgres';
 const MARIADB_CONTAINER = process.env.MARIADB_CONTAINER || 'erpnext-mariadb';
 const REDIS_CONTAINER = process.env.REDIS_CONTAINER || 'erpnext-redis-cache';
-const QDRANT_CONTAINER = process.env.QDRANT_CONTAINER || 'alice-qdrant';
+// CORREÇÃO 19/12/2025: QDRANT_CONTAINER usado apenas via QDRANT_URL
+const _QDRANT_CONTAINER = process.env.QDRANT_CONTAINER || 'alice-qdrant';
 const QDRANT_URL = process.env.QDRANT_URL || 'http://alice-qdrant:6333';
 
 // Re-exportar para uso futuro em funções de health check

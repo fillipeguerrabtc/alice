@@ -428,3 +428,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix backup-orchestrator.ts (18/12/2025): qdrant está em manifest.components.qdrant, BACKUPS_BASE_PATH→BACKUP_DIR, fs→existsSync*
 *Bug Fix Tipos Number/String (18/12/2025): Campos real() (price, size, confidence, filledSize, avgFilledPrice) agora usam number, não string*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() - parametrizava string inteira. Corrigido para usar inArray() do Drizzle (3 ocorrências)*
+*ESLint Cleanup (19/12/2025): Corrigidos 1 erro + 23 warnings - no-empty-pattern, no-unused-vars, prefer-const em 12 arquivos*

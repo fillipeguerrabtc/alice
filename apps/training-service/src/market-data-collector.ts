@@ -15,7 +15,8 @@
  */
 
 import { createLogger } from '@alice/logger';
-import { getDatabase, schema, eq, and, desc, sql } from '@alice/database';
+// CORREÇÃO 19/12/2025: Remover 'and' não utilizado (no-unused-vars)
+import { getDatabase, schema, eq, desc, sql } from '@alice/database';
 import type { InsertTradingMarketData, TradingCandleData } from '@alice/shared';
 
 const logger = createLogger('market-data-collector');

@@ -21,7 +21,8 @@ import type { Database } from '@alice/database';
 const logger = createLogger('image-generation');
 
 const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
+// CORREÇÃO 19/12/2025: Remover SALAD_ORGANIZATION_ID não utilizado (no-unused-vars)
+// SALAD_ORGANIZATION_ID é usado apenas em chat-service/index.ts para validação no startup
 // CORREÇÃO 17/12/2025: Usar SALAD_FLUX_URL (Container Group dedicado) ao invés de endpoint legado
 // REGRA 6: Sem fallback em produção - variável DEVE estar definida via deploy-salad-gpu.yml
 const SALAD_FLUX_URL = process.env.SALAD_FLUX_URL;

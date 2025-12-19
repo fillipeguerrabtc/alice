@@ -21,7 +21,8 @@ import pLimit from 'p-limit';
 import { dequeueNextLearningTask, updateLearningTaskStatus } from '../learning-orchestrator.js';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
-import { eq, and, schema, sql, desc, isNull, inArray } from '@alice/database';
+// CORREÇÃO 19/12/2025: Remover 'desc' não utilizado (no-unused-vars)
+import { eq, and, schema, sql, isNull, inArray } from '@alice/database';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = createLogger('learning-worker');

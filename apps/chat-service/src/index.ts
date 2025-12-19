@@ -78,12 +78,10 @@ import {
   getImageGenBreakerStats,
 } from './image-generation-client.js';
 import { initTradingOrchestrator } from './trading-orchestrator.js';
-import { 
-  checkResponseCache, 
-  isGreeting, 
-  getCacheMetrics,
-  isCacheOperational,
-} from './response-cache.js';
+// CORREÇÃO 19/12/2025: Remover imports não utilizados (no-unused-vars)
+// isGreeting, getCacheMetrics, isCacheOperational estão disponíveis no módulo
+// mas são usados internamente via checkResponseCache
+import { checkResponseCache } from './response-cache.js';
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('chat-service');
@@ -144,8 +142,9 @@ if (!SALAD_ORGANIZATION_ID) {
   process.exit(1);
 }
 
+// CORREÇÃO 19/12/2025: Remover SALAD_ORG não utilizado (no-unused-vars)
+// SALAD_ORGANIZATION_ID já é validado acima, não precisa de alias
 const SALAD_KEY: string = SALAD_API_KEY;
-const SALAD_ORG: string = SALAD_ORGANIZATION_ID;
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -2312,7 +2311,8 @@ wss.on('connection', (ws, req) => {
         // Processar comando de trading via chat
         // Importar parser dinamicamente para evitar circular deps
         const { parseTradingCommand, isTradingCommand, getCommandDescription, validateCommand } = await import('./trading-command-parser.js');
-        const { getTradingControlMode, canExecuteTradingCommand } = await import('./trading-orchestrator.js');
+        // CORREÇÃO 19/12/2025: Remover getTradingControlMode não utilizado (no-unused-vars)
+        const { canExecuteTradingCommand } = await import('./trading-orchestrator.js');
         
         const content = message.content || '';
         

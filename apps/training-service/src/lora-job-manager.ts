@@ -138,7 +138,8 @@ export async function prepareDataset(
   logger.info({ tenantId, filter }, 'Preparando dataset para treinamento');
 
   // Buscar datasets aprovados
-  let query = db
+  // CORREÇÃO 19/12/2025: Usar const ao invés de let (prefer-const)
+  const datasets = await db
     .select()
     .from(schema.tradingDataset)
     .where(
@@ -149,8 +150,6 @@ export async function prepareDataset(
       )
     )
     .orderBy(desc(schema.tradingDataset.criadoEm));
-
-  const datasets = await query;
 
   // Aplicar filtros
   let filtered = datasets;
@@ -348,12 +347,9 @@ export async function listJobs(
 ): Promise<TradingLoraJob[]> {
   const db = getDatabase();
 
-  let query = db
-    .select()
-    .from(schema.tradingLoraJobs);
-
   // CORREÇÃO 18/12/2025: Drizzle não permite encadear .where() múltiplas vezes
   // Construir condição completa de uma vez
+  // CORREÇÃO 19/12/2025: Remover query não utilizado (no-unused-vars)
   const conditions = options?.status
     ? and(
         eq(schema.tradingLoraJobs.tenantId, tenantId),

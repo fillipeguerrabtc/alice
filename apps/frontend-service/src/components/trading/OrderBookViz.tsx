@@ -193,7 +193,8 @@ export function OrderBookViz({
   const { t } = useTranslation();
   
   // Processar dados do order book
-  const { bids, asks, spread, spreadPercentage, maxTotal } = useMemo(() => {
+  // CORREÇÃO 19/12/2025: Remover maxTotal não utilizado (no-unused-vars)
+  const { bids, asks, spread, spreadPercentage } = useMemo(() => {
     if (!data) {
       return {
         bids: [],

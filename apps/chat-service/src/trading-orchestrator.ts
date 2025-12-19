@@ -17,7 +17,8 @@
  * Data: 17 de Dezembro de 2025
  */
 
-import { eq, and, desc } from '@alice/database';
+// CORREÇÃO 19/12/2025: Remover 'and' não utilizado (no-unused-vars)
+import { eq, desc } from '@alice/database';
 import { createLogger } from '@alice/logger';
 import * as schema from '@alice/shared/schema';
 import type { Database } from '@alice/database';

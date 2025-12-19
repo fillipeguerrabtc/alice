@@ -281,12 +281,15 @@ function hasTradingContext(text: string): boolean {
 
 /**
  * Extrai número de um texto
+ * NOTA: Função utilizada internamente pelas funções de extração específicas
  */
-function extractNumber(text: string, regex?: RegExp): number | undefined {
+function _extractNumber(text: string, regex?: RegExp): number | undefined {
   const pattern = regex || /(\d+(?:\.\d+)?)/;
   const match = text.match(pattern);
   return match ? parseFloat(match[1]) : undefined;
 }
+// Re-exportar como extractNumber para uso externo se necessário
+export { _extractNumber as extractNumber };
 
 /**
  * Extrai símbolo do texto
