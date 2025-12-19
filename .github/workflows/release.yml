@@ -150,13 +150,14 @@ jobs:
             ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
             ```
+            
+            > **NOTA:** clip-inference-service foi migrado 100% para Salad Cloud GPU (19/12/2025)
             
             ### 📋 Deploy
             Para fazer deploy desta versão, execute o workflow "Deploy to Production" com `version: ${{ inputs.version }}`
@@ -181,6 +182,7 @@ jobs:
     
     strategy:
       matrix:
+        # NOTA: clip-inference-service removido - migrado 100% para Salad Cloud GPU (19/12/2025)
         include:
           - service: api-gateway
             image: api-gateway
@@ -188,8 +190,6 @@ jobs:
             image: auth
           - service: chat-service
             image: chat
-          - service: clip-inference-service
-            image: clip-inference
           - service: frontend-service
             image: frontend
           - service: integrations-service

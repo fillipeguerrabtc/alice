@@ -70,7 +70,6 @@ jobs:
               - 'apps/api-gateway/**'
               - 'apps/auth-service/**'
               - 'apps/chat-service/**'
-              - 'apps/clip-inference-service/**'
               - 'apps/integrations-service/**'
               - 'apps/observability-service/**'
               - 'apps/rag-service/**'
@@ -443,111 +442,9 @@ jobs:
           echo "Build de ${{ matrix.service }} concluído com sucesso!"
 
   # ===========================================================================
-  # Job 3b: Build de microsserviço Python (CLIP Inference)
-  # ===========================================================================
-  build-clip-inference:
-    name: Build clip-inference-service (Python)
-    runs-on: ubuntu-latest
-    # CRÍTICO: timeout para evitar jobs stuck (PyTorch é grande, precisa de mais tempo)
-    timeout-minutes: 25
-    # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
-    permissions:
-      contents: read
-    needs: build-and-check
-    steps:
-      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      # CRÍTICO: Limpar espaço em disco ANTES de instalar PyTorch (~2GB)
-      - name: Free disk space before install
-        run: |
-          echo "=== Liberando espaço em disco para PyTorch ==="
-          df -h /
-          sudo apt-get clean
-          # NOTA: NÃO limpar ~/.cache/pip - é usado pelo actions/setup-python cache
-          sudo rm -rf /usr/share/dotnet || true
-          sudo rm -rf /opt/ghc || true
-          df -h /
-
-      # REGRA 6: Enterprise-grade - versionamento automático do Python
-      # API correta: actions/python-versions (versões realmente disponíveis no GitHub Actions)
-      # Fallback para .python-version se API falhar
-      - name: Buscar versão do Python
-        id: python-version
-        run: |
-          # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
-          # Razão: Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta 3.14)
-          # O arquivo .python-version garante compatibilidade testada com todas as dependências
-          echo "🔍 Lendo versão do Python do arquivo .python-version..."
-          
-          if [ -f ".python-version" ]; then
-            PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
-            echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
-          else
-            echo "::error::Arquivo .python-version não encontrado!" >&2
-            exit 1
-          fi
-          
-          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y)
-          if ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
-            echo "::error::Versão do Python em formato inválido: '$PYTHON_VERSION'. Deve ser X.Y" >&2
-            exit 1
-          fi
-          
-          echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
-
-      # SHA: actions/setup-python@v5.3.0 (2024-11-14) - Supply Chain Security
-      - name: Setup Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
-        with:
-          python-version: ${{ steps.python-version.outputs.version }}
-          cache: 'pip'
-          cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
-
-      # REGRA 6: Enterprise-grade - dependências de sistema como fallback para compilação
-      # Python 3.13 tem wheels para Pillow, mas mantemos como segurança para edge cases
-      - name: Install system dependencies for Pillow
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
-          echo "✅ Dependências de sistema instaladas"
-
-      - name: Install dependencies
-        run: |
-          # Fail-fast para cd se diretório não existir
-          cd apps/clip-inference-service || exit 1
-          
-          # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
-          # Pacotes grandes (nvidia_cudnn_cu12, torch) podem falhar com "Connection reset by peer"
-          for attempt in 1 2 3; do
-            echo "📦 Tentativa $attempt de instalar dependências..."
-            if pip install --upgrade pip && pip install --retries 5 --timeout 120 -r requirements.txt; then
-              echo "✅ Dependências instaladas com sucesso!"
-              break
-            else
-              if [ $attempt -eq 3 ]; then
-                echo "::error::Falha ao instalar dependências após 3 tentativas"
-                exit 1
-              fi
-              echo "⚠️ Tentativa $attempt falhou, aguardando 30s antes de retry..."
-              sleep 30
-            fi
-          done
-          # set -e após retry loop para fail-fast em comandos subsequentes
-          set -e
-          df -h /
-
-      - name: Validate Python syntax
-        run: |
-          set -e
-          cd apps/clip-inference-service
-          python -m py_compile server.py
-          echo "clip-inference-service: Sintaxe Python válida!"
-
-  # ===========================================================================
   # Job 4: Build Frontend
+  # NOTA: clip-inference-service foi migrado 100% para Salad Cloud GPU (19/12/2025)
+  # O processamento de embeddings de imagem agora usa OpenCLIP via Salad Cloud API
   # ===========================================================================
   build-frontend:
     name: Build Frontend
@@ -809,71 +706,8 @@ jobs:
           # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
           NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
-      # Setup Python para instalar dependências Python (necessário para Trivy escanear)
-      # CRÍTICO: Sem isso, Trivy reporta "site-packages directory not found" e falha
-      # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
-      - name: Buscar versão do Python
-        id: python-version
-        run: |
-          # REGRA 6: Enterprise-grade - usar .python-version como fonte primária
-          # Razão: Nem todas as bibliotecas suportam Python bleeding edge (ex: Pillow 11.x não suporta 3.14)
-          # O arquivo .python-version garante compatibilidade testada com todas as dependências
-          echo "🔍 Lendo versão do Python do arquivo .python-version..."
-          
-          if [ -f ".python-version" ]; then
-            PYTHON_VERSION=$(cat .python-version | tr -d '[:space:]')
-            echo "✅ Versão do Python lida do .python-version: $PYTHON_VERSION"
-          else
-            echo "::error::Arquivo .python-version não encontrado!" >&2
-            exit 1
-          fi
-          
-          if ! echo "$PYTHON_VERSION" | grep -qE '^[0-9]+\.[0-9]+$'; then
-            echo "::error::Versão do Python em formato inválido: '$PYTHON_VERSION'. Deve ser X.Y" >&2
-            exit 1
-          fi
-          
-          echo "version=$PYTHON_VERSION" >> $GITHUB_OUTPUT
-          echo "PYTHON_VERSION=$PYTHON_VERSION" >> $GITHUB_ENV
-
-      # SHA: actions/setup-python@v5.3.0 (2024-11-14) - Supply Chain Security
-      - name: Setup Python
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
-        with:
-          python-version: ${{ steps.python-version.outputs.version }}
-          cache: 'pip'
-          cache-dependency-path: 'apps/clip-inference-service/requirements.txt'
-
-      # REGRA 6: Enterprise-grade - dependências de sistema como fallback para compilação
-      # Python 3.13 tem wheels para Pillow, mas mantemos como segurança para edge cases
-      - name: Install system dependencies for Pillow
-        run: |
-          set -e
-          sudo apt-get update
-          sudo apt-get install -y libjpeg-dev zlib1g-dev libpng-dev
-          echo "✅ Dependências de sistema instaladas"
-
-      - name: Install Python dependencies
-        run: |
-          echo "Instalando dependências Python para scan de segurança..."
-          # REGRA 6: Enterprise-grade - retry logic para falhas de rede transientes
-          for attempt in 1 2 3; do
-            echo "📦 Tentativa $attempt de instalar dependências..."
-            if pip install --upgrade pip && pip install --retries 5 --timeout 120 -r apps/clip-inference-service/requirements.txt; then
-              echo "✅ Dependências Python instaladas com sucesso!"
-              break
-            else
-              if [ $attempt -eq 3 ]; then
-                echo "::error::Falha ao instalar dependências após 3 tentativas"
-                exit 1
-              fi
-              echo "⚠️ Tentativa $attempt falhou, aguardando 30s antes de retry..."
-              sleep 30
-            fi
-          done
-          # set -e após retry loop para fail-fast em comandos subsequentes
-          set -e
-          df -h /
+      # NOTA: Instalação Python removida - clip-inference-service migrado para Salad Cloud GPU (19/12/2025)
+      # O scan de segurança agora foca apenas em dependências Node.js (pnpm-lock.yaml)
 
       # SHA: aquasecurity/trivy-action@v0.28.0 (2024-10-15) - Supply Chain Security
       - name: Run Trivy vulnerability scanner
@@ -1110,11 +944,12 @@ jobs:
       contents: read
       actions: write
     # Depende diretamente de todos os jobs críticos (sem job intermediário)
-    needs: [build-and-check, build-services, build-clip-inference, build-frontend, security-scan, compliance-checks]
+    # NOTA: build-clip-inference removido - serviço migrado para Salad Cloud GPU (19/12/2025)
+    needs: [build-and-check, build-services, build-frontend, security-scan, compliance-checks]
     # CRÍTICO: Verificar explicitamente que TODOS os jobs upstream tiveram sucesso
     # needs apenas cria ordem de execução, mas não impede execução se algum job falhar
     # Padrão usado em release.yml e deploy-production.yml: needs.{job}.result == 'success'
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-services.result == 'success' && needs.build-clip-inference.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-services.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
       - name: Checkout codigo

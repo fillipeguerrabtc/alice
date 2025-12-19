@@ -905,8 +905,8 @@ jobs:
           echo "   - MariaDB: ${MARIADB_DIGEST:-não encontrado}"
           echo "   - pgvector: ${PGVECTOR_DIGEST:-não encontrado}"
 
-      # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
-      # Necessário para clip-inference-service
+      # Limpeza de disco para builds grandes
+      # Mantida para garantir espaço para múltiplos builds Docker simultâneos
       - name: Liberar espaço em disco
         run: |
           echo "📊 Espaço antes da limpeza:"
@@ -1083,19 +1083,9 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache,mode=max
           platforms: linux/amd64
 
-      - name: Build e Push - CLIP Inference Service (Local - CPU no Hetzner)
-        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
-        with:
-          context: .
-          file: apps/clip-inference-service/Dockerfile
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-clip-inference:${{ steps.image-tag.outputs.value }}
-            ${{ env.IMAGE_PREFIX }}-clip-inference:latest
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-clip-inference:cache,mode=max
-          platforms: linux/amd64
-
+      # NOTA: CLIP Inference Service REMOVIDO - migrado 100% para Salad Cloud GPU (19/12/2025)
+      # Embeddings de imagem agora são processados via OpenCLIP no Salad Cloud
+      
       - name: Build e Push - API Gateway (Traefik Config)
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:

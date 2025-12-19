@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "@alice/database": "workspace:*",
+    "@alice/logger": "workspace:*",
     "@alice/shared": "workspace:*",
     "@alice/shared-utils": "workspace:*",
     "@types/opossum": "^8.1.9",
