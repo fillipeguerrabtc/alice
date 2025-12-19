@@ -323,10 +323,10 @@ alice/
 ## Tecnologias
 
 ### Frontend
-- React 18, TypeScript 5.9.3, Vite 7.3
-- TanStack Query, Wouter
-- shadcn/ui, Tailwind CSS 4.1
-- Framer Motion, react-i18next
+- React 19.2, TypeScript 5.9.3, Vite 7.3
+- TanStack Query 5.90, Wouter 3.9
+- shadcn/ui, Tailwind CSS 4.1, Framer Motion 12
+- react-i18next 16.5, i18next 25.7
 
 ### Backend
 - Node.js 22 LTS (versão automática via API + fallback .nvmrc), Express 5.2
@@ -434,7 +434,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 
 *Autor: Fillipe Guerra*
 *Versão 4.0.0 - 19 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, pnpm 10.25.0, TypeScript 5.9.3*
+*Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*

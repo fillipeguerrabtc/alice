@@ -13,7 +13,7 @@ import {
   pgEnum,
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+// NOTA: import { z } from "zod" removido - drizzle-zod 0.8.x não requer
 
 // ============================================================================
 // ENUMS
@@ -1408,61 +1408,61 @@ export const auditLogsRelations = relations(auditLogs, ({ one }) => ({
 // ============================================================================
 // INSERT SCHEMAS (Zod Validation)
 // ============================================================================
-// NOTA: Usando z.ZodType<unknown> para resolver erro TS2742 (inferência de tipos)
+// drizzle-zod 0.8.x - inferência automática de tipos
 
-export const insertTenantSchema: z.ZodType<unknown> = createInsertSchema(tenants).omit({
+export const insertTenantSchema = createInsertSchema(tenants).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertUserSchema: z.ZodType<unknown> = createInsertSchema(users).omit({
+export const insertUserSchema = createInsertSchema(users).omit({
   createdAt: true,
   updatedAt: true,
 });
 
-export const insertNamespaceSchema: z.ZodType<unknown> = createInsertSchema(namespaces).omit({
+export const insertNamespaceSchema = createInsertSchema(namespaces).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertAgentSchema: z.ZodType<unknown> = createInsertSchema(agents).omit({
+export const insertAgentSchema = createInsertSchema(agents).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertConversationSchema: z.ZodType<unknown> = createInsertSchema(conversations).omit({
+export const insertConversationSchema = createInsertSchema(conversations).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertMessageSchema: z.ZodType<unknown> = createInsertSchema(messages).omit({
+export const insertMessageSchema = createInsertSchema(messages).omit({
   id: true,
   criadoEm: true,
 });
 
-export const insertDocumentSchema: z.ZodType<unknown> = createInsertSchema(documents).omit({
-  id: true,
-  criadoEm: true,
-  atualizadoEm: true,
-});
-
-export const insertIntegrationSchema: z.ZodType<unknown> = createInsertSchema(integrations).omit({
+export const insertDocumentSchema = createInsertSchema(documents).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertLlmConfigSchema: z.ZodType<unknown> = createInsertSchema(llmConfig).omit({
+export const insertIntegrationSchema = createInsertSchema(integrations).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertMediaUploadSchema: z.ZodType<unknown> = createInsertSchema(mediaUploads).omit({
+export const insertLlmConfigSchema = createInsertSchema(llmConfig).omit({
+  id: true,
+  criadoEm: true,
+  atualizadoEm: true,
+});
+
+export const insertMediaUploadSchema = createInsertSchema(mediaUploads).omit({
   id: true,
   criadoEm: true,
   processadoEm: true,
@@ -1471,41 +1471,42 @@ export const insertMediaUploadSchema: z.ZodType<unknown> = createInsertSchema(me
 // ============================================================================
 // TYPES
 // ============================================================================
+// drizzle-zod 0.8.x - usando $inferInsert do Drizzle para tipos
 
 export type Tenant = typeof tenants.$inferSelect;
-export type InsertTenant = z.infer<typeof insertTenantSchema>;
+export type InsertTenant = typeof tenants.$inferInsert;
 
 export type User = typeof users.$inferSelect;
-export type InsertUser = z.infer<typeof insertUserSchema>;
+export type InsertUser = typeof users.$inferInsert;
 export type UpsertUser = typeof users.$inferInsert;
 
 export type Permission = typeof permissions.$inferSelect;
 export type RolePermission = typeof rolePermissions.$inferSelect;
 
 export type Namespace = typeof namespaces.$inferSelect;
-export type InsertNamespace = z.infer<typeof insertNamespaceSchema>;
+export type InsertNamespace = typeof namespaces.$inferInsert;
 
 export type Agent = typeof agents.$inferSelect;
-export type InsertAgent = z.infer<typeof insertAgentSchema>;
+export type InsertAgent = typeof agents.$inferInsert;
 
 export type Conversation = typeof conversations.$inferSelect;
-export type InsertConversation = z.infer<typeof insertConversationSchema>;
+export type InsertConversation = typeof conversations.$inferInsert;
 
 export type Message = typeof messages.$inferSelect;
-export type InsertMessage = z.infer<typeof insertMessageSchema>;
+export type InsertMessage = typeof messages.$inferInsert;
 
 export type Document = typeof documents.$inferSelect;
-export type InsertDocument = z.infer<typeof insertDocumentSchema>;
+export type InsertDocument = typeof documents.$inferInsert;
 
 export type DocumentChunk = typeof documentChunks.$inferSelect;
 
 export type LearningTask = typeof learningTasks.$inferSelect;
 
 export type Integration = typeof integrations.$inferSelect;
-export type InsertIntegration = z.infer<typeof insertIntegrationSchema>;
+export type InsertIntegration = typeof integrations.$inferInsert;
 
 export type LlmConfig = typeof llmConfig.$inferSelect;
-export type InsertLlmConfig = z.infer<typeof insertLlmConfigSchema>;
+export type InsertLlmConfig = typeof llmConfig.$inferInsert;
 
 export type AuditLog = typeof auditLogs.$inferSelect;
 export type UsageMetric = typeof usageMetrics.$inferSelect;
@@ -1554,49 +1555,49 @@ export type InsertAutoLearningSchedule = typeof autoLearningSchedule.$inferInser
 export type MediaUpload = typeof mediaUploads.$inferSelect;
 export type InsertMediaUpload = typeof mediaUploads.$inferInsert;
 
-export const insertTrainingDataSchema: z.ZodType<unknown> = createInsertSchema(trainingData).omit({
+export const insertTrainingDataSchema = createInsertSchema(trainingData).omit({
   id: true,
   criadoEm: true,
   processadoEm: true,
 });
 
-export const insertFineTuningJobSchema: z.ZodType<unknown> = createInsertSchema(fineTuningJobs).omit({
+export const insertFineTuningJobSchema = createInsertSchema(fineTuningJobs).omit({
   id: true,
   criadoEm: true,
   iniciadoEm: true,
   completadoEm: true,
 });
 
-export const insertUsageMetricSchema: z.ZodType<unknown> = createInsertSchema(usageMetrics).omit({
+export const insertUsageMetricSchema = createInsertSchema(usageMetrics).omit({
   id: true,
   criadoEm: true,
 });
 
 // Wise-ERPNext Sync Insert Schema (FASE 5.5)
-export const insertWiseSyncLogSchema: z.ZodType<unknown> = createInsertSchema(wiseSyncLog).omit({
+export const insertWiseSyncLogSchema = createInsertSchema(wiseSyncLog).omit({
   id: true,
   criadoEm: true,
   sincronizadoEm: true,
 });
 
 // Takeover/Handover Insert Schemas (FASE 6.5)
-export const insertConversationStateSchema: z.ZodType<unknown> = createInsertSchema(conversationStates).omit({
+export const insertConversationStateSchema = createInsertSchema(conversationStates).omit({
   id: true,
   criadoEm: true,
   atualizadoEm: true,
 });
 
-export const insertConversationParticipantSchema: z.ZodType<unknown> = createInsertSchema(conversationParticipants).omit({
+export const insertConversationParticipantSchema = createInsertSchema(conversationParticipants).omit({
   id: true,
 });
 
-export const insertConversationEscalationSchema: z.ZodType<unknown> = createInsertSchema(conversationEscalations).omit({
+export const insertConversationEscalationSchema = createInsertSchema(conversationEscalations).omit({
   id: true,
   criadoEm: true,
 });
 
 // Generated Images Insert Schema (FASE 6.5+)
-export const insertGeneratedImageSchema: z.ZodType<unknown> = createInsertSchema(generatedImages).omit({
+export const insertGeneratedImageSchema = createInsertSchema(generatedImages).omit({
   id: true,
   criadoEm: true,
 });
