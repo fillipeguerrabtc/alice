@@ -14,14 +14,14 @@
  * Regra 16 CLAUDE.md: Circuit breaker para chamadas externas
  *
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 19 de Dezembro de 2025
  */
 
 import pLimit from 'p-limit';
 import { dequeueNextLearningTask, updateLearningTaskStatus } from '../learning-orchestrator.js';
 import { createLogger } from '@alice/logger';
 import type { Database } from '@alice/database';
-import { eq, and, schema, sql, desc, isNull } from '@alice/database';
+import { eq, and, schema, sql, desc, isNull, inArray } from '@alice/database';
 import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
 
 const logger = createLogger('learning-worker');
@@ -168,14 +168,18 @@ async function processRagUpdate(
   const tenantNamespaceIds = tenantNamespaces.map(ns => ns.id);
 
   // Buscar documentos que precisam de reindexação
+  // CORREÇÃO 19/12/2025: Bug Fix - usar inArray() ao invés de sql template literal
+  // sql`...IN (${ids.join(',')})` parametriza a string inteira como único valor,
+  // produzindo SQL como `namespace_id IN ($1)` onde $1 = 'uuid1,uuid2,uuid3' (string única)
+  // inArray() do Drizzle gera corretamente `namespace_id IN ($1, $2, $3)` com valores separados
   const whereConditions = tenantNamespaceIds.length > 0
     ? namespaceId
       ? and(
           eq(schema.documents.namespaceId, namespaceId),
           // Verificar que namespace pertence ao tenant
-          sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`
+          inArray(schema.documents.namespaceId, tenantNamespaceIds)
         )
-      : sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`
+      : inArray(schema.documents.namespaceId, tenantNamespaceIds)
     : undefined;
 
   // Documentos sem embedding ou modificados após embedding
@@ -243,10 +247,12 @@ async function processAutoIndexing(
   const tenantNamespaceIds = tenantNamespaces.map(ns => ns.id);
 
   // Buscar documentos pendentes de indexação (processado = false)
+  // CORREÇÃO 19/12/2025: Bug Fix - usar inArray() ao invés de sql template literal
+  // Mesmo problema do processRagUpdate - sql template parametriza string inteira
   const pendingDocs = tenantNamespaceIds.length > 0
     ? await db.query.documents.findMany({
         where: and(
-          sql`${schema.documents.namespaceId} IN (${tenantNamespaceIds.join(',')})`,
+          inArray(schema.documents.namespaceId, tenantNamespaceIds),
           eq(schema.documents.processado, false)
         ),
         limit: 50, // Processar em batches menores para auto-indexação
@@ -471,9 +477,13 @@ async function processEmbeddingGeneration(
 
   // CORREÇÃO 18/12/2025: documentChunks não tem tenantId
   // Buscar chunks diretamente pelos documentIds (já filtrados por tenant)
+  // CORREÇÃO 19/12/2025: Bug Fix - usar inArray() ao invés de sql template literal
+  // sql`...= ANY(ARRAY[${ids.map(...).join(',')}])` parametriza como string única,
+  // produzindo SQL como `= ANY(ARRAY[$1])` onde $1 = "'uuid1'::uuid,'uuid2'::uuid" (string literal)
+  // inArray() do Drizzle gera corretamente `document_id IN ($1, $2, $3)` com UUIDs separados
   if (documentIds && documentIds.length > 0) {
     const chunks = await db.query.documentChunks.findMany({
-      where: sql`${schema.documentChunks.documentId} = ANY(ARRAY[${documentIds.map(id => `'${id}'::uuid`).join(',')}])`,
+      where: inArray(schema.documentChunks.documentId, documentIds),
     });
     textsToProcess = chunks.map(c => c.conteudo).filter(Boolean);
   } else if (texts && texts.length > 0) {

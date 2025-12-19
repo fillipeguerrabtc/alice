@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 17 de Dezembro de 2025  
+> **Data:** 19 de Dezembro de 2025  
 > **Versão:** 1.1.0 - Pipeline Unificada  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)

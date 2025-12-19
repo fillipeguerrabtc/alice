@@ -1,7 +1,7 @@
 # Consolidação de Documentação - Alice Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 18 de Dezembro de 2025  
+**Data:** 19 de Dezembro de 2025  
 **Versão:** 3.0  
 **Atualizado:** 17 de Dezembro de 2025 (Documento de Arquitetura Enterprise - arc42 + C4 + ADRs)
 
@@ -73,8 +73,8 @@
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 17 de Dezembro de 2025*
-*Versão: 3.0 - Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
+*Documento atualizado em: 19 de Dezembro de 2025*
+*Versão: 3.1 - Bug Fix SQL IN Clause (learning-worker.ts)*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *Total de Documentos: 13 (8 docs técnicos + 3 raiz + 2 infra)*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*

@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 18 de Dezembro de 2025
+**Data:** 19 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -513,8 +513,8 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 17 de Dezembro de 2025*  
-*Versão: 7.3*  
+*Documento atualizado em: 19 de Dezembro de 2025*
+*Versão: 7.4*
 *Total de Secrets: 50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 43 (7 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  

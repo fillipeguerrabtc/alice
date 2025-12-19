@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 17 de Dezembro de 2025  
+> **Data:** 19 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
 > **Versão:** 4.0 - Pipeline Unificada + Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)
 
@@ -1107,9 +1107,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 17/12/2025*
+*Documento atualizado em: 19/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.0 - Pipeline Unificada + Documento de Arquitetura Enterprise (arc42 + C4 + ADRs)*
+*Versão: 4.1 - Bug Fix SQL IN Clause (learning-worker.ts)*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
@@ -1141,6 +1141,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): Hook useKucoinWebSocket evita subscriptions duplicadas na conexão inicial*
 *Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
+*Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() que parametrizava string inteira como único valor. Corrigido para usar inArray() do Drizzle ORM (3 ocorrências: processRagUpdate, processAutoIndexing, processEmbeddingGeneration)*
 
 ---
 

@@ -333,7 +333,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.02 - 18 de Dezembro de 2025*
+*Versão: 4.03 - 19 de Dezembro de 2025*
 *Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
 *GitHub Secrets: 50 configurados (SALAD_PROJECT_ID adicionado 17/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -427,3 +427,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix learning-worker.ts (18/12/2025): Schema documents não tem tenantId/status - corrigido para usar namespaceId e processado (boolean)*
 *Bug Fix backup-orchestrator.ts (18/12/2025): qdrant está em manifest.components.qdrant, BACKUPS_BASE_PATH→BACKUP_DIR, fs→existsSync*
 *Bug Fix Tipos Number/String (18/12/2025): Campos real() (price, size, confidence, filledSize, avgFilledPrice) agora usam number, não string*
+*Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() - parametrizava string inteira. Corrigido para usar inArray() do Drizzle (3 ocorrências)*
