@@ -459,6 +459,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Alertmanager Secrets Leak Fix (19/12/2025): Removido env_file para evitar vazamento de secrets em logs Docker*
 *ClickHouse IPv4 Only Fix (19/12/2025): Forçado listen_host 0.0.0.0 via override.xml - IPv6 não funciona em Docker/Hetzner, causava "Address family not supported"*
 *Loki WAL Fix (19/12/2025): Corrigido ingester_rf1 (não existe) para ingester.wal, replay_memory_ceiling 4GB→750MB (dentro do limite 1G), retention_period 744h*
-*pgvector External Fix (19/12/2025): Adicionado pgvector como dependência direta do rag-service - evita "Dynamic require of node:util" quando bundlado pelo esbuild*
+*pgvector External Fix (19/12/2025): Adicionado pgvector como dependência direta de TODOS microsserviços (auth, chat, rag, training, integrations) - evita "Dynamic require of node:util" quando bundlado pelo esbuild*
 *Rollback Inteligente Enterprise (19/12/2025): Função has_real_production_data() verifica manifesto válido + containers healthy + volumes reais antes de preservar dados*
 *Rollback Limpeza Total (19/12/2025): full_system_cleanup() agora remove TODOS volumes nomeados quando PRESERVE_DATA=false (primeiro deploy sem dados reais)*
