@@ -23,15 +23,25 @@ server:
   grpc_listen_port: 9096
   log_level: info
 
-# Configuração do ingester (Loki 3.6+ Best Practices)
+# Configuração do ingester (Loki 3.6+ Best Practices 2025)
+# Documentação: https://grafana.com/docs/loki/latest/configure/bp-configure/
 ingester:
   lifecycler:
     ring:
       kvstore:
         store: memberlist
       replication_factor: 1
+  # Chunk settings (Best Practices 2025)
+  # snappy: melhor performance de query vs gzip (default)
+  chunk_encoding: snappy
+  # Tempo máximo antes de flush (default 2h)
+  max_chunk_age: 2h
+  # Período de idle antes de flush (default 30m, reduzido para 5m)
   chunk_idle_period: 5m
+  # Período de retenção após flush
   chunk_retain_period: 1m
+  # Tamanho alvo do chunk comprimido (~1.5MB default)
+  chunk_target_size: 1572864
   # WAL (Write-Ahead Log) - habilitado por padrão no Loki 3.6+
   # Garante durabilidade dos dados gravando no filesystem antes de processar
   # Documentação: https://grafana.com/docs/loki/latest/operations/storage/wal/
@@ -70,12 +80,15 @@ schema_config:
         prefix: index_
         period: 24h
 
-# Storage usando TSDB (Loki 3.0+ Best Practices)
+# Storage usando TSDB (Loki 3.6+ Best Practices 2025)
+# Documentação: https://grafana.com/docs/loki/latest/operations/storage/tsdb/
 storage_config:
   tsdb_shipper:
     active_index_directory: /loki/tsdb-shipper-active
     cache_location: /loki/tsdb-shipper-cache
     cache_ttl: 24h
+    # Intervalo de ressincronização com storage (recomendado docs)
+    resync_interval: 5m
   filesystem:
     directory: /loki/chunks
 
