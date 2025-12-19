@@ -467,7 +467,7 @@ C4Deployment
 │   │   ├── audio/
 │   │   ├── video/
 │   │   └── document/
-│   └── tts/lip-sync/talking-head/  # Outputs GPU
+│   └── {tenantId}/                 # Uploads por tenant
 ├── backups/                        # Backups enterprise
 │   ├── postgresql/                 # pgBackRest (WAL, PITR)
 │   ├── mariadb/                    # ERPNext dumps

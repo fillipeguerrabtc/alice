@@ -1037,37 +1037,6 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-## 🛠️ ATUALIZAÇÃO 13/12/2025 - Multimodal (Wav2Lip/SadTalker/TTS)
-
-| Tópico | Detalhe | Arquivo |
-|--------|---------|---------|
-| Shell hardening | `SHELL ["/bin/bash","-o","pipefail","-c"]` + `set -euo pipefail` em imagens multimodais | `docker/lip-sync/Dockerfile`, `docker/talking-head/Dockerfile`, `docker/tts/Dockerfile` |
-| Dependências | Inclusão de `git-lfs`, `wget`, `unzip`, `ca-certificates`; `numpy==1.25.2` em todos os serviços multimodais (compatível com `torch 2.1.2`) | Dockerfiles multimodais, `docker/*/requirements.txt` |
-| Wav2Lip build | Clone com commit fixo, download do checkpoint `wav2lip_gan.pth` **+ modelo de face detection `s3fd.pth`** (ambos obrigatórios para inferência, ambos com **checksum SHA256 calculado automaticamente** no workflow) | `docker/lip-sync/Dockerfile` |
-| Wav2Lip runtime | Execução via script `python3 /opt/wav2lip/inference.py`, `PYTHONPATH=/opt/wav2lip`, `cwd=/opt/wav2lip`, caminhos absolutos para face/audio/output e checkpoint explícito; `VIDEO_PATH` e `AUDIO_PATH` via env (apenas caminhos locais, sem fallback para inputUrl/inputPath), saída em `/opt/alice/uploads/lip-sync/output-<job>.mp4` | `docker/lip-sync/serve.py`, `apps/rag-service/src/workers/media-worker.ts` |
-| SadTalker build | Clone completo (sem depth), instalação de deps e download **obrigatório** de modelos via `scripts/download_models.sh` (falha se ausente) | `docker/talking-head/Dockerfile` |
-| SadTalker runtime | `PYTHONPATH=/opt/sadtalker`, `cwd=/opt/sadtalker`, caminhos absolutos, renome final com `final_path`; `IMAGE_PATH` e `AUDIO_PATH` via env (apenas caminhos locais, sem fallback para inputUrl/inputPath); saída em `/opt/alice/uploads/talking-head/output-<job>.mp4` | `docker/talking-head/serve.py`, `apps/rag-service/src/workers/media-worker.ts` |
-| TTS build | Shell hardening, **pré-download obrigatório do modelo XTTS v2** durante build para autonomia 100%; validação via `tts.to('cpu')` (se executar com sucesso, modelo está OK); `TTS_HOME=/opt/tts-models`, `COQUI_TOS_AGREED=1` | `docker/tts/Dockerfile` |
-| TTS runtime | Parâmetros via `MEDIA_PARAMS` JSON (text, voice, lang, speaker_wav) com fallback para env vars; **speaker default: `Claribel Dervla`**; **idioma default: `pt`** (Regra 13 - PT-BR primário); suporte a voice cloning via `speaker_wav` **(apenas caminho local, URLs rejeitadas)**; `TEXT` obrigatório validado (com fallback em env `TEXT`) e `VOICE`/`TTS_LANG` enviados via env; saída em `/opt/alice/uploads/tts/output-<job>.wav` | `docker/tts/serve.py`, `apps/rag-service/src/workers/media-worker.ts` |
-| Long-video runtime | `OUTPUT_PATH` enviado ao container Salad e apontando para `/opt/alice/uploads/long-video/output-<job>.mp4` (volume extra) | `apps/rag-service/src/workers/media-worker.ts` |
-| Salad params flatten | `talking_head` e `lip_sync` agora achatam `parametros` no nível raiz antes de resolver paths (evita perda de VIDEO_PATH/IMAGE_PATH/AUDIO_PATH) | `apps/rag-service/src/workers/media-worker.ts` |
-| Cache enterprise | Workflow `build-media-images` usa **cache de registry** (`cache-from/cache-to: type=registry`) igual ao `deploy-production.yml` para builds rápidos | `.github/workflows/build-media-images.yml` |
-| Checksums automáticos | SHA256 dos modelos ML (wav2lip_gan.pth, s3fd.pth) calculados **inline no build do lip-sync** diretamente das fontes originais (HuggingFace mirrors com fallback — URL original do Adrian Bulat retorna 401). **Token `HUGGINGFACE_TOKEN` usado em todos os downloads** para acesso confiável (evita rate limits e permite acesso a repositórios gated/privados) — mesmo padrão enterprise do `deploy-production.yml`, sem dependência de assets no GitHub Release | `.github/workflows/build-media-images.yml` |
-| **Permissões enterprise** | **Hardening de permissões aplicado em todo o código:** diretórios criados com `mode: 0o750` (rwxr-x---), arquivos com `mode: 0o640` (rw-r-----), secrets com `mode: 0o600` (rw-------). Implementado em `storage.ts`, `video-processor.ts`, `index.ts` (upload endpoint), `setup-hetzner.sh`, e **todos os `serve.py` dos containers Salad** (tts, lip-sync, talking-head, long-video) que aplicam `os.chmod(0o750)` após criar diretórios | `apps/rag-service/src/storage.ts`, `apps/rag-service/src/video-processor.ts`, `apps/rag-service/src/index.ts`, `infra/scripts/setup-hetzner.sh`, `docker/*/serve.py` |
-| **Estrutura de pastas** | **Organização enterprise do volume extra:** `/opt/alice/uploads/{tts,lip-sync,talking-head,long-video,media}` para outputs multimodais, `/opt/alice/backups/{postgresql,mariadb,redis,manifests}` para backups, `/opt/alice/logs` para logs. Todas as subpastas criadas automaticamente com permissões corretas | `apps/rag-service/src/index.ts`, `apps/rag-service/src/workers/media-worker.ts`, `infra/scripts/setup-hetzner.sh` |
-| **Upload Salad->RAG** | **Endpoint interno `/api/rag/internal/media/upload`** com validação HMAC (`INTERNAL_API_SECRET`), salvamento em subpastas corretas do volume extra, e atualização do DB com metadados do upload. Todos os containers Salad (TTS, lip-sync, talking-head, long-video) fazem upload automático após gerar artefatos | `apps/rag-service/src/index.ts`, `docker/*/serve.py` |
-
-> Nota: `docs/PLANO-MULTIMODAL-COMPLETO.md` foi removido após conclusão do escopo. Estado e histórico multimodal estão centralizados aqui e em `README.md`/`DEPLOYMENT.md`.
-
-> Nota (limpeza de documentação legada): removidos relatórios históricos (`ANALISE-DOCUMENTACAO-2025-12-12.md`, `ANALISE-VERSOES-COMPONENTES.md`, `ATUALIZACAO-PERIODICA-PACOTES.md`, `RELATORIO-VERSIONAMENTO-AUTOMATICO.md`, `VERIFICACAO-COMPLETA-ENTERPRISE-2025-12-11.md`, `VERIFICACAO-FINAL-ATUALIZACAO-PERIODICA.md`) por estarem obsoletos/consolidados neste documento, `README.md` e `DEPLOYMENT.md`.
-
-*Documento atualizado em: 13/12/2025*  
-*Autor: Fillipe Guerra*  
-
----
-
----
-
 ## 📝 ATUALIZAÇÃO 09/12/2025 - BULK IMPORT ENTERPRISE UI
 
 ### Funcionalidade Implementada

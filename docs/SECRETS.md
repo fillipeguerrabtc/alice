@@ -24,7 +24,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
-| **Alice RAG (multimodal + Salad GPU)** | alice-rag | SALAD_TTS_IMAGE, SALAD_TALKING_HEAD_IMAGE, SALAD_LIP_SYNC_IMAGE, SALAD_LONG_VIDEO_IMAGE, SALAD_WHISPER_URL, SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL |
+| **Alice RAG (GPU + Web Search)** | alice-rag | SALAD_GPU_CLASS, SALAD_MEDIA_PROJECT, SALAD_API_URL, SEARXNG_URL |
 | **Alice Embeddings GPU** | embeddings-gpu | `EMBEDDINGS_GPU_URL` (URL do serviço GPU Salad Cloud - 4096 dim texto → Qdrant, 1024 dim imagem → pgvector) |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
@@ -101,12 +101,7 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_ORGANIZATION_ID` | portal.salad.com → Settings |
 | `SALAD_PROJECT_ID` | portal.salad.com → Projects → Project Name (ex: `default`) |
 | `SALAD_API_URL` | Use o default `https://api.salad.com/api/public` (defina em `Repository Variables` como var, não secret) |
-| `SALAD_MEDIA_PROJECT` | Nome do projeto de media jobs no Salad (ex.: `alice-media`) — configure como var |
-| `SALAD_TTS_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
-| `SALAD_TALKING_HEAD_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
-| `SALAD_LIP_SYNC_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
-| `SALAD_LONG_VIDEO_IMAGE` | Digest GHCR gerado pelo workflow `build-media-images` (obrigatório) |
-| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad (OPCIONAL - se não configurado, usa CPU local como fallback). Obter após build da imagem `whisper-gpu` |
+| `SALAD_MEDIA_PROJECT` | Nome do projeto no Salad (ex.: `alice-media`) — configure como var |
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 | `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 
@@ -122,8 +117,6 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 | `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim). Endpoints: `/embed/text`, `/embed/image` |
 
 > **IMPORTANTE:** O deploy de GPU está integrado no `deploy-production.yml`. Os endpoints são automaticamente configurados via Python SDK (salad-cloud-sdk) durante o deploy de produção.
-
-> **Nota sobre Checksums Multimodais:** Os checksums SHA256 dos modelos (`wav2lip_gan.pth`, `s3fd.pth`) são calculados **automaticamente** durante o workflow `build-media-images` (padrão enterprise). O token `HUGGINGFACE_TOKEN` é usado para garantir downloads confiáveis dos modelos ML (evita rate limits e permite acesso a repositórios gated/privados).
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 

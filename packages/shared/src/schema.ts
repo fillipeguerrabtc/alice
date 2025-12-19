@@ -435,11 +435,8 @@ export const webCrawlStatusEnum = pgEnum("web_crawl_status", [
   "cancelled",
 ]);
 
+// Job types de mídia (limpeza 19/12/2025 - removidos obsoletos: tts, talking_head, lip_sync, long_video)
 export const mediaJobTypeEnum = pgEnum("media_job_type", [
-  "tts",
-  "talking_head",
-  "lip_sync",
-  "long_video",
   "image_enhance",
   "audio_clean",
 ]);

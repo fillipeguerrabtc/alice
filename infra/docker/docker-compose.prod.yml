@@ -786,12 +786,6 @@ services:
       SALAD_API_KEY: ${SALAD_API_KEY:?SALAD_API_KEY é obrigatório}
       SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID:?SALAD_ORGANIZATION_ID é obrigatório}
       SALAD_MEDIA_PROJECT: ${SALAD_MEDIA_PROJECT:-alice-media}
-      # Imagens Salad para serviços de mídia (opcionais - jobs falham graciosamente se não configuradas)
-      # O media-worker.ts verifica a existência antes de usar e marca job como failed se ausente
-      SALAD_TTS_IMAGE: ${SALAD_TTS_IMAGE:-}
-      SALAD_TALKING_HEAD_IMAGE: ${SALAD_TALKING_HEAD_IMAGE:-}
-      SALAD_LIP_SYNC_IMAGE: ${SALAD_LIP_SYNC_IMAGE:-}
-      SALAD_LONG_VIDEO_IMAGE: ${SALAD_LONG_VIDEO_IMAGE:-}
       SALAD_GPU_CLASS: ${SALAD_GPU_CLASS:-premium-gpu}
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads

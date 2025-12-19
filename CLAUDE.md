@@ -174,17 +174,12 @@ alice/
 │   ├── postgresql/                 # Dados PostgreSQL + pgvector
 │   ├── mariadb/                    # Dados MariaDB (ERPNext)
 │   └── redis/                      # Dados Redis (persistência)
-├── uploads/                        # Uploads multimodais (750) - DUAS estruturas
-│   ├── {tenantId}/                 # Uploads gerais de usuários (isolamento por tenant)
-│   │   ├── image/                  # Imagens enviadas via /api/media/upload
-│   │   ├── audio/                  # Áudios enviados via /api/media/upload
-│   │   ├── video/                  # Vídeos enviados via /api/media/upload
-│   │   └── document/               # Documentos enviados via /api/media/upload
-│   ├── tts/                        # Outputs de jobs TTS (Salad) - output-{jobId}.wav
-│   ├── lip-sync/                   # Outputs de jobs lip-sync (Salad) - output-{jobId}.mp4
-│   ├── talking-head/               # Outputs de jobs talking-head (Salad) - output-{jobId}.mp4
-│   ├── long-video/                 # Outputs de jobs long-video (Salad) - output-{jobId}.mp4
-│   └── media/                      # Outros arquivos multimodais (reservado)
+├── uploads/                        # Uploads multimodais (750) - isolamento por tenant
+│   └── {tenantId}/                 # Uploads gerais de usuários
+│       ├── image/                  # Imagens enviadas via /api/media/upload
+│       ├── audio/                  # Áudios enviados via /api/media/upload
+│       ├── video/                  # Vídeos enviados via /api/media/upload
+│       └── document/               # Documentos enviados via /api/media/upload
 ├── backups/                        # Backups enterprise (750)
 │   ├── postgresql/                 # pgBackRest (full + incremental + WAL)
 │   ├── mariadb/                    # Mariabackup dumps

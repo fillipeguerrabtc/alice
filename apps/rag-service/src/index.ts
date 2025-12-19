@@ -67,7 +67,6 @@ import { getDocumentProcessor } from './document-processor.js';
 import { createWebSearchClient, WebSearchResult } from './web-search.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
 import { startLearningWorker } from './workers/learning-worker.js';
-import { startMediaWorker } from './workers/media-worker.js';
 import { startWebCrawlWorker } from './workers/web-crawl-worker.js';
 // Cliente Qdrant para busca de texto (4096 dim - Qwen3-Embedding-8B)
 // CORREÇÃO 17/12/2025: Adicionado upsertPoints para inserir documentos no Qdrant
@@ -603,13 +602,6 @@ logger.info('Sistema de feature flags inicializado');
 
 const app = express();
 const UPLOAD_BASE_DIR = '/opt/alice/uploads';
-const UPLOAD_JOB_DIRS: Record<string, string> = {
-  tts: path.join(UPLOAD_BASE_DIR, 'tts'),
-  lip_sync: path.join(UPLOAD_BASE_DIR, 'lip-sync'),
-  talking_head: path.join(UPLOAD_BASE_DIR, 'talking-head'),
-  long_video: path.join(UPLOAD_BASE_DIR, 'long-video'),
-  // Nota: 'media' não é um jobType válido - diretório /uploads/media é usado para outros uploads via /api/media/upload
-};
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
@@ -668,13 +660,6 @@ const mediaUpload = multer({
     } else {
       cb(new Error(`Tipo de arquivo não suportado: ${file.mimetype}`));
     }
-  },
-});
-
-const saladUpload = multer({
-  storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 200 * 1024 * 1024,
   },
 });
 
@@ -906,14 +891,6 @@ if (WORKER_TENANT_ID) {
     maxAttempts: WORKER_MAX_ATTEMPTS,
   });
 
-  startMediaWorker(db, {
-    tenantId: WORKER_TENANT_ID,
-    concurrency: WORKER_CONCURRENCY,
-    pollIntervalMs: WORKER_POLL_MS,
-    maxAttempts: WORKER_MAX_ATTEMPTS,
-    metrics, // Passar metrics Prometheus para instrumentação do circuit breaker
-  });
-
   startWebCrawlWorker(db, {
     tenantId: WORKER_TENANT_ID,
     concurrency: WORKER_CONCURRENCY,
@@ -1075,35 +1052,6 @@ async function ensureUploadDir(dirPath: string): Promise<void> {
 function isValidUUID(uuid: string): boolean {
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   return uuidRegex.test(uuid);
-}
-
-/**
- * Valida se o jobType é um dos tipos permitidos
- * Segurança: previne uso de tipos inválidos que poderiam causar problemas de path
- */
-function isValidJobType(jobType: string): jobType is 'tts' | 'lip_sync' | 'talking_head' | 'long_video' {
-  return ['tts', 'lip_sync', 'talking_head', 'long_video'].includes(jobType);
-}
-
-function getSaladUploadPath(jobType: string, jobId: string): string {
-  // Validação de segurança: garantir que jobId é UUID válido antes de usar em path
-  if (!isValidUUID(jobId)) {
-    throw new Error('jobId inválido: deve ser UUID v4 válido');
-  }
-  // Validação de segurança: jobType deve ser validado antes de chamar esta função
-  // Fail-fast se jobType não estiver em UPLOAD_JOB_DIRS (sem fallback inacessível)
-  const base = UPLOAD_JOB_DIRS[jobType];
-  if (!base) {
-    throw new Error(`jobType inválido: ${jobType} não está em UPLOAD_JOB_DIRS`);
-  }
-  return path.join(base, `output-${jobId}${jobType === 'tts' ? '.wav' : '.mp4'}`);
-}
-
-function validateUploadToken(token: string, jobId: string, jobType: string, tenantId: string | null | undefined) {
-  const secret = process.env.INTERNAL_API_SECRET;
-  if (!secret) throw new Error('INTERNAL_API_SECRET ausente');
-  const expected = crypto.createHmac('sha256', secret).update(`${jobId}:${jobType}:${tenantId ?? ''}`).digest('hex');
-  return token === expected;
 }
 
 app.get('/api/rag/health', async (_req: Request, res: Response) => {
@@ -1738,71 +1686,6 @@ app.post('/api/rag/classify', requireAuth(), async (req: Request, res: Response)
   } catch (error) {
     logger.error({ error }, 'Falha na classificação');
     res.status(500).json({ error: 'Erro interno do servidor' });
-  }
-});
-
-// Upload interno Salad -> RAG para outputs multimodais
-// NOTA DE SEGURANÇA: Endpoint interno para containers Salad Cloud (externos à rede Docker).
-// Não usa requireAuth() porque containers Salad não têm JWT de usuário.
-// Segurança baseada em HMAC token (INTERNAL_API_SECRET) + validação estrita de parâmetros.
-// Rate limiting aplicado via middleware global (createRateLimiter).
-app.post('/api/rag/internal/media/upload', saladUpload.single('file'), async (req: Request, res: Response) => {
-  try {
-    const token = req.headers['x-upload-token'];
-    // Validação estrita: rejeitar null/undefined explícitos e strings 'null'/'undefined'
-    const jobIdRaw = req.body.jobId ?? req.body.job_id;
-    const jobTypeRaw = req.body.jobType ?? req.body.job_type;
-    const jobId = typeof jobIdRaw === 'string' && jobIdRaw.trim().length > 0 ? jobIdRaw.trim() : '';
-    const jobType = typeof jobTypeRaw === 'string' && jobTypeRaw.trim().length > 0 ? jobTypeRaw.trim() : '';
-    const tenantId = req.body.tenantId ?? req.body.tenant_id ?? null;
-    const originalName = req.file?.originalname || '';
-    const buffer = req.file?.buffer;
-
-    if (!token || Array.isArray(token)) return res.status(401).json({ error: 'Token ausente' });
-    if (!jobId || !jobType || !buffer) return res.status(400).json({ error: 'Parâmetros obrigatórios ausentes' });
-    
-    // Validação de segurança: jobId deve ser UUID válido (previne path traversal)
-    if (!isValidUUID(jobId)) {
-      logger.warn({ jobId }, 'Tentativa de upload com jobId inválido (possível path traversal)');
-      return res.status(400).json({ error: 'jobId inválido: deve ser UUID v4 válido' });
-    }
-    
-    // Validação de segurança: jobType deve ser um dos tipos permitidos
-    if (!isValidJobType(jobType)) {
-      logger.warn({ jobType }, 'Tentativa de upload com jobType inválido');
-      return res.status(400).json({ error: 'jobType inválido: deve ser um dos tipos permitidos (tts, lip_sync, talking_head, long_video)' });
-    }
-    
-    // Validação de segurança: tenantId deve ser UUID válido se fornecido (previne path traversal)
-    if (tenantId !== null && tenantId !== undefined && typeof tenantId === 'string' && !isValidUUID(tenantId)) {
-      logger.warn({ tenantId }, 'Tentativa de upload com tenantId inválido (possível path traversal)');
-      return res.status(400).json({ error: 'tenantId inválido: deve ser UUID v4 válido ou null' });
-    }
-    
-    if (!validateUploadToken(token as string, jobId, jobType, tenantId)) return res.status(401).json({ error: 'Token inválido' });
-
-    const targetPath = getSaladUploadPath(jobType, jobId);
-    await ensureUploadDir(path.dirname(targetPath));
-    await fsPromises.writeFile(targetPath, buffer, { mode: 0o640 });
-
-    // Verificar se o update afetou pelo menos uma linha (job deve existir)
-    const updated = await db
-      .update(schema.mediaJobs)
-      .set({
-        resultado: sql`jsonb_set(COALESCE(resultado,'{}'::jsonb), '{upload}', jsonb_build_object('path', ${targetPath}, 'size', ${buffer.length}, 'original', ${originalName}, 'uploadedAt', NOW()))`,
-      })
-      .where(eq(schema.mediaJobs.id, jobId))
-      .returning({ id: schema.mediaJobs.id });
-
-    if (updated.length === 0) {
-      logger.warn({ jobId, jobType }, 'Upload recebido para job inexistente - possível race condition ou job deletado');
-      return res.status(404).json({ error: 'Job não encontrado' });
-    }
-
-    res.json({ ok: true, path: targetPath, size: buffer.length });
-  } catch (error) {
-    logger.error({ error }, 'Erro no upload Salad -> RAG');
-    res.status(500).json({ error: 'Falha ao processar upload' });
   }
 });
 

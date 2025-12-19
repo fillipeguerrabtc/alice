@@ -1713,10 +1713,6 @@ jobs:
             printf 'SALAD_ORGANIZATION_ID=%s\n' "${{ secrets.SALAD_ORGANIZATION_ID }}"
             printf 'SALAD_API_URL=%s\n' "${SALAD_API_URL_VAR}"
             printf 'SALAD_MEDIA_PROJECT=%s\n' "${SALAD_MEDIA_PROJECT_VAR}"
-            printf 'SALAD_TTS_IMAGE=%s\n' "${{ secrets.SALAD_TTS_IMAGE }}"
-            printf 'SALAD_TALKING_HEAD_IMAGE=%s\n' "${{ secrets.SALAD_TALKING_HEAD_IMAGE }}"
-            printf 'SALAD_LIP_SYNC_IMAGE=%s\n' "${{ secrets.SALAD_LIP_SYNC_IMAGE }}"
-            printf 'SALAD_LONG_VIDEO_IMAGE=%s\n' "${{ secrets.SALAD_LONG_VIDEO_IMAGE }}"
             # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
             printf 'SALAD_WHISPER_URL=%s\n' "${{ secrets.SALAD_WHISPER_URL }}"
             # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim)
