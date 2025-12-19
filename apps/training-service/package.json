@@ -21,6 +21,7 @@
     "@alice/logger": "workspace:*",
     "@alice/shared": "workspace:*",
     "@alice/shared-utils": "workspace:*",
+    "compression": "1.8.1",
     "cors": "2.8.5",
     "express": "5.2.1",
     "helmet": "8.1.0",
