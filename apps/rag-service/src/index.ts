@@ -19,7 +19,6 @@ import cors from 'cors';
 import compression from 'compression';
 // rateLimit via createRateLimiter de @alice/shared-utils
 import multer from 'multer';
-import fsPromises from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
@@ -601,7 +600,6 @@ initFeatureFlags(featureFlagStorage);
 logger.info('Sistema de feature flags inicializado');
 
 const app = express();
-const UPLOAD_BASE_DIR = '/opt/alice/uploads';
 
 // ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
@@ -1033,25 +1031,6 @@ function chunkText(text: string): string[] {
 
 function hashContent(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex');
-}
-
-async function ensureUploadDir(dirPath: string): Promise<void> {
-  try {
-    await fsPromises.mkdir(dirPath, { recursive: true, mode: 0o750 });
-  } catch (error) {
-    // Log erro crítico de criação de diretório (permissões, filesystem, etc.)
-    logger.error({ error, dirPath }, 'Falha ao criar diretório de upload - verifique permissões e filesystem');
-    throw error; // Re-lançar para que writeFile falhe com erro claro
-  }
-}
-
-/**
- * Valida se uma string é um UUID válido (v4)
- * Segurança: previne path traversal attacks ao validar formato UUID antes de usar em paths
- */
-function isValidUUID(uuid: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  return uuidRegex.test(uuid);
 }
 
 app.get('/api/rag/health', async (_req: Request, res: Response) => {
