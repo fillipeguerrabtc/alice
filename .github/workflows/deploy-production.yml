@@ -2067,7 +2067,10 @@ jobs:
               # Verificar se apt funcionou - se não, tentar pip
               if ! python3 -c "import ruamel.yaml" >/dev/null 2>&1; then
                 echo "⚠️ apt não instalou corretamente, tentando pip..."
-                PIP_BREAK_SYSTEM_PACKAGES=1 pip3 install ruamel.yaml || {
+                # Ubuntu 24+ requer PIP_BREAK_SYSTEM_PACKAGES=1 para pip install
+                export PIP_BREAK_SYSTEM_PACKAGES=1
+                pip3 install --upgrade pip >/dev/null 2>&1 || true
+                pip3 install ruamel.yaml || {
                   echo "::error::Falha ao instalar ruamel.yaml via pip. Deploy abortado."
                   exit 1
                 }
@@ -2256,9 +2259,20 @@ jobs:
             
             echo "✅ Código atualizado para: ${TARGET_REF}"
 
-            # REGRA 6: mover .env.prod imediatamente após clone/update
+            # REGRA 6: CRÍTICO - validar estrutura ANTES de mover .env.prod
+            if [ ! -d "app/infra/docker" ]; then
+              echo "❌ ERRO CRÍTICO: /opt/alice/app/infra/docker não existe após o clone."
+              echo "   Estrutura do repositório esperada não foi encontrada."
+              echo "   Verificando estrutura atual..."
+              ls -la app/ || true
+              ls -la app/infra/ || true
+              echo "::error::Diretório app/infra/docker não encontrado. Verifique estrutura do repositório." >&2
+              exit 1
+            fi
+            echo "✅ Estrutura do repositório validada"
+            
+            # REGRA 6: mover .env.prod imediatamente após validação
             if [ -f /tmp/.env.prod ]; then
-              mkdir -p app/infra/docker
               mv /tmp/.env.prod app/infra/docker/.env.prod
               chmod 600 app/infra/docker/.env.prod
               echo "✅ .env.prod movido para app/infra/docker/.env.prod"
@@ -2333,6 +2347,19 @@ jobs:
             cd /opt/alice
             
             # ==============================================
+            # VALIDAÇÃO CRÍTICA: .env.prod DEVE existir
+            # ==============================================
+            if [ ! -f "app/infra/docker/.env.prod" ]; then
+              echo "❌ ERRO CRÍTICO: .env.prod não encontrado em app/infra/docker/"
+              echo "   Docker Compose vai falhar sem variáveis de ambiente."
+              echo "   Verificando estrutura..."
+              ls -la app/infra/docker/ || true
+              echo "::error::.env.prod não encontrado. Verifique passos de SCP e movimentação." >&2
+              exit 1
+            fi
+            echo "✅ .env.prod validado em app/infra/docker/.env.prod"
+            
+            # ==============================================
             # SETUP INICIAL - Redes Docker (idempotente)
             # ==============================================
             echo "Configurando redes Docker..."
@@ -2402,8 +2429,9 @@ jobs:
             fi
             echo "PRÉ-DEPLOY: Limpeza completa ✓"
             
-            # Clone já realizado antes; .env.prod já movido; repositório em /opt/alice/app
+            # Login no GitHub Container Registry (garantir sessão válida)
             cd /opt/alice/app
+            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
 
             # Login no Docker Hub (para imagens de terceiros - evita rate limit)
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -2411,9 +2439,6 @@ jobs:
             else
               echo "⚠️ Aviso: DOCKERHUB_USERNAME/DOCKERHUB_TOKEN não configurados (usando rate limit anônimo)"
             fi
-
-            # Login no GitHub Container Registry (mantido aqui para garantir sessão válida)
-            echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
 
             cd infra/docker
             
@@ -2536,6 +2561,26 @@ jobs:
             
             echo "✅ Todas as migrações processadas"
             
+            # ==============================================
+            # PRÉ-DEPLOY: Debugging e Validação
+            # ==============================================
+            echo "============================================="
+            echo "PRÉ-DEPLOY: Validação e Debugging"
+            echo "============================================="
+            echo "Docker version:"
+            docker version
+            echo ""
+            echo "Docker Compose version:"
+            docker compose version
+            echo ""
+            echo "Validando docker-compose.prod.yml..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod config --quiet || {
+              echo "❌ ERRO: docker-compose.prod.yml inválido!"
+              exit 1
+            }
+            echo "✅ docker-compose.prod.yml válido"
+            echo "============================================="
+            
             # Deploy baseado nos serviços selecionados
             case "${DEPLOY_SERVICES}" in
               "alice-only")
@@ -2569,6 +2614,20 @@ jobs:
                   up -d --no-build --remove-orphans
                 ;;
             esac
+            
+            # ==============================================
+            # PÓS-DEPLOY: Status e Debugging
+            # ==============================================
+            echo ""
+            echo "============================================="
+            echo "PÓS-DEPLOY: Status dos Containers"
+            echo "============================================="
+            docker compose -f docker-compose.prod.yml --env-file .env.prod ps -a
+            echo ""
+            echo "Containers com problemas:"
+            docker ps -a --filter "health=unhealthy" --format "table {{.Names}}\t{{.Status}}" || true
+            docker ps -a --filter "status=exited" --format "table {{.Names}}\t{{.Status}}" || true
+            echo "============================================="
             
             echo "=============================================="
             echo "DEPLOY CONCLUÍDO COM SUCESSO!"
