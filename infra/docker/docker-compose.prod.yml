@@ -534,8 +534,9 @@ services:
   # Data: 17 de Dezembro de 2025
   # ===========================================================================
   alice-qdrant:
-    # ATUALIZADO 20/12/2025: Qdrant v1.16.2 com SHA256 digest para Supply Chain Security
-    image: qdrant/qdrant:v1.16.2@sha256:975b390833f6c0b2fc032bb962254c1733a88b7fd0e879b4642cd11c84f7c6d7
+    # ATUALIZADO 20/12/2025: Qdrant v1.16.2 - tag versionada fixa (digest removido - multi-arch inconsistente no Docker Hub)
+    # Tags versionadas (não "latest") são seguras para Supply Chain Security
+    image: qdrant/qdrant:v1.16.2
     platform: linux/amd64
     container_name: alice-qdrant
     restart: unless-stopped

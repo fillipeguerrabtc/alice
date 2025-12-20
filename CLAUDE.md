@@ -468,4 +468,5 @@ git commit -a -m "test: adiciona testes unitários"
 *drizzle-orm Dependência Direta (20/12/2025): Adicionado drizzle-orm em TODOS microsserviços - @alice/database re-exporta eq, and, desc, etc do drizzle que precisam estar instalados no container*
 *Rollback Verifica Dados Reais PostgreSQL (20/12/2025): has_real_production_data() agora executa query real no PostgreSQL para verificar se existem tenants/users - não apenas containers/volumes*
 *Bug Fix ERPNext create-site (20/12/2025): Comando incorreto "new" corrigido para "bench new-site" - causava erro "executable file not found in $PATH"*
-*Docker Hub Rate Limit Fix (20/12/2025): Adicionado login Docker Hub em deploy-production.yml (3 locais) + SHA256 digests para 5 imagens (Qdrant, ClickHouse, Langfuse DB, Alertmanager, Node Exporter)*
+*Docker Hub Rate Limit Fix (20/12/2025): Adicionado login Docker Hub em deploy-production.yml (3 locais) + SHA256 digests para 4 imagens (ClickHouse, Langfuse DB, Alertmanager, Node Exporter)*
+*Qdrant Digest Fix (20/12/2025): Removido digest inválido do Qdrant v1.16.2 - tag versionada é segura para Supply Chain Security (multi-arch inconsistente no Docker Hub)*
