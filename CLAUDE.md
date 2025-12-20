@@ -467,3 +467,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Rollback Limpeza Total (19/12/2025): full_system_cleanup() agora remove TODOS volumes nomeados quando PRESERVE_DATA=false (primeiro deploy sem dados reais)*
 *drizzle-orm Dependência Direta (20/12/2025): Adicionado drizzle-orm em TODOS microsserviços - @alice/database re-exporta eq, and, desc, etc do drizzle que precisam estar instalados no container*
 *Rollback Verifica Dados Reais PostgreSQL (20/12/2025): has_real_production_data() agora executa query real no PostgreSQL para verificar se existem tenants/users - não apenas containers/volumes*
+*Bug Fix ERPNext create-site (20/12/2025): Comando incorreto "new" corrigido para "bench new-site" - causava erro "executable file not found in $PATH"*

@@ -1343,7 +1343,18 @@ services:
     # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
     security_opt:
       - no-new-privileges:true
-    command: ["new", "--db-root-password", "${ERPNEXT_MYSQL_ROOT_PASSWORD}", "--admin-password", "${ERPNEXT_ADMIN_PASSWORD}", "--install-app", "erpnext", "${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"]
+    # CORREÇÃO 20/12/2025: Comando correto é "bench new-site", não "new"
+    # Documentação: https://github.com/frappe/frappe_docker
+    entrypoint:
+      - bash
+      - -c
+    command:
+      - >
+        bench new-site ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
+        --mariadb-root-password ${ERPNEXT_MYSQL_ROOT_PASSWORD}
+        --admin-password ${ERPNEXT_ADMIN_PASSWORD}
+        --no-mariadb-socket
+        --install-app erpnext
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root
