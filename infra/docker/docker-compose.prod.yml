@@ -258,10 +258,10 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 19/12/2025: nc não disponível nesta imagem Alpine
-      # Usar wget que está disponível no Alpine base do HAProxy
-      # Endpoint /_ping verifica se Docker API está acessível via proxy
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:2375/_ping"]
+      # CORREÇÃO 20/12/2025: Verificar se porta 2375 está escutando
+      # HAProxy Alpine não tem wget confiável, usar /proc/net/tcp
+      # 0x0947 = 2375 em hex
+      test: ["CMD-SHELL", "grep -q ':0947' /proc/net/tcp || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -561,9 +561,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 19/12/2025: Usar timeout nativo do bash com /dev/tcp
-      # Endpoint /readyz verifica se Qdrant está pronto para receber requests
-      test: ["CMD-SHELL", "timeout 5 bash -c 'echo > /dev/tcp/localhost/6333' 2>/dev/null || exit 1"]
+      # CORREÇÃO 20/12/2025: Qdrant não tem wget/curl, usar /proc/net/tcp
+      # Verifica se porta 6333 está escutando (0x18BD = 6333 em hex)
+      test: ["CMD-SHELL", "grep -q ':18BD' /proc/net/tcp || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2448,7 +2448,9 @@ services:
       - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
       - '--web.listen-address=:9100'
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      # CORREÇÃO 20/12/2025: Node Exporter é baseado em busybox/static - não tem wget/curl
+      # Usar /proc/net/tcp para verificar se porta 9100 está escutando (0x238C = 9100 em hex)
+      test: ["CMD-SHELL", "grep -q ':238C' /proc/net/tcp || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2486,6 +2488,7 @@ services:
     networks:
       - alice-network
     healthcheck:
+      # cAdvisor tem wget disponível na imagem
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
       interval: 30s
       timeout: 10s

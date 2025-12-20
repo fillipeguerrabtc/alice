@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 20 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.5 - Docker Hub Rate Limit Fix + 54 Secrets
+> **Versão:** 4.6 - Healthchecks Enterprise Fix + 54 Secrets
 
 ---
 

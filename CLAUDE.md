@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.12 - 20 de Dezembro de 2025*
+*Versão: 4.13 - 20 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -471,3 +471,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Docker Hub Rate Limit Fix (20/12/2025): Adicionado login Docker Hub em deploy-production.yml (3 locais) - evita rate limit 100 pulls/6h anônimo*
 *Digests ARM64 Removidos (20/12/2025): Removidos SHA256 digests incompatíveis com amd64 (Qdrant, ClickHouse, Langfuse DB, Alertmanager, Node Exporter) - tags versionadas são seguras para Supply Chain Security*
 *ClickHouse Healthcheck Fix (20/12/2025): Corrigido healthcheck de wget (não existe) para clickhouse-client --query 'SELECT 1' - imagem Alpine não tem wget/curl*
+*Healthchecks Enterprise Fix (20/12/2025): Corrigidos healthchecks para containers sem wget/curl: Qdrant (/proc/net/tcp:18BD), dockerproxy (/proc/net/tcp:0947), Node Exporter (/proc/net/tcp:238C)*
