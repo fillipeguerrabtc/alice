@@ -319,8 +319,8 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 
 ## Checklist de Verificação
 
-> **Status atualizado em:** 19 de Dezembro de 2025  
-> **Resumo:** 52 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
+> **Status atualizado em:** 20 de Dezembro de 2025  
+> **Resumo:** 54 secrets de produção ✅ configurados no repositório. Pendentes opcionais pós-deploy: `ERPNEXT_API_KEY`, `ERPNEXT_API_SECRET`, `WISE_WEBHOOK_SECRET`.
 
 ### Infraestrutura
 
@@ -334,6 +334,13 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 | `REDIS_PASSWORD` | ✅ |
 | `SESSION_SECRET` | ✅ |
 | `INTERNAL_API_SECRET` | ✅ |
+
+### Docker Hub (Rate Limit)
+
+| Secret | Status |
+|--------|--------|
+| `DOCKERHUB_USERNAME` | ✅ (adicionado 20/12/2025) |
+| `DOCKERHUB_TOKEN` | ✅ (adicionado 20/12/2025) |
 
 ### OAuth (pelo menos 1)
 
@@ -443,6 +450,12 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 |--------|--------|
 | `BACKUP_CIPHER_PASS` | ✅ |
 
+### Qdrant (Banco Vetorial Texto 4096 dim)
+
+| Secret | Status |
+|--------|--------|
+| `QDRANT_API_KEY` | ✅ |
+
 ---
 
 ## URLs de Callback e Webhook
@@ -519,7 +532,7 @@ openssl rand -hex 64
 
 *Autor: Fillipe Guerra*  
 *Documento atualizado em: 20 de Dezembro de 2025*
-*Versão: 7.6*
+*Versão: 7.7*
 *Total de Secrets: 54 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
@@ -530,3 +543,4 @@ openssl rand -hex 64
 *Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido | Risk Config API | orderValue multiplier*  
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
+*Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*

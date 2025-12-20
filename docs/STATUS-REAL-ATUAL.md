@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 19 de Dezembro de 2025  
+> **Data:** 20 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.4 - Langfuse v3 ClickHouse + Secrets Atualizados
+> **Versão:** 4.5 - Docker Hub Rate Limit Fix + 54 Secrets
 
 ---
 
@@ -1014,7 +1014,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Takeover/Handover** | ✅ | Completo com escalação |
 | **Backup Enterprise** | ✅ | PostgreSQL, MariaDB, Redis, Volume Local, PITR |
 | **Observability** | ✅ | Prometheus, Grafana, Jaeger, Langfuse |
-| **Secrets** | 27/~34 | Configurados no GitHub |
+| **Secrets** | 54 | Configurados no GitHub (100% ✅) |
 
 ---
 
@@ -1084,7 +1084,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
-*GitHub Secrets: 52 configurados (CLICKHOUSE_USER, CLICKHOUSE_PASSWORD adicionados 19/12/2025)*
+*GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
