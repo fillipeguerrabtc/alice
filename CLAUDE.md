@@ -462,5 +462,6 @@ git commit -a -m "test: adiciona testes unitários"
 *pgvector External Fix (19/12/2025): Adicionado pgvector como dependência direta de TODOS microsserviços (auth, chat, rag, training, integrations) - evita "Dynamic require of node:util" quando bundlado pelo esbuild*
 *redis External Fix (19/12/2025): Adicionado redis + rate-limit-redis como dependência direta de TODOS microsserviços - evita "Dynamic require of node:crypto" quando bundlado pelo esbuild (redis v5+ usa crypto dinâmico)*
 *Build Script Enterprise Fix (20/12/2025): Reescrito build-service.mjs para coletar e externalizar TODAS dependências de TODOS pacotes @alice/* - resolve "Dynamic require" de forma DEFINITIVA (prom-client, redis, pgvector, etc.)*
+*Dependências Externalizadas Fix (20/12/2025): Adicionado express-rate-limit, prom-client, swagger-ui-express em TODOS microsserviços - pacotes externalizados precisam estar em node_modules do container*
 *Rollback Inteligente Enterprise (19/12/2025): Função has_real_production_data() verifica manifesto válido + containers healthy + volumes reais antes de preservar dados*
 *Rollback Limpeza Total (19/12/2025): full_system_cleanup() agora remove TODOS volumes nomeados quando PRESERVE_DATA=false (primeiro deploy sem dados reais)*
