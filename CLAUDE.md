@@ -331,9 +331,9 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.11 - 19 de Dezembro de 2025*
+*Versão: 4.12 - 20 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
-*GitHub Secrets: 52 configurados (CLICKHOUSE_USER, CLICKHOUSE_PASSWORD adicionados 19/12/2025)*
+*GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (9 tabelas) + API REST (25 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC Permissões + Stop Orders (st-orders)*
@@ -468,3 +468,4 @@ git commit -a -m "test: adiciona testes unitários"
 *drizzle-orm Dependência Direta (20/12/2025): Adicionado drizzle-orm em TODOS microsserviços - @alice/database re-exporta eq, and, desc, etc do drizzle que precisam estar instalados no container*
 *Rollback Verifica Dados Reais PostgreSQL (20/12/2025): has_real_production_data() agora executa query real no PostgreSQL para verificar se existem tenants/users - não apenas containers/volumes*
 *Bug Fix ERPNext create-site (20/12/2025): Comando incorreto "new" corrigido para "bench new-site" - causava erro "executable file not found in $PATH"*
+*Docker Hub Rate Limit Fix (20/12/2025): Adicionado login Docker Hub em deploy-production.yml (3 locais) + SHA256 digests para 5 imagens (Qdrant, ClickHouse, Langfuse DB, Alertmanager, Node Exporter)*

@@ -1897,11 +1897,14 @@ jobs:
           MARIADB_DIGEST: ${{ needs.build-docker.outputs.mariadb_digest }}
           PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
           PGVECTOR_DIGEST: ${{ needs.build-docker.outputs.pgvector_digest }}
+          # Docker Hub credentials para evitar rate limit em imagens de terceiros
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST
+          envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             
@@ -2264,8 +2267,15 @@ jobs:
               exit 1
             fi
 
-            # Login no GHCR (necessário antes de pulls)
+            # Login no Docker Hub (para imagens de terceiros - evita rate limit)
             cd /opt/alice/app
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin || echo "⚠️ Aviso: Docker Hub login falhou (continuando com rate limit anônimo)"
+            else
+              echo "⚠️ Aviso: DOCKERHUB_USERNAME/DOCKERHUB_TOKEN não configurados (usando rate limit anônimo)"
+            fi
+
+            # Login no GHCR (necessário antes de pulls)
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
 
             # ==============================================
@@ -2394,6 +2404,13 @@ jobs:
             
             # Clone já realizado antes; .env.prod já movido; repositório em /opt/alice/app
             cd /opt/alice/app
+
+            # Login no Docker Hub (para imagens de terceiros - evita rate limit)
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin || echo "⚠️ Aviso: Docker Hub login falhou (continuando com rate limit anônimo)"
+            else
+              echo "⚠️ Aviso: DOCKERHUB_USERNAME/DOCKERHUB_TOKEN não configurados (usando rate limit anônimo)"
+            fi
 
             # Login no GitHub Container Registry (mantido aqui para garantir sessão válida)
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin || { echo "::error::Falha no docker login (GHCR)"; exit 1; }
@@ -3431,7 +3448,12 @@ jobs:
               exit 1
             fi
             
-            # Login no registry
+            # Login no Docker Hub (para imagens de terceiros - evita rate limit)
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin 2>/dev/null || true
+            fi
+
+            # Login no GHCR
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin 2>/dev/null || true
             
             # Pull das imagens da versão anterior

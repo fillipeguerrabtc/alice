@@ -1,13 +1,13 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 19 de Dezembro de 2025
+**Data:** 20 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 52 configurados no repositório GitHub (verificado em 19/12/2025)
+**Total de Secrets:** 54 configurados no repositório GitHub (verificado em 20/12/2025)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 44 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -63,6 +63,8 @@ Estes são necessários para o deploy funcionar:
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
 | `ADMIN_USER` | Email do administrador global (Alice/ERPNext/Grafana) | Definir seu email corporativo |
 | `ADMIN_PWD` | Senha do administrador global (mín. 8 chars) | Definir forte e exclusiva |
+| `DOCKERHUB_USERNAME` | Username Docker Hub | Evita rate limit (100 pulls/6h anônimo) |
+| `DOCKERHUB_TOKEN` | Access Token Docker Hub | [hub.docker.com/settings/security](https://hub.docker.com/settings/security) |
 
 ### FASE 2: Autenticação (mínimo 1 provider)
 
@@ -516,9 +518,9 @@ openssl rand -hex 64
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 19 de Dezembro de 2025*
-*Versão: 7.5*
-*Total de Secrets: 52 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
+*Documento atualizado em: 20 de Dezembro de 2025*
+*Versão: 7.6*
+*Total de Secrets: 54 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  

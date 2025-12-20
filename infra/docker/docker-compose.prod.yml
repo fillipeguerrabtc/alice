@@ -534,9 +534,8 @@ services:
   # Data: 17 de Dezembro de 2025
   # ===========================================================================
   alice-qdrant:
-    # ATUALIZADO 19/12/2025: Qdrant v1.16.2 - Removido digest inválido (manifest não encontrado no Docker Hub)
-    # Tag versionada fixa é segura para Supply Chain Security (não é "latest")
-    image: qdrant/qdrant:v1.16.2
+    # ATUALIZADO 20/12/2025: Qdrant v1.16.2 com SHA256 digest para Supply Chain Security
+    image: qdrant/qdrant:v1.16.2@sha256:975b390833f6c0b2fc032bb962254c1733a88b7fd0e879b4642cd11c84f7c6d7
     platform: linux/amd64
     container_name: alice-qdrant
     restart: unless-stopped
@@ -1887,8 +1886,8 @@ services:
   # NOTA: ClickHouse é OBRIGATÓRIO para Langfuse v3 - não é opcional
   # ===========================================================================
   clickhouse:
-    # ClickHouse 24.x LTS (última versão estável enterprise)
-    image: clickhouse/clickhouse-server:24.8-alpine
+    # ATUALIZADO 20/12/2025: ClickHouse 24.8 LTS com SHA256 digest para Supply Chain Security
+    image: clickhouse/clickhouse-server:24.8-alpine@sha256:5350e39b5c6dd74987a8953dc475b9febbf6eac57ae70603d33adffd378a20a3
     platform: linux/amd64
     container_name: alice-clickhouse
     restart: unless-stopped
@@ -2031,9 +2030,8 @@ services:
           cpus: '0.25'
 
   langfuse-db:
-    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
-    # Digest será adicionado quando imagem for incluída no versionamento automático
-    image: postgres:16-alpine
+    # ATUALIZADO 20/12/2025: PostgreSQL 16 Alpine com SHA256 digest para Supply Chain Security
+    image: postgres:16-alpine@sha256:594327ef9b46bf0ca7fd544d8160b13dd55aad2ec92538aaf2f53746a192d269
     platform: linux/amd64
     container_name: alice-langfuse-db
     restart: unless-stopped
@@ -2305,7 +2303,8 @@ services:
   # apenas as variáveis necessárias via environment (princípio do mínimo privilégio).
   # ===========================================================================
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    # ATUALIZADO 20/12/2025: Alertmanager v0.27.0 com SHA256 digest para Supply Chain Security
+    image: prom/alertmanager:v0.27.0@sha256:e13b6ed5cb929eeaee733479dce55e10eb3bc2e9c4586c705a4e8da41e5eacf5
     platform: linux/amd64
     container_name: alice-alertmanager
     restart: unless-stopped
@@ -2423,9 +2422,8 @@ services:
   # NODE EXPORTER - Métricas do host
   # ===========================================================================
   node-exporter:
-    # ATUALIZADO 15/12/2025: Removido digest inválido - tag versionada é suficiente para segurança
-    # Digest será adicionado quando imagem for incluída no versionamento automático
-    image: prom/node-exporter:v1.8.2
+    # ATUALIZADO 20/12/2025: Node Exporter v1.8.2 com SHA256 digest para Supply Chain Security
+    image: prom/node-exporter:v1.8.2@sha256:1eabab826c9d9f0c534e4e8fa745445f743fef9aee276d561d12811edea74004
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped
