@@ -470,3 +470,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix ERPNext create-site (20/12/2025): Comando incorreto "new" corrigido para "bench new-site" - causava erro "executable file not found in $PATH"*
 *Docker Hub Rate Limit Fix (20/12/2025): Adicionado login Docker Hub em deploy-production.yml (3 locais) - evita rate limit 100 pulls/6h anônimo*
 *Digests ARM64 Removidos (20/12/2025): Removidos SHA256 digests incompatíveis com amd64 (Qdrant, ClickHouse, Langfuse DB, Alertmanager, Node Exporter) - tags versionadas são seguras para Supply Chain Security*
+*ClickHouse Healthcheck Fix (20/12/2025): Corrigido healthcheck de wget (não existe) para clickhouse-client --query 'SELECT 1' - imagem Alpine não tem wget/curl*
