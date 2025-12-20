@@ -23,6 +23,7 @@
     "@alice/shared-utils": "workspace:*",
     "compression": "1.8.1",
     "cors": "2.8.5",
+    "drizzle-orm": "^0.39.1",
     "opossum": "9.0.0",
     "express": "5.2.1",
     "express-rate-limit": "^8.2.1",

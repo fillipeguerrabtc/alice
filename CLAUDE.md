@@ -465,3 +465,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Dependências Externalizadas Fix (20/12/2025): Adicionado express-rate-limit, prom-client, swagger-ui-express em TODOS microsserviços - pacotes externalizados precisam estar em node_modules do container*
 *Rollback Inteligente Enterprise (19/12/2025): Função has_real_production_data() verifica manifesto válido + containers healthy + volumes reais antes de preservar dados*
 *Rollback Limpeza Total (19/12/2025): full_system_cleanup() agora remove TODOS volumes nomeados quando PRESERVE_DATA=false (primeiro deploy sem dados reais)*
+*drizzle-orm Dependência Direta (20/12/2025): Adicionado drizzle-orm em TODOS microsserviços - @alice/database re-exporta eq, and, desc, etc do drizzle que precisam estar instalados no container*
+*Rollback Verifica Dados Reais PostgreSQL (20/12/2025): has_real_production_data() agora executa query real no PostgreSQL para verificar se existem tenants/users - não apenas containers/volumes*

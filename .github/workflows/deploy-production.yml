@@ -3214,12 +3214,14 @@ jobs:
             }
             
             # ==============================================================
-            # VERIFICAÇÃO DE DADOS REAIS DE PRODUÇÃO
-            # Função inteligente para determinar se há deploy anterior funcional
-            # ENTERPRISE (19/12/2025): Evita preservar lixo de deploys falhados
+            # VERIFICAÇÃO DE DADOS REAIS DE PRODUÇÃO (ENTERPRISE 20/12/2025)
+            # Função inteligente para determinar se há dados reais no banco
+            # VERIFICA DADOS NO POSTGRESQL - não apenas containers/volumes
             # ==============================================================
             has_real_production_data() {
               local MANIFEST_FILE="/opt/alice/backups/manifests/last-successful-deploy.txt"
+              
+              echo "   Verificando dados reais de produção..."
               
               # Verificação 1: Existe manifesto de deploy bem-sucedido?
               if [ ! -f "$MANIFEST_FILE" ]; then
@@ -3234,22 +3236,48 @@ jobs:
                 return 1
               fi
               
-              # Verificação 3: Há pelo menos 1 container Alice/ERPNext rodando e healthy?
-              local HEALTHY_COUNT=$(docker ps --filter "name=alice-" --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l || echo 0)
-              local ERPNEXT_COUNT=$(docker ps --filter "name=erpnext-" --filter "health=healthy" --format "{{.Names}}" 2>/dev/null | wc -l || echo 0)
-              
-              if [ "$HEALTHY_COUNT" -eq 0 ] && [ "$ERPNEXT_COUNT" -eq 0 ]; then
-                echo "   → Nenhum container healthy encontrado (containers fantasmas)"
-                return 1
-              fi
-              
-              # Verificação 4: Volume PostgreSQL existe e tem dados?
+              # Verificação 3: Volume PostgreSQL existe?
               if ! docker volume inspect alice-postgres-data >/dev/null 2>&1; then
                 echo "   → Volume PostgreSQL não existe"
                 return 1
               fi
               
-              echo "   ✓ Dados reais de produção detectados (SHA: ${PREVIOUS_SHA:0:8}...)"
+              # Verificação 4 (ENTERPRISE): PostgreSQL está rodando e acessível?
+              # Precisamos verificar se o container postgres está funcionando
+              local PG_RUNNING=$(docker ps --filter "name=alice-postgres" --filter "status=running" --format "{{.Names}}" 2>/dev/null | wc -l || echo 0)
+              if [ "$PG_RUNNING" -eq 0 ]; then
+                echo "   → PostgreSQL não está rodando"
+                return 1
+              fi
+              
+              # Verificação 5 (ENTERPRISE): Há dados REAIS no banco de dados?
+              # Query no PostgreSQL para verificar se existem registros em tabelas críticas
+              # Verifica: tenants, users, conversations (tabelas que só existem com dados reais)
+              local DB_HAS_DATA=$(docker exec alice-postgres psql -U postgres -d alice -t -c \
+                "SELECT CASE 
+                   WHEN (SELECT COUNT(*) FROM tenants) > 0 
+                     OR (SELECT COUNT(*) FROM users) > 0 
+                   THEN 'yes' 
+                   ELSE 'no' 
+                 END;" 2>/dev/null | tr -d ' \n' || echo "no")
+              
+              if [ "$DB_HAS_DATA" != "yes" ]; then
+                echo "   → Banco de dados vazio (sem tenants ou users)"
+                echo "   → Isso indica deploy falhado ou primeiro deploy"
+                return 1
+              fi
+              
+              # Verificação 6: Quantos registros existem?
+              local TENANT_COUNT=$(docker exec alice-postgres psql -U postgres -d alice -t -c \
+                "SELECT COUNT(*) FROM tenants;" 2>/dev/null | tr -d ' \n' || echo "0")
+              local USER_COUNT=$(docker exec alice-postgres psql -U postgres -d alice -t -c \
+                "SELECT COUNT(*) FROM users;" 2>/dev/null | tr -d ' \n' || echo "0")
+              
+              echo "   ✓ Dados reais encontrados:"
+              echo "     - Tenants: $TENANT_COUNT"
+              echo "     - Users: $USER_COUNT"
+              echo "     - Deploy anterior: ${PREVIOUS_SHA:0:8}..."
+              
               return 0
             }
             
