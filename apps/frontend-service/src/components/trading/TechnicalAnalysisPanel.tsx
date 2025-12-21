@@ -47,11 +47,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
+// NOTA: Tooltip removido - não utilizado neste componente (21/12/2025)
 import { apiRequest } from '@/lib/queryClient';
 
 // ============================================================================

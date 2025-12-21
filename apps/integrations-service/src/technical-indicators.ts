@@ -531,8 +531,9 @@ export function calculateFullAnalysis(
 
   logger.info({ symbol, interval, candleCount: candles.length }, 'Iniciando análise técnica completa');
 
-  // Extrair arrays
-  const opens = candles.map(c => c.open);
+  // Extrair arrays para cálculos de indicadores
+  // NOTA: opens não é usado diretamente nos indicadores atuais (RSI, MACD, etc usam close)
+  // mas highs/lows são necessários para ATR, Stochastic, ADX e Pivot Points
   const highs = candles.map(c => c.high);
   const lows = candles.map(c => c.low);
   const closes = candles.map(c => c.close);
