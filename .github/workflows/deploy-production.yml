@@ -2325,6 +2325,88 @@ jobs:
             echo "✅ Todas as migrações processadas"
             
             # ==============================================
+            # PRÉ-DEPLOY: Limpeza de Volumes Órfãos (Best Practice 2025)
+            # CORREÇÃO 21/12/2025: Remove volumes Docker antigos que conflitam
+            # com bind mounts configurados no docker-compose.prod.yml
+            # ==============================================
+            echo "============================================="
+            echo "PRÉ-DEPLOY: Limpeza de Volumes Docker Órfãos"
+            echo "============================================="
+            
+            # Lista de volumes que usamos como BIND MOUNT (não como volumes Docker)
+            # Se existirem como volumes Docker, eles conflitam com os bind mounts
+            BIND_MOUNT_VOLUMES=(
+              "erpnext-sites"
+              "erpnext-logs"
+              "erpnext-mariadb"
+              "erpnext-redis-cache"
+              "erpnext-redis-queue"
+              "alice-postgres-data"
+              "alice-redis-data"
+              "alice-traefik-acme"
+              "alice-searxng-config"
+              "alice-qdrant-data"
+              "alice-vector-data"
+              "alice-alertmanager-data"
+              "alice-clickhouse-data"
+              "alice-clickhouse-logs"
+              "alice-langfuse-db-data"
+            )
+            
+            echo "Verificando volumes Docker órfãos que conflitam com bind mounts..."
+            for vol in "${BIND_MOUNT_VOLUMES[@]}"; do
+              if docker volume ls -q | grep -q "^${vol}$"; then
+                echo "⚠️  Encontrado volume órfão: $vol"
+                echo "   Este volume conflita com o bind mount configurado."
+                echo "   Removendo volume órfão..."
+                docker volume rm "$vol" 2>/dev/null || {
+                  echo "   ⚠️  Volume em uso, tentando forçar..."
+                  # Para containers que usam o volume
+                  docker ps -aq --filter "volume=$vol" | xargs -r docker stop 2>/dev/null || true
+                  docker ps -aq --filter "volume=$vol" | xargs -r docker rm 2>/dev/null || true
+                  docker volume rm "$vol" 2>/dev/null || echo "   ❌ Não foi possível remover $vol (pode precisar de intervenção manual)"
+                }
+              fi
+            done
+            
+            # Verificar se existem ARQUIVOS onde deveriam existir DIRETÓRIOS
+            # Erro comum: "mkdir: file exists" quando há arquivo no lugar de diretório
+            echo ""
+            echo "Verificando conflitos arquivo/diretório em /opt/alice/data..."
+            for dir in /opt/alice/data/erpnext-sites /opt/alice/data/erpnext-logs; do
+              # Verificar se o caminho existe mas NÃO é um diretório
+              if [ -e "$dir" ] && [ ! -d "$dir" ]; then
+                echo "⚠️  Conflito: $dir existe como arquivo, não como diretório"
+                echo "   Renomeando para .bak e criando diretório..."
+                mv "$dir" "${dir}.bak.$(date +%s)"
+                mkdir -p "$dir"
+                chown -R 1000:1000 "$dir"
+                chmod -R 755 "$dir"
+              fi
+              
+              # Verificar subdiretório assets (problema específico do ERPNext)
+              if [ -d "$dir" ]; then
+                assets_path="$dir/assets"
+                if [ -e "$assets_path" ] && [ ! -d "$assets_path" ]; then
+                  echo "⚠️  Conflito: $assets_path existe como arquivo, não como diretório"
+                  echo "   Renomeando para .bak e criando diretório..."
+                  mv "$assets_path" "${assets_path}.bak.$(date +%s)"
+                  mkdir -p "$assets_path"
+                  chown -R 1000:1000 "$assets_path"
+                  chmod -R 755 "$assets_path"
+                fi
+              fi
+            done
+            
+            # Limpar volumes Docker não utilizados (dangling)
+            echo ""
+            echo "Limpando volumes Docker não utilizados..."
+            docker volume prune -f 2>/dev/null || true
+            
+            echo "✅ Limpeza de volumes concluída"
+            echo "============================================="
+            
+            # ==============================================
             # PRÉ-DEPLOY: Debugging e Validação
             # ==============================================
             echo "============================================="
@@ -2979,6 +3061,25 @@ jobs:
                 # Remover volumes órfãos/anônimos
                 docker volume prune -f 2>/dev/null || true
                 echo "   ✓ Todos os volumes removidos (servidor 100% limpo)"
+                
+                # CORREÇÃO 21/12/2025: Limpar conflitos arquivo/diretório em /var/lib/docker/volumes
+                # Erro: "mkdir: file exists" quando Docker encontra arquivo onde deveria haver diretório
+                echo "   → Verificando conflitos arquivo/diretório em volumes Docker..."
+                for vol_path in /var/lib/docker/volumes/erpnext-sites /var/lib/docker/volumes/erpnext-logs; do
+                  if [ -e "$vol_path" ]; then
+                    echo "   ⚠️ Encontrado resíduo de volume: $vol_path"
+                    rm -rf "$vol_path" 2>/dev/null || true
+                    echo "   ✓ Removido: $vol_path"
+                  fi
+                  # Verificar também subpaths problemáticos
+                  for subpath in "${vol_path}/_data/assets" "${vol_path}/_data"; do
+                    if [ -e "$subpath" ] && [ ! -d "$subpath" ]; then
+                      echo "   ⚠️ Conflito arquivo/diretório: $subpath"
+                      rm -f "$subpath" 2>/dev/null || true
+                      echo "   ✓ Arquivo removido: $subpath"
+                    fi
+                  done
+                done
               else
                 # ROLLBACK: preservar volumes com dados reais
                 docker volume prune -f 2>/dev/null || true
@@ -3011,6 +3112,26 @@ jobs:
                 rm -rf /opt/alice/logs/* 2>/dev/null || true
                 echo "   ✓ Dados residuais removidos"
               fi
+              
+              # CORREÇÃO 21/12/2025: Função auxiliar para criar diretório seguro
+              # Verifica se existe arquivo no caminho e remove antes de criar diretório
+              safe_mkdir() {
+                local dir="$1"
+                local uid="${2:-root}"
+                local gid="${3:-root}"
+                local mode="${4:-755}"
+                
+                # Se existe mas NÃO é diretório, remover
+                if [ -e "$dir" ] && [ ! -d "$dir" ]; then
+                  echo "   ⚠️ Conflito: $dir existe como arquivo - removendo..."
+                  rm -f "$dir" 2>/dev/null || true
+                fi
+                
+                # Criar diretório
+                mkdir -p "$dir"
+                chown -R "${uid}:${gid}" "$dir"
+                chmod -R "$mode" "$dir"
+              }
               
               # Grafana (UID 472)
               mkdir -p /opt/alice/data/grafana
@@ -3083,10 +3204,10 @@ jobs:
               chmod -R 755 /opt/alice/data/erpnext-redis-cache
               chmod -R 755 /opt/alice/data/erpnext-redis-queue
               
-              # ERPNext Sites (UID 1000)
-              mkdir -p /opt/alice/data/erpnext-sites
-              chown -R 1000:1000 /opt/alice/data/erpnext-sites
-              chmod -R 755 /opt/alice/data/erpnext-sites
+              # ERPNext Sites (UID 1000) - usando safe_mkdir para evitar conflitos arquivo/diretório
+              safe_mkdir /opt/alice/data/erpnext-sites 1000 1000 755
+              # Criar subdiretório assets que ERPNext precisa (causa erro se existir como arquivo)
+              safe_mkdir /opt/alice/data/erpnext-sites/assets 1000 1000 755
               
               # Vector (UID root)
               mkdir -p /opt/alice/data/vector

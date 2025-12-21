@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.18 - 21 de Dezembro de 2025*
+*Versão: 4.19 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -514,3 +514,5 @@ git commit -a -m "test: adiciona testes unitários"
 *ClickHouse start_period (21/12/2025): Aumentado start_period de 60s para 120s e retries de 5 para 8 - primeira inicialização do ClickHouse pode demorar mais*
 *RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant, FFmpeg)*
 *Bug Fix Qdrant Healthcheck pgrep (21/12/2025): Removido pgrep do healthcheck do Qdrant - imagem oficial qdrant/qdrant é minimalista e não tem pgrep instalado. Healthcheck agora usa apenas grep /proc/net/tcp para verificar porta*
+*Bug Fix ERPNext Volume Conflict (21/12/2025): Adicionada limpeza de volumes Docker órfãos e verificação de conflitos arquivo/diretório. Erro "mkdir: file exists" ocorre quando Docker encontra arquivo onde deveria haver diretório. Deploy agora limpa /var/lib/docker/volumes/ e usa safe_mkdir() para criar diretórios*
+*Rollback Enterprise Volumes (21/12/2025): FASE 4 do full_system_cleanup() agora remove resíduos de volumes em /var/lib/docker/volumes/ (erpnext-sites, erpnext-logs) e verifica conflitos arquivo/diretório*

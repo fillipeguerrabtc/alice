@@ -87,3 +87,4 @@ done
 echo "✅ Todas as secrets obrigatórias estão presentes."
 
 
+
