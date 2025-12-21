@@ -479,3 +479,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix ERPNext Logs Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/logs/erpnext - ERPNext roda como UID 1000 (frappe) e precisa de permissão de escrita para logs*
 *Bug Fix PostgreSQL SSL (21/12/2025): Alterado sslmode=prefer para sslmode=disable em DATABASE_URL - conexões internas Docker não precisam de SSL e PostgreSQL local não tem SSL configurado*
 *Bug Fix ws Dynamic Require (21/12/2025): Adicionado ws como dependência direta do rag-service - evita "Dynamic require of events is not supported" causado por ytdl-core*
+*Bug Fix ClickHouse Healthcheck Auth (21/12/2025): Healthcheck agora inclui --user e --password para autenticação - sem credenciais o clickhouse-client retorna erro*
+*Bug Fix Langfuse SSL (21/12/2025): DATABASE_URL do langfuse e langfuse-worker alterado de sslmode=prefer para sslmode=disable - PostgreSQL interno sem SSL*

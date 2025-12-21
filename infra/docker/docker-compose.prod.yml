@@ -1929,9 +1929,10 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 20/12/2025: clickhouse-server alpine não tem wget/curl
-      # Usar clickhouse-client que está disponível na imagem
-      test: ["CMD-SHELL", "clickhouse-client --query 'SELECT 1' || exit 1"]
+      # CORREÇÃO 21/12/2025: clickhouse-client precisa de credenciais para autenticar
+      # Usa variáveis de ambiente CLICKHOUSE_USER e CLICKHOUSE_PASSWORD
+      # --host localhost evita problemas com resolução de hostname
+      test: ["CMD-SHELL", "clickhouse-client --host localhost --user ${CLICKHOUSE_USER:-langfuse} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1965,7 +1966,8 @@ services:
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       # === DATABASE (PostgreSQL para metadados) ===
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
       # === CLICKHOUSE (OLAP para traces - OBRIGATÓRIO v3) ===
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
@@ -2025,7 +2027,8 @@ services:
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=prefer
+      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
+      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
