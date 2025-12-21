@@ -2620,6 +2620,16 @@ jobs:
       contents: read
       packages: read
     
+    # ENTERPRISE-GRADE (21/12/2025): URLs capturadas automaticamente
+    # O script deploy.py consulta a API do Salad Cloud e retorna as URLs
+    # Estes outputs são usados pelo health-check e para atualizar o servidor
+    outputs:
+      SALAD_MIXTRAL_URL: ${{ steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL }}
+      EMBEDDINGS_GPU_URL: ${{ steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL }}
+      SALAD_FLUX_URL: ${{ steps.deploy-gpu.outputs.SALAD_FLUX_URL }}
+      SALAD_ASR_URL: ${{ steps.deploy-gpu.outputs.SALAD_ASR_URL }}
+      SALAD_WHISPER_URL: ${{ steps.deploy-gpu.outputs.SALAD_WHISPER_URL }}
+    
     steps:
       # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
       - name: Checkout
@@ -2638,6 +2648,7 @@ jobs:
           pip install salad-cloud-sdk || echo "SDK alpha, continuando com REST API fallback"
 
       - name: Deploy Container Groups
+        id: deploy-gpu
         env:
           SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
           SALAD_ORG: ${{ secrets.SALAD_ORGANIZATION_ID }}
@@ -2657,6 +2668,175 @@ jobs:
           
           cd infra/salad-cloud
           python deploy.py
+          
+          # Script deploy.py agora escreve URLs para GITHUB_OUTPUT automaticamente
+
+      # ================================================================
+      # ATUALIZAR SERVIDOR HETZNER COM URLs DO SALAD CLOUD
+      # ================================================================
+      # ENTERPRISE-GRADE (21/12/2025): URLs geradas dinamicamente
+      # O script deploy.py captura as URLs dos Container Groups
+      # Este step atualiza o .env.prod no servidor e reinicia serviços
+      # ================================================================
+      - name: Atualizar URLs GPU no Servidor Hetzner
+        env:
+          SALAD_MIXTRAL_URL: ${{ steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL }}
+          EMBEDDINGS_GPU_URL: ${{ steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL }}
+          SALAD_FLUX_URL: ${{ steps.deploy-gpu.outputs.SALAD_FLUX_URL }}
+          SALAD_ASR_URL: ${{ steps.deploy-gpu.outputs.SALAD_ASR_URL }}
+          SALAD_WHISPER_URL: ${{ steps.deploy-gpu.outputs.SALAD_WHISPER_URL }}
+        run: |
+          echo "=============================================="
+          echo "ATUALIZANDO URLs GPU NO SERVIDOR HETZNER"
+          echo "=============================================="
+          
+          # Verificar se temos URLs para atualizar
+          if [ -z "$SALAD_MIXTRAL_URL" ] && [ -z "$EMBEDDINGS_GPU_URL" ]; then
+            echo "⚠️  URLs ainda não disponíveis (Container Groups podem estar iniciando)"
+            echo "   Serviços Alice usarão URLs configuradas previamente ou ficarão em standby"
+            echo "   Próximo deploy após Container Groups estarem running terá as URLs"
+            exit 0
+          fi
+          
+          echo "URLs capturadas do Salad Cloud:"
+          echo "  SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL:-'(não disponível)'}"
+          echo "  EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-'(não disponível)'}"
+          echo "  SALAD_FLUX_URL: ${SALAD_FLUX_URL:-'(não disponível)'}"
+          echo "  SALAD_ASR_URL: ${SALAD_ASR_URL:-'(não disponível)'}"
+          echo "  SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-'(não disponível)'}"
+          echo ""
+          
+          # Criar script para atualizar servidor
+          cat > /tmp/update_gpu_urls.sh << 'SCRIPT_EOF'
+          #!/bin/bash
+          set -euo pipefail
+          
+          cd /opt/alice
+          
+          echo "Atualizando URLs GPU em .env.prod..."
+          
+          # Backup do .env.prod atual
+          cp .env.prod .env.prod.bak.$(date +%s) 2>/dev/null || true
+          
+          # Função para atualizar ou adicionar variável
+          update_env_var() {
+            local var_name="$1"
+            local var_value="$2"
+            
+            if [ -z "$var_value" ]; then
+              return 0
+            fi
+            
+            if grep -q "^${var_name}=" .env.prod; then
+              # Atualizar variável existente
+              sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" .env.prod
+              echo "  Atualizado: ${var_name}"
+            else
+              # Adicionar nova variável
+              echo "" >> .env.prod
+              echo "# URLs GPU Salad Cloud (atualizado automaticamente)" >> .env.prod
+              echo "${var_name}=${var_value}" >> .env.prod
+              echo "  Adicionado: ${var_name}"
+            fi
+          }
+          
+          # Atualizar cada URL
+          update_env_var "SALAD_MIXTRAL_URL" "${SALAD_MIXTRAL_URL:-}"
+          update_env_var "EMBEDDINGS_GPU_URL" "${EMBEDDINGS_GPU_URL:-}"
+          update_env_var "SALAD_FLUX_URL" "${SALAD_FLUX_URL:-}"
+          update_env_var "SALAD_ASR_URL" "${SALAD_ASR_URL:-}"
+          update_env_var "SALAD_WHISPER_URL" "${SALAD_WHISPER_URL:-}"
+          
+          echo ""
+          echo "Reiniciando serviços Alice para aplicar novas URLs..."
+          
+          # Reiniciar apenas serviços que usam as URLs GPU
+          docker compose -f docker-compose.prod.yml restart alice-rag alice-chat alice-integrations 2>/dev/null || {
+            echo "⚠️  Alguns serviços podem não ter reiniciado (normal se ainda iniciando)"
+          }
+          
+          echo "✅ URLs GPU atualizadas com sucesso!"
+          SCRIPT_EOF
+          
+          chmod +x /tmp/update_gpu_urls.sh
+          echo "Script de atualização criado"
+
+      - name: Executar atualização no servidor via SSH
+        if: steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL != '' || steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL != ''
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        env:
+          SALAD_MIXTRAL_URL: ${{ steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL }}
+          EMBEDDINGS_GPU_URL: ${{ steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL }}
+          SALAD_FLUX_URL: ${{ steps.deploy-gpu.outputs.SALAD_FLUX_URL }}
+          SALAD_ASR_URL: ${{ steps.deploy-gpu.outputs.SALAD_ASR_URL }}
+          SALAD_WHISPER_URL: ${{ steps.deploy-gpu.outputs.SALAD_WHISPER_URL }}
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: SALAD_MIXTRAL_URL,EMBEDDINGS_GPU_URL,SALAD_FLUX_URL,SALAD_ASR_URL,SALAD_WHISPER_URL
+          script_stop: true
+          script: |
+            set -euo pipefail
+            
+            cd /opt/alice
+            
+            echo "=============================================="
+            echo "ATUALIZANDO URLs GPU EM .env.prod"
+            echo "=============================================="
+            
+            # Backup do .env.prod atual
+            cp .env.prod .env.prod.bak.$(date +%s) 2>/dev/null || true
+            
+            # Função para atualizar ou adicionar variável
+            update_env_var() {
+              local var_name="$1"
+              local var_value="$2"
+              
+              if [ -z "$var_value" ]; then
+                return 0
+              fi
+              
+              if grep -q "^${var_name}=" .env.prod 2>/dev/null; then
+                # Atualizar variável existente
+                sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" .env.prod
+                echo "  ✓ Atualizado: ${var_name}"
+              else
+                # Adicionar nova variável (com seção se primeira vez)
+                if ! grep -q "# URLs GPU Salad Cloud" .env.prod 2>/dev/null; then
+                  echo "" >> .env.prod
+                  echo "# URLs GPU Salad Cloud (atualizado automaticamente pelo deploy)" >> .env.prod
+                fi
+                echo "${var_name}=${var_value}" >> .env.prod
+                echo "  ✓ Adicionado: ${var_name}"
+              fi
+            }
+            
+            # Atualizar cada URL
+            update_env_var "SALAD_MIXTRAL_URL" "${SALAD_MIXTRAL_URL:-}"
+            update_env_var "EMBEDDINGS_GPU_URL" "${EMBEDDINGS_GPU_URL:-}"
+            update_env_var "SALAD_FLUX_URL" "${SALAD_FLUX_URL:-}"
+            update_env_var "SALAD_ASR_URL" "${SALAD_ASR_URL:-}"
+            update_env_var "SALAD_WHISPER_URL" "${SALAD_WHISPER_URL:-}"
+            
+            echo ""
+            echo "Reiniciando serviços Alice para aplicar novas URLs..."
+            
+            # Reiniciar apenas serviços que usam as URLs GPU
+            # Isso é mais rápido que reiniciar todo o stack
+            docker compose -f docker-compose.prod.yml --env-file .env.prod restart alice-rag alice-chat alice-integrations 2>/dev/null || {
+              echo "⚠️  Alguns serviços podem não ter reiniciado (normal se ainda iniciando)"
+            }
+            
+            # Aguardar serviços ficarem healthy
+            echo ""
+            echo "Aguardando serviços reiniciarem (30s)..."
+            sleep 30
+            
+            echo ""
+            echo "=============================================="
+            echo "✅ URLs GPU ATUALIZADAS COM SUCESSO!"
+            echo "=============================================="
 
       - name: Resumo Deploy GPU
         if: always()
@@ -2670,6 +2850,12 @@ jobs:
           echo "  - alice-flux-schnell (FLUX.1 Schnell)"
           echo "  - alice-embeddings-gpu (Qwen3 + OpenCLIP)"
           echo "GPU: RTX 4090 (24GB VRAM)"
+          echo ""
+          echo "URLs capturadas (se disponíveis):"
+          echo "  SALAD_MIXTRAL_URL: ${{ steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL || '(aguardando)' }}"
+          echo "  EMBEDDINGS_GPU_URL: ${{ steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL || '(aguardando)' }}"
+          echo "  SALAD_FLUX_URL: ${{ steps.deploy-gpu.outputs.SALAD_FLUX_URL || '(aguardando)' }}"
+          echo "  SALAD_ASR_URL: ${{ steps.deploy-gpu.outputs.SALAD_ASR_URL || '(aguardando)' }}"
           echo "=============================================="
 
   # ===========================================================================
@@ -2770,16 +2956,25 @@ jobs:
       - name: Health Check - Serviços GPU Salad Cloud (4 Container Groups)
         id: health-gpu
         env:
-          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
-          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
+          # ENTERPRISE-GRADE (21/12/2025): URLs vêm dos outputs do deploy-salad-gpu
+          # Fallback para secrets se outputs não estiverem disponíveis
+          SALAD_MIXTRAL_URL: ${{ needs.deploy-salad-gpu.outputs.SALAD_MIXTRAL_URL || secrets.SALAD_MIXTRAL_URL }}
+          SALAD_FLUX_URL: ${{ needs.deploy-salad-gpu.outputs.SALAD_FLUX_URL || secrets.SALAD_FLUX_URL }}
+          SALAD_ASR_URL: ${{ needs.deploy-salad-gpu.outputs.SALAD_ASR_URL || secrets.SALAD_ASR_URL }}
+          EMBEDDINGS_GPU_URL: ${{ needs.deploy-salad-gpu.outputs.EMBEDDINGS_GPU_URL || secrets.EMBEDDINGS_GPU_URL }}
         run: |
           FAILED=0
           
           echo "=============================================="
           echo "HEALTH CHECK - SERVIÇOS GPU SALAD CLOUD"
           echo "=============================================="
+          echo ""
+          echo "URLs sendo verificadas:"
+          echo "  SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL:-'(não configurada)'}"
+          echo "  EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-'(não configurada)'}"
+          echo "  SALAD_FLUX_URL: ${SALAD_FLUX_URL:-'(não configurada)'}"
+          echo "  SALAD_ASR_URL: ${SALAD_ASR_URL:-'(não configurada)'}"
+          echo ""
           
           # Mixtral 8x7B (LLM - coração do chat e trading)
           echo "Verificando Mixtral 8x7B (LLM)..."

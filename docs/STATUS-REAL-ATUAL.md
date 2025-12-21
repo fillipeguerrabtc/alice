@@ -46,6 +46,8 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
+> **URLs GPU Automáticas 21/12/2025:** Script `deploy.py` agora captura URLs dos Container Groups Salad Cloud automaticamente após criação via API. URLs são exportadas como `GITHUB_OUTPUT` e passadas para o servidor Hetzner, atualizando `.env.prod` e reiniciando serviços Alice. **Elimina necessidade de configurar manualmente** as secrets `SALAD_MIXTRAL_URL`, `EMBEDDINGS_GPU_URL`, `SALAD_FLUX_URL`, `SALAD_ASR_URL`, `SALAD_WHISPER_URL`. No primeiro deploy, URLs podem não estar disponíveis imediatamente (Container Groups ainda iniciando) - segundo deploy captura automaticamente.
+
 > **Bug Fix ERPNext Configurator 21/12/2025:** Escapar `$` com `$$` no comando do `erpnext-configurator` para evitar substituição pelo Docker Compose. Docker Compose interpreta `$CACHE_URL` e `$QUEUE_URL` como variáveis de ambiente, mas são variáveis bash internas do script. Aviso no log: "The CACHE_URL variable is not set. Defaulting to a blank string."
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**

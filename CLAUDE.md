@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.19 - 21 de Dezembro de 2025*
+*Versão: 4.20 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -526,3 +526,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Container Names (21/12/2025): Corrigidos nomes postgres→alice-postgres, traefik→alice-traefik na lista de captura de logs. grep usa match exato (^${container}$) - nomes devem bater exatamente com docker-compose.prod.yml*
 *Bug Fix ERPNext Workers -2 (21/12/2025): Adicionados erpnext-worker-default-2, erpnext-worker-short-2, erpnext-worker-long-2 na lista ERPNEXT_CONTAINERS. Eram 12 containers, agora 15 (todos os workers incluídos)*
 *Bug Fix ERPNext Configurator $$ Escape (21/12/2025): Escapar $ com $$ no command do erpnext-configurator para evitar substituição pelo Docker Compose. Bug: Docker Compose interpreta $CACHE_URL e $QUEUE_URL como env vars, mas são variáveis bash internas. Aviso: "The CACHE_URL variable is not set. Defaulting to a blank string."*
+*URLs GPU Automáticas (21/12/2025): deploy.py agora captura URLs dos Container Groups automaticamente após criação. URLs são passadas como outputs do job deploy-salad-gpu e atualizadas no .env.prod do servidor Hetzner. Elimina necessidade de configurar secrets SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc. manualmente.*

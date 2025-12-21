@@ -378,6 +378,63 @@ def deploy_with_rest_api(
 # MAIN
 # =============================================================================
 
+def get_container_group_url(
+    sdk: Optional["SaladCloudSdk"],
+    org: str,
+    project: str,
+    name: str,
+    api_key: str,
+) -> Optional[str]:
+    """
+    Obtem a URL publica de um Container Group apos criacao.
+    
+    ENTERPRISE-GRADE (21/12/2025):
+    - Consulta API do Salad Cloud para obter networking.dns
+    - Retorna URL no formato https://<dns>
+    - Necessario para configurar secrets automaticamente
+    
+    Args:
+        sdk: SDK instance (ou None para usar REST API)
+        org: Organization ID
+        project: Project ID
+        name: Nome do Container Group
+        api_key: API Key para autenticacao
+    
+    Returns:
+        URL publica ou None se nao disponivel
+    """
+    try:
+        if SDK_AVAILABLE and sdk:
+            cg = sdk.container_groups.get_container_group(
+                organization_name=org,
+                project_name=project,
+                container_group_name=name
+            )
+            # SDK retorna networking.dns com o dominio
+            if hasattr(cg, 'networking') and cg.networking:
+                dns = getattr(cg.networking, 'dns', None)
+                if dns:
+                    return f"https://{dns}"
+        else:
+            # Fallback REST API
+            url = f"{API_BASE_URL}/organizations/{org}/projects/{project}/containers/{name}"
+            req = urllib.request.Request(url, method="GET")
+            req.add_header("Salad-Api-Key", api_key)
+            
+            with urllib.request.urlopen(req, timeout=30) as response:
+                data = json.loads(response.read().decode())
+                networking = data.get("networking", {})
+                dns = networking.get("dns")
+                if dns:
+                    return f"https://{dns}"
+        
+        return None
+        
+    except Exception as e:
+        logger.warning(f"Erro ao obter URL de {name}: {e}")
+        return None
+
+
 def main():
     """Funcao principal de deploy."""
     
@@ -424,6 +481,7 @@ def main():
     # Deploy de cada Container Group
     success_count = 0
     failed_groups = []
+    deployed_urls = {}  # NOVO: Armazenar URLs dos Container Groups
     
     for config in configs:
         logger.info("-" * 40)
@@ -466,6 +524,15 @@ def main():
         if success:
             success_count += 1
             logger.info(f"  SUCESSO: {config.name}")
+            
+            # NOVO: Aguardar um pouco e obter URL do Container Group
+            time.sleep(5)  # Aguardar propagacao
+            url = get_container_group_url(sdk, org, project, config.name, api_key)
+            if url:
+                deployed_urls[config.name] = url
+                logger.info(f"  URL: {url}")
+            else:
+                logger.warning(f"  URL ainda nao disponivel para {config.name}")
         else:
             failed_groups.append(config.name)
             logger.error(f"  FALHA: {config.name}")
@@ -477,6 +544,47 @@ def main():
     logger.info(f"Total: {len(configs)}")
     logger.info(f"Sucesso: {success_count}")
     logger.info(f"Falha: {len(failed_groups)}")
+    
+    # NOVO: Imprimir URLs para GitHub Actions capturar como outputs
+    # Formato: ::set-output name=<key>::<value> (deprecated) ou GITHUB_OUTPUT
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("URLS DOS CONTAINER GROUPS (para GitHub Actions)")
+    logger.info("=" * 60)
+    
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    
+    # Mapeamento de nomes para variaveis de ambiente
+    url_mapping = {
+        "alice-mixtral-vllm": "SALAD_MIXTRAL_URL",
+        "alice-embeddings-gpu": "EMBEDDINGS_GPU_URL",
+        "alice-flux-schnell": "SALAD_FLUX_URL",
+        "alice-asr-canary": "SALAD_ASR_URL",
+    }
+    
+    for cg_name, env_var in url_mapping.items():
+        url = deployed_urls.get(cg_name, "")
+        logger.info(f"{env_var}={url}")
+        
+        # Escrever para GITHUB_OUTPUT se disponivel
+        if github_output and url:
+            try:
+                with open(github_output, "a") as f:
+                    f.write(f"{env_var}={url}\n")
+            except Exception as e:
+                logger.warning(f"Erro ao escrever GITHUB_OUTPUT: {e}")
+    
+    # SALAD_WHISPER_URL usa mesma URL do ASR
+    whisper_url = deployed_urls.get("alice-asr-canary", "")
+    logger.info(f"SALAD_WHISPER_URL={whisper_url}")
+    if github_output and whisper_url:
+        try:
+            with open(github_output, "a") as f:
+                f.write(f"SALAD_WHISPER_URL={whisper_url}\n")
+        except Exception:
+            pass
+    
+    logger.info("=" * 60)
     
     if failed_groups:
         logger.error(f"Container Groups com falha: {', '.join(failed_groups)}")
