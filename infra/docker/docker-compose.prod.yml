@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE PLATFORM - DOCKER COMPOSE PRODUÇÃO
 # =============================================================================
-# Versão: 4.4
+# Versão: 4.5
 # Ambiente: Produção (Hetzner Cloud CX43)
 # Servidor: 8 vCPU, 16GB RAM, 160GB NVMe SSD
 # Volume Adicional: Hetzner Volume 100GB (alice-data) montado em /opt/alice
@@ -26,12 +26,18 @@
 # - LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090
 # - alice-clip-inference REMOVIDO - migrado para EMBEDDINGS_GPU_URL (Salad Cloud)
 #
+# HEALTHCHECKS ENTERPRISE (21/12/2025):
+# - Serviços Alice usam /live (liveness probe) para Docker healthchecks
+# - /live: verifica se processo está vivo (não dependências externas)
+# - /ready: usado para Kubernetes readiness (roteamento de tráfego)
+# - Evita falsos positivos quando GPUs Salad Cloud não estão prontas
+#
 # SECURITY: 100% SHA256 digests em todas as 26 imagens externas (Supply Chain Security 2025)
 # ERPNEXT: Arquitetura unificada v15 - imagem única frappe/erpnext com comandos por serviço
 #
 # Autor: Fillipe Guerra
-# Data: 17 de Dezembro de 2025
-# Atualização: Remoção alice-clip-inference + migração 100% GPU Salad Cloud
+# Data: 21 de Dezembro de 2025
+# Atualização: Healthchecks corrigidos (/ready → /live) + start_period aumentado
 # =============================================================================
 
 # =============================================================================
@@ -669,9 +675,11 @@ services:
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # IMPORTANTE: Usar /ready (verifica PostgreSQL) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready é para Kubernetes readiness (roteamento de tráfego) - verifica dependências externas
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -752,9 +760,11 @@ services:
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # IMPORTANTE: Usar /ready (verifica PostgreSQL + LLM) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready verifica dependências externas (GPU Salad Cloud) - pode falhar sem GPU estar pronta
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -840,13 +850,15 @@ services:
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
       # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
-      # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready verifica dependências externas (GPU Salad Cloud, Qdrant) - pode falhar sem GPU pronta
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -906,9 +918,11 @@ services:
       - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # IMPORTANTE: Usar /ready (verifica PostgreSQL + embeddings) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready verifica dependências externas (GPU, PostgreSQL) - pode falhar temporariamente
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1010,9 +1024,11 @@ services:
       - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # IMPORTANTE: Usar /ready (verifica PostgreSQL + ERPNext) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready verifica dependências externas (ERPNext, Stripe) - pode falhar temporariamente
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1083,9 +1099,11 @@ services:
       - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # IMPORTANTE: Usar /ready (verifica observability stack) ao invés de /health (sempre 200)
+      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # /ready verifica observability stack (Prometheus, Grafana) - pode falhar temporariamente
+      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/ready',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -1932,11 +1950,12 @@ services:
       # CORREÇÃO 21/12/2025: clickhouse-client precisa de credenciais para autenticar
       # Usa variáveis de ambiente CLICKHOUSE_USER e CLICKHOUSE_PASSWORD
       # --host localhost evita problemas com resolução de hostname
+      # NOTA: start_period aumentado para 120s - primeira inicialização pode demorar
       test: ["CMD-SHELL", "clickhouse-client --host localhost --user ${CLICKHOUSE_USER:-langfuse} --password ${CLICKHOUSE_PASSWORD} --query 'SELECT 1' 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 5
-      start_period: 60s
+      retries: 8
+      start_period: 120s
     deploy:
       resources:
         limits:

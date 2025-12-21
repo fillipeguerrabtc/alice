@@ -33,9 +33,12 @@
 | Resource limits | ✅ | 44/44 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
+| **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
 | **PostgreSQL RLS Trading** | ✅ | **10 tabelas com RLS** (migrations 0007 + 0008 + 0012) |
 
 > Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` verifica que `version` é obrigatória e válida (formato v1.0.0). Impede disparo acidental. Script externo `infra/scripts/generate-env-prod.sh` para .env.prod. Pipeline sequencial: CI → Release → Deploy (sem execução paralela).
+
+> Atualização 21/12/2025: Healthchecks dos 6 serviços Alice corrigidos de `/ready` para `/live`. Docker healthcheck verifica se PROCESSO está vivo, não dependências externas (GPU Salad Cloud). Endpoint `/ready` é para Kubernetes readiness (roteamento de tráfego). Corrige erro "container alice-rag is unhealthy" em primeiro deploy.
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |

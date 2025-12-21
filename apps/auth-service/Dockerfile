@@ -111,9 +111,11 @@ USER nonroot
 EXPOSE 3001
 
 # Health check compatível com Distroless (usa node diretamente, não shell)
+# CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) ao invés de /ready
+# /ready verifica dependências externas - Docker healthcheck deve verificar se PROCESSO está vivo
 # NOTA: Distroless não tem shell, então usamos node -e diretamente
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD ["/nodejs/bin/node", "-e", "require('http').get('http://localhost:3001/ready', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+    CMD ["/nodejs/bin/node", "-e", "require('http').get('http://localhost:3001/live', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
 
 # Entrypoint do Distroless nodejs já é /nodejs/bin/node
 CMD ["dist/bundle.js"]

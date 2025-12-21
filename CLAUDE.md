@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.16 - 21 de Dezembro de 2025*
+*Versão: 4.17 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -508,3 +508,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix deploy-production.yml Expression Length (21/12/2025): Step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo infra/scripts/generate-env-prod.sh - Best Practice 2025 para scripts grandes em workflows*
 *Deploy Workflow Gate (21/12/2025): Adicionado job validate-trigger como gate de segurança - version é OBRIGATÓRIO e deve ser tag válida (v1.0.0). Impede disparo acidental do deploy sem versão. Release workflow passa triggered_by: release-workflow para auditoria*
 *ESLint Cleanup (21/12/2025): Removidos imports não utilizados (Tooltip, TooltipContent, TooltipTrigger) de TechnicalAnalysisPanel.tsx e variável opens não utilizada de technical-indicators.ts - Zero warnings no CI*
+*Bug Fix AlertTriangle Import (21/12/2025): Adicionado import AlertTriangle faltante em TechnicalAnalysisPanel.tsx - erro TS2304 no build*
+*Healthchecks /live Enterprise (21/12/2025): Todos healthchecks dos 6 serviços Alice alterados de /ready para /live - /ready verifica dependências externas (GPU Salad Cloud) e falha se não estiverem prontas. Docker healthcheck deve verificar se PROCESSO está vivo, não dependências. Corrige erro "container alice-rag is unhealthy" em primeiro deploy*
+*Healthchecks Dockerfiles Sync (21/12/2025): Dockerfiles de todos 6 serviços Alice atualizados com /live para consistência com docker-compose.prod.yml*
+*ClickHouse start_period (21/12/2025): Aumentado start_period de 60s para 120s e retries de 5 para 8 - primeira inicialização do ClickHouse pode demorar mais*
+*RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant, FFmpeg)*
