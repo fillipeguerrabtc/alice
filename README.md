@@ -234,7 +234,7 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner + Salad GPU (auto)
    └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings
 ```
 
-**Pipeline 100% Automático:** Push para `main` deploya Hetzner + Salad GPU após todas as validações passarem.
+**Pipeline 100% Automático:** Push para `main` aciona CI → Release → Deploy (Hetzner + Salad GPU) com health checks e rollback automático.
 
 ### Acesso SSH à Hetzner (Produção)
 

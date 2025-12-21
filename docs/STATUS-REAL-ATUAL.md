@@ -1117,7 +1117,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix Leverage igual Amount (17/12/2025): Lógica corrigida para aceitar leverage mesmo quando valor=amount (ex: "compre 10 BTC 10x")*
 *Bug Fix messageContent Inconsistente (17/12/2025): Todas as funções agora usam messageContent (com fallback) ao invés de message.content (undefined)*
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): Hook useKucoinWebSocket evita subscriptions duplicadas na conexão inicial*
-*Pipeline CI/CD: Verificado 100% funcional - versionamento automático, cache, auto-correção de requisitos*
+*Pipeline CI/CD: 100% automático - versionamento, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() que parametrizava string inteira como único valor. Corrigido para usar inArray() do Drizzle ORM (3 ocorrências: processRagUpdate, processAutoIndexing, processEmbeddingGeneration)*
 *CI/CD Cleanup (19/12/2025): Removido job build-clip-inference do CI workflow - serviço migrado 100% para Salad Cloud GPU. Adicionado @alice/logger às dependências do observability-service e autoprefixer ao frontend-service*

@@ -1001,28 +1001,19 @@ jobs:
 
   # ===========================================================================
   # Job 8: Trigger Release Automático (apenas em push para main)
-  # Best Practices 2025: CI passa -> Release automático -> Deploy manual
-  # NOTA: CRÍTICO - needs apenas cria ordem de execução, não impede execução se falhar
-  # A condição if DEVE verificar explicitamente que todos os jobs upstream tiveram sucesso
+  # Best Practices 2025: CI passa -> Release automático -> Deploy automático
+  # NOTA: needs apenas cria ordem; condição if garante todos success.
   # ===========================================================================
   trigger-release:
     name: Trigger Release
     runs-on: ubuntu-latest
-    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 5
-    # GAP-GHACTIONS-003: Least privilege - permissões para disparar workflow dispatch
     permissions:
       contents: read
       actions: write
-    # Depende diretamente de todos os jobs críticos (sem job intermediário)
-    # NOTA: build-clip-inference removido - serviço migrado para Salad Cloud GPU (19/12/2025)
     needs: [build-and-check, build-services, build-frontend, security-scan, compliance-checks]
-    # CRÍTICO: Verificar explicitamente que TODOS os jobs upstream tiveram sucesso
-    # needs apenas cria ordem de execução, mas não impede execução se algum job falhar
-    # Padrão usado em release.yml e deploy-production.yml: needs.{job}.result == 'success'
     if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-services.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
     steps:
-      # SHA: actions/checkout@v4.2.2 (2024-10-23) - Supply Chain Security
       - name: Checkout codigo
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -1031,51 +1022,25 @@ jobs:
       - name: Calcular proxima versao
         id: version
         run: |
-          # Buscar ultima tag (fallback para v0.0.0 se não existir)
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Ultima tag: $LAST_TAG"
-          
-          # Extrair numeros da versao (remover prefixo 'v')
           VERSION=${LAST_TAG#v}
-          
-          # Extrair componentes (cut retorna string vazia se campo não existir)
           MAJOR_RAW=$(echo $VERSION | cut -d. -f1)
           MINOR_RAW=$(echo $VERSION | cut -d. -f2)
           PATCH_RAW=$(echo $VERSION | cut -d. -f3 | cut -d- -f1)
-          
-          # Enterprise-grade: valores default para componentes ausentes (Regra 6)
-          # Se a tag for 'v1' → MAJOR=1, MINOR=0, PATCH=0
-          # Se a tag for 'v1.2' → MAJOR=1, MINOR=2, PATCH=0
-          # Se a tag for 'v1.2.3' → MAJOR=1, MINOR=2, PATCH=3
           MAJOR=${MAJOR_RAW:-0}
           MINOR=${MINOR_RAW:-0}
           PATCH=${PATCH_RAW:-0}
-          
-          # CRÍTICO: Validar que todos os componentes são números válidos para semver
-          # Semver 2.0 spec: "A normal version number MUST NOT contain leading zeroes"
-          # Regex: ^(0|[1-9][0-9]*)$ aceita: 0, 1, 10, 123 | rejeita: 01, 08, 007
-          # Isso previne erros de octal em bash: $((08 + 1)) falha porque 8 não é válido em octal
           SEMVER_REGEX='^(0|[1-9][0-9]*)$'
-          
           if ! [[ "$MAJOR" =~ $SEMVER_REGEX ]] || ! [[ "$MINOR" =~ $SEMVER_REGEX ]] || ! [[ "$PATCH" =~ $SEMVER_REGEX ]]; then
-            echo "⚠️ AVISO: Tag '$LAST_TAG' com formato não-semântico (zeros à esquerda ou caracteres inválidos). Usando v0.0.1"
+            echo "⚠️ Tag '$LAST_TAG' inválida para semver. Usando v0.0.1"
             MAJOR=0
             MINOR=0
             PATCH=0
           fi
-          
-          echo "Versão parseada: MAJOR=$MAJOR, MINOR=$MINOR, PATCH=$PATCH"
-          
-          # Incrementar patch (usando 10# para forçar base decimal - segurança adicional)
-          # CRÍTICO: Mesmo com validação regex, usar 10# garante que bash sempre interprete como decimal
-          # Isso previne edge cases onde validação pode falhar silenciosamente
           NEW_PATCH=$((10#$PATCH + 1))
           NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
-          
-          echo "Nova versao: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security
       - name: Disparar Release Workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
@@ -1086,8 +1051,6 @@ jobs:
               repo: context.repo.repo,
               workflow_id: 'release.yml',
               ref: 'main',
-              // NOTA: release.yml aceita apenas 'version' e 'prerelease'
-              // trigger_deploy foi removido (deploy agora é automático após Release)
               inputs: {
                 version: '${{ steps.version.outputs.version }}',
                 prerelease: 'false'
