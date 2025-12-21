@@ -2021,24 +2021,29 @@ jobs:
             fi
             
             echo "✅ Código atualizado para: ${TARGET_REF}"
+            
+            # CORREÇÃO CRÍTICA 21/12/2025: Entrar no diretório do repositório clonado
+            # O repo foi clonado em /opt/alice/app, precisamos estar lá para os próximos passos
+            cd /opt/alice/app
+            echo "📂 Diretório atual: $(pwd)"
 
             # REGRA 6: CRÍTICO - validar estrutura ANTES de mover .env.prod
-            if [ ! -d "app/infra/docker" ]; then
-              echo "❌ ERRO CRÍTICO: /opt/alice/app/infra/docker não existe após o clone."
+            if [ ! -d "infra/docker" ]; then
+              echo "❌ ERRO CRÍTICO: infra/docker não existe após o clone."
               echo "   Estrutura do repositório esperada não foi encontrada."
               echo "   Verificando estrutura atual..."
-              ls -la app/ || true
-              ls -la app/infra/ || true
-              echo "::error::Diretório app/infra/docker não encontrado. Verifique estrutura do repositório." >&2
+              ls -la . || true
+              ls -la infra/ || true
+              echo "::error::Diretório infra/docker não encontrado. Verifique estrutura do repositório." >&2
               exit 1
             fi
             echo "✅ Estrutura do repositório validada"
             
             # REGRA 6: mover .env.prod imediatamente após validação
             if [ -f /tmp/.env.prod ]; then
-              mv /tmp/.env.prod app/infra/docker/.env.prod
-              chmod 600 app/infra/docker/.env.prod
-              echo "✅ .env.prod movido para app/infra/docker/.env.prod"
+              mv /tmp/.env.prod infra/docker/.env.prod
+              chmod 600 infra/docker/.env.prod
+              echo "✅ .env.prod movido para infra/docker/.env.prod"
             else
               echo "::error::Arquivo /tmp/.env.prod não encontrado. Verifique o passo de SCP." >&2
               exit 1
@@ -2059,6 +2064,7 @@ jobs:
             # VERSIONAMENTO AUTOMÁTICO: Atualizar docker-compose.prod.yml
             # ==============================================
             echo "🔄 Atualizando docker-compose.prod.yml com versões e digests..."
+            # Repositório clonado em /opt/alice/app, então infra/docker está em /opt/alice/app/infra/docker
             if [ ! -d /opt/alice/app/infra/docker ]; then
               echo "❌ ERRO CRÍTICO: /opt/alice/app/infra/docker não existe após o clone."
               echo "   Verifique o passo de clone ou permissões no diretório /opt/alice."
@@ -2107,20 +2113,20 @@ jobs:
               echo "   Usando versões do .env.prod (digests precisam ser atualizados manualmente)"
             fi
 
-            cd /opt/alice
+            cd /opt/alice/app
             
             # ==============================================
             # VALIDAÇÃO CRÍTICA: .env.prod DEVE existir
             # ==============================================
-            if [ ! -f "app/infra/docker/.env.prod" ]; then
-              echo "❌ ERRO CRÍTICO: .env.prod não encontrado em app/infra/docker/"
+            if [ ! -f "infra/docker/.env.prod" ]; then
+              echo "❌ ERRO CRÍTICO: .env.prod não encontrado em infra/docker/"
               echo "   Docker Compose vai falhar sem variáveis de ambiente."
               echo "   Verificando estrutura..."
-              ls -la app/infra/docker/ || true
+              ls -la infra/docker/ || true
               echo "::error::.env.prod não encontrado. Verifique passos de SCP e movimentação." >&2
               exit 1
             fi
-            echo "✅ .env.prod validado em app/infra/docker/.env.prod"
+            echo "✅ .env.prod validado em /opt/alice/app/infra/docker/.env.prod"
             
             # ==============================================
             # SETUP INICIAL - Redes Docker (idempotente)
@@ -2779,7 +2785,8 @@ jobs:
           script: |
             set -euo pipefail
             
-            cd /opt/alice
+            # Repositório clonado em /opt/alice/app, .env.prod está em infra/docker/
+            cd /opt/alice/app/infra/docker
             
             echo "=============================================="
             echo "ATUALIZANDO URLs GPU EM .env.prod"
@@ -3206,6 +3213,7 @@ jobs:
               
               echo "[CLEANUP 1/8] Docker Compose down (força)..."
               # Tentar docker compose down se o arquivo existir (não depende de cd funcionar)
+              # Repositório clonado em /opt/alice/app
               if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
                 # REGRA 6: --env-file necessário para Docker Compose expandir variáveis ${VAR} no YAML
                 docker compose -f /opt/alice/app/infra/docker/docker-compose.prod.yml --env-file /opt/alice/app/infra/docker/.env.prod down --remove-orphans 2>/dev/null || true
@@ -3594,6 +3602,7 @@ jobs:
             done
             
             # Se docker-compose.prod.yml existir, capturar info adicional
+            # Repositório clonado em /opt/alice/app
             if [ -f "/opt/alice/app/infra/docker/docker-compose.prod.yml" ]; then
               cd /opt/alice/app/infra/docker
               echo "=== DOCKER COMPOSE STATUS ===" >> /tmp/rollback-state-before.txt
@@ -3709,6 +3718,7 @@ jobs:
             fi
             
             # Continuar com deploy da versão anterior
+            # Repositório clonado em /opt/alice/app
             if ! cd /opt/alice/app/infra/docker; then
               echo "❌ ERRO: Não foi possível acessar /opt/alice/app/infra/docker"
               echo "Executando limpeza total..."
