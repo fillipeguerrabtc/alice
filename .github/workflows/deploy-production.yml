@@ -1822,10 +1822,12 @@ jobs:
             printf '\n'
             printf '# Alertmanager / Resend SMTP (observabilidade)\n'
             printf '# CORREÇÃO 21/12/2025: Resend usa valores SMTP fixos + API Key como senha\n'
+            printf '# Docs: https://resend.com/docs/send-with-smtp\n'
             printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
             printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
             printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
             printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
+            printf 'SMTP_PASSWORD=%s\n' "${{ secrets.RESEND_API_KEY }}"
             printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
             printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
             printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"

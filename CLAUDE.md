@@ -501,3 +501,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix minConfidenceToExecute (21/12/2025): Usar ?? ao invés de || para preservar valor 0 válido (0 é falsy com ||)*
 *Bug Fix Validation noValuesExtracted (21/12/2025): totalFields === 0 agora marca passed=false e overallAccuracy=0 (evita aprovação de respostas vagas)*
 *Bug Fix MACD Enum Mismatch (21/12/2025): MACDResult.interpretation agora usa 'sideways' ao invés de 'neutral' - compatibilidade com trendEnum do PostgreSQL*
+*Bug Fix SMTP_PASSWORD Faltante (21/12/2025): Adicionado SMTP_PASSWORD usando RESEND_API_KEY - Resend usa API Key como senha SMTP para autenticação*
