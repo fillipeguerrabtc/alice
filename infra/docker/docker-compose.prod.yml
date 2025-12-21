@@ -1356,9 +1356,10 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     # REGRA 6 + Security: gera URLs Redis de forma segura sem reinterpretação pelo shell
-    # CORREÇÃO 21/12/2025: Criar common_site_config.json antes de bench set-config
-    # Bug: bench set-config -g falha se common_site_config.json não existe
-    # Solução: Criar arquivo JSON vazio antes de configurar
+    # CORREÇÃO 21/12/2025: Criar common_site_config.json E apps.txt antes de bench set-config
+    # Bug: bench set-config -g falha se common_site_config.json ou apps.txt não existem
+    # Erro: "OSError: b'./apps.txt' Not Found" - frappe precisa da lista de apps instaladas
+    # Solução: Criar ambos arquivos antes de configurar
     command:
       - bash
       - -c
@@ -1366,10 +1367,19 @@ services:
         set -euo pipefail
         cd /home/frappe/frappe-bench
         
+        # Criar diretório sites se não existir
+        mkdir -p sites
+        
+        # Criar apps.txt se não existir (bench precisa dele para carregar apps)
+        # Lista apps instaladas no frappe-bench (frappe e erpnext)
+        if [ ! -f "sites/apps.txt" ]; then
+          echo "Criando sites/apps.txt..."
+          echo -e "frappe\nerpnext" > sites/apps.txt
+        fi
+        
         # Criar common_site_config.json se não existir (bench set-config -g precisa dele)
         if [ ! -f "sites/common_site_config.json" ]; then
           echo "Criando sites/common_site_config.json..."
-          mkdir -p sites
           echo "{}" > sites/common_site_config.json
         fi
         
