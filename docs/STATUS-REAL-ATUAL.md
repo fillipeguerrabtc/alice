@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 21 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.9 - Trading Analysis Enterprise: Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação
+> **Versão:** 4.10 - Deploy Workflow Expression Length Fix: Script Externo para .env.prod
 
 ---
 
@@ -35,7 +35,7 @@
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **PostgreSQL RLS Trading** | ✅ | **10 tabelas com RLS** (migrations 0007 + 0008 + 0012) |
 
-> Atualização 21/12/2025: CI - Build & Test ajustado para evitar duplicação (push somente em `main` + PR) e correção de tipos no frontend (SignalApprovalPanel e TechnicalAnalysisPanel) que bloqueavam o Release.
+> Atualização 21/12/2025: Deploy workflow corrigido - step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo `infra/scripts/generate-env-prod.sh` (Best Practice 2025). CI - Build & Test executa apenas em push para `main` (comportamento correto).
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |

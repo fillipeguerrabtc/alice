@@ -1451,26 +1451,18 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.HETZNER_VM_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
+      # =============================================================================
+      # CORREÇÃO 21/12/2025: Script externo para evitar "Exceeded max expression length 21000"
+      # GitHub Actions tem limite de 21.000 caracteres por expressão YAML
+      # Best Practice 2025: Scripts grandes devem ser arquivos separados
+      # =============================================================================
       - name: Criar arquivo .env.prod seguro
         env:
+          # Secrets obrigatórias
           POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
           REDIS_PASSWORD_SECRET: ${{ secrets.REDIS_PASSWORD }}
           ADMIN_USER_SECRET: ${{ secrets.ADMIN_USER }}
           ADMIN_PWD_SECRET: ${{ secrets.ADMIN_PWD }}
-          GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
-          GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
-          ERPNEXT_ADMIN_PASSWORD_SECRET: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
-          STRIPE_WEBHOOK_BASE_URL_SECRET: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
-          WISE_WEBHOOK_SECRET_SECRET: ${{ secrets.WISE_WEBHOOK_SECRET }}
-          WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
-          ERPNEXT_API_KEY_SECRET: ${{ secrets.ERPNEXT_API_KEY }}
-          ERPNEXT_API_SECRET_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
-          LANGFUSE_DB_USER_SECRET: ${{ secrets.LANGFUSE_DB_USER }}
-          LANGFUSE_DB_PASSWORD_SECRET: ${{ secrets.LANGFUSE_DB_PASSWORD }}
-          LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
-          CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
-          CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
-          # CORREÇÃO 21/12/2025: Secrets que faltavam validação fail-fast
           QDRANT_API_KEY_SECRET: ${{ secrets.QDRANT_API_KEY }}
           SALAD_API_KEY_SECRET: ${{ secrets.SALAD_API_KEY }}
           SALAD_ORGANIZATION_ID_SECRET: ${{ secrets.SALAD_ORGANIZATION_ID }}
@@ -1483,455 +1475,74 @@ jobs:
           REDIS_QUEUE_PASSWORD_SECRET: ${{ secrets.REDIS_QUEUE_PASSWORD }}
           ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
           ERPNEXT_DB_PASSWORD_SECRET: ${{ secrets.ERPNEXT_DB_PASSWORD }}
-          # CORREÇÃO 21/12/2025: Resend usa API Key como senha SMTP
-          # Os valores SMTP são fixos do Resend (não são secrets separados)
-          # Docs: https://resend.com/docs/send-with-smtp
-          RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
-          # Variáveis Salad (passadas separadamente para auditoria)
+          LANGFUSE_DB_USER_SECRET: ${{ secrets.LANGFUSE_DB_USER }}
+          LANGFUSE_DB_PASSWORD_SECRET: ${{ secrets.LANGFUSE_DB_PASSWORD }}
+          LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
+          CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
+          CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          # Secrets opcionais
+          GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          ERPNEXT_ADMIN_PASSWORD_SECRET: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
+          STRIPE_WEBHOOK_BASE_URL_SECRET: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
+          WISE_WEBHOOK_SECRET_SECRET: ${{ secrets.WISE_WEBHOOK_SECRET }}
+          WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
+          ERPNEXT_API_KEY_SECRET: ${{ secrets.ERPNEXT_API_KEY }}
+          ERPNEXT_API_SECRET_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
+          # Variáveis Salad
           SALAD_API_URL_CONFIGURED: ${{ vars.SALAD_API_URL }}
           SALAD_MEDIA_PROJECT_CONFIGURED: ${{ vars.SALAD_MEDIA_PROJECT }}
           SALAD_GPU_CLASS_CONFIGURED: ${{ vars.SALAD_GPU_CLASS }}
+          # Variáveis de versão (outputs do build-docker)
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
+          PGBACKREST_VERSION: ${{ needs.build-docker.outputs.pgbackrest_version }}
+          TRAEFIK_VERSION: ${{ needs.build-docker.outputs.traefik_version }}
+          PROMETHEUS_VERSION: ${{ needs.build-docker.outputs.prometheus_version }}
+          GRAFANA_VERSION: ${{ needs.build-docker.outputs.grafana_version }}
+          LOKI_VERSION: ${{ needs.build-docker.outputs.loki_version }}
+          PROMTAIL_VERSION: ${{ needs.build-docker.outputs.promtail_version }}
+          JAEGER_VERSION: ${{ needs.build-docker.outputs.jaeger_version }}
+          LANGFUSE_VERSION: ${{ needs.build-docker.outputs.langfuse_version }}
+          ERPNEXT_VERSION: ${{ needs.build-docker.outputs.erpnext_version }}
+          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.build-docker.outputs.docker_socket_proxy_version }}
+          BUSYBOX_VERSION: ${{ needs.build-docker.outputs.busybox_version }}
+          REDIS_VERSION: ${{ needs.build-docker.outputs.redis_version }}
+          MARIADB_VERSION: ${{ needs.build-docker.outputs.mariadb_version }}
+          PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
+          # Secrets adicionais para .env.prod
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          OAUTH_GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
+          OAUTH_GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
+          SALAD_WHISPER_URL: ${{ secrets.SALAD_WHISPER_URL }}
+          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
+          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
+          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
+          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
+          HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+          TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+          TWILIO_WHATSAPP_NUMBER: ${{ secrets.TWILIO_WHATSAPP_NUMBER }}
+          WISE_API_KEY: ${{ secrets.WISE_API_KEY }}
+          WISE_PROFILE_ID: ${{ secrets.WISE_PROFILE_ID }}
+          KUCOIN_PRO_API_KEY: ${{ secrets.KUCOIN_PRO_API_KEY }}
+          KUCOIN_PRO_API_SECRET: ${{ secrets.KUCOIN_PRO_API_SECRET }}
+          KUCOIN_PRO_API_PASSPHRASE: ${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}
+          KUCOIN_PRO_BASE_URL: ${{ secrets.KUCOIN_PRO_BASE_URL }}
+          BACKUP_CIPHER_PASS: ${{ secrets.BACKUP_CIPHER_PASS }}
+          ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_NEXT_AUTH_SECRET: ${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}
+          LANGFUSE_SALT: ${{ secrets.LANGFUSE_SALT }}
+          LANGFUSE_ENCRYPTION_KEY: ${{ secrets.LANGFUSE_ENCRYPTION_KEY }}
         run: |
-          set -euo pipefail
-          # =============================================================
-          # REGRA 6: Validação Enterprise das variáveis Salad
-          # - Logging de auditoria para rastreabilidade
-          # - Distinção clara entre "configurado" e "usando default"
-          # - Aviso visível quando usando defaults
-          # =============================================================
-          echo "🔍 Validando variáveis Salad Cloud..."
-          
-          # Defaults de produção válidos (não mocks)
-          SALAD_API_URL_DEFAULT="https://api.salad.com/api/public"
-          SALAD_MEDIA_PROJECT_DEFAULT="alice-media"
-          SALAD_GPU_CLASS_DEFAULT="premium-gpu"
-          
-          # Aplicar valores com logging de auditoria
-          if [ -n "${SALAD_API_URL_CONFIGURED:-}" ]; then
-            SALAD_API_URL_VAR="${SALAD_API_URL_CONFIGURED}"
-            echo "✅ SALAD_API_URL: usando valor configurado no repositório"
-          else
-            SALAD_API_URL_VAR="${SALAD_API_URL_DEFAULT}"
-            echo "::warning::SALAD_API_URL não configurado - usando default: ${SALAD_API_URL_DEFAULT}"
-          fi
-          
-          if [ -n "${SALAD_MEDIA_PROJECT_CONFIGURED:-}" ]; then
-            SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_CONFIGURED}"
-            echo "✅ SALAD_MEDIA_PROJECT: usando valor configurado no repositório"
-          else
-            SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_DEFAULT}"
-            echo "::warning::SALAD_MEDIA_PROJECT não configurado - usando default: ${SALAD_MEDIA_PROJECT_DEFAULT}"
-          fi
-          
-          if [ -n "${SALAD_GPU_CLASS_CONFIGURED:-}" ]; then
-            SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_CONFIGURED}"
-            echo "✅ SALAD_GPU_CLASS: usando valor configurado no repositório"
-          else
-            SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_DEFAULT}"
-            echo "::warning::SALAD_GPU_CLASS não configurado - usando default: ${SALAD_GPU_CLASS_DEFAULT}"
-          fi
-          
-          echo "📋 Resumo Salad Cloud:"
-          echo "   API URL: ${SALAD_API_URL_VAR}"
-          echo "   Project: ${SALAD_MEDIA_PROJECT_VAR}"
-          echo "   GPU Class: ${SALAD_GPU_CLASS_VAR}"
-          echo ""
-          
-          # =====================================================================
-          # SECRETS OBRIGATÓRIAS (fail-fast em produção) - CORREÇÃO 21/12/2025
-          # Valida TODAS as variáveis obrigatórias usadas no docker-compose
-          # que utilizam a sintaxe ${VAR:?mensagem}
-          # =====================================================================
-          echo "🔐 Validando secrets obrigatórias..."
-          
-          POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
-          if [ -z "${POSTGRES_PASSWORD}" ]; then
-            echo "::error::POSTGRES_PASSWORD não definido. Configure o secret POSTGRES_PASSWORD no repositório." >&2
-            exit 1
-          fi
-          REDIS_PASSWORD="${REDIS_PASSWORD_SECRET:-}"
-          if [ -z "${REDIS_PASSWORD}" ]; then
-            echo "::error::REDIS_PASSWORD não definido. Configure o secret REDIS_PASSWORD no repositório." >&2
-            exit 1
-          fi
-          ADMIN_USER="${ADMIN_USER_SECRET:-}"
-          ADMIN_PWD="${ADMIN_PWD_SECRET:-}"
-          if [ -z "${ADMIN_USER}" ] || [ -z "${ADMIN_PWD}" ]; then
-            echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
-            exit 1
-          fi
-          
-          # CORREÇÃO 21/12/2025: Validar secrets críticas que faltavam
-          # Estas secrets são usadas com ${VAR:?} no docker-compose e causam
-          # falha silenciosa se não definidas
-          QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
-          if [ -z "${QDRANT_API_KEY}" ]; then
-            echo "::error::QDRANT_API_KEY não definido. Configure o secret QDRANT_API_KEY no repositório (necessário para alice-qdrant)." >&2
-            exit 1
-          fi
-          SALAD_API_KEY="${SALAD_API_KEY_SECRET:-}"
-          if [ -z "${SALAD_API_KEY}" ]; then
-            echo "::error::SALAD_API_KEY não definido. Configure o secret SALAD_API_KEY no repositório (necessário para GPU Salad Cloud)." >&2
-            exit 1
-          fi
-          SALAD_ORGANIZATION_ID="${SALAD_ORGANIZATION_ID_SECRET:-}"
-          if [ -z "${SALAD_ORGANIZATION_ID}" ]; then
-            echo "::error::SALAD_ORGANIZATION_ID não definido. Configure o secret SALAD_ORGANIZATION_ID no repositório (necessário para GPU Salad Cloud)." >&2
-            exit 1
-          fi
-          SESSION_SECRET="${SESSION_SECRET_SECRET:-}"
-          if [ -z "${SESSION_SECRET}" ]; then
-            echo "::error::SESSION_SECRET não definido. Configure o secret SESSION_SECRET no repositório (necessário para auth-service)." >&2
-            exit 1
-          fi
-          INTERNAL_API_SECRET="${INTERNAL_API_SECRET_SECRET:-}"
-          if [ -z "${INTERNAL_API_SECRET}" ]; then
-            echo "::error::INTERNAL_API_SECRET não definido. Configure o secret INTERNAL_API_SECRET no repositório (necessário para comunicação entre serviços)." >&2
-            exit 1
-          fi
-          SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY_SECRET:-}"
-          if [ -z "${SEARXNG_SECRET_KEY}" ]; then
-            echo "::error::SEARXNG_SECRET_KEY não definido. Configure o secret SEARXNG_SECRET_KEY no repositório (necessário para alice-searxng)." >&2
-            exit 1
-          fi
-          CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD_SECRET:-}"
-          if [ -z "${CLICKHOUSE_PASSWORD}" ]; then
-            echo "::error::CLICKHOUSE_PASSWORD não definido. Configure o secret CLICKHOUSE_PASSWORD no repositório (necessário para clickhouse)." >&2
-            exit 1
-          fi
-          # ERPNext Redis passwords
-          REDIS_CACHE_PASSWORD="${REDIS_CACHE_PASSWORD_SECRET:-}"
-          if [ -z "${REDIS_CACHE_PASSWORD}" ]; then
-            echo "::error::REDIS_CACHE_PASSWORD não definido. Configure o secret REDIS_CACHE_PASSWORD no repositório (necessário para ERPNext redis-cache)." >&2
-            exit 1
-          fi
-          REDIS_QUEUE_PASSWORD="${REDIS_QUEUE_PASSWORD_SECRET:-}"
-          if [ -z "${REDIS_QUEUE_PASSWORD}" ]; then
-            echo "::error::REDIS_QUEUE_PASSWORD não definido. Configure o secret REDIS_QUEUE_PASSWORD no repositório (necessário para ERPNext redis-queue)." >&2
-            exit 1
-          fi
-          # ERPNext MariaDB
-          ERPNEXT_MYSQL_ROOT_PASSWORD="${ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET:-}"
-          if [ -z "${ERPNEXT_MYSQL_ROOT_PASSWORD}" ]; then
-            echo "::error::ERPNEXT_MYSQL_ROOT_PASSWORD não definido. Configure o secret ERPNEXT_MYSQL_ROOT_PASSWORD no repositório (necessário para mariadb)." >&2
-            exit 1
-          fi
-          ERPNEXT_DB_PASSWORD="${ERPNEXT_DB_PASSWORD_SECRET:-}"
-          if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
-            echo "::error::ERPNEXT_DB_PASSWORD não definido. Configure o secret ERPNEXT_DB_PASSWORD no repositório (necessário para mariadb)." >&2
-            exit 1
-          fi
-          
-          echo "✅ Todas as secrets obrigatórias validadas"
-          # REGRA 14: Validar formato de email do ADMIN_USER (Zod valida .email() em runtime)
-          # Fail-fast no CI/CD para evitar falha silenciosa em produção
-          if ! echo "${ADMIN_USER}" | grep -qE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
-            echo "::error::ADMIN_USER deve ser um email válido (formato: user@example.com). Valor fornecido: ${ADMIN_USER}" >&2
-            exit 1
-          fi
-          # Validar comprimento mínimo da senha (Zod valida .min(8) em runtime)
-          if [ ${#ADMIN_PWD} -lt 8 ]; then
-            echo "::error::ADMIN_PWD deve ter no mínimo 8 caracteres. Comprimento atual: ${#ADMIN_PWD}" >&2
-            exit 1
-          fi
-          # REGRA 14: Fallback seguro para secrets opcionais (GitHub Actions define ausentes como empty strings)
-          # Usar verificação explícita [ -z ] ao invés de ${VAR:-default} para garantir fallback correto
-          if [ -z "${GRAFANA_ADMIN_USER_SECRET}" ]; then
-            GRAFANA_ADMIN_USER="${ADMIN_USER}"
-          else
-            GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET}"
-          fi
-          if [ -z "${GRAFANA_ADMIN_PASSWORD_SECRET}" ]; then
-            GRAFANA_ADMIN_PASSWORD="${ADMIN_PWD}"
-          else
-            GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET}"
-          fi
-          if [ -z "${ERPNEXT_ADMIN_PASSWORD_SECRET}" ]; then
-            ERPNEXT_ADMIN_PASSWORD="${ADMIN_PWD}"
-          else
-            ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET}"
-          fi
-          # Secrets opcionais (com fallback seguro)
-          # REGRA 14: Verificação explícita para fallback correto (GitHub Actions define ausentes como empty strings)
-          if [ -z "${STRIPE_WEBHOOK_BASE_URL_SECRET}" ]; then
-            STRIPE_WEBHOOK_BASE_URL="https://yesyoudeserve.duckdns.org"
-          else
-            STRIPE_WEBHOOK_BASE_URL="${STRIPE_WEBHOOK_BASE_URL_SECRET}"
-          fi
-          # REGRA 14: Verificação explícita para fallback correto (consistência com padrão estabelecido)
-          if [ -z "${WISE_WEBHOOK_SECRET_SECRET}" ]; then
-            WISE_WEBHOOK_SECRET=""
-          else
-            WISE_WEBHOOK_SECRET="${WISE_WEBHOOK_SECRET_SECRET}"
-          fi
-          if [ -z "${WISE_SANDBOX_SECRET}" ]; then
-            WISE_SANDBOX="false"
-          else
-            WISE_SANDBOX="${WISE_SANDBOX_SECRET}"
-          fi
-          if [ -z "${ERPNEXT_API_KEY_SECRET}" ]; then
-            ERPNEXT_API_KEY=""
-          else
-            ERPNEXT_API_KEY="${ERPNEXT_API_KEY_SECRET}"
-          fi
-          if [ -z "${ERPNEXT_API_SECRET_SECRET}" ]; then
-            ERPNEXT_API_SECRET=""
-          else
-            ERPNEXT_API_SECRET="${ERPNEXT_API_SECRET_SECRET}"
-          fi
-          # Langfuse DB (obrigatório)
-          LANGFUSE_DB_USER="${LANGFUSE_DB_USER_SECRET:-}"
-          LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD_SECRET:-}"
-          LANGFUSE_DB_NAME="${LANGFUSE_DB_NAME_SECRET:-}"
-          if [ -z "${LANGFUSE_DB_USER}" ] || [ -z "${LANGFUSE_DB_PASSWORD}" ] || [ -z "${LANGFUSE_DB_NAME}" ]; then
-            echo "::error::LANGFUSE_DB_USER/LANGFUSE_DB_PASSWORD/LANGFUSE_DB_NAME são obrigatórios para o langfuse-db. Configure os secrets correspondentes." >&2
-            exit 1
-          fi
-          # REGRA 6: Validar que senha não contém caracteres especiais de URL (fail-fast)
-          # Caracteres @ : / ? # % [ ] quebram a URL de conexão se não forem encoded
-          # Como não fazemos percent-encoding (libpq não suporta senha pré-encoded em conn string),
-          # a senha DEVE ser configurada sem esses caracteres
-          # POSIX ERE: ] deve ser primeiro caractere na classe para ser literal
-          if echo "${LANGFUSE_DB_PASSWORD}" | grep -qE '[][@:/?#%]'; then
-            echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (@:/?#%[]). Configure uma senha sem esses caracteres para evitar URL malformada." >&2
-            exit 1
-          fi
-          # CORS (origens obrigatórias em produção)
-          # REGRA 6: Normalizar CORS_ORIGINS ANTES de derivar CORS_ORIGIN (corrige caso de vírgula inicial)
-          CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGIN_SECRET:-}" | xargs)"
-          CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_SECRET:-}" | xargs)"
-          # Normalizar lista ANTES de qualquer derivação (remove vírgulas iniciais/finais e valores vazios)
-          if [ -n "${CORS_ORIGINS_VALUE}" ]; then
-            CORS_ORIGINS_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | awk 'BEGIN{RS=",";ORS=","}{gsub(/^ +| +$/,""); if(length($0)>0) print $0}' | sed 's/,$//')"
-          fi
-          if [ -z "${CORS_ORIGIN_VALUE}" ] && [ -z "${CORS_ORIGINS_VALUE}" ]; then
-            echo "::error::Defina ao menos um dos secrets CORS_ORIGIN ou CORS_ORIGINS para liberar o frontend. Ambos estão vazios." >&2
-            exit 1
-          fi
-          # Derivar CORS_ORIGIN do primeiro valor de CORS_ORIGINS (já normalizado)
-          if [ -z "${CORS_ORIGIN_VALUE}" ] && [ -n "${CORS_ORIGINS_VALUE}" ]; then
-            CORS_ORIGIN_VALUE="$(printf '%s' "${CORS_ORIGINS_VALUE}" | cut -d',' -f1 | xargs)"
-            # REGRA 6: Fail-fast se CORS_ORIGINS continha apenas delimitadores/espaços após normalização
-            if [ -z "${CORS_ORIGIN_VALUE}" ]; then
-              echo "::error::CORS_ORIGINS contém apenas delimitadores ou espaços. Configure um valor válido (ex: https://yesyoudeserve.duckdns.org)." >&2
-              exit 1
-            fi
-          fi
-          # Derivar CORS_ORIGINS de CORS_ORIGIN se apenas este estiver definido
-          if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
-            CORS_ORIGINS_VALUE="${CORS_ORIGIN_VALUE}"
-          fi
-          # CORREÇÃO 21/12/2025: Resend usa valores SMTP fixos (não são secrets)
-          # Docs Resend SMTP: https://resend.com/docs/send-with-smtp
-          # - Host: smtp.resend.com
-          # - Port: 587 (TLS)
-          # - Username: resend
-          # - Password: RESEND_API_KEY
-          SMTP_HOST_VALUE="smtp.resend.com"
-          SMTP_PORT_VALUE="587"
-          SMTP_FROM_VALUE="onboarding@resend.dev"
-          SMTP_USERNAME_VALUE="resend"
-          # Emails de alerta (hardcoded - domínio interno)
-          ALERT_EMAIL_VALUE="ops@yesyoudeserve.duckdns.org"
-          CRITICAL_EMAIL_VALUE="critical@yesyoudeserve.duckdns.org"
-          ONCALL_EMAIL_VALUE="oncall@yesyoudeserve.duckdns.org"
-          
-          # REGRA 14: Criar .env.prod usando printf com escape adequado para proteger secrets
-          # Protege contra caracteres especiais ($, backticks, backslashes) sendo interpretados pelo shell
-          # Usa printf '%s\n' com aspas duplas para escape automático de caracteres especiais
-          {
-            printf '# ==============================================\n'
-            printf '# ALICE PLATFORM - PRODUÇÃO\n'
-            printf '# Gerado automaticamente pelo CI/CD\n'
-            printf '# Commit: %s\n' "${{ github.sha }}"
-            printf '# ==============================================\n'
-            printf '\n'
-            printf '# Imagens Docker\n'
-            printf 'IMAGE_PREFIX=%s\n' "ghcr.io/${{ github.repository_owner }}/alice"
-            printf 'IMAGE_TAG=%s\n' "${{ needs.build-docker.outputs.image_tag || github.sha }}"
-            printf '\n'
-            printf '# Versões Automáticas dos Componentes (buscadas automaticamente)\n'
-            # Bug 1 corrigido: usar outputs do job build-docker (não env que não persiste entre jobs)
-            printf 'PGBACKREST_VERSION=%s\n' "${{ needs.build-docker.outputs.pgbackrest_version }}"
-            printf 'TRAEFIK_VERSION=%s\n' "${{ needs.build-docker.outputs.traefik_version }}"
-            printf 'PROMETHEUS_VERSION=%s\n' "${{ needs.build-docker.outputs.prometheus_version }}"
-            printf 'GRAFANA_VERSION=%s\n' "${{ needs.build-docker.outputs.grafana_version }}"
-            printf 'LOKI_VERSION=%s\n' "${{ needs.build-docker.outputs.loki_version }}"
-            printf 'PROMTAIL_VERSION=%s\n' "${{ needs.build-docker.outputs.promtail_version }}"
-            printf 'JAEGER_VERSION=%s\n' "${{ needs.build-docker.outputs.jaeger_version }}"
-            printf 'LANGFUSE_VERSION=%s\n' "${{ needs.build-docker.outputs.langfuse_version }}"
-            printf 'ERPNEXT_VERSION=%s\n' "${{ needs.build-docker.outputs.erpnext_version }}"
-            printf 'DOCKER_SOCKET_PROXY_VERSION=%s\n' "${{ needs.build-docker.outputs.docker_socket_proxy_version }}"
-            printf 'BUSYBOX_VERSION=%s\n' "${{ needs.build-docker.outputs.busybox_version }}"
-            printf 'REDIS_VERSION=%s\n' "${{ needs.build-docker.outputs.redis_version }}"
-            printf 'MARIADB_VERSION=%s\n' "${{ needs.build-docker.outputs.mariadb_version }}"
-            printf 'PGVECTOR_TAG=%s\n' "${{ needs.build-docker.outputs.pgvector_tag }}"
-            printf '\n'
-            printf '# PostgreSQL Alice\n'
-            printf 'POSTGRES_USER=alice\n'
-            printf 'POSTGRES_PASSWORD=%s\n' "${POSTGRES_PASSWORD}"
-            printf 'POSTGRES_DB=alice_prod\n'
-            printf '\n'
-            printf '# Redis Alice (Cache distribuído dedicado - CORREÇÃO SEGURANÇA)\n'
-            printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD}"
-            printf '\n'
-            printf '# Redis ERPNext (ACL habilitado - GAP-ERPNEXT-001)\n'
-            printf 'REDIS_CACHE_PASSWORD=%s\n' "${{ secrets.REDIS_CACHE_PASSWORD }}"
-            printf 'REDIS_QUEUE_PASSWORD=%s\n' "${{ secrets.REDIS_QUEUE_PASSWORD }}"
-            printf '\n'
-            printf '# Sessão e Segurança S2S\n'
-            printf 'SESSION_SECRET=%s\n' "${{ secrets.SESSION_SECRET }}"
-            printf 'INTERNAL_API_SECRET=%s\n' "${{ secrets.INTERNAL_API_SECRET }}"
-            printf '\n'
-            printf '# OAuth Google\n'
-            printf 'GOOGLE_CLIENT_ID=%s\n' "${{ secrets.GOOGLE_CLIENT_ID }}"
-            printf 'GOOGLE_CLIENT_SECRET=%s\n' "${{ secrets.GOOGLE_CLIENT_SECRET }}"
-            printf '\n'
-            printf '# OAuth GitHub\n'
-            printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${{ secrets.OAUTH_GITHUB_CLIENT_ID }}"
-            printf 'OAUTH_GITHUB_CLIENT_SECRET=%s\n' "${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}"
-            printf '\n'
-            printf '# Salad Cloud (LLM + GPU Embeddings)\n'
-            printf 'SALAD_API_KEY=%s\n' "${{ secrets.SALAD_API_KEY }}"
-            printf 'SALAD_ORGANIZATION_ID=%s\n' "${{ secrets.SALAD_ORGANIZATION_ID }}"
-            printf 'SALAD_API_URL=%s\n' "${SALAD_API_URL_VAR}"
-            printf 'SALAD_MEDIA_PROJECT=%s\n' "${SALAD_MEDIA_PROJECT_VAR}"
-            # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
-            printf 'SALAD_WHISPER_URL=%s\n' "${{ secrets.SALAD_WHISPER_URL }}"
-            # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim)
-            printf 'EMBEDDINGS_GPU_URL=%s\n' "${{ secrets.EMBEDDINGS_GPU_URL }}"
-            # LLM Mixtral 8x7B (Container Group vLLM) - gerado pelo deploy-salad-gpu.yml
-            printf 'SALAD_MIXTRAL_URL=%s\n' "${{ secrets.SALAD_MIXTRAL_URL }}"
-            # FLUX.1 Schnell Image Generation (Container Group) - gerado pelo deploy-salad-gpu.yml
-            printf 'SALAD_FLUX_URL=%s\n' "${{ secrets.SALAD_FLUX_URL }}"
-            # ASR Canary-1B (Container Group) - gerado pelo deploy-salad-gpu.yml
-            printf 'SALAD_ASR_URL=%s\n' "${{ secrets.SALAD_ASR_URL }}"
-            printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
-            printf 'HUGGINGFACE_TOKEN=%s\n' "${{ secrets.HUGGINGFACE_TOKEN }}"
-            printf '\n'
-            printf '# Qdrant - Banco Vetorial para Texto (4096 dim Qwen3-Embedding-8B)\n'
-            printf 'QDRANT_API_KEY=%s\n' "${{ secrets.QDRANT_API_KEY }}"
-            printf 'QDRANT_URL=http://alice-qdrant:6333\n'
-            printf '\n'
-            printf '# RAG Service (URLs públicas)\n'
-            printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
-            printf '\n'
-            printf '# CORS (origens permitidas)\n'
-            printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
-            printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
-            printf '\n'
-            printf '# Alertmanager / Resend SMTP (observabilidade)\n'
-            printf '# CORREÇÃO 21/12/2025: Resend usa valores SMTP fixos + API Key como senha\n'
-            printf '# Docs: https://resend.com/docs/send-with-smtp\n'
-            printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
-            printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
-            printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
-            printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
-            printf 'SMTP_PASSWORD=%s\n' "${{ secrets.RESEND_API_KEY }}"
-            printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
-            printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
-            printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
-            printf '\n'
-            printf '# Stripe Portugal\n'
-            printf 'STRIPE_SECRET_KEY=%s\n' "${{ secrets.STRIPE_SECRET_KEY }}"
-            printf 'STRIPE_PUBLISHABLE_KEY=%s\n' "${{ secrets.STRIPE_PUBLISHABLE_KEY }}"
-            printf 'STRIPE_WEBHOOK_SECRET=%s\n' "${{ secrets.STRIPE_WEBHOOK_SECRET }}"
-            printf 'STRIPE_WEBHOOK_BASE_URL=%s\n' "${STRIPE_WEBHOOK_BASE_URL}"
-            printf '\n'
-            printf '# Twilio\n'
-            printf 'TWILIO_ACCOUNT_SID=%s\n' "${{ secrets.TWILIO_ACCOUNT_SID }}"
-            printf 'TWILIO_AUTH_TOKEN=%s\n' "${{ secrets.TWILIO_AUTH_TOKEN }}"
-            printf 'TWILIO_WHATSAPP_NUMBER=%s\n' "${{ secrets.TWILIO_WHATSAPP_NUMBER }}"
-            printf '\n'
-            printf '# Resend\n'
-            printf 'RESEND_API_KEY=%s\n' "${{ secrets.RESEND_API_KEY }}"
-            printf '\n'
-            printf '# Wise (pagamentos globais)\n'
-            printf 'WISE_API_KEY=%s\n' "${{ secrets.WISE_API_KEY }}"
-            printf 'WISE_PROFILE_ID=%s\n' "${{ secrets.WISE_PROFILE_ID }}"
-            printf 'WISE_WEBHOOK_SECRET=%s\n' "${WISE_WEBHOOK_SECRET}"
-            printf 'WISE_SANDBOX=%s\n' "${WISE_SANDBOX}"
-            printf '\n'
-            printf '# KuCoin Futures (Trading BTC Perpetuals)\n'
-            # CORREÇÃO 17/12/2025: Usar nomes corretos dos secrets (KUCOIN_PRO_*)
-            # Elimina workaround de mapping - código usa KUCOIN_PRO_* diretamente
-            printf 'KUCOIN_PRO_API_KEY=%s\n' "${{ secrets.KUCOIN_PRO_API_KEY }}"
-            printf 'KUCOIN_PRO_API_SECRET=%s\n' "${{ secrets.KUCOIN_PRO_API_SECRET }}"
-            printf 'KUCOIN_PRO_API_PASSPHRASE=%s\n' "${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}"
-            printf 'KUCOIN_PRO_BASE_URL=%s\n' "${{ secrets.KUCOIN_PRO_BASE_URL }}"
-            printf 'KUCOIN_SANDBOX_MODE=false\n'
-            printf '\n'
-            printf '# ERPNext Database\n'
-            printf 'ERPNEXT_SITE_NAME=erp.yesyoudeserve.duckdns.org\n'
-            printf 'ERPNEXT_MYSQL_ROOT_PASSWORD=%s\n' "${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}"
-            printf 'ERPNEXT_ADMIN_PASSWORD=%s\n' "${ERPNEXT_ADMIN_PASSWORD}"
-            printf 'ERPNEXT_DB_NAME=erpnext\n'
-            printf 'ERPNEXT_DB_USER=erpnext\n'
-            printf 'ERPNEXT_DB_PASSWORD=%s\n' "${{ secrets.ERPNEXT_DB_PASSWORD }}"
-            printf '\n'
-            printf '# ERPNext API (para integrations-service) - Opcionais (gerados após deploy)\n'
-            printf 'ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org\n'
-            printf 'ERPNEXT_API_KEY=%s\n' "${ERPNEXT_API_KEY}"
-            printf 'ERPNEXT_API_SECRET=%s\n' "${ERPNEXT_API_SECRET}"
-            printf '\n'
-            printf '# Backup (pgBackRest) - Criptografia AES-256\n'
-            printf 'BACKUP_CIPHER_PASS=%s\n' "${{ secrets.BACKUP_CIPHER_PASS }}"
-            printf '\n'
-            printf '# SSL/TLS (Let'\''s Encrypt via Traefik)\n'
-            printf 'ACME_EMAIL=%s\n' "${{ secrets.ACME_EMAIL }}"
-            printf '\n'
-            printf '# Grafana (Observabilidade)\n'
-            printf 'GRAFANA_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
-            printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
-            printf 'GF_SECURITY_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
-            printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
-            printf '\n'
-            printf '# Admin centralizado (Alice/ERPNext/Grafana)\n'
-            printf 'ADMIN_USER=%s\n' "${ADMIN_USER}"
-            printf 'ADMIN_PWD=%s\n' "${ADMIN_PWD}"
-            printf '\n'
-            printf '# Langfuse (Métricas LLM - v3 requer SALT e ENCRYPTION_KEY)\n'
-            printf 'LANGFUSE_SECRET_KEY=%s\n' "${{ secrets.LANGFUSE_SECRET_KEY }}"
-            printf 'LANGFUSE_NEXT_AUTH_SECRET=%s\n' "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}"
-            printf 'LANGFUSE_SALT=%s\n' "${{ secrets.LANGFUSE_SALT }}"
-            printf 'LANGFUSE_ENCRYPTION_KEY=%s\n' "${{ secrets.LANGFUSE_ENCRYPTION_KEY }}"
-            printf 'LANGFUSE_DB_USER=%s\n' "${LANGFUSE_DB_USER}"
-            printf 'LANGFUSE_DB_PASSWORD=%s\n' "${LANGFUSE_DB_PASSWORD}"
-            printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
-            printf '\n'
-            printf '# ClickHouse (Obrigatório para Langfuse v3 - Arquitetura 2025)\n'
-            # CORREÇÃO 21/12/2025: Usar default se secret CLICKHOUSE_USER não estiver definido
-            # Se o secret estiver vazio, o printf escreve CLICKHOUSE_USER= e o default do docker-compose não funciona
-            CLICKHOUSE_USER_VALUE="${CLICKHOUSE_USER_SECRET_VAL:-langfuse}"
-            printf 'CLICKHOUSE_USER=%s\n' "${CLICKHOUSE_USER_VALUE}"
-            printf 'CLICKHOUSE_PASSWORD=%s\n' "${CLICKHOUSE_PASSWORD}"
-            printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB:-langfuse}"
-            printf '\n'
-            printf '# SearXNG (Metabusca interna - Web Search)\n'
-            printf 'SEARXNG_SECRET_KEY=%s\n' "${{ secrets.SEARXNG_SECRET_KEY }}"
-          } > .env.prod
-          chmod 600 .env.prod
-          
-          # REGRA 6: Validar que pgbackrest.conf define a stanza alice_prod (default usado pelos scripts)
-          # Esta validação garante que backups não falharão silenciosamente em runtime
-          EXPECTED_STANZA="${PGBACKREST_STANZA:-alice_prod}"
-          if ! grep -q "^\[${EXPECTED_STANZA}\]" infra/backup/pgbackrest.conf; then
-            echo "::error::pgbackrest.conf não define a stanza '${EXPECTED_STANZA}'. Scripts de backup falharão em runtime. Corrija o pgbackrest.conf ou defina PGBACKREST_STANZA no secret." >&2
-            exit 1
-          fi
-          echo "✅ Validação: pgbackrest.conf contém stanza '${EXPECTED_STANZA}'"
-          
-          # Secret file para langfuse-db (POSTGRES_PASSWORD_FILE)
-          printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
-          chmod 600 langfuse_db_password
-          # Secret file para alertmanager SMTP (usa RESEND_API_KEY como senha SMTP)
-          RESEND_API_KEY_VALUE="${RESEND_API_KEY_SECRET:-}"
-          if [ -z "${RESEND_API_KEY_VALUE}" ]; then
-            echo "::error::RESEND_API_KEY é obrigatório para alertmanager SMTP. Configure o secret no repositório." >&2
-            exit 1
-          fi
-          printf '%s' "${RESEND_API_KEY_VALUE}" > alertmanager_smtp_password
-          chmod 600 alertmanager_smtp_password
+          chmod +x infra/scripts/generate-env-prod.sh
+          ./infra/scripts/generate-env-prod.sh
 
       - name: Transferir arquivos via SCP
         run: |

@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.15 - 21 de Dezembro de 2025*
+*Versão: 4.16 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -505,3 +505,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix TypeScript interval Enum (21/12/2025): Adicionada validação e type narrowing para interval - TypeScript não entendia que string era um valor válido do enum após validação*
 *Bug Fix Frontend MACDResult (21/12/2025): TechnicalAnalysisPanel.tsx agora usa 'sideways' ao invés de 'neutral' - alinhado com backend e trendEnum PostgreSQL*
 *Bug Fix Typo 'as string' (21/12/2025): Corrigido `as 'string'` (literal) para type assertion correta no insert de indicadores*
+*Bug Fix deploy-production.yml Expression Length (21/12/2025): Step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo infra/scripts/generate-env-prod.sh - Best Practice 2025 para scripts grandes em workflows*

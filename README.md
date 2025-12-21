@@ -43,7 +43,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> Atualização 21/12/2025: Pipeline CI ajustado para evitar execuções duplicadas (push apenas em `main` + PR) e correção de tipos no frontend (SignalApprovalPanel) garantindo sucesso do Release.
+> Atualização 21/12/2025: Deploy workflow corrigido - step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo `infra/scripts/generate-env-prod.sh` seguindo Best Practices 2025 para scripts grandes em workflows.
 
 ---
 
