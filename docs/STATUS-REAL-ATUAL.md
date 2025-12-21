@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 21 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.8 - Deploy Fixes: ERPNext Idempotente + Rollback Dados Residuais
+> **Versão:** 4.9 - Trading Analysis Enterprise: Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação
 
 ---
 
@@ -33,9 +33,9 @@
 | Resource limits | ✅ | 44/44 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
-| **PostgreSQL RLS Trading** | ✅ | **8 tabelas com RLS** (migrations 0007 + 0008) |
+| **PostgreSQL RLS Trading** | ✅ | **10 tabelas com RLS** (migrations 0007 + 0008 + 0012) |
 
-**Row Level Security (RLS) - Tabelas Trading (17/12/2025)**
+**Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |
 |--------|-----|--------|
 | `trading_signals` | ✅ | `trading_signals_tenant_isolation` |
@@ -46,6 +46,8 @@
 | `trading_dataset` | ✅ | `trading_dataset_tenant_isolation` |
 | `trading_lora_jobs` | ✅ | `trading_lora_jobs_tenant_isolation` |
 | `trading_control_history` | ✅ | `trading_control_history_tenant_isolation` |
+| `trading_technical_indicators` | ✅ | **NOVO 21/12** - Indicadores calculados por código |
+| `trading_llm_validations` | ✅ | **NOVO 21/12** - Validação cruzada anti-alucinação |
 | `trading_market_data` | ❌ | Dados públicos de mercado (sem tenant) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
@@ -253,7 +255,9 @@
 | Circuit Breakers | ✅ | ERPNext + Wise + Stripe + KuCoin |
 | Prometheus Metrics | ✅ | `/metrics` |
 | **Trading BTC Futures KuCoin** | ✅ | `kucoinClient.ts`, `kucoinService.ts` |
-| Trading REST APIs (25 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data, Control, Stop Orders |
+| Trading REST APIs (28 endpoints) | ✅ | Orders, Positions, Signals, Risk Config, Market Data, Control, Stop Orders, **Analysis (21/12)** |
+| **Technical Indicators Service** | ✅ | RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points (21/12/2025) |
+| **LLM Validation Service** | ✅ | Validação cruzada anti-alucinação - extrai valores citados e compara com reais (21/12/2025) |
 | **KuCoin WebSocket Client** | ✅ | `kucoinWebSocket.ts` - Token management, canais públicos/privados |
 | **Trading Redis Broadcast** | ✅ | `tradingBroadcast.ts` - Pub/Sub entre serviços |
 | Klines API (Candlesticks) | ✅ | `GET /api/integrations/trading/klines/:symbol` |
@@ -586,7 +590,7 @@ Retenção Arquivo:   30 dias
 > - **kucoinService.ts:** Adicionadas funções `createStopOrder`, `cancelStopOrder`, `getOpenStopOrders` com auditoria
 > - **chat-service:** Comandos `set_stop_loss`, `set_take_profit` agora usam endpoint correto
 
-### Página Frontend Trading - 8 Tabs (17/12/2025)
+### Página Frontend Trading - 9 Tabs (21/12/2025)
 
 | Tab | Funcionalidade |
 |-----|----------------|
@@ -595,7 +599,8 @@ Retenção Arquivo:   30 dias
 | **OrderBook** | Visualização de profundidade de mercado, bids/asks, spread |
 | **Orders** | Tabela completa, criar/cancelar/sincronizar ordens, filtro por status |
 | **Positions** | Posições abertas com PnL, preço de liquidação, margem utilizada |
-| **Signals** | Sinais do Mixtral LLM com confidence, criar sinais manuais |
+| **Signals** | Sinais do Mixtral LLM com confidence + **Painel de Aprovação** (aprovar/rejeitar sinais) |
+| **Analysis** | **NOVO 21/12** - Análise Técnica: RSI, MACD, EMAs, Bollinger, ATR, Stochastic, ADX, Pivot Points |
 | **History** | Histórico completo de operações com auditoria |
 | **Control** | Handover/takeover entre Alice (IA) e operador manual, histórico de controle |
 

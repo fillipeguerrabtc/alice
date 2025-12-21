@@ -37,6 +37,7 @@ import { isWiseConfigured, getSandboxStatus, getProfileIdSafe, getWiseCircuitBre
 import { initWiseSyncService } from './wiseSyncService.js';
 import * as kucoinClient from './kucoinClient.js';
 import * as kucoinService from './kucoinService.js';
+import * as technicalIndicators from './technical-indicators.js';
 
 const logger = createLogger('integrations-service');
 const config = loadConfig(integrationsServiceConfigSchema);
@@ -3643,6 +3644,268 @@ app.post('/api/integrations/trading/control', requirePermission('integrations:tr
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
     logger.error({ error: errorMessage }, 'Erro ao alterar modo de controle de trading');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// ============================================================================
+// TRADING: ANÁLISE TÉCNICA ENTERPRISE (21/12/2025)
+// Indicadores técnicos calculados por CÓDIGO (determinísticos)
+// Elimina alucinações do LLM ao fornecer dados reais calculados
+// ============================================================================
+
+// GET /api/integrations/trading/analysis/:symbol - Análise técnica completa
+app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const { symbol } = req.params;
+    const interval = (req.query.interval as string) || '5m';
+    
+    // Mapear intervalo para granularity (minutos)
+    const intervalToGranularity: Record<string, number> = {
+      '1m': 1, '3m': 3, '5m': 5, '15m': 15, '30m': 30,
+      '1h': 60, '2h': 120, '4h': 240, '8h': 480, '12h': 720,
+      '1d': 1440, '1w': 10080
+    };
+    
+    const granularity = intervalToGranularity[interval];
+    if (!granularity) {
+      res.status(400).json({ error: `Intervalo inválido: ${interval}. Use: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 1w` });
+      return;
+    }
+
+    if (!kucoinClient.isKucoinConfigured()) {
+      res.status(503).json({ error: 'KuCoin não configurado' });
+      return;
+    }
+
+    // Obter 250 candles para ter dados suficientes para todos os indicadores
+    const now = Date.now();
+    const from = now - (granularity * 60 * 1000 * 250);
+    const klinesRaw = await kucoinClient.getKlines(symbol, granularity, from, now);
+
+    if (klinesRaw.length < 200) {
+      res.status(400).json({ 
+        error: `Dados insuficientes: ${klinesRaw.length} candles. Mínimo: 200`,
+        suggestion: 'Tente um intervalo maior ou aguarde mais dados acumularem'
+      });
+      return;
+    }
+
+    // Converter para formato do serviço de indicadores
+    const candles: technicalIndicators.CandleData[] = klinesRaw.map(k => ({
+      timestamp: k.time,
+      open: parseFloat(k.open),
+      high: parseFloat(k.high),
+      low: parseFloat(k.low),
+      close: parseFloat(k.close),
+      volume: parseFloat(k.volume),
+    }));
+
+    // Calcular análise técnica completa
+    const analysis = technicalIndicators.calculateFullAnalysis(candles, symbol, interval);
+
+    // Persistir análise no banco de dados
+    const db = getDatabase();
+    const [savedIndicator] = await db
+      .insert(schema.tradingTechnicalIndicators)
+      .values({
+        tenantId: authContext.tenantId,
+        symbol,
+        interval: interval as 'string' as '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d' | '1w',
+        candleTimestamp: new Date(candles[candles.length - 1].timestamp),
+        currentPrice: analysis.currentPrice,
+        
+        // RSI
+        rsiValue: analysis.rsi.value,
+        rsiInterpretation: analysis.rsi.interpretation,
+        rsiPeriod: analysis.rsi.period,
+        
+        // MACD
+        macdLine: analysis.macd.macd,
+        macdSignal: analysis.macd.signal,
+        macdHistogram: analysis.macd.histogram,
+        macdInterpretation: analysis.macd.interpretation as 'bullish' | 'bearish' | 'sideways',
+        macdCrossover: analysis.macd.crossover,
+        
+        // EMAs
+        ema9: analysis.movingAverages.ema9,
+        ema21: analysis.movingAverages.ema21,
+        ema50: analysis.movingAverages.ema50,
+        ema200: analysis.movingAverages.ema200,
+        
+        // SMAs
+        sma20: analysis.movingAverages.sma20,
+        sma50: analysis.movingAverages.sma50,
+        sma200: analysis.movingAverages.sma200,
+        maTrend: analysis.movingAverages.trend,
+        
+        // Bollinger
+        bollingerUpper: analysis.bollinger.upper,
+        bollingerMiddle: analysis.bollinger.middle,
+        bollingerLower: analysis.bollinger.lower,
+        bollingerWidth: analysis.bollinger.width,
+        bollingerPercentB: analysis.bollinger.percentB,
+        bollingerInterpretation: analysis.bollinger.interpretation,
+        
+        // ATR
+        atrValue: analysis.atr.value,
+        atrPercentage: analysis.atr.percentage,
+        atrVolatility: analysis.atr.volatility,
+        
+        // Stochastic
+        stochasticK: analysis.stochastic.k,
+        stochasticD: analysis.stochastic.d,
+        stochasticInterpretation: analysis.stochastic.interpretation,
+        
+        // ADX
+        adxValue: analysis.adx.adx,
+        adxPlusDI: analysis.adx.plusDI,
+        adxMinusDI: analysis.adx.minusDI,
+        adxTrendStrength: analysis.adx.trendStrength,
+        
+        // Suporte/Resistência
+        pivotPoint: analysis.supportResistance.pivot,
+        resistance1: analysis.supportResistance.resistance1,
+        resistance2: analysis.supportResistance.resistance2,
+        resistance3: analysis.supportResistance.resistance3,
+        support1: analysis.supportResistance.support1,
+        support2: analysis.supportResistance.support2,
+        support3: analysis.supportResistance.support3,
+        
+        // Volume
+        currentVolume: analysis.volume.currentVolume,
+        averageVolume: analysis.volume.averageVolume,
+        volumeRatio: analysis.volume.volumeRatio,
+        obv: analysis.volume.obv,
+        volumeInterpretation: analysis.volume.interpretation,
+        
+        // Sinal geral
+        overallSignal: analysis.overallSignal,
+        signalConfidence: analysis.confidence,
+        
+        metadata: {
+          calculationDurationMs: Date.now() - analysis.timestamp,
+          candleCount: candles.length,
+          lastCandleTime: new Date(candles[candles.length - 1].timestamp).toISOString(),
+        },
+      })
+      .returning({ id: schema.tradingTechnicalIndicators.id });
+
+    logger.info({
+      tenantId: authContext.tenantId,
+      symbol,
+      interval,
+      overallSignal: analysis.overallSignal,
+      confidence: analysis.confidence,
+      indicatorId: savedIndicator?.id,
+    }, 'Análise técnica calculada e persistida');
+
+    res.json({
+      success: true,
+      data: analysis,
+      indicatorId: savedIndicator?.id,
+      llmPrompt: technicalIndicators.formatAnalysisForLLM(analysis),
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao calcular análise técnica');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/analysis/history - Histórico de análises
+app.get('/api/integrations/trading/analysis/history', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const symbol = req.query.symbol as string || 'XBTUSDTM';
+    const interval = req.query.interval as string || '5m';
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+    const db = getDatabase();
+    const history = await db
+      .select()
+      .from(schema.tradingTechnicalIndicators)
+      .where(
+        and(
+          eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
+          eq(schema.tradingTechnicalIndicators.symbol, symbol)
+        )
+      )
+      .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))
+      .limit(limit);
+
+    res.json({
+      success: true,
+      data: history,
+      count: history.length,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter histórico de análises');
+    res.status(500).json({ error: errorMessage });
+  }
+});
+
+// GET /api/integrations/trading/validations - Histórico de validações LLM
+app.get('/api/integrations/trading/validations', requirePermission('integrations:trading:read'), async (req: Request, res: Response) => {
+  try {
+    const authContext = extractAuthContext(req);
+    if (!authContext?.tenantId) {
+      res.status(401).json({ error: 'Autenticação necessária' });
+      return;
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+    const passedOnly = req.query.passedOnly === 'true';
+
+    const db = getDatabase();
+    
+    const conditions = [eq(schema.tradingLlmValidations.tenantId, authContext.tenantId)];
+    if (passedOnly) {
+      conditions.push(eq(schema.tradingLlmValidations.validationPassed, true));
+    }
+
+    const validations = await db
+      .select()
+      .from(schema.tradingLlmValidations)
+      .where(and(...conditions))
+      .orderBy(desc(schema.tradingLlmValidations.validatedAt))
+      .limit(limit);
+
+    // Calcular estatísticas
+    const allValidations = await db
+      .select()
+      .from(schema.tradingLlmValidations)
+      .where(eq(schema.tradingLlmValidations.tenantId, authContext.tenantId));
+
+    const totalValidations = allValidations.length;
+    const passedValidations = allValidations.filter(v => v.validationPassed).length;
+    const accuracyRate = totalValidations > 0 ? (passedValidations / totalValidations) * 100 : 0;
+
+    res.json({
+      success: true,
+      data: validations,
+      stats: {
+        total: totalValidations,
+        passed: passedValidations,
+        failed: totalValidations - passedValidations,
+        accuracyRate: Math.round(accuracyRate * 100) / 100,
+      },
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
+    logger.error({ error: errorMessage }, 'Erro ao obter validações LLM');
     res.status(500).json({ error: errorMessage });
   }
 });

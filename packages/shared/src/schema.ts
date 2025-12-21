@@ -1725,6 +1725,246 @@ export type TradingControlHistory = typeof tradingControlHistory.$inferSelect;
 export type InsertTradingControlHistory = typeof tradingControlHistory.$inferInsert;
 
 // ============================================================================
+// TRADING TECHNICAL INDICATORS (21/12/2025)
+// Indicadores técnicos calculados por código (determinísticos)
+// Elimina alucinações do LLM ao fornecer dados reais calculados
+// ============================================================================
+
+// Enum para intervalos de candles
+export const tradingIntervalEnum = pgEnum("trading_interval", [
+  "1m", "3m", "5m", "15m", "30m",
+  "1h", "2h", "4h", "8h", "12h",
+  "1d", "1w"
+]);
+
+// Enum para interpretações de indicadores
+export const indicatorInterpretationEnum = pgEnum("indicator_interpretation", [
+  "oversold",
+  "neutral", 
+  "overbought"
+]);
+
+// Enum para tendências
+export const trendEnum = pgEnum("trend", [
+  "bullish",
+  "bearish",
+  "sideways"
+]);
+
+// Enum para força de tendência (ADX)
+export const trendStrengthEnum = pgEnum("trend_strength", [
+  "weak",
+  "moderate",
+  "strong",
+  "very_strong"
+]);
+
+// Enum para volatilidade
+export const volatilityEnum = pgEnum("volatility", [
+  "low",
+  "medium",
+  "high"
+]);
+
+// Enum para interpretação de volume
+export const volumeInterpretationEnum = pgEnum("volume_interpretation", [
+  "low",
+  "normal",
+  "high",
+  "very_high"
+]);
+
+// Enum para crossover MACD
+export const macdCrossoverEnum = pgEnum("macd_crossover", [
+  "bullish_cross",
+  "bearish_cross",
+  "none"
+]);
+
+// Enum para sinal geral
+export const overallSignalEnum = pgEnum("overall_signal", [
+  "strong_buy",
+  "buy",
+  "neutral",
+  "sell",
+  "strong_sell"
+]);
+
+// Enum para ação de validação
+export const validationActionEnum = pgEnum("validation_action", [
+  "approved",
+  "rejected",
+  "flagged_for_review"
+]);
+
+// Tabela de indicadores técnicos calculados
+export const tradingTechnicalIndicators = pgTable(
+  "trading_technical_indicators",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    
+    // Identificação temporal
+    symbol: varchar("symbol", { length: 50 }).notNull().default("XBTUSDTM"),
+    interval: tradingIntervalEnum("interval").notNull(),
+    calculatedAt: timestamp("calculated_at").defaultNow(),
+    candleTimestamp: timestamp("candle_timestamp").notNull(),
+    
+    // Preço atual
+    currentPrice: real("current_price").notNull(),
+    
+    // RSI
+    rsiValue: real("rsi_value"),
+    rsiInterpretation: indicatorInterpretationEnum("rsi_interpretation"),
+    rsiPeriod: integer("rsi_period").default(14),
+    
+    // MACD
+    macdLine: real("macd_line"),
+    macdSignal: real("macd_signal"),
+    macdHistogram: real("macd_histogram"),
+    macdInterpretation: trendEnum("macd_interpretation"),
+    macdCrossover: macdCrossoverEnum("macd_crossover"),
+    
+    // Médias Móveis Exponenciais
+    ema9: real("ema_9"),
+    ema21: real("ema_21"),
+    ema50: real("ema_50"),
+    ema200: real("ema_200"),
+    
+    // Médias Móveis Simples
+    sma20: real("sma_20"),
+    sma50: real("sma_50"),
+    sma200: real("sma_200"),
+    
+    // Tendência
+    maTrend: trendEnum("ma_trend"),
+    
+    // Bollinger Bands
+    bollingerUpper: real("bollinger_upper"),
+    bollingerMiddle: real("bollinger_middle"),
+    bollingerLower: real("bollinger_lower"),
+    bollingerWidth: real("bollinger_width"),
+    bollingerPercentB: real("bollinger_percent_b"),
+    bollingerInterpretation: indicatorInterpretationEnum("bollinger_interpretation"),
+    
+    // ATR
+    atrValue: real("atr_value"),
+    atrPercentage: real("atr_percentage"),
+    atrVolatility: volatilityEnum("atr_volatility"),
+    
+    // Stochastic
+    stochasticK: real("stochastic_k"),
+    stochasticD: real("stochastic_d"),
+    stochasticInterpretation: indicatorInterpretationEnum("stochastic_interpretation"),
+    
+    // ADX
+    adxValue: real("adx_value"),
+    adxPlusDI: real("adx_plus_di"),
+    adxMinusDI: real("adx_minus_di"),
+    adxTrendStrength: trendStrengthEnum("adx_trend_strength"),
+    
+    // Suporte e Resistência
+    pivotPoint: real("pivot_point"),
+    resistance1: real("resistance_1"),
+    resistance2: real("resistance_2"),
+    resistance3: real("resistance_3"),
+    support1: real("support_1"),
+    support2: real("support_2"),
+    support3: real("support_3"),
+    
+    // Volume
+    currentVolume: real("current_volume"),
+    averageVolume: real("average_volume"),
+    volumeRatio: real("volume_ratio"),
+    obv: real("obv"),
+    volumeInterpretation: volumeInterpretationEnum("volume_interpretation"),
+    
+    // Sinal geral
+    overallSignal: overallSignalEnum("overall_signal").notNull(),
+    signalConfidence: real("signal_confidence").notNull(),
+    
+    // Metadata
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().default({}),
+    criadoEm: timestamp("criado_em").defaultNow(),
+  },
+  (table) => ({
+    idxIndicatorsTenant: index("idx_trading_indicators_tenant").on(table.tenantId),
+    idxIndicatorsSymbolInterval: index("idx_trading_indicators_symbol_interval").on(table.symbol, table.interval),
+    idxIndicatorsCalculatedAt: index("idx_trading_indicators_calculated_at").on(table.calculatedAt),
+    idxIndicatorsSignal: index("idx_trading_indicators_signal").on(table.overallSignal),
+  })
+);
+
+// Tabela de validação cruzada LLM
+export const tradingLlmValidations = pgTable(
+  "trading_llm_validations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    tenantId: uuid("tenant_id").notNull().references(() => tenants.id),
+    
+    // Referências
+    signalId: uuid("signal_id").references(() => tradingSignals.id),
+    indicatorSnapshotId: uuid("indicator_snapshot_id").references(() => tradingTechnicalIndicators.id),
+    conversationId: uuid("conversation_id").references(() => conversations.id),
+    
+    // Valores citados pelo LLM
+    llmCitedValues: jsonb("llm_cited_values").$type<Record<string, number>>().notNull(),
+    
+    // Valores reais calculados
+    actualValues: jsonb("actual_values").$type<Record<string, number>>().notNull(),
+    
+    // Resultado da validação
+    validationPassed: boolean("validation_passed").notNull(),
+    discrepancies: jsonb("discrepancies").$type<Record<string, { cited: number; actual: number; diff: number }>>(),
+    maxAllowedDeviation: real("max_allowed_deviation").default(0.01),
+    
+    // Ação tomada
+    actionTaken: validationActionEnum("action_taken"),
+    
+    validatedAt: timestamp("validated_at").defaultNow(),
+  },
+  (table) => ({
+    idxValidationsTenant: index("idx_llm_validations_tenant").on(table.tenantId),
+    idxValidationsSignal: index("idx_llm_validations_signal").on(table.signalId),
+    idxValidationsPassed: index("idx_llm_validations_passed").on(table.validationPassed),
+    idxValidationsDate: index("idx_llm_validations_date").on(table.validatedAt),
+  })
+);
+
+// Relations
+export const tradingTechnicalIndicatorsRelations = relations(tradingTechnicalIndicators, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingTechnicalIndicators.tenantId],
+    references: [tenants.id],
+  }),
+}));
+
+export const tradingLlmValidationsRelations = relations(tradingLlmValidations, ({ one }) => ({
+  tenant: one(tenants, {
+    fields: [tradingLlmValidations.tenantId],
+    references: [tenants.id],
+  }),
+  signal: one(tradingSignals, {
+    fields: [tradingLlmValidations.signalId],
+    references: [tradingSignals.id],
+  }),
+  indicatorSnapshot: one(tradingTechnicalIndicators, {
+    fields: [tradingLlmValidations.indicatorSnapshotId],
+    references: [tradingTechnicalIndicators.id],
+  }),
+  conversation: one(conversations, {
+    fields: [tradingLlmValidations.conversationId],
+    references: [conversations.id],
+  }),
+}));
+
+// Tipos TypeScript
+export type TradingTechnicalIndicators = typeof tradingTechnicalIndicators.$inferSelect;
+export type InsertTradingTechnicalIndicators = typeof tradingTechnicalIndicators.$inferInsert;
+export type TradingLlmValidation = typeof tradingLlmValidations.$inferSelect;
+export type InsertTradingLlmValidation = typeof tradingLlmValidations.$inferInsert;
+
+// ============================================================================
 // TRADING LORA DATASET (FASE Trading Mixtral 8x7B - Fine-tuning)
 // Infraestrutura para coleta de dados e treinamento LoRA para trading BTC
 // ============================================================================

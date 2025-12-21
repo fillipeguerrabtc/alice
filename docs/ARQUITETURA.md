@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 21 de Dezembro de 2025  
-> **Versão:** 1.3.0 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto  
+> **Versão:** 1.4.0 - Trading Analysis Enterprise: Indicadores Técnicos Determinísticos + Validação Cruzada  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 

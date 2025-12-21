@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.14 - 21 de Dezembro de 2025*
+*Versão: 4.15 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -485,3 +485,15 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Uploads Directory Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/uploads - alice-rag roda como UID 1000 (node) e precisa de permissão de escrita no diretório de uploads*
 *Bug Fix CLICKHOUSE_USER Default (21/12/2025): Corrigido default de CLICKHOUSE_USER - se secret vazio, usa "langfuse" como default ao invés de escrever valor vazio no .env.prod*
 *Bug Fix SMTP Secrets Removidos (21/12/2025): Removidos secrets SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD do workflow - Resend usa valores SMTP fixos (smtp.resend.com:587) + RESEND_API_KEY como senha. Docs: https://resend.com/docs/send-with-smtp*
+*Trading Analysis Enterprise (21/12/2025): Indicadores técnicos calculados por CÓDIGO (determinísticos) - RSI, MACD, EMA, SMA, Bollinger Bands, ATR, Stochastic, ADX, Pivot Points*
+*Technical Indicators Service (21/12/2025): technical-indicators.ts usa biblioteca technicalindicators 3.1.0 - cálculos precisos sem alucinação*
+*LLM Validation Service (21/12/2025): llm-validation.ts extrai valores citados pelo LLM e compara com valores reais calculados - detecta alucinações numéricas*
+*Trading Technical Indicators Table (21/12/2025): Migration 0012 - tabela trading_technical_indicators com RLS para persistir indicadores calculados*
+*Trading LLM Validations Table (21/12/2025): Migration 0012 - tabela trading_llm_validations com RLS para registrar validação cruzada*
+*Trading Analysis API (21/12/2025): GET /api/integrations/trading/analysis/:symbol - calcula indicadores e retorna prompt formatado para LLM*
+*Trading Analysis History API (21/12/2025): GET /api/integrations/trading/analysis/history - histórico de análises calculadas*
+*Trading Validations API (21/12/2025): GET /api/integrations/trading/validations - estatísticas de validação cruzada (taxa de acerto LLM)*
+*TechnicalAnalysisPanel Component (21/12/2025): Componente React que exibe indicadores técnicos calculados por código com cores e interpretações*
+*SignalApprovalPanel Component (21/12/2025): Painel de aprovação/rejeição de sinais com suporte a modo manual e Alice (automático)*
+*Trading Page Analysis Tab (21/12/2025): Nova aba "Análise Técnica" na página de Trading com todos indicadores e níveis de suporte/resistência*
+*Anti-Alucinação Architecture (21/12/2025): LLM recebe indicadores pré-calculados → gera análise → código valida se citou valores corretos*

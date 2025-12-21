@@ -428,15 +428,16 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.10 - 19 de Dezembro de 2025*
+*Versão 4.11 - 21 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 43 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 1 backup)*
+*Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
-*PostgreSQL (19/12/2025): HNSW indexes otimizados (m=24, ef_construction=128) + 8 índices compostos*
+*PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
-*Trading BTC Futures: KuCoin Perpetuals (XBTUSDTM) + Scalping (1m, 3m, 5m candles) + LoRA Fine-tuning + RBAC*
+*Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
+*Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *Salad Cloud: LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR)*
 *Pipeline Unificada: GPU deploy integrado via Python SDK (salad-cloud-sdk) - 100% automático*

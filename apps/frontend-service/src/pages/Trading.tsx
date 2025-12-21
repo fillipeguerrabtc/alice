@@ -105,7 +105,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 // CORREÇÃO 19/12/2025: Remover queryClient não utilizado (no-unused-vars)
 import { apiRequest } from '@/lib/queryClient';
-import { CandleChart, OrderBookViz, HandoverPanel } from '@/components/trading';
+import { 
+  CandleChart, 
+  OrderBookViz, 
+  HandoverPanel, 
+  TechnicalAnalysisPanel,
+  SignalApprovalPanel,
+} from '@/components/trading';
 import type { KlineData, OrderBookData, TradingControlMode, ControlHistoryEntry } from '@/components/trading';
 
 // ============================================================================
@@ -1091,6 +1097,10 @@ export default function Trading() {
               <Brain className="h-4 w-4 mr-2" />
               {t('trading.tabs.signals')}
             </TabsTrigger>
+            <TabsTrigger value="analysis" data-testid="tab-analysis">
+              <BarChart3 className="h-4 w-4 mr-2" />
+              Análise Técnica
+            </TabsTrigger>
             <TabsTrigger value="history" data-testid="tab-history">
               <History className="h-4 w-4 mr-2" />
               {t('trading.tabs.history')}
@@ -1637,6 +1647,20 @@ export default function Trading() {
                 </Table>
               </Card>
             )}
+
+            {/* Painel de Aprovação de Sinais (21/12/2025) */}
+            <SignalApprovalPanel
+              controlMode={controlMode}
+              minConfidenceToExecute={parseFloat(riskConfig?.minConfidenceToExecute || '0.8')}
+            />
+          </TabsContent>
+
+          {/* Analysis Tab - Análise Técnica Enterprise (21/12/2025) */}
+          <TabsContent value="analysis" className="space-y-4 mt-6">
+            <TechnicalAnalysisPanel
+              symbol={selectedSymbol}
+              defaultInterval={selectedInterval}
+            />
           </TabsContent>
 
           {/* History Tab */}
