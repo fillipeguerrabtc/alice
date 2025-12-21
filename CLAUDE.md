@@ -477,3 +477,5 @@ git commit -a -m "test: adiciona testes unitários"
 *ERPNext Create-Site Idempotente (21/12/2025): Container erpnext-create-site agora verifica se site existe antes de criar - evita exit 1 em redeploys quando site já foi criado anteriormente*
 *Dockerproxy Healthcheck Fix (21/12/2025): Healthcheck atualizado de /proc/net/tcp para wget --spider http://localhost:2375/_ping - mais confiável e com start_period aumentado para 30s*
 *Bug Fix ERPNext Logs Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/logs/erpnext - ERPNext roda como UID 1000 (frappe) e precisa de permissão de escrita para logs*
+*Bug Fix PostgreSQL SSL (21/12/2025): Alterado sslmode=prefer para sslmode=disable em DATABASE_URL - conexões internas Docker não precisam de SSL e PostgreSQL local não tem SSL configurado*
+*Bug Fix ws Dynamic Require (21/12/2025): Adicionado ws como dependência direta do rag-service - evita "Dynamic require of events is not supported" causado por ytdl-core*
