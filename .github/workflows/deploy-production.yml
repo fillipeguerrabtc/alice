@@ -1483,14 +1483,9 @@ jobs:
           REDIS_QUEUE_PASSWORD_SECRET: ${{ secrets.REDIS_QUEUE_PASSWORD }}
           ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
           ERPNEXT_DB_PASSWORD_SECRET: ${{ secrets.ERPNEXT_DB_PASSWORD }}
-          ALERT_EMAIL_SECRET: ${{ secrets.ALERT_EMAIL }}
-          CRITICAL_EMAIL_SECRET: ${{ secrets.CRITICAL_EMAIL }}
-          ONCALL_EMAIL_SECRET: ${{ secrets.ONCALL_EMAIL }}
-          SMTP_HOST_SECRET: ${{ secrets.SMTP_HOST }}
-          SMTP_PORT_SECRET: ${{ secrets.SMTP_PORT }}
-          SMTP_FROM_SECRET: ${{ secrets.SMTP_FROM }}
-          SMTP_USERNAME_SECRET: ${{ secrets.SMTP_USERNAME }}
-          SMTP_PASSWORD_SECRET: ${{ secrets.SMTP_PASSWORD }}
+          # CORREÇÃO 21/12/2025: Resend usa API Key como senha SMTP
+          # Os valores SMTP são fixos do Resend (não são secrets separados)
+          # Docs: https://resend.com/docs/send-with-smtp
           RESEND_API_KEY_SECRET: ${{ secrets.RESEND_API_KEY }}
           # Variáveis Salad (passadas separadamente para auditoria)
           SALAD_API_URL_CONFIGURED: ${{ vars.SALAD_API_URL }}
@@ -1726,14 +1721,20 @@ jobs:
           if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
             CORS_ORIGINS_VALUE="${CORS_ORIGIN_VALUE}"
           fi
-          # Alertmanager / SMTP (usar defaults seguros se secrets ausentes)
-          SMTP_HOST_VALUE="${SMTP_HOST_SECRET:-smtp.resend.com}"
-          SMTP_PORT_VALUE="${SMTP_PORT_SECRET:-587}"
-          SMTP_FROM_VALUE="${SMTP_FROM_SECRET:-onboarding@resend.dev}"
-          SMTP_USERNAME_VALUE="${SMTP_USERNAME_SECRET:-resend}"
-          ALERT_EMAIL_VALUE="${ALERT_EMAIL_SECRET:-ops@yesyoudeserve.duckdns.org}"
-          CRITICAL_EMAIL_VALUE="${CRITICAL_EMAIL_SECRET:-critical@yesyoudeserve.duckdns.org}"
-          ONCALL_EMAIL_VALUE="${ONCALL_EMAIL_SECRET:-oncall@yesyoudeserve.duckdns.org}"
+          # CORREÇÃO 21/12/2025: Resend usa valores SMTP fixos (não são secrets)
+          # Docs Resend SMTP: https://resend.com/docs/send-with-smtp
+          # - Host: smtp.resend.com
+          # - Port: 587 (TLS)
+          # - Username: resend
+          # - Password: RESEND_API_KEY
+          SMTP_HOST_VALUE="smtp.resend.com"
+          SMTP_PORT_VALUE="587"
+          SMTP_FROM_VALUE="onboarding@resend.dev"
+          SMTP_USERNAME_VALUE="resend"
+          # Emails de alerta (hardcoded - domínio interno)
+          ALERT_EMAIL_VALUE="ops@yesyoudeserve.duckdns.org"
+          CRITICAL_EMAIL_VALUE="critical@yesyoudeserve.duckdns.org"
+          ONCALL_EMAIL_VALUE="oncall@yesyoudeserve.duckdns.org"
           
           # REGRA 14: Criar .env.prod usando printf com escape adequado para proteger secrets
           # Protege contra caracteres especiais ($, backticks, backslashes) sendo interpretados pelo shell
@@ -1819,7 +1820,8 @@ jobs:
             printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
             printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
             printf '\n'
-            printf '# Alertmanager / SMTP (observabilidade)\n'
+            printf '# Alertmanager / Resend SMTP (observabilidade)\n'
+            printf '# CORREÇÃO 21/12/2025: Resend usa valores SMTP fixos + API Key como senha\n'
             printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
             printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
             printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
