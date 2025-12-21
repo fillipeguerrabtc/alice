@@ -59,6 +59,8 @@
 | Segurança | Compliance | Zero vulnerabilidades |
 | Usuários Finais | Consumo | UX, velocidade |
 
+> Atualização 21/12/2025: CI ajustado para evitar execuções duplicadas (push restrito ao `main` + PR em `main`) e correção de tipos do frontend (SignalApprovalPanel) garantindo build do Release.
+
 ---
 
 ## 2. Restrições Arquiteturais

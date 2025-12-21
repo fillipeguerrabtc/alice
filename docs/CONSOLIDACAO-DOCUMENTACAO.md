@@ -5,6 +5,8 @@
 **Versão:** 3.2  
 **Atualizado:** 17 de Dezembro de 2025 (Documento de Arquitetura Enterprise - arc42 + C4 + ADRs)
 
+> Atualização 21/12/2025: CI ajustado para evitar execuções duplicadas (push apenas em `main` + PR) e correção de tipos no frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
+
 ## Estrutura Atual da Documentação
 
 ### Documentos Principais (Ativos)

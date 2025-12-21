@@ -19,6 +19,8 @@ A plataforma Alice é composta por **44 containers** organizados em 6 categorias
 | 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
 | 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
+> Atualização 21/12/2025: CI ajustado para evitar execuções duplicadas (push apenas em `main` + PR) e correção de build do frontend (SignalApprovalPanel) destravando o Release.
+
 ### Categoria 2: Microsserviços Alice (7 serviços)
 
 | # | Serviço | Container | Diretório | Descrição | Tecnologia |

@@ -18,7 +18,6 @@
 
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
 import { motion } from 'framer-motion';
 import {
   TrendingUp,
@@ -32,8 +31,6 @@ import {
   Volume2,
   RefreshCw,
   CheckCircle,
-  XCircle,
-  AlertTriangle,
   Brain,
   Loader2,
 } from 'lucide-react';
@@ -42,7 +39,6 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import {
   Select,
@@ -239,7 +235,6 @@ export function TechnicalAnalysisPanel({
   symbol,
   defaultInterval = '5m',
 }: TechnicalAnalysisPanelProps) {
-  const { t } = useTranslation();
   const [interval, setInterval] = useState(defaultInterval);
 
   // Buscar análise técnica

@@ -15,18 +15,15 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useTranslation } from 'react-i18next';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   CheckCircle,
   XCircle,
-  AlertTriangle,
   Clock,
   TrendingUp,
   TrendingDown,
   Brain,
   Shield,
-  Eye,
   ChevronDown,
   ChevronUp,
   RefreshCw,
@@ -40,7 +37,6 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { Progress } from '@/components/ui/progress';
 import {
   Dialog,
   DialogContent,
@@ -90,7 +86,7 @@ interface ValidationStats {
   accuracyRate: number;
 }
 
-interface SignalApprovalPanelProps {
+export interface SignalApprovalPanelProps {
   controlMode: 'manual' | 'alice';
   minConfidenceToExecute: number;
   onModeChange?: (mode: 'manual' | 'alice') => void;
@@ -430,7 +426,6 @@ export function SignalApprovalPanel({
   controlMode,
   minConfidenceToExecute,
 }: SignalApprovalPanelProps) {
-  const { t } = useTranslation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [approvingSignalId, setApprovingSignalId] = useState<string | null>(null);

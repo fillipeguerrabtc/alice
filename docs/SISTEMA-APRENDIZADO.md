@@ -4,6 +4,8 @@
 **Versão:** 3.6 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto  
 **Data:** 21 de Dezembro de 2025
 
+> Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
+
 ## Visão Geral
 
 A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressivo que permite que o modelo evolua constantemente com base nas interações e dados fornecidos.

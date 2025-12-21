@@ -17,6 +17,8 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
 **IP:** 46.224.46.93
 
+> Atualização 21/12/2025: Fluxo CI deduplicado (push somente em `main` + PR em `main`) e correções de tipos no frontend destravando Release & Tag.
+
 ### Serviços que Utilizam Secrets
 
 | Categoria | Serviços | Secrets Relacionados |

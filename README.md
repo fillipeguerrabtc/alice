@@ -43,6 +43,8 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
+> Atualização 21/12/2025: Pipeline CI ajustado para evitar execuções duplicadas (push apenas em `main` + PR) e correção de tipos no frontend (SignalApprovalPanel) garantindo sucesso do Release.
+
 ---
 
 ## Arquitetura

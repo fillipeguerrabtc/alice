@@ -16,8 +16,9 @@
 name: CI - Build & Test
 
 on:
+  # Evita duplicação: PRs usam pull_request; push roda apenas no main (commit final)
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
     branches: [main]
 
