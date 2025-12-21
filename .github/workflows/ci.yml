@@ -16,10 +16,8 @@
 name: CI - Build & Test
 
 on:
-  # Evita duplicação: PRs usam pull_request; push roda apenas no main (commit final)
+  # Execução somente em push no main (fluxo sem PR)
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
 
 # GAP-GHACTIONS-003: Least privilege - permissões definidas por job
