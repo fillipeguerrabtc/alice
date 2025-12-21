@@ -1470,6 +1470,19 @@ jobs:
           LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
           CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
           CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
+          # CORREÇÃO 21/12/2025: Secrets que faltavam validação fail-fast
+          QDRANT_API_KEY_SECRET: ${{ secrets.QDRANT_API_KEY }}
+          SALAD_API_KEY_SECRET: ${{ secrets.SALAD_API_KEY }}
+          SALAD_ORGANIZATION_ID_SECRET: ${{ secrets.SALAD_ORGANIZATION_ID }}
+          SESSION_SECRET_SECRET: ${{ secrets.SESSION_SECRET }}
+          INTERNAL_API_SECRET_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
+          SEARXNG_SECRET_KEY_SECRET: ${{ secrets.SEARXNG_SECRET_KEY }}
+          CLICKHOUSE_PASSWORD_SECRET: ${{ secrets.CLICKHOUSE_PASSWORD }}
+          CLICKHOUSE_USER_SECRET_VAL: ${{ secrets.CLICKHOUSE_USER }}
+          REDIS_CACHE_PASSWORD_SECRET: ${{ secrets.REDIS_CACHE_PASSWORD }}
+          REDIS_QUEUE_PASSWORD_SECRET: ${{ secrets.REDIS_QUEUE_PASSWORD }}
+          ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
+          ERPNEXT_DB_PASSWORD_SECRET: ${{ secrets.ERPNEXT_DB_PASSWORD }}
           ALERT_EMAIL_SECRET: ${{ secrets.ALERT_EMAIL }}
           CRITICAL_EMAIL_SECRET: ${{ secrets.CRITICAL_EMAIL }}
           ONCALL_EMAIL_SECRET: ${{ secrets.ONCALL_EMAIL }}
@@ -1529,7 +1542,13 @@ jobs:
           echo "   GPU Class: ${SALAD_GPU_CLASS_VAR}"
           echo ""
           
-          # Secrets obrigatórias (fail-fast em produção)
+          # =====================================================================
+          # SECRETS OBRIGATÓRIAS (fail-fast em produção) - CORREÇÃO 21/12/2025
+          # Valida TODAS as variáveis obrigatórias usadas no docker-compose
+          # que utilizam a sintaxe ${VAR:?mensagem}
+          # =====================================================================
+          echo "🔐 Validando secrets obrigatórias..."
+          
           POSTGRES_PASSWORD="${POSTGRES_PASSWORD_SECRET:-}"
           if [ -z "${POSTGRES_PASSWORD}" ]; then
             echo "::error::POSTGRES_PASSWORD não definido. Configure o secret POSTGRES_PASSWORD no repositório." >&2
@@ -1546,6 +1565,69 @@ jobs:
             echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
             exit 1
           fi
+          
+          # CORREÇÃO 21/12/2025: Validar secrets críticas que faltavam
+          # Estas secrets são usadas com ${VAR:?} no docker-compose e causam
+          # falha silenciosa se não definidas
+          QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
+          if [ -z "${QDRANT_API_KEY}" ]; then
+            echo "::error::QDRANT_API_KEY não definido. Configure o secret QDRANT_API_KEY no repositório (necessário para alice-qdrant)." >&2
+            exit 1
+          fi
+          SALAD_API_KEY="${SALAD_API_KEY_SECRET:-}"
+          if [ -z "${SALAD_API_KEY}" ]; then
+            echo "::error::SALAD_API_KEY não definido. Configure o secret SALAD_API_KEY no repositório (necessário para GPU Salad Cloud)." >&2
+            exit 1
+          fi
+          SALAD_ORGANIZATION_ID="${SALAD_ORGANIZATION_ID_SECRET:-}"
+          if [ -z "${SALAD_ORGANIZATION_ID}" ]; then
+            echo "::error::SALAD_ORGANIZATION_ID não definido. Configure o secret SALAD_ORGANIZATION_ID no repositório (necessário para GPU Salad Cloud)." >&2
+            exit 1
+          fi
+          SESSION_SECRET="${SESSION_SECRET_SECRET:-}"
+          if [ -z "${SESSION_SECRET}" ]; then
+            echo "::error::SESSION_SECRET não definido. Configure o secret SESSION_SECRET no repositório (necessário para auth-service)." >&2
+            exit 1
+          fi
+          INTERNAL_API_SECRET="${INTERNAL_API_SECRET_SECRET:-}"
+          if [ -z "${INTERNAL_API_SECRET}" ]; then
+            echo "::error::INTERNAL_API_SECRET não definido. Configure o secret INTERNAL_API_SECRET no repositório (necessário para comunicação entre serviços)." >&2
+            exit 1
+          fi
+          SEARXNG_SECRET_KEY="${SEARXNG_SECRET_KEY_SECRET:-}"
+          if [ -z "${SEARXNG_SECRET_KEY}" ]; then
+            echo "::error::SEARXNG_SECRET_KEY não definido. Configure o secret SEARXNG_SECRET_KEY no repositório (necessário para alice-searxng)." >&2
+            exit 1
+          fi
+          CLICKHOUSE_PASSWORD="${CLICKHOUSE_PASSWORD_SECRET:-}"
+          if [ -z "${CLICKHOUSE_PASSWORD}" ]; then
+            echo "::error::CLICKHOUSE_PASSWORD não definido. Configure o secret CLICKHOUSE_PASSWORD no repositório (necessário para clickhouse)." >&2
+            exit 1
+          fi
+          # ERPNext Redis passwords
+          REDIS_CACHE_PASSWORD="${REDIS_CACHE_PASSWORD_SECRET:-}"
+          if [ -z "${REDIS_CACHE_PASSWORD}" ]; then
+            echo "::error::REDIS_CACHE_PASSWORD não definido. Configure o secret REDIS_CACHE_PASSWORD no repositório (necessário para ERPNext redis-cache)." >&2
+            exit 1
+          fi
+          REDIS_QUEUE_PASSWORD="${REDIS_QUEUE_PASSWORD_SECRET:-}"
+          if [ -z "${REDIS_QUEUE_PASSWORD}" ]; then
+            echo "::error::REDIS_QUEUE_PASSWORD não definido. Configure o secret REDIS_QUEUE_PASSWORD no repositório (necessário para ERPNext redis-queue)." >&2
+            exit 1
+          fi
+          # ERPNext MariaDB
+          ERPNEXT_MYSQL_ROOT_PASSWORD="${ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET:-}"
+          if [ -z "${ERPNEXT_MYSQL_ROOT_PASSWORD}" ]; then
+            echo "::error::ERPNEXT_MYSQL_ROOT_PASSWORD não definido. Configure o secret ERPNEXT_MYSQL_ROOT_PASSWORD no repositório (necessário para mariadb)." >&2
+            exit 1
+          fi
+          ERPNEXT_DB_PASSWORD="${ERPNEXT_DB_PASSWORD_SECRET:-}"
+          if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
+            echo "::error::ERPNEXT_DB_PASSWORD não definido. Configure o secret ERPNEXT_DB_PASSWORD no repositório (necessário para mariadb)." >&2
+            exit 1
+          fi
+          
+          echo "✅ Todas as secrets obrigatórias validadas"
           # REGRA 14: Validar formato de email do ADMIN_USER (Zod valida .email() em runtime)
           # Fail-fast no CI/CD para evitar falha silenciosa em produção
           if ! echo "${ADMIN_USER}" | grep -qE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
@@ -1814,8 +1896,11 @@ jobs:
             printf 'LANGFUSE_DB_NAME=%s\n' "${LANGFUSE_DB_NAME}"
             printf '\n'
             printf '# ClickHouse (Obrigatório para Langfuse v3 - Arquitetura 2025)\n'
-            printf 'CLICKHOUSE_USER=%s\n' "${{ secrets.CLICKHOUSE_USER }}"
-            printf 'CLICKHOUSE_PASSWORD=%s\n' "${{ secrets.CLICKHOUSE_PASSWORD }}"
+            # CORREÇÃO 21/12/2025: Usar default se secret CLICKHOUSE_USER não estiver definido
+            # Se o secret estiver vazio, o printf escreve CLICKHOUSE_USER= e o default do docker-compose não funciona
+            CLICKHOUSE_USER_VALUE="${CLICKHOUSE_USER_SECRET_VAL:-langfuse}"
+            printf 'CLICKHOUSE_USER=%s\n' "${CLICKHOUSE_USER_VALUE}"
+            printf 'CLICKHOUSE_PASSWORD=%s\n' "${CLICKHOUSE_PASSWORD}"
             printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB:-langfuse}"
             printf '\n'
             printf '# SearXNG (Metabusca interna - Web Search)\n'
@@ -2197,6 +2282,10 @@ jobs:
             chmod -R 750 /opt/alice/logs
             chmod -R 750 /opt/alice/backups
             chmod -R 750 /opt/alice/uploads
+            
+            # CORREÇÃO 21/12/2025: alice-rag roda como UID 1000 (node user)
+            # O diretório de uploads precisa ser writable pelo container
+            chown -R 1000:1000 /opt/alice/uploads
             
             echo "✅ Estrutura de diretórios criada com permissões enterprise"
             

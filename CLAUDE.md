@@ -481,3 +481,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix ws Dynamic Require (21/12/2025): Adicionado ws como dependência direta do rag-service - evita "Dynamic require of events is not supported" causado por ytdl-core*
 *Bug Fix ClickHouse Healthcheck Auth (21/12/2025): Healthcheck agora inclui --user e --password para autenticação - sem credenciais o clickhouse-client retorna erro*
 *Bug Fix Langfuse SSL (21/12/2025): DATABASE_URL do langfuse e langfuse-worker alterado de sslmode=prefer para sslmode=disable - PostgreSQL interno sem SSL*
+*Bug Fix Secrets Validação Fail-Fast (21/12/2025): Adicionada validação fail-fast para TODAS as secrets obrigatórias (QDRANT_API_KEY, SALAD_API_KEY, SALAD_ORGANIZATION_ID, SESSION_SECRET, INTERNAL_API_SECRET, SEARXNG_SECRET_KEY, CLICKHOUSE_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, ERPNEXT_DB_PASSWORD) - deploy falha imediatamente se qualquer secret obrigatória não estiver configurada*
+*Bug Fix Uploads Directory Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/uploads - alice-rag roda como UID 1000 (node) e precisa de permissão de escrita no diretório de uploads*
+*Bug Fix CLICKHOUSE_USER Default (21/12/2025): Corrigido default de CLICKHOUSE_USER - se secret vazio, usa "langfuse" como default ao invés de escrever valor vazio no .env.prod*
