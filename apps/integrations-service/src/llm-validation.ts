@@ -80,6 +80,8 @@ export interface ValidationResult {
   discrepancies: Record<string, { cited: number; actual: number; diff: number }>;
   maxDeviationFound: number;
   overallAccuracy: number;
+  /** BUG FIX 21/12/2025: Flag para indicar que não havia valores numéricos para validar */
+  noValuesExtracted: boolean;
 }
 
 /** Parâmetros para validação */
@@ -309,8 +311,11 @@ export function validateValues(
   const totalFields = details.length;
   const validFields = details.filter(d => d.isValid).length;
   const invalidFields = totalFields - validFields;
-  const overallAccuracy = totalFields > 0 ? validFields / totalFields : 1;
-  const passed = invalidFields === 0;
+  
+  // BUG FIX 21/12/2025: Se totalFields === 0, marcar como falha (não há valores para validar)
+  // Isso evita que respostas vagas do LLM sejam aprovadas sem validação real
+  const overallAccuracy = totalFields > 0 ? validFields / totalFields : 0;
+  const passed = totalFields > 0 && invalidFields === 0;
 
   return {
     passed,
@@ -321,6 +326,8 @@ export function validateValues(
     discrepancies,
     maxDeviationFound,
     overallAccuracy,
+    // BUG FIX 21/12/2025: Flag para indicar que não havia valores para validar
+    noValuesExtracted: totalFields === 0,
   };
 }
 

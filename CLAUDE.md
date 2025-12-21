@@ -497,3 +497,6 @@ git commit -a -m "test: adiciona testes unitários"
 *SignalApprovalPanel Component (21/12/2025): Painel de aprovação/rejeição de sinais com suporte a modo manual e Alice (automático)*
 *Trading Page Analysis Tab (21/12/2025): Nova aba "Análise Técnica" na página de Trading com todos indicadores e níveis de suporte/resistência*
 *Anti-Alucinação Architecture (21/12/2025): LLM recebe indicadores pré-calculados → gera análise → código valida se citou valores corretos*
+*Bug Fix Analysis History interval (21/12/2025): Query do histórico agora filtra por interval (antes era ignorado, misturava todos os timeframes)*
+*Bug Fix minConfidenceToExecute (21/12/2025): Usar ?? ao invés de || para preservar valor 0 válido (0 é falsy com ||)*
+*Bug Fix Validation noValuesExtracted (21/12/2025): totalFields === 0 agora marca passed=false e overallAccuracy=0 (evita aprovação de respostas vagas)*

@@ -3833,13 +3833,15 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
 
     const db = getDatabase();
+    // BUG FIX 21/12/2025: interval agora é usado na query (antes era ignorado)
     const history = await db
       .select()
       .from(schema.tradingTechnicalIndicators)
       .where(
         and(
           eq(schema.tradingTechnicalIndicators.tenantId, authContext.tenantId),
-          eq(schema.tradingTechnicalIndicators.symbol, symbol)
+          eq(schema.tradingTechnicalIndicators.symbol, symbol),
+          eq(schema.tradingTechnicalIndicators.interval, interval)
         )
       )
       .orderBy(desc(schema.tradingTechnicalIndicators.calculatedAt))

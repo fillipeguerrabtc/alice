@@ -1649,9 +1649,10 @@ export default function Trading() {
             )}
 
             {/* Painel de Aprovação de Sinais (21/12/2025) */}
+            {/* BUG FIX 21/12/2025: Usar ?? ao invés de || para preservar valor 0 válido */}
             <SignalApprovalPanel
               controlMode={controlMode}
-              minConfidenceToExecute={parseFloat(riskConfig?.minConfidenceToExecute || '0.8')}
+              minConfidenceToExecute={parseFloat(String(riskConfig?.minConfidenceToExecute ?? 0.8))}
             />
           </TabsContent>
 
