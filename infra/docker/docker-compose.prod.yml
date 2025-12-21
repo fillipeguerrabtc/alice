@@ -1330,17 +1330,20 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     # REGRA 6 + Security: gera URLs Redis de forma segura sem reinterpretação pelo shell
+    # CORREÇÃO 21/12/2025: Escapar $ com $$ para evitar substituição pelo Docker Compose
+    # Bug: Docker Compose interpreta $CACHE_URL e $QUEUE_URL como env vars, mas são vars bash
+    # Aviso: "The CACHE_URL variable is not set. Defaulting to a blank string."
     command:
       - bash
       - -c
       - |
         set -euo pipefail
-        CACHE_URL="$(printf 'redis://:%s@erpnext-redis-cache:6379' "$REDIS_CACHE_PASSWORD")"
-        QUEUE_URL="$(printf 'redis://:%s@erpnext-redis-queue:6379' "$REDIS_QUEUE_PASSWORD")"
+        CACHE_URL="$$(printf 'redis://:%s@erpnext-redis-cache:6379' "$$REDIS_CACHE_PASSWORD")"
+        QUEUE_URL="$$(printf 'redis://:%s@erpnext-redis-queue:6379' "$$REDIS_QUEUE_PASSWORD")"
         bench set-config -g db_host erpnext-mariadb
         bench set-config -g db_port 3306
-        bench set-config -g redis_cache "$CACHE_URL"
-        bench set-config -g redis_queue "$QUEUE_URL"
+        bench set-config -g redis_cache "$$CACHE_URL"
+        bench set-config -g redis_queue "$$QUEUE_URL"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root

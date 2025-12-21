@@ -46,6 +46,8 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
+> **Bug Fix ERPNext Configurator 21/12/2025:** Escapar `$` com `$$` no comando do `erpnext-configurator` para evitar substituição pelo Docker Compose. Docker Compose interpreta `$CACHE_URL` e `$QUEUE_URL` como variáveis de ambiente, mas são variáveis bash internas do script. Aviso no log: "The CACHE_URL variable is not set. Defaulting to a blank string."
+
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |
 |--------|-----|--------|
