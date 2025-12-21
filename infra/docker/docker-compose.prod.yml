@@ -666,8 +666,13 @@ services:
       GITHUB_CLIENT_SECRET: ${OAUTH_GITHUB_CLIENT_SECRET}
       # Callback URL
       OAUTH_CALLBACK_URL: https://yesyoudeserve.duckdns.org/api/auth/callback
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - rate limiting requer Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       postgres:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
@@ -842,12 +847,18 @@ services:
       STORAGE_BASE_URL: /api/media/files
       # URL pública do RAG para upload dos artefatos Salad (HTTPS Traefik)
       RAG_PUBLIC_BASE_URL: ${RAG_PUBLIC_BASE_URL:?RAG_PUBLIC_BASE_URL é obrigatório}
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - causava "REDIS_URL não configurado em produção"
+      # Rate limiting distribuído requer Redis para funcionar em cluster
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       alice-qdrant:
         condition: service_healthy
       alice-searxng:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
@@ -912,10 +923,15 @@ services:
       # Qdrant - Banco vetorial para texto (4096 dim)
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - rate limiting requer Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       alice-qdrant:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
@@ -1007,6 +1023,9 @@ services:
       KUCOIN_PRO_API_PASSPHRASE: ${KUCOIN_PRO_API_PASSPHRASE:-}
       KUCOIN_PRO_BASE_URL: ${KUCOIN_PRO_BASE_URL:-https://api-futures.kucoin.com}
       KUCOIN_SANDBOX_MODE: ${KUCOIN_SANDBOX_MODE:-false}
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - rate limiting requer Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -1015,6 +1034,8 @@ services:
       alice-rag:
         condition: service_healthy
       alice-qdrant:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
@@ -1093,10 +1114,15 @@ services:
       PROMETHEUS_EXTERNAL_URL: https://metrics.yesyoudeserve.duckdns.org
       JAEGER_EXTERNAL_URL: https://traces.yesyoudeserve.duckdns.org
       LANGFUSE_EXTERNAL_URL: https://langfuse.yesyoudeserve.duckdns.org
+      # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
+      # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - rate limiting requer Redis
+      REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
     depends_on:
       traefik:
         condition: service_healthy
       postgres:
+        condition: service_healthy
+      alice-redis:
         condition: service_healthy
     networks:
       - alice-network
