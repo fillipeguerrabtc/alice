@@ -3678,6 +3678,9 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       res.status(400).json({ error: `Intervalo inválido: ${interval}. Use: 1m, 3m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 12h, 1d, 1w` });
       return;
     }
+    
+    // BUG FIX 21/12/2025: Type narrowing para TypeScript entender que interval é válido após validação
+    const validatedInterval = interval as '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d' | '1w';
 
     if (!kucoinClient.isKucoinConfigured()) {
       res.status(503).json({ error: 'KuCoin não configurado' });
@@ -3717,7 +3720,8 @@ app.get('/api/integrations/trading/analysis/:symbol', requirePermission('integra
       .values({
         tenantId: authContext.tenantId,
         symbol,
-        interval: interval as 'string' as '1m' | '3m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h' | '8h' | '12h' | '1d' | '1w',
+        // BUG FIX 21/12/2025: Corrigido typo 'as string' e adicionada validação de tipo
+        interval: validatedInterval,
         candleTimestamp: new Date(candles[candles.length - 1].timestamp),
         currentPrice: analysis.currentPrice,
         
@@ -3829,8 +3833,18 @@ app.get('/api/integrations/trading/analysis/history', requirePermission('integra
     }
 
     const symbol = req.query.symbol as string || 'XBTUSDTM';
-    const interval = req.query.interval as string || '5m';
+    const intervalParam = req.query.interval as string || '5m';
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
+
+    // BUG FIX 21/12/2025: Validação e type narrowing para TypeScript
+    const validIntervals = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '8h', '12h', '1d', '1w'] as const;
+    type ValidInterval = typeof validIntervals[number];
+    
+    if (!validIntervals.includes(intervalParam as ValidInterval)) {
+      res.status(400).json({ error: `Intervalo inválido: ${intervalParam}. Use: ${validIntervals.join(', ')}` });
+      return;
+    }
+    const interval = intervalParam as ValidInterval;
 
     const db = getDatabase();
     // BUG FIX 21/12/2025: interval agora é usado na query (antes era ignorado)

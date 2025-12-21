@@ -502,3 +502,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Validation noValuesExtracted (21/12/2025): totalFields === 0 agora marca passed=false e overallAccuracy=0 (evita aprovação de respostas vagas)*
 *Bug Fix MACD Enum Mismatch (21/12/2025): MACDResult.interpretation agora usa 'sideways' ao invés de 'neutral' - compatibilidade com trendEnum do PostgreSQL*
 *Bug Fix SMTP_PASSWORD Faltante (21/12/2025): Adicionado SMTP_PASSWORD usando RESEND_API_KEY - Resend usa API Key como senha SMTP para autenticação*
+*Bug Fix TypeScript interval Enum (21/12/2025): Adicionada validação e type narrowing para interval - TypeScript não entendia que string era um valor válido do enum após validação*
+*Bug Fix Frontend MACDResult (21/12/2025): TechnicalAnalysisPanel.tsx agora usa 'sideways' ao invés de 'neutral' - alinhado com backend e trendEnum PostgreSQL*
+*Bug Fix Typo 'as string' (21/12/2025): Corrigido `as 'string'` (literal) para type assertion correta no insert de indicadores*

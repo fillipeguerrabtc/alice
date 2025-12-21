@@ -72,7 +72,8 @@ export interface MACDResult {
   macd: number;
   signal: number;
   histogram: number;
-  interpretation: 'bullish' | 'bearish' | 'neutral';
+  // BUG FIX 21/12/2025: Usar 'sideways' ao invés de 'neutral' para compatibilidade com trendEnum do PostgreSQL
+  interpretation: 'bullish' | 'bearish' | 'sideways';
   crossover: 'bullish_cross' | 'bearish_cross' | 'none';
 }
 
