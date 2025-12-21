@@ -2476,6 +2476,8 @@ jobs:
             # ==============================================
             # CAPTURA IMEDIATA DE LOGS SE DEPLOY FALHOU
             # Não esperar verificação pós-deploy - capturar logs agora
+            # CORREÇÃO 21/12/2025: Capturar logs baseado em DEPLOY_SERVICES
+            # Bug anterior: só capturava Alice, ignorava ERPNext
             # ==============================================
             if [ "${DEPLOY_EXIT_CODE:-0}" -ne 0 ]; then
               echo ""
@@ -2484,8 +2486,27 @@ jobs:
               echo "CAPTURA IMEDIATA DE LOGS DOS CONTAINERS"
               echo "============================================="
               
-              # Capturar logs de TODOS os containers Alice problemáticos
-              for container in alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability; do
+              # Definir containers baseado no tipo de deploy
+              ALICE_CONTAINERS="alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability alice-redis alice-qdrant alice-searxng postgres traefik"
+              ERPNEXT_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-configurator erpnext-create-site erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long"
+              
+              case "${DEPLOY_SERVICES}" in
+                "alice-only")
+                  CONTAINERS_TO_CHECK="$ALICE_CONTAINERS"
+                  echo "📋 Capturando logs de containers Alice (alice-only)..."
+                  ;;
+                "erpnext-only")
+                  CONTAINERS_TO_CHECK="$ERPNEXT_CONTAINERS"
+                  echo "📋 Capturando logs de containers ERPNext (erpnext-only)..."
+                  ;;
+                *)
+                  CONTAINERS_TO_CHECK="$ALICE_CONTAINERS $ERPNEXT_CONTAINERS"
+                  echo "📋 Capturando logs de TODOS containers (full stack)..."
+                  ;;
+              esac
+              
+              # Capturar logs dos containers relevantes
+              for container in $CONTAINERS_TO_CHECK; do
                 if docker ps -a --format "{{.Names}}" | grep -q "^${container}$"; then
                   echo ""
                   echo "=== LOGS: $container ===" 
