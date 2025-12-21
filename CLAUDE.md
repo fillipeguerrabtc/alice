@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.20 - 21 de Dezembro de 2025*
+*Versão: 4.21 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -529,3 +529,5 @@ git commit -a -m "test: adiciona testes unitários"
 *URLs GPU Automáticas (21/12/2025): deploy.py agora captura URLs dos Container Groups automaticamente após criação. URLs são passadas como outputs do job deploy-salad-gpu e atualizadas no .env.prod do servidor Hetzner. Elimina necessidade de configurar secrets SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc. manualmente.*
 *Bug Fix Paths Workflow (21/12/2025): Corrigidos TODOS os paths no deploy-production.yml. Repositório é clonado em /opt/alice/app, então todos os paths devem usar /opt/alice/app/infra/docker (não /opt/alice/infra/docker). Adicionado cd /opt/alice/app após o clone. Corrigidos paths de validação, .env.prod, cleanup, rollback e URLs GPU.*
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
+*Bug Fix ERPNext Configurator common_site_config.json (21/12/2025): erpnext-configurator falhava com exit 1 porque bench set-config -g requer que common_site_config.json exista no diretório sites. Corrigido criando arquivo JSON vazio {} antes de executar bench set-config. Também corrigido script para criar diretório sites se não existir.*
+*Pipeline 100% Automática (21/12/2025): Deploy na Hetzner e Salad Cloud são 100% automáticos. URLs dos Container Groups GPU (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc.) são capturadas automaticamente pelo deploy.py via GITHUB_OUTPUT e atualizadas no .env.prod do servidor Hetzner. Sem necessidade de configurar secrets manualmente para URLs GPU.*
