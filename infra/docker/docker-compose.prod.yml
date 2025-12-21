@@ -819,6 +819,11 @@ services:
       # - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant | Licença Apache 2.0
       # - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector | Licença MIT
       # - Transcrição: Whisper large-v3 via GPU Salad Cloud
+      # Qdrant - Banco vetorial para texto (4096 dim) - CORREÇÃO 21/12/2025
+      # BUG: Variáveis QDRANT_URL e QDRANT_API_KEY estavam FALTANDO neste serviço!
+      # RAG service usa Qdrant para embeddings de texto - conexão falhava sem estas variáveis
+      QDRANT_URL: http://alice-qdrant:6333
+      QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
       # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
       SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-}
       # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (1024 dim)

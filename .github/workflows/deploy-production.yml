@@ -2430,10 +2430,13 @@ jobs:
             echo "============================================="
             
             # Deploy baseado nos serviços selecionados
-            # CORREÇÃO 21/12/2025: Usar --wait para aguardar healthchecks (Best Practice 2025)
+            # CORREÇÃO 21/12/2025: Timeout REDUZIDO de 300s para 120s (2 min)
+            # 300s (5 min) era muito longo e workflow ficava "pendurado" esperando
+            # 120s é suficiente para containers iniciarem - se não iniciou em 2 min, algo está errado
             # --wait: Aguarda que todos os containers fiquem healthy antes de retornar
-            # --wait-timeout: Timeout de 300s (5 min) para evitar espera infinita
-            # Sem --wait, o compose retorna imediatamente após iniciar containers (não aguarda health)
+            # --wait-timeout: Timeout para evitar espera infinita (fail fast)
+            WAIT_TIMEOUT=120
+            
             case "${DEPLOY_SERVICES}" in
               "alice-only")
                 echo "Deploy apenas Alice Stack..."
@@ -2443,7 +2446,7 @@ jobs:
                   alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans --wait --wait-timeout 300 \
+                  up -d --no-build --remove-orphans --wait --wait-timeout $WAIT_TIMEOUT \
                   dockerproxy traefik-init traefik postgres alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
                 DEPLOY_EXIT_CODE=$?
                 ;;
@@ -2451,7 +2454,7 @@ jobs:
                 echo "Deploy apenas ERPNext Stack..."
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans --wait --wait-timeout 300 \
+                  up -d --no-build --remove-orphans --wait --wait-timeout $WAIT_TIMEOUT \
                   erpnext-mariadb erpnext-redis-cache erpnext-redis-queue \
                   erpnext-configurator erpnext-create-site \
                   erpnext-backend erpnext-frontend erpnext-websocket \
@@ -2465,10 +2468,42 @@ jobs:
                   pull --ignore-pull-failures
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans --wait --wait-timeout 300
+                  up -d --no-build --remove-orphans --wait --wait-timeout $WAIT_TIMEOUT
                 DEPLOY_EXIT_CODE=$?
                 ;;
             esac
+            
+            # ==============================================
+            # CAPTURA IMEDIATA DE LOGS SE DEPLOY FALHOU
+            # Não esperar verificação pós-deploy - capturar logs agora
+            # ==============================================
+            if [ "${DEPLOY_EXIT_CODE:-0}" -ne 0 ]; then
+              echo ""
+              echo "❌ DEPLOY FALHOU (exit code: $DEPLOY_EXIT_CODE)"
+              echo "============================================="
+              echo "CAPTURA IMEDIATA DE LOGS DOS CONTAINERS"
+              echo "============================================="
+              
+              # Capturar logs de TODOS os containers Alice problemáticos
+              for container in alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability; do
+                if docker ps -a --format "{{.Names}}" | grep -q "^${container}$"; then
+                  echo ""
+                  echo "=== LOGS: $container ===" 
+                  docker logs --tail 100 "$container" 2>&1 || true
+                  echo "=== FIM LOGS: $container ==="
+                fi
+              done
+              
+              # Capturar status de saúde
+              echo ""
+              echo "=== STATUS DOS CONTAINERS ==="
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null || true
+              
+              # FALHAR IMEDIATAMENTE - não esperar mais verificações
+              echo ""
+              echo "❌ DEPLOY FALHOU - Workflow interrompido"
+              exit 1
+            fi
             
             # ==============================================
             # PÓS-DEPLOY: Status e Debugging

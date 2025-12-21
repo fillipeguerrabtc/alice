@@ -40,6 +40,10 @@
 
 > Atualização 21/12/2025: Healthchecks dos 6 serviços Alice corrigidos de `/ready` para `/live`. Docker healthcheck verifica se PROCESSO está vivo, não dependências externas (GPU Salad Cloud). Endpoint `/ready` é para Kubernetes readiness (roteamento de tráfego). Corrige erro "container alice-rag is unhealthy" em primeiro deploy.
 
+> **CORREÇÃO CRÍTICA 21/12/2025:** Variáveis `QDRANT_URL` e `QDRANT_API_KEY` estavam **FALTANDO** no docker-compose.prod.yml para `alice-rag`. Sem estas variáveis, RAG service não conseguia conectar ao Qdrant (banco vetorial de texto 4096 dim), causando falha no healthcheck. Training e integrations tinham, mas rag não.
+
+> **Deploy Fail Fast 21/12/2025:** Reduzido `--wait-timeout` de 300s (5 min) para 120s (2 min). Adicionada captura imediata de logs quando deploy falha - workflow não fica mais "pendurado" esperando, falha imediatamente e mostra logs dos containers problemáticos.
+
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |
 |--------|-----|--------|
