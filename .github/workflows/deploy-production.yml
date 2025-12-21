@@ -3272,9 +3272,10 @@ jobs:
               mkdir -p /opt/alice/data/vector
               chmod -R 755 /opt/alice/data/vector
               
-              # Logs de serviços
+              # Logs de serviços - ERPNext (UID 1000/frappe)
               mkdir -p /opt/alice/logs/erpnext
-              chmod -R 755 /opt/alice/logs
+              chown -R 1000:1000 /opt/alice/logs/erpnext
+              chmod -R 755 /opt/alice/logs/erpnext
               
               echo "   ✓ Estrutura de diretórios configurada"
               

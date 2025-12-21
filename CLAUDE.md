@@ -476,3 +476,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Rollback Dados Residuais (21/12/2025): FASE 7 de full_system_cleanup() agora limpa dados residuais de deploys anteriores (rm -rf /opt/alice/data/* e logs/*) ANTES de recriar estrutura quando PRESERVE_DATA=false - evita lixo de deploys falhados acumulando no servidor*
 *ERPNext Create-Site Idempotente (21/12/2025): Container erpnext-create-site agora verifica se site existe antes de criar - evita exit 1 em redeploys quando site já foi criado anteriormente*
 *Dockerproxy Healthcheck Fix (21/12/2025): Healthcheck atualizado de /proc/net/tcp para wget --spider http://localhost:2375/_ping - mais confiável e com start_period aumentado para 30s*
+*Bug Fix ERPNext Logs Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/logs/erpnext - ERPNext roda como UID 1000 (frappe) e precisa de permissão de escrita para logs*
