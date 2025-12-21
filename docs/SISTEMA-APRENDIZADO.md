@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.5 - ARQUITETURA ENTERPRISE + TRADING  
-**Data:** 19 de Dezembro de 2025
+**Versão:** 3.6 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto  
+**Data:** 21 de Dezembro de 2025
 
 ## Visão Geral
 

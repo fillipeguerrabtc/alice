@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 20 de Dezembro de 2025  
+> **Data:** 21 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.7 - Code Review Enterprise COMPLETO + 54 Secrets
+> **Versão:** 4.8 - Deploy Fixes: ERPNext Idempotente + Rollback Dados Residuais
 
 ---
 
@@ -1078,9 +1078,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 19/12/2025*
+*Documento atualizado em: 21/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.2 - Otimização de Performance + SHA Pinning Enterprise*
+*Versão: 4.3 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
@@ -1313,4 +1313,4 @@ body = {
 
 *Documento gerado automaticamente pela auditoria completa da plataforma*  
 *Autor: Fillipe Guerra*  
-*Data: 19 de Dezembro de 2025*
+*Data: 21 de Dezembro de 2025*

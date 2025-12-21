@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.13 - 20 de Dezembro de 2025*
+*Versão: 4.14 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -473,3 +473,6 @@ git commit -a -m "test: adiciona testes unitários"
 *ClickHouse Healthcheck Fix (20/12/2025): Corrigido healthcheck de wget (não existe) para clickhouse-client --query 'SELECT 1' - imagem Alpine não tem wget/curl*
 *Healthchecks Enterprise Fix (20/12/2025): Corrigidos healthchecks para containers sem wget/curl: Qdrant (/proc/net/tcp:18BD), dockerproxy (/proc/net/tcp:0947), Node Exporter (/proc/net/tcp:238C)*
 *Code Review Enterprise COMPLETO (20/12/2025): Auditoria 100% aprovada - 44 containers, 7 microsserviços, 5 packages, 4 workflows, 11 migrations. Zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks. 54 RLS policies, 54 indexes, 89 pgvector configs, 80 SHA pins, 22 timeouts.*
+*Bug Fix Rollback Dados Residuais (21/12/2025): FASE 7 de full_system_cleanup() agora limpa dados residuais de deploys anteriores (rm -rf /opt/alice/data/* e logs/*) ANTES de recriar estrutura quando PRESERVE_DATA=false - evita lixo de deploys falhados acumulando no servidor*
+*ERPNext Create-Site Idempotente (21/12/2025): Container erpnext-create-site agora verifica se site existe antes de criar - evita exit 1 em redeploys quando site já foi criado anteriormente*
+*Dockerproxy Healthcheck Fix (21/12/2025): Healthcheck atualizado de /proc/net/tcp para wget --spider http://localhost:2375/_ping - mais confiável e com start_period aumentado para 30s*

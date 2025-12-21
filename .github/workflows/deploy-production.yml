@@ -3181,7 +3181,16 @@ jobs:
               echo "   ✓ Networks alice-network e erpnext-network criadas"
               
               # FASE 7: Recriar estrutura de diretórios com permissões corretas
+              # ATUALIZAÇÃO 21/12/2025: Limpa dados quando PRESERVE_DATA=false
               echo "[7/8] Configurando estrutura de diretórios..."
+              
+              # Se não preservar dados, limpar TUDO antes de recriar
+              if [ "$PRESERVE_DATA" != "true" ]; then
+                echo "   → Limpando dados residuais de deploys anteriores..."
+                rm -rf /opt/alice/data/* 2>/dev/null || true
+                rm -rf /opt/alice/logs/* 2>/dev/null || true
+                echo "   ✓ Dados residuais removidos"
+              fi
               
               # Grafana (UID 472)
               mkdir -p /opt/alice/data/grafana
@@ -3216,8 +3225,9 @@ jobs:
               chmod -R 755 /opt/alice/data/clickhouse
               chmod -R 755 /opt/alice/logs/clickhouse
 
-              # Qdrant (UID root)
-              mkdir -p /opt/alice/data/qdrant
+              # Qdrant (UID root) - precisa de storage e snapshots
+              mkdir -p /opt/alice/data/qdrant/storage
+              mkdir -p /opt/alice/data/qdrant/snapshots
               chmod -R 755 /opt/alice/data/qdrant
               
               # PostgreSQL (UID 999)
@@ -3261,6 +3271,10 @@ jobs:
               # Vector (UID root)
               mkdir -p /opt/alice/data/vector
               chmod -R 755 /opt/alice/data/vector
+              
+              # Logs de serviços
+              mkdir -p /opt/alice/logs/erpnext
+              chmod -R 755 /opt/alice/logs
               
               echo "   ✓ Estrutura de diretórios configurada"
               

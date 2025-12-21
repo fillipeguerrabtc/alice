@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 20 de Dezembro de 2025
+**Data:** 21 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 44 Containers em Produção
 
@@ -1100,8 +1100,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 19 de Dezembro de 2025*
-*Versão: 7.2 - Langfuse v3 ClickHouse + Secrets Atualizados*
+*Documento atualizado em: 21 de Dezembro de 2025*
+*Versão: 7.3 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 44/44 containers com no-new-privileges, 44/44 com resource limits, 25/44 com read_only*

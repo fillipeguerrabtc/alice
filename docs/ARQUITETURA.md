@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 19 de Dezembro de 2025  
-> **Versão:** 1.2.0 - Otimização de Performance + SHA Pinning Enterprise  
+> **Data:** 21 de Dezembro de 2025  
+> **Versão:** 1.3.0 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -893,8 +893,8 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 19 de Dezembro de 2025*  
-*Versão: 1.3.0*  
+*Data: 21 de Dezembro de 2025*  
+*Versão: 1.4.0*  
 *Total de Containers: 44*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud*  
