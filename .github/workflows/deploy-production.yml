@@ -2490,7 +2490,8 @@ jobs:
               # CORREÇÃO 21/12/2025: Nomes corretos são alice-postgres e alice-traefik (não postgres/traefik)
               # grep usa match exato com anchors ^${container}$ - nomes devem bater exatamente
               ALICE_CONTAINERS="alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability alice-redis alice-qdrant alice-searxng alice-postgres alice-traefik"
-              ERPNEXT_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-configurator erpnext-create-site erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long"
+              # CORREÇÃO 21/12/2025: Incluir workers -2 (erpnext-worker-default-2, short-2, long-2)
+              ERPNEXT_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-configurator erpnext-create-site erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long erpnext-worker-short-2 erpnext-worker-default-2 erpnext-worker-long-2"
               
               case "${DEPLOY_SERVICES}" in
                 "alice-only")
