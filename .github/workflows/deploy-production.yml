@@ -2375,8 +2375,9 @@ jobs:
             echo "Verificando conflitos arquivo/diretório em /opt/alice/data..."
             for dir in /opt/alice/data/erpnext-sites /opt/alice/data/erpnext-logs; do
               # Verificar se o caminho existe mas NÃO é um diretório
-              if [ -e "$dir" ] && [ ! -d "$dir" ]; then
-                echo "⚠️  Conflito: $dir existe como arquivo, não como diretório"
+              # NOTA: -L detecta symlinks mesmo quando target não existe (dangling symlinks)
+              if { [ -e "$dir" ] || [ -L "$dir" ]; } && [ ! -d "$dir" ]; then
+                echo "⚠️  Conflito: $dir existe como arquivo/symlink, não como diretório"
                 echo "   Renomeando para .bak e criando diretório..."
                 mv "$dir" "${dir}.bak.$(date +%s)"
                 mkdir -p "$dir"
@@ -2387,8 +2388,9 @@ jobs:
               # Verificar subdiretório assets (problema específico do ERPNext)
               if [ -d "$dir" ]; then
                 assets_path="$dir/assets"
-                if [ -e "$assets_path" ] && [ ! -d "$assets_path" ]; then
-                  echo "⚠️  Conflito: $assets_path existe como arquivo, não como diretório"
+                # NOTA: -L detecta symlinks mesmo quando target não existe (dangling symlinks)
+                if { [ -e "$assets_path" ] || [ -L "$assets_path" ]; } && [ ! -d "$assets_path" ]; then
+                  echo "⚠️  Conflito: $assets_path existe como arquivo/symlink, não como diretório"
                   echo "   Renomeando para .bak e criando diretório..."
                   mv "$assets_path" "${assets_path}.bak.$(date +%s)"
                   mkdir -p "$assets_path"
@@ -3072,11 +3074,12 @@ jobs:
                     echo "   ✓ Removido: $vol_path"
                   fi
                   # Verificar também subpaths problemáticos
+                  # NOTA: -L detecta symlinks mesmo quando target não existe (dangling symlinks)
                   for subpath in "${vol_path}/_data/assets" "${vol_path}/_data"; do
-                    if [ -e "$subpath" ] && [ ! -d "$subpath" ]; then
-                      echo "   ⚠️ Conflito arquivo/diretório: $subpath"
+                    if { [ -e "$subpath" ] || [ -L "$subpath" ]; } && [ ! -d "$subpath" ]; then
+                      echo "   ⚠️ Conflito arquivo/diretório/symlink: $subpath"
                       rm -f "$subpath" 2>/dev/null || true
-                      echo "   ✓ Arquivo removido: $subpath"
+                      echo "   ✓ Arquivo/symlink removido: $subpath"
                     fi
                   done
                 done
@@ -3114,7 +3117,7 @@ jobs:
               fi
               
               # CORREÇÃO 21/12/2025: Função auxiliar para criar diretório seguro
-              # Verifica se existe arquivo no caminho e remove antes de criar diretório
+              # Verifica se existe arquivo/symlink no caminho e remove antes de criar diretório
               safe_mkdir() {
                 local dir="$1"
                 local uid="${2:-root}"
@@ -3122,8 +3125,11 @@ jobs:
                 local mode="${4:-755}"
                 
                 # Se existe mas NÃO é diretório, remover
-                if [ -e "$dir" ] && [ ! -d "$dir" ]; then
-                  echo "   ⚠️ Conflito: $dir existe como arquivo - removendo..."
+                # NOTA: -e segue symlinks e retorna false para dangling symlinks (target não existe)
+                # -L detecta symlinks independente de o target existir
+                # Precisamos verificar ambos para cobrir todos os casos
+                if { [ -e "$dir" ] || [ -L "$dir" ]; } && [ ! -d "$dir" ]; then
+                  echo "   ⚠️ Conflito: $dir existe como arquivo/symlink - removendo..."
                   rm -f "$dir" 2>/dev/null || true
                 fi
                 
