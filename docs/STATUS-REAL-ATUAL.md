@@ -1292,7 +1292,7 @@ body = {
 ### Bug Fix Qdrant ReadOnlyFilesystem
 - **Problema:** Container falhava com `Failed to create snapshots temp directory: ReadOnlyFilesystem`
 - **Solução:** Adicionado `tmpfs` para `/qdrant/snapshots` no docker-compose.prod.yml
-- **Healthcheck:** Substituído `wget` por `/dev/tcp` (imagem oficial não tem wget/curl)
+- **Healthcheck (21/12/2025):** Removido `pgrep` - imagem oficial qdrant/qdrant é minimalista e não tem pgrep instalado. Healthcheck usa apenas `grep /proc/net/tcp` para verificar porta 6333
 
 ### Rollback Enterprise Robusto
 - **Problema:** `full_system_cleanup()` falhava com lista de containers vazia

@@ -2345,6 +2345,10 @@ jobs:
             echo "============================================="
             
             # Deploy baseado nos serviços selecionados
+            # CORREÇÃO 21/12/2025: Usar --wait para aguardar healthchecks (Best Practice 2025)
+            # --wait: Aguarda que todos os containers fiquem healthy antes de retornar
+            # --wait-timeout: Timeout de 300s (5 min) para evitar espera infinita
+            # Sem --wait, o compose retorna imediatamente após iniciar containers (não aguarda health)
             case "${DEPLOY_SERVICES}" in
               "alice-only")
                 echo "Deploy apenas Alice Stack..."
@@ -2354,18 +2358,20 @@ jobs:
                   alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans \
+                  up -d --no-build --remove-orphans --wait --wait-timeout 300 \
                   dockerproxy traefik-init traefik postgres alice-frontend alice-auth alice-chat alice-rag alice-training alice-integrations
+                DEPLOY_EXIT_CODE=$?
                 ;;
               "erpnext-only")
                 echo "Deploy apenas ERPNext Stack..."
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans \
+                  up -d --no-build --remove-orphans --wait --wait-timeout 300 \
                   erpnext-mariadb erpnext-redis-cache erpnext-redis-queue \
                   erpnext-configurator erpnext-create-site \
                   erpnext-backend erpnext-frontend erpnext-websocket \
                   erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long
+                DEPLOY_EXIT_CODE=$?
                 ;;
               *)
                 echo "Deploy Stack Completa (Alice + ERPNext)..."
@@ -2374,7 +2380,8 @@ jobs:
                   pull --ignore-pull-failures
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  up -d --no-build --remove-orphans
+                  up -d --no-build --remove-orphans --wait --wait-timeout 300
+                DEPLOY_EXIT_CODE=$?
                 ;;
             esac
             
@@ -2392,6 +2399,56 @@ jobs:
             docker ps -a --filter "status=exited" --format "table {{.Names}}\t{{.Status}}" || true
             echo "============================================="
             
+            # ==============================================
+            # VERIFICAÇÃO DE SAÚDE IMEDIATA (Best Practice 2025)
+            # Falhar imediatamente se houver containers unhealthy ou crashados
+            # ==============================================
+            UNHEALTHY_COUNT=$(docker ps -a --filter "health=unhealthy" --format "{{.Names}}" | wc -l)
+            EXITED_COUNT=$(docker ps -a --filter "status=exited" --filter "name=alice-" --format "{{.Names}}" | grep -v "traefik-init" | wc -l)
+            
+            echo ""
+            echo "=============================================="
+            echo "VERIFICAÇÃO DE SAÚDE PÓS-DEPLOY"
+            echo "=============================================="
+            echo "Exit code do docker compose: ${DEPLOY_EXIT_CODE:-0}"
+            echo "Containers unhealthy: $UNHEALTHY_COUNT"
+            echo "Containers Alice crashados: $EXITED_COUNT"
+            
+            # Se docker compose falhou OU há containers unhealthy/crashados, falhar imediatamente
+            if [ "${DEPLOY_EXIT_CODE:-0}" -ne 0 ]; then
+              echo ""
+              echo "❌ CRÍTICO: docker compose up falhou (exit code: $DEPLOY_EXIT_CODE)"
+              echo "Capturando logs dos containers problemáticos..."
+              docker ps -a --filter "health=unhealthy" --format "{{.Names}}" | while read container; do
+                echo "=== LOGS: $container ===" 
+                docker logs --tail 50 "$container" 2>&1 || true
+              done
+              exit 1
+            fi
+            
+            if [ "$UNHEALTHY_COUNT" -gt 0 ]; then
+              echo ""
+              echo "❌ CRÍTICO: $UNHEALTHY_COUNT container(s) estão unhealthy!"
+              echo "Capturando logs dos containers unhealthy..."
+              docker ps -a --filter "health=unhealthy" --format "{{.Names}}" | while read container; do
+                echo "=== LOGS: $container ===" 
+                docker logs --tail 50 "$container" 2>&1 || true
+              done
+              exit 1
+            fi
+            
+            if [ "$EXITED_COUNT" -gt 0 ]; then
+              echo ""
+              echo "❌ CRÍTICO: $EXITED_COUNT container(s) Alice crasharam!"
+              echo "Capturando logs dos containers crashados..."
+              docker ps -a --filter "status=exited" --filter "name=alice-" --format "{{.Names}}" | grep -v "traefik-init" | while read container; do
+                echo "=== LOGS: $container ===" 
+                docker logs --tail 50 "$container" 2>&1 || true
+              done
+              exit 1
+            fi
+            
+            echo "✅ Todos os containers estão saudáveis!"
             echo "=============================================="
             echo "DEPLOY CONCLUÍDO COM SUCESSO!"
             echo "=============================================="

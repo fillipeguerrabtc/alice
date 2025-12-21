@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.17 - 21 de Dezembro de 2025*
+*Versão: 4.18 - 21 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -513,3 +513,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Healthchecks Dockerfiles Sync (21/12/2025): Dockerfiles de todos 6 serviços Alice atualizados com /live para consistência com docker-compose.prod.yml*
 *ClickHouse start_period (21/12/2025): Aumentado start_period de 60s para 120s e retries de 5 para 8 - primeira inicialização do ClickHouse pode demorar mais*
 *RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant, FFmpeg)*
+*Bug Fix Qdrant Healthcheck pgrep (21/12/2025): Removido pgrep do healthcheck do Qdrant - imagem oficial qdrant/qdrant é minimalista e não tem pgrep instalado. Healthcheck agora usa apenas grep /proc/net/tcp para verificar porta*

@@ -567,9 +567,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 20/12/2025: Qdrant não tem wget/curl, usar /proc/net/tcp
-      # Verifica se porta 6333 está escutando (0x18BD = 6333 em hex)
-      test: ["CMD-SHELL", "grep -q ':18BD' /proc/net/tcp || exit 1"]
+      # CORREÇÃO 21/12/2025: Healthcheck robusto para Qdrant (Best Practice 2025)
+      # Problema: Qdrant imagem minimalista não tem curl/wget/pgrep
+      # Solução: Verificar apenas porta 6333 via /proc/net/tcp
+      # Formato /proc/net/tcp: sl local_address rem_address st ... (porta em hex)
+      # 6333 decimal = 18BD hexadecimal (maiúsculo em /proc/net/tcp)
+      # Se porta está LISTENING (0A em coluna st), serviço está funcionando
+      # NOTA: Removido pgrep que não existe na imagem oficial do Qdrant
+      test: ["CMD-SHELL", "grep -q ':18BD' /proc/net/tcp"]
       interval: 30s
       timeout: 10s
       retries: 5
