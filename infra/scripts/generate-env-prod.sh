@@ -22,36 +22,39 @@ echo "=============================================="
 # =============================================================================
 # FASE 1: Validação das variáveis Salad Cloud
 # =============================================================================
-echo "🔍 Validando variáveis Salad Cloud..."
+echo "🔍 Configurando variáveis Salad Cloud..."
 
-# Defaults de produção válidos (não mocks)
-SALAD_API_URL_DEFAULT="https://api.salad.com/api/public"
-SALAD_MEDIA_PROJECT_DEFAULT="alice-media"
-SALAD_GPU_CLASS_DEFAULT="premium-gpu"
+# =============================================================================
+# SALAD CLOUD - Valores de Produção Enterprise (Best Practice 2025)
+# =============================================================================
+# NOTA: Esses são valores de PRODUÇÃO REAIS, não mocks ou placeholders.
+# A URL da API do Salad Cloud é pública e bem conhecida.
+# Não há necessidade de configurar como secrets - são configurações padrão.
+# Documentação: https://docs.salad.com/reference/api-reference
+# =============================================================================
 
-# Aplicar valores com logging de auditoria
-if [ -n "${SALAD_API_URL_CONFIGURED:-}" ]; then
-  SALAD_API_URL_VAR="${SALAD_API_URL_CONFIGURED}"
-  echo "✅ SALAD_API_URL: usando valor configurado no repositório"
-else
-  SALAD_API_URL_VAR="${SALAD_API_URL_DEFAULT}"
-  echo "::warning::SALAD_API_URL não configurado - usando default: ${SALAD_API_URL_DEFAULT}"
-fi
+# URL oficial da API do Salad Cloud (valor fixo de produção)
+# Esta é a URL pública oficial - não muda e não precisa de customização
+SALAD_API_URL_VAR="https://api.salad.com/api/public"
 
+# Nome do projeto no Salad Cloud para a Alice Platform
+# Pode ser customizado via secret SALAD_MEDIA_PROJECT se necessário
 if [ -n "${SALAD_MEDIA_PROJECT_CONFIGURED:-}" ]; then
   SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_CONFIGURED}"
-  echo "✅ SALAD_MEDIA_PROJECT: usando valor configurado no repositório"
+  echo "✅ SALAD_MEDIA_PROJECT: usando valor customizado: ${SALAD_MEDIA_PROJECT_VAR}"
 else
-  SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_DEFAULT}"
-  echo "::warning::SALAD_MEDIA_PROJECT não configurado - usando default: ${SALAD_MEDIA_PROJECT_DEFAULT}"
+  SALAD_MEDIA_PROJECT_VAR="alice-media"
+  echo "✅ SALAD_MEDIA_PROJECT: usando valor padrão enterprise: ${SALAD_MEDIA_PROJECT_VAR}"
 fi
 
+# Classe de GPU para inferência (premium-gpu = RTX 4090)
+# Pode ser customizado via secret SALAD_GPU_CLASS se necessário
 if [ -n "${SALAD_GPU_CLASS_CONFIGURED:-}" ]; then
   SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_CONFIGURED}"
-  echo "✅ SALAD_GPU_CLASS: usando valor configurado no repositório"
+  echo "✅ SALAD_GPU_CLASS: usando valor customizado: ${SALAD_GPU_CLASS_VAR}"
 else
-  SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_DEFAULT}"
-  echo "::warning::SALAD_GPU_CLASS não configurado - usando default: ${SALAD_GPU_CLASS_DEFAULT}"
+  SALAD_GPU_CLASS_VAR="premium-gpu"
+  echo "✅ SALAD_GPU_CLASS: usando valor padrão enterprise: ${SALAD_GPU_CLASS_VAR}"
 fi
 
 echo "📋 Resumo Salad Cloud:"
