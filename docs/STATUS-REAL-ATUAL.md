@@ -44,7 +44,7 @@
 
 > **Deploy Fail Fast 21/12/2025:** Reduzido `--wait-timeout` de 300s (5 min) para 120s (2 min). Adicionada captura imediata de logs quando deploy falha - workflow não fica mais "pendurado" esperando, falha imediatamente e mostra logs dos containers problemáticos.
 
-> **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice, `erpnext-only` captura containers ERPNext, `all` captura ambos. Bug anterior só capturava Alice mesmo quando ERPNext falhava.
+> **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice, `erpnext-only` captura containers ERPNext, `all` captura ambos. Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik` (grep usa match exato).
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |
