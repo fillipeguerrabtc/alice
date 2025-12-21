@@ -2371,9 +2371,10 @@ jobs:
             
             # Verificar se existem ARQUIVOS onde deveriam existir DIRETÓRIOS
             # Erro comum: "mkdir: file exists" quando há arquivo no lugar de diretório
+            # NOTA: erpnext-sites está em /opt/alice/data/, mas erpnext-logs está em /opt/alice/logs/
             echo ""
-            echo "Verificando conflitos arquivo/diretório em /opt/alice/data..."
-            for dir in /opt/alice/data/erpnext-sites /opt/alice/data/erpnext-logs; do
+            echo "Verificando conflitos arquivo/diretório nos bind mounts do ERPNext..."
+            for dir in /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext; do
               # Verificar se o caminho existe mas NÃO é um diretório
               # NOTA: -L detecta symlinks mesmo quando target não existe (dangling symlinks)
               if { [ -e "$dir" ] || [ -L "$dir" ]; } && [ ! -d "$dir" ]; then
