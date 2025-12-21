@@ -309,7 +309,8 @@ jobs:
               ref: version,
               inputs: {
                 version: version,
-                services: 'all'
+                services: 'all',
+                triggered_by: 'release-workflow'
               }
             });
             

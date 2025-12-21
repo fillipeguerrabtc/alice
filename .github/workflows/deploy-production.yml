@@ -17,22 +17,27 @@ name: Deploy to Production (Hetzner Cloud)
 
 on:
   # =============================================================================
-  # Deploy disparado automaticamente pelo Release workflow via GH_PAT
-  # Pipeline 100% automático: Push → CI → Release → Deploy
-  # Sem aprovação manual - security scan é o gate de qualidade
+  # Deploy disparado EXCLUSIVAMENTE pelo Release workflow via GH_PAT
+  # IMPORTANTE: NÃO adicionar triggers push: ou pull_request:
+  # Pipeline 100% sequencial: Push → CI → Release → Deploy
+  # Security scan em imagens é o gate de qualidade
   # =============================================================================
   workflow_dispatch:
     inputs:
       version:
         description: 'Versão para deploy (ex: v1.0.0, latest)'
         type: string
-        required: false
-        default: 'latest'
+        required: true
       services:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
         type: string
         required: false
         default: 'all'
+      triggered_by:
+        description: 'Origem do disparo (release-workflow ou manual)'
+        type: string
+        required: false
+        default: 'manual'
 
 # =============================================================================
 # CONCURRENCY: Evitar múltiplos deploys simultâneos
@@ -62,12 +67,66 @@ env:
 
 jobs:
   # ===========================================================================
+  # Job 0: Validação de Disparo (Gate de Segurança)
+  # Garante que o workflow só execute quando disparado corretamente
+  # IMPORTANTE: version é OBRIGATÓRIO (impede disparo acidental)
+  # ===========================================================================
+  validate-trigger:
+    name: Validar Disparo
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    steps:
+      - name: Validar parâmetros obrigatórios
+        run: |
+          echo "=============================================="
+          echo "VALIDANDO DISPARO DO DEPLOY"
+          echo "=============================================="
+          
+          VERSION="${{ inputs.version }}"
+          TRIGGERED_BY="${{ inputs.triggered_by }}"
+          
+          echo "📋 Parâmetros recebidos:"
+          echo "   version: ${VERSION:-'(não informado)'}"
+          echo "   triggered_by: ${TRIGGERED_BY:-'manual'}"
+          echo "   services: ${{ inputs.services }}"
+          
+          # REGRA 6: Validação Enterprise - version é OBRIGATÓRIO
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "latest" ]; then
+            echo ""
+            echo "❌ ERRO: Parâmetro 'version' é OBRIGATÓRIO e deve ser uma tag válida (ex: v1.0.0)"
+            echo ""
+            echo "📌 Este workflow deve ser disparado:"
+            echo "   1. Automaticamente pelo Release workflow (recomendado)"
+            echo "   2. Manualmente com uma versão específica"
+            echo ""
+            echo "   NÃO execute este workflow diretamente sem especificar a versão!"
+            exit 1
+          fi
+          
+          # Validar formato da versão (semver)
+          if ! echo "${VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo ""
+            echo "❌ ERRO: Formato de versão inválido: ${VERSION}"
+            echo "   Formato esperado: v1.0.0 ou v1.0.0-beta.1"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Disparo válido!"
+          echo "   Versão: ${VERSION}"
+          echo "   Origem: ${TRIGGERED_BY:-'manual'}"
+          echo "=============================================="
+
+  # ===========================================================================
   # Job 1: Análise de Código e Qualidade
   # COMPLIANCE: Testes são SEMPRE obrigatórios (REGRA 4 e 6 do CLAUDE.md)
   # ===========================================================================
   code-quality:
     name: Análise de Qualidade
     runs-on: ubuntu-latest
+    needs: validate-trigger
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 20
 

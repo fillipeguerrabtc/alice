@@ -506,3 +506,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Frontend MACDResult (21/12/2025): TechnicalAnalysisPanel.tsx agora usa 'sideways' ao invés de 'neutral' - alinhado com backend e trendEnum PostgreSQL*
 *Bug Fix Typo 'as string' (21/12/2025): Corrigido `as 'string'` (literal) para type assertion correta no insert de indicadores*
 *Bug Fix deploy-production.yml Expression Length (21/12/2025): Step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo infra/scripts/generate-env-prod.sh - Best Practice 2025 para scripts grandes em workflows*
+*Deploy Workflow Gate (21/12/2025): Adicionado job validate-trigger como gate de segurança - version é OBRIGATÓRIO e deve ser tag válida (v1.0.0). Impede disparo acidental do deploy sem versão. Release workflow passa triggered_by: release-workflow para auditoria*

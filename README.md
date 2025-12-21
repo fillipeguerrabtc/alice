@@ -43,7 +43,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> Atualização 21/12/2025: Deploy workflow corrigido - step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo `infra/scripts/generate-env-prod.sh` seguindo Best Practices 2025 para scripts grandes em workflows.
+> Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` exige `version` obrigatória (tag v1.0.0). Impede disparo paralelo com CI. Pipeline 100% sequencial: Push → CI → Release → Deploy. Script externo para .env.prod.
 
 ---
 

@@ -35,7 +35,7 @@
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **PostgreSQL RLS Trading** | ✅ | **10 tabelas com RLS** (migrations 0007 + 0008 + 0012) |
 
-> Atualização 21/12/2025: Deploy workflow corrigido - step "Criar arquivo .env.prod seguro" excedia limite de 21.000 caracteres do GitHub Actions. Criado script externo `infra/scripts/generate-env-prod.sh` (Best Practice 2025). CI - Build & Test executa apenas em push para `main` (comportamento correto).
+> Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` verifica que `version` é obrigatória e válida (formato v1.0.0). Impede disparo acidental. Script externo `infra/scripts/generate-env-prod.sh` para .env.prod. Pipeline sequencial: CI → Release → Deploy (sem execução paralela).
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
 | Tabela | RLS | Policy |
