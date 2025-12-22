@@ -544,3 +544,5 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix mysql CLI Inexistente (22/12/2025): Removido teste de conexão MySQL do erpnext-create-site - imagem frappe/erpnext não tem mysql CLI instalado. O bench new-site faz sua própria verificação de conexão internamente.*
 *Bug Fix ERPNext Memory 2GB (22/12/2025): erpnext-create-site aumentado de 1GB para 2GB - ERPNext v15.91.3 usa >1GB durante instalação (cria ~300 tabelas, instala apps). CPU também aumentada de 1.0 para 1.5.*
 *Security Fix Configurator Logs (22/12/2025): Removido `cat sites/common_site_config.json` do configurator - arquivo contém senhas Redis. Agora mostra apenas lista de chaves via jq.*
+*Bug Fix SITE_NAME vs ERPNEXT_SITE_NAME (22/12/2025): Script do erpnext-create-site usava ${ERPNEXT_SITE_NAME} mas o environment define SITE_NAME. Container recebe SITE_NAME, não ERPNEXT_SITE_NAME. Corrigido para usar ${SITE_NAME} diretamente.*
+*Código Morto Removido (22/12/2025): Removido script /tmp/update_gpu_urls.sh que era criado no runner GitHub Actions mas nunca executado. O passo SSH posterior já tinha seu próprio script inline funcionando corretamente com path /opt/alice/app/infra/docker.*

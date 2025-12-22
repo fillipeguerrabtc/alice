@@ -2764,62 +2764,9 @@ jobs:
           echo "  SALAD_FLUX_URL: ${SALAD_FLUX_URL:-'(não disponível)'}"
           echo "  SALAD_ASR_URL: ${SALAD_ASR_URL:-'(não disponível)'}"
           echo "  SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-'(não disponível)'}"
-          echo ""
           
-          # Criar script para atualizar servidor
-          cat > /tmp/update_gpu_urls.sh << 'SCRIPT_EOF'
-          #!/bin/bash
-          set -euo pipefail
-          
-          cd /opt/alice
-          
-          echo "Atualizando URLs GPU em .env.prod..."
-          
-          # Backup do .env.prod atual
-          cp .env.prod .env.prod.bak.$(date +%s) 2>/dev/null || true
-          
-          # Função para atualizar ou adicionar variável
-          update_env_var() {
-            local var_name="$1"
-            local var_value="$2"
-            
-            if [ -z "$var_value" ]; then
-              return 0
-            fi
-            
-            if grep -q "^${var_name}=" .env.prod; then
-              # Atualizar variável existente
-              sed -i "s|^${var_name}=.*|${var_name}=${var_value}|" .env.prod
-              echo "  Atualizado: ${var_name}"
-            else
-              # Adicionar nova variável
-              echo "" >> .env.prod
-              echo "# URLs GPU Salad Cloud (atualizado automaticamente)" >> .env.prod
-              echo "${var_name}=${var_value}" >> .env.prod
-              echo "  Adicionado: ${var_name}"
-            fi
-          }
-          
-          # Atualizar cada URL
-          update_env_var "SALAD_MIXTRAL_URL" "${SALAD_MIXTRAL_URL:-}"
-          update_env_var "EMBEDDINGS_GPU_URL" "${EMBEDDINGS_GPU_URL:-}"
-          update_env_var "SALAD_FLUX_URL" "${SALAD_FLUX_URL:-}"
-          update_env_var "SALAD_ASR_URL" "${SALAD_ASR_URL:-}"
-          update_env_var "SALAD_WHISPER_URL" "${SALAD_WHISPER_URL:-}"
-          
-          echo ""
-          echo "Reiniciando serviços Alice para aplicar novas URLs..."
-          
-          # Reiniciar apenas serviços que usam as URLs GPU
-          docker compose -f docker-compose.prod.yml restart alice-rag alice-chat alice-integrations 2>/dev/null || {
-            echo "⚠️  Alguns serviços podem não ter reiniciado (normal se ainda iniciando)"
-          }
-          
-          echo "✅ URLs GPU atualizadas com sucesso!"
-          SCRIPT_EOF
-          
-          chmod +x /tmp/update_gpu_urls.sh
-          echo "Script de atualização criado"
+          # NOTA: A atualização real é feita no passo SSH seguinte
+          # Este passo apenas valida e loga as URLs capturadas
 
       - name: Executar atualização no servidor via SSH
         if: steps.deploy-gpu.outputs.SALAD_MIXTRAL_URL != '' || steps.deploy-gpu.outputs.EMBEDDINGS_GPU_URL != ''

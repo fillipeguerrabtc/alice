@@ -1439,7 +1439,9 @@ services:
         echo "=== DEBUG: Verificando ambiente ==="
         echo "PWD: $$(pwd)"
         echo "USER: $$(whoami)"
-        echo "SITE_NAME env: $${ERPNEXT_SITE_NAME:-não definido}"
+        # CORREÇÃO 22/12/2025: Usar SITE_NAME (definido no environment do container)
+        # ERPNEXT_SITE_NAME está no .env.prod, mas o container recebe como SITE_NAME
+        echo "SITE_NAME env: $${SITE_NAME:-não definido}"
         ls -la sites/ || echo "sites/ não existe"
         # SEGURANÇA: Verificar existência sem expor conteúdo (contém senhas Redis)
         if [ -f "sites/common_site_config.json" ]; then
@@ -1451,7 +1453,8 @@ services:
         fi
         cat sites/apps.txt || echo "apps.txt não existe"
         
-        SITE_NAME="${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"
+        # CORREÇÃO 22/12/2025: Usar SITE_NAME do environment (não ERPNEXT_SITE_NAME)
+        # O environment já define SITE_NAME a partir de ERPNEXT_SITE_NAME do .env.prod
         echo "=== Usando SITE_NAME: $${SITE_NAME} ==="
         
         if [ -f "sites/$${SITE_NAME}/site_config.json" ]; then
