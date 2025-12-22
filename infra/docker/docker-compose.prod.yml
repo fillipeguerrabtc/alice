@@ -1424,8 +1424,7 @@ services:
     # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
     security_opt:
       - no-new-privileges:true
-    # CORREÇÃO 22/12/2025: Script idempotente com --db-host explícito
-    # Bug anterior: bench new-site tentava conectar localhost sem --db-host
+    # CORREÇÃO 22/12/2025: Script com logging detalhado para debug
     # Documentação: https://frappeframework.com/docs/user/en/bench/reference/new-site
     entrypoint:
       - bash
@@ -1434,11 +1433,30 @@ services:
       - |
         set -euo pipefail
         cd /home/frappe/frappe-bench
+        
+        echo "=== DEBUG: Verificando ambiente ==="
+        echo "PWD: $$(pwd)"
+        echo "USER: $$(whoami)"
+        echo "SITE_NAME env: $${ERPNEXT_SITE_NAME:-não definido}"
+        ls -la sites/ || echo "sites/ não existe"
+        cat sites/common_site_config.json || echo "common_site_config.json não existe"
+        cat sites/apps.txt || echo "apps.txt não existe"
+        
         SITE_NAME="${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"
+        echo "=== Usando SITE_NAME: $${SITE_NAME} ==="
+        
         if [ -f "sites/$${SITE_NAME}/site_config.json" ]; then
           echo "✅ Site $${SITE_NAME} já existe. Pulando criação."
           exit 0
         fi
+        
+        echo "🔧 Testando conexão com MariaDB..."
+        mysql -h erpnext-mariadb -P 3306 -u root -p"${ERPNEXT_MYSQL_ROOT_PASSWORD}" -e "SELECT 1;" || {
+          echo "❌ ERRO: Não foi possível conectar ao MariaDB!"
+          exit 1
+        }
+        echo "✅ Conexão com MariaDB OK"
+        
         echo "🔧 Criando site $${SITE_NAME}..."
         bench new-site "$${SITE_NAME}" \
           --db-host erpnext-mariadb \
@@ -1446,7 +1464,13 @@ services:
           --mariadb-root-password "${ERPNEXT_MYSQL_ROOT_PASSWORD}" \
           --admin-password "${ERPNEXT_ADMIN_PASSWORD}" \
           --no-mariadb-socket \
-          --install-app erpnext
+          --install-app erpnext \
+          --verbose 2>&1 || {
+          echo "❌ ERRO: bench new-site falhou!"
+          echo "=== Logs do bench ==="
+          cat logs/*.log 2>/dev/null || echo "Sem logs disponíveis"
+          exit 1
+        }
         echo "✅ Site $${SITE_NAME} criado com sucesso!"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
