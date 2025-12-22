@@ -1683,9 +1683,8 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers processam jobs em background via Redis queue
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1695,7 +1694,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      # Verificar processo do worker local (não pingar backend externo)
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -1739,9 +1738,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1751,7 +1748,6 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -1795,9 +1791,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1807,7 +1801,6 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -1851,10 +1844,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Scheduler deve esperar backend estar healthy
-      # Healthcheck pinga o backend, então precisa estar disponível
-      erpnext-backend:
-        condition: service_healthy
+      # Scheduler NÃO depende do backend - só agenda jobs via Redis
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1864,8 +1854,7 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Healthcheck deve verificar o processo do scheduler, não o backend
-      # O scheduler pode estar funcionando mesmo se o backend estiver temporariamente indisponível
+      # Verificar processo do scheduler local
       test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -1909,9 +1898,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1921,7 +1908,6 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -1965,9 +1951,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1977,7 +1961,6 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
@@ -2021,9 +2004,7 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
-      erpnext-backend:
-        condition: service_healthy
+      # Workers NÃO dependem do backend - só de Redis/MariaDB
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -2033,7 +2014,6 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
