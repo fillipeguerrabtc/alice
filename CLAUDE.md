@@ -331,7 +331,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.21 - 21 de Dezembro de 2025*
+*Versão: 4.22 - 22 de Dezembro de 2025*
 *Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
@@ -531,3 +531,6 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
 *Bug Fix ERPNext Configurator PRE-DEPLOY (21/12/2025): erpnext-configurator falhava porque volume montado sobrescreve arquivos originais do container. Solução: apps.txt e common_site_config.json agora são criados no PRÉ-DEPLOY (workflow) em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe). Erros corrigidos: "OSError: b'./apps.txt' Not Found", "JSONDecodeError", "PermissionError".*
 *Pipeline 100% Automática (21/12/2025): Deploy na Hetzner e Salad Cloud são 100% automáticos. URLs dos Container Groups GPU (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc.) são capturadas automaticamente pelo deploy.py via GITHUB_OUTPUT e atualizadas no .env.prod do servidor Hetzner. Sem necessidade de configurar secrets manualmente para URLs GPU.*
+*Bug Fix ClickHouse override.xml (22/12/2025): REMOVIDO mount de override.xml que causava falha na inicialização do ClickHouse. A imagem oficial já tem docker_related_config.xml com listen_host correto (0.0.0.0 e ::) e listen_try=1 para ignorar falhas de IPv6. O override.xml sobrescrevia essas configurações e fazia ClickHouse escutar apenas em 127.0.0.1:9009, sem abrir portas 8123 (HTTP) e 9000 (TCP).*
+*Bug Fix ClickHouse CLICKHOUSE_LISTEN_HOST (22/12/2025): Adicionada variável de ambiente CLICKHOUSE_LISTEN_HOST="0.0.0.0". O entrypoint da imagem oficial passa --listen_host=127.0.0.1 por padrão durante inicialização. Sem esta variável, Langfuse não conseguia conectar ao ClickHouse.*
+*Bug Fix Redis SHA256 Digest (22/12/2025): Atualizado digest do Redis de sha256:4e053b71... para sha256:3b73847e... - digest anterior estava obsoleto e causava erro "manifest unknown" no docker pull.*

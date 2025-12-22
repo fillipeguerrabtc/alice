@@ -465,7 +465,7 @@ services:
   # ===========================================================================
   alice-redis:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
+    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
     platform: linux/amd64
     container_name: alice-redis
     restart: always
@@ -1225,7 +1225,7 @@ services:
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
+    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
     platform: linux/amd64
     container_name: erpnext-redis-cache
     restart: always
@@ -1285,7 +1285,7 @@ services:
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:4e053b7129d176b6b9300ba86a079cd6a6b638c6233ee703fe6de7acf2650725
+    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
     platform: linux/amd64
     container_name: erpnext-redis-queue
     restart: always
@@ -1994,6 +1994,12 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      # CORREÇÃO 22/12/2025: CLICKHOUSE_LISTEN_HOST é OBRIGATÓRIO!
+      # O entrypoint da imagem oficial passa --listen_host=127.0.0.1 por padrão
+      # Isso faz o ClickHouse escutar APENAS localhost, ignorando outras conexões
+      # Sem esta variável, Langfuse não consegue conectar ao ClickHouse
+      # Documentação: https://github.com/ClickHouse/ClickHouse/blob/master/docker/server/entrypoint.sh
+      CLICKHOUSE_LISTEN_HOST: "0.0.0.0"
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
       CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
@@ -2001,10 +2007,10 @@ services:
     volumes:
       - clickhouse_data:/var/lib/clickhouse
       - clickhouse_logs:/var/log/clickhouse-server
-      # CORREÇÃO 19/12/2025: Override para forçar IPv4 only
-      # Hetzner/Docker não suporta IPv6 corretamente dentro de containers
-      # Sem isso, ClickHouse falha com "Address family not supported"
-      - ../observability/clickhouse/override.xml:/etc/clickhouse-server/config.d/override.xml:ro
+      # REMOVIDO 22/12/2025: override.xml estava causando problemas!
+      # A imagem oficial já tem docker_related_config.xml com listen_host correto
+      # e listen_try=1 para ignorar falhas de IPv6. Não precisa de override.
+      # O override estava sobrescrevendo listen_try e causando falha na inicialização.
     networks:
       - alice-network
     healthcheck:
