@@ -183,10 +183,13 @@ app.set('trust proxy', 1);
 // ============================================================================
 
 // Embeddings GPU Service URL (Salad Cloud)
+// CORREÇÃO 22/12/2025: Não fazer exit(1) no startup - URLs GPU são configuradas
+// DEPOIS pelo job deploy-salad-gpu e atualizadas no .env.prod automaticamente.
+// Serviço deve iniciar e retornar erro 503 quando embeddings for chamado sem URL.
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL;
 if (!EMBEDDINGS_GPU_URL && process.env.NODE_ENV === 'production') {
-  logger.error('EMBEDDINGS_GPU_URL não configurado - obrigatório para embeddings em produção (arquitetura 100% GPU)');
-  process.exit(1);
+  logger.warn('EMBEDDINGS_GPU_URL não configurado - funcionalidade de embeddings desabilitada até URL ser configurada');
+  logger.warn('URLs GPU são configuradas automaticamente após deploy do Salad Cloud');
 }
 const EMBEDDINGS_SERVICE_URL = EMBEDDINGS_GPU_URL || 'http://localhost:8080';
 
