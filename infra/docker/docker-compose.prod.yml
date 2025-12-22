@@ -1502,16 +1502,16 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     # REGRA 16: Resource limits para init containers (best practice enterprise)
-    # CORREÇÃO 22/12/2025: bench new-site precisa de MAIS memória!
-    # 256MB era insuficiente - instalação do ERPNext cria ~300 tabelas e é pesado
-    # Documentação Frappe recomenda mínimo 1GB para instalação
+    # CORREÇÃO 22/12/2025: bench new-site precisa de MUITA memória!
+    # 256MB→1GB ainda insuficiente - ERPNext v15.91.3 usa >1GB durante instalação
+    # Aumentado para 2GB conforme observado em deploys falhados
     deploy:
       resources:
         limits:
-          memory: 1G
-          cpus: '1.0'
+          memory: 2G
+          cpus: '1.5'
         reservations:
-          memory: 512M
+          memory: 1G
           cpus: '0.5'
 
   erpnext-backend:

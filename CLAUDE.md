@@ -542,3 +542,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Debug Clone Workflow (22/12/2025): Adicionado logging detalhado ao passo de clone - valida GH_PAT e REPO_FULL_NAME antes de clonar, mostra conteúdo de /opt/alice antes e depois do clone para identificar problemas de estrutura.*
 *Debug erpnext-create-site Prioritário (22/12/2025): Captura de logs do erpnext-create-site agora é PRIORIDADE MÁXIMA quando deploy falha - logs completos + docker inspect capturados ANTES de outros containers.*
 *Bug Fix mysql CLI Inexistente (22/12/2025): Removido teste de conexão MySQL do erpnext-create-site - imagem frappe/erpnext não tem mysql CLI instalado. O bench new-site faz sua própria verificação de conexão internamente.*
+*Bug Fix ERPNext Memory 2GB (22/12/2025): erpnext-create-site aumentado de 1GB para 2GB - ERPNext v15.91.3 usa >1GB durante instalação (cria ~300 tabelas, instala apps). CPU também aumentada de 1.0 para 1.5.*
