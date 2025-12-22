@@ -2472,12 +2472,13 @@ jobs:
             echo "============================================="
             
             # Deploy baseado nos serviços selecionados
-            # CORREÇÃO 21/12/2025: Timeout REDUZIDO de 300s para 120s (2 min)
-            # 300s (5 min) era muito longo e workflow ficava "pendurado" esperando
-            # 120s é suficiente para containers iniciarem - se não iniciou em 2 min, algo está errado
+            # CORREÇÃO 22/12/2025: Timeout AUMENTADO de 120s para 300s (5 min)
+            # 120s era insuficiente - ClickHouse tem start_period: 120s + healthchecks
+            # ClickHouse pode precisar: 120s start_period + (8 retries × 30s interval)
+            # 300s dá margem adequada para todos os serviços ficarem healthy
             # --wait: Aguarda que todos os containers fiquem healthy antes de retornar
-            # --wait-timeout: Timeout para evitar espera infinita (fail fast)
-            WAIT_TIMEOUT=120
+            # --wait-timeout: Timeout para evitar espera infinita
+            WAIT_TIMEOUT=300
             
             case "${DEPLOY_SERVICES}" in
               "alice-only")
