@@ -556,12 +556,16 @@ if: always() && needs.deploy.result == 'success'
 
 > **NOTA:** Health check de GPU é informativo - Container Groups podem estar em cold start (~30-60s após inatividade de 30min).
 
-**Rollback Enterprise:**
-- Dispara se Hetzner **OU** GPU falhar
-- Não registra deploys parciais como sucesso
-- Reverte para última versão estável automaticamente
+**Rollback Enterprise (Abordagem Híbrida 22/12/2025):**
+- Dispara se deploy Hetzner **OU** validação GPU falhar
+- **GPU NÃO é deletado** - Container Groups são pré-criados manualmente
+- Apenas Hetzner é revertido para última versão estável
+- Container Groups GPU permanecem intactos (persistentes)
+- Diagnóstico GPU via `python rollback.py status` (não delete!)
 
-Pipeline totalmente automático: push para `main` deploya Hetzner + Salad GPU (ambos obrigatórios).
+> **IMPORTANTE:** Com a abordagem híbrida, Container Groups Salad Cloud são **permanentes**. O rollback apenas reverte os containers Hetzner, não deleta os GPU Container Groups pré-criados pelo usuário.
+
+Pipeline: push para `main` → CI → Release → Deploy Hetzner (100% auto) + Valida GPU (híbrido).
 
 ### Versionamento Automático
 

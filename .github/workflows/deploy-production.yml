@@ -3115,24 +3115,44 @@ jobs:
           pip install salad-cloud-sdk || echo "SDK não disponível, usando REST API"
 
       # ================================================================
-      # ROLLBACK SALAD CLOUD GPU - PRIMEIRO (liberar recursos GPU)
+      # SALAD CLOUD GPU - ABORDAGEM HÍBRIDA (NÃO DELETAR!)
       # ================================================================
-      - name: Rollback Salad Cloud GPU Services
+      # ENTERPRISE BEST PRACTICE (22/12/2025):
+      # Container Groups são PRÉ-CRIADOS MANUALMENTE pelo usuário.
+      # Rollback NÃO deve deletar - apenas logar status para diagnóstico.
+      # Deletar destruiria Container Groups que levam tempo para recriar.
+      # ================================================================
+      - name: Verificar Status Salad Cloud GPU (informativo)
         env:
           SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
           SALAD_ORG: ${{ secrets.SALAD_ORGANIZATION_ID }}
           SALAD_PROJECT: ${{ secrets.SALAD_PROJECT_ID }}
         run: |
           echo "=============================================="
-          echo "🚀 ROLLBACK SALAD CLOUD GPU SERVICES"
+          echo "📊 SALAD CLOUD GPU STATUS (Abordagem Híbrida)"
           echo "=============================================="
-          echo "Limpando Container Groups GPU para liberar recursos..."
+          echo "⚠️  Container Groups são PRÉ-CRIADOS MANUALMENTE"
+          echo "⚠️  Rollback NÃO deleta Container Groups GPU"
+          echo "⚠️  Verifique status manualmente em portal.salad.com"
+          echo ""
+          echo "Container Groups esperados:"
+          echo "  - alice-mixtral-vllm (LLM Mixtral 8x7B)"
+          echo "  - alice-embeddings-gpu (Qwen3 + OpenCLIP)"
+          echo "  - alice-flux-schnell (FLUX.1 Schnell)"
+          echo "  - alice-asr-canary (ASR Canary-1B)"
+          echo ""
           
-          cd infra/salad-cloud
-          python rollback.py delete --force || echo "⚠️ Rollback GPU falhou ou não havia recursos"
+          # Apenas verificar status (não deletar)
+          if [ -f "infra/salad-cloud/rollback.py" ]; then
+            cd infra/salad-cloud
+            python rollback.py status || echo "⚠️ Não foi possível verificar status"
+          else
+            echo "ℹ️  Script rollback.py não encontrado (normal após refatoração)"
+          fi
           
+          echo ""
           echo "=============================================="
-          echo "✅ Cleanup Salad Cloud concluído"
+          echo "ℹ️  GPU rollback SKIPPED (abordagem híbrida)"
           echo "=============================================="
 
       # ================================================================

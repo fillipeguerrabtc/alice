@@ -240,6 +240,7 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
 - Container Groups são **pré-criados manualmente** no [Salad Cloud Dashboard](https://portal.salad.com)
 - URLs são configuradas como **secrets no GitHub** (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc.)
 - Pipeline apenas **valida** que os serviços estão respondendo
+- **Rollback NÃO deleta** Container Groups (são persistentes)
 - Guia completo: [docs/SECRETS.md](docs/SECRETS.md) - Seção "Salad Cloud GPU URLs"
 
 ### Acesso SSH à Hetzner (Produção)

@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
 """
-Alice Enterprise Platform - Salad Cloud Rollback Script
+Alice Enterprise Platform - Salad Cloud Status Script
 =========================================================
 
-Script enterprise-grade para rollback/cleanup de Container Groups GPU no Salad Cloud.
+Script enterprise-grade para verificar status de Container Groups GPU no Salad Cloud.
 Usa o Python SDK oficial (salad-cloud-sdk) com fallback para REST API.
 
 OPERAÇÕES SUPORTADAS:
-- stop: Para todos os Container Groups (mantém configuração)
-- delete: Remove todos os Container Groups
-- status: Verifica status de todos os Container Groups
+- status: Verifica status de todos os Container Groups (RECOMENDADO)
+- delete: Remove todos os Container Groups (USAR COM CUIDADO!)
 
-PIPELINE CI/CD:
-- Executado em caso de falha no deploy (Hetzner ou GPU)
-- Executado em caso de health check falhar
-- Limpa recursos GPU para evitar custos desnecessários
+ABORDAGEM HÍBRIDA (22/12/2025):
+- Container Groups são PRÉ-CRIADOS MANUALMENTE no Salad Cloud Dashboard
+- URLs são configuradas como secrets no GitHub
+- Pipeline NÃO cria nem deleta Container Groups automaticamente
+- Rollback apenas verifica status para diagnóstico
+
+⚠️  ATENÇÃO: O comando 'delete' só deve ser usado manualmente quando
+    realmente necessário recriar os Container Groups do zero.
+    NÃO usar em pipelines CI/CD automáticas!
 
 Best Practices 2025:
-- Cleanup completo em caso de falha (não deixar recursos órfãos)
-- Rollback atômico (tudo ou nada)
+- Container Groups persistentes (não deletar em rollback)
+- Apenas verificar status para diagnóstico
 - Logging estruturado para auditoria
 
 Autor: Fillipe Guerra
-Data: 17 de Dezembro de 2025
+Data: 22 de Dezembro de 2025
 """
 
 import os
