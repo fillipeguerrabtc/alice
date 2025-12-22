@@ -1267,10 +1267,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_CACHE_PASSWORD}", "ping"]
+      # CORREÇÃO 22/12/2025: --no-auth-warning evita logs com warning sobre senha na linha de comando
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_CACHE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -1327,10 +1329,12 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_QUEUE_PASSWORD}", "ping"]
+      # CORREÇÃO 22/12/2025: --no-auth-warning evita logs com warning sobre senha na linha de comando
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_QUEUE_PASSWORD} --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 3
+      start_period: 15s
     deploy:
       resources:
         limits:
@@ -1679,6 +1683,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1688,7 +1695,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1731,6 +1739,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1740,7 +1751,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1783,6 +1795,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1792,7 +1807,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1835,6 +1851,10 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Scheduler deve esperar backend estar healthy
+      # Healthcheck pinga o backend, então precisa estar disponível
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1844,7 +1864,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Healthcheck deve verificar o processo do scheduler, não o backend
+      # O scheduler pode estar funcionando mesmo se o backend estiver temporariamente indisponível
+      test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1887,6 +1909,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1896,7 +1921,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1939,6 +1965,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1948,7 +1977,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1991,6 +2021,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
+      # CORREÇÃO 22/12/2025: Worker deve esperar backend estar healthy
+      erpnext-backend:
+        condition: service_healthy
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -2000,7 +2033,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider http://erpnext-backend:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 22/12/2025: Verificar processo do worker, não o backend
+      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
