@@ -543,3 +543,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Debug erpnext-create-site Prioritário (22/12/2025): Captura de logs do erpnext-create-site agora é PRIORIDADE MÁXIMA quando deploy falha - logs completos + docker inspect capturados ANTES de outros containers.*
 *Bug Fix mysql CLI Inexistente (22/12/2025): Removido teste de conexão MySQL do erpnext-create-site - imagem frappe/erpnext não tem mysql CLI instalado. O bench new-site faz sua própria verificação de conexão internamente.*
 *Bug Fix ERPNext Memory 2GB (22/12/2025): erpnext-create-site aumentado de 1GB para 2GB - ERPNext v15.91.3 usa >1GB durante instalação (cria ~300 tabelas, instala apps). CPU também aumentada de 1.0 para 1.5.*
+*Security Fix Configurator Logs (22/12/2025): Removido `cat sites/common_site_config.json` do configurator - arquivo contém senhas Redis. Agora mostra apenas lista de chaves via jq.*

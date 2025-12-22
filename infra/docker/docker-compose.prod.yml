@@ -1386,7 +1386,9 @@ services:
         bench set-config -g socketio_port 9000
         
         echo "✅ ERPNext configurator concluído com sucesso"
-        cat sites/common_site_config.json
+        # SEGURANÇA: Mostrar apenas chaves, não valores (contém senhas Redis)
+        echo "=== Chaves em common_site_config.json ==="
+        jq -r 'keys[]' sites/common_site_config.json 2>/dev/null || echo "  (jq não disponível)"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root
