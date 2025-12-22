@@ -1439,7 +1439,14 @@ services:
         echo "USER: $$(whoami)"
         echo "SITE_NAME env: $${ERPNEXT_SITE_NAME:-não definido}"
         ls -la sites/ || echo "sites/ não existe"
-        cat sites/common_site_config.json || echo "common_site_config.json não existe"
+        # SEGURANÇA: Verificar existência sem expor conteúdo (contém senhas Redis)
+        if [ -f "sites/common_site_config.json" ]; then
+          echo "✅ common_site_config.json existe ($$(wc -c < sites/common_site_config.json) bytes)"
+          # Mostrar apenas chaves, não valores (segurança)
+          jq -r 'keys[]' sites/common_site_config.json 2>/dev/null || echo "  (jq não disponível para listar chaves)"
+        else
+          echo "❌ common_site_config.json não existe"
+        fi
         cat sites/apps.txt || echo "apps.txt não existe"
         
         SITE_NAME="${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"
