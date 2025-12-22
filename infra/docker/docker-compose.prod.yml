@@ -1356,10 +1356,10 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     # REGRA 6 + Security: gera URLs Redis de forma segura sem reinterpretação pelo shell
-    # CORREÇÃO 21/12/2025: Criar common_site_config.json E apps.txt antes de bench set-config
-    # Bug: bench set-config -g falha se common_site_config.json ou apps.txt não existem
-    # Erro: "OSError: b'./apps.txt' Not Found" - frappe precisa da lista de apps instaladas
-    # Solução: Criar ambos arquivos antes de configurar
+    # CORREÇÃO 21/12/2025: apps.txt e common_site_config.json são criados no PRÉ-DEPLOY (workflow)
+    # Os arquivos são criados em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe)
+    # O volume montado sobrescreve o conteúdo original do container
+    # Veja deploy-production.yml seção "ERPNext Sites (UID 1000)"
     command:
       - bash
       - -c
@@ -1367,20 +1367,18 @@ services:
         set -euo pipefail
         cd /home/frappe/frappe-bench
         
-        # Criar diretório sites se não existir
-        mkdir -p sites
-        
-        # Criar apps.txt se não existir (bench precisa dele para carregar apps)
-        # Lista apps instaladas no frappe-bench (frappe e erpnext)
+        # Verificar se apps.txt existe (deve ter sido criado no pré-deploy)
         if [ ! -f "sites/apps.txt" ]; then
-          echo "Criando sites/apps.txt..."
-          echo -e "frappe\nerpnext" > sites/apps.txt
+          echo "❌ ERRO: sites/apps.txt não existe!"
+          echo "   Este arquivo deve ser criado no pré-deploy (workflow)"
+          exit 1
         fi
         
-        # Criar common_site_config.json se não existir (bench set-config -g precisa dele)
+        # Verificar se common_site_config.json existe
         if [ ! -f "sites/common_site_config.json" ]; then
-          echo "Criando sites/common_site_config.json..."
-          echo "{}" > sites/common_site_config.json
+          echo "❌ ERRO: sites/common_site_config.json não existe!"
+          echo "   Este arquivo deve ser criado no pré-deploy (workflow)"
+          exit 1
         fi
         
         # Construir URLs Redis com senha
