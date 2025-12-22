@@ -2528,6 +2528,24 @@ jobs:
               echo "CAPTURA IMEDIATA DE LOGS DOS CONTAINERS"
               echo "============================================="
               
+              # PRIORIDADE MÁXIMA: Capturar logs do erpnext-create-site PRIMEIRO
+              # Este é o container que mais falha - capturar antes de qualquer outro
+              echo ""
+              echo "🔴 PRIORIDADE: LOGS DO ERPNEXT-CREATE-SITE"
+              echo "============================================="
+              if docker ps -a --format "{{.Names}}" | grep -q "^erpnext-create-site$"; then
+                echo "Container existe - capturando logs completos..."
+                docker logs erpnext-create-site 2>&1 || echo "❌ Não foi possível capturar logs"
+                echo ""
+                echo "=== INSPECT DO CONTAINER ==="
+                docker inspect erpnext-create-site --format '{{.State.Status}} - Exit: {{.State.ExitCode}} - Error: {{.State.Error}}' 2>&1 || true
+              else
+                echo "❌ Container erpnext-create-site não encontrado"
+                echo "Containers disponíveis:"
+                docker ps -a --format "{{.Names}}" | grep erpnext || echo "  (nenhum container erpnext)"
+              fi
+              echo "============================================="
+              
               # Definir containers baseado no tipo de deploy
               # CORREÇÃO 21/12/2025: Nomes corretos são alice-postgres e alice-traefik (não postgres/traefik)
               # grep usa match exato com anchors ^${container}$ - nomes devem bater exatamente

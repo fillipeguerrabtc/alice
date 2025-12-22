@@ -540,3 +540,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Debug ERPNext create-site (22/12/2025): Adicionado logging detalhado ao script create-site - verifica ambiente, testa conexão MariaDB antes de criar site, captura logs do bench em caso de falha. Flag --verbose adicionada ao bench new-site.*
 *Security Fix common_site_config.json (22/12/2025): Removido cat de common_site_config.json dos logs - arquivo contém senhas Redis. Agora mostra apenas tamanho do arquivo e lista de chaves (sem valores) via jq.*
 *Debug Clone Workflow (22/12/2025): Adicionado logging detalhado ao passo de clone - valida GH_PAT e REPO_FULL_NAME antes de clonar, mostra conteúdo de /opt/alice antes e depois do clone para identificar problemas de estrutura.*
+*Debug erpnext-create-site Prioritário (22/12/2025): Captura de logs do erpnext-create-site agora é PRIORIDADE MÁXIMA quando deploy falha - logs completos + docker inspect capturados ANTES de outros containers.*
