@@ -1457,12 +1457,8 @@ services:
           exit 0
         fi
         
-        echo "🔧 Testando conexão com MariaDB..."
-        mysql -h erpnext-mariadb -P 3306 -u root -p"${ERPNEXT_MYSQL_ROOT_PASSWORD}" -e "SELECT 1;" || {
-          echo "❌ ERRO: Não foi possível conectar ao MariaDB!"
-          exit 1
-        }
-        echo "✅ Conexão com MariaDB OK"
+        # NOTA: Removido teste mysql client - imagem frappe/erpnext não tem mysql CLI
+        # O bench new-site faz sua própria verificação de conexão
         
         echo "🔧 Criando site $${SITE_NAME}..."
         bench new-site "$${SITE_NAME}" \
