@@ -1355,11 +1355,10 @@ services:
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
-    # REGRA 6 + Security: gera URLs Redis de forma segura sem reinterpretação pelo shell
-    # CORREÇÃO 21/12/2025: apps.txt e common_site_config.json são criados no PRÉ-DEPLOY (workflow)
-    # Os arquivos são criados em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe)
-    # O volume montado sobrescreve o conteúdo original do container
-    # Veja deploy-production.yml seção "ERPNext Sites (UID 1000)"
+    # CORREÇÃO 22/12/2025: Seguir padrão oficial frappe_docker
+    # Ref: https://github.com/frappe/frappe_docker/blob/main/compose.yaml
+    # apps.txt deve ser criado dinamicamente com ls -1 apps (não hardcoded)
+    # redis_socketio é OBRIGATÓRIO para websocket funcionar
     command:
       - bash
       - -c
@@ -1367,31 +1366,27 @@ services:
         set -euo pipefail
         cd /home/frappe/frappe-bench
         
-        # Verificar se apps.txt existe (deve ter sido criado no pré-deploy)
-        if [ ! -f "sites/apps.txt" ]; then
-          echo "❌ ERRO: sites/apps.txt não existe!"
-          echo "   Este arquivo deve ser criado no pré-deploy (workflow)"
-          exit 1
-        fi
+        # Criar apps.txt dinamicamente (padrão oficial frappe_docker)
+        # Lista os apps instalados no bench, não hardcoded
+        echo "📋 Criando apps.txt..."
+        ls -1 apps > sites/apps.txt
+        cat sites/apps.txt
         
-        # Verificar se common_site_config.json existe
-        if [ ! -f "sites/common_site_config.json" ]; then
-          echo "❌ ERRO: sites/common_site_config.json não existe!"
-          echo "   Este arquivo deve ser criado no pré-deploy (workflow)"
-          exit 1
-        fi
-        
-        # Construir URLs Redis com senha
+        # Construir URLs Redis com senha (ACL habilitado)
         CACHE_URL="redis://:$${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379"
         QUEUE_URL="redis://:$${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379"
         
-        # Configurar globalmente
+        # Configurar globalmente (seguindo padrão oficial)
+        echo "⚙️ Configurando bench..."
         bench set-config -g db_host erpnext-mariadb
         bench set-config -g db_port 3306
         bench set-config -g redis_cache "$${CACHE_URL}"
         bench set-config -g redis_queue "$${QUEUE_URL}"
+        bench set-config -g redis_socketio "$${QUEUE_URL}"
+        bench set-config -g socketio_port 9000
         
         echo "✅ ERPNext configurator concluído com sucesso"
+        cat sites/common_site_config.json
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root

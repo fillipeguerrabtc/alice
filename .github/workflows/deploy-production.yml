@@ -3478,17 +3478,10 @@ jobs:
               # Criar subdiretório assets que ERPNext precisa (causa erro se existir como arquivo)
               safe_mkdir /opt/alice/data/erpnext-sites/assets 1000 1000 755
               
-              # CORREÇÃO 21/12/2025: Criar apps.txt e common_site_config.json
-              # ERPNext configurator precisa destes arquivos ANTES de iniciar
-              # O volume montado sobrescreve os arquivos originais do container
-              # apps.txt lista as apps instaladas no frappe-bench
-              # common_site_config.json é a config global do site
-              if [ ! -f /opt/alice/data/erpnext-sites/apps.txt ]; then
-                printf 'frappe\nerpnext\n' > /opt/alice/data/erpnext-sites/apps.txt
-                chown 1000:1000 /opt/alice/data/erpnext-sites/apps.txt
-                chmod 644 /opt/alice/data/erpnext-sites/apps.txt
-                echo "✅ Criado apps.txt para ERPNext"
-              fi
+              # CORREÇÃO 22/12/2025: Apenas common_site_config.json pré-criado
+              # apps.txt é criado DINAMICAMENTE pelo configurator com ls -1 apps
+              # (seguindo padrão oficial frappe_docker)
+              # common_site_config.json precisa existir para bench set-config funcionar
               if [ ! -f /opt/alice/data/erpnext-sites/common_site_config.json ]; then
                 echo '{}' > /opt/alice/data/erpnext-sites/common_site_config.json
                 chown 1000:1000 /opt/alice/data/erpnext-sites/common_site_config.json
