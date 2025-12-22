@@ -80,6 +80,14 @@ if [ -z "${REDIS_PASSWORD}" ]; then
   exit 1
 fi
 
+# CORREÇÃO 22/12/2025: Validar que senha Redis não contém caracteres especiais de URL
+# Senhas com +, /, =, @, :, ?, #, % quebram URLs Redis (ex: redis://:senha@host:port)
+# Use: openssl rand -hex 32 (hexadecimal é 100% URL-safe)
+if echo "${REDIS_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+  echo "::error::REDIS_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs Redis serão malformadas. Regenere com: openssl rand -hex 32" >&2
+  exit 1
+fi
+
 ADMIN_USER="${ADMIN_USER_SECRET:-}"
 ADMIN_PWD="${ADMIN_PWD_SECRET:-}"
 if [ -z "${ADMIN_USER}" ] || [ -z "${ADMIN_PWD}" ]; then
@@ -135,9 +143,23 @@ if [ -z "${REDIS_CACHE_PASSWORD}" ]; then
   exit 1
 fi
 
+# CORREÇÃO 22/12/2025: Validar que senha Redis não contém caracteres especiais de URL
+# Senhas com +, /, =, @, :, ?, #, % quebram URLs Redis (ex: redis://:senha@host:port)
+# Use: openssl rand -hex 32 (hexadecimal é 100% URL-safe)
+if echo "${REDIS_CACHE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+  echo "::error::REDIS_CACHE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs Redis serão malformadas. Regenere com: openssl rand -hex 32" >&2
+  exit 1
+fi
+
 REDIS_QUEUE_PASSWORD="${REDIS_QUEUE_PASSWORD_SECRET:-}"
 if [ -z "${REDIS_QUEUE_PASSWORD}" ]; then
   echo "::error::REDIS_QUEUE_PASSWORD não definido. Configure o secret REDIS_QUEUE_PASSWORD no repositório (necessário para ERPNext redis-queue)." >&2
+  exit 1
+fi
+
+# CORREÇÃO 22/12/2025: Validar que senha Redis não contém caracteres especiais de URL
+if echo "${REDIS_QUEUE_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+  echo "::error::REDIS_QUEUE_PASSWORD contém caracteres especiais de URL (+/=@:?#%). URLs Redis serão malformadas. Regenere com: openssl rand -hex 32" >&2
   exit 1
 fi
 

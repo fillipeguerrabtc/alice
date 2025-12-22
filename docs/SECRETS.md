@@ -253,11 +253,18 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 
 | Secret | Descrição | Como Obter |
 |--------|-----------|------------|
-| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
-| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext no DB | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
-| `ERPNEXT_ADMIN_PASSWORD` | Senha admin do site ERPNext | `node -e "console.log(require('crypto').randomBytes(24).toString('base64'))"` |
-| `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ACL) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
-| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ACL) | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` |
+| `ERPNEXT_MYSQL_ROOT_PASSWORD` | Senha root MariaDB | `openssl rand -base64 24` |
+| `ERPNEXT_DB_PASSWORD` | Senha usuário ERPNext no DB | `openssl rand -base64 24` |
+| `ERPNEXT_ADMIN_PASSWORD` | Senha admin do site ERPNext | `openssl rand -base64 24` |
+| `REDIS_CACHE_PASSWORD` | Senha Redis Cache (ACL) | `openssl rand -hex 32` ⚠️ **OBRIGATÓRIO HEX** |
+| `REDIS_QUEUE_PASSWORD` | Senha Redis Queue (ACL) | `openssl rand -hex 32` ⚠️ **OBRIGATÓRIO HEX** |
+
+**⚠️ IMPORTANTE - Senhas Redis (Atualizado 22/12/2025):**
+- As senhas Redis **DEVEM** ser geradas com `openssl rand -hex 32` (hexadecimal)
+- **NÃO USE** `openssl rand -base64` para senhas Redis!
+- Motivo: Base64 produz caracteres `+`, `/`, `=` que quebram URLs Redis
+- Erro típico: `ValueError: Port could not be cast to integer value`
+- Hexadecimal (0-9, a-f) é 100% URL-safe
 
 **🟢 OPCIONAIS** (podem ser configurados após ERPNext rodando):
 
@@ -494,15 +501,22 @@ Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu
 ## Geradores de Senhas Seguras
 
 ```bash
-# Senha 32 caracteres (hex)
+# Senha 64 caracteres hexadecimais (RECOMENDADO - URL-safe)
+# Use para: REDIS_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD
 openssl rand -hex 32
 
-# Senha 24 caracteres (base64)
-openssl rand -base64 24
-
-# Senha 64 caracteres (hex)
+# Senha 128 caracteres hexadecimais (para secrets longos)
 openssl rand -hex 64
+
+# Senha base64 (24 caracteres) - para secrets que NÃO são usados em URLs
+# NÃO use para senhas Redis! Base64 produz +, /, = que quebram URLs
+openssl rand -base64 24
 ```
+
+**⚠️ Regra de Ouro para Senhas Redis:**
+- Sempre use `openssl rand -hex 32` para senhas que serão usadas em URLs
+- Hexadecimal (0-9, a-f) é 100% URL-safe
+- Base64 (+, /, =) causa `ValueError: Port could not be cast to integer value`
 
 ---
 
