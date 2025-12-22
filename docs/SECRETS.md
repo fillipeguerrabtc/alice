@@ -109,18 +109,102 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_GPU_CLASS` | Classe de GPU no Salad (ex.: `premium-gpu`) — configure como var obrigatória |
 | `HUGGINGFACE_TOKEN` | Token de acesso read-only do HuggingFace (opcional mas recomendado) | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) |
 
-#### Container Groups GPU (Gerados pelo `deploy-production.yml`)
+#### Container Groups GPU URLs (Configuração Manual - Abordagem Híbrida)
 
-Os seguintes secrets são **gerados automaticamente** pelo job `deploy-salad-gpu` no workflow `deploy-production.yml` via Python SDK e salvos nos GitHub Secrets. Os Container Groups são criados automaticamente durante o deploy de produção:
+> **ENTERPRISE BEST PRACTICE (22/12/2025):** Container Groups são **pré-criados manualmente** no Salad Cloud Dashboard. URLs são configuradas como secrets no GitHub. Pipeline apenas **valida** que os serviços estão respondendo.
 
-| Secret | Descrição |
-|--------|-----------|
-| `SALAD_MIXTRAL_URL` | URL do Container Group vLLM Mixtral 8x7B (API OpenAI-compatible). Endpoint: `/v1/chat/completions` |
-| `SALAD_FLUX_URL` | URL do Container Group FLUX.1 Schnell para geração de imagens. Endpoint: `/generate` |
-| `SALAD_ASR_URL` | URL do Container Group Canary-1B para transcrição de áudio (ASR). Endpoint: `/transcribe` |
-| `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim). Endpoints: `/embed/text`, `/embed/image` |
+**Benefícios da Abordagem Híbrida:**
+- ✅ Deploy mais rápido (sem cold start de GPU de 2-5 min)
+- ✅ Mais confiável (GPUs já "quentes")
+- ✅ Health checks sempre passam
+- ✅ Menor custo (evita cold start repetido)
 
-> **IMPORTANTE:** O deploy de GPU está integrado no `deploy-production.yml`. Os endpoints são automaticamente configurados via Python SDK (salad-cloud-sdk) durante o deploy de produção.
+| Secret | Descrição | Endpoint |
+|--------|-----------|----------|
+| `SALAD_MIXTRAL_URL` | URL do Container Group vLLM Mixtral 8x7B | `/v1/chat/completions` |
+| `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B + OpenCLIP) | `/embed/text`, `/embed/image` |
+| `SALAD_FLUX_URL` | URL do Container Group FLUX.1 Schnell (imagens) | `/generate` |
+| `SALAD_ASR_URL` | URL do Container Group Canary-1B (ASR) | `/transcribe` |
+
+---
+
+### 🚀 Guia Passo a Passo: Criar Container Groups no Salad Cloud
+
+#### Passo 1: Acessar o Portal Salad Cloud
+1. Acesse [portal.salad.com](https://portal.salad.com)
+2. Faça login com sua conta
+3. Navegue até **Container Groups** no menu lateral
+
+#### Passo 2: Criar Container Group - Mixtral 8x7B (LLM)
+1. Clique em **Create Container Group**
+2. Configure:
+   - **Name:** `alice-mixtral-vllm`
+   - **Image:** `ghcr.io/fillipeguerrabtc/alice/mixtral-vllm:latest` (ou sua imagem)
+   - **GPU:** RTX 4090 (24GB VRAM)
+   - **Replicas:** 1 (pode aumentar para scaling)
+   - **Environment Variables:**
+     ```
+     HUGGINGFACE_TOKEN=<seu_token>
+     MODEL_ID=mistralai/Mixtral-8x7B-Instruct-v0.1
+     ```
+3. Clique em **Create**
+4. Aguarde o status ficar **Running**
+5. **Copie a URL** gerada (ex: `https://alice-mixtral-vllm-xxxxx.salad.cloud`)
+
+#### Passo 3: Criar Container Group - Embeddings GPU
+1. Clique em **Create Container Group**
+2. Configure:
+   - **Name:** `alice-embeddings-gpu`
+   - **Image:** `ghcr.io/fillipeguerrabtc/alice/embeddings-gpu:latest`
+   - **GPU:** RTX 4090 (24GB VRAM)
+   - **Replicas:** 1
+   - **Environment Variables:**
+     ```
+     HUGGINGFACE_TOKEN=<seu_token>
+     TEXT_MODEL=Qwen/Qwen3-Embedding-8B
+     IMAGE_MODEL=laion/CLIP-ViT-H-14-laion2B-s32B-b79K
+     ```
+3. **Copie a URL** gerada
+
+#### Passo 4: Criar Container Group - FLUX.1 Schnell
+1. Clique em **Create Container Group**
+2. Configure:
+   - **Name:** `alice-flux-schnell`
+   - **Image:** `ghcr.io/fillipeguerrabtc/alice/flux-schnell:latest`
+   - **GPU:** RTX 4090 (24GB VRAM)
+   - **Replicas:** 1
+3. **Copie a URL** gerada
+
+#### Passo 5: Criar Container Group - ASR Canary
+1. Clique em **Create Container Group**
+2. Configure:
+   - **Name:** `alice-asr-canary`
+   - **Image:** `ghcr.io/fillipeguerrabtc/alice/asr-canary:latest`
+   - **GPU:** RTX 4090 (24GB VRAM)
+   - **Replicas:** 1
+3. **Copie a URL** gerada
+
+#### Passo 6: Adicionar URLs como Secrets no GitHub
+1. Acesse seu repositório no GitHub
+2. Vá em **Settings** → **Secrets and variables** → **Actions**
+3. Clique em **New repository secret** para cada URL:
+
+| Secret Name | Valor (exemplo) |
+|-------------|-----------------|
+| `SALAD_MIXTRAL_URL` | `https://alice-mixtral-vllm-abc123.salad.cloud` |
+| `EMBEDDINGS_GPU_URL` | `https://alice-embeddings-gpu-def456.salad.cloud` |
+| `SALAD_FLUX_URL` | `https://alice-flux-schnell-ghi789.salad.cloud` |
+| `SALAD_ASR_URL` | `https://alice-asr-canary-jkl012.salad.cloud` |
+
+#### Passo 7: Validar Configuração
+Execute o pipeline de deploy. O job `Validate GPU Services (Salad Cloud)` irá:
+1. ✅ Verificar que todas as URLs estão configuradas
+2. ✅ Fazer health check de cada serviço (informativo)
+3. ✅ Prosseguir com o deploy Hetzner
+
+---
+
+> **NOTA:** Container Groups do Salad Cloud mantêm GPUs "quentes" por ~30 minutos após o último uso. Após isso, entram em cold start. A primeira requisição após cold start pode demorar 30-60 segundos.
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 

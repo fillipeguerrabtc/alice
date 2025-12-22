@@ -175,6 +175,46 @@ if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
   exit 1
 fi
 
+# =============================================================================
+# VALIDAÇÃO URLs GPU SALAD CLOUD (Abordagem Híbrida - 22/12/2025)
+# =============================================================================
+# Container Groups são PRÉ-CRIADOS manualmente no Salad Cloud Dashboard
+# URLs são configuradas como secrets no GitHub
+# Pipeline valida que os serviços estão acessíveis
+# =============================================================================
+echo ""
+echo "🔐 Validando URLs GPU Salad Cloud (abordagem híbrida)..."
+
+SALAD_MIXTRAL_URL="${SALAD_MIXTRAL_URL:-}"
+if [ -z "${SALAD_MIXTRAL_URL}" ]; then
+  echo "::error::SALAD_MIXTRAL_URL não definido. Crie o Container Group 'alice-mixtral-vllm' no Salad Cloud e adicione a URL como secret." >&2
+  exit 1
+fi
+
+EMBEDDINGS_GPU_URL="${EMBEDDINGS_GPU_URL:-}"
+if [ -z "${EMBEDDINGS_GPU_URL}" ]; then
+  echo "::error::EMBEDDINGS_GPU_URL não definido. Crie o Container Group 'alice-embeddings-gpu' no Salad Cloud e adicione a URL como secret." >&2
+  exit 1
+fi
+
+SALAD_FLUX_URL="${SALAD_FLUX_URL:-}"
+if [ -z "${SALAD_FLUX_URL}" ]; then
+  echo "::error::SALAD_FLUX_URL não definido. Crie o Container Group 'alice-flux-schnell' no Salad Cloud e adicione a URL como secret." >&2
+  exit 1
+fi
+
+SALAD_ASR_URL="${SALAD_ASR_URL:-}"
+if [ -z "${SALAD_ASR_URL}" ]; then
+  echo "::error::SALAD_ASR_URL não definido. Crie o Container Group 'alice-asr-canary' no Salad Cloud e adicione a URL como secret." >&2
+  exit 1
+fi
+
+echo "✅ URLs GPU Salad Cloud validadas:"
+echo "   SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL}"
+echo "   EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL}"
+echo "   SALAD_FLUX_URL: ${SALAD_FLUX_URL}"
+echo "   SALAD_ASR_URL: ${SALAD_ASR_URL}"
+
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================

@@ -46,7 +46,7 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
-> **URLs GPU Automáticas 21/12/2025:** Script `deploy.py` agora captura URLs dos Container Groups Salad Cloud automaticamente após criação via API. URLs são exportadas como `GITHUB_OUTPUT` e passadas para o servidor Hetzner, atualizando `.env.prod` e reiniciando serviços Alice. **Elimina necessidade de configurar manualmente** as secrets `SALAD_MIXTRAL_URL`, `EMBEDDINGS_GPU_URL`, `SALAD_FLUX_URL`, `SALAD_ASR_URL`, `SALAD_WHISPER_URL`. No primeiro deploy, URLs podem não estar disponíveis imediatamente (Container Groups ainda iniciando) - segundo deploy captura automaticamente.
+> **Salad Cloud Abordagem Híbrida 22/12/2025:** Container Groups GPU são **PRÉ-CRIADOS MANUALMENTE** no Salad Cloud Dashboard. URLs são configuradas como **secrets no GitHub**: `SALAD_MIXTRAL_URL`, `EMBEDDINGS_GPU_URL`, `SALAD_FLUX_URL`, `SALAD_ASR_URL`. Pipeline apenas **valida** que URLs estão configuradas e faz health check. Benefícios: deploy mais rápido (sem cold start 2-5 min), mais confiável (GPUs quentes), menor custo (evita cold start repetido). Guia completo: [docs/SECRETS.md](SECRETS.md) seção "Salad Cloud GPU URLs".
 
 > **Bug Fix ERPNext Configurator 21/12/2025:** Escapar `$` com `$$` no comando do `erpnext-configurator` para evitar substituição pelo Docker Compose. Docker Compose interpreta `$CACHE_URL` e `$QUEUE_URL` como variáveis de ambiente, mas são variáveis bash internas do script. Aviso no log: "The CACHE_URL variable is not set. Defaulting to a blank string."
 
@@ -210,7 +210,7 @@
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
-> **Arquitetura Enterprise (17/12/2025):** Container Groups Salad Cloud gerenciados via Python SDK (`deploy-production.yml` job `deploy-salad-gpu`). RTX 4090 (24GB VRAM).
+> **Arquitetura Enterprise (22/12/2025):** Container Groups Salad Cloud **pré-criados manualmente** no Dashboard. URLs configuradas como secrets no GitHub. RTX 4090 (24GB VRAM).
 
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
 > - `EMBEDDINGS_GPU_URL/health` (embeddings)
@@ -658,9 +658,10 @@ Retenção Arquivo:   30 dias
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
 | 14 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim HNSW) |
 
-> **ARQUITETURA GPU ENTERPRISE (17/12/2025):** Embeddings 100% via Salad Cloud Container Groups:
+> **ARQUITETURA GPU ENTERPRISE (22/12/2025):** Embeddings 100% via Salad Cloud Container Groups (pré-criados manualmente):
 > - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
+> - **Configuração:** URLs configuradas como secrets no GitHub (ver [docs/SECRETS.md](SECRETS.md))
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
 > - **LLM:** Mixtral 8x7B (vLLM AWQ)
 > O container permanece para compatibilidade durante a transição.

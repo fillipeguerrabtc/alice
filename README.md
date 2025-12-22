@@ -214,7 +214,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 ### Pipeline CI/CD Unificada (Best Practices 2025)
 
 ```
-Push → CI (auto) → Release (auto) → Deploy Hetzner + Salad GPU (auto)
+Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU (auto)
 
 1. Push para branch main
 2. CI - Build & Test (automático):
@@ -228,13 +228,19 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner + Salad GPU (auto)
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner (43 containers)
-   ├── Deploy Salad Cloud GPU (4 Container Groups via Python SDK)
+   ├── Deploy Hetzner (44 containers)
+   ├── Validate Salad Cloud GPU (URLs pré-configuradas)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings
 ```
 
-**Pipeline 100% Automático:** Push para `main` aciona CI → Release → Deploy (Hetzner + Salad GPU) com health checks e rollback automático.
+**Hetzner 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback.
+
+**Salad Cloud GPU - Abordagem Híbrida:**
+- Container Groups são **pré-criados manualmente** no [Salad Cloud Dashboard](https://portal.salad.com)
+- URLs são configuradas como **secrets no GitHub** (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc.)
+- Pipeline apenas **valida** que os serviços estão respondendo
+- Guia completo: [docs/SECRETS.md](docs/SECRETS.md) - Seção "Salad Cloud GPU URLs"
 
 ### Acesso SSH à Hetzner (Produção)
 
@@ -442,6 +448,6 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
 *Salad Cloud: LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR)*
-*Pipeline Unificada: GPU deploy integrado via Python SDK (salad-cloud-sdk) - 100% automático*
+*Pipeline Unificada: Hetzner 100% automático + Salad Cloud abordagem híbrida (Container Groups manuais, URLs em secrets)*
 
 </div>

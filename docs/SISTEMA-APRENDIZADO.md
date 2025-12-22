@@ -38,6 +38,8 @@ Para otimizar custos e latência:
 | **Requisições subsequentes** | ~1 segundo | GPU permanece "quente" |
 | **Após 30 min inatividade** | 5-30 segundos | GPU é desligada, cold start novamente |
 
+> **Abordagem Híbrida (22/12/2025):** Container Groups são **pré-criados manualmente** no Salad Cloud Dashboard. URLs configuradas como secrets no GitHub. Ver [docs/SECRETS.md](SECRETS.md) para guia completo.
+
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings
 - **Embedding Worker:** Worker dedicado para processar fila

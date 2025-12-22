@@ -506,9 +506,9 @@ O deploy é **100% automático** via GitHub Actions:
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │   43 containers                        │
+│  │ • SSH para Hetzner  │   44 containers                        │
 │  │ • Docker Compose up │                                        │
-│  │ • Deploy Salad GPU  │   4 Container Groups (Python SDK)      │
+│  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
 │  │ • Health checks     │   RTX 4090 (Mixtral, FLUX, ASR, Emb.)  │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
@@ -522,13 +522,15 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Hetzner** | Release passa | 43 containers via Docker Compose |
-| **Deploy Salad GPU** | Deploy Hetzner passa | 4 Container Groups via Python SDK |
-| **Health Check** | Deploy Hetzner passa | Validação e rollback automático |
+| **Deploy Hetzner** | Release passa | 44 containers via Docker Compose |
+| **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
+| **Health Check** | Validate GPU passa | Validação e rollback automático |
 
 ### GPU é OBRIGATÓRIO - Enterprise-Grade (17/12/2025)
 
-**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU Salad Cloud são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona:
+**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU Salad Cloud são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona.
+
+**ABORDAGEM HÍBRIDA (22/12/2025):** Container Groups são **pré-criados manualmente** no Salad Cloud Dashboard. URLs são configuradas como **secrets no GitHub**. Ver [docs/SECRETS.md](SECRETS.md) para guia passo a passo.
 
 | Serviço GPU | Função | Impacto se Falhar |
 |-------------|--------|-------------------|
@@ -549,8 +551,10 @@ if: always() && needs.deploy.result == 'success'
 
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
-- Verifica **4 Container Groups GPU**: Mixtral, Embeddings, FLUX, ASR
+- Valida **4 URLs GPU** (Container Groups pré-criados): Mixtral, Embeddings, FLUX, ASR
 - **Tolerância zero**: Qualquer falha dispara rollback automático
+
+> **NOTA:** Health check de GPU é informativo - Container Groups podem estar em cold start (~30-60s após inatividade de 30min).
 
 **Rollback Enterprise:**
 - Dispara se Hetzner **OU** GPU falhar
@@ -1110,7 +1114,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
+*Pipeline Unificada (22/12/2025): Hetzner 100% automático + Salad Cloud abordagem híbrida (Container Groups manuais, URLs em secrets)*
 *GPU: RTX 4090 (24GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

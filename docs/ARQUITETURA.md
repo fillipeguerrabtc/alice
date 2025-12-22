@@ -104,7 +104,7 @@ alice/
 │   └── shared-utils/        # Utilities enterprise
 ├── infra/                   # Infraestrutura
 │   ├── docker/              # Docker Compose
-│   ├── salad-cloud/         # Python SDK GPU (deploy.py)
+│   ├── salad-cloud/         # Scripts GPU (obsoleto - abordagem híbrida)
 │   └── scripts/             # Automação
 └── docs/                    # Documentação
 ```
@@ -143,7 +143,7 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Salad Cloud** | GPUs para LLM/Embeddings | REST/WebSocket | API Key |
+| **Salad Cloud** | GPUs para LLM/Embeddings (Container Groups pré-criados) | REST/WebSocket | API Key |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -501,13 +501,13 @@ flowchart LR
     end
     
     subgraph Production
-        K --> L[43 Containers Hetzner]
-        L --> M[4 GPU Salad Cloud]
+        K --> L[44 Containers Hetzner]
+        L --> M[4 GPU Salad Cloud - URLs pré-configuradas]
         M --> N[Prometheus Monitoring]
     end
 ```
 
-> **Pipeline Unificada (17/12/2025):** GPU deploy integrado em `deploy-production.yml` via Python SDK (`salad-cloud-sdk`).
+> **Pipeline Híbrida (22/12/2025):** Hetzner 100% automático. Salad Cloud usa abordagem híbrida - Container Groups pré-criados manualmente, URLs em secrets.
 
 ---
 
