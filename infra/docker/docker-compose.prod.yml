@@ -1429,14 +1429,15 @@ services:
     # REGRA 16: Security Hardening - no-new-privileges (init precisa escrever, não pode ter read_only)
     security_opt:
       - no-new-privileges:true
-    # CORREÇÃO 21/12/2025: Script idempotente - verifica se site existe antes de criar
-    # Isso permite redeploys sem falhar se o site já foi criado em deploy anterior
-    # Documentação: https://github.com/frappe/frappe_docker
+    # CORREÇÃO 22/12/2025: Script idempotente com --db-host explícito
+    # Bug anterior: bench new-site tentava conectar localhost sem --db-host
+    # Documentação: https://frappeframework.com/docs/user/en/bench/reference/new-site
     entrypoint:
       - bash
       - -c
     command:
       - |
+        set -euo pipefail
         cd /home/frappe/frappe-bench
         SITE_NAME="${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}"
         if [ -f "sites/$${SITE_NAME}/site_config.json" ]; then
@@ -1445,10 +1446,13 @@ services:
         fi
         echo "🔧 Criando site $${SITE_NAME}..."
         bench new-site "$${SITE_NAME}" \
+          --db-host erpnext-mariadb \
+          --db-port 3306 \
           --mariadb-root-password "${ERPNEXT_MYSQL_ROOT_PASSWORD}" \
           --admin-password "${ERPNEXT_ADMIN_PASSWORD}" \
           --no-mariadb-socket \
           --install-app erpnext
+        echo "✅ Site $${SITE_NAME} criado com sucesso!"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root
