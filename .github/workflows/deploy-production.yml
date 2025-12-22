@@ -1968,6 +1968,25 @@ jobs:
             # =====================================================
             # CLONE/UPDATE DO REPO (precisa existir antes do cd infra/docker)
             # =====================================================
+            
+            # VALIDAÇÃO: Garantir que variáveis críticas existem antes do clone
+            echo "=== DEBUG: Variáveis de clone ==="
+            echo "GITHUB_ACTOR: ${GITHUB_ACTOR:-NÃO DEFINIDO}"
+            echo "REPO_FULL_NAME: ${REPO_FULL_NAME:-NÃO DEFINIDO}"
+            echo "GH_PAT: ${GH_PAT:+DEFINIDO (${#GH_PAT} caracteres)}"
+            echo "PWD: $(pwd)"
+            echo "Conteúdo de /opt/alice:"
+            ls -la /opt/alice/ || echo "  (erro ao listar)"
+            
+            if [ -z "${GH_PAT:-}" ]; then
+              echo "::error::GH_PAT não definido. Clone não é possível."
+              exit 1
+            fi
+            if [ -z "${REPO_FULL_NAME:-}" ]; then
+              echo "::error::REPO_FULL_NAME não definido. Clone não é possível."
+              exit 1
+            fi
+            
             REPO_URL="https://${GITHUB_ACTOR}:${GH_PAT}@github.com/${REPO_FULL_NAME}.git"
 
             # DEPLOY_VERSION: TAG da release (ex: v1.0.0) ou 'main' para deploy manual
@@ -2021,6 +2040,23 @@ jobs:
             fi
             
             echo "✅ Código atualizado para: ${TARGET_REF}"
+            
+            # DEBUG: Verificar resultado do clone
+            echo "=== DEBUG: Verificando clone ==="
+            echo "Conteúdo de /opt/alice após clone:"
+            ls -la /opt/alice/ || echo "  (erro ao listar /opt/alice)"
+            
+            if [ -d "/opt/alice/app" ]; then
+              echo "✅ Diretório /opt/alice/app existe"
+              echo "Conteúdo de /opt/alice/app:"
+              ls -la /opt/alice/app/ | head -20 || echo "  (erro ao listar)"
+            else
+              echo "❌ ERRO: /opt/alice/app NÃO existe após clone!"
+              echo "Verificando se estamos no diretório certo:"
+              pwd
+              ls -la
+              exit 1
+            fi
             
             # CORREÇÃO CRÍTICA 21/12/2025: Entrar no diretório do repositório clonado
             # O repo foi clonado em /opt/alice/app, precisamos estar lá para os próximos passos
