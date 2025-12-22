@@ -1683,8 +1683,10 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
-      # Workers processam jobs em background via Redis queue
+      # Workers precisam do SITE existir para funcionar
+      # Site é criado pelo create-site, então esperar ele completar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1694,13 +1696,11 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # Verificar processo do worker local (não pingar backend externo)
       test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -1738,7 +1738,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers precisam do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1753,7 +1755,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -1791,7 +1792,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers precisam do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1806,7 +1809,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -1844,7 +1846,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Scheduler NÃO depende do backend - só agenda jobs via Redis
+      # Scheduler precisa do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1854,13 +1858,11 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # Verificar processo do scheduler local
       test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para scheduler (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -1898,7 +1900,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers precisam do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1913,7 +1917,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -1951,7 +1954,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers precisam do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -1966,7 +1971,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
@@ -2004,7 +2008,9 @@ services:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
     depends_on:
-      # Workers NÃO dependem do backend - só de Redis/MariaDB
+      # Workers precisam do SITE existir para funcionar
+      erpnext-create-site:
+        condition: service_completed_successfully
       erpnext-mariadb:
         condition: service_healthy
       erpnext-redis-cache:
@@ -2019,7 +2025,6 @@ services:
       timeout: 10s
       retries: 5
       start_period: 60s
-    # REGRA 16: Resource limits para workers (best practice enterprise)
     deploy:
       resources:
         limits:
