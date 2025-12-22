@@ -124,7 +124,9 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_MIXTRAL_URL` | URL do Container Group vLLM Mixtral 8x7B | `/v1/chat/completions` |
 | `EMBEDDINGS_GPU_URL` | URL do Container Group Embeddings GPU (Qwen3-Embedding-8B + OpenCLIP) | `/embed/text`, `/embed/image` |
 | `SALAD_FLUX_URL` | URL do Container Group FLUX.1 Schnell (imagens) | `/generate` |
-| `SALAD_ASR_URL` | URL do Container Group Canary-1B (ASR) | `/transcribe` |
+| `SALAD_ASR_URL` | URL do Container Group ASR (transcrição áudio) → mapeado para `SALAD_WHISPER_URL` | `/transcribe` |
+
+> **NOTA:** O código interno usa `SALAD_WHISPER_URL`, mas o secret no GitHub é `SALAD_ASR_URL`. O script `generate-env-prod.sh` faz o mapeamento automaticamente (`SALAD_WHISPER_URL=${SALAD_ASR_URL}`).
 
 ---
 

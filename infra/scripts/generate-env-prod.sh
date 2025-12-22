@@ -209,11 +209,18 @@ if [ -z "${SALAD_ASR_URL}" ]; then
   exit 1
 fi
 
+# MAPEAMENTO ENTERPRISE (22/12/2025): Código usa SALAD_WHISPER_URL, secret é SALAD_ASR_URL
+# O secret SALAD_ASR_URL é o nome padronizado no GitHub
+# O código audio-processor.ts usa SALAD_WHISPER_URL internamente
+# Este mapeamento garante compatibilidade sem alterar o código existente
+SALAD_WHISPER_URL="${SALAD_ASR_URL}"
+
 echo "✅ URLs GPU Salad Cloud validadas:"
 echo "   SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL}"
 echo "   EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL}"
 echo "   SALAD_FLUX_URL: ${SALAD_FLUX_URL}"
 echo "   SALAD_ASR_URL: ${SALAD_ASR_URL}"
+echo "   SALAD_WHISPER_URL: ${SALAD_WHISPER_URL} (mapeado de SALAD_ASR_URL)"
 
 echo "✅ Todas as secrets obrigatórias validadas"
 
