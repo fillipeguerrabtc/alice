@@ -998,6 +998,16 @@ jobs:
           if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
             TAG="${GITHUB_SHA}"
           fi
+          
+          # CORREÇÃO DEFENSIVA (22/12/2025): Garantir que versões semânticas tenham prefixo 'v'
+          # Problema: Se workflow for disparado com versão '2.39.1' (sem 'v'), imagens não existem
+          # Causa raiz: TAGs antigas podem não ter a validação do formato
+          # Solução: Adicionar 'v' se a versão parecer semântica mas não tiver o prefixo
+          if echo "$TAG" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+            TAG="v${TAG}"
+            echo "⚠️ Prefixo 'v' adicionado à versão: $TAG"
+          fi
+          
           echo "value=$TAG" >> "$GITHUB_OUTPUT"
           echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
           echo "🏷️ Tag efetiva das imagens: $TAG"
