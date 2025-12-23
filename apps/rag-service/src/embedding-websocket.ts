@@ -154,9 +154,25 @@ export async function initEmbeddingWebSocket(server: Server): Promise<void> {
   // BUG FIX 23/12/2025: Aguardar inicialização do Redis Pub/Sub antes de aceitar conexões
   // initRedisPubSub() é async e precisa ser aguardado para evitar race condition
   // WebSocket clients podem conectar antes do Redis estar pronto, causando falhas silenciosas
-  await initRedisPubSub();
-  
-  logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado');
+  // BUG FIX 23/12/2025: Tratamento de erro explícito - se Redis Pub/Sub falhar, WebSocket não deve funcionar
+  // O erro será propagado para o caller (index.ts) que tem try-catch adequado
+  try {
+    await initRedisPubSub();
+    logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado');
+  } catch (redisError) {
+    logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket');
+    // Limpar recursos criados antes de lançar erro
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+    if (wss) {
+      wss.close();
+      wss = null;
+    }
+    // Propagar erro para o caller tratar adequadamente
+    throw redisError;
+  }
 }
 
 /**

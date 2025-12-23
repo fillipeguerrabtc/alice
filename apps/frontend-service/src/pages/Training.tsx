@@ -708,10 +708,13 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   // Ícone baseado no tipo de mídia
   // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+  // BUG FIX 23/12/2025: Adicionado default case para evitar retorno undefined
+  // Se tipo inesperado for passado, retorna FileAudio como fallback seguro
   const getMediaIcon = (type: 'image' | 'audio') => {
     switch (type) {
       case 'image': return ImageIcon;
       case 'audio': return FileAudio;
+      default: return FileAudio; // Fallback seguro para tipos inesperados
     }
   };
 

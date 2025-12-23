@@ -134,10 +134,25 @@ const ALL_SUPPORTED_MIMES = [
 
 type MediaType = 'image' | 'audio' | 'document';
 
+// BUG FIX 23/12/2025: Type assertions seguras - includes() retorna boolean, type assertion apenas para TypeScript
+// A validação real é feita pelo includes(), não pela type assertion
+// Se mimeType não estiver na lista, includes() retorna false e a função retorna null
 function detectMediaType(mimeType: string): MediaType | null {
-  if (SUPPORTED_MEDIA_TYPES.image.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.image[number])) return 'image';
-  if (SUPPORTED_MEDIA_TYPES.audio.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.audio[number])) return 'audio';
-  if (SUPPORTED_MEDIA_TYPES.document.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.document[number])) return 'document';
+  // Normalizar MIME type para comparação case-insensitive
+  const normalizedMimeType = mimeType.toLowerCase().trim();
+  
+  // Verificar cada tipo suportado explicitamente
+  if (SUPPORTED_MEDIA_TYPES.image.includes(normalizedMimeType as typeof SUPPORTED_MEDIA_TYPES.image[number])) {
+    return 'image';
+  }
+  if (SUPPORTED_MEDIA_TYPES.audio.includes(normalizedMimeType as typeof SUPPORTED_MEDIA_TYPES.audio[number])) {
+    return 'audio';
+  }
+  if (SUPPORTED_MEDIA_TYPES.document.includes(normalizedMimeType as typeof SUPPORTED_MEDIA_TYPES.document[number])) {
+    return 'document';
+  }
+  
+  // Tipo não suportado - retornar null para fail-fast
   return null;
 }
 
@@ -2911,7 +2926,11 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
       '.mp3': 'audio/mpeg',
       '.wav': 'audio/wav',
       '.ogg': 'audio/ogg',
-      '.webm': 'audio/webm', // CORREÇÃO 23/12/2025: WebM é container que pode ser vídeo ou áudio, mas removemos suporte a vídeo. Aceitamos apenas como áudio.
+      // BUG FIX 23/12/2025: WebM pode ser vídeo ou áudio, mas removemos suporte a vídeo
+      // Arquivos WebM legados podem ter MIME type 'video/webm', mas agora tratamos apenas como áudio
+      // Se arquivos legados existirem com 'video/webm', serão rejeitados na validação (não está em SUPPORTED_MEDIA_TYPES)
+      // Novos uploads WebM devem ser enviados com MIME type 'audio/webm' explicitamente
+      '.webm': 'audio/webm',
       // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
       '.pdf': 'application/pdf',
       '.txt': 'text/plain',
