@@ -523,9 +523,15 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   ].join(',');
 
   // Determinar tipo de mídia baseado no MIME type
+  // BUG FIX 23/12/2025: Normalização robusta de mimeType para suportar variações de case e espaços
+  // MIME types são case-insensitive segundo RFC 2045, mas podem vir com variações (ex: "Image/JPEG", "Audio/MPEG")
+  // .toLowerCase() e .trim() garantem matching correto mesmo com variações
+  // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais (ex: "audio/mpeg; codecs=mp3")
+  // Consistente com normalização em rag-service, chat-service e integrations-service para evitar rejeição de tipos legítimos
   const getMediaType = (mimeType: string): 'image' | 'audio' | null => {
-    if (acceptedTypes.image.includes(mimeType)) return 'image';
-    if (acceptedTypes.audio.includes(mimeType)) return 'audio';
+    const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
+    if (acceptedTypes.image.includes(normalizedMimeType)) return 'image';
+    if (acceptedTypes.audio.includes(normalizedMimeType)) return 'audio';
     return null;
   };
 
