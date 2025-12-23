@@ -3406,22 +3406,30 @@ app.use(createErrorHandler({
     // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)
     // BUG FIX 23/12/2025: Unificar tratamento de erro - se initializeRedisCache() lançar exceção,
     // será capturada pelo catch externo. Se retornar false, tratamos aqui de forma consistente.
+    // BUG FIX 23/12/2025: Garantir que redisConnected seja sempre definido explicitamente
+    // Evita comportamento indefinido onde exceções podem deixar variável em estado inconsistente
     let redisConnected = false;
     try {
       redisConnected = await initializeRedisCache();
+      // Garantir que redisConnected seja boolean explícito (não undefined)
+      redisConnected = Boolean(redisConnected);
     } catch (redisError) {
       // Se initializeRedisCache() lançar exceção, tratar como falha crítica
+      // IMPORTANTE: Definir redisConnected explicitamente como false para evitar estado indefinido
+      redisConnected = false;
       logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis cache - exceção lançada');
       if (isProduction) {
         logger.error('CRITICAL: Redis é OBRIGATÓRIO para embedding-websocket Pub/Sub em produção. Abortando.');
         process.exit(1);
       } else {
         logger.warn('Redis cache falhou - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
-        // Continuar em desenvolvimento mesmo com exceção
+        // Continuar em desenvolvimento mesmo com exceção, mas redisConnected = false garante estado consistente
       }
-      // Não re-lançar exceção - já tratamos acima
+      // Não re-lançar exceção - já tratamos acima e definimos redisConnected = false
     }
     
+    // BUG FIX 23/12/2025: Verificação unificada - redisConnected sempre definido (true ou false)
+    // Não há mais lógica duplicada - uma única verificação após try-catch
     if (redisConnected) {
       logger.info('Redis cache inicializado para embedding-websocket');
     } else {

@@ -2385,7 +2385,15 @@ jobs:
             # - Valores com $: "my\$pass" (com backslash-escapes, sem aspas)
             # Solução: Usar sed para remover aspas externas E normalizar backslash-escapes
             # sed regex remove aspas se existirem, e depois remove backslashes de escape para obter valor literal
+            # BUG FIX 23/12/2025: Criar arquivo temporário com permissões seguras desde o início
+            # Problema: mktemp cria arquivo com permissões padrão (geralmente 0644), e escrever credenciais
+            # antes de chmod cria janela de vulnerabilidade onde outros usuários podem ler credenciais
+            # Solução: Usar umask 077 antes de criar arquivo para garantir permissões 0600 desde o início
+            # Isso elimina a janela de vulnerabilidade entre criação do arquivo e mudança de permissões
+            OLD_UMASK=$(umask)
+            umask 077
             VALIDATION_ENV_FILE=$(mktemp)
+            umask "$OLD_UMASK"
             # BUG FIX 23/12/2025: Escrever valores diretamente no arquivo sem normalização sed
             # Problema: sed regex s/\\(.)/\1/g remove TODOS os backslashes seguidos de caracteres
             # Isso pode corromper credenciais que contenham backslashes legítimos
@@ -2395,11 +2403,11 @@ jobs:
             # Isso é seguro porque o arquivo é criado localmente e passado diretamente ao Docker
             # BUG FIX 23/12/2025: Aspas duplas necessárias para que %s seja interpretado como format specifier
             # Com aspas simples, %s seria tratado literalmente e o arquivo conteria PGPASSWORD=%s ao invés do valor real
-            # BUG FIX 23/12/2025: Garantir permissões corretas do arquivo temporário (600 = rw-------)
-            # Isso previne que outros processos leiam credenciais do arquivo
             printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$VALIDATION_ENV_FILE"
             printf "PG_USER=%s\n" "${PG_USER}" >> "$VALIDATION_ENV_FILE"
             printf "PG_DB=%s\n" "${PG_DB}" >> "$VALIDATION_ENV_FILE"
+            # BUG FIX 23/12/2025: chmod 600 redundante mas mantido para garantir (umask já aplicou 0600)
+            # Mantido como defesa em profundidade - garante permissões mesmo se umask falhar
             chmod 600 "$VALIDATION_ENV_FILE"
             docker run --rm \
               --network alice-network \
@@ -2538,13 +2546,17 @@ jobs:
                 # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
                 # Exportar PGPASSWORD no subshell não passa a variável para o container
                 # Solução: Usar env dentro do comando sh -c para passar variáveis explicitamente
-                # Usar aspas simples no sh -c para que variáveis sejam expandidas apenas no shell interno
-                # Variáveis são passadas como argumentos posicionais ($1, $2, $3) para evitar shell injection
-                # Isso garante que psql receba as credenciais corretas sem shell injection
+                # BUG FIX 23/12/2025: Padrão "_ arg1 arg2" faz com que _ seja $0, causando deslocamento
+                # Quando usamos sh -c 'script' _ arg1 arg2, o _ se torna $0, então $1 recebe arg1 (correto)
+                # Mas para garantir clareza e evitar confusão, usamos variáveis de ambiente via --env-file
+                # ou passamos diretamente sem placeholder. Solução: usar variáveis de ambiente via docker compose
+                # que já tem acesso ao .env.prod, mas precisamos passar PGPASSWORD explicitamente
+                # Alternativa segura: usar printf %q para escapar e passar via variável de ambiente
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c 'env PGPASSWORD="$1" psql -U "$2" -d "$3" -v ON_ERROR_STOP=0 -f /dev/stdin' \
-                  _ "${PG_PASS}" "${PG_USER}" "${PG_DB}" \
+                  exec -T -e "PGPASSWORD=${PG_PASS}" postgres \
+                  sh -c 'psql -U "$1" -d "$2" -v ON_ERROR_STOP=0 -f /dev/stdin' \
+                  _ "${PG_USER}" "${PG_DB}" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
@@ -2576,15 +2588,15 @@ jobs:
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
               # Exportar PGPASSWORD no subshell não passa a variável para o container
-              # Solução: Usar env dentro do comando sh -c para passar variáveis explicitamente
-              # Usar aspas simples no sh -c para que variáveis sejam expandidas apenas no shell interno
-              # Variáveis são passadas como argumentos posicionais ($1, $2, $3) para evitar shell injection
-              # Isso garante que psql receba as credenciais corretas sem shell injection
+              # BUG FIX 23/12/2025: Padrão "_ arg1 arg2" faz com que _ seja $0, causando deslocamento
+              # Solução: Usar -e para passar PGPASSWORD como variável de ambiente diretamente
+              # Isso evita o problema de deslocamento de argumentos posicionais
               psql_output=$(
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c 'env PGPASSWORD="$1" psql -U "$2" -d "$3" -v ON_ERROR_STOP=1 -f /dev/stdin' \
-                  _ "${PG_PASS}" "${PG_USER}" "${PG_DB}" \
+                  exec -T -e "PGPASSWORD=${PG_PASS}" postgres \
+                  sh -c 'psql -U "$1" -d "$2" -v ON_ERROR_STOP=1 -f /dev/stdin' \
+                  _ "${PG_USER}" "${PG_DB}" \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
               
