@@ -2466,13 +2466,27 @@ jobs:
             # Usar container Node.js temporário para executar drizzle-kit push
             # NOTA: O repositório já foi clonado em /opt/alice/app
             # ENTERPRISE-GRADE: timeout wrapper previne hang indefinido (Regra 6 - sem workarounds)
+            # BUG FIX 23/12/2025: Shell injection prevention para DATABASE_URL
+            # Problema: -e DATABASE_URL="${DB_URL}" permite shell expansion antes de passar ao Docker
+            # Mesmo com URL-encoding, caracteres como % podem ser interpretados pelo shell
+            # Solução: Usar --env-file para passar DATABASE_URL de forma segura (mesmo padrão das migrations)
+            # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
             DRIZZLE_TIMEOUT=300  # 5 minutos (suficiente para schema completo)
+            
+            # Criar arquivo temporário com permissões seguras para passar DATABASE_URL via --env-file
+            local OLD_UMASK=$(umask)
+            umask 077
+            local DRIZZLE_ENV_FILE=$(mktemp)
+            umask "$OLD_UMASK"
+            printf "DATABASE_URL=%s\n" "${DB_URL}" > "$DRIZZLE_ENV_FILE"
+            printf "DRIZZLE_TIMEOUT=%s\n" "${DRIZZLE_TIMEOUT}" >> "$DRIZZLE_ENV_FILE"
+            chmod 600 "$DRIZZLE_ENV_FILE"
+            
             docker run --rm \
               --network alice-network \
               -v /opt/alice/app:/app \
               -w /app \
-              -e DATABASE_URL="${DB_URL}" \
-              -e DRIZZLE_TIMEOUT="${DRIZZLE_TIMEOUT}" \
+              --env-file "$DRIZZLE_ENV_FILE" \
               node:22-alpine \
               sh -c "
                 echo 'Instalando drizzle-kit...'
@@ -2526,9 +2540,14 @@ jobs:
                 fi
                 echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
                 echo "   Verifique logs acima para detalhes do erro"
+                # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
+                rm -f "$DRIZZLE_ENV_FILE"
                 # Propagar exit code original (não converter para 1) para que workflow possa distinguir tipos de erro
                 exit "$DRIZZLE_EXIT_CODE"
               }
+            
+            # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
+            rm -f "$DRIZZLE_ENV_FILE"
             
             echo "✅ Schema base processado"
             
