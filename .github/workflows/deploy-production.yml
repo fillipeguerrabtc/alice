@@ -2265,12 +2265,33 @@ jobs:
               --env-file .env.prod \
               up -d postgres
             
+            # CORREÇÃO 23/12/2025: Extrair credenciais ANTES do check de readiness
+            # DATABASE_URL não existe no .env.prod - generate-env-prod.sh gera apenas POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+            # DATABASE_URL é construído dinamicamente no docker-compose.prod.yml
+            # Extraímos credenciais aqui para usar em pg_isready, drizzle-kit push e migrations
+            PG_USER=$(grep -E "^POSTGRES_USER=" .env.prod | cut -d'=' -f2-)
+            PG_PASS=$(grep -E "^POSTGRES_PASSWORD=" .env.prod | cut -d'=' -f2-)
+            PG_DB=$(grep -E "^POSTGRES_DB=" .env.prod | cut -d'=' -f2-)
+            
+            # Usar defaults se não encontrar (mesmo que generate-env-prod.sh deve garantir)
+            PG_USER="${PG_USER:-alice}"
+            PG_DB="${PG_DB:-alice_prod}"
+            
+            if [ -z "${PG_PASS}" ]; then
+              echo "❌ ERRO: POSTGRES_PASSWORD não encontrado no .env.prod"
+              echo "   O generate-env-prod.sh deveria ter criado esta variável."
+              exit 1
+            fi
+            
             # Aguardar PostgreSQL
+            # CORREÇÃO 23/12/2025: Usa credenciais dinâmicas (${PG_USER}, ${PG_DB}) extraídas de .env.prod
+            # ao invés de hardcoded (-U alice -d alice_prod) para suportar credenciais customizadas
             PG_READY=false
             for i in {1..30}; do
+              # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               if docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres pg_isready -U alice -d alice_prod >/dev/null 2>&1; then
+                exec -T postgres pg_isready -U "${PG_USER}" -d "${PG_DB}" >/dev/null 2>&1; then
                 echo "PostgreSQL está pronto!"
                 PG_READY=true
                 break
@@ -2291,18 +2312,6 @@ jobs:
             # As migrations SQL incrementais (0001-0012) adicionam RLS, índices, etc.
             # ==============================================
             echo "Criando schema base do banco de dados (Drizzle ORM)..."
-            
-            # CORREÇÃO 23/12/2025: DATABASE_URL não existe no .env.prod
-            # O generate-env-prod.sh gera apenas POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
-            # DATABASE_URL é construído dinamicamente no docker-compose.prod.yml
-            # Aqui construímos manualmente a partir dos componentes
-            PG_USER=$(grep -E "^POSTGRES_USER=" .env.prod | cut -d'=' -f2-)
-            PG_PASS=$(grep -E "^POSTGRES_PASSWORD=" .env.prod | cut -d'=' -f2-)
-            PG_DB=$(grep -E "^POSTGRES_DB=" .env.prod | cut -d'=' -f2-)
-            
-            # Usar defaults se não encontrar (mesmo que generate-env-prod.sh deve garantir)
-            PG_USER="${PG_USER:-alice}"
-            PG_DB="${PG_DB:-alice_prod}"
             
             if [ -z "${PG_PASS}" ]; then
               echo "❌ ERRO: POSTGRES_PASSWORD não encontrado no .env.prod"
