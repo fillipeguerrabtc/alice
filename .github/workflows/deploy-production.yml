@@ -2406,6 +2406,8 @@ jobs:
                   # Variáveis foram escapadas com printf %q no shell externo, garantindo passagem literal ao Docker
                   # BUG FIX 23/12/2025: psql lê PGPASSWORD automaticamente se definido - não precisa passar explicitamente
                   # PGPASSWORD é lido pelo psql automaticamente da variável de ambiente quando presente
+                  # BUG FIX 23/12/2025: Variáveis dentro de sh -c devem usar aspas para prevenir word splitting
+                  # printf %q já produz string segura, mas dentro de sh -c string interpolation, aspas são necessárias
                   if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
@@ -2521,14 +2523,15 @@ jobs:
                 # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
                 # Solução: Escapar PG_PASS com printf %q antes de passar ao env
                 # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
-                # Mesmo com printf %q, se variáveis contiverem espaços, word splitting pode ocorrer dentro de sh -c
-                # Aspas garantem que variáveis sejam tratadas como argumentos únicos, mesmo com espaços
+                # Mesmo com printf %q, quando variáveis são interpoladas dentro de sh -c string, o shell interno precisa de aspas
+                # printf %q produz string segura, mas dentro de sh -c "command", variáveis devem estar entre aspas para prevenir word splitting
+                # Solução: Usar aspas duplas ao redor de cada variável dentro do comando sh -c
                 PG_PASS_SAFE=$(printf %q "${PG_PASS}")
                 PG_USER_SAFE=$(printf %q "${PG_USER}")
                 PG_DB_SAFE=$(printf %q "${PG_DB}")
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                  exec -T postgres sh -c "env PGPASSWORD=\"${PG_PASS_SAFE}\" psql -U \"${PG_USER_SAFE}\" -d \"${PG_DB_SAFE}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
@@ -2565,14 +2568,15 @@ jobs:
               # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
               # Solução: Escapar PG_PASS com printf %q antes de passar ao env via sh -c
               # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
-              # Mesmo com printf %q, se variáveis contiverem espaços, word splitting pode ocorrer dentro de sh -c
-              # Aspas garantem que variáveis sejam tratadas como argumentos únicos, mesmo com espaços
+              # Mesmo com printf %q, quando variáveis são interpoladas dentro de sh -c string, o shell interno precisa de aspas
+              # printf %q produz string segura, mas dentro de sh -c "command", variáveis devem estar entre aspas para prevenir word splitting
+              # Solução: Usar aspas duplas ao redor de cada variável dentro do comando sh -c
               PG_PASS_SAFE=$(printf %q "${PG_PASS}")
               PG_USER_SAFE=$(printf %q "${PG_USER}")
               PG_DB_SAFE=$(printf %q "${PG_DB}")
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                exec -T postgres sh -c "env PGPASSWORD=\"${PG_PASS_SAFE}\" psql -U \"${PG_USER_SAFE}\" -d \"${PG_DB_SAFE}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
                 < "$migration_file" 2>&1) || psql_exit_code=$?
               
               # Mostrar output filtrado (sem NOTICE informativas)
