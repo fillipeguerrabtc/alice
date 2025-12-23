@@ -2477,9 +2477,10 @@ jobs:
             DRIZZLE_TIMEOUT=300  # 5 minutos (suficiente para schema completo)
             
             # Criar arquivo temporário com permissões seguras para passar DATABASE_URL via --env-file
-            local OLD_UMASK=$(umask)
+            # CORREÇÃO 23/12/2025: Removido 'local' - variáveis no escopo global do script (não dentro de função)
+            OLD_UMASK=$(umask)
             umask 077
-            local DRIZZLE_ENV_FILE=$(mktemp)
+            DRIZZLE_ENV_FILE=$(mktemp)
             umask "$OLD_UMASK"
             printf "DATABASE_URL=%s\n" "${DB_URL}" > "$DRIZZLE_ENV_FILE"
             printf "DRIZZLE_TIMEOUT=%s\n" "${DRIZZLE_TIMEOUT}" >> "$DRIZZLE_ENV_FILE"
@@ -2584,9 +2585,10 @@ jobs:
                 # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
                 # NOTA: docker compose exec NÃO suporta --env-file (apenas docker compose principal suporta)
                 # docker run cria container temporário que se conecta ao PostgreSQL via rede alice-network
-                local OLD_UMASK=$(umask)
+                # CORREÇÃO 23/12/2025: Removido 'local' - variáveis no escopo global do script (não dentro de função)
+                OLD_UMASK=$(umask)
                 umask 077
-                local MIGRATION_ENV_FILE=$(mktemp)
+                MIGRATION_ENV_FILE=$(mktemp)
                 umask "$OLD_UMASK"
                 printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$MIGRATION_ENV_FILE"
                 printf "PG_USER=%s\n" "${PG_USER}" >> "$MIGRATION_ENV_FILE"
@@ -2661,9 +2663,10 @@ jobs:
               # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
               # NOTA: docker compose exec NÃO suporta --env-file (apenas docker compose principal suporta)
               # docker run cria container temporário que se conecta ao PostgreSQL via rede alice-network
-              local OLD_UMASK=$(umask)
+              # CORREÇÃO 23/12/2025: Removido 'local' - variáveis no escopo global do script (não dentro de função)
+              OLD_UMASK=$(umask)
               umask 077
-              local MIGRATION_ENV_FILE=$(mktemp)
+              MIGRATION_ENV_FILE=$(mktemp)
               umask "$OLD_UMASK"
               printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$MIGRATION_ENV_FILE"
               printf "PG_USER=%s\n" "${PG_USER}" >> "$MIGRATION_ENV_FILE"
