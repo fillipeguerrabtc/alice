@@ -2377,17 +2377,17 @@ jobs:
             # Solução: Criar arquivo temporário com variáveis e usar --env-file para passar de forma segura
             # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
             # BUG FIX 23/12/2025: printf %q não sempre produz aspas - só quando necessário para escapar
-            # Para valores simples (alfanuméricos), printf %q retorna sem aspas
-            # Para valores com metacaracteres, printf %q pode retornar com aspas ('value') ou escapes (value\$)
-            # Solução: Usar eval para expandir printf %q de forma segura, garantindo valor literal
-            # eval com printf %q é seguro porque %q já escapou todos os metacaracteres
+            # Para valores simples (alfanuméricos), printf %q retorna sem aspas (ex: "simplepass123")
+            # Para valores com metacaracteres, printf %q retorna com aspas (ex: "'my$pass'") ou escapes (ex: "my\$pass")
+            # Solução: Usar sed para remover aspas externas se existirem, mas manter valor original se não existirem
+            # sed com regex alternativo que funciona tanto com aspas quanto sem aspas
             VALIDATION_ENV_FILE=$(mktemp)
-            # Usar eval para expandir printf %q de forma segura, garantindo valor literal
-            # printf %q já escapou todos os metacaracteres, então eval é seguro aqui
+            # Escapar valores com printf %q e remover aspas externas apenas se existirem
+            # sed regex: s/^'\(.*\)'$/\1/ remove aspas externas se presentes, senão mantém valor original
             # Isso funciona tanto para valores com aspas ('value') quanto sem aspas (value)
-            PG_PASS_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_PASS}")")
-            PG_USER_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_USER}")")
-            PG_DB_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_DB}")")
+            PG_PASS_ESCAPED=$(printf '%q' "${PG_PASS}" | sed -E "s/^'(.*)'$/\1/")
+            PG_USER_ESCAPED=$(printf '%q' "${PG_USER}" | sed -E "s/^'(.*)'$/\1/")
+            PG_DB_ESCAPED=$(printf '%q' "${PG_DB}" | sed -E "s/^'(.*)'$/\1/")
             # Escrever no arquivo usando printf com %s para evitar expansão adicional
             printf 'PGPASSWORD=%s\n' "$PG_PASS_ESCAPED" > "$VALIDATION_ENV_FILE"
             printf 'PG_USER=%s\n' "$PG_USER_ESCAPED" >> "$VALIDATION_ENV_FILE"
