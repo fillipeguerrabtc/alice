@@ -2951,17 +2951,25 @@ wss.on('connection', (ws, req) => {
         // BUG FIX 23/12/2025: Validação defensiva explícita de tipos suportados ao invés de assumir 'image' por padrão
         // Problema: Validação anterior classificava qualquer tipo não-audio/video como 'image', causando falhas no image processor
         // Solução: Lista explícita de tipos suportados com mensagem de erro clara e informativa
-        const mimeType = mediaMessage.media.mimeType.toLowerCase().trim();
+        // BUG FIX 23/12/2025: Normalização robusta de mimeType para suportar variações de case e espaços
+        // MIME types podem vir com variações (ex: "Image/Jpeg", "audio/mpeg; codecs=mp3")
+        // .toLowerCase() e .trim() garantem matching correto mesmo com variações
+        // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais
+        // Consistente com normalização em integrations-service para evitar rejeição de tipos legítimos
+        const normalizedMimeType = mediaMessage.media.mimeType.toLowerCase().trim().split(';')[0].trim();
         
         // Tipos de mídia suportados (consistente com RAG service e frontend)
         const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
         const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
         
+        // BUG FIX 23/12/2025: Validação com type narrowing explícito para garantir type safety
+        // includes() com type assertion garante que TypeScript entenda o tipo correto
+        // Isso previne falsos negativos onde tipos legítimos são rejeitados por problemas de case/whitespace/parâmetros
         let mediaType: 'image' | 'audio' | null = null;
         
-        if (SUPPORTED_IMAGE_TYPES.includes(mimeType as typeof SUPPORTED_IMAGE_TYPES[number])) {
+        if (SUPPORTED_IMAGE_TYPES.includes(normalizedMimeType as typeof SUPPORTED_IMAGE_TYPES[number])) {
           mediaType = 'image';
-        } else if (SUPPORTED_AUDIO_TYPES.includes(mimeType as typeof SUPPORTED_AUDIO_TYPES[number])) {
+        } else if (SUPPORTED_AUDIO_TYPES.includes(normalizedMimeType as typeof SUPPORTED_AUDIO_TYPES[number])) {
           mediaType = 'audio';
         }
         
