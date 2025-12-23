@@ -61,17 +61,12 @@ interface UserSession {
 
 function updateUserSession(
   user: UserSession,
-  tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
+  tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
+  claims: IdTokenClaims
 ) {
-  // BUG FIX 23/12/2025: Validação defensiva antes de type assertion
-  // tokens.claims() pode retornar undefined em casos de erro ou token inválido
-  const claims = tokens.claims();
-  if (!claims) {
-    throw new Error('Token OAuth não contém claims - autenticação falhou');
-  }
-  
-  // Type assertion para IdTokenClaims - tokens.claims() retorna objeto compatível quando válido
-  user.claims = claims as IdTokenClaims;
+  // BUG FIX 23/12/2025: Receber claims já validado como parâmetro
+  // Evita chamar tokens.claims() múltiplas vezes e garante consistência
+  user.claims = claims;
   user.access_token = tokens.access_token;
   user.refresh_token = tokens.refresh_token;
   user.expires_at = user.claims?.exp;
@@ -115,14 +110,15 @@ export async function setupAuth(app: Express) {
       
       // BUG FIX 23/12/2025: Validação defensiva antes de type assertion
       // tokens.claims() pode retornar undefined em casos de erro ou token inválido
-      // updateUserSession já valida claims, mas precisamos validar aqui também para upsertUser
-      const claims = tokens.claims();
-      if (!claims) {
+      const claimsResult = tokens.claims();
+      if (!claimsResult) {
         return verified(new Error('Token OAuth não contém claims - autenticação falhou'));
       }
       
-      updateUserSession(user, tokens);
-      await upsertUser(claims as IdTokenClaims);
+      // Type assertion após validação - garantir que claims tem sub obrigatório
+      const claims = claimsResult as IdTokenClaims;
+      updateUserSession(user, tokens, claims);
+      await upsertUser(claims);
       verified(null, user as Express.User);
     } catch (error) {
       // Tratar erros de validação ou upsert como falha de autenticação
@@ -201,7 +197,12 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const config = await getOidcConfig();
     const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
-    updateUserSession(user, tokenResponse);
+    // BUG FIX 23/12/2025: Validar claims antes de passar para updateUserSession
+    const claimsResult = tokenResponse.claims();
+    if (!claimsResult) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    updateUserSession(user, tokenResponse, claimsResult as IdTokenClaims);
     return next();
   } catch {
     res.status(401).json({ message: "Unauthorized" });
