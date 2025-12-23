@@ -3469,19 +3469,6 @@ registerShutdownCallback(
   { priority: ShutdownPriority.DATABASE }
 );
 
-// BUG FIX 23/12/2025: Registrar callback de database pool ANTES do IIFE para garantir cleanup mesmo se inicialização falhar
-// Se Redis falhar, o server nunca é criado, mas o database pool já existe e precisa ser fechado
-// Isso previne vazamento de conexões do database pool se a inicialização falhar parcialmente
-registerShutdownCallback(
-  'rag-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
-
 // CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
 // Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
 // O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
