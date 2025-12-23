@@ -2568,31 +2568,30 @@ jobs:
                 chmod 600 "$MIGRATION_ENV_FILE"
                 
                 # CRITICAL SECURITY FIX 23/12/2025: Shell injection prevention via env file
-                # Problema: -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" permite shell injection quando GitHub Actions expande ${MIGRATION_PGPASSWORD}
-                # Se MIGRATION_PGPASSWORD contiver $variable, backticks, ou $(command), shell do runner os interpreta ANTES de passar ao Docker
-                # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
-                # Solução: Usar --env-file no docker compose exec (suportado desde Docker Compose v2.20+)
+                # Problema: docker compose exec NÃO suporta --env-file (apenas docker compose principal suporta)
+                # Problema: -e "PGPASSWORD=${PG_PASS}" permite shell injection quando GitHub Actions expande ${PG_PASS}
+                # Se PG_PASS contiver $variable, backticks, ou $(command), shell do runner os interpreta ANTES de passar ao Docker
+                # Solução: Usar docker run --rm --network alice-network --env-file (mesmo padrão da seção de validação)
                 # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
-                # NOTA: docker compose exec suporta --env-file desde v2.20 (2023), então esta é a solução enterprise-grade correta
+                # docker run cria container temporário que se conecta ao PostgreSQL via rede alice-network
+                # Hostname 'alice-postgres' é o nome do container PostgreSQL na rede (conforme docker-compose.prod.yml)
                 # psql com ON_ERROR_STOP=0 permite continuar mesmo com erros de idempotência
                 # Erros como "policy already exists" são ignorados
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-                # BUG FIX 23/12/2025: Pipe para docker compose exec -T pode não conectar stdin corretamente
-                # Solução enterprise-grade: copiar arquivo para dentro do container e executar psql -f diretamente
-                # docker compose cp copia arquivo para /tmp dentro do container, garantindo que psql receba o arquivo corretamente
-                # Isso é mais confiável que pipes ou stdin redirection, especialmente com -T flag
+                # BUG FIX 23/12/2025: Resolver caminho absoluto do arquivo de migration
+                # migration_file é relativo a infra/docker (ex: ../../migrations/0001.sql)
+                # Precisamos do caminho absoluto para montar como volume no container temporário
+                local MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
                 local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
-                docker compose -f docker-compose.prod.yml \
-                  --env-file .env.prod \
-                  cp "$migration_file" postgres:"$MIGRATION_CONTAINER_PATH" > /dev/null 2>&1
-                
-                docker compose -f docker-compose.prod.yml \
-                  --env-file .env.prod \
-                  exec -T \
+                docker run --rm \
+                  --network alice-network \
                   --env-file "$MIGRATION_ENV_FILE" \
-                  postgres \
-                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f \"$MIGRATION_CONTAINER_PATH\" && rm -f \"$MIGRATION_CONTAINER_PATH\"" \
-                  2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                  -v "$MIGRATION_ABSOLUTE_PATH:$MIGRATION_CONTAINER_PATH:ro" \
+                  postgres:16-alpine \
+                  sh -c "
+                    apk add --no-cache postgresql-client >/dev/null 2>&1 && \
+                    psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f \"$MIGRATION_CONTAINER_PATH\"
+                  " 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 
                 # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
                 rm -f "$MIGRATION_ENV_FILE"
@@ -2637,33 +2636,33 @@ jobs:
               chmod 600 "$MIGRATION_ENV_FILE"
               
               # CRITICAL SECURITY FIX 23/12/2025: Shell injection prevention via env file
-              # Problema: -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" permite shell injection quando GitHub Actions expande ${MIGRATION_PGPASSWORD}
-              # Se MIGRATION_PGPASSWORD contiver $variable, backticks, ou $(command), shell do runner os interpreta ANTES de passar ao Docker
-              # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
-              # Solução: Usar --env-file no docker compose exec (suportado desde Docker Compose v2.20+)
+              # Problema: docker compose exec NÃO suporta --env-file (apenas docker compose principal suporta)
+              # Problema: -e "PGPASSWORD=${PG_PASS}" permite shell injection quando GitHub Actions expande ${PG_PASS}
+              # Se PG_PASS contiver $variable, backticks, ou $(command), shell do runner os interpreta ANTES de passar ao Docker
+              # Solução: Usar docker run --rm --network alice-network --env-file (mesmo padrão da seção de validação)
               # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
-              # NOTA: docker compose exec suporta --env-file desde v2.20 (2023), então esta é a solução enterprise-grade correta
+              # docker run cria container temporário que se conecta ao PostgreSQL via rede alice-network
+              # Hostname 'alice-postgres' é o nome do container PostgreSQL na rede (conforme docker-compose.prod.yml)
               # ENTERPRISE-GRADE: Captura output e exit code separadamente
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # BUG FIX 23/12/2025: Pipe para docker compose exec -T pode não conectar stdin corretamente
-              # Solução enterprise-grade: copiar arquivo para dentro do container e executar psql -f diretamente
-              # docker compose cp copia arquivo para /tmp dentro do container, garantindo que psql receba o arquivo corretamente
-              # Isso é mais confiável que pipes ou stdin redirection, especialmente com -T flag
+              # BUG FIX 23/12/2025: Resolver caminho absoluto do arquivo de migration
+              # migration_file é relativo a infra/docker (ex: ../../migrations/0001.sql)
+              # Precisamos do caminho absoluto para montar como volume no container temporário
+              local MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
               local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
-              docker compose -f docker-compose.prod.yml \
-                --env-file .env.prod \
-                cp "$migration_file" postgres:"$MIGRATION_CONTAINER_PATH" > /dev/null 2>&1
               
               psql_output=$(
-                docker compose -f docker-compose.prod.yml \
-                  --env-file .env.prod \
-                  exec -T \
+                docker run --rm \
+                  --network alice-network \
                   --env-file "$MIGRATION_ENV_FILE" \
-                  postgres \
-                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f \"$MIGRATION_CONTAINER_PATH\" && rm -f \"$MIGRATION_CONTAINER_PATH\"" \
-                  2>&1
+                  -v "$MIGRATION_ABSOLUTE_PATH:$MIGRATION_CONTAINER_PATH:ro" \
+                  postgres:16-alpine \
+                  sh -c "
+                    apk add --no-cache postgresql-client >/dev/null 2>&1 && \
+                    psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f \"$MIGRATION_CONTAINER_PATH\"
+                  " 2>&1
               ) || psql_exit_code=$?
               
               # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
