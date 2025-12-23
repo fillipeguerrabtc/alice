@@ -2912,33 +2912,59 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
       return res.status(404).json({ error: 'Arquivo não encontrado' });
     }
     
+    // BUG FIX 23/12/2025: Buscar MIME type original do banco de dados
+    // Arquivos WebM podem ser tanto áudio quanto vídeo - usar MIME type original garante Content-Type correto
+    // Isso previne problemas ao servir arquivos legados que são vídeos mas foram mapeados como áudio
+    let contentType: string | null = null;
+    try {
+      const mediaRecord = await db.query.mediaUploads.findFirst({
+        where: and(
+          eq(schema.mediaUploads.tenantId, tenantId),
+          eq(schema.mediaUploads.filePath, filePath)
+        ),
+        columns: {
+          mimeType: true,
+        },
+      });
+      
+      if (mediaRecord?.mimeType) {
+        contentType = mediaRecord.mimeType;
+        logger.debug({ filePath, mimeType: contentType }, 'MIME type obtido do banco de dados');
+      }
+    } catch (dbError) {
+      logger.warn({ error: dbError, filePath }, 'Erro ao buscar MIME type do banco - usando fallback');
+    }
+    
+    // Fallback: determinar content type pela extensão se não encontrado no banco
+    if (!contentType) {
+      const ext = path.extname(filename).toLowerCase();
+      const contentTypes: Record<string, string> = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.webp': 'image/webp',
+        '.gif': 'image/gif',
+        '.mp3': 'audio/mpeg',
+        '.wav': 'audio/wav',
+        '.ogg': 'audio/ogg',
+        // BUG FIX 23/12/2025: WebM pode ser vídeo ou áudio
+        // Usar 'video/webm' como fallback pois funciona para ambos (é um superconjunto)
+        // Arquivos legados de vídeo WebM serão servidos corretamente
+        // Novos uploads de áudio WebM terão 'audio/webm' no banco e serão servidos corretamente
+        '.webm': 'video/webm',
+        // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
+        '.pdf': 'application/pdf',
+        '.txt': 'text/plain',
+        '.md': 'text/markdown',
+        '.json': 'application/json',
+      };
+      
+      contentType = contentTypes[ext] || 'application/octet-stream';
+      logger.debug({ filePath, ext, contentType }, 'MIME type determinado por extensão (fallback)');
+    }
+    
     // Ler arquivo
     const buffer = await storageService.readFile(filePath);
-    
-    // Determinar content type
-    const ext = path.extname(filename).toLowerCase();
-    const contentTypes: Record<string, string> = {
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.webp': 'image/webp',
-      '.gif': 'image/gif',
-      '.mp3': 'audio/mpeg',
-      '.wav': 'audio/wav',
-      '.ogg': 'audio/ogg',
-      // BUG FIX 23/12/2025: WebM pode ser vídeo ou áudio, mas removemos suporte a vídeo
-      // Arquivos WebM legados podem ter MIME type 'video/webm', mas agora tratamos apenas como áudio
-      // Se arquivos legados existirem com 'video/webm', serão rejeitados na validação (não está em SUPPORTED_MEDIA_TYPES)
-      // Novos uploads WebM devem ser enviados com MIME type 'audio/webm' explicitamente
-      '.webm': 'audio/webm',
-      // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
-      '.pdf': 'application/pdf',
-      '.txt': 'text/plain',
-      '.md': 'text/markdown',
-      '.json': 'application/json',
-    };
-    
-    const contentType = contentTypes[ext] || 'application/octet-stream';
     
     res.set({
       'Content-Type': contentType,
