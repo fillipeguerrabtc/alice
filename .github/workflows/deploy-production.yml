@@ -2485,9 +2485,12 @@ jobs:
                 # psql com ON_ERROR_STOP=0 permite continuar mesmo com erros de idempotência
                 # Erros como "policy already exists" são ignorados
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
+                # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
+                # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
+                # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres psql -U "${PG_USER}" -d "${PG_DB}" \
+                  exec -T postgres env PGPASSWORD="${PG_PASS}" psql -U "${PG_USER}" -d "${PG_DB}" \
                   -v ON_ERROR_STOP=0 \
                   -f /dev/stdin < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
@@ -2518,9 +2521,12 @@ jobs:
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
+              # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
+              # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
+              # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres psql -U "${PG_USER}" -d "${PG_DB}" \
+                exec -T postgres env PGPASSWORD="${PG_PASS}" psql -U "${PG_USER}" -d "${PG_DB}" \
                 -v ON_ERROR_STOP=1 \
                 -f /dev/stdin < "$migration_file" 2>&1) || psql_exit_code=$?
               
