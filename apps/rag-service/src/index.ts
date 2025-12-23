@@ -2891,7 +2891,8 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
       '.mp3': 'audio/mpeg',
       '.wav': 'audio/wav',
       '.ogg': 'audio/ogg',
-      // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.webm, .mp4, .mov)
+      '.webm': 'audio/webm', // CORREÇÃO 23/12/2025: .webm ainda é usado para áudio (não apenas vídeo)
+      // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
       '.pdf': 'application/pdf',
       '.txt': 'text/plain',
       '.md': 'text/markdown',
