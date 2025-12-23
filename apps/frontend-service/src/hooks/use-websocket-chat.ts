@@ -100,7 +100,9 @@ export interface ChatMessage {
 
 // Limites de arquivo (em bytes)
 // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
-export const FILE_LIMITS = {
+// BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam
+// Isso previne acesso a undefined e NaN em cálculos de limite
+export const FILE_LIMITS: Record<MediaType, number> = {
   image: 10 * 1024 * 1024,  // 10MB
   audio: 25 * 1024 * 1024,  // 25MB
   // video removido
@@ -144,7 +146,12 @@ export function validateFile(file: File): { valid: boolean; error?: string } {
     return { valid: false, error: 'Tipo de arquivo não suportado' };
   }
   
+  // BUG FIX 23/12/2025: Verificação defensiva garante que limit não seja undefined
+  // Type narrowing após validação garante que mediaType é MediaType
   const limit = FILE_LIMITS[mediaType];
+  if (!limit) {
+    return { valid: false, error: `Limite não definido para tipo de mídia: ${mediaType}` };
+  }
   if (file.size > limit) {
     return { 
       valid: false, 

@@ -556,7 +556,9 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   // Limites de arquivo por tipo de mídia (consistente com Chat e RAG service)
   // CORREÇÃO 23/12/2025: Removido limite fixo de 100MB (vídeo) - agora usa limites por tipo
-  const FILE_LIMITS = {
+  // BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam
+  // Isso previne acesso a undefined e NaN em cálculos de limite
+  const FILE_LIMITS: Record<'image' | 'audio', number> = {
     image: 10 * 1024 * 1024,  // 10MB para imagens
     audio: 25 * 1024 * 1024,  // 25MB para áudio
   } as const;
@@ -578,7 +580,17 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       }
 
       // Validar tamanho baseado no tipo de mídia
+      // BUG FIX 23/12/2025: Verificação defensiva garante que limit não seja undefined
+      // Type narrowing após validação garante que mediaType é 'image' | 'audio'
       const limit = FILE_LIMITS[mediaType];
+      if (!limit) {
+        toast({
+          title: t('training.multimodal.errors.unsupportedType'),
+          description: `${file.name} - tipo de mídia não suportado: ${mediaType}`,
+          variant: 'destructive',
+        });
+        continue;
+      }
       if (file.size > limit) {
         const limitMB = limit / (1024 * 1024);
         toast({

@@ -64,7 +64,9 @@ export interface ConversationsResponse {
   conversations: Conversation[];
 }
 
-export const FILE_LIMITS = {
+// BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam
+// Isso previne acesso a undefined e NaN em cálculos de limite
+export const FILE_LIMITS: Record<MediaType, number> = {
   image: 10 * 1024 * 1024,
   audio: 25 * 1024 * 1024,
   // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)

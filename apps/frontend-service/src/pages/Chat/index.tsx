@@ -99,7 +99,21 @@ export default function Chat() {
         continue;
       }
 
+      // BUG FIX 23/12/2025: Verificação defensiva garante que limit não seja undefined
+      // Type narrowing após validação garante que mediaType é MediaType
       const limit = FILE_LIMITS[mediaType];
+      if (!limit) {
+        frontendLogger.error('Limite não definido para tipo de mídia', { 
+          fileName: file.name, 
+          mediaType 
+        });
+        toast({
+          title: t('chat.upload.unsupportedType'),
+          description: `Tipo de mídia não suportado: ${mediaType}`,
+          variant: 'destructive',
+        });
+        continue;
+      }
       if (file.size > limit) {
         frontendLogger.warn('Upload rejeitado: arquivo muito grande', { 
           fileName: file.name, 
