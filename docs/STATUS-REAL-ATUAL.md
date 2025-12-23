@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 21 de Dezembro de 2025  
+> **Data:** 23 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.10 - Deploy Workflow Expression Length Fix: Script Externo para .env.prod
+> **Versão:** 4.11 - Verificação Completa SearXNG + Correção Contagem Containers
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 44 (produção) |
+| **Total de Containers** | 45 (produção) |
 | **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
 | **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -627,7 +627,7 @@ Retenção Arquivo:   30 dias
 
 ## 🐳 INFRAESTRUTURA DOCKER (45 containers)
 
-### Core Infra (7)
+### Core Infra (8)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
@@ -636,8 +636,9 @@ Retenção Arquivo:   30 dias
 | 3 | traefik | traefik:v3.6.4 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
 | 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
-| 6 | alice-tor | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
-| 7 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
+| 6 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
+| 7 | alice-tor | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
+| 8 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
 
 ### Alice Microservices (8)
 
@@ -1092,12 +1093,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 21/12/2025*
+*Documento atualizado em: 23/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.3 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto*
+*Versão: 4.11 - Verificação Completa SearXNG + Correção Contagem Containers*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

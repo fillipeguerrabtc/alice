@@ -214,9 +214,9 @@ Permissões Enterprise (13/12/2025):
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
 ## Security Hardening (19 de Dezembro de 2025)
-- **44 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+- **45 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
 - **25 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **44 containers** = 100% com resource limits ✅ COMPLETO
+- **45 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
@@ -330,8 +330,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.24 - 23 de Dezembro de 2025*
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Versão: 4.25 - 23 de Dezembro de 2025*
+*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup) - Tor Proxy adicionado 23/12/2025*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -578,3 +578,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix SearXNG limiter.toml (23/12/2025): Warning "missing config file: /etc/searxng/limiter.toml" e erro "X-Forwarded-For nor X-Real-IP header is set!" indicavam bot detection não configurado. Criado limiter.toml com IPs da rede Docker (172.16.0.0/12) como confiáveis. Workflow atualizado para copiar limiter.toml junto com settings.yml.*
 *Remoção Vídeo Processing (23/12/2025): Processamento de vídeo REMOVIDO completamente - muito pesado para GPU. Plataforma suporta apenas texto, áudio e imagem. Arquivos deletados: video-processor.ts (~870 linhas), VideoPlayer.tsx, testes de vídeo. Atualizados: rag-service, chat-service, integrations-service, frontend (Training, Chat), traduções, documentação. Total: 4 arquivos deletados, ~20 arquivos atualizados.*
 *Bug Fix SearXNG use_default_settings (23/12/2025): settings.yml não tinha diretiva `use_default_settings: true`. Sem ela, SearXNG SUBSTITUI todas configurações padrão ao invés de MESCLAR - resultando em APENAS 2 engines ativos (ahmia e torch - ambos .onion). Google, Bing, DuckDuckGo, Wikipedia e todos os outros estavam DESABILITADOS. Buscas retornariam apenas resultados da dark web. Corrigido adicionando `use_default_settings: true` no início do settings.yml.*
+*Verificação Completa SearXNG (23/12/2025): Auditoria enterprise da implementação SearXNG + Tor Proxy. Confirmado: use_default_settings: true presente, Tor proxy configurado APENAS para engines .onion (não global), limiter.toml configurado para rede interna, workflow copia arquivos corretamente antes de iniciar container, dependências corretas (alice-tor antes de alice-searxng), contagem de containers corrigida (45 total - 8 infra incluindo Tor). Implementação 100% enterprise-grade conforme Regra 6.*

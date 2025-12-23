@@ -3,7 +3,7 @@
 **Autor:** Fillipe Guerra  
 **Data:** 21 de Dezembro de 2025
 
-## Visão Geral da Arquitetura - 44 Containers em Produção
+## Visão Geral da Arquitetura - 45 Containers em Produção
 
 A plataforma Alice é composta por **45 containers** organizados em 6 categorias:
 
@@ -113,7 +113,7 @@ A plataforma Alice é composta por **45 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 44 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - CX43) - 45 CONTAINERS           │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
@@ -1110,10 +1110,10 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 21 de Dezembro de 2025*
-*Versão: 7.3 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto*
+*Documento atualizado em: 23 de Dezembro de 2025*
+*Versão: 7.4 - Verificação Completa SearXNG + Correção Contagem Containers*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 45 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*

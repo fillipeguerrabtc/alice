@@ -9,7 +9,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 
 **Total de Secrets:** 54 configurados no repositório GitHub (verificado em 20/12/2025)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 44 em produção (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)
+**Total de Containers:** 45 em produção (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud GPUs
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
@@ -633,10 +633,10 @@ openssl rand -base64 24
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 21 de Dezembro de 2025*
-*Versão: 7.8*
+*Documento atualizado em: 23 de Dezembro de 2025*
+*Versão: 7.9 - Verificação Completa SearXNG*
 *Total de Secrets: 54 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
+*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *SALAD_PROJECT_ID (17/12/2025): Adicionado para Python SDK - projeto no Salad Cloud*
