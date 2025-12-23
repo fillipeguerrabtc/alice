@@ -3522,8 +3522,18 @@ registerShutdownCallback(
     // BUG FIX 23/12/2025: Inicializar WebSocket ANTES de iniciar servidor HTTP
     // Isso garante que Redis Pub/Sub esteja pronto antes de aceitar qualquer conexão
     // Evita race condition onde clientes conectam antes do Redis estar inicializado
-    await initEmbeddingWebSocket(server);
-    logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+    // BUG FIX 23/12/2025: Em desenvolvimento, se Redis não estiver disponível, initEmbeddingWebSocket
+    // permite WebSocket funcionar sem Pub/Sub (funcionalidade limitada) ao invés de crashar
+    try {
+      await initEmbeddingWebSocket(server);
+      logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+    } catch (error) {
+      // Em produção, erro já foi logado e propagado por initEmbeddingWebSocket
+      // Em desenvolvimento, erro não deve ocorrer (função permite operação sem Redis)
+      // Mas se ocorrer, tratar como erro crítico
+      logger.error({ error }, 'CRITICAL: Falha ao inicializar WebSocket - abortando');
+      throw error;
+    }
     
     // BUG FIX 23/12/2025: Registrar shutdown callbacks específicos do servidor ANTES de server.listen()
     // Se o servidor falhar ao fazer bind na porta, server.on('error') chama process.exit(1)

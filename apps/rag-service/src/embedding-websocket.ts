@@ -154,36 +154,56 @@ export async function initEmbeddingWebSocket(server: Server): Promise<void> {
   // BUG FIX 23/12/2025: Aguardar inicialização do Redis Pub/Sub antes de aceitar conexões
   // initRedisPubSub() é async e precisa ser aguardado para evitar race condition
   // WebSocket clients podem conectar antes do Redis estar pronto, causando falhas silenciosas
-  // BUG FIX 23/12/2025: Tratamento de erro explícito - se Redis Pub/Sub falhar, WebSocket não deve funcionar
+  // BUG FIX 23/12/2025: Tratamento de erro explícito - se Redis Pub/Sub falhar, comportamento depende do ambiente
   // initRedisPubSub() agora retorna boolean - false indica que Redis não está disponível ou falhou
   // Em produção, Redis é obrigatório - falha deve causar erro crítico (Regra 6 - sem workarounds)
+  // Em desenvolvimento, permitir WebSocket funcionar sem Pub/Sub (funcionalidade limitada - sem notificações de outros workers)
+  const isProduction = process.env.NODE_ENV === 'production';
+  
   try {
     const redisPubSubInitialized = await initRedisPubSub();
     
     if (!redisPubSubInitialized) {
       // Redis não disponível ou falhou - comportamento depende do ambiente
-      // Em produção, isso é erro crítico (Redis é obrigatório para Pub/Sub)
-      // Em desenvolvimento, permitir continuar mas com funcionalidade limitada
-      const error = new Error('Redis Pub/Sub não disponível - WebSocket não pode funcionar corretamente');
-      logger.error({ error }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket');
-      
-      // Limpar recursos criados antes de lançar erro
-      if (heartbeatInterval) {
-        clearInterval(heartbeatInterval);
-        heartbeatInterval = null;
+      if (isProduction) {
+        // Em produção, isso é erro crítico (Redis é obrigatório para Pub/Sub)
+        const error = new Error('Redis Pub/Sub não disponível - WebSocket não pode funcionar corretamente em produção');
+        logger.error({ error }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket em produção');
+        
+        // Limpar recursos criados antes de lançar erro
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
+        }
+        if (wss) {
+          wss.close();
+          wss = null;
+        }
+        
+        throw error;
+      } else {
+        // Em desenvolvimento, permitir WebSocket funcionar sem Pub/Sub
+        // Funcionalidade limitada: conexões WebSocket funcionam, mas notificações de outros workers não são recebidas
+        // Isso permite desenvolvimento local sem Redis, mas com aviso claro sobre limitações
+        logger.warn('Redis Pub/Sub não disponível - WebSocket funcionará sem notificações de outros workers (modo desenvolvimento)');
+        logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado (sem Redis Pub/Sub)');
+        return; // Retornar sem erro - WebSocket funciona mas sem Pub/Sub
       }
-      if (wss) {
-        wss.close();
-        wss = null;
-      }
-      
-      // Propagar erro para o caller tratar adequadamente (index.ts verifica isProduction)
-      throw error;
     }
     
     logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado');
   } catch (redisError) {
+    // Se initRedisPubSub() lançar exceção (não apenas retornar false), tratar como erro crítico
     logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket');
+    
+    // Em desenvolvimento, permitir continuar sem Pub/Sub se for apenas falha de conexão
+    if (!isProduction && redisError instanceof Error && redisError.message.includes('Redis não disponível')) {
+      logger.warn('Redis Pub/Sub não disponível - WebSocket funcionará sem notificações de outros workers (modo desenvolvimento)');
+      logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado (sem Redis Pub/Sub)');
+      return; // Retornar sem erro - WebSocket funciona mas sem Pub/Sub
+    }
+    
+    // Em produção ou se for erro diferente de "Redis não disponível", lançar erro
     // Limpar recursos criados antes de lançar erro
     if (heartbeatInterval) {
       clearInterval(heartbeatInterval);
@@ -193,7 +213,6 @@ export async function initEmbeddingWebSocket(server: Server): Promise<void> {
       wss.close();
       wss = null;
     }
-    // Propagar erro para o caller tratar adequadamente
     throw redisError;
   }
 }
