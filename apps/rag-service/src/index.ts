@@ -3385,74 +3385,106 @@ app.use(createErrorHandler({
 // ENTERPRISE-GRADE: Servidor só aceita conexões após dependências críticas estarem prontas (Regra 6)
 initializeRedisCache()
   .then((connected) => {
-    if (connected) {
-      logger.info('Redis cache inicializado para embedding-websocket');
-    } else {
-      logger.warn('Redis cache não disponível - WebSocket funcionará sem Pub/Sub');
-    }
-    
-    // Iniciar servidor HTTP APÓS Redis estar pronto (ou falhar graciosamente)
-    const server = app.listen(PORT, () => {
-      logger.info({ 
-        port: PORT, 
-        embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
-        qdrantConfigured: isQdrantConfigured(),
-        qdrantUrl: process.env.QDRANT_URL || 'not_configured',
-        architecture: {
-          text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
-          image: 'OpenCLIP (1024 dim) → pgvector',
-        },
-        circuitBreaker: 'enabled',
-        strategy: 'warm-on-demand',
-        redisConnected: connected,
-      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
-    });
-    
-    // Inicializar WebSocket para notificações de embeddings (após servidor estar pronto)
-    // CORREÇÃO 23/12/2025: Removida duplicação - chamado apenas uma vez aqui
-    initEmbeddingWebSocket(server);
-    logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
-    
-    // Configurar timeouts do servidor
-    server.timeout = 60000; // 60s para processamento de embeddings/uploads
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-    
-    // Registrar shutdown callbacks
-    registerShutdownCallback(
-      'rag-http-server',
-      async () => {
-        logger.info('Encerrando HTTP server...');
-        await new Promise<void>((resolve, reject) => {
-          server.close((err) => {
-            if (err) {
-              logger.error({ error: err }, 'Erro ao fechar HTTP server');
-              reject(err);
-            } else {
-              logger.info('HTTP server encerrado com sucesso');
-              resolve();
-            }
+    try {
+      if (connected) {
+        logger.info('Redis cache inicializado para embedding-websocket');
+      } else {
+        logger.warn('Redis cache não disponível - WebSocket funcionará sem Pub/Sub');
+      }
+      
+      // Iniciar servidor HTTP APÓS Redis estar pronto (ou falhar graciosamente)
+      // CORREÇÃO 23/12/2025: app.listen() pode falhar se porta já estiver em uso
+      // Erros síncronos são capturados pelo try-catch, erros assíncronos pelo error handler do server
+      const server = app.listen(PORT, () => {
+        logger.info({ 
+          port: PORT, 
+          embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
+          qdrantConfigured: isQdrantConfigured(),
+          qdrantUrl: process.env.QDRANT_URL || 'not_configured',
+          architecture: {
+            text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+            image: 'OpenCLIP (1024 dim) → pgvector',
+          },
+          circuitBreaker: 'enabled',
+          strategy: 'warm-on-demand',
+          redisConnected: connected,
+        }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
+      });
+      
+      // CORREÇÃO 23/12/2025: Capturar erros assíncronos de inicialização do servidor (ex: porta em uso)
+      // app.listen() emite evento 'error' se falhar após callback ser chamado
+      // Isso previne unhandled promise rejections e garante fail-fast adequado
+      server.on('error', (err: NodeJS.ErrnoException) => {
+        logger.error({ 
+          error: err.message, 
+          code: err.code,
+          port: PORT,
+          stack: err.stack,
+        }, 'Falha crítica ao iniciar servidor HTTP - abortando');
+        // ENTERPRISE-GRADE: Fail-fast se servidor não pode iniciar (Regra 6 - sem workarounds)
+        process.exit(1);
+      });
+      
+      // Inicializar WebSocket para notificações de embeddings (após servidor estar pronto)
+      // CORREÇÃO 23/12/2025: Removida duplicação - chamado apenas uma vez aqui
+      // Pode lançar exceções síncronas - capturadas pelo try-catch
+      initEmbeddingWebSocket(server);
+      logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+      
+      // Configurar timeouts do servidor
+      server.timeout = 60000; // 60s para processamento de embeddings/uploads
+      server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+      server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+      
+      // Registrar shutdown callbacks
+      // CORREÇÃO 23/12/2025: registerShutdownCallback pode lançar exceções síncronas - capturadas pelo try-catch
+      registerShutdownCallback(
+        'rag-http-server',
+        async () => {
+          logger.info('Encerrando HTTP server...');
+          await new Promise<void>((resolve, reject) => {
+            server.close((err) => {
+              if (err) {
+                logger.error({ error: err }, 'Erro ao fechar HTTP server');
+                reject(err);
+              } else {
+                logger.info('HTTP server encerrado com sucesso');
+                resolve();
+              }
+            });
           });
-        });
-      },
-      { priority: ShutdownPriority.HTTP_SERVER }
-    );
-    
-    registerShutdownCallback(
-      'rag-websocket-server',
-      async () => {
-        logger.info('Encerrando WebSocket server...');
-        // CORREÇÃO 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
-        // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
-        // Isso causa resource leaks e conexões pendentes
-        await closeEmbeddingWebSocket();
-        logger.info('WebSocket server encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.WEBSOCKET }
-    );
+        },
+        { priority: ShutdownPriority.HTTP_SERVER }
+      );
+      
+      registerShutdownCallback(
+        'rag-websocket-server',
+        async () => {
+          logger.info('Encerrando WebSocket server...');
+          // CORREÇÃO 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
+          // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
+          // Isso causa resource leaks e conexões pendentes
+          await closeEmbeddingWebSocket();
+          logger.info('WebSocket server encerrado com sucesso');
+        },
+        { priority: ShutdownPriority.WEBSOCKET }
+      );
+    } catch (error) {
+      // CORREÇÃO 23/12/2025: Capturar erros síncronos dentro do .then() (app.listen, initEmbeddingWebSocket, registerShutdownCallback)
+      // Esses erros não são capturados pelo .catch() externo - precisam ser tratados aqui
+      logger.error({ 
+        error: (error as Error).message,
+        stack: (error as Error).stack,
+      }, 'Falha crítica ao inicializar servidor após Redis - abortando');
+      // ENTERPRISE-GRADE: Fail-fast se inicialização falhar (Regra 6 - sem workarounds)
+      process.exit(1);
+    }
   })
   .catch((error) => {
-    logger.error({ error: (error as Error).message }, 'Falha crítica ao inicializar Redis - abortando servidor');
+    logger.error({ 
+      error: (error as Error).message,
+      stack: (error as Error).stack,
+    }, 'Falha crítica ao inicializar Redis - abortando servidor');
     // ENTERPRISE-GRADE: Fail-fast se Redis é crítico (Regra 6 - sem workarounds)
     // Em produção, Redis é necessário para Pub/Sub de embeddings
     process.exit(1);
