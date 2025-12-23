@@ -39,8 +39,15 @@ export function getSession() {
   });
 }
 
+interface UserSession {
+  claims?: client.IdTokenClaims;
+  access_token?: string;
+  refresh_token?: string;
+  expires_at?: number;
+}
+
 function updateUserSession(
-  user: any,
+  user: UserSession,
   tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
 ) {
   user.claims = tokens.claims();
@@ -49,7 +56,7 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUser(claims: any) {
+async function upsertUser(claims: client.IdTokenClaims) {
   await storage.upsertUser({
     id: claims["sub"],
     email: claims["email"],
@@ -71,7 +78,7 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user: Record<string, any> = {};
+    const user: UserSession = {};
     updateUserSession(user, tokens);
     await upsertUser(tokens.claims());
     verified(null, user as Express.User);
@@ -128,7 +135,7 @@ export async function setupAuth(app: Express) {
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  const user = req.user as any;
+  const user = req.user as UserSession;
 
   if (!req.isAuthenticated() || !user.expires_at) {
     return res.status(401).json({ message: "Unauthorized" });

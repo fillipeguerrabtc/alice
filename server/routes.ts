@@ -4,6 +4,10 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { z } from "zod";
 import { llmClient } from "./services/llm-client";
+import { createLogger } from "@alice/shared-utils";
+
+// Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
+const logger = createLogger("server-routes");
 
 const createConversationSchema = z.object({
   titulo: z.string().optional(),
@@ -18,7 +22,7 @@ const createMessageSchema = z.object({
   conversationId: z.string().uuid(),
   conteudo: z.string(),
   tipo: z.enum(["text", "image", "audio", "mixed"]).optional(),
-  anexos: z.array(z.any()).optional(),
+  anexos: z.array(z.record(z.unknown())).optional(),
 });
 
 const createDocumentSchema = z.object({
@@ -32,13 +36,13 @@ const createDocumentSchema = z.object({
 export async function registerRoutes(app: Express): Promise<Server> {
   await setupAuth(app);
 
-  app.get("/api/auth/user", isAuthenticated, async (req: any, res) => {
+  app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
-      console.error("Erro ao buscar usuário:", error);
+      logger.error({ err: error }, "Erro ao buscar usuário");
       res.status(500).json({ message: "Falha ao buscar usuário" });
     }
   });
@@ -47,98 +51,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
 
-  app.get("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       const conversations = await storage.getConversations(userId);
       res.json(conversations);
     } catch (error) {
-      console.error("Erro ao buscar conversas:", error);
+      logger.error({ err: error }, "Erro ao buscar conversas");
       res.status(500).json({ message: "Falha ao buscar conversas" });
     }
   });
 
-  app.get("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      if (conversation.userId !== req.user.claims.sub) {
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
       res.json(conversation);
     } catch (error) {
-      console.error("Erro ao buscar conversa:", error);
+      logger.error({ err: error }, "Erro ao buscar conversa");
       res.status(500).json({ message: "Falha ao buscar conversa" });
     }
   });
 
-  app.post("/api/conversations", isAuthenticated, async (req: any, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = createConversationSchema.parse(req.body);
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       const conversation = await storage.createConversation({
         ...data,
-        userId: req.user.claims.sub,
+        userId,
       });
       res.status(201).json(conversation);
     } catch (error) {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
       }
-      console.error("Erro ao criar conversa:", error);
+      logger.error({ err: error }, "Erro ao criar conversa");
       res.status(500).json({ message: "Falha ao criar conversa" });
     }
   });
 
-  app.delete("/api/conversations/:id", isAuthenticated, async (req: any, res: Response) => {
+  app.delete("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      if (conversation.userId !== req.user.claims.sub) {
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
       await storage.deleteConversation(req.params.id);
       res.status(204).send();
     } catch (error) {
-      console.error("Erro ao deletar conversa:", error);
+      logger.error({ err: error }, "Erro ao deletar conversa");
       res.status(500).json({ message: "Falha ao deletar conversa" });
     }
   });
 
-  app.get("/api/conversations/:id/messages", isAuthenticated, async (req: any, res: Response) => {
+  app.get("/api/conversations/:id/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      if (conversation.userId !== req.user.claims.sub) {
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
-      const limit = parseInt(req.query.limit as string) || 100;
+      const limit = parseInt((req.query.limit as string) || "100", 10);
       const messages = await storage.getMessages(req.params.id, limit);
       res.json(messages);
     } catch (error) {
-      console.error("Erro ao buscar mensagens:", error);
+      logger.error({ err: error }, "Erro ao buscar mensagens");
       res.status(500).json({ message: "Falha ao buscar mensagens" });
     }
   });
 
-  app.post("/api/messages", isAuthenticated, async (req: any, res: Response) => {
+  app.post("/api/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = createMessageSchema.parse(req.body);
       const conversation = await storage.getConversation(data.conversationId);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      if (conversation.userId !== req.user.claims.sub) {
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
       const message = await storage.createMessage({
         ...data,
-        userId: req.user.claims.sub,
+        userId,
         isFromUser: true,
       });
       res.status(201).json(message);
@@ -146,23 +155,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
       }
-      console.error("Erro ao criar mensagem:", error);
+      logger.error({ err: error }, "Erro ao criar mensagem");
       res.status(500).json({ message: "Falha ao criar mensagem" });
     }
   });
 
-  app.get("/api/documents", isAuthenticated, async (req: any, res: Response) => {
+  app.get("/api/documents", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const namespaceId = req.query.namespaceId as string | undefined;
+      const namespaceId = (req.query.namespaceId as string) || undefined;
       const documents = await storage.getDocuments(namespaceId);
       res.json(documents);
     } catch (error) {
-      console.error("Erro ao buscar documentos:", error);
+      logger.error({ err: error }, "Erro ao buscar documentos");
       res.status(500).json({ message: "Falha ao buscar documentos" });
     }
   });
 
-  app.post("/api/documents", isAuthenticated, async (req: any, res: Response) => {
+  app.post("/api/documents", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = createDocumentSchema.parse(req.body);
       const document = await storage.createDocument(data);
@@ -171,17 +180,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
       }
-      console.error("Erro ao criar documento:", error);
+      logger.error({ err: error }, "Erro ao criar documento");
       res.status(500).json({ message: "Falha ao criar documento" });
     }
   });
 
-  app.delete("/api/documents/:id", isAuthenticated, async (req: any, res: Response) => {
+  app.delete("/api/documents/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
       await storage.deleteDocument(req.params.id);
       res.status(204).send();
     } catch (error) {
-      console.error("Erro ao deletar documento:", error);
+      logger.error({ err: error }, "Erro ao deletar documento");
       res.status(500).json({ message: "Falha ao deletar documento" });
     }
   });
@@ -191,7 +200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const namespaces = await storage.getNamespaces();
       res.json(namespaces);
     } catch (error) {
-      console.error("Erro ao buscar namespaces:", error);
+      logger.error({ err: error }, "Erro ao buscar namespaces");
       res.status(500).json({ message: "Falha ao buscar namespaces" });
     }
   });
@@ -201,14 +210,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const agents = await storage.getAgents();
       res.json(agents);
     } catch (error) {
-      console.error("Erro ao buscar agentes:", error);
+      logger.error({ err: error }, "Erro ao buscar agentes");
       res.status(500).json({ message: "Falha ao buscar agentes" });
     }
   });
 
-  app.get("/api/metrics", isAuthenticated, async (req: any, res: Response) => {
+  app.get("/api/metrics", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       const conversations = await storage.getConversations(userId);
       const totalConversas = conversations.length;
       const totalMensagens = conversations.reduce((sum, c) => sum + (c.totalMensagens || 0), 0);
@@ -218,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
-      console.error("Erro ao buscar métricas:", error);
+      logger.error({ err: error }, "Erro ao buscar métricas");
       res.status(500).json({ message: "Falha ao buscar métricas" });
     }
   });
@@ -237,7 +246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     stream: z.boolean().optional().default(true),
   });
 
-  app.post("/api/chat", isAuthenticated, async (req: any, res: Response) => {
+  app.post("/api/chat", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = chatRequestSchema.parse(req.body);
       const conversation = await storage.getConversation(data.conversationId);
@@ -245,7 +254,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      if (conversation.userId !== req.user.claims.sub) {
+      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
 
@@ -258,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userMessage = await storage.createMessage({
         conversationId: data.conversationId,
         conteudo: data.message,
-        userId: req.user.claims.sub,
+        userId,
         isFromUser: true,
         tipo: "text",
       });
@@ -299,7 +309,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           res.write(`data: ${JSON.stringify({ done: true, messageId: assistantMessage.id })}\n\n`);
           res.end();
         } catch (error) {
-          console.error("Erro no streaming:", error);
+          logger.error({ err: error }, "Erro no streaming");
           res.write(`data: ${JSON.stringify({ error: "Erro ao gerar resposta" })}\n\n`);
           res.end();
         }
@@ -331,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof z.ZodError) {
         return res.status(400).json({ message: "Dados inválidos", errors: error.errors });
       }
-      console.error("Erro no chat:", error);
+      logger.error({ err: error }, "Erro no chat");
       res.status(500).json({ message: "Falha ao processar mensagem" });
     }
   });

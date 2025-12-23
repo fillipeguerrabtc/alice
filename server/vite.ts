@@ -3,21 +3,18 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { createServer as createViteServer, createLogger } from "vite";
+import type { Server as HttpServer } from "http";
+import { createLogger as createPinoLogger } from "@alice/shared-utils";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const viteLogger = createLogger();
+const logger = createPinoLogger("vite-dev");
 
 export function log(message: string, source = "express") {
-  const formattedTime = new Date().toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: true,
-  });
-  console.log(`${formattedTime} [${source}] ${message}`);
+  logger.info({ source }, message);
 }
 
-export async function setupVite(app: Express, server: any) {
+export async function setupVite(app: Express, server: HttpServer) {
   const vite = await createViteServer({
     server: {
       middlewareMode: true,

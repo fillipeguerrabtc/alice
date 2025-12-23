@@ -11,6 +11,10 @@
 import express from 'express';
 import { registerRoutes } from './routes';
 import { setupVite, log } from './vite';
+import { createLogger } from '@alice/shared-utils';
+
+// Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
+const logger = createLogger('server-dev');
 
 // ============================================================================
 // PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 CLAUDE.md)
@@ -88,7 +92,7 @@ async function startDevServer() {
   app.use((req, res, next) => {
     const start = Date.now();
     const path = req.path;
-    let capturedJsonResponse: Record<string, any> | undefined = undefined;
+    let capturedJsonResponse: Record<string, unknown> | undefined = undefined;
 
     const originalResJson = res.json;
     res.json = function (bodyJson, ...args) {
@@ -121,9 +125,10 @@ async function startDevServer() {
 
   const server = await registerRoutes(app);
   
-  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((err: Error & { status?: number; statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
+    logger.error({ err, status }, "Erro no servidor de desenvolvimento");
     res.status(status).json({ message });
     throw err;
   });
@@ -138,6 +143,6 @@ async function startDevServer() {
 }
 
 startDevServer().catch((error) => {
-  console.error('Erro ao iniciar servidor:', error);
+  logger.error({ err: error }, 'Erro ao iniciar servidor');
   process.exit(1);
 });

@@ -1,4 +1,8 @@
 import { z } from "zod";
+import { createLogger } from "@alice/shared-utils";
+
+// Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
+const logger = createLogger("llm-client");
 
 const SALAD_API_KEY = process.env.SALAD_API_KEY || "";
 const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID || "";
@@ -36,7 +40,7 @@ export class LLMClient {
   constructor() {
     this.isConfigured = !!(SALAD_API_KEY && SALAD_ORGANIZATION_ID);
     if (!this.isConfigured) {
-      console.warn("LLM Client: SALAD_API_KEY ou SALAD_ORGANIZATION_ID nao configurados - LLM indisponivel");
+      logger.warn("LLM Client: SALAD_API_KEY ou SALAD_ORGANIZATION_ID nao configurados - LLM indisponivel");
     }
   }
 

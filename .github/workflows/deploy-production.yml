@@ -2377,23 +2377,25 @@ jobs:
             
             # ENTERPRISE-GRADE: Escapar credenciais com printf %q para prevenir shell injection (Regra 6 - segurança crítica)
             # BUG FIX 23/12/2025: Shell injection vulnerability corrigida
+            # CORREÇÃO CRÍTICA 23/12/2025: Shell injection prevention enterprise-grade
             # Problema: Se PG_PASS contiver metacaracteres ($, backticks, $(), etc.), shell externo os interpreta ANTES de passar ao Docker
-            # Solução: Usar printf %q para escapar credenciais e passar via variáveis de ambiente Docker (-e)
+            # Solução: Usar printf %q para escapar credenciais e passar via variáveis de ambiente Docker (-e) COM ASPAS
             # Docker -e passa variáveis de forma segura sem risco de shell injection - variáveis são expandidas pelo shell interno, não externo
             # printf %q escapa todos os metacaracteres de forma segura (RFC 3986 compliant)
+            # BUG FIX: Variáveis escapadas DEVEM ser passadas COM ASPAS ao docker run -e para evitar problemas com espaços/aspas literais
             PG_PASS_ESCAPED=$(printf %q "${PG_PASS}")
             PG_USER_ESCAPED=$(printf %q "${PG_USER}")
             PG_DB_ESCAPED=$(printf %q "${PG_DB}")
             
-            # CORREÇÃO CRÍTICA: Passar variáveis escapadas SEM aspas adicionais para evitar expansão dupla
-            # printf %q já retorna string escapada pronta para uso em comandos shell
-            # Usar sem aspas permite que shell expanda variável escapada, passando valor literal ao Docker
+            # BUG FIX 23/12/2025: Passar variáveis escapadas COM ASPAS para docker run -e
+            # printf %q retorna string escapada, mas quando passada sem aspas ao docker run -e, aspas literais podem ser interpretadas incorretamente
+            # Usar aspas duplas garante que o valor escapado inteiro seja tratado como um único argumento
             # Docker -e recebe valor literal sem interpretação adicional pelo shell externo
             docker run --rm \
               --network alice-network \
-              -e PGPASSWORD=${PG_PASS_ESCAPED} \
-              -e PG_USER=${PG_USER_ESCAPED} \
-              -e PG_DB=${PG_DB_ESCAPED} \
+              -e "PGPASSWORD=${PG_PASS_ESCAPED}" \
+              -e "PG_USER=${PG_USER_ESCAPED}" \
+              -e "PG_DB=${PG_DB_ESCAPED}" \
               postgres:16-alpine \
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
@@ -2402,6 +2404,8 @@ jobs:
                   # Docker -e passa variáveis de forma segura - shell interno expande, não shell externo
                   # Isso previne shell injection mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
                   # Variáveis foram escapadas com printf %q no shell externo, garantindo passagem literal ao Docker
+                  # BUG FIX 23/12/2025: psql lê PGPASSWORD automaticamente se definido - não precisa passar explicitamente
+                  # PGPASSWORD é lido pelo psql automaticamente da variável de ambiente quando presente
                   if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
@@ -2460,7 +2464,13 @@ jobs:
                   fi
                 fi
               " || {
+                # BUG FIX 23/12/2025: Capturar exit code ANTES do handler para garantir valor correto
+                # Handler || { ... } só executa quando docker run falha (exit code != 0)
+                # Dentro do handler, $? captura o exit code do docker run, que é o exit code do script interno
+                # Script interno retorna exit 124 para timeout, ou exit code do drizzle-kit para outros erros
+                # docker run repassa exit code do script interno corretamente
                 DRIZZLE_EXIT_CODE=$?
+                
                 # CORREÇÃO 23/12/2025: Handler externo agora pode distinguir timeout (124) de outros erros
                 # Script interno retorna exit 124 para timeout, ou exit code do drizzle-kit para outros erros
                 # docker run repassa exit code do script interno, então DRIZZLE_EXIT_CODE contém o valor correto
@@ -2507,11 +2517,14 @@ jobs:
                 # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
                 # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
                 # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
+                # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
+                # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
+                # Solução: Escapar PG_PASS com printf %q antes de passar ao env
+                PG_PASS_SAFE=$(printf %q "${PG_PASS}")
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres env PGPASSWORD="${PG_PASS}" psql -U "${PG_USER}" -d "${PG_DB}" \
-                  -v ON_ERROR_STOP=0 \
-                  -f /dev/stdin < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                  exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U \"${PG_USER}\" -d \"${PG_DB}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                  < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2543,11 +2556,14 @@ jobs:
               # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
               # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
               # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
+              # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
+              # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
+              # Solução: Escapar PG_PASS com printf %q antes de passar ao env via sh -c
+              PG_PASS_SAFE=$(printf %q "${PG_PASS}")
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres env PGPASSWORD="${PG_PASS}" psql -U "${PG_USER}" -d "${PG_DB}" \
-                -v ON_ERROR_STOP=1 \
-                -f /dev/stdin < "$migration_file" 2>&1) || psql_exit_code=$?
+                exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U \"${PG_USER}\" -d \"${PG_DB}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                < "$migration_file" 2>&1) || psql_exit_code=$?
               
               # Mostrar output filtrado (sem NOTICE informativas)
               echo "$psql_output" | grep -v "NOTICE:" || true
