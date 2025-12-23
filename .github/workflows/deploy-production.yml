@@ -2485,10 +2485,12 @@ jobs:
             # CORREÇÃO 22/12/2025: Timeout AUMENTADO de 120s para 300s (5 min)
             # 120s era insuficiente - ClickHouse tem start_period: 120s + healthchecks
             # ClickHouse pode precisar: 120s start_period + (8 retries × 30s interval)
-            # 300s dá margem adequada para todos os serviços ficarem healthy
+            # 600s (10 minutos) para dar margem adequada para TODOS os serviços ficarem healthy
+            # Inclui: ClickHouse (até 360s), erpnext-create-site (criação de ~300 tabelas)
             # --wait: Aguarda que todos os containers fiquem healthy antes de retornar
             # --wait-timeout: Timeout para evitar espera infinita
-            WAIT_TIMEOUT=300
+            # CORREÇÃO 22/12/2025: Aumentado de 300s para 600s - containers init demoram mais
+            WAIT_TIMEOUT=600
             
             case "${DEPLOY_SERVICES}" in
               "alice-only")
