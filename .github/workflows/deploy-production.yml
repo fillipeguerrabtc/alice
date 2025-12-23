@@ -2555,11 +2555,13 @@ jobs:
                 # Erros como "policy already exists" são ignorados
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
                 # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
+                # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
+                # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   --env-file "$MIGRATION_ENV_FILE" \
                   exec -T postgres \
-                  sh -c 'psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=0 -f /dev/stdin' \
+                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 
                 # Limpar arquivo temporário com credenciais
@@ -2607,12 +2609,14 @@ jobs:
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
+              # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
+              # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
               psql_output=$(
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   --env-file "$MIGRATION_ENV_FILE" \
                   exec -T postgres \
-                  sh -c 'psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f /dev/stdin' \
+                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
               
