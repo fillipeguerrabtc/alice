@@ -9,6 +9,14 @@ import { createLogger } from "@alice/shared-utils";
 // Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger("server-routes");
 
+// BUG FIX 23/12/2025: Helper function para extrair userId de forma type-safe
+// Evita type casting inseguro que assume que claims.sub sempre existe
+// Esta função garante verificação de existência antes de retornar
+function getUserId(req: Request): string | null {
+  const user = req.user as { claims?: { sub?: string } } | undefined;
+  return user?.claims?.sub ?? null;
+}
+
 const createConversationSchema = z.object({
   titulo: z.string().optional(),
   agentId: z.string().uuid().optional(),
@@ -38,7 +46,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/auth/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
@@ -53,7 +64,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversations = await storage.getConversations(userId);
       res.json(conversations);
     } catch (error) {
@@ -64,11 +78,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -81,8 +98,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/conversations", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const data = createConversationSchema.parse(req.body);
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       const conversation = await storage.createConversation({
         ...data,
         userId,
@@ -99,11 +119,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete("/api/conversations/:id", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -117,11 +140,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/conversations/:id/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversation = await storage.getConversation(req.params.id);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -136,12 +162,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/messages", isAuthenticated, async (req: Request, res: Response) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const data = createMessageSchema.parse(req.body);
       const conversation = await storage.getConversation(data.conversationId);
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }
@@ -217,7 +246,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.get("/api/metrics", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversations = await storage.getConversations(userId);
       const totalConversas = conversations.length;
       const totalMensagens = conversations.reduce((sum, c) => sum + (c.totalMensagens || 0), 0);
@@ -249,12 +281,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/chat", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const data = chatRequestSchema.parse(req.body);
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
       const conversation = await storage.getConversation(data.conversationId);
       
       if (!conversation) {
         return res.status(404).json({ message: "Conversa não encontrada" });
       }
-      const userId = (req.user as { claims: { sub: string } }).claims.sub;
       if (conversation.userId !== userId) {
         return res.status(403).json({ message: "Acesso negado" });
       }

@@ -39,8 +39,14 @@ export function getSession() {
   });
 }
 
+// BUG FIX 23/12/2025: IdTokenClaims não é exportado diretamente do openid-client v6+
+// Usar ReturnType para inferir o tipo retornado por tokens.claims()
+// A função claims() retorna um objeto com propriedades do ID token (sub, email, etc.)
+type TokenEndpointResponse = client.TokenEndpointResponse & client.TokenEndpointResponseHelpers;
+type IdTokenClaims = ReturnType<TokenEndpointResponse['claims']>;
+
 interface UserSession {
-  claims?: client.IdTokenClaims;
+  claims?: IdTokenClaims;
   access_token?: string;
   refresh_token?: string;
   expires_at?: number;
@@ -56,13 +62,13 @@ function updateUserSession(
   user.expires_at = user.claims?.exp;
 }
 
-async function upsertUser(claims: client.IdTokenClaims) {
+async function upsertUser(claims: IdTokenClaims) {
   await storage.upsertUser({
-    id: claims["sub"],
-    email: claims["email"],
-    firstName: claims["first_name"],
-    lastName: claims["last_name"],
-    profileImageUrl: claims["profile_image_url"],
+    id: String(claims?.["sub"] ?? ""),
+    email: String(claims?.["email"] ?? ""),
+    firstName: String(claims?.["first_name"] ?? ""),
+    lastName: String(claims?.["last_name"] ?? ""),
+    profileImageUrl: String(claims?.["profile_image_url"] ?? ""),
   });
 }
 
