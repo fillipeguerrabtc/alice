@@ -333,9 +333,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
           }
 
+          // BUG FIX 23/12/2025: Assistant messages devem incluir userId para consistência de dados
+          // Todas as mensagens de uma conversa devem ter userId para queries, analytics e auditoria
           const assistantMessage = await storage.createMessage({
             conversationId: data.conversationId,
             conteudo: fullResponse,
+            userId, // Incluir userId para consistência - mensagem pertence à conversa do usuário
             isFromUser: false,
             tipo: "text",
             latenciaMs: Date.now() - startTime,
@@ -357,9 +360,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           ],
         });
 
+        // BUG FIX 23/12/2025: Assistant messages devem incluir userId para consistência de dados
+        // Todas as mensagens de uma conversa devem ter userId para queries, analytics e auditoria
         const assistantMessage = await storage.createMessage({
           conversationId: data.conversationId,
           conteudo: response.message.content,
+          userId, // Incluir userId para consistência - mensagem pertence à conversa do usuário
           isFromUser: false,
           tipo: "text",
           tokensUsados: response.usage.totalTokens,
