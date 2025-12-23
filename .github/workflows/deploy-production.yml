@@ -2456,6 +2456,8 @@ jobs:
             
             # Função helper para executar migration de forma idempotente (não-crítica)
             # Usada para migrações que podem já estar aplicadas parcialmente
+            # CORREÇÃO 23/12/2025: Usa credenciais dinâmicas (${PG_USER}, ${PG_DB}) extraídas de .env.prod
+            # ao invés de hardcoded (-U alice -d alice_prod) para suportar credenciais customizadas
             run_migration_idempotent() {
               local migration_file="$1"
               local migration_name="$2"
@@ -2464,9 +2466,10 @@ jobs:
                 echo "  → Executando $migration_name..."
                 # psql com ON_ERROR_STOP=0 permite continuar mesmo com erros de idempotência
                 # Erros como "policy already exists" são ignorados
+                # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres psql -U alice -d alice_prod \
+                  exec -T postgres psql -U "${PG_USER}" -d "${PG_DB}" \
                   -v ON_ERROR_STOP=0 \
                   -f /dev/stdin < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
@@ -2477,6 +2480,8 @@ jobs:
             
             # Função para executar migration CRÍTICA com falha hard
             # Usada para migrações que DEVEM ser executadas com sucesso
+            # CORREÇÃO 23/12/2025: Usa credenciais dinâmicas (${PG_USER}, ${PG_DB}) extraídas de .env.prod
+            # ao invés de hardcoded (-U alice -d alice_prod) para suportar credenciais customizadas
             run_migration_critical() {
               local migration_file="$1"
               local migration_name="$2"
@@ -2494,9 +2499,10 @@ jobs:
               # ENTERPRISE-GRADE: Captura output e exit code separadamente
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
+              # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres psql -U alice -d alice_prod \
+                exec -T postgres psql -U "${PG_USER}" -d "${PG_DB}" \
                 -v ON_ERROR_STOP=1 \
                 -f /dev/stdin < "$migration_file" 2>&1) || psql_exit_code=$?
               
