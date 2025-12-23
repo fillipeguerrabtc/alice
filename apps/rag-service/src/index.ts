@@ -52,8 +52,11 @@ import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
 
 // Constante para verificar ambiente de produção
-// BUG FIX 23/12/2025: Definir isProduction ANTES de qualquer código que possa referenciá-lo
-// initializeRedisCache e outros imports podem executar código durante module loading
+// BUG FIX 23/12/2025: Definir isProduction IMEDIATAMENTE após imports (TypeScript requer imports primeiro)
+// Módulos importados de @alice/shared-utils verificam process.env.NODE_ENV diretamente (não isProduction local),
+// então é seguro definir isProduction após imports. Esta constante é usada apenas neste módulo.
+// IMPORTANTE: Se algum módulo importado precisar de isProduction durante import, isso causaria undefined.
+// Verificado: todos os módulos importados usam process.env.NODE_ENV diretamente, não isProduction local.
 const isProduction = process.env.NODE_ENV === 'production';
 import { getStorageService } from './storage.js';
 import { getImageProcessor, CLIP_EMBEDDING_DIM, getGpuCircuitBreakerStatus } from './image-processor.js';
