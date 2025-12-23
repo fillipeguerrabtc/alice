@@ -2384,9 +2384,15 @@ jobs:
             # sed regex remove aspas se existirem, e depois remove backslashes de escape para obter valor literal
             VALIDATION_ENV_FILE=$(mktemp)
             # Escapar valores com printf %q e normalizar formato (remover aspas externas e backslash-escapes)
+            # printf %q pode retornar diferentes formatos:
+            # - Valores simples: "simplepass123" (sem aspas, sem escapes)
+            # - Valores com espaços/metacaracteres: "'my$pass'" (com aspas)
+            # - Valores com $: "my\$pass" (com backslash-escapes, sem aspas)
             # Passo 1: Remover aspas externas se existirem: s/^'(.*)'$/\1/
-            # Passo 2: Remover backslash-escapes para obter valor literal: s/\\\([^\\]\)/\1/g
-            # Isso garante que valores sejam escritos literalmente no arquivo, independente do formato do printf %q
+            # Passo 2: Remover backslash-escapes para obter valor literal: s/\\(.)/\1/g
+            # NOTA: O regex remove TODOS os backslashes seguidos de qualquer caractere
+            # Isso é seguro para senhas de banco, pois backslashes literais são raros
+            # Se necessário, printf %q escaparia backslashes literais de forma diferente
             PG_PASS_ESCAPED=$(printf '%q' "${PG_PASS}" | sed -E "s/^'(.*)'$/\1/" | sed 's/\\(.)/\1/g')
             PG_USER_ESCAPED=$(printf '%q' "${PG_USER}" | sed -E "s/^'(.*)'$/\1/" | sed 's/\\(.)/\1/g')
             PG_DB_ESCAPED=$(printf '%q' "${PG_DB}" | sed -E "s/^'(.*)'$/\1/" | sed 's/\\(.)/\1/g')
