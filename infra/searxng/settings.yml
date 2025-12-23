@@ -11,7 +11,13 @@
 # - Bot detection configurado para acesso interno
 # =============================================================================
 
-# Configurações gerais
+# CRÍTICO: Mesclar com configurações padrão ao invés de substituir
+# Sem esta diretiva, APENAS os engines definidos aqui seriam usados,
+# desabilitando Google, Bing, DuckDuckGo, Wikipedia e todos os outros!
+# Documentação: https://docs.searxng.org/admin/settings/settings.html#use-default-settings
+use_default_settings: true
+
+# Configurações gerais (mescladas com defaults)
 general:
   # Debug desabilitado em produção
   debug: false
