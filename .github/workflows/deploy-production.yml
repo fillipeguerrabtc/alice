@@ -2363,9 +2363,11 @@ jobs:
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
                 for i in \$(seq 1 30); do
-                  # CORREÇÃO 23/12/2025: Variáveis entre aspas para prevenir word-splitting
+                  # CORREÇÃO 23/12/2025: Variáveis entre aspas duplas para permitir expansão e prevenir word-splitting
+                  # Aspas simples ('${PG_PASS}') impedem expansão - literal \${PG_PASS} seria passado ao psql
+                  # Aspas duplas (\"${PG_PASS}\") permitem expansão e protegem contra word-splitting
                   # Se PG_USER ou PG_DB contiverem espaços ou metacaracteres, sem aspas o comando quebra
-                  if PGPASSWORD='${PG_PASS}' psql -h alice-postgres -U \"${PG_USER}\" -d \"${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
+                  if PGPASSWORD=\"${PG_PASS}\" psql -h alice-postgres -U \"${PG_USER}\" -d \"${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
                   fi
@@ -2397,9 +2399,13 @@ jobs:
                 npm install -g pnpm@10 && \
                 pnpm install --frozen-lockfile --ignore-scripts && \
                 echo \"Executando drizzle-kit push (timeout: \${DRIZZLE_TIMEOUT}s)...\" && \
-                timeout \${DRIZZLE_TIMEOUT} npx drizzle-kit push --force || {
-                  EXIT_CODE=\$?
-                  if [ \$EXIT_CODE -eq 124 ]; then
+                # ENTERPRISE-GRADE: Capturar exit code do timeout command corretamente
+                # timeout retorna: 124 (timeout), exit code do comando (se falhar), 0 (sucesso)
+                # Handler || { ... } só executa quando timeout retorna != 0
+                timeout \${DRIZZLE_TIMEOUT} npx drizzle-kit push --force
+                TIMEOUT_EXIT_CODE=\$?
+                if [ \$TIMEOUT_EXIT_CODE -ne 0 ]; then
+                  if [ \$TIMEOUT_EXIT_CODE -eq 124 ]; then
                     echo \"❌ ERRO: drizzle-kit push excedeu timeout de \${DRIZZLE_TIMEOUT}s\"
                     echo \"   Possíveis causas: PostgreSQL não totalmente pronto, rede lenta, schema muito grande\"
                     exit 1
@@ -2407,12 +2413,13 @@ jobs:
                     # CORREÇÃO 23/12/2025: Qualquer erro de drizzle-kit push (exit code != 0 e != 124) é CRÍTICO
                     # drizzle-kit push --force retorna exit code 0 mesmo se schema já existe (apenas sincroniza)
                     # Se retornar != 0, é erro real (sintaxe, conexão, permissões, etc.) - deploy DEVE falhar
-                    echo \"❌ ERRO: drizzle-kit push falhou com exit code \$EXIT_CODE\"
+                    # TIMEOUT_EXIT_CODE contém o exit code do drizzle-kit push (timeout repassa o exit code do comando)
+                    echo \"❌ ERRO: drizzle-kit push falhou com exit code \$TIMEOUT_EXIT_CODE\"
                     echo \"   Possíveis causas: erro de sintaxe no schema, erro de conexão, permissões insuficientes\"
                     echo \"   Schema base NÃO foi criado/atualizado corretamente - deploy NÃO pode continuar\"
                     exit 1
                   fi
-                }
+                fi
               " || {
                 DRIZZLE_EXIT_CODE=$?
                 # CORREÇÃO 23/12/2025: Qualquer exit code != 0 do container é erro crítico
