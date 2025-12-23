@@ -67,7 +67,8 @@ export interface ConversationsResponse {
 // BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam
 // Isso previne acesso a undefined e NaN em cálculos de limite
 // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
-export const FILE_LIMITS: Record<MediaType, number> = {
+// BUG FIX 23/12/2025: Tipo explícito 'image' | 'audio' ao invés de MediaType para garantir type safety
+export const FILE_LIMITS: Record<'image' | 'audio', number> = {
   image: 10 * 1024 * 1024,
   audio: 25 * 1024 * 1024,
 } as const;

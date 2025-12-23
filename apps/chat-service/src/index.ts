@@ -1729,9 +1729,10 @@ app.get('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(g
 const sendMessageSchema = z.object({
   conteudo: z.string().min(1),
   // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
-  // CORREÇÃO 23/12/2025: Removido 'document' - documentos são enviados para RAG service via uploads,
-  // não como tipos de mensagem de chat. Chat messages suportam apenas: text, image, audio, mixed
-  tipo: z.enum(['text', 'image', 'audio', 'mixed']).default('text'),
+  // BUG FIX 23/12/2025: 'document' mantido no enum para compatibilidade com mensagens existentes no database
+  // O database schema (messageTypeEnum) ainda permite 'document', então precisamos aceitar na validação
+  // para evitar erros ao buscar/processar mensagens existentes. Documentos novos devem ser enviados via RAG uploads.
+  tipo: z.enum(['text', 'image', 'audio', 'document', 'mixed']).default('text'),
 });
 
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas

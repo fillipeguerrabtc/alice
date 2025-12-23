@@ -2908,7 +2908,7 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
       '.mp3': 'audio/mpeg',
       '.wav': 'audio/wav',
       '.ogg': 'audio/ogg',
-      '.webm': 'audio/webm', // CORREÇÃO 23/12/2025: .webm ainda é usado para áudio (não apenas vídeo)
+      '.webm': 'audio/webm', // CORREÇÃO 23/12/2025: WebM é container que pode ser vídeo ou áudio, mas removemos suporte a vídeo. Aceitamos apenas como áudio.
       // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
       '.pdf': 'application/pdf',
       '.txt': 'text/plain',
@@ -3404,7 +3404,23 @@ app.use(createErrorHandler({
 (async () => {
   try {
     // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)
-    const redisConnected = await initializeRedisCache();
+    // BUG FIX 23/12/2025: Unificar tratamento de erro - se initializeRedisCache() lançar exceção,
+    // será capturada pelo catch externo. Se retornar false, tratamos aqui de forma consistente.
+    let redisConnected = false;
+    try {
+      redisConnected = await initializeRedisCache();
+    } catch (redisError) {
+      // Se initializeRedisCache() lançar exceção, tratar como falha crítica
+      logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis cache - exceção lançada');
+      if (isProduction) {
+        logger.error('CRITICAL: Redis é OBRIGATÓRIO para embedding-websocket Pub/Sub em produção. Abortando.');
+        process.exit(1);
+      } else {
+        logger.warn('Redis cache falhou - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
+        // Continuar em desenvolvimento mesmo com exceção
+      }
+      // Não re-lançar exceção - já tratamos acima
+    }
     
     if (redisConnected) {
       logger.info('Redis cache inicializado para embedding-websocket');

@@ -2353,6 +2353,9 @@ jobs:
             }
             
             # Codificar user e password para URL (previne quebra de DATABASE_URL com caracteres especiais)
+            # BUG FIX 23/12/2025: PG_PASS_ENCODED é usado APENAS no DATABASE_URL (formato URL)
+            # Para autenticação psql/pg_isready, devemos usar PG_PASS (não-encoded) porque psql espera a senha real
+            # URL-encoding é necessário apenas para construir a string de conexão, não para autenticação direta
             PG_USER_ENCODED=$(urlencode "${PG_USER}")
             PG_PASS_ENCODED=$(urlencode "${PG_PASS}")
             PG_DB_ENCODED=$(urlencode "${PG_DB}")
@@ -2392,9 +2395,12 @@ jobs:
             # Isso é seguro porque o arquivo é criado localmente e passado diretamente ao Docker
             # BUG FIX 23/12/2025: Aspas duplas necessárias para que %s seja interpretado como format specifier
             # Com aspas simples, %s seria tratado literalmente e o arquivo conteria PGPASSWORD=%s ao invés do valor real
+            # BUG FIX 23/12/2025: Garantir permissões corretas do arquivo temporário (600 = rw-------)
+            # Isso previne que outros processos leiam credenciais do arquivo
             printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$VALIDATION_ENV_FILE"
             printf "PG_USER=%s\n" "${PG_USER}" >> "$VALIDATION_ENV_FILE"
             printf "PG_DB=%s\n" "${PG_DB}" >> "$VALIDATION_ENV_FILE"
+            chmod 600 "$VALIDATION_ENV_FILE"
             docker run --rm \
               --network alice-network \
               --env-file "$VALIDATION_ENV_FILE" \
