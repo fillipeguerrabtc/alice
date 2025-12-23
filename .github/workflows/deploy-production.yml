@@ -2672,11 +2672,13 @@ jobs:
             fi
             
             # FASE 7: Observability Stack
+            # NOTA: Usa $WAIT_TIMEOUT (600s) porque ClickHouse pode demorar até 360s
+            # (start_period: 120s + 8 retries × 30s = 360s worst case)
             if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_OBSERVABILITY" = "true" ]; then
               echo ""
               echo "📈 FASE 7: Observability (prometheus, grafana, langfuse, etc.)..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --wait --wait-timeout 300 \
+                up -d --no-build --wait --wait-timeout $WAIT_TIMEOUT \
                 clickhouse langfuse langfuse-worker langfuse-db \
                 prometheus grafana loki promtail jaeger vector alertmanager otel-collector node-exporter cadvisor \
                 pgbackrest || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 7 falhou"; }
