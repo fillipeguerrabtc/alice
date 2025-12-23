@@ -1067,10 +1067,16 @@ function BulkImportTab({ t }: { t: (key: string, options?: Record<string, unknow
     setValidationError(null);
     setParsedData([]);
 
-    // BUG FIX 23/12/2025: Validação de tamanho removida - bulk import é apenas JSON/JSONL
-    // Este handler é para bulk import (JSON/JSONL), não para uploads multimodais
-    // Uploads multimodais usam FILE_LIMITS por tipo (10MB imagem, 25MB áudio)
-    // Bulk import não tem limite de tamanho específico além do limite geral do servidor
+    // BUG FIX 23/12/2025: Validação de tamanho RESTAURADA - necessário para segurança e DoS prevention
+    // Backend limita payload JSON a 10MB (express.json({ limit: '10mb' }))
+    // Validação frontend previne upload de arquivos grandes e dá feedback imediato ao usuário
+    // Consistente com limite do backend para evitar tentativas de upload que falhariam
+    // Previne memory exhaustion quando arquivo é parseado com selectedFile.text()
+    const BULK_IMPORT_MAX_SIZE = 10 * 1024 * 1024; // 10MB - mesmo limite do backend
+    if (selectedFile.size > BULK_IMPORT_MAX_SIZE) {
+      setValidationError(t('training.bulkImport.validation.fileTooLargeDesc'));
+      return;
+    }
 
     // Validação 2: Extensão do arquivo
     const validExtensions = ['.json', '.jsonl'];
