@@ -2510,20 +2510,19 @@ jobs:
                 # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
                 # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
                 # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
-                # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
-                # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
-                # Solução: Escapar PG_PASS com printf %q antes de passar ao env
-                # CRITICAL SECURITY FIX 23/12/2025: NÃO remover aspas do printf %q - isso remove proteção contra shell injection
-                # printf %q produz string segura (ex: 'my$pass') que deve ser usada diretamente no comando sh -c
-                # Usar resultado do printf %q diretamente sem aspas adicionais - o printf %q já faz o escape correto
-                # Passar variável escapada diretamente no comando sem interpolação de string para evitar expansão do bash
-                PG_PASS_SAFE=$(printf %q "${PG_PASS}")
-                PG_USER_SAFE=$(printf %q "${PG_USER}")
-                PG_DB_SAFE=$(printf %q "${PG_DB}")
+                # CRITICAL SECURITY FIX 23/12/2025: Passar credenciais via variáveis de ambiente do shell externo
+                # Problema: printf %q produz aspas literais (ex: 'my$pass') que se tornam parte do valor quando expandidas em sh -c
+                # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
+                # docker compose exec herda variáveis de ambiente do shell externo de forma segura
+                # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
+                export PGPASSWORD="${PG_PASS}"
+                export PG_USER_MIGRATION="${PG_USER}"
+                export PG_DB_MIGRATION="${PG_DB}"
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                  exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                unset PGPASSWORD PG_USER_MIGRATION PG_DB_MIGRATION
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2555,20 +2554,19 @@ jobs:
               # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
               # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
               # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
-              # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
-              # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
-              # Solução: Escapar PG_PASS com printf %q antes de passar ao env via sh -c
-              # CRITICAL SECURITY FIX 23/12/2025: NÃO remover aspas do printf %q - isso remove proteção contra shell injection
-              # printf %q produz string segura (ex: 'my$pass') que deve ser usada diretamente no comando sh -c
-              # Usar resultado do printf %q diretamente sem aspas adicionais - o printf %q já faz o escape correto
-              # Passar variável escapada diretamente no comando sem interpolação de string para evitar expansão do bash
-              PG_PASS_SAFE=$(printf %q "${PG_PASS}")
-              PG_USER_SAFE=$(printf %q "${PG_USER}")
-              PG_DB_SAFE=$(printf %q "${PG_DB}")
+              # CRITICAL SECURITY FIX 23/12/2025: Passar credenciais via variáveis de ambiente do shell externo
+              # Problema: printf %q produz aspas literais (ex: 'my$pass') que se tornam parte do valor quando expandidas em sh -c
+              # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
+              # docker compose exec herda variáveis de ambiente do shell externo de forma segura
+              # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
+              export PGPASSWORD="${PG_PASS}"
+              export PG_USER_MIGRATION="${PG_USER}"
+              export PG_DB_MIGRATION="${PG_DB}"
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
                 < "$migration_file" 2>&1) || psql_exit_code=$?
+              unset PGPASSWORD PG_USER_MIGRATION PG_DB_MIGRATION
               
               # Mostrar output filtrado (sem NOTICE informativas)
               echo "$psql_output" | grep -v "NOTICE:" || true
