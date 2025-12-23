@@ -80,11 +80,17 @@ export const ACCEPTED_TYPES = {
   // video removido - não aceitar uploads de vídeo
 } as const;
 
+// BUG FIX 23/12/2025: Normalização robusta de mimeType para suportar variações de case e espaços
+// MIME types são case-insensitive segundo RFC 2045, mas podem vir com variações (ex: "Image/JPEG", "Audio/MPEG")
+// .toLowerCase() e .trim() garantem matching correto mesmo com variações
+// Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais (ex: "audio/mpeg; codecs=mp3")
+// Consistente com normalização em Training.tsx, rag-service, chat-service e integrations-service para evitar rejeição de tipos legítimos
 export function getMediaType(mimeType: string): MediaType | null {
-  if (ACCEPTED_TYPES.image.includes(mimeType)) return 'image';
-  if (ACCEPTED_TYPES.audio.includes(mimeType)) return 'audio';
+  const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
+  if (ACCEPTED_TYPES.image.includes(normalizedMimeType)) return 'image';
+  if (ACCEPTED_TYPES.audio.includes(normalizedMimeType)) return 'audio';
   // REMOVIDO 23/12/2025: video não é mais aceito
-  // if (ACCEPTED_TYPES.video.includes(mimeType)) return 'video';
+  // if (ACCEPTED_TYPES.video.includes(normalizedMimeType)) return 'video';
   return null;
 }
 
