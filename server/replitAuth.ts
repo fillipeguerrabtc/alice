@@ -71,12 +71,17 @@ function updateUserSession(
 }
 
 async function upsertUser(claims: IdTokenClaims) {
+  // BUG FIX 23/12/2025: Preservar undefined para campos opcionais ausentes (não usar "" como fallback)
+  // undefined será convertido para NULL no banco, mantendo distinção semântica:
+  // - NULL = campo não fornecido no token OAuth
+  // - "" = campo explicitamente vazio
+  // Isso preserva queries que filtram por IS NULL e analytics que distinguem ausente vs vazio
   await storage.upsertUser({
     id: claims.sub,
-    email: claims.email ?? "",
-    firstName: claims.first_name ?? "",
-    lastName: claims.last_name ?? "",
-    profileImageUrl: claims.profile_image_url ?? "",
+    email: claims.email ?? undefined,
+    firstName: claims.first_name ?? undefined,
+    lastName: claims.last_name ?? undefined,
+    profileImageUrl: claims.profile_image_url ?? undefined,
   });
 }
 
