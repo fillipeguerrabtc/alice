@@ -2979,10 +2979,15 @@ wss.on('connection', (ws, req) => {
           return;
         }
 
+        // BUG FIX 23/12/2025: Type narrowing após validação para garantir type safety
+        // Após o early return acima, TypeScript não infere automaticamente que mediaType não é null
+        // Criar variável não-nullable para garantir type safety em todas as operações subsequentes
+        const validatedMediaType: 'image' | 'audio' = mediaType;
+
         ws.send(JSON.stringify({ 
           type: 'media_uploading',
           filename: mediaMessage.media.filename,
-          mediaType,
+          mediaType: validatedMediaType,
         }));
 
         // Salvar mensagem do usuário com referência à mídia
@@ -2990,12 +2995,12 @@ wss.on('connection', (ws, req) => {
         const [userMsg] = await db.insert(schema.messages).values({
           conversationId: mediaMessage.conversationId,
           userId,
-          conteudo: mediaMessage.content || `[${mediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
-          tipo: mediaType,
+          conteudo: mediaMessage.content || `[${validatedMediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
+          tipo: validatedMediaType,
           isFromUser: true,
           anexos: [{
             id: mediaId,
-            type: mediaType,
+            type: validatedMediaType,
             filename: mediaMessage.media.filename,
             mimeType: mediaMessage.media.mimeType,
             size: Buffer.from(mediaMessage.media.file, 'base64').length,
@@ -3028,7 +3033,7 @@ wss.on('connection', (ws, req) => {
           .set({
             anexos: [{
               id: mediaId,
-              type: mediaType,
+              type: validatedMediaType,
               filename: mediaMessage.media.filename,
               mimeType: mediaMessage.media.mimeType,
               size: Buffer.from(mediaMessage.media.file, 'base64').length,
