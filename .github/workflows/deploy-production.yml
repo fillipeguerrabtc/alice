@@ -2487,29 +2487,23 @@ jobs:
                   exit \$TIMEOUT_EXIT_CODE
                 fi
               " || {
-                # BUG FIX 23/12/2025: Capturar exit code ANTES do handler para garantir valor correto
-                # Handler || { ... } só executa quando docker run falha (exit code != 0)
-                # Dentro do handler, $? captura o exit code do docker run, que é o exit code do script interno
-                # Script interno retorna exit 0 (sucesso), exit 124 (timeout), ou exit code do drizzle-kit (erro)
-                # docker run repassa exit code do script interno corretamente
+                # BUG FIX 23/12/2025: Handler só executa quando docker run falha (exit code != 0)
+                # Capturar exit code imediatamente após falha para preservar valor correto
+                # Script interno retorna: exit 0 (sucesso), exit 124 (timeout), ou exit code do drizzle-kit (erro)
                 DRIZZLE_EXIT_CODE=$?
                 
-                # BUG FIX 23/12/2025: Handler externo só executa quando script interno falha (exit != 0)
-                # Se script interno retornar exit 0 (sucesso), handler externo NUNCA executa (comportamento correto)
-                # Se script interno retornar exit != 0 (falha), handler externo executa e propaga o exit code
-                # Não há double-exit porque o handler só executa quando há falha, e exit "$DRIZZLE_EXIT_CODE" propaga corretamente
+                # BUG FIX 23/12/2025: Distinguir timeout (124) de outros erros para mensagens mais específicas
+                # Preservar exit code original para que workflow possa distinguir diferentes tipos de erro
                 if [ "$DRIZZLE_EXIT_CODE" -eq 124 ]; then
                   echo "❌ ERRO CRÍTICO: drizzle-kit push excedeu timeout de 300s"
                   echo "   Possíveis causas: PostgreSQL não totalmente pronto, rede lenta, schema muito grande"
-                  echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
                 else
                   echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
                   echo "   Possíveis causas: erro de sintaxe no schema, erro de conexão, permissões insuficientes"
-                  echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
                 fi
+                echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
                 echo "   Verifique logs acima para detalhes do erro"
-                # BUG FIX 23/12/2025: Preservar exit code original para que workflow possa distinguir diferentes tipos de erro
-                # Não há double-exit porque este exit só executa quando há falha (handler || { ... } só executa em falha)
+                # Propagar exit code original (não converter para 1) para que workflow possa distinguir tipos de erro
                 exit "$DRIZZLE_EXIT_CODE"
               }
             
@@ -2576,19 +2570,18 @@ jobs:
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
                 # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
                 # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
-                # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
-                # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
-                # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
-                # -T desabilita TTY, -i permite stdin mesmo sem TTY
-                docker compose -f docker-compose.prod.yml \
+                # BUG FIX 23/12/2025: stdin redirection com -T -i pode não funcionar corretamente em todos os contextos
+                # Solução enterprise-grade: usar cat para passar conteúdo via pipe, garantindo que psql receba o arquivo corretamente
+                # cat lê o arquivo e passa para stdin do docker compose exec, que repassa para psql via /dev/stdin
+                cat "$migration_file" | docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T -i \
+                  exec -T \
                   -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
                   -e "PG_USER=${MIGRATION_PG_USER}" \
                   -e "PG_DB=${MIGRATION_PG_DB}" \
                   postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
-                  < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                  2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2653,20 +2646,19 @@ jobs:
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
               # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
-              # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
-              # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
-              # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
-              # -T desabilita TTY, -i permite stdin mesmo sem TTY
+              # BUG FIX 23/12/2025: stdin redirection com -T -i pode não funcionar corretamente em todos os contextos
+              # Solução enterprise-grade: usar cat para passar conteúdo via pipe, garantindo que psql receba o arquivo corretamente
+              # cat lê o arquivo e passa para stdin do docker compose exec, que repassa para psql via /dev/stdin
               psql_output=$(
-                docker compose -f docker-compose.prod.yml \
+                cat "$migration_file" | docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T -i \
+                  exec -T \
                   -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
                   -e "PG_USER=${MIGRATION_PG_USER}" \
                   -e "PG_DB=${MIGRATION_PG_DB}" \
                   postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
-                  < "$migration_file" 2>&1
+                  2>&1
               ) || psql_exit_code=$?
               
               # Mostrar output filtrado (sem NOTICE informativas)

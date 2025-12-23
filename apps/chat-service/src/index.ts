@@ -3064,14 +3064,16 @@ wss.on('connection', (ws, req) => {
         // Para áudio: usar transcrição quando disponível
         let userContent = mediaMessage.content || '';
         
-        if (mediaType === 'image') {
+        // BUG FIX 23/12/2025: Usar validatedMediaType consistentemente em todo o código
+        // Após validação e type narrowing, usar apenas validatedMediaType para garantir type safety
+        if (validatedMediaType === 'image') {
           // CORREÇÃO 17/12/2025: Mixtral é text-only - usar contexto RAG via embeddings CLIP
           // A imagem foi processada e embedding CLIP gerado - busca RAG usa esse embedding
           systemPrompt += '\n\nO usuário enviou uma imagem que foi processada pelo sistema de visão computacional. ' +
             'Use o contexto fornecido pelo RAG para responder sobre a imagem. ' +
             'Se não houver contexto suficiente, informe que a análise visual direta não está disponível no momento.';
           userContent = userContent || 'O que você pode me dizer sobre esta imagem com base no contexto disponível?';
-        } else if (mediaType === 'audio') {
+        } else if (validatedMediaType === 'audio') {
           // Aguardar transcrição se disponível
           if (uploadResult.transcription) {
             userContent = `[Transcrição do áudio]: ${uploadResult.transcription}\n\n${userContent}`;
@@ -3131,7 +3133,7 @@ wss.on('connection', (ws, req) => {
           data: assistantMsg,
           metrics: {
             llmLatencyMs: llmLatency,
-            mediaType,
+            mediaType: validatedMediaType,
             uploadId: uploadResult.uploadId,
             usedRag: !!ragResult?.context,
           },
@@ -3140,7 +3142,7 @@ wss.on('connection', (ws, req) => {
         logger.info({
           conversationId: mediaMessage.conversationId,
           uploadId: uploadResult.uploadId,
-          mediaType,
+          mediaType: validatedMediaType,
           llmLatencyMs: llmLatency,
         }, 'Mensagem multimodal processada via WebSocket');
       }

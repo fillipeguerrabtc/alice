@@ -3464,8 +3464,8 @@ app.use(createErrorHandler({
 (async () => {
   try {
     // Inicializar Redis cache (crítico para embedding-websocket Pub/Sub)
-    // BUG FIX 23/12/2025: Unificar tratamento de erro - se initializeRedisCache() lançar exceção,
-    // será capturada pelo catch externo. Se retornar false, tratamos aqui de forma consistente.
+    // BUG FIX 23/12/2025: Unificar tratamento de erro - uma única verificação após try-catch
+    // Evita múltiplos pontos de exit e lógica duplicada
     // BUG FIX 23/12/2025: Garantir que redisConnected seja sempre definido explicitamente
     // Evita comportamento indefinido onde exceções podem deixar variável em estado inconsistente
     let redisConnected = false;
@@ -3478,24 +3478,20 @@ app.use(createErrorHandler({
       // IMPORTANTE: Definir redisConnected explicitamente como false para evitar estado indefinido
       redisConnected = false;
       logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis cache - exceção lançada');
-      if (isProduction) {
-        logger.error('CRITICAL: Redis é OBRIGATÓRIO para embedding-websocket Pub/Sub em produção. Abortando.');
-        process.exit(1);
-      } else {
-        logger.warn('Redis cache falhou - WebSocket funcionará sem Pub/Sub (modo desenvolvimento)');
-        // Continuar em desenvolvimento mesmo com exceção, mas redisConnected = false garante estado consistente
-      }
       // Não re-lançar exceção - já tratamos acima e definimos redisConnected = false
+      // Verificação unificada abaixo tratará tanto false quanto exceções de forma consistente
     }
     
     // BUG FIX 23/12/2025: Verificação unificada - redisConnected sempre definido (true ou false)
-    // Não há mais lógica duplicada - uma única verificação após try-catch
+    // Trata tanto retorno false quanto exceções de forma consistente
+    // Evita múltiplos pontos de exit e lógica duplicada
     if (redisConnected) {
       logger.info('Redis cache inicializado para embedding-websocket');
     } else {
       // BUG FIX 23/12/2025: Redis é crítico para embedding-websocket Pub/Sub
       // Se Redis não estiver disponível, embedding-websocket não pode funcionar corretamente
       // Fail-fast em produção (Regra 6 - sem workarounds)
+      // ÚNICO ponto de exit para falha de Redis - evita confusão sobre qual caminho foi tomado
       if (isProduction) {
         logger.error('CRITICAL: Redis é OBRIGATÓRIO para embedding-websocket Pub/Sub em produção. Abortando.');
         process.exit(1);

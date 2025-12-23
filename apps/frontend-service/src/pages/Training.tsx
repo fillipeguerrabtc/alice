@@ -580,14 +580,19 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
         continue;
       }
 
+      // BUG FIX 23/12/2025: Type narrowing explícito após validação para garantir type safety
+      // TypeScript não faz narrowing automático após continue, então precisamos garantir que mediaType não é null
+      // Após o early return acima, sabemos que mediaType é 'image' | 'audio', mas TypeScript não infere isso
+      // Criar variável não-nullable para garantir type safety em todas as operações subsequentes
+      const validatedMediaType: 'image' | 'audio' = mediaType;
+
       // Validar tamanho baseado no tipo de mídia
-      // BUG FIX 23/12/2025: Verificação defensiva garante que limit não seja undefined
-      // Type narrowing após validação garante que mediaType é 'image' | 'audio'
-      const limit = FILE_LIMITS[mediaType];
+      // BUG FIX 23/12/2025: Usar validatedMediaType para garantir type safety
+      const limit = FILE_LIMITS[validatedMediaType];
       if (!limit) {
         toast({
           title: t('training.multimodal.errors.unsupportedType'),
-          description: `${file.name} - tipo de mídia não suportado: ${mediaType}`,
+          description: `${file.name} - tipo de mídia não suportado: ${validatedMediaType}`,
           variant: 'destructive',
         });
         continue;
@@ -596,7 +601,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
         const limitMB = limit / (1024 * 1024);
         toast({
           title: t('training.multimodal.errors.fileTooLarge'),
-          description: `${file.name} (máx ${limitMB}MB para ${mediaType === 'image' ? 'imagens' : 'áudio'})`,
+          description: `${file.name} (máx ${limitMB}MB para ${validatedMediaType === 'image' ? 'imagens' : 'áudio'})`,
           variant: 'destructive',
         });
         continue;
@@ -605,7 +610,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       newUploads.push({
         id: crypto.randomUUID(),
         file,
-        type: mediaType,
+        type: validatedMediaType,
         progress: 0,
         status: 'pending',
       });
@@ -708,13 +713,19 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
 
   // Ícone baseado no tipo de mídia
   // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
-  // BUG FIX 23/12/2025: Adicionado default case para evitar retorno undefined
-  // Se tipo inesperado for passado, retorna FileAudio como fallback seguro
-  const getMediaIcon = (type: 'image' | 'audio') => {
+  // BUG FIX 23/12/2025: Tipo restrito garante que apenas tipos válidos sejam aceitos
+  // TypeScript garante type safety - não há necessidade de default case se tipo está correto
+  // Mas mantemos default como proteção defensiva para casos extremos (type narrowing failure)
+  const getMediaIcon = (type: 'image' | 'audio'): typeof ImageIcon | typeof FileAudio => {
     switch (type) {
       case 'image': return ImageIcon;
       case 'audio': return FileAudio;
-      default: return FileAudio; // Fallback seguro para tipos inesperados
+      default: {
+        // BUG FIX 23/12/2025: Log de erro para identificar type narrowing failures
+        // Este caso nunca deveria ocorrer se type está correto, mas serve como proteção defensiva
+        console.error('getMediaIcon recebeu tipo inesperado:', type);
+        return FileAudio; // Fallback seguro para tipos inesperados
+      }
     }
   };
 
