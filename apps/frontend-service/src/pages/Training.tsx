@@ -554,28 +554,36 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
     e.target.value = ''; // Reset input para permitir re-seleção do mesmo arquivo
   };
 
+  // Limites de arquivo por tipo de mídia (consistente com Chat e RAG service)
+  // CORREÇÃO 23/12/2025: Removido limite fixo de 100MB (vídeo) - agora usa limites por tipo
+  const FILE_LIMITS = {
+    image: 10 * 1024 * 1024,  // 10MB para imagens
+    audio: 25 * 1024 * 1024,  // 25MB para áudio
+  } as const;
+
   // Adicionar arquivos à fila de upload
   const addFilesToQueue = (files: File[]) => {
-    const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB para vídeos
     const newUploads: MediaUpload[] = [];
 
     for (const file of files) {
-      // Validar tamanho
-      if (file.size > MAX_FILE_SIZE) {
+      // Validar tipo primeiro (necessário para determinar limite)
+      const mediaType = getMediaType(file.type);
+      if (!mediaType) {
         toast({
-          title: t('training.multimodal.errors.fileTooLarge'),
+          title: t('training.multimodal.errors.unsupportedType'),
           description: file.name,
           variant: 'destructive',
         });
         continue;
       }
 
-      // Validar tipo
-      const mediaType = getMediaType(file.type);
-      if (!mediaType) {
+      // Validar tamanho baseado no tipo de mídia
+      const limit = FILE_LIMITS[mediaType];
+      if (file.size > limit) {
+        const limitMB = limit / (1024 * 1024);
         toast({
-          title: t('training.multimodal.errors.unsupportedType'),
-          description: file.name,
+          title: t('training.multimodal.errors.fileTooLarge'),
+          description: `${file.name} (máx ${limitMB}MB para ${mediaType === 'image' ? 'imagens' : 'áudio'})`,
           variant: 'destructive',
         });
         continue;
@@ -897,7 +905,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                 {t('training.multimodal.info.images.desc')}
               </p>
               <p className="text-xs text-muted-foreground mt-2">
-                JPEG, PNG, WebP, GIF (máx 100MB)
+                JPEG, PNG, WebP, GIF (máx 10MB)
               </p>
             </div>
             
@@ -910,7 +918,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                 {t('training.multimodal.info.audio.desc')}
               </p>
               <p className="text-xs text-muted-foreground mt-2">
-                MP3, WAV, WebM, OGG, M4A (máx 100MB)
+                MP3, WAV, WebM, OGG, M4A (máx 25MB)
               </p>
             </div>
             

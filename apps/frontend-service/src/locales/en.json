@@ -1019,7 +1019,7 @@
         }
       },
       "errors": {
-        "fileTooLarge": "File too large (max 100MB)",
+        "fileTooLarge": "File too large",
         "unsupportedType": "Unsupported file type"
       }
     }
