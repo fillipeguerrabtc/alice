@@ -2379,23 +2379,16 @@ jobs:
             # BUG FIX 23/12/2025: Shell injection vulnerability corrigida
             # CORREÇÃO CRÍTICA 23/12/2025: Shell injection prevention enterprise-grade
             # Problema: Se PG_PASS contiver metacaracteres ($, backticks, $(), etc.), shell externo os interpreta ANTES de passar ao Docker
-            # Solução: Usar printf %q para escapar credenciais e passar via variáveis de ambiente Docker (-e) COM ASPAS
-            # Docker -e passa variáveis de forma segura sem risco de shell injection - variáveis são expandidas pelo shell interno, não externo
-            # printf %q escapa todos os metacaracteres de forma segura (RFC 3986 compliant)
-            # BUG FIX: Variáveis escapadas DEVEM ser passadas COM ASPAS ao docker run -e para evitar problemas com espaços/aspas literais
-            PG_PASS_ESCAPED=$(printf %q "${PG_PASS}")
-            PG_USER_ESCAPED=$(printf %q "${PG_USER}")
-            PG_DB_ESCAPED=$(printf %q "${PG_DB}")
-            
-            # BUG FIX 23/12/2025: Passar variáveis escapadas COM ASPAS para docker run -e
-            # printf %q retorna string escapada, mas quando passada sem aspas ao docker run -e, aspas literais podem ser interpretadas incorretamente
-            # Usar aspas duplas garante que o valor escapado inteiro seja tratado como um único argumento
-            # Docker -e recebe valor literal sem interpretação adicional pelo shell externo
+            # Solução: Docker -e passa variáveis de forma segura sem risco de shell injection - NÃO precisa de printf %q
+            # BUG FIX 23/12/2025: printf %q adiciona aspas literais (ex: 'my$pass') que se tornam parte do valor da variável de ambiente
+            # Isso causa falhas de autenticação no PostgreSQL porque as credenciais incluem aspas literais
+            # Docker -e já trata variáveis de forma segura - basta usar aspas duplas ao redor da expansão
+            # Docker processa -e de forma segura, não há risco de shell injection quando usamos aspas duplas
             docker run --rm \
               --network alice-network \
-              -e "PGPASSWORD=${PG_PASS_ESCAPED}" \
-              -e "PG_USER=${PG_USER_ESCAPED}" \
-              -e "PG_DB=${PG_DB_ESCAPED}" \
+              -e "PGPASSWORD=${PG_PASS}" \
+              -e "PG_USER=${PG_USER}" \
+              -e "PG_DB=${PG_DB}" \
               postgres:16-alpine \
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
@@ -2403,11 +2396,9 @@ jobs:
                   # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente Docker (\$PGPASSWORD, \$PG_USER, \$PG_DB)
                   # Docker -e passa variáveis de forma segura - shell interno expande, não shell externo
                   # Isso previne shell injection mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
-                  # Variáveis foram escapadas com printf %q no shell externo, garantindo passagem literal ao Docker
                   # BUG FIX 23/12/2025: psql lê PGPASSWORD automaticamente se definido - não precisa passar explicitamente
                   # PGPASSWORD é lido pelo psql automaticamente da variável de ambiente quando presente
-                  # BUG FIX 23/12/2025: Variáveis dentro de sh -c devem usar aspas para prevenir word splitting
-                  # printf %q já produz string segura, mas dentro de sh -c string interpolation, aspas são necessárias
+                  # Variáveis dentro de sh -c devem usar aspas para prevenir word splitting
                   if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
@@ -2522,13 +2513,12 @@ jobs:
                 # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
                 # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
                 # Solução: Escapar PG_PASS com printf %q antes de passar ao env
-                # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
-                # Mesmo com printf %q, quando variáveis são interpoladas dentro de sh -c string, o shell interno precisa de aspas
-                # printf %q produz string segura, mas dentro de sh -c "command", variáveis devem estar entre aspas para prevenir word splitting
-                # Solução: Usar aspas duplas ao redor de cada variável dentro do comando sh -c
-                PG_PASS_SAFE=$(printf %q "${PG_PASS}")
-                PG_USER_SAFE=$(printf %q "${PG_USER}")
-                PG_DB_SAFE=$(printf %q "${PG_DB}")
+                # BUG FIX 23/12/2025: printf %q produz aspas literais que se tornam parte do valor
+                # Solução: Usar printf %q mas remover aspas literais usando sed ou parameter expansion
+                # printf %q retorna string como 'my$pass' (com aspas), precisamos remover as aspas externas
+                PG_PASS_SAFE=$(printf %q "${PG_PASS}" | sed "s/^'//; s/'$//")
+                PG_USER_SAFE=$(printf %q "${PG_USER}" | sed "s/^'//; s/'$//")
+                PG_DB_SAFE=$(printf %q "${PG_DB}" | sed "s/^'//; s/'$//")
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   exec -T postgres sh -c "env PGPASSWORD=\"${PG_PASS_SAFE}\" psql -U \"${PG_USER_SAFE}\" -d \"${PG_DB_SAFE}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
@@ -2567,13 +2557,12 @@ jobs:
               # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
               # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
               # Solução: Escapar PG_PASS com printf %q antes de passar ao env via sh -c
-              # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
-              # Mesmo com printf %q, quando variáveis são interpoladas dentro de sh -c string, o shell interno precisa de aspas
-              # printf %q produz string segura, mas dentro de sh -c "command", variáveis devem estar entre aspas para prevenir word splitting
-              # Solução: Usar aspas duplas ao redor de cada variável dentro do comando sh -c
-              PG_PASS_SAFE=$(printf %q "${PG_PASS}")
-              PG_USER_SAFE=$(printf %q "${PG_USER}")
-              PG_DB_SAFE=$(printf %q "${PG_DB}")
+              # BUG FIX 23/12/2025: printf %q produz aspas literais que se tornam parte do valor
+              # Solução: Usar printf %q mas remover aspas literais usando sed ou parameter expansion
+              # printf %q retorna string como 'my$pass' (com aspas), precisamos remover as aspas externas
+              PG_PASS_SAFE=$(printf %q "${PG_PASS}" | sed "s/^'//; s/'$//")
+              PG_USER_SAFE=$(printf %q "${PG_USER}" | sed "s/^'//; s/'$//")
+              PG_DB_SAFE=$(printf %q "${PG_DB}" | sed "s/^'//; s/'$//")
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
                 exec -T postgres sh -c "env PGPASSWORD=\"${PG_PASS_SAFE}\" psql -U \"${PG_USER_SAFE}\" -d \"${PG_DB_SAFE}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
