@@ -2537,11 +2537,14 @@ jobs:
               
               if [ -f "$migration_file" ]; then
                 echo "  → Executando $migration_name..."
-                # BUG FIX 23/12/2025: Usar arquivo temporário com --env-file para evitar shell injection
+                # BUG FIX 23/12/2025: docker compose exec NÃO suporta --env-file
+                # --env-file é apenas para docker compose (comando principal), não para subcomandos como exec
+                # Solução enterprise-grade: Ler variáveis do arquivo temporário e passar via -e flags
+                # Isso é seguro porque os valores são lidos do arquivo e passados diretamente, sem shell expansion
+                # BUG FIX 23/12/2025: Usar arquivo temporário com permissões seguras para evitar shell injection
                 # Problema: -e "PGPASSWORD=${PG_PASS}" expande ${PG_PASS} no shell do GitHub Actions
                 # Se a senha contiver metacaracteres ($variable, backticks, $(command)), serão interpretados
-                # Solução: Criar arquivo temporário com permissões seguras e usar --env-file (mesmo padrão da validação)
-                # Isso elimina completamente a vulnerabilidade de injeção de comando
+                # Solução: Criar arquivo temporário, ler valores dele, e passar via -e com valores já lidos
                 local OLD_UMASK=$(umask)
                 umask 077
                 local MIGRATION_ENV_FILE=$(mktemp)
@@ -2551,25 +2554,41 @@ jobs:
                 printf "PG_DB=%s\n" "${PG_DB}" >> "$MIGRATION_ENV_FILE"
                 chmod 600 "$MIGRATION_ENV_FILE"
                 
+                # BUG FIX 23/12/2025: Ler valores do arquivo temporário para evitar shell expansion
+                # source ou . (dot) lê o arquivo no shell atual, mas isso ainda expandiria variáveis
+                # Solução: Usar read para ler valores linha por linha de forma segura
+                local MIGRATION_PGPASSWORD=""
+                local MIGRATION_PG_USER=""
+                local MIGRATION_PG_DB=""
+                while IFS='=' read -r key value; do
+                  case "$key" in
+                    PGPASSWORD) MIGRATION_PGPASSWORD="$value" ;;
+                    PG_USER) MIGRATION_PG_USER="$value" ;;
+                    PG_DB) MIGRATION_PG_DB="$value" ;;
+                  esac
+                done < "$MIGRATION_ENV_FILE"
+                
+                # Limpar arquivo temporário com credenciais ANTES de usar os valores
+                rm -f "$MIGRATION_ENV_FILE"
+                
                 # psql com ON_ERROR_STOP=0 permite continuar mesmo com erros de idempotência
                 # Erros como "policy already exists" são ignorados
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-                # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
-                # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
-                # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
+                # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
+                # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
                 # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
                 # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
                 # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
                 # -T desabilita TTY, -i permite stdin mesmo sem TTY
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  --env-file "$MIGRATION_ENV_FILE" \
-                  exec -T -i postgres \
+                  exec -T -i \
+                  -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
+                  -e "PG_USER=${MIGRATION_PG_USER}" \
+                  -e "PG_DB=${MIGRATION_PG_DB}" \
+                  postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
-                
-                # Limpar arquivo temporário com credenciais
-                rm -f "$MIGRATION_ENV_FILE"
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2594,11 +2613,14 @@ jobs:
               
               echo "  → Executando $migration_name (CRÍTICA)..."
               
-              # BUG FIX 23/12/2025: Usar arquivo temporário com --env-file para evitar shell injection
+              # BUG FIX 23/12/2025: docker compose exec NÃO suporta --env-file
+              # --env-file é apenas para docker compose (comando principal), não para subcomandos como exec
+              # Solução enterprise-grade: Ler variáveis do arquivo temporário e passar via -e flags
+              # Isso é seguro porque os valores são lidos do arquivo e passados diretamente, sem shell expansion
+              # BUG FIX 23/12/2025: Usar arquivo temporário com permissões seguras para evitar shell injection
               # Problema: -e "PGPASSWORD=${PG_PASS}" expande ${PG_PASS} no shell do GitHub Actions
               # Se a senha contiver metacaracteres ($variable, backticks, $(command)), serão interpretados
-              # Solução: Criar arquivo temporário com permissões seguras e usar --env-file (mesmo padrão da validação)
-              # Isso elimina completamente a vulnerabilidade de injeção de comando
+              # Solução: Criar arquivo temporário, ler valores dele, e passar via -e com valores já lidos
               local OLD_UMASK=$(umask)
               umask 077
               local MIGRATION_ENV_FILE=$(mktemp)
@@ -2608,13 +2630,29 @@ jobs:
               printf "PG_DB=%s\n" "${PG_DB}" >> "$MIGRATION_ENV_FILE"
               chmod 600 "$MIGRATION_ENV_FILE"
               
+              # BUG FIX 23/12/2025: Ler valores do arquivo temporário para evitar shell expansion
+              # source ou . (dot) lê o arquivo no shell atual, mas isso ainda expandiria variáveis
+              # Solução: Usar read para ler valores linha por linha de forma segura
+              local MIGRATION_PGPASSWORD=""
+              local MIGRATION_PG_USER=""
+              local MIGRATION_PG_DB=""
+              while IFS='=' read -r key value; do
+                case "$key" in
+                  PGPASSWORD) MIGRATION_PGPASSWORD="$value" ;;
+                  PG_USER) MIGRATION_PG_USER="$value" ;;
+                  PG_DB) MIGRATION_PG_DB="$value" ;;
+                esac
+              done < "$MIGRATION_ENV_FILE"
+              
+              # Limpar arquivo temporário com credenciais ANTES de usar os valores
+              rm -f "$MIGRATION_ENV_FILE"
+              
               # ENTERPRISE-GRADE: Captura output e exit code separadamente
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
-              # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
-              # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
+              # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
+              # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
               # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
               # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
               # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
@@ -2622,14 +2660,14 @@ jobs:
               psql_output=$(
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  --env-file "$MIGRATION_ENV_FILE" \
-                  exec -T -i postgres \
+                  exec -T -i \
+                  -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
+                  -e "PG_USER=${MIGRATION_PG_USER}" \
+                  -e "PG_DB=${MIGRATION_PG_DB}" \
+                  postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
-              
-              # Limpar arquivo temporário com credenciais
-              rm -f "$MIGRATION_ENV_FILE"
               
               # Mostrar output filtrado (sem NOTICE informativas)
               echo "$psql_output" | grep -v "NOTICE:" || true
