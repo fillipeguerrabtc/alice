@@ -2944,15 +2944,33 @@ wss.on('connection', (ws, req) => {
         const mediaSafeTenantId = mediaConversationTenantId;
 
         // Determinar tipo de mídia
-        // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+        // CORREÇÃO 23/12/2025: Validação explícita de tipos suportados ao invés de assumir 'image' por padrão
+        // Antes: Qualquer tipo não-audio/video era classificado como 'image', causando falhas no image processor
+        // Agora: Apenas tipos explicitamente suportados são aceitos, todos os outros são rejeitados
         const mimeType = mediaMessage.media.mimeType.toLowerCase();
-        let mediaType: 'image' | 'audio' = 'image';
-        if (mimeType.startsWith('audio/')) mediaType = 'audio';
-        // Vídeo não é mais suportado - rejeitado abaixo
-        if (mimeType.startsWith('video/')) {
+        
+        // Tipos de mídia suportados (consistente com RAG service e frontend)
+        const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+        const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
+        
+        let mediaType: 'image' | 'audio' | null = null;
+        
+        if (SUPPORTED_IMAGE_TYPES.includes(mimeType as typeof SUPPORTED_IMAGE_TYPES[number])) {
+          mediaType = 'image';
+        } else if (SUPPORTED_AUDIO_TYPES.includes(mimeType as typeof SUPPORTED_AUDIO_TYPES[number])) {
+          mediaType = 'audio';
+        }
+        
+        // Rejeitar tipos não suportados (vídeo, documentos, texto, etc.)
+        if (!mediaType) {
+          logger.warn({ 
+            mimeType, 
+            filename: mediaMessage.media.filename,
+            conversationId: mediaMessage.conversationId,
+          }, 'Tipo de mídia não suportado via WebSocket - rejeitado');
           ws.send(JSON.stringify({ 
             type: 'media_error',
-            error: 'Vídeo não é suportado. Envie apenas imagens ou áudio.',
+            error: `Tipo de arquivo não suportado: ${mimeType}. Envie apenas imagens (JPEG, PNG, WebP, GIF) ou áudio (MP3, WAV, OGG, WebM, MP4).`,
           }));
           return;
         }
