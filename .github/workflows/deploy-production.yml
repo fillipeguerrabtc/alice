@@ -2327,7 +2327,7 @@ jobs:
               local string="${1}"
               local strlen=${#string}
               local encoded=""
-              local pos c hex
+              local pos c hex ascii
             
               for (( pos=0 ; pos<strlen ; pos++ )); do
                 c=${string:$pos:1}
@@ -2340,8 +2340,11 @@ jobs:
                     ;;
                   * )
                     # Codificar caractere como %XX (hexadecimal)
-                    # Usar LC_ALL=C para garantir comportamento consistente
-                    printf -v hex '%%%02X' "'$c"
+                    # CORREÇÃO 23/12/2025: printf "'$c" não funciona corretamente com variáveis expandidas
+                    # Solução: obter código ASCII primeiro, depois converter para hex
+                    # LC_ALL=C garante comportamento consistente com caracteres multibyte
+                    LC_ALL=C printf -v ascii '%d' "'$c"
+                    printf -v hex '%%%02X' "$ascii"
                     encoded+="${hex}"
                     ;;
                 esac
