@@ -2464,6 +2464,46 @@ jobs:
               }
             rm -f "$VALIDATION_ENV_FILE"
             
+            # ==============================================
+            # CRIAR EXTENSÃO PGVECTOR ANTES DO DRIZZLE-KIT PUSH
+            # ==============================================
+            # BUG FIX 23/12/2025: drizzle-kit push falha com "type halfvec does not exist"
+            # Causa: drizzle-kit push roda ANTES das migrations SQL que criam a extensão
+            # Solução: Criar extensão vector explicitamente ANTES do drizzle-kit push
+            # A migration 0001 também cria a extensão (idempotente), mas precisa existir antes
+            # ==============================================
+            echo "   Criando extensão pgvector (obrigatória para halfvec/vector types)..."
+            
+            OLD_UMASK=$(umask)
+            umask 077
+            EXTENSION_ENV_FILE=$(mktemp)
+            umask "$OLD_UMASK"
+            printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$EXTENSION_ENV_FILE"
+            printf "PG_USER=%s\n" "${PG_USER}" >> "$EXTENSION_ENV_FILE"
+            printf "PG_DB=%s\n" "${PG_DB}" >> "$EXTENSION_ENV_FILE"
+            chmod 600 "$EXTENSION_ENV_FILE"
+            
+            # ENTERPRISE-GRADE: Usar mesma imagem do docker-compose (pgvector/pgvector:pg16)
+            # A imagem pgvector/pgvector:pg16 já tem a extensão pgvector instalada
+            # Apenas precisamos criar a extensão no banco de dados (CREATE EXTENSION)
+            docker run --rm \
+              --network alice-network \
+              --env-file "$EXTENSION_ENV_FILE" \
+              pgvector/pgvector:pg16@sha256:ba936058427f638177f216901afc42cbacac0c4e1f441adf9c39a4a777d31075 \
+              sh -c "
+                psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -c 'CREATE EXTENSION IF NOT EXISTS vector;' || {
+                  echo 'ERRO: Falha ao criar extensão vector'
+                  exit 1
+                }
+                echo '✅ Extensão pgvector criada com sucesso'
+              " || {
+                echo "❌ ERRO: Falha ao criar extensão pgvector"
+                echo "   drizzle-kit push não pode prosseguir sem a extensão"
+                rm -f "$EXTENSION_ENV_FILE"
+                exit 1
+              }
+            rm -f "$EXTENSION_ENV_FILE"
+            
             echo "   ✅ Conexão PostgreSQL validada - executando drizzle-kit push com timeout de 300s..."
             
             # Usar container Node.js temporário para executar drizzle-kit push
