@@ -2376,15 +2376,18 @@ jobs:
             # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
             # Solução: Criar arquivo temporário com variáveis e usar --env-file para passar de forma segura
             # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
-            # BUG FIX 23/12/2025: Usar printf com %q para escapar valores, depois remover aspas externas com sed
-            # printf %q produz string shell-escaped (ex: 'my$pass' ou my\$pass), mas precisamos valor literal
-            # Solução: Usar printf %q e depois sed para remover aspas externas, mantendo escapes internos
-            # Isso garante que valores com metacaracteres sejam escritos literalmente no arquivo
+            # BUG FIX 23/12/2025: printf %q não sempre produz aspas - só quando necessário para escapar
+            # Para valores simples (alfanuméricos), printf %q retorna sem aspas
+            # Para valores com metacaracteres, printf %q pode retornar com aspas ('value') ou escapes (value\$)
+            # Solução: Usar eval para expandir printf %q de forma segura, garantindo valor literal
+            # eval com printf %q é seguro porque %q já escapou todos os metacaracteres
             VALIDATION_ENV_FILE=$(mktemp)
-            # Escapar valores com printf %q e remover aspas externas (se houver)
-            PG_PASS_ESCAPED=$(printf '%q' "${PG_PASS}" | sed "s/^'\(.*\)'$/\1/")
-            PG_USER_ESCAPED=$(printf '%q' "${PG_USER}" | sed "s/^'\(.*\)'$/\1/")
-            PG_DB_ESCAPED=$(printf '%q' "${PG_DB}" | sed "s/^'\(.*\)'$/\1/")
+            # Usar eval para expandir printf %q de forma segura, garantindo valor literal
+            # printf %q já escapou todos os metacaracteres, então eval é seguro aqui
+            # Isso funciona tanto para valores com aspas ('value') quanto sem aspas (value)
+            PG_PASS_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_PASS}")")
+            PG_USER_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_USER}")")
+            PG_DB_ESCAPED=$(eval "printf '%s' $(printf '%q' "${PG_DB}")")
             # Escrever no arquivo usando printf com %s para evitar expansão adicional
             printf 'PGPASSWORD=%s\n' "$PG_PASS_ESCAPED" > "$VALIDATION_ENV_FILE"
             printf 'PG_USER=%s\n' "$PG_USER_ESCAPED" >> "$VALIDATION_ENV_FILE"
