@@ -2415,36 +2415,45 @@ jobs:
                 npm install -g pnpm@10 && \
                 pnpm install --frozen-lockfile --ignore-scripts && \
                 echo \"Executando drizzle-kit push (timeout: \${DRIZZLE_TIMEOUT}s)...\" && \
-                # ENTERPRISE-GRADE: Capturar exit code do timeout command corretamente
+                # ENTERPRISE-GRADE: Capturar exit code do timeout command e propagar corretamente
                 # timeout retorna: 124 (timeout), exit code do comando (se falhar), 0 (sucesso)
-                # Handler || { ... } só executa quando timeout retorna != 0
+                # IMPORTANTE: Script interno DEVE retornar o exit code correto para que handler externo possa distinguir
+                # Se retornarmos sempre exit 1, handler externo não consegue distinguir timeout (124) de outros erros
                 timeout \${DRIZZLE_TIMEOUT} npx drizzle-kit push --force
                 TIMEOUT_EXIT_CODE=\$?
                 if [ \$TIMEOUT_EXIT_CODE -ne 0 ]; then
                   if [ \$TIMEOUT_EXIT_CODE -eq 124 ]; then
                     echo \"❌ ERRO: drizzle-kit push excedeu timeout de \${DRIZZLE_TIMEOUT}s\"
                     echo \"   Possíveis causas: PostgreSQL não totalmente pronto, rede lenta, schema muito grande\"
-                    exit 1
+                    # CORREÇÃO 23/12/2025: Retornar exit 124 para que handler externo possa distinguir timeout
+                    # docker run repassa exit code do script interno, então handler externo verá 124
+                    exit 124
                   else
                     # CORREÇÃO 23/12/2025: Qualquer erro de drizzle-kit push (exit code != 0 e != 124) é CRÍTICO
                     # drizzle-kit push --force retorna exit code 0 mesmo se schema já existe (apenas sincroniza)
                     # Se retornar != 0, é erro real (sintaxe, conexão, permissões, etc.) - deploy DEVE falhar
                     # TIMEOUT_EXIT_CODE contém o exit code do drizzle-kit push (timeout repassa o exit code do comando)
+                    # Retornar o exit code original para que handler externo possa distinguir diferentes tipos de erro
                     echo \"❌ ERRO: drizzle-kit push falhou com exit code \$TIMEOUT_EXIT_CODE\"
                     echo \"   Possíveis causas: erro de sintaxe no schema, erro de conexão, permissões insuficientes\"
                     echo \"   Schema base NÃO foi criado/atualizado corretamente - deploy NÃO pode continuar\"
-                    exit 1
+                    exit \$TIMEOUT_EXIT_CODE
                   fi
                 fi
               " || {
                 DRIZZLE_EXIT_CODE=$?
-                # CORREÇÃO 23/12/2025: Qualquer exit code != 0 do container é erro crítico
-                # Timeout (124) e outros erros (!= 0) ambos resultam em exit 1 do container
-                # Não há cenário onde drizzle-kit push falha mas o deploy deve continuar
-                # NOTA: Este handler só executa quando docker run falha (exit code != 0)
-                # Portanto DRIZZLE_EXIT_CODE sempre será != 0 aqui - não há caminho de sucesso neste bloco
-                echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
-                echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
+                # CORREÇÃO 23/12/2025: Handler externo agora pode distinguir timeout (124) de outros erros
+                # Script interno retorna exit 124 para timeout, ou exit code do drizzle-kit para outros erros
+                # docker run repassa exit code do script interno, então DRIZZLE_EXIT_CODE contém o valor correto
+                if [ "$DRIZZLE_EXIT_CODE" -eq 124 ]; then
+                  echo "❌ ERRO CRÍTICO: drizzle-kit push excedeu timeout de 300s"
+                  echo "   Possíveis causas: PostgreSQL não totalmente pronto, rede lenta, schema muito grande"
+                  echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
+                else
+                  echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
+                  echo "   Possíveis causas: erro de sintaxe no schema, erro de conexão, permissões insuficientes"
+                  echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
+                fi
                 echo "   Verifique logs acima para detalhes do erro"
                 exit 1
               }
