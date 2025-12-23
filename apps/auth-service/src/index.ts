@@ -18,7 +18,7 @@ import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { type Options as RateLimitOptions } from 'express-rate-limit';
 import crypto from 'crypto';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
@@ -1305,6 +1305,8 @@ app.post('/api/auth/register', asyncHandler(async (req: Request, res: Response) 
 }));
 
 // Rate limiting para login - 5 tentativas por minuto por IP (Regra 16 - Proteção Brute-force)
+// CORREÇÃO 23/12/2025: express-rate-limit 8.x requer validação IPv6 explícita
+// Usando validate.keyGeneratorIpFallback: false pois combinamos IP+email (não IP puro)
 const loginRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minuto
   max: 5, // 5 tentativas por minuto
@@ -1313,8 +1315,15 @@ const loginRateLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: (req) => {
     // Usar IP + email para evitar bloqueio de IP compartilhado
+    // IP é tratado como parte da chave composta, não como chave única
     const email = req.body?.email || '';
-    return `${req.ip}-${email}`;
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    return `${ip}-${email}`;
+  },
+  validate: {
+    // Desabilitar validação IPv6 pois usamos chave composta IP+email
+    // A validação é para casos onde IP é usado sozinho como chave
+    keyGeneratorIpFallback: false,
   },
 });
 

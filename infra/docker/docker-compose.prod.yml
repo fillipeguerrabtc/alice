@@ -210,10 +210,15 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=32M
+      # CORREÇÃO 23/12/2025: SearXNG tenta atualizar certificados SSL no startup
+      # Erro: "can't create /etc/ssl/certs/ca-certificates.crt.new: Read-only file system"
+      - /etc/ssl/certs:mode=1777,size=8M
     environment:
       - SEARXNG_SECRET_KEY=${SEARXNG_SECRET_KEY:?SEARXNG_SECRET_KEY é obrigatório}
       # Bind default 8080; acesso interno via alice-network
       - SEARXNG_BASE_URL=http://alice-searxng:8080/
+      # CORREÇÃO 23/12/2025: Desabilitar atualização de certificados (imagem já tem certs válidos)
+      - SSL_CERT_DIR=/etc/ssl/certs
     volumes:
       - searxng_config:/etc/searxng
     networks:
@@ -556,8 +561,11 @@ services:
       - no-new-privileges:true
     read_only: true
     tmpfs:
-      # CORREÇÃO 19/12/2025: Qdrant precisa escrever em /tmp E /qdrant/snapshots
-      # Erro anterior: "Failed to create snapshots temp directory at ./snapshots/tmp: ReadOnlyFilesystem"
+      # CORREÇÃO 23/12/2025: Qdrant precisa escrever em vários diretórios temporários
+      # - /tmp: arquivos temporários gerais
+      # - /qdrant/snapshots: diretório de snapshots
+      # NOTA: Warning ".qdrant-initialized: Read-only file system" é esperado e não afeta funcionamento
+      # Qdrant tenta criar arquivo de flag na raiz do workdir mas não é crítico
       - /tmp:mode=1777,size=64M
       - /qdrant/snapshots:mode=1777,size=256M
     environment:
@@ -626,11 +634,14 @@ services:
       - /var/cache/nginx:mode=1777,size=32M
       - /var/run:mode=1777,size=8M
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      # CORREÇÃO 23/12/2025: Healthcheck robusto com -q (quiet mode) para evitar problemas
+      # BusyBox wget no Alpine funciona bem com read_only:true
+      # start_period aumentado para dar tempo ao nginx iniciar completamente
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 45s
     deploy:
       resources:
         limits:
@@ -769,12 +780,16 @@ services:
       - "traefik.http.routers.alice-chat.entrypoints=websecure"
       - "traefik.http.routers.alice-chat.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-chat.middlewares=security-headers@docker,rate-limit@docker"
+      # CORREÇÃO 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
+      - "traefik.http.routers.alice-chat.service=alice-chat"
       - "traefik.http.services.alice-chat.loadbalancer.server.port=3002"
-      # WebSocket
+      # WebSocket - mesma porta, router separado
       - "traefik.http.routers.alice-ws.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/ws`)"
       - "traefik.http.routers.alice-ws.entrypoints=websecure"
       - "traefik.http.routers.alice-ws.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-ws.middlewares=rate-limit@docker"
+      # CORREÇÃO 23/12/2025: Especificar service explícito para WebSocket
+      - "traefik.http.routers.alice-ws.service=alice-ws"
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente

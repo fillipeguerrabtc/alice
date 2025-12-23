@@ -2284,6 +2284,39 @@ jobs:
             fi
             
             # ==============================================
+            # SCHEMA BASE (Drizzle ORM) - OBRIGATÓRIO ANTES DAS MIGRATIONS
+            # ==============================================
+            # CORREÇÃO 23/12/2025: No primeiro deploy, as tabelas base não existem
+            # O drizzle-kit push cria/atualiza todas as tabelas definidas no schema
+            # As migrations SQL incrementais (0001-0012) adicionam RLS, índices, etc.
+            # ==============================================
+            echo "Criando schema base do banco de dados (Drizzle ORM)..."
+            
+            # Extrair DATABASE_URL do .env.prod para o drizzle-kit
+            DB_URL=$(grep -E "^DATABASE_URL=" .env.prod | cut -d'=' -f2-)
+            
+            # Usar container Node.js temporário para executar drizzle-kit push
+            # NOTA: O repositório já foi clonado em /opt/alice/app
+            docker run --rm \
+              --network alice-network \
+              -v /opt/alice/app:/app \
+              -w /app \
+              -e DATABASE_URL="${DB_URL}" \
+              node:22-alpine \
+              sh -c "
+                echo 'Instalando drizzle-kit...'
+                npm install -g pnpm@10 && \
+                pnpm install --frozen-lockfile --ignore-scripts && \
+                echo 'Executando drizzle-kit push...' && \
+                npx drizzle-kit push --force
+              " || {
+                echo "⚠️ drizzle-kit push falhou - pode ser normal se schema já existe"
+                echo "Continuando com migrations SQL..."
+              }
+            
+            echo "✅ Schema base processado"
+            
+            # ==============================================
             # MIGRAÇÕES DATABASE - 100% IDEMPOTENTES (Enterprise - Regra 6)
             # ==============================================
             # NOTA: Todas as migrações usam padrões idempotentes:

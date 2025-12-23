@@ -114,7 +114,7 @@ http:
 
 ### Autenticação
 
-- **Desenvolvimento (Cursor IDE)**: Sem autenticação (INTERNAL_API_TOKEN não configurado)
+- **Desenvolvimento (Cursor IDE)**: Sem autenticação (INTERNAL_API_SECRET não configurado)
 - **Produção**: ForwardAuth middleware valida sessão do usuário via auth-service
 
 O frontend usa `credentials: 'include'` para enviar cookies de sessão automaticamente.

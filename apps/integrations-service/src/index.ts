@@ -721,10 +721,11 @@ if (!STRIPE_WEBHOOK_SECRET && IS_PRODUCTION && stripe) {
   process.exit(1);
 }
 
-// WISE: Fail-fast se produção sem webhook secret e Wise configurado
+// WISE: Warning se produção sem webhook secret (webhooks desabilitados, API funciona)
+// CORREÇÃO 23/12/2025: WISE_WEBHOOK_SECRET só é gerado após primeiro deploy
+// O serviço deve funcionar sem webhook secret - apenas webhooks ficam desabilitados
 if (!WISE_WEBHOOK_SECRET && IS_PRODUCTION && isWiseConfigured()) {
-  logger.error('CRITICAL: WISE_WEBHOOK_SECRET é OBRIGATÓRIO em produção com Wise ativo. Abortando.');
-  process.exit(1);
+  logger.warn('WISE_WEBHOOK_SECRET não configurado - webhooks Wise desabilitados. Configure após primeiro deploy se necessário.');
 }
 
 // Função auxiliar para verificar idempotência de webhooks

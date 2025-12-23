@@ -34,10 +34,11 @@ const logger = createLogger('observability-health');
 const isProduction = process.env.NODE_ENV === 'production';
 
 // Token de autenticação para endpoints internos (Regra 16 - Segurança)
-const INTERNAL_API_TOKEN = process.env.INTERNAL_API_TOKEN;
+// CORREÇÃO 23/12/2025: Nome correto é INTERNAL_API_SECRET (conforme secrets do repositório)
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
 
-if (!INTERNAL_API_TOKEN && isProduction) {
-  logger.error('CRITICAL: INTERNAL_API_TOKEN é OBRIGATÓRIO em produção. Abortando.');
+if (!INTERNAL_API_SECRET && isProduction) {
+  logger.error('CRITICAL: INTERNAL_API_SECRET é OBRIGATÓRIO em produção. Abortando.');
   process.exit(1);
 }
 
@@ -52,11 +53,11 @@ function requireInternalAuth(req: Request, res: Response, next: NextFunction): v
   const token = authHeader?.replace('Bearer ', '');
 
   // Em desenvolvimento sem token configurado, permitir acesso
-  if (!INTERNAL_API_TOKEN && !isProduction) {
+  if (!INTERNAL_API_SECRET && !isProduction) {
     return next();
   }
 
-  if (!token || token !== INTERNAL_API_TOKEN) {
+  if (!token || token !== INTERNAL_API_SECRET) {
     logger.warn({ path: req.path, ip: req.ip }, 'Tentativa de acesso não autorizado');
     res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
     return;
