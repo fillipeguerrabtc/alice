@@ -2356,18 +2356,25 @@ jobs:
             # Problema: drizzle-kit push pode hang indefinidamente se PostgreSQL não está totalmente pronto
             # mesmo com health check passando (connection pooling delays, initialization lag)
             # Solução: Teste de conexão explícito + timeout wrapper (300s = 5 min)
+            # CORREÇÃO 23/12/2025: Prevenção de shell injection - credenciais via variáveis de ambiente Docker
+            # Problema: Interpolação direta de ${PG_PASS}, ${PG_USER}, ${PG_DB} em sh -c permite shell injection
+            # Se credenciais contiverem metacaracteres ($variable, backticks, $()), shell interno os interpreta
+            # Solução: Passar credenciais via -e (variáveis de ambiente Docker) - forma segura sem risco de injection
             echo "   Validando conexão PostgreSQL antes de drizzle-kit push..."
             docker run --rm \
               --network alice-network \
+              -e PGPASSWORD="${PG_PASS}" \
+              -e PG_USER="${PG_USER}" \
+              -e PG_DB="${PG_DB}" \
               postgres:16-alpine \
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
                 for i in \$(seq 1 30); do
-                  # CORREÇÃO 23/12/2025: Variáveis entre aspas duplas para permitir expansão e prevenir word-splitting
-                  # Aspas simples ('${PG_PASS}') impedem expansão - literal \${PG_PASS} seria passado ao psql
-                  # Aspas duplas (\"${PG_PASS}\") permitem expansão e protegem contra word-splitting
-                  # Se PG_USER ou PG_DB contiverem espaços ou metacaracteres, sem aspas o comando quebra
-                  if PGPASSWORD=\"${PG_PASS}\" psql -h alice-postgres -U \"${PG_USER}\" -d \"${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
+                  # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente (\$PGPASSWORD, \$PG_USER, \$PG_DB)
+                  # Docker -e passa variáveis de forma segura sem risco de shell injection
+                  # Variáveis são expandidas pelo shell interno, não pelo shell externo (GitHub Actions)
+                  # Isso previne injeção mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
+                  if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
                   fi

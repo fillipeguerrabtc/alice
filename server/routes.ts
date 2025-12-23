@@ -12,10 +12,12 @@ const createConversationSchema = z.object({
 });
 
 // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+// CORREÇÃO 23/12/2025: Removido 'document' - documentos são enviados para RAG service via uploads,
+// não como tipos de mensagem de chat. Chat messages suportam apenas: text, image, audio, mixed
 const createMessageSchema = z.object({
   conversationId: z.string().uuid(),
   conteudo: z.string(),
-  tipo: z.enum(["text", "image", "audio", "document"]).optional(),
+  tipo: z.enum(["text", "image", "audio", "mixed"]).optional(),
   anexos: z.array(z.any()).optional(),
 });
 
