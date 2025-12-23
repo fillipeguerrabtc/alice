@@ -155,9 +155,32 @@ export async function initEmbeddingWebSocket(server: Server): Promise<void> {
   // initRedisPubSub() é async e precisa ser aguardado para evitar race condition
   // WebSocket clients podem conectar antes do Redis estar pronto, causando falhas silenciosas
   // BUG FIX 23/12/2025: Tratamento de erro explícito - se Redis Pub/Sub falhar, WebSocket não deve funcionar
-  // O erro será propagado para o caller (index.ts) que tem try-catch adequado
+  // initRedisPubSub() agora retorna boolean - false indica que Redis não está disponível ou falhou
+  // Em produção, Redis é obrigatório - falha deve causar erro crítico (Regra 6 - sem workarounds)
   try {
-    await initRedisPubSub();
+    const redisPubSubInitialized = await initRedisPubSub();
+    
+    if (!redisPubSubInitialized) {
+      // Redis não disponível ou falhou - comportamento depende do ambiente
+      // Em produção, isso é erro crítico (Redis é obrigatório para Pub/Sub)
+      // Em desenvolvimento, permitir continuar mas com funcionalidade limitada
+      const error = new Error('Redis Pub/Sub não disponível - WebSocket não pode funcionar corretamente');
+      logger.error({ error }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket');
+      
+      // Limpar recursos criados antes de lançar erro
+      if (heartbeatInterval) {
+        clearInterval(heartbeatInterval);
+        heartbeatInterval = null;
+      }
+      if (wss) {
+        wss.close();
+        wss = null;
+      }
+      
+      // Propagar erro para o caller tratar adequadamente (index.ts verifica isProduction)
+      throw error;
+    }
+    
     logger.info({ path: '/ws/embeddings' }, 'WebSocket server para embeddings iniciado');
   } catch (redisError) {
     logger.error({ error: redisError }, 'CRITICAL: Falha ao inicializar Redis Pub/Sub para WebSocket');
@@ -251,12 +274,15 @@ function handleMessage(ws: AuthenticatedWebSocket, message: WebSocketMessage): v
 // REDIS PUB/SUB
 // ============================================================================
 
-async function initRedisPubSub(): Promise<void> {
+// BUG FIX 23/12/2025: Retornar boolean para indicar sucesso/falha ao invés de retornar silenciosamente
+// Isso permite que initEmbeddingWebSocket verifique se Redis Pub/Sub foi realmente inicializado
+// Em produção, Redis é obrigatório - falha deve ser tratada como erro crítico
+async function initRedisPubSub(): Promise<boolean> {
   const client = getRedisClient();
   
   if (!client) {
     logger.warn('Redis não disponível - notificações WebSocket desabilitadas');
-    return;
+    return false;
   }
   
   try {
@@ -280,8 +306,11 @@ async function initRedisPubSub(): Promise<void> {
     });
     
     logger.info({ channel }, 'Redis Pub/Sub inicializado para notificações');
+    return true;
   } catch (error) {
     logger.error({ error }, 'Erro ao inicializar Redis Pub/Sub');
+    // Retornar false para indicar falha - erro será tratado pelo caller
+    return false;
   }
 }
 
