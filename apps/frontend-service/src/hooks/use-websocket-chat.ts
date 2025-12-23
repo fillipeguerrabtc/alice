@@ -122,10 +122,12 @@ export const ACCEPTED_TYPES = {
 // .toLowerCase() e .trim() garantem matching correto mesmo com variações
 // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais (ex: "audio/mpeg; codecs=mp3")
 // Consistente com normalização em Training.tsx, rag-service, chat-service e integrations-service para evitar rejeição de tipos legítimos
+// BUG FIX 23/12/2025: Type assertion segura seguindo padrão da plataforma (chat-service, rag-service)
+// includes() faz validação real em runtime, type assertion apenas informa TypeScript sobre tipos possíveis
 export function getMediaType(mimeType: string): MediaType | null {
   const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
-  if (ACCEPTED_TYPES.image.includes(normalizedMimeType)) return 'image';
-  if (ACCEPTED_TYPES.audio.includes(normalizedMimeType)) return 'audio';
+  if (ACCEPTED_TYPES.image.includes(normalizedMimeType as typeof ACCEPTED_TYPES.image[number])) return 'image';
+  if (ACCEPTED_TYPES.audio.includes(normalizedMimeType as typeof ACCEPTED_TYPES.audio[number])) return 'audio';
   // REMOVIDO 23/12/2025: video não é mais aceito
   return null;
 }

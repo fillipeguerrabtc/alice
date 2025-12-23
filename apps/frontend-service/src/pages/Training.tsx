@@ -515,7 +515,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   const acceptedTypes = {
     image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     audio: ['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp4'],
-  };
+  } as const;
 
   const allAccepted = [
     ...acceptedTypes.image,
@@ -528,10 +528,12 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   // .toLowerCase() e .trim() garantem matching correto mesmo com variações
   // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais (ex: "audio/mpeg; codecs=mp3")
   // Consistente com normalização em rag-service, chat-service e integrations-service para evitar rejeição de tipos legítimos
+  // BUG FIX 23/12/2025: Type assertion segura seguindo padrão da plataforma (chat-service, rag-service)
+  // includes() faz validação real em runtime, type assertion apenas informa TypeScript sobre tipos possíveis
   const getMediaType = (mimeType: string): 'image' | 'audio' | null => {
     const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
-    if (acceptedTypes.image.includes(normalizedMimeType)) return 'image';
-    if (acceptedTypes.audio.includes(normalizedMimeType)) return 'audio';
+    if (acceptedTypes.image.includes(normalizedMimeType as typeof acceptedTypes.image[number])) return 'image';
+    if (acceptedTypes.audio.includes(normalizedMimeType as typeof acceptedTypes.audio[number])) return 'audio';
     return null;
   };
 
