@@ -18,7 +18,7 @@ import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
-import rateLimit, { type Options as RateLimitOptions } from 'express-rate-limit';
+import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
