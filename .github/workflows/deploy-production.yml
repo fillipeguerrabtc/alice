@@ -2527,23 +2527,17 @@ jobs:
                 # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
                 # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
                 # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
-                # CRITICAL SECURITY FIX 23/12/2025: Passar credenciais via variáveis de ambiente do shell externo
-                # Problema: printf %q produz aspas literais (ex: 'my$pass') que se tornam parte do valor quando expandidas em sh -c
-                # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
-                # docker compose exec herda variáveis de ambiente do shell externo de forma segura
-                # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
-                # BUG FIX 23/12/2025: Usar subshell para isolar export/unset e evitar persistência no shell parent
-                # export dentro de subshell não afeta o shell parent, garantindo least privilege
-                # Credenciais são limpas automaticamente quando o subshell termina
-                (
-                  export PGPASSWORD="${PG_PASS}"
-                  export PG_USER_MIGRATION="${PG_USER}"
-                  export PG_DB_MIGRATION="${PG_DB}"
-                  docker compose -f docker-compose.prod.yml \
-                    --env-file .env.prod \
-                    exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
-                    < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
-                )
+                # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
+                # Exportar PGPASSWORD no subshell não passa a variável para o container
+                # Solução: Usar env dentro do comando sh -c para passar variáveis explicitamente
+                # Usar aspas simples no sh -c para que variáveis sejam expandidas apenas no shell interno
+                # Variáveis são passadas como argumentos posicionais ($1, $2, $3) para evitar shell injection
+                # Isso garante que psql receba as credenciais corretas sem shell injection
+                docker compose -f docker-compose.prod.yml \
+                  --env-file .env.prod \
+                  exec -T postgres sh -c 'env PGPASSWORD="$1" psql -U "$2" -d "$3" -v ON_ERROR_STOP=0 -f /dev/stdin' \
+                  _ "${PG_PASS}" "${PG_USER}" "${PG_DB}" \
+                  < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2572,24 +2566,17 @@ jobs:
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
-              # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
-              # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
-              # CRITICAL SECURITY FIX 23/12/2025: Passar credenciais via variáveis de ambiente do shell externo
-              # Problema: printf %q produz aspas literais (ex: 'my$pass') que se tornam parte do valor quando expandidas em sh -c
-              # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
-              # docker compose exec herda variáveis de ambiente do shell externo de forma segura
-              # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
-              # BUG FIX 23/12/2025: Usar subshell para isolar export/unset e evitar persistência no shell parent
-              # export dentro de subshell não afeta o shell parent, garantindo least privilege
-              # Credenciais são limpas automaticamente quando o subshell termina
+              # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
+              # Exportar PGPASSWORD no subshell não passa a variável para o container
+              # Solução: Usar env dentro do comando sh -c para passar variáveis explicitamente
+              # Usar aspas simples no sh -c para que variáveis sejam expandidas apenas no shell interno
+              # Variáveis são passadas como argumentos posicionais ($1, $2, $3) para evitar shell injection
+              # Isso garante que psql receba as credenciais corretas sem shell injection
               psql_output=$(
-                export PGPASSWORD="${PG_PASS}"
-                export PG_USER_MIGRATION="${PG_USER}"
-                export PG_DB_MIGRATION="${PG_DB}"
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                  exec -T postgres sh -c 'env PGPASSWORD="$1" psql -U "$2" -d "$3" -v ON_ERROR_STOP=1 -f /dev/stdin' \
+                  _ "${PG_PASS}" "${PG_USER}" "${PG_DB}" \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
               
