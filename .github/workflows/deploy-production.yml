@@ -2390,9 +2390,11 @@ jobs:
             # --env-file lê valores literalmente do arquivo, então não precisamos de escaping
             # Docker --env-file não faz expansão de shell, então valores são escritos literalmente
             # Isso é seguro porque o arquivo é criado localmente e passado diretamente ao Docker
-            printf 'PGPASSWORD=%s\n' "${PG_PASS}" > "$VALIDATION_ENV_FILE"
-            printf 'PG_USER=%s\n' "${PG_USER}" >> "$VALIDATION_ENV_FILE"
-            printf 'PG_DB=%s\n' "${PG_DB}" >> "$VALIDATION_ENV_FILE"
+            # BUG FIX 23/12/2025: Aspas duplas necessárias para que %s seja interpretado como format specifier
+            # Com aspas simples, %s seria tratado literalmente e o arquivo conteria PGPASSWORD=%s ao invés do valor real
+            printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$VALIDATION_ENV_FILE"
+            printf "PG_USER=%s\n" "${PG_USER}" >> "$VALIDATION_ENV_FILE"
+            printf "PG_DB=%s\n" "${PG_DB}" >> "$VALIDATION_ENV_FILE"
             docker run --rm \
               --network alice-network \
               --env-file "$VALIDATION_ENV_FILE" \

@@ -57,8 +57,23 @@ let redisSubscriber: ReturnType<typeof getRedisClient> | null = null;
 
 /**
  * Inicializa o servidor WebSocket para notificações de embeddings
+ * 
  * BUG FIX 23/12/2025: Tornado async para aguardar inicialização do Redis Pub/Sub
  * Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
+ * 
+ * DEPENDÊNCIAS CRÍTICAS:
+ * - Redis Pub/Sub deve estar inicializado ANTES de aceitar conexões
+ * - Esta função aguarda initRedisPubSub() antes de retornar
+ * - O servidor HTTP não deve iniciar (server.listen()) até que esta função complete
+ * 
+ * ORDEM DE INICIALIZAÇÃO:
+ * 1. Redis cache inicializado (initializeRedisCache)
+ * 2. Servidor HTTP criado mas NÃO iniciado (http.createServer)
+ * 3. Esta função chamada e aguardada (await initEmbeddingWebSocket)
+ * 4. Servidor HTTP iniciado (server.listen) - APENAS após Redis Pub/Sub estar pronto
+ * 
+ * @param server - Servidor HTTP que será usado pelo WebSocket (não deve estar escutando ainda)
+ * @returns Promise que resolve quando Redis Pub/Sub está inicializado e WebSocket está pronto
  */
 export async function initEmbeddingWebSocket(server: Server): Promise<void> {
   if (wss) {
@@ -66,6 +81,9 @@ export async function initEmbeddingWebSocket(server: Server): Promise<void> {
     return;
   }
   
+  // BUG FIX 23/12/2025: WebSocket server criado mas handlers só funcionam após Redis estar pronto
+  // O servidor HTTP não está escutando ainda, então não há race condition
+  // Mas garantimos que Redis Pub/Sub esteja inicializado antes de retornar
   wss = new WebSocketServer({ 
     server,
     path: '/ws/embeddings',

@@ -558,6 +558,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   // CORREÇÃO 23/12/2025: Removido limite fixo de 100MB (vídeo) - agora usa limites por tipo
   // BUG FIX 23/12/2025: Tipo explícito garante que todas as chaves de MediaType existam
   // Isso previne acesso a undefined e NaN em cálculos de limite
+  // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
   const FILE_LIMITS: Record<'image' | 'audio', number> = {
     image: 10 * 1024 * 1024,  // 10MB para imagens
     audio: 25 * 1024 * 1024,  // 25MB para áudio
