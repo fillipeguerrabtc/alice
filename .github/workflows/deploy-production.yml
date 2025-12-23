@@ -2376,27 +2376,19 @@ jobs:
             # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
             # Solução: Criar arquivo temporário com variáveis e usar --env-file para passar de forma segura
             # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
-            # BUG FIX 23/12/2025: Usar cat com heredoc para escrever valores literalmente sem expansão
-            # printf 'PGPASSWORD=%s\n' "${PG_PASS}" ainda expande ${PG_PASS} pelo shell antes de passar para printf
-            # cat com heredoc 'EOF' escreve valores literalmente sem expansão de metacaracteres
+            # BUG FIX 23/12/2025: Usar printf com %q para escapar valores, depois remover aspas externas com sed
+            # printf %q produz string shell-escaped (ex: 'my$pass' ou my\$pass), mas precisamos valor literal
+            # Solução: Usar printf %q e depois sed para remover aspas externas, mantendo escapes internos
+            # Isso garante que valores com metacaracteres sejam escritos literalmente no arquivo
             VALIDATION_ENV_FILE=$(mktemp)
-            {
-              cat <<'EOF'
-PGPASSWORD=
-EOF
-              printf '%s' "${PG_PASS}"
-              echo
-              cat <<'EOF'
-PG_USER=
-EOF
-              printf '%s' "${PG_USER}"
-              echo
-              cat <<'EOF'
-PG_DB=
-EOF
-              printf '%s' "${PG_DB}"
-              echo
-            } > "$VALIDATION_ENV_FILE"
+            # Escapar valores com printf %q e remover aspas externas (se houver)
+            PG_PASS_ESCAPED=$(printf '%q' "${PG_PASS}" | sed "s/^'\(.*\)'$/\1/")
+            PG_USER_ESCAPED=$(printf '%q' "${PG_USER}" | sed "s/^'\(.*\)'$/\1/")
+            PG_DB_ESCAPED=$(printf '%q' "${PG_DB}" | sed "s/^'\(.*\)'$/\1/")
+            # Escrever no arquivo usando printf com %s para evitar expansão adicional
+            printf 'PGPASSWORD=%s\n' "$PG_PASS_ESCAPED" > "$VALIDATION_ENV_FILE"
+            printf 'PG_USER=%s\n' "$PG_USER_ESCAPED" >> "$VALIDATION_ENV_FILE"
+            printf 'PG_DB=%s\n' "$PG_DB_ESCAPED" >> "$VALIDATION_ENV_FILE"
             docker run --rm \
               --network alice-network \
               --env-file "$VALIDATION_ENV_FILE" \
