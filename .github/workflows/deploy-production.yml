@@ -2323,7 +2323,10 @@ jobs:
               for (( pos=0 ; pos<strlen ; pos++ )); do
                 c=${string:$pos:1}
                 case "$c" in
-                  [-_.~a-zA-Z0-9] )
+                  # CORREÇÃO 23/12/2025: Hífen movido para o final para evitar interpretação como range operator
+                  # RFC 3986: caracteres não-reservados não precisam encoding: [-_.~a-zA-Z0-9]
+                  # Em bash case patterns, hífen no início pode ser interpretado como range (ex: [-a] = range de - até a)
+                  [_.~a-zA-Z0-9-] )
                     encoded+="${c}"
                     ;;
                   * )
@@ -2360,7 +2363,9 @@ jobs:
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
                 for i in \$(seq 1 30); do
-                  if PGPASSWORD='${PG_PASS}' psql -h alice-postgres -U ${PG_USER} -d ${PG_DB} -c 'SELECT 1' >/dev/null 2>&1; then
+                  # CORREÇÃO 23/12/2025: Variáveis entre aspas para prevenir word-splitting
+                  # Se PG_USER ou PG_DB contiverem espaços ou metacaracteres, sem aspas o comando quebra
+                  if PGPASSWORD='${PG_PASS}' psql -h alice-postgres -U \"${PG_USER}\" -d \"${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
                   fi
@@ -2399,20 +2404,28 @@ jobs:
                     echo \"   Possíveis causas: PostgreSQL não totalmente pronto, rede lenta, schema muito grande\"
                     exit 1
                   else
-                    echo \"⚠️ drizzle-kit push falhou (exit code: \$EXIT_CODE) - pode ser normal se schema já existe\"
-                    exit 0
+                    # CORREÇÃO 23/12/2025: Qualquer erro de drizzle-kit push (exit code != 0 e != 124) é CRÍTICO
+                    # drizzle-kit push --force retorna exit code 0 mesmo se schema já existe (apenas sincroniza)
+                    # Se retornar != 0, é erro real (sintaxe, conexão, permissões, etc.) - deploy DEVE falhar
+                    echo \"❌ ERRO: drizzle-kit push falhou com exit code \$EXIT_CODE\"
+                    echo \"   Possíveis causas: erro de sintaxe no schema, erro de conexão, permissões insuficientes\"
+                    echo \"   Schema base NÃO foi criado/atualizado corretamente - deploy NÃO pode continuar\"
+                    exit 1
                   fi
                 }
               " || {
                 DRIZZLE_EXIT_CODE=$?
-                if [ "$DRIZZLE_EXIT_CODE" -eq 1 ]; then
-                  echo "❌ ERRO CRÍTICO: drizzle-kit push falhou ou excedeu timeout"
+                # CORREÇÃO 23/12/2025: Qualquer exit code != 0 do container é erro crítico
+                # Timeout (124) e outros erros (!= 0) ambos resultam em exit 1 do container
+                # Não há cenário onde drizzle-kit push falha mas o deploy deve continuar
+                if [ "$DRIZZLE_EXIT_CODE" -ne 0 ]; then
+                  echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
                   echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
+                  echo "   Verifique logs acima para detalhes do erro"
                   exit 1
-                else
-                  echo "⚠️ drizzle-kit push falhou - pode ser normal se schema já existe"
-                  echo "Continuando com migrations SQL..."
                 fi
+                # Se chegou aqui, exit code = 0 (sucesso)
+                echo "✅ drizzle-kit push executado com sucesso"
               }
             
             echo "✅ Schema base processado"
