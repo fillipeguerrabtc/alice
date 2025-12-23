@@ -2499,122 +2499,179 @@ jobs:
             # Problema: docker compose up com 44 containers simultaneamente
             # sobrecarrega o sistema e causa falhas de timing/dependência
             # Solução: Deploy em fases sequenciais, cada fase aguarda healthy
+            # DEPLOY_SERVICES: alice-only, erpnext-only, ou all (default)
             # ==============================================
             
             echo "============================================="
             echo "DEPLOY EM FASES SEQUENCIAIS"
+            echo "DEPLOY_SERVICES: ${DEPLOY_SERVICES:-all}"
             echo "============================================="
             DEPLOY_EXIT_CODE=0
             
-            # FASE 1: Pull de todas as imagens primeiro (evita timeout durante up)
+            # Determinar quais fases executar baseado em DEPLOY_SERVICES
+            DEPLOY_ALICE="false"
+            DEPLOY_ERPNEXT="false"
+            DEPLOY_OBSERVABILITY="false"
+            
+            case "${DEPLOY_SERVICES}" in
+              "alice-only")
+                DEPLOY_ALICE="true"
+                DEPLOY_OBSERVABILITY="true"
+                echo "📋 Modo: Alice Stack apenas (fases 1-4, 7)"
+                ;;
+              "erpnext-only")
+                DEPLOY_ERPNEXT="true"
+                echo "📋 Modo: ERPNext Stack apenas (fases 5-6)"
+                ;;
+              *)
+                DEPLOY_ALICE="true"
+                DEPLOY_ERPNEXT="true"
+                DEPLOY_OBSERVABILITY="true"
+                echo "📋 Modo: Stack Completa (todas as 7 fases)"
+                ;;
+            esac
+            
+            # FASE 1: Pull de imagens (sempre executa)
             echo ""
-            echo "📦 FASE 1/7: Pull de imagens..."
+            echo "📦 FASE 1: Pull de imagens..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures || true
             echo "✅ Pull concluído"
             
-            # FASE 2: Infraestrutura base Alice
-            echo ""
-            echo "🔧 FASE 2/7: Infraestrutura base (postgres, redis, qdrant, searxng)..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod \
-              up -d --no-build --remove-orphans --wait --wait-timeout 120 \
-              postgres alice-redis alice-qdrant alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
-            
-            if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-              echo "✅ Infraestrutura base healthy"
-              
-              # FASE 3: Gateway (Traefik)
+            # FASES 2-4: Alice Stack
+            if [ "$DEPLOY_ALICE" = "true" ]; then
+              # FASE 2: Infraestrutura base Alice
               echo ""
-              echo "🌐 FASE 3/7: Gateway (dockerproxy, traefik)..."
+              echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, searxng)..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --wait --wait-timeout 120 \
-                dockerproxy traefik-init traefik || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 3 falhou"; }
+                up -d --no-build --remove-orphans --wait --wait-timeout 120 \
+                postgres alice-redis alice-qdrant alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
+              
+              if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                echo "✅ Infraestrutura base healthy"
+                
+                # FASE 3: Gateway (Traefik)
+                echo ""
+                echo "🌐 FASE 3: Gateway (dockerproxy, traefik)..."
+                docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                  up -d --no-build --wait --wait-timeout 120 \
+                  dockerproxy traefik-init traefik || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 3 falhou"; }
+              fi
+              
+              if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                echo "✅ Gateway healthy"
+                
+                # FASE 4: Serviços Alice
+                echo ""
+                echo "🤖 FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend)..."
+                docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                  up -d --no-build --wait --wait-timeout 180 \
+                  alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 4 falhou"; }
+              fi
+              
+              if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                echo "✅ Serviços Alice healthy"
+              fi
+            else
+              echo ""
+              echo "⏭️ FASES 2-4 ignoradas (DEPLOY_SERVICES=${DEPLOY_SERVICES})"
             fi
             
-            if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-              echo "✅ Gateway healthy"
-              
-              # FASE 4: Serviços Alice
-              echo ""
-              echo "🤖 FASE 4/7: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend)..."
-              docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --wait --wait-timeout 180 \
-                alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 4 falhou"; }
-            fi
-            
-            if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-              echo "✅ Serviços Alice healthy"
-              
+            # FASES 5-6: ERPNext Stack
+            if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_ERPNEXT" = "true" ]; then
               # FASE 5: Infraestrutura ERPNext
               echo ""
-              echo "📊 FASE 5/7: Infraestrutura ERPNext (mariadb, redis)..."
+              echo "📊 FASE 5: Infraestrutura ERPNext (mariadb, redis)..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --wait --wait-timeout 120 \
                 erpnext-mariadb erpnext-redis-cache erpnext-redis-queue || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 5 falhou"; }
-            fi
-            
-            if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-              echo "✅ Infraestrutura ERPNext healthy"
-              
-              # FASE 6: Init e Serviços ERPNext
-              echo ""
-              echo "🏢 FASE 6/7: ERPNext (configurator, create-site, backend, workers)..."
-              # Init containers primeiro (sem --wait pois são one-shot)
-              docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build \
-                erpnext-configurator || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6a falhou (configurator)"; }
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-                # Aguardar configurator completar
-                echo "   Aguardando erpnext-configurator..."
-                timeout 120 docker wait erpnext-configurator || true
+                echo "✅ Infraestrutura ERPNext healthy"
                 
-                # Create-site
+                # FASE 6: Init e Serviços ERPNext
+                echo ""
+                echo "🏢 FASE 6: ERPNext (configurator, create-site, backend, workers)..."
+                # Init containers primeiro (sem --wait pois são one-shot)
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   up -d --no-build \
-                  erpnext-create-site || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6b falhou (create-site)"; }
+                  erpnext-configurator || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6a falhou (configurator)"; }
                 
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-                  # Aguardar create-site completar (pode demorar até 5 min)
-                  echo "   Aguardando erpnext-create-site (pode demorar 3-5 min)..."
-                  timeout 300 docker wait erpnext-create-site || true
+                  # Aguardar configurator completar
+                  echo "   Aguardando erpnext-configurator..."
+                  timeout 120 docker wait erpnext-configurator || true
                   
-                  # Verificar se create-site teve sucesso
-                  CREATE_SITE_EXIT=$(docker inspect erpnext-create-site --format '{{.State.ExitCode}}' 2>/dev/null || echo "1")
-                  if [ "$CREATE_SITE_EXIT" != "0" ]; then
-                    echo "❌ erpnext-create-site falhou com exit code: $CREATE_SITE_EXIT"
-                    docker logs erpnext-create-site 2>&1 | tail -50
+                  # Verificar se configurator teve sucesso
+                  CONFIGURATOR_EXIT=$(docker inspect erpnext-configurator --format '{{.State.ExitCode}}' 2>/dev/null || echo "1")
+                  if [ "$CONFIGURATOR_EXIT" != "0" ]; then
+                    echo "❌ erpnext-configurator falhou com exit code: $CONFIGURATOR_EXIT"
+                    docker logs erpnext-configurator 2>&1 | tail -50
                     DEPLOY_EXIT_CODE=1
                   fi
+                fi
+                
+                if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                  # Create-site
+                  docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                    up -d --no-build \
+                    erpnext-create-site || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6b falhou (create-site)"; }
+                  
+                  if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                    # Aguardar create-site completar (pode demorar até 5 min)
+                    echo "   Aguardando erpnext-create-site (pode demorar 3-5 min)..."
+                    timeout 300 docker wait erpnext-create-site || true
+                    
+                    # Verificar se create-site teve sucesso
+                    CREATE_SITE_EXIT=$(docker inspect erpnext-create-site --format '{{.State.ExitCode}}' 2>/dev/null || echo "1")
+                    if [ "$CREATE_SITE_EXIT" != "0" ]; then
+                      echo "❌ erpnext-create-site falhou com exit code: $CREATE_SITE_EXIT"
+                      docker logs erpnext-create-site 2>&1 | tail -50
+                      DEPLOY_EXIT_CODE=1
+                    fi
+                  fi
+                fi
+                
+                if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                  # Serviços ERPNext
+                  docker compose -f docker-compose.prod.yml --env-file .env.prod \
+                    up -d --no-build --wait --wait-timeout 180 \
+                    erpnext-backend erpnext-frontend erpnext-websocket \
+                    erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long \
+                    erpnext-worker-short-2 erpnext-worker-default-2 erpnext-worker-long-2 || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6c falhou (serviços)"; }
                 fi
               fi
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-                # Serviços ERPNext
-                docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                  up -d --no-build --wait --wait-timeout 180 \
-                  erpnext-backend erpnext-frontend erpnext-websocket \
-                  erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long \
-                  erpnext-worker-short-2 erpnext-worker-default-2 erpnext-worker-long-2 || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6c falhou (serviços)"; }
+                echo "✅ ERPNext healthy"
               fi
+            elif [ "$DEPLOY_ERPNEXT" = "false" ]; then
+              echo ""
+              echo "⏭️ FASES 5-6 ignoradas (DEPLOY_SERVICES=${DEPLOY_SERVICES})"
             fi
             
-            if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-              echo "✅ ERPNext healthy"
-              
-              # FASE 7: Observability Stack
+            # FASE 7: Observability Stack
+            if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_OBSERVABILITY" = "true" ]; then
               echo ""
-              echo "📈 FASE 7/7: Observability (prometheus, grafana, langfuse, etc.)..."
+              echo "📈 FASE 7: Observability (prometheus, grafana, langfuse, etc.)..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --wait --wait-timeout 300 \
                 clickhouse langfuse langfuse-worker langfuse-db \
                 prometheus grafana loki promtail jaeger vector alertmanager otel-collector node-exporter cadvisor \
                 pgbackrest || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 7 falhou"; }
+              
+              if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                echo "✅ Observability healthy"
+              fi
+            elif [ "$DEPLOY_OBSERVABILITY" = "false" ]; then
+              echo ""
+              echo "⏭️ FASE 7 ignorada (DEPLOY_SERVICES=${DEPLOY_SERVICES})"
             fi
             
             if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
               echo ""
               echo "============================================="
-              echo "✅ TODAS AS 7 FASES CONCLUÍDAS COM SUCESSO!"
+              echo "✅ DEPLOY CONCLUÍDO COM SUCESSO!"
+              echo "   Modo: ${DEPLOY_SERVICES:-all}"
               echo "============================================="
             fi
             
