@@ -252,7 +252,9 @@ class LocalStorageService implements StorageService {
         // Estrutura 1: Uploads gerais por tenant (/uploads/{tenantId}/{mediaType}/...)
         // Detecta se é UUID (tenantId) ou nome de diretório de job Salad
         // ATUALIZADO 23/12/2025: Removidos diretórios de vídeo (lip-sync, talking-head, long-video)
-        const isJobOutputDir = ['tts', 'media'].includes(entry);
+        // BUG FIX 23/12/2025: Manter diretórios antigos na lista para compatibilidade com diretórios existentes
+        // Se diretórios antigos ainda existem em disco, devem ser tratados como job output, não como tenantId
+        const isJobOutputDir = ['tts', 'media', 'lip-sync', 'talking-head', 'long-video'].includes(entry);
         
         if (isJobOutputDir) {
           // Estrutura 2: Outputs de jobs Salad (/uploads/{jobType}/output-{jobId}.{ext})
