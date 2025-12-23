@@ -74,6 +74,14 @@ if [ -z "${POSTGRES_PASSWORD}" ]; then
   exit 1
 fi
 
+# CORREÇÃO 23/12/2025: Validar que senha PostgreSQL não contém caracteres especiais de URL
+# Senhas com +, /, =, @, :, ?, #, % quebram DATABASE_URL (ex: postgresql://user:P@ss@host:port/db)
+# Use: openssl rand -hex 32 (hexadecimal é 100% URL-safe)
+if echo "${POSTGRES_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
+  echo "::error::POSTGRES_PASSWORD contém caracteres especiais de URL (+/=@:?#%). DATABASE_URL será malformado. Regenere com: openssl rand -hex 32" >&2
+  exit 1
+fi
+
 REDIS_PASSWORD="${REDIS_PASSWORD_SECRET:-}"
 if [ -z "${REDIS_PASSWORD}" ]; then
   echo "::error::REDIS_PASSWORD não definido. Configure o secret REDIS_PASSWORD no repositório." >&2
