@@ -2493,6 +2493,20 @@ jobs:
             WAIT_TIMEOUT=600
             
             # ==============================================
+            # TIMEOUTS POR FASE (Enterprise Best Practice)
+            # ==============================================
+            # Cada fase tem timeout baseado no maior start_period dos seus containers
+            # Fórmula: timeout = max(start_period) + buffer_para_healthchecks
+            # PROIBIDO: hardcoded inline - usar estas variáveis
+            # ==============================================
+            PHASE2_TIMEOUT=240   # alice-qdrant: start_period=120s + buffer
+            PHASE3_TIMEOUT=120   # traefik: start_period=30s + buffer
+            PHASE4_TIMEOUT=300   # alice-rag: start_period=90s + 7 serviços
+            PHASE5_TIMEOUT=120   # erpnext-mariadb: start_period=60s + buffer
+            PHASE6_TIMEOUT=180   # erpnext-backend: start_period=60s + 9 workers
+            PHASE7_TIMEOUT=$WAIT_TIMEOUT  # clickhouse: até 360s
+            
+            # ==============================================
             # DEPLOY EM FASES SEQUENCIAIS (Enterprise Best Practice)
             # ==============================================
             # CORREÇÃO 23/12/2025: Deploy em fases ao invés de tudo de uma vez
@@ -2540,12 +2554,10 @@ jobs:
             # FASES 2-4: Alice Stack
             if [ "$DEPLOY_ALICE" = "true" ]; then
               # FASE 2: Infraestrutura base Alice
-              # NOTA: alice-qdrant tem start_period=120s, então timeout deve ser > 120s
-              # Usando 240s = start_period(120s) + buffer para healthchecks
               echo ""
-              echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, searxng)..."
+              echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, searxng) [timeout: ${PHASE2_TIMEOUT}s]..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --remove-orphans --wait --wait-timeout 240 \
+                up -d --no-build --remove-orphans --wait --wait-timeout $PHASE2_TIMEOUT \
                 postgres alice-redis alice-qdrant alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
@@ -2553,9 +2565,9 @@ jobs:
                 
                 # FASE 3: Gateway (Traefik)
                 echo ""
-                echo "🌐 FASE 3: Gateway (dockerproxy, traefik)..."
+                echo "🌐 FASE 3: Gateway (dockerproxy, traefik) [timeout: ${PHASE3_TIMEOUT}s]..."
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                  up -d --no-build --wait --wait-timeout 120 \
+                  up -d --no-build --wait --wait-timeout $PHASE3_TIMEOUT \
                   dockerproxy traefik-init traefik || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 3 falhou"; }
               fi
               
@@ -2563,12 +2575,10 @@ jobs:
                 echo "✅ Gateway healthy"
                 
                 # FASE 4: Serviços Alice
-                # NOTA: alice-rag tem start_period=90s, mais 7 serviços em paralelo
-                # Usando 300s = start_period(90s) + buffer generoso para 7 containers
                 echo ""
-                echo "🤖 FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend)..."
+                echo "🤖 FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend) [timeout: ${PHASE4_TIMEOUT}s]..."
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                  up -d --no-build --wait --wait-timeout 300 \
+                  up -d --no-build --wait --wait-timeout $PHASE4_TIMEOUT \
                   alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 4 falhou"; }
               fi
               
@@ -2584,9 +2594,9 @@ jobs:
             if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_ERPNEXT" = "true" ]; then
               # FASE 5: Infraestrutura ERPNext
               echo ""
-              echo "📊 FASE 5: Infraestrutura ERPNext (mariadb, redis)..."
+              echo "📊 FASE 5: Infraestrutura ERPNext (mariadb, redis) [timeout: ${PHASE5_TIMEOUT}s]..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --wait --wait-timeout 120 \
+                up -d --no-build --wait --wait-timeout $PHASE5_TIMEOUT \
                 erpnext-mariadb erpnext-redis-cache erpnext-redis-queue || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 5 falhou"; }
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
@@ -2659,8 +2669,9 @@ jobs:
                 
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
                   # Serviços ERPNext
+                  echo "   Iniciando serviços ERPNext [timeout: ${PHASE6_TIMEOUT}s]..."
                   docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                    up -d --no-build --wait --wait-timeout 180 \
+                    up -d --no-build --wait --wait-timeout $PHASE6_TIMEOUT \
                     erpnext-backend erpnext-frontend erpnext-websocket \
                     erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long \
                     erpnext-worker-short-2 erpnext-worker-default-2 erpnext-worker-long-2 || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6c falhou (serviços)"; }
@@ -2676,13 +2687,11 @@ jobs:
             fi
             
             # FASE 7: Observability Stack
-            # NOTA: Usa $WAIT_TIMEOUT (600s) porque ClickHouse pode demorar até 360s
-            # (start_period: 120s + 8 retries × 30s = 360s worst case)
             if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_OBSERVABILITY" = "true" ]; then
               echo ""
-              echo "📈 FASE 7: Observability (prometheus, grafana, langfuse, etc.)..."
+              echo "📈 FASE 7: Observability (prometheus, grafana, langfuse, etc.) [timeout: ${PHASE7_TIMEOUT}s]..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --wait --wait-timeout $WAIT_TIMEOUT \
+                up -d --no-build --wait --wait-timeout $PHASE7_TIMEOUT \
                 clickhouse langfuse langfuse-worker langfuse-db \
                 prometheus grafana loki promtail jaeger vector alertmanager otel-collector node-exporter cadvisor \
                 pgbackrest || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 7 falhou"; }
