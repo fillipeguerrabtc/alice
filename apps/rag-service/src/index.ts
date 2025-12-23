@@ -3432,45 +3432,33 @@ app.use(createErrorHandler({
     await initEmbeddingWebSocket(server);
     logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
     
-    // BUG FIX 23/12/2025: Iniciar servidor HTTP APÓS WebSocket estar pronto
-    // Agora que Redis Pub/Sub está inicializado, podemos aceitar conexões com segurança
-    server.listen(PORT, () => {
-      logger.info({ 
-        port: PORT, 
-        embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
-        qdrantConfigured: isQdrantConfigured(),
-        qdrantUrl: process.env.QDRANT_URL || 'not_configured',
-        architecture: {
-          text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
-          image: 'OpenCLIP (1024 dim) → pgvector',
-        },
-        circuitBreaker: 'enabled',
-        strategy: 'warm-on-demand',
-        redisConnected,
-      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
-    });
+    // BUG FIX 23/12/2025: Registrar shutdown callbacks ANTES de server.listen()
+    // Se o servidor falhar ao fazer bind na porta, server.on('error') chama process.exit(1)
+    // Os callbacks devem estar registrados ANTES para garantir cleanup mesmo em falhas de inicialização
+    // Isso previne vazamento de conexões do database pool se o servidor não conseguir iniciar
+    registerShutdownCallback(
+      'rag-database-pool',
+      async () => {
+        logger.info('Encerrando pool de conexões database...');
+        await closeDatabasePool();
+        logger.info('Pool de conexões encerrado com sucesso');
+      },
+      { priority: ShutdownPriority.DATABASE }
+    );
     
-    // BUG FIX 23/12/2025: Capturar erros assíncronos de inicialização do servidor (ex: porta em uso)
-    // server.listen() emite evento 'error' se falhar após callback ser chamado
-    // Isso previne unhandled promise rejections e garante fail-fast adequado
-    server.on('error', (err: NodeJS.ErrnoException) => {
-      logger.error({ 
-        error: err.message, 
-        code: err.code,
-        port: PORT,
-        stack: err.stack,
-      }, 'Falha crítica ao iniciar servidor HTTP - abortando');
-      // ENTERPRISE-GRADE: Fail-fast se servidor não pode iniciar (Regra 6 - sem workarounds)
-      process.exit(1);
-    });
+    registerShutdownCallback(
+      'rag-websocket-server',
+      async () => {
+        logger.info('Encerrando WebSocket server...');
+        // BUG FIX 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
+        // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
+        // Isso causa resource leaks e conexões pendentes
+        await closeEmbeddingWebSocket();
+        logger.info('WebSocket server encerrado com sucesso');
+      },
+      { priority: ShutdownPriority.WEBSOCKET }
+    );
     
-    // Configurar timeouts do servidor
-    server.timeout = 60000; // 60s para processamento de embeddings/uploads
-    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
-    
-    // Registrar shutdown callbacks
-    // BUG FIX 23/12/2025: registerShutdownCallback pode lançar exceções síncronas - capturadas pelo try-catch externo
     registerShutdownCallback(
       'rag-http-server',
       async () => {
@@ -3490,32 +3478,45 @@ app.use(createErrorHandler({
       { priority: ShutdownPriority.HTTP_SERVER }
     );
     
-    registerShutdownCallback(
-      'rag-websocket-server',
-      async () => {
-        logger.info('Encerrando WebSocket server...');
-        // BUG FIX 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
-        // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
-        // Isso causa resource leaks e conexões pendentes
-        await closeEmbeddingWebSocket();
-        logger.info('WebSocket server encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.WEBSOCKET }
-    );
+    // Configurar timeouts do servidor
+    server.timeout = 60000; // 60s para processamento de embeddings/uploads
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
     
-    // BUG FIX 23/12/2025: Registrar shutdown callback para database pool DENTRO do async IIFE
-    // Se a inicialização falhar e chamar process.exit(1), o callback nunca seria registrado
-    // Isso causa resource leaks - conexões do pool não são fechadas em cenários de falha
-    // Registrar APÓS servidor estar inicializado com sucesso garante cleanup mesmo em falhas
-    registerShutdownCallback(
-      'rag-database-pool',
-      async () => {
-        logger.info('Encerrando pool de conexões database...');
-        await closeDatabasePool();
-        logger.info('Pool de conexões encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.DATABASE }
-    );
+    // BUG FIX 23/12/2025: Capturar erros assíncronos de inicialização do servidor (ex: porta em uso)
+    // server.listen() emite evento 'error' se falhar após callback ser chamado
+    // Isso previne unhandled promise rejections e garante fail-fast adequado
+    // IMPORTANTE: Callbacks de shutdown já estão registrados acima, então cleanup será executado mesmo se servidor falhar
+    server.on('error', (err: NodeJS.ErrnoException) => {
+      logger.error({ 
+        error: err.message, 
+        code: err.code,
+        port: PORT,
+        stack: err.stack,
+      }, 'Falha crítica ao iniciar servidor HTTP - abortando');
+      // ENTERPRISE-GRADE: Fail-fast se servidor não pode iniciar (Regra 6 - sem workarounds)
+      // Callbacks de shutdown já estão registrados, então cleanup será executado durante process.exit()
+      process.exit(1);
+    });
+    
+    // BUG FIX 23/12/2025: Iniciar servidor HTTP APÓS WebSocket estar pronto E callbacks registrados
+    // Agora que Redis Pub/Sub está inicializado e callbacks de shutdown estão registrados,
+    // podemos aceitar conexões com segurança e garantir cleanup mesmo em falhas
+    server.listen(PORT, () => {
+      logger.info({ 
+        port: PORT, 
+        embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
+        qdrantConfigured: isQdrantConfigured(),
+        qdrantUrl: process.env.QDRANT_URL || 'not_configured',
+        architecture: {
+          text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
+          image: 'OpenCLIP (1024 dim) → pgvector',
+        },
+        circuitBreaker: 'enabled',
+        strategy: 'warm-on-demand',
+        redisConnected,
+      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
+    });
   } catch (error) {
     // BUG FIX 23/12/2025: Capturar TODOS os erros (síncronos e assíncronos) da inicialização
     // async/await garante que erros sejam propagados corretamente e capturados aqui
