@@ -570,3 +570,4 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Traefik Router Conflict (23/12/2025): Traefik erro "cannot be linked automatically with multiple Services" para alice-chat/alice-ws. Adicionada label traefik.http.routers.*.service explícita para ambos os routers.*
 *Bug Fix Frontend Healthcheck (23/12/2025): alice-frontend marcado como unhealthy. Healthcheck alterado para usar wget -q (quiet mode) e aumentado start_period de 30s para 45s e retries de 3 para 5.*
 *Bug Fix SearXNG SSL Certs (23/12/2025): SearXNG warning "can't create /etc/ssl/certs/ca-certificates.crt.new: Read-only file system". Adicionado tmpfs /etc/ssl/certs para permitir update-ca-certificates.*
+*Bug Fix Redis WebSocket Race Condition (23/12/2025): embedding-websocket inicializava ANTES do Redis estar pronto, causando "Redis não disponível - notificações WebSocket desabilitadas". Corrigido adicionando initializeRedisCache() antes de initEmbeddingWebSocket() no rag-service.*

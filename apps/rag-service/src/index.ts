@@ -44,6 +44,8 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   RAG_SERVICE_TAGS,
+  // CORREÇÃO 23/12/2025: Redis cache distribuído para embedding-websocket
+  initializeRedisCache,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -3566,9 +3568,21 @@ const server = app.listen(PORT, () => {
   }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
 });
 
-// Inicializar WebSocket para notificações de embeddings
-initEmbeddingWebSocket(server);
-logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+// CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES do WebSocket
+// O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
+initializeRedisCache().then((connected) => {
+  if (connected) {
+    logger.info('Redis cache inicializado para embedding-websocket');
+  }
+  // Inicializar WebSocket para notificações de embeddings (após Redis estar pronto)
+  initEmbeddingWebSocket(server);
+  logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+}).catch((error) => {
+  logger.warn({ error: (error as Error).message }, 'Redis cache não disponível - WebSocket funcionará sem Pub/Sub');
+  // Inicializar WebSocket mesmo sem Redis (funciona localmente)
+  initEmbeddingWebSocket(server);
+  logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo (sem Redis Pub/Sub)');
+});
 
 // ============================================================================
 // INICIALIZAÇÃO QDRANT - Banco vetorial para texto (4096 dim)
