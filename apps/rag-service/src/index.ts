@@ -3156,12 +3156,21 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
     // - se Whisper estiver indisponível, audio ficará not_ready e o status global será degraded (sinal explícito).
     const allReady = imageReady && documentReady && audioReady;
 
+    // BUG FIX 23/12/2025: Limites corretos por tipo de mídia (consistente com FILE_LIMITS)
+    // Removido maxFileSizeMb: 100 (limite desatualizado de vídeo)
+    // Limites reais: 10MB para imagens, 25MB para áudio, 50MB para documentos
+    const FILE_LIMITS_MB = {
+      image: 10,
+      audio: 25,
+      document: 50,
+    } as const;
+
     res.json({
       status: allReady ? 'ok' : 'degraded',
       service: 'media-upload',
       timestamp: new Date().toISOString(),
       supportedTypes: SUPPORTED_MEDIA_TYPES,
-      maxFileSizeMb: 100,
+      fileSizeLimitsMb: FILE_LIMITS_MB,
       processing: {
         image: {
           configured: imageConfig.configured,
@@ -3169,6 +3178,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           ready: imageReady,
           embeddingDim: imageConfig.embeddingDim,
           model: imageConfig.model,
+          maxFileSizeMb: FILE_LIMITS_MB.image,
         },
         audio: {
           configured: audioConfig.configured,
@@ -3177,6 +3187,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           embeddingDim: audioConfig.embeddingDim,
           transcriptionModel: audioConfig.transcriptionModel,
           embeddingModel: audioConfig.embeddingModel,
+          maxFileSizeMb: FILE_LIMITS_MB.audio,
         },
         // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
         document: {
@@ -3185,6 +3196,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           ready: documentReady,
           embeddingDim: documentConfig.embeddingDim,
           maxDocumentSizeMB: documentConfig.maxDocumentSizeMB,
+          maxFileSizeMb: FILE_LIMITS_MB.document,
           chunkSize: documentConfig.chunkSize,
           supportedFormats: documentConfig.supportedFormats,
         },

@@ -2537,27 +2537,33 @@ jobs:
               
               if [ -f "$migration_file" ]; then
                 echo "  → Executando $migration_name..."
+                # BUG FIX 23/12/2025: Usar arquivo temporário com --env-file para evitar shell injection
+                # Problema: -e "PGPASSWORD=${PG_PASS}" expande ${PG_PASS} no shell do GitHub Actions
+                # Se a senha contiver metacaracteres ($variable, backticks, $(command)), serão interpretados
+                # Solução: Criar arquivo temporário com permissões seguras e usar --env-file (mesmo padrão da validação)
+                # Isso elimina completamente a vulnerabilidade de injeção de comando
+                local OLD_UMASK=$(umask)
+                umask 077
+                local MIGRATION_ENV_FILE=$(mktemp)
+                umask "$OLD_UMASK"
+                printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$MIGRATION_ENV_FILE"
+                printf "PG_USER=%s\n" "${PG_USER}" >> "$MIGRATION_ENV_FILE"
+                printf "PG_DB=%s\n" "${PG_DB}" >> "$MIGRATION_ENV_FILE"
+                chmod 600 "$MIGRATION_ENV_FILE"
+                
                 # psql com ON_ERROR_STOP=0 permite continuar mesmo com erros de idempotência
                 # Erros como "policy already exists" são ignorados
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-                # CORREÇÃO 23/12/2025: PGPASSWORD deve ser passado explicitamente para psql
-                # .env.prod contém POSTGRES_PASSWORD (usado pelo Docker), mas psql precisa de PGPASSWORD
-                # docker compose exec não aceita -e, então usamos env para passar PGPASSWORD
-                # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
-                # Exportar PGPASSWORD no subshell não passa a variável para o container
-                # Solução: Usar env dentro do comando sh -c para passar variáveis explicitamente
-                # BUG FIX 23/12/2025: Padrão "_ arg1 arg2" faz com que _ seja $0, causando deslocamento
-                # Quando usamos sh -c 'script' _ arg1 arg2, o _ se torna $0, então $1 recebe arg1 (correto)
-                # Mas para garantir clareza e evitar confusão, usamos variáveis de ambiente via --env-file
-                # ou passamos diretamente sem placeholder. Solução: usar variáveis de ambiente via docker compose
-                # que já tem acesso ao .env.prod, mas precisamos passar PGPASSWORD explicitamente
-                # Alternativa segura: usar printf %q para escapar e passar via variável de ambiente
+                # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T -e "PGPASSWORD=${PG_PASS}" postgres \
-                  sh -c 'psql -U "$1" -d "$2" -v ON_ERROR_STOP=0 -f /dev/stdin' \
-                  _ "${PG_USER}" "${PG_DB}" \
+                  --env-file "$MIGRATION_ENV_FILE" \
+                  exec -T postgres \
+                  sh -c 'psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=0 -f /dev/stdin' \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                
+                # Limpar arquivo temporário com credenciais
+                rm -f "$MIGRATION_ENV_FILE"
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2582,23 +2588,36 @@ jobs:
               
               echo "  → Executando $migration_name (CRÍTICA)..."
               
+              # BUG FIX 23/12/2025: Usar arquivo temporário com --env-file para evitar shell injection
+              # Problema: -e "PGPASSWORD=${PG_PASS}" expande ${PG_PASS} no shell do GitHub Actions
+              # Se a senha contiver metacaracteres ($variable, backticks, $(command)), serão interpretados
+              # Solução: Criar arquivo temporário com permissões seguras e usar --env-file (mesmo padrão da validação)
+              # Isso elimina completamente a vulnerabilidade de injeção de comando
+              local OLD_UMASK=$(umask)
+              umask 077
+              local MIGRATION_ENV_FILE=$(mktemp)
+              umask "$OLD_UMASK"
+              printf "PGPASSWORD=%s\n" "${PG_PASS}" > "$MIGRATION_ENV_FILE"
+              printf "PG_USER=%s\n" "${PG_USER}" >> "$MIGRATION_ENV_FILE"
+              printf "PG_DB=%s\n" "${PG_DB}" >> "$MIGRATION_ENV_FILE"
+              chmod 600 "$MIGRATION_ENV_FILE"
+              
               # ENTERPRISE-GRADE: Captura output e exit code separadamente
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # BUG FIX 23/12/2025: docker compose exec NÃO herda variáveis de ambiente do shell pai
-              # Exportar PGPASSWORD no subshell não passa a variável para o container
-              # BUG FIX 23/12/2025: Padrão "_ arg1 arg2" faz com que _ seja $0, causando deslocamento
-              # Solução: Usar -e para passar PGPASSWORD como variável de ambiente diretamente
-              # Isso evita o problema de deslocamento de argumentos posicionais
+              # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
               psql_output=$(
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T -e "PGPASSWORD=${PG_PASS}" postgres \
-                  sh -c 'psql -U "$1" -d "$2" -v ON_ERROR_STOP=1 -f /dev/stdin' \
-                  _ "${PG_USER}" "${PG_DB}" \
+                  --env-file "$MIGRATION_ENV_FILE" \
+                  exec -T postgres \
+                  sh -c 'psql -U "$PG_USER" -d "$PG_DB" -v ON_ERROR_STOP=1 -f /dev/stdin' \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
+              
+              # Limpar arquivo temporário com credenciais
+              rm -f "$MIGRATION_ENV_FILE"
               
               # Mostrar output filtrado (sem NOTICE informativas)
               echo "$psql_output" | grep -v "NOTICE:" || true
