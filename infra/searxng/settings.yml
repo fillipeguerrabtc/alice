@@ -49,26 +49,23 @@ ui:
   # Hotkeys habilitadas
   hotkeys: default
 
-# Configuração de saída (CRÍTICO para Tor)
+# Configuração de saída
 outgoing:
-  # Request timeout aumentado para Tor (latência maior)
-  request_timeout: 10.0
+  # Request timeout padrão para engines clearnet
+  request_timeout: 5.0
   # Timeout de conexão
-  connect_timeout: 5.0
+  connect_timeout: 3.0
   # Pool de conexões
   pool_connections: 100
   pool_maxsize: 20
   # User agent genérico para privacidade
   useragent_suffix: ""
   
-  # ENTERPRISE: Proxy Tor para engines .onion
-  # Formato: socks5h:// (h = resolve DNS via Tor também)
-  proxies:
-    all://:
-      - socks5h://alice-tor:9050
-
-  # Engines específicos que usam Tor
-  using_tor_proxy: true
+  # CORREÇÃO 23/12/2025: NÃO usar proxy global (all://)
+  # Proxy global roteia TODAS as buscas pelo Tor (Google, Bing, etc.)
+  # causando degradação de performance e captchas/bloqueios
+  # Proxy Tor é configurado APENAS nos engines específicos (.onion)
+  # via 'proxies' local no engine (ver seção engines abaixo)
 
 # Configuração de busca
 search:
@@ -86,13 +83,18 @@ search:
   max_request_timeout: 15.0
 
 # Configuração de engines
+# CORREÇÃO 23/12/2025: Proxy Tor configurado APENAS nos engines .onion
+# Formato socks5h:// (h = resolve DNS via Tor também, necessário para .onion)
 engines:
   # Engine ahmia (.onion) - requer Tor
   - name: ahmia
     engine: ahmia
     shortcut: ah
     disabled: false
-    using_tor_proxy: true
+    # Proxy Tor APENAS para este engine (não global)
+    proxies:
+      all://:
+        - socks5h://alice-tor:9050
     timeout: 15.0
   
   # Engine torch (.onion) - requer Tor
@@ -100,7 +102,10 @@ engines:
     engine: torch
     shortcut: tor
     disabled: false
-    using_tor_proxy: true
+    # Proxy Tor APENAS para este engine (não global)
+    proxies:
+      all://:
+        - socks5h://alice-tor:9050
     timeout: 15.0
 
 # Bot detection (acesso interno via alice-network)
