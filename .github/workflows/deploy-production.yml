@@ -2506,6 +2506,10 @@ jobs:
             PHASE6_TIMEOUT=180   # erpnext-backend: start_period=60s + 9 workers
             PHASE7_TIMEOUT=$WAIT_TIMEOUT  # clickhouse: até 360s
             
+            # Timeouts para init containers (one-shot)
+            CONFIGURATOR_TIMEOUT=120   # erpnext-configurator: escreve configs
+            CREATE_SITE_TIMEOUT=300    # erpnext-create-site: cria ~300 tabelas
+            
             # ==============================================
             # DEPLOY EM FASES SEQUENCIAIS (Enterprise Best Practice)
             # ==============================================
@@ -2612,8 +2616,8 @@ jobs:
                 
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
                   # Aguardar configurator completar
-                  echo "   Aguardando erpnext-configurator..."
-                  timeout 120 docker wait erpnext-configurator || true
+                  echo "   Aguardando erpnext-configurator [timeout: ${CONFIGURATOR_TIMEOUT}s]..."
+                  timeout $CONFIGURATOR_TIMEOUT docker wait erpnext-configurator || true
                   
                   # CORREÇÃO 23/12/2025: Verificar se container REALMENTE terminou
                   # antes de confiar no ExitCode (que é 0 por padrão se ainda rodando)
@@ -2643,8 +2647,8 @@ jobs:
                   
                   if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
                     # Aguardar create-site completar (pode demorar até 5 min)
-                    echo "   Aguardando erpnext-create-site (pode demorar 3-5 min)..."
-                    timeout 300 docker wait erpnext-create-site || true
+                    echo "   Aguardando erpnext-create-site [timeout: ${CREATE_SITE_TIMEOUT}s]..."
+                    timeout $CREATE_SITE_TIMEOUT docker wait erpnext-create-site || true
                     
                     # CORREÇÃO 23/12/2025: Verificar se container REALMENTE terminou
                     # antes de confiar no ExitCode (que é 0 por padrão se ainda rodando)
