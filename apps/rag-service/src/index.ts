@@ -138,8 +138,12 @@ type MediaType = 'image' | 'audio' | 'document';
 // A validação real é feita pelo includes(), não pela type assertion
 // Se mimeType não estiver na lista, includes() retorna false e a função retorna null
 function detectMediaType(mimeType: string): MediaType | null {
-  // Normalizar MIME type para comparação case-insensitive
-  const normalizedMimeType = mimeType.toLowerCase().trim();
+  // BUG FIX 23/12/2025: Normalização robusta de mimeType para suportar variações de case e espaços
+  // MIME types podem vir com variações (ex: "Image/Jpeg", "audio/mpeg; codecs=mp3")
+  // .toLowerCase() e .trim() garantem matching correto mesmo com variações
+  // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais
+  // Consistente com normalização em integrations-service e chat-service para evitar rejeição de tipos legítimos
+  const normalizedMimeType = mimeType.toLowerCase().trim().split(';')[0].trim();
   
   // Verificar cada tipo suportado explicitamente
   if (SUPPORTED_MEDIA_TYPES.image.includes(normalizedMimeType as typeof SUPPORTED_MEDIA_TYPES.image[number])) {
