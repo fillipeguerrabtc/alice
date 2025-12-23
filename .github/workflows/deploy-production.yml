@@ -2539,14 +2539,18 @@ jobs:
                 # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
                 # docker compose exec herda variáveis de ambiente do shell externo de forma segura
                 # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
-                export PGPASSWORD="${PG_PASS}"
-                export PG_USER_MIGRATION="${PG_USER}"
-                export PG_DB_MIGRATION="${PG_DB}"
-                docker compose -f docker-compose.prod.yml \
-                  --env-file .env.prod \
-                  exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
-                  < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
-                unset PGPASSWORD PG_USER_MIGRATION PG_DB_MIGRATION
+                # BUG FIX 23/12/2025: Usar subshell para isolar export/unset e evitar persistência no shell parent
+                # export dentro de subshell não afeta o shell parent, garantindo least privilege
+                # Credenciais são limpas automaticamente quando o subshell termina
+                (
+                  export PGPASSWORD="${PG_PASS}"
+                  export PG_USER_MIGRATION="${PG_USER}"
+                  export PG_DB_MIGRATION="${PG_DB}"
+                  docker compose -f docker-compose.prod.yml \
+                    --env-file .env.prod \
+                    exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                    < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                )
                 echo "  ✓ $migration_name aplicada"
               else
                 echo "  ⚠️ $migration_name não encontrada (pode ser normal em primeiro deploy)"
@@ -2583,14 +2587,18 @@ jobs:
               # Solução: Exportar variáveis no shell externo e usar docker compose exec que herda essas variáveis
               # docker compose exec herda variáveis de ambiente do shell externo de forma segura
               # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
-              export PGPASSWORD="${PG_PASS}"
-              export PG_USER_MIGRATION="${PG_USER}"
-              export PG_DB_MIGRATION="${PG_DB}"
-              psql_output=$(docker compose -f docker-compose.prod.yml \
-                --env-file .env.prod \
-                exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
-                < "$migration_file" 2>&1) || psql_exit_code=$?
-              unset PGPASSWORD PG_USER_MIGRATION PG_DB_MIGRATION
+              # BUG FIX 23/12/2025: Usar subshell para isolar export/unset e evitar persistência no shell parent
+              # export dentro de subshell não afeta o shell parent, garantindo least privilege
+              # Credenciais são limpas automaticamente quando o subshell termina
+              psql_output=$(
+                export PGPASSWORD="${PG_PASS}"
+                export PG_USER_MIGRATION="${PG_USER}"
+                export PG_DB_MIGRATION="${PG_DB}"
+                docker compose -f docker-compose.prod.yml \
+                  --env-file .env.prod \
+                  exec -T postgres sh -c "psql -U \"\${PG_USER_MIGRATION}\" -d \"\${PG_DB_MIGRATION}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                  < "$migration_file" 2>&1
+              ) || psql_exit_code=$?
               
               # Mostrar output filtrado (sem NOTICE informativas)
               echo "$psql_output" | grep -v "NOTICE:" || true
