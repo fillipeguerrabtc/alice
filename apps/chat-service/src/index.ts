@@ -1476,7 +1476,7 @@ app.get('/ready', async (_req: Request, res: Response) => {
   }
 });
 
-app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
     // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
     const tenantId = req.tenantId;
@@ -1563,7 +1563,7 @@ app.get('/api/chat/stats', requireAuth, requireSameTenant(getTenantIdFromRequest
   }
 });
 
-app.get('/api/chat/usage', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/usage', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:stats:read'), async (req: Request, res: Response) => {
   try {
     // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth/requireSameTenant
     const tenantId = req.tenantId;
@@ -1616,7 +1616,7 @@ app.get('/api/chat/usage', requireAuth, requireSameTenant(getTenantIdFromRequest
   }
 });
 
-app.get('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:read'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const auth = req.user;
   
@@ -1677,7 +1677,7 @@ const createConversationSchema = z.object({
   titulo: z.string().optional(),
 });
 
-app.post('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:conversations:write'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user populado pelo middleware ao invés de header direto
   const auth = req.user;
   
@@ -1705,7 +1705,7 @@ app.post('/api/chat/conversations', requireAuth, requireSameTenant(getTenantIdFr
   }
 });
 
-app.get('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -1774,7 +1774,7 @@ const messageRatingSchema = z.object({
   isPositive: z.boolean().optional(), // ThumbsUp/ThumbsDown convertido para rating
 });
 
-app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -1880,7 +1880,7 @@ app.post('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(
   }
 });
 
-app.post('/api/chat/stream', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   // OWASP API3 - Validação Zod obrigatória
   const parseResult = streamMessageSchema.safeParse(req.body);
   if (!parseResult.success) {
@@ -3354,7 +3354,7 @@ agentWss.on('connection', async (ws, req) => {
 // TAKEOVER/HANDOVER ROUTES (FASE 6.5)
 // ============================================================================
 
-app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/conversations/:id/state', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -3371,7 +3371,7 @@ app.get('/api/chat/conversations/:id/state', requireAuth, requireSameTenant(getT
   }
 });
 
-app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations/:id/takeover', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -3410,7 +3410,7 @@ app.post('/api/chat/conversations/:id/takeover', requireAuth, requireSameTenant(
   }
 });
 
-app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:handoff:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/conversations/:id/handback', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:handoff:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -3449,7 +3449,7 @@ app.post('/api/chat/conversations/:id/handback', requireAuth, requireSameTenant(
   }
 });
 
-app.get('/api/chat/pending-handoffs', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/pending-handoffs', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   try {
     // SEGURANÇA: Validar tenantId obrigatório para isolamento multi-tenant (Regra 6 CLAUDE.md)
     const tenantId = req.tenantId;
@@ -3474,7 +3474,7 @@ const takeoverConversationsQuerySchema = z.object({
   priority: z.enum(['all', 'high', 'medium', 'low']).optional(),
 });
 
-app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+app.get('/api/takeover/conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
   const queryResult = takeoverConversationsQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
@@ -3580,7 +3580,7 @@ app.get('/api/takeover/conversations', requireAuth, requireSameTenant(getTenantI
   }
 });
 
-app.post('/api/takeover/conversations/:id/message', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
+app.post('/api/takeover/conversations/:id/message', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -3834,7 +3834,7 @@ const _serviceNameParamSchema = z.object({
   name: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Nome deve conter apenas letras minúsculas, números e hífens'),
 });
 
-app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/urgent-conversations', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:takeover:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação estrita de query params - rejeita inputs inválidos
   const queryResult = urgentConversationsQuerySchema.safeParse(req.query);
   if (!queryResult.success) {
@@ -3858,7 +3858,7 @@ app.get('/api/chat/urgent-conversations', requireAuth, requireSameTenant(getTena
   }
 });
 
-app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:manage'), async (req: Request, res: Response) => {
+app.post('/api/chat/check-sla', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:manage'), async (req: Request, res: Response) => {
   // SEGURANÇA: Validar tenantId obrigatório para isolamento multi-tenant (Regra 6 CLAUDE.md)
   const tenantId = req.tenantId;
   if (!tenantId) {
@@ -3875,7 +3875,7 @@ app.post('/api/chat/check-sla', requireAuth, requireSameTenant(getTenantIdFromRe
   }
 });
 
-app.get('/api/chat/escalation-config', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
+app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:escalation:read'), (_req: Request, res: Response) => {
   res.json(ESCALATION_CONFIG);
 });
 
@@ -4208,7 +4208,7 @@ const imageGenerationSchema = z.object({
   guidanceScale: z.number().min(1).max(20).default(3.5),
 });
 
-app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/images/generate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.user e req.tenantId populados pelo middleware
   const userId = req.user?.userId;
   const tenantId = req.tenantId;
@@ -4238,7 +4238,7 @@ app.post('/api/chat/images/generate', requireAuth, requireSameTenant(getTenantId
   }
 });
 
-app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/images/:id/rate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -4277,7 +4277,7 @@ app.post('/api/chat/images/:id/rate', requireAuth, requireSameTenant(getTenantId
   }
 });
 
-app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/images/:id/approve', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:approve:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -4316,7 +4316,7 @@ app.post('/api/chat/images/:id/approve', requireAuth, requireSameTenant(getTenan
   }
 });
 
-app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (_req: Request, res: Response) => {
+app.get('/api/chat/images/stats', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (_req: Request, res: Response) => {
   try {
     const stats = await getImageGenerationStats();
     const breakerStats = getImageGenBreakerStats();
@@ -4327,7 +4327,7 @@ app.get('/api/chat/images/stats', requireAuth, requireSameTenant(getTenantIdFrom
   }
 });
 
-app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/images', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
   // SEGURANÇA: Usar req.tenantId populado pelo middleware
   const tenantId = req.tenantId;
   
@@ -4381,7 +4381,7 @@ app.get('/api/chat/images', requireAuth, requireSameTenant(getTenantIdFromReques
   }
 });
 
-app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
+app.get('/api/chat/images/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('images:generate:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
@@ -4434,7 +4434,7 @@ app.get('/api/chat/images/:id', requireAuth, requireSameTenant(getTenantIdFromRe
  * REGRA 6: Enterprise-grade - integração real com training-service
  * Alice MULTIMODAL: suporta texto, imagens, áudio, vídeo para aprendizado
  */
-app.post('/api/chat/messages/:id/rate', requireAuth, requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
+app.post('/api/chat/messages/:id/rate', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:messages:write'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
