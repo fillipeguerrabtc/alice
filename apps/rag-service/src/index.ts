@@ -3442,8 +3442,10 @@ app.use(createErrorHandler({
     });
     
     // Inicializar WebSocket para notificações de embeddings (após servidor estar pronto)
-    // BUG FIX 23/12/2025: initEmbeddingWebSocket pode lançar exceções síncronas - capturadas pelo try-catch externo
-    initEmbeddingWebSocket(server);
+    // BUG FIX 23/12/2025: initEmbeddingWebSocket é async e precisa ser aguardado
+    // Aguarda inicialização do Redis Pub/Sub antes de aceitar conexões WebSocket
+    // Evita race condition onde clientes podem conectar antes do Redis estar pronto
+    await initEmbeddingWebSocket(server);
     logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
     
     // Configurar timeouts do servidor
