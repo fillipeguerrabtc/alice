@@ -63,12 +63,16 @@ function updateUserSession(
 }
 
 async function upsertUser(claims: IdTokenClaims) {
+  // BUG FIX 23/12/2025: Claims retorna JsonValue que pode ser string | number | null | undefined
+  // Converter para string garante type safety e lida com valores opcionais
+  // Type assertion necessário porque TypeScript não consegue inferir que claims é sempre definido
+  const claimsObj = claims as Record<string, unknown>;
   await storage.upsertUser({
-    id: String(claims?.["sub"] ?? ""),
-    email: String(claims?.["email"] ?? ""),
-    firstName: String(claims?.["first_name"] ?? ""),
-    lastName: String(claims?.["last_name"] ?? ""),
-    profileImageUrl: String(claims?.["profile_image_url"] ?? ""),
+    id: String(claimsObj["sub"] ?? ""),
+    email: String(claimsObj["email"] ?? ""),
+    firstName: String(claimsObj["first_name"] ?? ""),
+    lastName: String(claimsObj["last_name"] ?? ""),
+    profileImageUrl: String(claimsObj["profile_image_url"] ?? ""),
   });
 }
 
