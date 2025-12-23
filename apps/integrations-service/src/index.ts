@@ -2184,6 +2184,10 @@ async function processWhatsAppMediaForRAG(
     
     // Determinar extensão do arquivo
     // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+    // BUG FIX 23/12/2025: Usar normalizedContentType ao invés de mediaContentType para lookup
+    // Problema: extensionMap tem chaves em lowercase, mas mediaContentType pode vir em mixed case (ex: Image/JPEG)
+    // Se usar mediaContentType original, lookup falha e retorna 'bin' como fallback incorreto
+    // Solução: Usar normalizedContentType (já convertido para lowercase) para lookup correto
     const extensionMap: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
@@ -2195,7 +2199,7 @@ async function processWhatsAppMediaForRAG(
       'audio/wav': 'wav',
       'audio/webm': 'webm',
     };
-    const extension = extensionMap[mediaContentType] || 'bin';
+    const extension = extensionMap[normalizedContentType] || 'bin';
     const mediaType = isImage ? 'image' : 'audio';
     
     // Gerar headers de autenticação interna
