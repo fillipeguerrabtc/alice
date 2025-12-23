@@ -2520,10 +2520,15 @@ jobs:
                 # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
                 # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
                 # Solução: Escapar PG_PASS com printf %q antes de passar ao env
+                # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
+                # Mesmo com printf %q, se variáveis contiverem espaços, word splitting pode ocorrer dentro de sh -c
+                # Aspas garantem que variáveis sejam tratadas como argumentos únicos, mesmo com espaços
                 PG_PASS_SAFE=$(printf %q "${PG_PASS}")
+                PG_USER_SAFE=$(printf %q "${PG_USER}")
+                PG_DB_SAFE=$(printf %q "${PG_DB}")
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
-                  exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U \"${PG_USER}\" -d \"${PG_DB}\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                  exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
@@ -2559,10 +2564,15 @@ jobs:
               # BUG FIX 23/12/2025: Shell injection prevention - usar printf %q para escapar PG_PASS
               # env PGPASSWORD="${PG_PASS}" permite shell expansion se PG_PASS contiver metacaracteres
               # Solução: Escapar PG_PASS com printf %q antes de passar ao env via sh -c
+              # BUG FIX 23/12/2025: Word splitting prevention - adicionar aspas ao redor das variáveis dentro de sh -c
+              # Mesmo com printf %q, se variáveis contiverem espaços, word splitting pode ocorrer dentro de sh -c
+              # Aspas garantem que variáveis sejam tratadas como argumentos únicos, mesmo com espaços
               PG_PASS_SAFE=$(printf %q "${PG_PASS}")
+              PG_USER_SAFE=$(printf %q "${PG_USER}")
+              PG_DB_SAFE=$(printf %q "${PG_DB}")
               psql_output=$(docker compose -f docker-compose.prod.yml \
                 --env-file .env.prod \
-                exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U \"${PG_USER}\" -d \"${PG_DB}\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                exec -T postgres sh -c "env PGPASSWORD=${PG_PASS_SAFE} psql -U ${PG_USER_SAFE} -d ${PG_DB_SAFE} -v ON_ERROR_STOP=1 -f /dev/stdin" \
                 < "$migration_file" 2>&1) || psql_exit_code=$?
               
               # Mostrar output filtrado (sem NOTICE informativas)
