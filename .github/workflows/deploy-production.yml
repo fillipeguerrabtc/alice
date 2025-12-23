@@ -2389,13 +2389,13 @@ jobs:
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
                 for i in \$(seq 1 30); do
-                  # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente Docker (\$PGPASSWORD, \$PG_USER, \$PG_DB)
+                  # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente Docker (\$PGPASSWORD, \$PG_USER_VALIDATION, \$PG_DB_VALIDATION)
                   # Docker -e passa variáveis de forma segura - shell interno expande, não shell externo
                   # Isso previne shell injection mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
                   # BUG FIX 23/12/2025: psql lê PGPASSWORD automaticamente se definido - não precisa passar explicitamente
                   # PGPASSWORD é lido pelo psql automaticamente da variável de ambiente quando presente
                   # Variáveis dentro de sh -c devem usar aspas para prevenir word splitting
-                  if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
+                  if psql -h alice-postgres -U \"\${PG_USER_VALIDATION}\" -d \"\${PG_DB_VALIDATION}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
                   fi
@@ -2403,7 +2403,8 @@ jobs:
                 done
                 echo 'ERRO: Não foi possível conectar ao PostgreSQL após 60s'
                 exit 1
-              " || {
+              "
+            unset PGPASSWORD_VALIDATION PG_USER_VALIDATION PG_DB_VALIDATION || {
                 echo "❌ ERRO: Validação de conexão PostgreSQL falhou"
                 echo "   drizzle-kit push não será executado - schema pode estar inconsistente"
                 exit 1
