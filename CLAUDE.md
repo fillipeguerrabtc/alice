@@ -19,7 +19,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER** | Deploy via GitHub Actions |
+| 12 | **PRODUÇÃO HETZNER + SALAD CLOUD** | Deploy Hetzner via GitHub Actions (100% automático). GPUs Salad Cloud: Container Groups pré-criados manualmente, URLs configuradas como secrets. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -42,7 +42,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
 | DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
-| PRODUÇÃO | Hetzner Cloud | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+| PRODUÇÃO | Hetzner Cloud (containers) + Salad Cloud (GPUs) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
@@ -119,6 +119,7 @@ Otimização de custos para GPUs Salad Cloud:
 ## Deploy Information
 - **Servidor**: Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe SSD)
 - **Volume Adicional**: Hetzner Volume 100GB (alice-data) montado em /mnt/alice-data
+- **GPUs**: Salad Cloud (Container Groups pré-criados manualmente, URLs em secrets GitHub)
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
