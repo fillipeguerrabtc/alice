@@ -723,7 +723,8 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
       default: {
         // BUG FIX 23/12/2025: Log de erro para identificar type narrowing failures
         // Este caso nunca deveria ocorrer se type está correto, mas serve como proteção defensiva
-        console.error('getMediaIcon recebeu tipo inesperado:', type);
+        // REGRA 8: Usar frontendLogger estruturado ao invés de console.error
+        frontendLogger.error('getMediaIcon recebeu tipo inesperado', { type });
         return FileAudio; // Fallback seguro para tipos inesperados
       }
     }
