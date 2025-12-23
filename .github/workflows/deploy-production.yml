@@ -2444,8 +2444,11 @@ jobs:
                   # Isso previne shell injection mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
                   # BUG FIX 23/12/2025: psql lê PGPASSWORD automaticamente se definido - não precisa passar explicitamente
                   # PGPASSWORD é lido pelo psql automaticamente da variável de ambiente quando presente
-                  # Variáveis dentro de sh -c devem usar aspas para prevenir word splitting
-                  if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
+                  # BUG FIX 23/12/2025: Corrigir expansão de variáveis para prevenir shell injection
+                  # Problema: \"\${PG_USER}\" dentro de sh -c com aspas duplas permite expansão pelo shell externo
+                  # Solução: Usar \$PG_USER (sem chaves) para escapar $ do shell externo, permitindo expansão apenas pelo shell interno
+                  # O shell externo vê \$ e passa $PG_USER literal ao shell interno, que então expande corretamente via --env-file
+                  if psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0
                   fi
@@ -2607,10 +2610,12 @@ jobs:
                 # BUG FIX 23/12/2025: Usar volume mount ao invés de stdin redirection para garantir que psql receba o arquivo
                 # stdin redirection através de pipes para comandos containerizados é não confiável
                 # Volume mount garante que o arquivo esteja disponível dentro do container
-                # BUG FIX 23/12/2025: Corrigir expansão de variáveis em sh -c
-                # Problema: Aspas duplas com \"\$PG_USER\" passam literalmente "$PG_USER" ao shell interno sem expansão
-                # Solução: Usar aspas simples para sh -c e expandir $MIGRATION_CONTAINER_PATH antes (shell externo)
-                # Variáveis de ambiente do --env-file (PG_USER, PG_DB) são expandidas pelo shell interno (dentro do container)
+                # BUG FIX 23/12/2025: Corrigir expansão de variáveis em sh -c para prevenir shell injection
+                # Problema: Aspas duplas com \"\${PG_USER}\" permitem que shell externo expanda ${PG_USER} antes de passar ao Docker
+                # Se PG_USER contiver metacaracteres ($, backticks, $()), serão interpretados pelo shell externo, causando shell injection
+                # Solução: Usar \$PG_USER (sem chaves) para escapar $ do shell externo, permitindo expansão apenas pelo shell interno
+                # O shell externo vê \$ e passa $PG_USER literal ao shell interno, que então expande corretamente via --env-file
+                # $MIGRATION_CONTAINER_PATH é expandido pelo shell externo (necessário para passar o caminho do arquivo)
                 local MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
                 local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
                 docker run --rm \
@@ -2618,7 +2623,7 @@ jobs:
                   --env-file "$MIGRATION_ENV_FILE" \
                   -v "$MIGRATION_ABSOLUTE_PATH:$MIGRATION_CONTAINER_PATH:ro" \
                   postgres:16-alpine \
-                  sh -c "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -v ON_ERROR_STOP=0 -f $MIGRATION_CONTAINER_PATH" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
+                  sh -c "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f $MIGRATION_CONTAINER_PATH" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 
                 # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
                 rm -f "$MIGRATION_ENV_FILE"
@@ -2681,10 +2686,12 @@ jobs:
               # BUG FIX 23/12/2025: Usar volume mount ao invés de stdin redirection para garantir que psql receba o arquivo
               # stdin redirection através de pipes para comandos containerizados é não confiável
               # Volume mount garante que o arquivo esteja disponível dentro do container
-              # BUG FIX 23/12/2025: Corrigir expansão de variáveis em sh -c
-              # Problema: Aspas duplas com \"\$PG_USER\" passam literalmente "$PG_USER" ao shell interno sem expansão
-              # Solução: Usar aspas simples para sh -c e expandir $MIGRATION_CONTAINER_PATH antes (shell externo)
-              # Variáveis de ambiente do --env-file (PG_USER, PG_DB) são expandidas pelo shell interno (dentro do container)
+              # BUG FIX 23/12/2025: Corrigir expansão de variáveis em sh -c para prevenir shell injection
+              # Problema: Aspas duplas com \"\${PG_USER}\" permitem que shell externo expanda ${PG_USER} antes de passar ao Docker
+              # Se PG_USER contiver metacaracteres ($, backticks, $()), serão interpretados pelo shell externo, causando shell injection
+              # Solução: Usar \$PG_USER (sem chaves) para escapar $ do shell externo, permitindo expansão apenas pelo shell interno
+              # O shell externo vê \$ e passa $PG_USER literal ao shell interno, que então expande corretamente via --env-file
+              # $MIGRATION_CONTAINER_PATH é expandido pelo shell externo (necessário para passar o caminho do arquivo)
               local MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
               local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
               
@@ -2694,7 +2701,7 @@ jobs:
                   --env-file "$MIGRATION_ENV_FILE" \
                   -v "$MIGRATION_ABSOLUTE_PATH:$MIGRATION_CONTAINER_PATH:ro" \
                   postgres:16-alpine \
-                  sh -c "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -v ON_ERROR_STOP=1 -f $MIGRATION_CONTAINER_PATH" 2>&1
+                  sh -c "apk add --no-cache postgresql-client >/dev/null 2>&1 && psql -h alice-postgres -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f $MIGRATION_CONTAINER_PATH" 2>&1
               ) || psql_exit_code=$?
               
               # Limpar arquivo temporário com credenciais APÓS usar (defesa em profundidade)
