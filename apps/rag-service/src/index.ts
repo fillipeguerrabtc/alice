@@ -3442,7 +3442,11 @@ initializeRedisCache()
       'rag-websocket-server',
       async () => {
         logger.info('Encerrando WebSocket server...');
-        closeEmbeddingWebSocket();
+        // CORREÇÃO 23/12/2025: closeEmbeddingWebSocket() é async e precisa de await
+        // Sem await, cleanup (heartbeat intervals, Redis subscriber) pode não completar antes do shutdown
+        // Isso causa resource leaks e conexões pendentes
+        await closeEmbeddingWebSocket();
+        logger.info('WebSocket server encerrado com sucesso');
       },
       { priority: ShutdownPriority.WEBSOCKET }
     );
