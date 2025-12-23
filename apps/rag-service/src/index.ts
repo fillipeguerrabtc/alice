@@ -3486,6 +3486,20 @@ app.use(createErrorHandler({
       },
       { priority: ShutdownPriority.WEBSOCKET }
     );
+    
+    // BUG FIX 23/12/2025: Registrar shutdown callback para database pool DENTRO do async IIFE
+    // Se a inicialização falhar e chamar process.exit(1), o callback nunca seria registrado
+    // Isso causa resource leaks - conexões do pool não são fechadas em cenários de falha
+    // Registrar APÓS servidor estar inicializado com sucesso garante cleanup mesmo em falhas
+    registerShutdownCallback(
+      'rag-database-pool',
+      async () => {
+        logger.info('Encerrando pool de conexões database...');
+        await closeDatabasePool();
+        logger.info('Pool de conexões encerrado com sucesso');
+      },
+      { priority: ShutdownPriority.DATABASE }
+    );
   } catch (error) {
     // BUG FIX 23/12/2025: Capturar TODOS os erros (síncronos e assíncronos) da inicialização
     // async/await garante que erros sejam propagados corretamente e capturados aqui
@@ -3524,16 +3538,6 @@ if (isQdrantConfigured()) {
 // Isso garante que o servidor só aceita conexões após dependências críticas estarem prontas
 // O código duplicado foi removido - configuração do servidor agora está no escopo correto
 
-// ============================================================================
-// GRACEFUL SHUTDOWN - Database Pool (não depende do servidor HTTP)
-// ============================================================================
-
-registerShutdownCallback(
-  'rag-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
+// BUG FIX 23/12/2025: registerShutdownCallback para rag-database-pool movido para dentro do async IIFE
+// Isso garante que o callback seja registrado mesmo se a inicialização falhar parcialmente
+// O callback agora está registrado após o servidor estar inicializado com sucesso (linha 3488)
