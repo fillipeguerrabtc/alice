@@ -2418,14 +2418,12 @@ jobs:
                 # CORREÇÃO 23/12/2025: Qualquer exit code != 0 do container é erro crítico
                 # Timeout (124) e outros erros (!= 0) ambos resultam em exit 1 do container
                 # Não há cenário onde drizzle-kit push falha mas o deploy deve continuar
-                if [ "$DRIZZLE_EXIT_CODE" -ne 0 ]; then
-                  echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
-                  echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
-                  echo "   Verifique logs acima para detalhes do erro"
-                  exit 1
-                fi
-                # Se chegou aqui, exit code = 0 (sucesso)
-                echo "✅ drizzle-kit push executado com sucesso"
+                # NOTA: Este handler só executa quando docker run falha (exit code != 0)
+                # Portanto DRIZZLE_EXIT_CODE sempre será != 0 aqui - não há caminho de sucesso neste bloco
+                echo "❌ ERRO CRÍTICO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
+                echo "   Schema base NÃO foi criado/atualizado - deploy NÃO pode continuar"
+                echo "   Verifique logs acima para detalhes do erro"
+                exit 1
               }
             
             echo "✅ Schema base processado"
