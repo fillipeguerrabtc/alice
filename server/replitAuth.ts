@@ -39,11 +39,18 @@ export function getSession() {
   });
 }
 
-// BUG FIX 23/12/2025: IdTokenClaims não é exportado diretamente do openid-client v6+
-// Usar ReturnType para inferir o tipo retornado por tokens.claims()
-// A função claims() retorna um objeto com propriedades do ID token (sub, email, etc.)
-type TokenEndpointResponse = client.TokenEndpointResponse & client.TokenEndpointResponseHelpers;
-type IdTokenClaims = ReturnType<TokenEndpointResponse['claims']>;
+// BUG FIX 23/12/2025: IdTokenClaims não é exportado do openid-client v6+
+// Criar interface local baseada na estrutura esperada do ID token
+// Isso garante type safety sem depender de tipos internos não exportados
+interface IdTokenClaims {
+  sub: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  profile_image_url?: string;
+  exp?: number;
+  [key: string]: unknown; // Permitir propriedades adicionais do token
+}
 
 interface UserSession {
   claims?: IdTokenClaims;
@@ -56,23 +63,20 @@ function updateUserSession(
   user: UserSession,
   tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
 ) {
-  user.claims = tokens.claims();
+  // Type assertion para IdTokenClaims - tokens.claims() retorna objeto compatível
+  user.claims = tokens.claims() as IdTokenClaims;
   user.access_token = tokens.access_token;
   user.refresh_token = tokens.refresh_token;
   user.expires_at = user.claims?.exp;
 }
 
 async function upsertUser(claims: IdTokenClaims) {
-  // BUG FIX 23/12/2025: Claims retorna JsonValue que pode ser string | number | null | undefined
-  // Converter para string garante type safety e lida com valores opcionais
-  // Type assertion necessário porque TypeScript não consegue inferir que claims é sempre definido
-  const claimsObj = claims as Record<string, unknown>;
   await storage.upsertUser({
-    id: String(claimsObj["sub"] ?? ""),
-    email: String(claimsObj["email"] ?? ""),
-    firstName: String(claimsObj["first_name"] ?? ""),
-    lastName: String(claimsObj["last_name"] ?? ""),
-    profileImageUrl: String(claimsObj["profile_image_url"] ?? ""),
+    id: claims.sub,
+    email: claims.email ?? "",
+    firstName: claims.first_name ?? "",
+    lastName: claims.last_name ?? "",
+    profileImageUrl: claims.profile_image_url ?? "",
   });
 }
 
@@ -90,7 +94,9 @@ export async function setupAuth(app: Express) {
   ) => {
     const user: UserSession = {};
     updateUserSession(user, tokens);
-    await upsertUser(tokens.claims());
+    // Type assertion necessário porque tokens.claims() pode retornar undefined em alguns casos
+    // mas em contexto de callback OAuth sempre retorna um objeto válido
+    await upsertUser(tokens.claims() as IdTokenClaims);
     verified(null, user as Express.User);
   };
 
