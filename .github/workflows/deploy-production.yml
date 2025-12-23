@@ -2303,12 +2303,15 @@ jobs:
             PG_READY=false
             for i in {1..30}; do
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # Usar --env-file para passar variáveis de forma segura, sem shell expansion
-              if docker compose -f docker-compose.prod.yml \
-                --env-file .env.prod \
-                exec -T \
+              # BUG FIX 23/12/2025: docker compose exec NÃO suporta --env-file (apenas docker compose principal suporta)
+              # Solução: Usar docker run --rm --network alice-network --env-file (mesmo padrão das migrations)
+              # docker run cria container temporário que se conecta ao PostgreSQL via rede alice-network
+              # Hostname 'alice-postgres' é o nome do container PostgreSQL na rede (conforme docker-compose.prod.yml)
+              if docker run --rm \
+                --network alice-network \
                 --env-file "$PG_READY_ENV_FILE" \
-                postgres pg_isready >/dev/null 2>&1; then
+                postgres:16-alpine \
+                sh -c "apk add --no-cache postgresql-client >/dev/null 2>&1 && pg_isready -h alice-postgres" >/dev/null 2>&1; then
                 echo "PostgreSQL está pronto!"
                 PG_READY=true
                 break

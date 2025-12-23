@@ -3456,6 +3456,32 @@ app.use(createErrorHandler({
   includeStackInDev: true,
 }));
 
+// BUG FIX 23/12/2025: Registrar callback de database pool ANTES do IIFE para garantir cleanup mesmo se inicialização falhar
+// Se Redis falhar, o server nunca é criado, mas o database pool já existe e precisa ser fechado
+// Isso previne vazamento de conexões do database pool se a inicialização falhar parcialmente
+registerShutdownCallback(
+  'rag-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);
+
+// BUG FIX 23/12/2025: Registrar callback de database pool ANTES do IIFE para garantir cleanup mesmo se inicialização falhar
+// Se Redis falhar, o server nunca é criado, mas o database pool já existe e precisa ser fechado
+// Isso previne vazamento de conexões do database pool se a inicialização falhar parcialmente
+registerShutdownCallback(
+  'rag-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);
+
 // CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
 // Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
 // O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
@@ -3512,20 +3538,10 @@ app.use(createErrorHandler({
     await initEmbeddingWebSocket(server);
     logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
     
-    // BUG FIX 23/12/2025: Registrar shutdown callbacks ANTES de server.listen()
+    // BUG FIX 23/12/2025: Registrar shutdown callbacks específicos do servidor ANTES de server.listen()
     // Se o servidor falhar ao fazer bind na porta, server.on('error') chama process.exit(1)
     // Os callbacks devem estar registrados ANTES para garantir cleanup mesmo em falhas de inicialização
-    // Isso previne vazamento de conexões do database pool se o servidor não conseguir iniciar
-    registerShutdownCallback(
-      'rag-database-pool',
-      async () => {
-        logger.info('Encerrando pool de conexões database...');
-        await closeDatabasePool();
-        logger.info('Pool de conexões encerrado com sucesso');
-      },
-      { priority: ShutdownPriority.DATABASE }
-    );
-    
+    // NOTA: Callback de database pool já está registrado fora do IIFE para garantir cleanup mesmo se inicialização falhar
     registerShutdownCallback(
       'rag-websocket-server',
       async () => {
@@ -3608,7 +3624,16 @@ app.use(createErrorHandler({
     // ENTERPRISE-GRADE: Fail-fast se inicialização falhar (Regra 6 - sem workarounds)
     process.exit(1);
   }
-})();
+})().catch((error) => {
+  // BUG FIX 23/12/2025: Adicionar catch handler explícito para prevenir unhandled promise rejections
+  // Se qualquer erro assíncrono ocorrer fora do try-catch (ex: em callbacks de logger, promises não aguardadas),
+  // será capturado aqui. Isso previne crashes silenciosos e garante que todos os erros sejam logados antes de exit
+  logger.error({ 
+    error: error instanceof Error ? error.message : String(error),
+    stack: error instanceof Error ? error.stack : undefined,
+  }, 'CRITICAL: Unhandled rejection na inicialização do RAG service - abortando');
+  process.exit(1);
+});
 
 // ============================================================================
 // INICIALIZAÇÃO QDRANT - Banco vetorial para texto (4096 dim)

@@ -2138,7 +2138,15 @@ async function processWhatsAppMediaForRAG(
   const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
   const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
   
-  const normalizedContentType = mediaContentType.toLowerCase().trim();
+  // BUG FIX 23/12/2025: Normalização robusta de content-type para suportar variações de case e espaços
+  // WhatsApp pode enviar tipos com variações (ex: "Image/Jpeg", "audio/mpeg; codecs=mp3")
+  // .toLowerCase() e .trim() garantem matching correto mesmo com variações
+  // Extrair apenas o tipo base (antes de ;) para suportar parâmetros adicionais
+  const normalizedContentType = mediaContentType.toLowerCase().trim().split(';')[0].trim();
+  
+  // BUG FIX 23/12/2025: Validação com type narrowing explícito para garantir type safety
+  // includes() com type assertion garante que TypeScript entenda o tipo correto
+  // Isso previne falsos negativos onde tipos legítimos são rejeitados por problemas de case/whitespace
   const isImage = SUPPORTED_IMAGE_TYPES.includes(normalizedContentType as typeof SUPPORTED_IMAGE_TYPES[number]);
   const isAudio = SUPPORTED_AUDIO_TYPES.includes(normalizedContentType as typeof SUPPORTED_AUDIO_TYPES[number]);
   
@@ -2146,6 +2154,7 @@ async function processWhatsAppMediaForRAG(
   if (!isImage && !isAudio) {
     logger.warn({
       mediaContentType: normalizedContentType,
+      originalContentType: mediaContentType,
       conversationId,
       supportedTypes: {
         image: SUPPORTED_IMAGE_TYPES,
@@ -2154,7 +2163,7 @@ async function processWhatsAppMediaForRAG(
     }, 'Tipo de mídia WhatsApp não suportado para RAG - apenas imagem e áudio são aceitos');
     return { 
       success: false, 
-      error: `Tipo de mídia não suportado: ${normalizedContentType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).` 
+      error: `Tipo de mídia não suportado: ${mediaContentType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).` 
     };
   }
   
