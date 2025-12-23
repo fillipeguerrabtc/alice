@@ -2976,7 +2976,8 @@ wss.on('connection', (ws, req) => {
         // Validação defensiva: apenas tipos explicitamente suportados são aceitos
         if (!mediaType) {
           logger.warn({ 
-            mimeType, 
+            normalizedMimeType: normalizedMimeType,
+            originalMimeType: mediaMessage.media.mimeType,
             filename: mediaMessage.media.filename,
             conversationId: mediaMessage.conversationId,
             supportedTypes: {
@@ -2986,7 +2987,7 @@ wss.on('connection', (ws, req) => {
           }, 'Tipo de mídia não suportado via WebSocket - rejeitado');
           ws.send(JSON.stringify({ 
             type: 'media_error',
-            error: `Tipo de arquivo não suportado: ${mimeType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).`,
+            error: `Tipo de arquivo não suportado: ${mediaMessage.media.mimeType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).`,
           }));
           return;
         }
