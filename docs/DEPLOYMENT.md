@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 21 de Dezembro de 2025
+**Data:** 23 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 45 Containers em Produção
 
@@ -602,13 +602,19 @@ Actions → Deploy to Production → Run workflow → Selecionar versão
 
 O workflow de deploy executa automaticamente todas as migrations na ordem correta:
 
-1. **0001_rls_security_enterprise.sql**: Configura RLS (Row Level Security), funções de tenant, índices e grants
-2. **0002_create_feature_flags.sql**: Cria tabela de feature flags enterprise
-3. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14 → pgvector) - **CRÍTICA**
+1. **Schema Base (Drizzle ORM)**: `drizzle-kit push` cria/atualiza todas as tabelas definidas no schema antes das migrations SQL incrementais
+2. **0001_rls_security_enterprise.sql**: Configura RLS (Row Level Security), funções de tenant, índices e grants
+3. **0002_create_feature_flags.sql**: Cria tabela de feature flags enterprise
+4. **0003_update_embedding_dimensions_1024.sql**: Atualiza dimensões de embeddings de imagem para 1024 (OpenCLIP ViT-H/14 → pgvector) - **CRÍTICA**
 
 **⚠️ IMPORTANTE - Arquitetura de Embeddings (17/12/2025):**
 - **Texto**: Qwen3-Embedding-8B (4096 dim) → **Qdrant** (não usa migration SQL)
 - **Imagem**: OpenCLIP ViT-H/14 (1024 dim) → **pgvector** (migration 0003)
+
+**🔧 Melhorias Enterprise (23/12/2025):**
+- **URL-Encoding de Credenciais**: `DATABASE_URL` agora usa URL-encoding adequado (RFC 3986) para user, password e database name. Suporta senhas com qualquer caractere especial (@, :, ?, #, etc.) sem quebrar a string de conexão.
+- **Timeout Protection**: `drizzle-kit push` tem timeout de 300s (5 min) e validação de conexão explícita antes da execução. Previne hangs indefinidos se PostgreSQL não está totalmente pronto.
+- **Fail-Fast**: Se `drizzle-kit push` falhar ou exceder timeout, o deploy é abortado imediatamente (schema base é crítico).
 
 O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 
@@ -1111,7 +1117,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 23 de Dezembro de 2025*
-*Versão: 7.4 - Verificação Completa SearXNG + Correção Contagem Containers*
+*Versão: 7.5 - Correções Enterprise drizzle-kit push (timeout + URL-encoding)*
+*Data: 23 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
