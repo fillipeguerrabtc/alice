@@ -63,14 +63,27 @@ function updateUserSession(
   user: UserSession,
   tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers
 ) {
-  // Type assertion para IdTokenClaims - tokens.claims() retorna objeto compatível
-  user.claims = tokens.claims() as IdTokenClaims;
+  // BUG FIX 23/12/2025: Validação defensiva antes de type assertion
+  // tokens.claims() pode retornar undefined em casos de erro ou token inválido
+  const claims = tokens.claims();
+  if (!claims) {
+    throw new Error('Token OAuth não contém claims - autenticação falhou');
+  }
+  
+  // Type assertion para IdTokenClaims - tokens.claims() retorna objeto compatível quando válido
+  user.claims = claims as IdTokenClaims;
   user.access_token = tokens.access_token;
   user.refresh_token = tokens.refresh_token;
   user.expires_at = user.claims?.exp;
 }
 
 async function upsertUser(claims: IdTokenClaims) {
+  // BUG FIX 23/12/2025: Validação defensiva - sub é obrigatório para criar/atualizar usuário
+  // Se sub não existir, lançar erro ao invés de crashar com undefined reference
+  if (!claims?.sub) {
+    throw new Error('ID token claims não contém sub (subject) - token OAuth inválido');
+  }
+
   // BUG FIX 23/12/2025: Preservar undefined para campos opcionais ausentes (não usar "" como fallback)
   // undefined será convertido para NULL no banco, mantendo distinção semântica:
   // - NULL = campo não fornecido no token OAuth
@@ -97,12 +110,24 @@ export async function setupAuth(app: Express) {
     tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers,
     verified: passport.AuthenticateCallback
   ) => {
-    const user: UserSession = {};
-    updateUserSession(user, tokens);
-    // Type assertion necessário porque tokens.claims() pode retornar undefined em alguns casos
-    // mas em contexto de callback OAuth sempre retorna um objeto válido
-    await upsertUser(tokens.claims() as IdTokenClaims);
-    verified(null, user as Express.User);
+    try {
+      const user: UserSession = {};
+      
+      // BUG FIX 23/12/2025: Validação defensiva antes de type assertion
+      // tokens.claims() pode retornar undefined em casos de erro ou token inválido
+      // updateUserSession já valida claims, mas precisamos validar aqui também para upsertUser
+      const claims = tokens.claims();
+      if (!claims) {
+        return verified(new Error('Token OAuth não contém claims - autenticação falhou'));
+      }
+      
+      updateUserSession(user, tokens);
+      await upsertUser(claims as IdTokenClaims);
+      verified(null, user as Express.User);
+    } catch (error) {
+      // Tratar erros de validação ou upsert como falha de autenticação
+      verified(error instanceof Error ? error : new Error('Erro ao processar autenticação OAuth'));
+    }
   };
 
   const registeredStrategies = new Set<string>();
