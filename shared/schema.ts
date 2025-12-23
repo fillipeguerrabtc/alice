@@ -28,11 +28,11 @@ export const userRoleEnum = pgEnum("user_role", [
   "guest",
 ]);
 
+// ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
 export const messageTypeEnum = pgEnum("message_type", [
   "text",
   "image",
   "audio",
-  "video",
   "document",
   "mixed",
 ]);
@@ -1194,13 +1194,13 @@ export const generatedImages = pgTable(
 );
 
 // ============================================================================
-// MEDIA UPLOADS (FASE 9 - Multimodal: Imagem, Áudio, Vídeo)
+// MEDIA UPLOADS (FASE 9 - Multimodal: Imagem, Áudio, Documento)
+// ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
 // ============================================================================
 
 export const mediaTypeEnum = pgEnum("media_type", [
   "image",
   "audio",
-  "video",
   "document",
 ]);
 

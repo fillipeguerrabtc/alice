@@ -192,9 +192,9 @@ C4Container
     Rel(auth, redis, "TCP", "Sessions")
 ```
 
-### 4.2 Catálogo de Containers (44 Total)
+### 4.2 Catálogo de Containers (45 Total)
 
-#### Infraestrutura Core (7)
+#### Infraestrutura Core (8)
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
@@ -204,7 +204,8 @@ C4Container
 | 4 | `postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
 | 5 | `alice-redis` | Redis 7.4 | 6379 | Cache distribuído |
 | 6 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
-| 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
+| 7 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
+| 8 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
 
 #### Microsserviços Alice (7)
 
@@ -282,7 +283,6 @@ C4Component
         Component(docProc, "Document Processor", "Chunking", "PDF, DOCX, TXT")
         Component(audioProc, "Audio Processor", "Canary-1B", "Transcrição ASR")
         Component(imageProc, "Image Processor", "OpenCLIP", "Embeddings 1024 dim")
-        Component(videoProc, "Video Processor", "Multimodal", "Frames + Transcrição")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
         Component(embWorker, "Embedding Worker", "Background", "Warm-on-Demand GPU")
         Component(vectorSearch, "Vector Search", "Qdrant", "Busca semântica")
@@ -467,7 +467,6 @@ C4Deployment
 │   ├── {tenantId}/                 # Isolamento por tenant
 │   │   ├── image/
 │   │   ├── audio/
-│   │   ├── video/
 │   │   └── document/
 │   └── {tenantId}/                 # Uploads por tenant
 ├── backups/                        # Backups enterprise
@@ -570,9 +569,9 @@ CREATE POLICY "tenant_isolation" ON conversations
 
 | Medida | Cobertura | Status |
 |--------|-----------|--------|
-| `no-new-privileges` | 44/44 containers | ✅ 100% |
-| `read_only: true` | 25/44 containers | ✅ Onde aplicável |
-| Resource limits | 44/44 containers | ✅ 100% |
+| `no-new-privileges` | 45/45 containers | ✅ 100% |
+| `read_only: true` | 25/45 containers | ✅ Onde aplicável |
+| Resource limits | 45/45 containers | ✅ 100% |
 | SHA256 digests | 26 imagens | ✅ 100% |
 | Healthchecks | 38/38 containers | ✅ 100% |
 
@@ -846,7 +845,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 | Categoria | Arquivos | Cobertura |
 |-----------|----------|-----------|
 | **Services** | 7 | auth, chat, rag, training, integrations, observability, learning-orchestrator |
-| **Processors** | 5 | image, audio, video, document, video-combine-embeddings |
+| **Processors** | 3 | image, audio, document |
 | **Packages** | 2 | database, shutdown-manager |
 | **Security** | 3 | security-fixes, rbac-validation, rbac-cache |
 | **Config/Schema** | 3 | config-validation, schema-validation, feature-flags |

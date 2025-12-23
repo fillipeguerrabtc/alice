@@ -1728,7 +1728,8 @@ app.get('/api/chat/conversations/:id/messages', requireAuth, requireSameTenant(g
 
 const sendMessageSchema = z.object({
   conteudo: z.string().min(1),
-  tipo: z.enum(['text', 'image', 'audio', 'video', 'document', 'mixed']).default('text'),
+  // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+  tipo: z.enum(['text', 'image', 'audio', 'document', 'mixed']).default('text'),
 });
 
 // OWASP API3 - Schemas Zod para validação de input em todas as rotas
@@ -2941,10 +2942,18 @@ wss.on('connection', (ws, req) => {
         const mediaSafeTenantId = mediaConversationTenantId;
 
         // Determinar tipo de mídia
+        // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
         const mimeType = mediaMessage.media.mimeType.toLowerCase();
-        let mediaType: 'image' | 'audio' | 'video' = 'image';
+        let mediaType: 'image' | 'audio' = 'image';
         if (mimeType.startsWith('audio/')) mediaType = 'audio';
-        else if (mimeType.startsWith('video/')) mediaType = 'video';
+        // Vídeo não é mais suportado - rejeitado abaixo
+        if (mimeType.startsWith('video/')) {
+          ws.send(JSON.stringify({ 
+            type: 'media_error',
+            error: 'Vídeo não é suportado. Envie apenas imagens ou áudio.',
+          }));
+          return;
+        }
 
         ws.send(JSON.stringify({ 
           type: 'media_uploading',
@@ -2962,7 +2971,7 @@ wss.on('connection', (ws, req) => {
           isFromUser: true,
           anexos: [{
             id: mediaId,
-            type: mediaType === 'image' ? 'image' : mediaType === 'audio' ? 'audio' : 'video',
+            type: mediaType,
             filename: mediaMessage.media.filename,
             mimeType: mediaMessage.media.mimeType,
             size: Buffer.from(mediaMessage.media.file, 'base64').length,
@@ -2995,7 +3004,7 @@ wss.on('connection', (ws, req) => {
           .set({
             anexos: [{
               id: mediaId,
-              type: mediaType === 'image' ? 'image' : mediaType === 'audio' ? 'audio' : 'video',
+              type: mediaType,
               filename: mediaMessage.media.filename,
               mimeType: mediaMessage.media.mimeType,
               size: Buffer.from(mediaMessage.media.file, 'base64').length,
@@ -3037,23 +3046,9 @@ wss.on('connection', (ws, req) => {
             systemPrompt += '\n\nO usuário enviou um áudio que está sendo processado.';
             userContent = userContent || 'Recebi seu áudio. Estou processando a transcrição.';
           }
-        } else if (mediaType === 'video') {
-          // CORREÇÃO 17/12/2025: Mixtral é text-only - usar transcrição + contexto RAG via embeddings CLIP
-          // Vídeo: frames processados via OpenCLIP (1024 dim) + transcrição via Canary-1B
-          if (uploadResult.transcription) {
-            // Se temos transcrição, incluir no contexto
-            systemPrompt += '\n\nO usuário enviou um vídeo. A transcrição do áudio está incluída abaixo. ' +
-              'Frames do vídeo foram processados pelo sistema de visão computacional para busca por contexto similar. ' +
-              'Responda com base na transcrição e no contexto do RAG.';
-            userContent = `[Transcrição do vídeo]: ${uploadResult.transcription}\n\n${userContent || 'O que você pode me dizer sobre este vídeo?'}`;
-          } else {
-            // Sem transcrição ainda - informar limitações
-            systemPrompt += '\n\nO usuário enviou um vídeo que está sendo processado pelo sistema de visão computacional. ' +
-              'Use o contexto fornecido pelo RAG para responder. ' +
-              'Se não houver contexto suficiente, informe que a análise visual direta não está disponível no momento.';
-            userContent = userContent || 'O que você pode me dizer sobre este vídeo com base no contexto disponível?';
-          }
         }
+        // REMOVIDO 23/12/2025: Processamento de vídeo desabilitado (muito pesado para GPU)
+        // Plataforma suporta apenas: texto, áudio e imagem
 
         // Buscar contexto RAG
         const namespaceId = mediaMessage.namespaceId || conversation.namespaceId || undefined;

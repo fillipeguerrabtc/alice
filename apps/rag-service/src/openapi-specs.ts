@@ -33,7 +33,8 @@ export const ragServicePaths = {
           in: 'query',
           schema: {
             type: 'string',
-            enum: ['text', 'image', 'audio', 'video', 'document'],
+            // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+            enum: ['text', 'image', 'audio', 'document'],
           },
         },
       ],

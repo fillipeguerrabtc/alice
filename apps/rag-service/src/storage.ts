@@ -12,18 +12,16 @@
  * - Produção: Volume Docker persistente em /opt/alice/uploads
  * - Desenvolvimento: ./uploads (local)
  * 
- * Estrutura de diretórios (Enterprise - 13/12/2025):
+ * Estrutura de diretórios (Enterprise - 23/12/2025):
  * /opt/alice/uploads/
  * ├── {tenantId}/                    # Uploads gerais de usuários (isolamento por tenant)
  * │   ├── image/                     # Imagens enviadas via /api/media/upload
  * │   ├── audio/                     # Áudios enviados via /api/media/upload
- * │   ├── video/                     # Vídeos enviados via /api/media/upload
  * │   └── document/                  # Documentos enviados via /api/media/upload
  * ├── tts/                           # Outputs de jobs TTS (Salad) - output-{jobId}.wav
- * ├── lip-sync/                      # Outputs de jobs lip-sync (Salad) - output-{jobId}.mp4
- * ├── talking-head/                  # Outputs de jobs talking-head (Salad) - output-{jobId}.mp4
- * ├── long-video/                    # Outputs de jobs long-video (Salad) - output-{jobId}.mp4
  * └── media/                         # Outros arquivos multimodais (reservado)
+ * 
+ * NOTA (23/12/2025): Vídeo REMOVIDO - muito pesado para GPU. Plataforma suporta apenas texto, áudio e imagem.
  * 
  * Permissões Enterprise:
  * - Diretórios: 750 (rwxr-x---) - owner/group rwx, outros sem acesso
@@ -85,9 +83,10 @@ export interface StorageService {
   getDiskUsage(): Promise<DiskUsageStats>;
 }
 
+// ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
 export interface SaveFileOptions {
   tenantId: string;
-  mediaType: 'image' | 'audio' | 'video' | 'document';
+  mediaType: 'image' | 'audio' | 'document';
   originalFilename: string;
   mimeType: string;
 }
@@ -229,7 +228,9 @@ class LocalStorageService implements StorageService {
    * Obter estatísticas de uso de disco
    * Considera AMBAS as estruturas:
    * 1. Uploads gerais: /uploads/{tenantId}/{mediaType}/{filename}
-   * 2. Outputs de jobs Salad: /uploads/{tts,lip-sync,talking-head,long-video}/output-{jobId}.{ext}
+   * 2. Outputs de jobs Salad: /uploads/{tts}/output-{jobId}.{ext}
+   * 
+   * NOTA (23/12/2025): Diretórios de vídeo removidos (lip-sync, talking-head, long-video)
    */
   async getDiskUsage(): Promise<DiskUsageStats> {
     const stats: DiskUsageStats = {
@@ -250,11 +251,12 @@ class LocalStorageService implements StorageService {
         
         // Estrutura 1: Uploads gerais por tenant (/uploads/{tenantId}/{mediaType}/...)
         // Detecta se é UUID (tenantId) ou nome de diretório de job Salad
-        const isJobOutputDir = ['tts', 'lip-sync', 'talking-head', 'long-video', 'media'].includes(entry);
+        // ATUALIZADO 23/12/2025: Removidos diretórios de vídeo (lip-sync, talking-head, long-video)
+        const isJobOutputDir = ['tts', 'media'].includes(entry);
         
         if (isJobOutputDir) {
           // Estrutura 2: Outputs de jobs Salad (/uploads/{jobType}/output-{jobId}.{ext})
-          const jobType = entry === 'lip-sync' ? 'video' : entry === 'talking-head' ? 'video' : entry === 'long-video' ? 'video' : entry === 'tts' ? 'audio' : 'media';
+          const jobType = entry === 'tts' ? 'audio' : 'media';
           
           if (!stats.byMediaType[jobType]) {
             stats.byMediaType[jobType] = { files: 0, size: '0 B', sizeBytes: 0 };
@@ -340,6 +342,7 @@ class LocalStorageService implements StorageService {
     if (ext) return ext;
     
     // Fallback baseado no mimeType
+    // ATUALIZADO 23/12/2025: Removidas extensões de vídeo (muito pesado para GPU)
     const mimeToExt: Record<string, string> = {
       'image/jpeg': '.jpg',
       'image/png': '.png',
@@ -349,10 +352,6 @@ class LocalStorageService implements StorageService {
       'audio/wav': '.wav',
       'audio/ogg': '.ogg',
       'audio/webm': '.webm',
-      'video/mp4': '.mp4',
-      'video/webm': '.webm',
-      'video/ogg': '.ogv',
-      'video/quicktime': '.mov',
       'application/pdf': '.pdf',
       'text/plain': '.txt',
       'text/markdown': '.md',

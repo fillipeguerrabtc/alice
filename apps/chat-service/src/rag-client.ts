@@ -186,9 +186,10 @@ export function formatarContextoParaLLM(ragResult: RAGContextResponse | null): s
 /**
  * Resultado do upload de mídia para RAG Service
  */
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
 export interface MediaUploadResult {
   uploadId: string;
-  mediaType: 'image' | 'audio' | 'video';
+  mediaType: 'image' | 'audio';
   fileUrl: string;
   thumbnailUrl?: string;
   processingStatus: 'pending' | 'processing' | 'completed' | 'failed';

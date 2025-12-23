@@ -5,9 +5,9 @@
 
 ## Visão Geral da Arquitetura - 44 Containers em Produção
 
-A plataforma Alice é composta por **44 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **45 containers** organizados em 6 categorias:
 
-### Categoria 1: Infraestrutura Core (7 serviços)
+### Categoria 1: Infraestrutura Core (8 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
@@ -17,7 +17,8 @@ A plataforma Alice é composta por **44 containers** organizados em 6 categorias
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
 | 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.7 Alpine |
 | 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
-| 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
+| 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
+| 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
 > Atualização 21/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Impede disparo acidental ou paralelo com CI. Pipeline 100% sequencial: Push → CI → Release → Deploy.
 
@@ -191,7 +192,6 @@ Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice
 | ├── `{tenantId}/` | Uploads gerais de usuários (isolamento por tenant) | 750 | |
 | │   ├── `image/` | Imagens enviadas via /api/media/upload | 750 | |
 | │   ├── `audio/` | Áudios enviados via /api/media/upload | 750 | |
-| │   ├── `video/` | Vídeos enviados via /api/media/upload | 750 | |
 | │   └── `document/` | Documentos enviados via /api/media/upload | 750 | |
 | `/opt/alice/backups/` | Backups enterprise | 750 | ~20-40GB |
 | ├── `postgresql/` | Backups PostgreSQL (pgBackRest) | 750 | |
@@ -506,7 +506,7 @@ O deploy é **100% automático** via GitHub Actions:
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │   44 containers                        │
+│  │ • SSH para Hetzner  │   45 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
 │  │ • Health checks     │   RTX 4090 (Mixtral, FLUX, ASR, Emb.)  │
@@ -522,7 +522,7 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Hetzner** | Release passa | 44 containers via Docker Compose |
+| **Deploy Hetzner** | Release passa | 45 containers via Docker Compose |
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
@@ -1061,9 +1061,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 44/44 containers (100%) |
-| **resource limits** | ✅ | 44/44 containers (100%) |
-| **read_only: true** | ✅ | 25/44 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 45/45 containers (100%) |
+| **resource limits** | ✅ | 45/45 containers (100%) |
+| **read_only: true** | ✅ | 25/45 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -1113,8 +1113,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Documento atualizado em: 21 de Dezembro de 2025*
 *Versão: 7.3 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 44 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
-*Security Hardening: 100% completo - 44/44 containers com no-new-privileges, 44/44 com resource limits, 25/44 com read_only*
+*Total de Containers: 45 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*

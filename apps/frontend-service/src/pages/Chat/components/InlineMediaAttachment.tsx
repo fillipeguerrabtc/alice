@@ -12,7 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import { MediaAttachment } from './types';
 import { AudioPlayer } from './AudioPlayer';
-import { VideoPlayer } from './VideoPlayer';
+// REMOVIDO 23/12/2025: VideoPlayer desabilitado (muito pesado para GPU)
 
 interface InlineMediaAttachmentProps {
   media: MediaAttachment;
@@ -26,9 +26,7 @@ export function InlineMediaAttachment({ media }: InlineMediaAttachmentProps) {
     return <AudioPlayer media={media} />;
   }
 
-  if (media.type === 'video') {
-    return <VideoPlayer media={media} />;
-  }
+  // REMOVIDO 23/12/2025: Bloco de vídeo removido (muito pesado para GPU)
 
   if (media.status === 'uploading' || media.status === 'processing') {
     return (

@@ -130,8 +130,9 @@ export default function Chat() {
         status: 'ready',
       };
 
-      if (mediaType === 'audio' || mediaType === 'video') {
-        const mediaElement = document.createElement(mediaType);
+      // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+      if (mediaType === 'audio') {
+        const mediaElement = document.createElement('audio');
         mediaElement.src = objectUrl;
         mediaElement.onloadedmetadata = () => {
           setPendingMedia(prev => 
@@ -505,7 +506,7 @@ export default function Chat() {
           <input
             ref={fileInputRef}
             type="file"
-            accept={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio, ...ACCEPTED_TYPES.video].join(',')}
+            accept={[...ACCEPTED_TYPES.image, ...ACCEPTED_TYPES.audio].join(',')}
             multiple
             onChange={handleFileSelect}
             className="hidden"

@@ -349,7 +349,6 @@
       "text": "Text",
       "image": "Image",
       "audio": "Audio",
-      "video": "Video",
       "file": "File"
     },
     "actions": {
@@ -989,11 +988,11 @@
     "multimodal": {
       "tabTitle": "Multimodal",
       "title": "Multimodal Media Upload",
-      "subtitle": "Upload images, audio, and video to train Alice. Media will be processed via GPU to generate embeddings and enrich the knowledge base.",
+      "subtitle": "Upload images and audio to train Alice. Media will be processed via GPU to generate embeddings and enrich the knowledge base.",
       "descriptionLabel": "Description (optional)",
       "descriptionPlaceholder": "Describe the media content for better contextualization",
       "dragDrop": "Drag files or click to select",
-      "supportedTypes": "Images (JPEG, PNG, WebP, GIF), Audio (MP3, WAV, WebM), and Videos (MP4, WebM, MOV)",
+      "supportedTypes": "Images (JPEG, PNG, WebP, GIF) and Audio (MP3, WAV, WebM)",
       "queueTitle": "Upload Queue",
       "clearCompleted": "Clear Completed",
       "uploadAll": "Upload All ({{count}})",
@@ -1012,11 +1011,7 @@
         },
         "audio": {
           "title": "Audio",
-          "desc": "Whisper large-v3 transcribes the audio, Qwen3-Embedding-8B generates text embeddings"
-        },
-        "video": {
-          "title": "Videos",
-          "desc": "Combines frame extraction (OpenCLIP) with audio transcription (Whisper + Qwen3)"
+          "desc": "Canary-1B transcribes the audio, Qwen3-Embedding-8B generates text embeddings"
         },
         "gpu": {
           "title": "GPU Processing on Salad Cloud",

@@ -100,13 +100,13 @@ describe('Schema - Enums RBAC', () => {
     });
   });
 
+  // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
   describe('messageTypeEnum (Multimodal)', () => {
     it('deve suportar todos os tipos de mídia multimodal', () => {
       const types = messageTypeEnum.enumValues;
       expect(types).toContain('text');
       expect(types).toContain('image');
       expect(types).toContain('audio');
-      expect(types).toContain('video');
       expect(types).toContain('document');
       expect(types).toContain('mixed');
     });

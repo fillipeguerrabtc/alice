@@ -5,15 +5,12 @@
 # Cria estrutura completa de diretórios com permissões enterprise-grade
 # Executado no primeiro deploy e após atualizações de estrutura
 #
-# Estrutura:
+# Estrutura (ATUALIZADO 23/12/2025 - Vídeo removido):
 # /opt/alice/
 # ├── data/          (750) - Dados de DBs e serviços
 # ├── uploads/       (750) - Uploads multimodais (subpastas por tipo)
-# │   ├── tts/       (750)
-# │   ├── lip-sync/  (750)
-# │   ├── talking-head/ (750)
-# │   ├── long-video/ (750)
-# │   └── media/     (750)
+# │   ├── tts/       (750) - Outputs de jobs TTS
+# │   └── media/     (750) - Outros arquivos multimodais
 # ├── backups/       (750) - Backups enterprise
 # │   ├── postgresql/ (750)
 # │   ├── mariadb/   (750)
@@ -41,12 +38,10 @@ echo "  Base: ${BASE_DIR}"
 echo "=================================================="
 
 # Criar estrutura base
+# ATUALIZADO 23/12/2025: Removidos diretórios de vídeo (lip-sync, talking-head, long-video)
 echo "[INFO] Criando diretórios base..."
 mkdir -p "${BASE_DIR}/data"
 mkdir -p "${BASE_DIR}/uploads/tts"
-mkdir -p "${BASE_DIR}/uploads/lip-sync"
-mkdir -p "${BASE_DIR}/uploads/talking-head"
-mkdir -p "${BASE_DIR}/uploads/long-video"
 mkdir -p "${BASE_DIR}/uploads/media"
 mkdir -p "${BASE_DIR}/backups/postgresql"
 mkdir -p "${BASE_DIR}/backups/postgresql/logs"

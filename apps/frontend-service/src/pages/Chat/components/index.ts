@@ -8,7 +8,7 @@
 
 export * from './types';
 export { AudioPlayer } from './AudioPlayer';
-export { VideoPlayer } from './VideoPlayer';
+// REMOVIDO 23/12/2025: VideoPlayer desabilitado (muito pesado para GPU)
 export { InlineImage } from './InlineImage';
 export { InlineMediaAttachment } from './InlineMediaAttachment';
 export { MessageBubble } from './MessageBubble';

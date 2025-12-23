@@ -200,6 +200,55 @@ services:
   # SEARXNG - Metabusca self-hosted para Web Search (fase multimodal)
   # Nota: rota interna (não exposta publicamente). Traefik não configurado aqui.
   # ===========================================================================
+  # ===========================================================================
+  # TOR PROXY - Proxy SOCKS5 para acesso a .onion (engines ahmia/torch)
+  # ===========================================================================
+  # ENTERPRISE (23/12/2025): Tor habilitado para engines .onion completas
+  # Elimina warnings: "loading engine ahmia/torch failed: set engine to inactive!"
+  # 
+  # Imagem: dperson/torproxy - imagem comunitária bem mantida baseada em Alpine
+  # NOTA: O Tor Project NÃO fornece imagens Docker oficiais.
+  # Esta é uma das imagens mais estáveis e usadas para Tor proxy em Docker.
+  # Ref: https://github.com/dperson/torproxy
+  # ===========================================================================
+  alice-tor:
+    # NOTA: dperson/torproxy não publica digests SHA256 estáveis
+    # A tag latest é a única mantida ativamente pelo autor
+    # Para supply chain security, monitoramos atualizações via Dependabot
+    image: dperson/torproxy:latest
+    platform: linux/amd64
+    container_name: alice-tor
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    # Tor precisa escrever em vários diretórios (cache, logs, dados)
+    # read_only: true NÃO suportado pelo Tor daemon
+    environment:
+      # Porta SOCKS5 padrão - SearXNG conecta via socks5h://alice-tor:9050
+      TOR_SOCKS_PORT: "9050"
+      # Desabilitar DNS sobre Tor (usamos DNS do host para resolução normal)
+      TOR_DNSPORT: "0"
+    networks:
+      - alice-network
+    healthcheck:
+      # CORREÇÃO 23/12/2025: Usar timeout + /dev/tcp ao invés de nc
+      # A imagem dperson/torproxy é baseada em Alpine/busybox onde nc pode não estar disponível
+      # /dev/tcp é built-in do bash e funciona em qualquer shell POSIX
+      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/9050' 2>/dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      # Tor precisa de tempo para bootstrap (conectar à rede Tor)
+      start_period: 90s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
+
   alice-searxng:
     image: searxng/searxng:latest@sha256:1cc8efcc2a40f79249d5fe0033a9a9ec079c171cb65d35bacee22be37c794aea
     platform: linux/amd64
@@ -221,6 +270,9 @@ services:
       - SSL_CERT_DIR=/etc/ssl/certs
     volumes:
       - searxng_config:/etc/searxng
+    depends_on:
+      alice-tor:
+        condition: service_healthy
     networks:
       - alice-network
     healthcheck:
@@ -633,6 +685,10 @@ services:
       - /tmp:mode=1777,size=64M
       - /var/cache/nginx:mode=1777,size=32M
       - /var/run:mode=1777,size=8M
+      # CORREÇÃO 23/12/2025: Script 10-listen-on-ipv6-by-default.sh tenta modificar default.conf
+      # Warning: "can not modify /etc/nginx/conf.d/default.conf (read-only file system?)"
+      # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
+      - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
       # CORREÇÃO 23/12/2025: Healthcheck robusto com -q (quiet mode) para evitar problemas
       # BusyBox wget no Alpine funciona bem com read_only:true
@@ -1162,11 +1218,12 @@ services:
       # /ready verifica observability stack (Prometheus, Grafana) - pode falhar temporariamente
       # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
+      # CORREÇÃO 23/12/2025: Aumentado start_period e retries para dar tempo de inicialização
       test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 60s
     deploy:
       resources:
         limits:

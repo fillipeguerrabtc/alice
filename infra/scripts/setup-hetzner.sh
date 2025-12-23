@@ -208,9 +208,6 @@ DIRS=(
     /opt/alice/data/grafana
     /opt/alice/data/loki
     /opt/alice/uploads/tts
-    /opt/alice/uploads/lip-sync
-    /opt/alice/uploads/talking-head
-    /opt/alice/uploads/long-video
     /opt/alice/uploads/media
     /opt/alice/backups/postgresql/logs
     /opt/alice/backups/mariadb

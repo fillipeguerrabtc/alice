@@ -15,7 +15,9 @@ export interface GeneratedImageData {
   feedbackScore?: number;
 }
 
-export type MediaType = 'image' | 'audio' | 'video';
+// ATUALIZADO 23/12/2025: 'video' REMOVIDO (muito pesado para GPU)
+// Plataforma suporta apenas: texto, áudio e imagem
+export type MediaType = 'image' | 'audio';
 
 export interface MediaAttachment {
   id: string;
@@ -39,7 +41,8 @@ export interface Message {
   content: string;
   createdAt: string;
   tokensUsados?: number;
-  tipo?: 'text' | 'image' | 'audio' | 'video' | 'mixed';
+  // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+  tipo?: 'text' | 'image' | 'audio' | 'mixed';
   anexos?: unknown[];
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
@@ -64,19 +67,21 @@ export interface ConversationsResponse {
 export const FILE_LIMITS = {
   image: 10 * 1024 * 1024,
   audio: 25 * 1024 * 1024,
-  video: 100 * 1024 * 1024,
+  // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
 } as const;
 
-export const ACCEPTED_TYPES: Record<MediaType, string[]> = {
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+export const ACCEPTED_TYPES = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'audio/webm'],
-  video: ['video/mp4', 'video/webm', 'video/quicktime'],
-};
+  // video removido - não aceitar uploads de vídeo
+} as const;
 
 export function getMediaType(mimeType: string): MediaType | null {
   if (ACCEPTED_TYPES.image.includes(mimeType)) return 'image';
   if (ACCEPTED_TYPES.audio.includes(mimeType)) return 'audio';
-  if (ACCEPTED_TYPES.video.includes(mimeType)) return 'video';
+  // REMOVIDO 23/12/2025: video não é mais aceito
+  // if (ACCEPTED_TYPES.video.includes(mimeType)) return 'video';
   return null;
 }
 

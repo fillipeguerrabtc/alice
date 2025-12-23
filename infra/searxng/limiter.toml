@@ -1,0 +1,39 @@
+# =============================================================================
+# SEARXNG LIMITER - Configuração de Bot Detection para Rede Interna
+# =============================================================================
+# Autor: Fillipe Guerra
+# Data: 23 de Dezembro de 2025
+# Documentação: https://docs.searxng.org/admin/searx.botdetection.html
+#
+# CORREÇÃO 23/12/2025: Elimina warning "missing config file: /etc/searxng/limiter.toml"
+# e "X-Forwarded-For nor X-Real-IP header is set!"
+#
+# O SearXNG é usado internamente via alice-network - não precisa de bot detection
+# =============================================================================
+
+# Bot detection desabilitado para rede interna
+# O SearXNG é acessado apenas por serviços internos Alice (alice-rag, alice-chat)
+# Traefik faz rate limiting na borda, não precisamos duplicar aqui
+
+[botdetection]
+# IP usado quando headers de proxy não estão presentes
+# 127.0.0.1 = acesso local confiável
+ip_limit.link_token = false
+
+[botdetection.ip_limit]
+# Limites desabilitados para rede interna
+filter_link_local = false
+
+[botdetection.ip_lists]
+# Lista de IPs/ranges confiáveis (rede Docker interna)
+# Isso elimina o warning "X-Forwarded-For nor X-Real-IP header is set!"
+pass_ip = [
+    "127.0.0.0/8",     # Localhost
+    "10.0.0.0/8",      # Rede privada classe A
+    "172.16.0.0/12",   # Rede privada classe B (inclui 172.28.0.0/16 do Docker)
+    "192.168.0.0/16",  # Rede privada classe C
+]
+
+# Nenhum IP bloqueado internamente
+block_ip = []
+

@@ -1,0 +1,119 @@
+# =============================================================================
+# SEARXNG SETTINGS - Configuração Enterprise Alice Platform
+# =============================================================================
+# Autor: Fillipe Guerra
+# Data: 23 de Dezembro de 2025
+# Documentação: https://docs.searxng.org/admin/settings/index.html
+#
+# ENTERPRISE (23/12/2025):
+# - Tor proxy habilitado para engines .onion (ahmia, torch)
+# - Elimina warnings "loading engine ahmia/torch failed"
+# - Bot detection configurado para acesso interno
+# =============================================================================
+
+# Configurações gerais
+general:
+  # Debug desabilitado em produção
+  debug: false
+  # Instance name
+  instance_name: "Alice Search"
+  # Contato do admin (não exposto publicamente)
+  contact_url: false
+  # Ativar métricas para monitoramento
+  enable_metrics: true
+
+# Configuração de servidor (Granian ASGI)
+server:
+  # Bind interno - Traefik faz proxy externo
+  bind_address: "0.0.0.0"
+  port: 8080
+  # Segredo carregado via variável de ambiente SEARXNG_SECRET_KEY
+  secret_key: ""
+  # Formato de log JSON para parsing por Loki
+  limiter: false
+  # Limiter desabilitado - rate limiting feito no Traefik
+  public_instance: false
+  # Resultado de imagens em formato JSON
+  image_proxy: true
+
+# Configurações de UI
+ui:
+  # Tema padrão
+  default_theme: simple
+  # Locale padrão PT-BR (Regra 13)
+  default_locale: pt-BR
+  # Resultados por página
+  results_on_new_tab: false
+  # Centro de resultado
+  center_alignment: true
+  # Hotkeys habilitadas
+  hotkeys: default
+
+# Configuração de saída (CRÍTICO para Tor)
+outgoing:
+  # Request timeout aumentado para Tor (latência maior)
+  request_timeout: 10.0
+  # Timeout de conexão
+  connect_timeout: 5.0
+  # Pool de conexões
+  pool_connections: 100
+  pool_maxsize: 20
+  # User agent genérico para privacidade
+  useragent_suffix: ""
+  
+  # ENTERPRISE: Proxy Tor para engines .onion
+  # Formato: socks5h:// (h = resolve DNS via Tor também)
+  proxies:
+    all://:
+      - socks5h://alice-tor:9050
+
+  # Engines específicos que usam Tor
+  using_tor_proxy: true
+
+# Configuração de busca
+search:
+  # Safe search desabilitado (é uma ferramenta interna)
+  safe_search: 0
+  # Autocomplete habilitado
+  autocomplete: "google"
+  # Formato padrão HTML
+  default_lang: "pt-BR"
+  # Máximo de resultados
+  max_page: 0
+  # Ban time para engines com falha
+  ban_time_on_fail: 10
+  # Máximo de resultados por request
+  max_request_timeout: 15.0
+
+# Configuração de engines
+engines:
+  # Engine ahmia (.onion) - requer Tor
+  - name: ahmia
+    engine: ahmia
+    shortcut: ah
+    disabled: false
+    using_tor_proxy: true
+    timeout: 15.0
+  
+  # Engine torch (.onion) - requer Tor
+  - name: torch
+    engine: torch
+    shortcut: tor
+    disabled: false
+    using_tor_proxy: true
+    timeout: 15.0
+
+# Bot detection (acesso interno via alice-network)
+# CORREÇÃO 23/12/2025: Configura trusted proxies para eliminar warning
+# "X-Forwarded-For nor X-Real-IP header is set!"
+redis:
+  # Limiter usa Redis se configurado, senão desabilitado
+  url: false
+
+# Plugins habilitados
+enabled_plugins:
+  - 'Hash plugin'
+  - 'Self Information'
+  - 'Tracker URL remover'
+  - 'Unit converter'
+

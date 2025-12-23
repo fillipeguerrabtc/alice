@@ -28,9 +28,9 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 44/44 containers (100%) |
-| `read_only: true` | ✅ | 25/44 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 44/44 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 45/45 containers (100%) |
+| `read_only: true` | ✅ | 25/45 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 45/45 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
@@ -159,7 +159,6 @@
 | pgvector (busca semântica) | ✅ | `index.ts` |
 | Image Processing (OpenCLIP ViT-H/14, 1024 dim) | ✅ | `image-processor.ts` |
 | Audio Processing (Canary-1B ASR, Qwen3-Embedding-8B 4096 dim → Qdrant) | ✅ | `audio-processor.ts` |
-| Video Processing (Whisper GPU + OpenCLIP GPU) | ✅ | `video-processor.ts` |
 | Document Processing (Qwen3-Embedding-8B GPU, 4096 dim → Qdrant) | ✅ | `document-processor.ts` |
 | **Storage Local** | ✅ | `storage.ts` (/opt/alice/uploads) |
 | Magic Bytes Validation | ✅ | `index.ts` (segurança upload) |
@@ -181,24 +180,18 @@
 | `/api/rag/circuit-breaker/embeddings` | GET | Status dos circuit breakers GPU |
 | `/ws/embeddings` | WebSocket | Notificações em tempo real |
 
-> **Nota (Readiness enterprise):** O `video-processor` valida prontidão real dos processadores (`audio-processor` e `image-processor`) usando `isReadyAsync()` (contrato explícito `Promise<boolean>`) e evita falso-positivo ao nunca tratar `Promise<boolean>` como boolean. Para compatibilidade, `image-processor.isReady()` voltou a ser **síncrono** (apenas “configurado”), e o readiness real fica em `isReadyAsync()`. Além disso, cada processor valida **apenas** as capabilities necessárias no `clip-inference-service`:
+> **Nota (Readiness enterprise):** Cada processor valida prontidão real usando `isReadyAsync()` (contrato explícito `Promise<boolean>`). Para compatibilidade, `image-processor.isReady()` é **síncrono** (apenas "configurado"), e o readiness real fica em `isReadyAsync()`. Cada processor valida **apenas** as capabilities necessárias:
 > - `image-processor` → OpenCLIP ViT-H/14 GPU (1024 dim → pgvector)
-> - `audio-processor` → Whisper GPU + Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
+> - `audio-processor` → Canary-1B ASR GPU + Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
 > - `document-processor` → Qwen3-Embedding-8B GPU (4096 dim → Qdrant)
 >
-> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/video/document** (sem “pendente” hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com `EMBEDDINGS_GPU_URL` (Salad Cloud) (evita falso-positivo). Para **video**, o endpoint usa `await video-processor.getConfigAsync()` após `isReadyAsync()` para não reportar `configured=false` com `ready=true`.
+> **Nota (23/12/2025 - Vídeo DESABILITADO):** Processamento de vídeo foi **removido** por ser muito pesado para GPU. Plataforma suporta apenas: **texto, áudio e imagem**.
 >
-> **Capacidades opcionais:** quando `WHISPER_REQUIRED=false`, **audio** e **video** são marcados como `required: false` no payload e não derrubam o `status` global (permite operar apenas com **image + document/text embeddings**).
+> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/document** (sem "pendente" hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com `EMBEDDINGS_GPU_URL` (Salad Cloud).
 
 > **Nota (Observability):** no `audio-processor`, `durationSeconds` usa preferencialmente a duração extraída do header (`metadata.duration`) como fallback quando a transcrição falha; quando não for possível determinar a duração (ex: formato sem parser), `durationSeconds` permanece `null` (estado **desconhecido**), evitando reportar `0` (que pode significar “áudio vazio/silencioso”).
 
-> **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor`, `document-processor` e `video-processor` **não** retornam mais embeddings “falsos” (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando “hardcoded”, “mock” ou “default falso”).
-
-> **Nota (Validação de embedding - enterprise):** no `video-processor`, o embedding de texto só é considerado válido se tiver **dimensão correta (4096 para Qwen3-Embedding-8B GPU)**, **valores finitos** e **ao menos um valor não-zero**. Embeddings inválidos (ex.: all-zero, `NaN`, `Infinity`) são ignorados e o resultado usa apenas frames (OpenCLIP). **Se não houver frames**, o `combinedEmbedding` é `[]` e o `clipEmbedding` é persistido como `NULL` (o `textEmbedding` continua persistido separadamente no Qdrant).
->
-> **Nota (Robustez CLIP frames):** o `combinedEmbedding` nunca contém `NaN`: frames CLIP com dimensão incorreta ou valores não-finitos são ignorados antes do cálculo da média; se nenhum frame válido existir, `combinedEmbedding` é `[]` (persistido como `NULL`).
->
-> **Nota (Robustez normalizedText - enterprise):** no `combineVideoEmbeddingsForSearch`, após o slice de `textEmbedding`, há validação adicional para garantir que `normalizedText.length === CLIP_EMBEDDING_DIM` antes de acessar índices no loop de combinação. Isso previne `NaN` em edge cases de corrupção de dados. Além disso, cada valor de `normalizedText[i]` é validado como finito antes de ser usado na combinação (fallback seguro para 0 com log de warning).
+> **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor` e `document-processor` **não** retornam mais embeddings "falsos" (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando "hardcoded", "mock" ou "default falso").
 
 > **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via Salad Cloud GPUs (Container Groups).
 >
@@ -632,9 +625,9 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (44 containers)
+## 🐳 INFRAESTRUTURA DOCKER (45 containers)
 
-### Core Infra (6)
+### Core Infra (7)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
@@ -643,7 +636,8 @@ Retenção Arquivo:   30 dias
 | 3 | traefik | traefik:v3.6.4 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
 | 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
-| 6 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
+| 6 | alice-tor | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
+| 7 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
 
 ### Alice Microservices (8)
 
@@ -698,10 +692,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 44/44 containers (100% COMPLETO) |
-| read_only: true | ✅ | 25/44 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 44/44 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 44/44 containers |
+| no-new-privileges | ✅ | 45/45 containers (100% COMPLETO) |
+| read_only: true | ✅ | 25/45 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 45/45 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 45/45 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
@@ -955,7 +949,6 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 |------|-------------|------------|--------|
 | Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim (pgvector) |
 | Áudio | `audio-processor.ts` | Canary-1B + Qwen3-Embedding-8B | Transcrição + 4096 dim (Qdrant) |
-| Vídeo | `video-processor.ts` | FFmpeg + Canary + OpenCLIP | Texto Qdrant + Imagem pgvector |
 | Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 4096 dim (Qdrant) |
 
 **Serviços de Inferência (GPU Salad Cloud):**
@@ -1029,7 +1022,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Segurança** | 100% | OWASP, hardening, Distroless |
 | **Integrações** | ✅ | Stripe, Wise, ERPNext, Twilio, Resend |
 | **Identity Provisioning** | ✅ | Grafana + ERPNext |
-| **Multimodal INPUT** | ✅ | Image, Audio, Video, Document |
+| **Multimodal INPUT** | ✅ | Image, Audio, Document |
 | **Geração** | ✅ | LLM + Image (FLUX.1) |
 | **Auto-learning** | ✅ | Scheduler + LoRA + Versioning |
 | **Takeover/Handover** | ✅ | Completo com escalação |
@@ -1207,7 +1200,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ### Arquivos de Teste Criados:
 - `tests/unit/services/` - 6 arquivos (auth, chat, integrations, rag, training, observability)
-- `tests/unit/processors/` - 4 arquivos (document, audio, image, video)
+- `tests/unit/processors/` - 3 arquivos (document, audio, image)
 - **Total: ~5000 linhas de testes enterprise**
 
 ### Cobertura por Serviço:
@@ -1224,9 +1217,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Processor | Testes | Funcionalidades |
 |-----------|--------|-----------------|
 | document-processor | ✅ | ExcelJS, chunking, MIME types |
-| audio-processor | ✅ | Whisper híbrido (GPU Salad + CPU fallback), metadata |
-| image-processor | ✅ | CLIP, magic bytes, thumbnails |
-| video-processor | ✅ | FFmpeg, frames, metadata |
+| audio-processor | ✅ | Canary-1B ASR GPU, metadata |
+| image-processor | ✅ | OpenCLIP ViT-H/14 GPU, magic bytes, thumbnails |
 
 ---
 

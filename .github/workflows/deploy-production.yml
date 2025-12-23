@@ -2292,8 +2292,29 @@ jobs:
             # ==============================================
             echo "Criando schema base do banco de dados (Drizzle ORM)..."
             
-            # Extrair DATABASE_URL do .env.prod para o drizzle-kit
-            DB_URL=$(grep -E "^DATABASE_URL=" .env.prod | cut -d'=' -f2-)
+            # CORREÇÃO 23/12/2025: DATABASE_URL não existe no .env.prod
+            # O generate-env-prod.sh gera apenas POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
+            # DATABASE_URL é construído dinamicamente no docker-compose.prod.yml
+            # Aqui construímos manualmente a partir dos componentes
+            PG_USER=$(grep -E "^POSTGRES_USER=" .env.prod | cut -d'=' -f2-)
+            PG_PASS=$(grep -E "^POSTGRES_PASSWORD=" .env.prod | cut -d'=' -f2-)
+            PG_DB=$(grep -E "^POSTGRES_DB=" .env.prod | cut -d'=' -f2-)
+            
+            # Usar defaults se não encontrar (mesmo que generate-env-prod.sh deve garantir)
+            PG_USER="${PG_USER:-alice}"
+            PG_DB="${PG_DB:-alice_prod}"
+            
+            if [ -z "${PG_PASS}" ]; then
+              echo "❌ ERRO: POSTGRES_PASSWORD não encontrado no .env.prod"
+              echo "   O generate-env-prod.sh deveria ter criado esta variável."
+              exit 1
+            fi
+            
+            # Construir DATABASE_URL no formato que drizzle-kit espera
+            # Hostname 'alice-postgres' é o nome do container na rede alice-network
+            DB_URL="postgresql://${PG_USER}:${PG_PASS}@alice-postgres:5432/${PG_DB}?sslmode=disable"
+            
+            echo "   DATABASE_URL construído: postgresql://${PG_USER}:***@alice-postgres:5432/${PG_DB}?sslmode=disable"
             
             # Usar container Node.js temporário para executar drizzle-kit push
             # NOTA: O repositório já foi clonado em /opt/alice/app
@@ -2592,10 +2613,29 @@ jobs:
             if [ "$DEPLOY_ALICE" = "true" ]; then
               # FASE 2: Infraestrutura base Alice
               echo ""
-              echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, searxng) [timeout: ${PHASE2_TIMEOUT}s]..."
+              echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, tor, searxng) [timeout: ${PHASE2_TIMEOUT}s]..."
+              
+              # ENTERPRISE 23/12/2025: Copiar configs para SearXNG (Tor + Bot Detection)
+              echo "   Configurando SearXNG com Tor proxy e bot detection..."
+              mkdir -p /opt/alice/data/searxng-config
+              
+              # settings.yml - Configuração principal com Tor proxy
+              cp /opt/alice/app/infra/searxng/settings.yml /opt/alice/data/searxng-config/settings.yml
+              chown 977:977 /opt/alice/data/searxng-config/settings.yml
+              chmod 644 /opt/alice/data/searxng-config/settings.yml
+              
+              # limiter.toml - Bot detection para rede interna
+              # CORREÇÃO 23/12/2025: Elimina warnings "missing config file: limiter.toml"
+              # e "X-Forwarded-For nor X-Real-IP header is set!"
+              cp /opt/alice/app/infra/searxng/limiter.toml /opt/alice/data/searxng-config/limiter.toml
+              chown 977:977 /opt/alice/data/searxng-config/limiter.toml
+              chmod 644 /opt/alice/data/searxng-config/limiter.toml
+              
+              echo "   ✅ SearXNG configurado (settings.yml + limiter.toml)"
+              
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --remove-orphans --wait --wait-timeout $PHASE2_TIMEOUT \
-                postgres alice-redis alice-qdrant alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
+                postgres alice-redis alice-qdrant alice-tor alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
                 echo "✅ Infraestrutura base healthy"
@@ -2783,7 +2823,7 @@ jobs:
               # Definir containers baseado no tipo de deploy
               # CORREÇÃO 21/12/2025: Nomes corretos são alice-postgres e alice-traefik (não postgres/traefik)
               # grep usa match exato com anchors ^${container}$ - nomes devem bater exatamente
-              ALICE_CONTAINERS="alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability alice-redis alice-qdrant alice-searxng alice-postgres alice-traefik"
+              ALICE_CONTAINERS="alice-rag alice-chat alice-auth alice-training alice-integrations alice-frontend alice-observability alice-redis alice-qdrant alice-tor alice-searxng alice-postgres alice-traefik"
               # CORREÇÃO 21/12/2025: Incluir workers -2 (erpnext-worker-default-2, short-2, long-2)
               ERPNEXT_CONTAINERS="erpnext-mariadb erpnext-redis-cache erpnext-redis-queue erpnext-configurator erpnext-create-site erpnext-backend erpnext-frontend erpnext-websocket erpnext-scheduler erpnext-worker-short erpnext-worker-default erpnext-worker-long erpnext-worker-short-2 erpnext-worker-default-2 erpnext-worker-long-2"
               

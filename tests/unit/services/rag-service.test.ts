@@ -19,11 +19,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // TESTES DE TIPOS DE MÍDIA SUPORTADOS
 // ============================================================================
 
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
 describe('RAG Service - Tipos de Mídia Suportados', () => {
   const SUPPORTED_MEDIA_TYPES = {
     image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
-    video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
+    // video removido
     document: [
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -44,9 +45,7 @@ describe('RAG Service - Tipos de Mídia Suportados', () => {
     expect(SUPPORTED_MEDIA_TYPES.audio.length).toBe(5);
   });
 
-  it('deve suportar 4 formatos de vídeo', () => {
-    expect(SUPPORTED_MEDIA_TYPES.video.length).toBe(4);
-  });
+  // REMOVIDO 23/12/2025: Teste de vídeo removido (muito pesado para GPU)
 
   it('deve suportar 8 formatos de documento', () => {
     expect(SUPPORTED_MEDIA_TYPES.document.length).toBe(8);
@@ -223,12 +222,13 @@ describe('RAG Service - Chunking de Documentos', () => {
 // TESTES DE PROCESSADORES
 // ============================================================================
 
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
 describe('RAG Service - Processadores de Mídia', () => {
   const processors = {
     document: ['pdf', 'docx', 'xlsx', 'txt', 'md', 'csv'],
     image: ['jpeg', 'png', 'webp', 'gif'],
     audio: ['mp3', 'wav', 'ogg'],
-    video: ['mp4', 'webm', 'mov'],
+    // video removido
   };
 
   it('deve ter processador para documentos', () => {
@@ -246,10 +246,7 @@ describe('RAG Service - Processadores de Mídia', () => {
     expect(processors.audio).toContain('mp3');
   });
 
-  it('deve ter processador para vídeo', () => {
-    expect(processors.video.length).toBeGreaterThan(0);
-    expect(processors.video).toContain('mp4');
-  });
+  // REMOVIDO 23/12/2025: Teste de vídeo removido (muito pesado para GPU)
 });
 
 // ============================================================================
@@ -301,7 +298,8 @@ describe('RAG Service - Validação Zod', () => {
     limit: z.number().min(1).max(100).optional(),
     scoreThreshold: z.number().min(0).max(1).optional(),
     filters: z.object({
-      mediaType: z.enum(['document', 'image', 'audio', 'video']).optional(),
+      // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+      mediaType: z.enum(['document', 'image', 'audio']).optional(),
       dateFrom: z.string().datetime().optional(),
       dateTo: z.string().datetime().optional(),
     }).optional(),

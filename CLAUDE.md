@@ -47,10 +47,10 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 44 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 45 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
 
 **Core Architectural Components:**
-- **Infrastructure Core (7 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**.
+- **Infrastructure Core (8 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**.
 - **Alice Microservices (7 serviços)**:
     - **Frontend**: React 18, Vite 5, shadcn/ui, i18n PT-BR.
     - **Auth Service**: OAuth 2.0, SAML 2.0, OIDC Provider, 6-level RBAC, PostgreSQL sessions.
@@ -182,7 +182,6 @@ alice/
 │   └── {tenantId}/                 # Uploads gerais de usuários
 │       ├── image/                  # Imagens enviadas via /api/media/upload
 │       ├── audio/                  # Áudios enviados via /api/media/upload
-│       ├── video/                  # Vídeos enviados via /api/media/upload
 │       └── document/               # Documentos enviados via /api/media/upload
 ├── backups/                        # Backups enterprise (750)
 │   ├── postgresql/                 # pgBackRest (full + incremental + WAL)
@@ -303,9 +302,9 @@ git add .
 
 **✅ CORRETO** - Commit consolidado:
 ```bash
-git commit -a -m "fix: correção de bugs em video-processor e validação de embeddings
+git commit -a -m "fix: correção de bugs em audio-processor e validação de embeddings
 
-- Corrige NaN propagation em combineVideoEmbeddingsForSearch
+- Corrige NaN propagation em processamento de áudio
 - Adiciona validação de dimensão para normalizedText
 - Atualiza documentação em STATUS-REAL-ATUAL.md
 - Adiciona testes unitários para edge cases"
@@ -314,7 +313,7 @@ git commit -a -m "fix: correção de bugs em video-processor e validação de em
 **❌ INCORRETO** - Commits individuais:
 ```bash
 # NÃO fazer isso - commits separados para cada mudança pequena
-git commit -a -m "fix: corrige NaN em video-processor"
+git commit -a -m "fix: corrige NaN em audio-processor"
 git commit -a -m "fix: adiciona validação de dimensão"
 git commit -a -m "docs: atualiza STATUS-REAL-ATUAL.md"
 git commit -a -m "test: adiciona testes unitários"
@@ -331,8 +330,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.22 - 22 de Dezembro de 2025*
-*Total de Containers: 44 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Versão: 4.24 - 23 de Dezembro de 2025*
+*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -359,7 +358,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split (lora-job-manager.ts)*
 *Security Hardening: 100% no-new-privileges, 100% resource limits, 24/43 com read_only (aplicável apenas onde não há escrita), healthchecks 38/38*
 *ARQUITETURA ENTERPRISE (17/12/2025): Texto 4096 dim Qwen3-Embedding-8B Apache 2.0 (Qdrant) | Imagem vector(1024) OpenCLIP MIT (pgvector)*
-*Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio/vídeo) agora vão para Qdrant (4096 dim), não PostgreSQL*
+*Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim), não PostgreSQL*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus*
 *Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR)*
@@ -571,3 +570,10 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Frontend Healthcheck (23/12/2025): alice-frontend marcado como unhealthy. Healthcheck alterado para usar wget -q (quiet mode) e aumentado start_period de 30s para 45s e retries de 3 para 5.*
 *Bug Fix SearXNG SSL Certs (23/12/2025): SearXNG warning "can't create /etc/ssl/certs/ca-certificates.crt.new: Read-only file system". Adicionado tmpfs /etc/ssl/certs para permitir update-ca-certificates.*
 *Bug Fix Redis WebSocket Race Condition (23/12/2025): embedding-websocket inicializava ANTES do Redis estar pronto, causando "Redis não disponível - notificações WebSocket desabilitadas". Corrigido adicionando initializeRedisCache() antes de initEmbeddingWebSocket() no rag-service.*
+*Tor Proxy Enterprise (23/12/2025): Adicionado container alice-tor (dperson/torproxy) para habilitar engines .onion (ahmia, torch) no SearXNG. Elimina warnings "loading engine ahmia/torch failed". Arquivo settings.yml criado em infra/searxng/ com configuração de proxy SOCKS5. Total de containers: 45.*
+*Bug Fix DATABASE_URL Build (23/12/2025): drizzle-kit push falhava porque tentava extrair DATABASE_URL de .env.prod, mas generate-env-prod.sh só gera POSTGRES_USER/PASSWORD/DB individualmente. Corrigido para construir DATABASE_URL dinamicamente: postgresql://${PG_USER}:${PG_PASS}@alice-postgres:5432/${PG_DB}?sslmode=disable. Agora drizzle-kit push funciona no primeiro deploy.*
+*Bug Fix Tor Healthcheck /dev/tcp (23/12/2025): Healthcheck do alice-tor usava nc (netcat) que pode não estar disponível em imagens Alpine/busybox. Corrigido para usar timeout + /dev/tcp que é built-in do bash. Também aumentado start_period de 60s para 90s para dar tempo ao Tor fazer bootstrap.*
+*Bug Fix nginx tmpfs mode (23/12/2025): alice-frontend tmpfs /etc/nginx/conf.d tinha mode=1755 (não permite escrita). O script 10-listen-on-ipv6-by-default.sh do nginx tenta modificar arquivos nesse diretório. Corrigido para mode=1777.*
+*Tor Proxy Documentação Corrigida (23/12/2025): Comentário incorretamente dizia "Imagem oficial Tor Project" - dperson/torproxy é imagem comunitária, não oficial. Tor Project NÃO fornece imagens Docker oficiais. Documentação atualizada com referência correta ao repositório GitHub.*
+*Bug Fix SearXNG limiter.toml (23/12/2025): Warning "missing config file: /etc/searxng/limiter.toml" e erro "X-Forwarded-For nor X-Real-IP header is set!" indicavam bot detection não configurado. Criado limiter.toml com IPs da rede Docker (172.16.0.0/12) como confiáveis. Workflow atualizado para copiar limiter.toml junto com settings.yml.*
+*Remoção Vídeo Processing (23/12/2025): Processamento de vídeo REMOVIDO completamente - muito pesado para GPU. Plataforma suporta apenas texto, áudio e imagem. Arquivos deletados: video-processor.ts (~870 linhas), VideoPlayer.tsx, testes de vídeo. Atualizados: rag-service, chat-service, integrations-service, frontend (Training, Chat), traduções, documentação. Total: 4 arquivos deletados, ~20 arquivos atualizados.*

@@ -228,7 +228,7 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner (44 containers)
+   ├── Deploy Hetzner (45 containers)
    ├── Validate Salad Cloud GPU (URLs pré-configuradas)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings

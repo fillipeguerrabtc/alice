@@ -2168,6 +2168,7 @@ async function processWhatsAppMediaForRAG(
     const mediaBase64 = mediaBuffer.toString('base64');
     
     // Determinar extensão do arquivo
+    // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
     const extensionMap: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
@@ -2178,12 +2179,9 @@ async function processWhatsAppMediaForRAG(
       'audio/mp4': 'm4a',
       'audio/wav': 'wav',
       'audio/webm': 'webm',
-      'video/mp4': 'mp4',
-      'video/webm': 'webm',
-      'video/quicktime': 'mov',
     };
     const extension = extensionMap[mediaContentType] || 'bin';
-    const mediaType = isImage ? 'image' : isAudio ? 'audio' : 'video';
+    const mediaType = isImage ? 'image' : 'audio';
     
     // Gerar headers de autenticação interna
     // Role válidos: super_admin, admin, manager, operator, viewer, guest

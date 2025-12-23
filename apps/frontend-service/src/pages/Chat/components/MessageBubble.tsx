@@ -18,7 +18,8 @@ import { Message } from './types';
 import { InlineImage } from './InlineImage';
 import { InlineMediaAttachment } from './InlineMediaAttachment';
 import { MessageActions } from './MessageActions';
-// AudioPlayer e VideoPlayer disponíveis via InlineMediaAttachment quando necessário
+// AudioPlayer disponível via InlineMediaAttachment quando necessário
+// REMOVIDO 23/12/2025: VideoPlayer desabilitado (muito pesado para GPU)
 
 const messageVariants = {
   hidden: { opacity: 0, y: 20, scale: 0.95 },

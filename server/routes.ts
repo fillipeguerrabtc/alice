@@ -11,10 +11,11 @@ const createConversationSchema = z.object({
   namespaceId: z.string().uuid().optional(),
 });
 
+// ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
 const createMessageSchema = z.object({
   conversationId: z.string().uuid(),
   conteudo: z.string(),
-  tipo: z.enum(["text", "image", "audio", "video", "document"]).optional(),
+  tipo: z.enum(["text", "image", "audio", "document"]).optional(),
   anexos: z.array(z.any()).optional(),
 });
 

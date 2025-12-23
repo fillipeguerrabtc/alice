@@ -63,7 +63,6 @@ import {
 } from './embedding-queue.js';
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
 import { getAudioProcessor } from './audio-processor.js';
-import { getVideoProcessor } from './video-processor.js';
 import { getDocumentProcessor } from './document-processor.js';
 import { createWebSearchClient, WebSearchResult } from './web-search.js';
 import { createLearningTask, dequeueNextLearningTask, updateLearningTaskStatus } from './learning-orchestrator.js';
@@ -99,10 +98,11 @@ function getAuthUser(req: Request): AuthUser {
 // MULTIMODAL - Tipos de mídia suportados (Fase 9)
 // ============================================================================
 
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+// Plataforma suporta apenas: texto, áudio e imagem
 const SUPPORTED_MEDIA_TYPES = {
   image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'],
-  video: ['video/mp4', 'video/webm', 'video/ogg', 'video/quicktime'],
   // Documentos suportados pelo document-processor.ts (Regra 10 - Documentação PT-BR)
   // PDF, Word (DOCX/DOC), Excel (XLSX/XLS), Texto puro (TXT/MD/CSV)
   document: [
@@ -120,16 +120,14 @@ const SUPPORTED_MEDIA_TYPES = {
 const ALL_SUPPORTED_MIMES = [
   ...SUPPORTED_MEDIA_TYPES.image,
   ...SUPPORTED_MEDIA_TYPES.audio,
-  ...SUPPORTED_MEDIA_TYPES.video,
   ...SUPPORTED_MEDIA_TYPES.document,
 ];
 
-type MediaType = 'image' | 'audio' | 'video' | 'document';
+type MediaType = 'image' | 'audio' | 'document';
 
 function detectMediaType(mimeType: string): MediaType | null {
   if (SUPPORTED_MEDIA_TYPES.image.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.image[number])) return 'image';
   if (SUPPORTED_MEDIA_TYPES.audio.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.audio[number])) return 'audio';
-  if (SUPPORTED_MEDIA_TYPES.video.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.video[number])) return 'video';
   if (SUPPORTED_MEDIA_TYPES.document.includes(mimeType as typeof SUPPORTED_MEDIA_TYPES.document[number])) return 'document';
   return null;
 }
@@ -2151,86 +2149,8 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
             embeddingDim: result.embedding.length,
             qdrantConfigured: isQdrantConfigured(),
           }, 'Áudio processado com sucesso');
-        } else if (mediaType === 'video') {
-          // Processar vídeo: extrai áudio para transcrição + frames para CLIP
-          const videoProcessor = getVideoProcessor();
-          
-          // Usar versão async para aguardar inicialização completa (evita race condition)
-          if (!(await videoProcessor.isReadyAsync())) {
-            throw new Error(
-              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com os serviços GPU.'
-            );
-          }
-          
-          const result = await videoProcessor.processVideo(
-            req.file!.buffer,
-            req.file!.mimetype,
-            { language: 'auto', extractFrames: true, generateTranscription: true }
-          );
-
-          // Validar dimensões antes de salvar (Enterprise-Grade - Regra 6)
-          if (result.textEmbedding.length > 0) {
-            validateEmbeddingDimension(result.textEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-          }
-          if (result.combinedEmbedding.length > 0) {
-            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
-          }
-          
-          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
-          // Schema mediaUploads.textEmbedding é halfvec(3584) - DEPRECATED para texto
-          // Apenas clipEmbedding (1024 dim OpenCLIP) permanece em pgvector
-          if (result.textEmbedding.length > 0 && isQdrantConfigured()) {
-            await upsertPoints(TEXT_COLLECTION_NAME, [{
-              id: `media-video-${mediaUploadRecord.id}`,
-              vector: result.textEmbedding,
-              payload: {
-                type: 'media_video',
-                mediaUploadId: mediaUploadRecord.id,
-                mediaType: 'video',
-                tenantId: req.tenantId,
-                transcription: result.transcription.slice(0, 10000), // Limitar para payload
-                transcriptionLanguage: result.transcriptionLanguage,
-                embeddingModel: result.embeddingModel,
-                framesExtracted: result.framesExtracted,
-                criadoEm: new Date().toISOString(),
-              },
-            }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de texto de vídeo inserido no Qdrant');
-          }
-          
-          // Atualizar registro com embedding de imagem (CLIP) e transcrição
-          // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant, não PostgreSQL halfvec(3584)
-          // clipEmbedding (1024 dim OpenCLIP) permanece em pgvector para busca de imagens
-          await db.update(schema.mediaUploads)
-            .set({
-              processingStatus: 'completed',
-              transcription: result.transcription,
-              transcriptionLanguage: result.transcriptionLanguage,
-              transcriptionConfidence: result.transcriptionConfidence,
-              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant
-              clipEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
-              extractedMetadata: {
-                ...mediaUploadRecord.extractedMetadata as object,
-                ...result.metadata,
-                embeddingModel: result.embeddingModel,
-                framesExtracted: result.framesExtracted,
-                frameEmbeddingsCount: result.frameEmbeddings.length,
-                processingTimeMs: result.processingTimeMs,
-                // CORREÇÃO 17/12/2025: qdrantPointId só é definido se Qdrant está configurado
-                // (condição deve coincidir com a do upsert para evitar referência a ponto inexistente)
-                qdrantPointId: result.textEmbedding.length > 0 && isQdrantConfigured() ? `media-video-${mediaUploadRecord.id}` : null,
-              },
-            })
-            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
-
-          logger.info({
-            uploadId: mediaUploadRecord.id,
-            transcriptionLength: result.transcription.length,
-            framesExtracted: result.framesExtracted,
-            textEmbeddingDim: result.textEmbedding.length,
-            combinedEmbeddingDim: result.combinedEmbedding.length,
-            qdrantConfigured: isQdrantConfigured(),
-          }, 'Vídeo processado com sucesso');
+        // REMOVIDO 23/12/2025: Processamento de vídeo desabilitado (muito pesado para GPU)
+        // Plataforma suporta apenas: texto, áudio e imagem
         } else if (mediaType === 'document') {
           // Processar documento: extrai texto e gera embeddings
           const documentProcessor = getDocumentProcessor();
@@ -2333,10 +2253,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
         message: 'Upload recebido. Transcrição GPU iniciada.',
         features: ['Canary-1B ASR GPU', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant)', 'metadata extraction'],
       },
-      video: {
-        message: 'Upload recebido. Processamento pendente.',
-        features: ['Frame extraction (pendente)', 'Canary-1B ASR GPU (pendente)'],
-      },
+      // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
       document: {
         message: 'Upload recebido. Processamento pendente.',
         features: ['Text extraction (pendente)', 'Qwen3-Embedding-8B (4096 dim GPU → Qdrant) (pendente)'],
@@ -2401,7 +2318,8 @@ const documentsQuerySchema = z.object({
 const mediaUploadsQuerySchema = z.object({
   limit: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 1 && n <= 100, 'limit deve ser entre 1 e 100').optional(),
   offset: z.string().regex(/^\d+$/).transform(Number).refine(n => n >= 0, 'offset deve ser >= 0').optional(),
-  mediaType: z.enum(['image', 'audio', 'video', 'document']).optional(),
+  // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+  mediaType: z.enum(['image', 'audio', 'document']).optional(),
   conversationId: z.string().uuid().optional(),
 });
 
@@ -2610,79 +2528,8 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
             qdrantConfigured: isQdrantConfigured(),
           }, 'Áudio processado com sucesso (JSON upload)');
 
-        } else if (mediaType === 'video') {
-          // CORREÇÃO 17/12/2025: Processar vídeo como no endpoint FormData
-          const videoProcessor = getVideoProcessor();
-          
-          if (!(await videoProcessor.isReadyAsync())) {
-            throw new Error(
-              'Video Processor não está pronto. Verifique FFmpeg/FFprobe e conectividade com os serviços GPU.'
-            );
-          }
-          
-          const result = await videoProcessor.processVideo(
-            fileBuffer,
-            body.mimeType,
-            { language: 'auto', extractFrames: true, generateTranscription: true }
-          );
-
-          // Validar dimensões antes de salvar (Enterprise-Grade - Regra 6)
-          if (result.textEmbedding.length > 0) {
-            validateEmbeddingDimension(result.textEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-          }
-          if (result.combinedEmbedding.length > 0) {
-            validateEmbeddingDimension(result.combinedEmbedding, EMBEDDING_DIMENSIONS.CLIP, 'CLIP');
-          }
-          
-          // CORREÇÃO 17/12/2025: Embeddings de texto (4096 dim) vão para QDRANT, não PostgreSQL
-          if (result.textEmbedding.length > 0 && isQdrantConfigured()) {
-            await upsertPoints(TEXT_COLLECTION_NAME, [{
-              id: `media-video-${mediaUploadRecord.id}`,
-              vector: result.textEmbedding,
-              payload: {
-                type: 'media_video',
-                mediaUploadId: mediaUploadRecord.id,
-                mediaType: 'video',
-                tenantId: tenantId,
-                transcription: result.transcription.slice(0, 10000),
-                transcriptionLanguage: result.transcriptionLanguage,
-                embeddingModel: result.embeddingModel,
-                framesExtracted: result.framesExtracted,
-                criadoEm: new Date().toISOString(),
-              },
-            }]);
-            logger.debug({ uploadId: mediaUploadRecord.id }, 'Embedding de texto de vídeo inserido no Qdrant (JSON upload)');
-          }
-          
-          await db.update(schema.mediaUploads)
-            .set({
-              processingStatus: 'completed',
-              transcription: result.transcription,
-              transcriptionLanguage: result.transcriptionLanguage,
-              transcriptionConfidence: result.transcriptionConfidence,
-              // textEmbedding OMITIDO - texto 4096 dim vai para Qdrant
-              clipEmbedding: result.combinedEmbedding.length > 0 ? result.combinedEmbedding : null,
-              extractedMetadata: {
-                ...mediaUploadRecord.extractedMetadata as object,
-                ...result.metadata,
-                embeddingModel: result.embeddingModel,
-                framesExtracted: result.framesExtracted,
-                frameEmbeddingsCount: result.frameEmbeddings.length,
-                processingTimeMs: result.processingTimeMs,
-                qdrantPointId: result.textEmbedding.length > 0 && isQdrantConfigured() ? `media-video-${mediaUploadRecord.id}` : null,
-              },
-            })
-            .where(eq(schema.mediaUploads.id, mediaUploadRecord.id));
-
-          logger.info({
-            uploadId: mediaUploadRecord.id,
-            transcriptionLength: result.transcription.length,
-            framesExtracted: result.framesExtracted,
-            textEmbeddingDim: result.textEmbedding.length,
-            combinedEmbeddingDim: result.combinedEmbedding.length,
-            qdrantConfigured: isQdrantConfigured(),
-          }, 'Vídeo processado com sucesso (JSON upload)');
-
+        // REMOVIDO 23/12/2025: Processamento de vídeo desabilitado (muito pesado para GPU)
+        // Plataforma suporta apenas: texto, áudio e imagem
         } else if (mediaType === 'document') {
           // CORREÇÃO 17/12/2025: Processar documento como no endpoint FormData
           const documentProcessor = getDocumentProcessor();
@@ -3044,9 +2891,7 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
       '.mp3': 'audio/mpeg',
       '.wav': 'audio/wav',
       '.ogg': 'audio/ogg',
-      '.webm': 'video/webm',
-      '.mp4': 'video/mp4',
-      '.mov': 'video/quicktime',
+      // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.webm, .mp4, .mov)
       '.pdf': 'application/pdf',
       '.txt': 'text/plain',
       '.md': 'text/markdown',
@@ -3246,6 +3091,8 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 // Busca vetorial otimizada com pgvector nativo (enterprise-grade)
 
 // Health check específico para multimodal
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+// Plataforma suporta apenas: texto, áudio e imagem
 app.get('/api/media/health', async (_req: Request, res: Response) => {
   try {
     const imageProcessor = getImageProcessor();
@@ -3253,8 +3100,6 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
     
     const audioProcessor = getAudioProcessor();
     const audioConfig = audioProcessor.getConfig();
-
-    const videoProcessor = getVideoProcessor();
 
     const documentProcessor = getDocumentProcessor();
     const documentConfig = documentProcessor.getConfig();
@@ -3267,15 +3112,13 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
     const readinessResults = await Promise.allSettled([
       imageProcessor.isReadyAsync(),
       audioProcessor.isReadyAsync(),
-      videoProcessor.isReadyAsync(),
       documentProcessor.isReadyAsync(),
     ]);
 
-    const [imageResult, audioResult, videoResult, documentResult] = readinessResults;
+    const [imageResult, audioResult, documentResult] = readinessResults;
 
     const imageReady = imageResult.status === 'fulfilled' ? imageResult.value : false;
     const audioReady = audioResult.status === 'fulfilled' ? audioResult.value : false;
-    const videoReady = videoResult.status === 'fulfilled' ? videoResult.value : false;
     const documentReady = documentResult.status === 'fulfilled' ? documentResult.value : false;
 
     // Logar falhas de forma segura para observabilidade (sem derrubar o endpoint)
@@ -3287,20 +3130,10 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
       );
     }
 
-    // Garantir consistência: obter config APÓS inicialização assíncrona.
-    // `getConfig()` é usado APENAS como fallback para manter o endpoint responsivo em erro inesperado.
-    let videoConfig: ReturnType<typeof videoProcessor.getConfig>;
-    try {
-      videoConfig = await videoProcessor.getConfigAsync();
-    } catch (error) {
-      logger.warn({ error }, 'Falha ao obter config assíncrona do video-processor (fallback para getConfig() síncrono)');
-      videoConfig = videoProcessor.getConfig();
-    }
-
     // Semântica de saúde enterprise:
     // - refletir APENAS as probes/capabilities (isReadyAsync), sem duplicar lógica de WHISPER_REQUIRED localmente.
-    // - se Whisper estiver indisponível, audio/video ficarão not_ready e o status global será degraded (sinal explícito).
-    const allReady = imageReady && documentReady && audioReady && videoReady;
+    // - se Whisper estiver indisponível, audio ficará not_ready e o status global será degraded (sinal explícito).
+    const allReady = imageReady && documentReady && audioReady;
 
     res.json({
       status: allReady ? 'ok' : 'degraded',
@@ -3324,15 +3157,7 @@ app.get('/api/media/health', async (_req: Request, res: Response) => {
           transcriptionModel: audioConfig.transcriptionModel,
           embeddingModel: audioConfig.embeddingModel,
         },
-        video: {
-          configured: videoConfig.configured,
-          required: true,
-          ready: videoReady,
-          textEmbeddingDim: videoConfig.textEmbeddingDim,
-          frameEmbeddingDim: videoConfig.frameEmbeddingDim,
-          maxDurationSeconds: videoConfig.maxDurationSeconds,
-          framesPerMinute: videoConfig.framesPerMinute,
-        },
+        // REMOVIDO 23/12/2025: video desabilitado (muito pesado para GPU)
         document: {
           configured: documentConfig.configured,
           required: true,

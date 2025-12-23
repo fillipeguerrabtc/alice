@@ -40,10 +40,8 @@ import {
   Eye,
   Image,
   Mic,
-  Video,
   X,
   FileAudio,
-  FileVideo,
   ImageIcon,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -486,10 +484,11 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 // REGRA 16: Validação client-side, error handling, UX feedback
 // ============================================================================
 
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
 interface MediaUpload {
   id: string;
   file: File;
-  type: 'image' | 'audio' | 'video';
+  type: 'image' | 'audio';
   progress: number;
   status: 'pending' | 'uploading' | 'processing' | 'completed' | 'error';
   error?: string;
@@ -512,23 +511,21 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   const [description, setDescription] = useState('');
 
   // Tipos de arquivo aceitos para cada categoria
+  // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
   const acceptedTypes = {
     image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     audio: ['audio/mpeg', 'audio/wav', 'audio/webm', 'audio/ogg', 'audio/mp4'],
-    video: ['video/mp4', 'video/webm', 'video/quicktime'],
   };
 
   const allAccepted = [
     ...acceptedTypes.image,
     ...acceptedTypes.audio,
-    ...acceptedTypes.video,
   ].join(',');
 
   // Determinar tipo de mídia baseado no MIME type
-  const getMediaType = (mimeType: string): 'image' | 'audio' | 'video' | null => {
+  const getMediaType = (mimeType: string): 'image' | 'audio' | null => {
     if (acceptedTypes.image.includes(mimeType)) return 'image';
     if (acceptedTypes.audio.includes(mimeType)) return 'audio';
-    if (acceptedTypes.video.includes(mimeType)) return 'video';
     return null;
   };
 
@@ -689,11 +686,11 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
   };
 
   // Ícone baseado no tipo de mídia
-  const getMediaIcon = (type: 'image' | 'audio' | 'video') => {
+  // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+  const getMediaIcon = (type: 'image' | 'audio') => {
     switch (type) {
       case 'image': return ImageIcon;
       case 'audio': return FileAudio;
-      case 'video': return FileVideo;
     }
   };
 
@@ -757,9 +754,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                 <div className="p-3 rounded-full bg-green-500/10">
                   <Mic className="h-6 w-6 text-green-500" />
                 </div>
-                <div className="p-3 rounded-full bg-purple-500/10">
-                  <Video className="h-6 w-6 text-purple-500" />
-                </div>
+                {/* REMOVIDO 23/12/2025: Vídeo desabilitado (muito pesado para GPU) */}
               </div>
               <div>
                 <p className="font-medium">
@@ -810,14 +805,12 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
                       <div className={cn(
                         "p-2 rounded-lg",
                         upload.type === 'image' && "bg-blue-500/10",
-                        upload.type === 'audio' && "bg-green-500/10",
-                        upload.type === 'video' && "bg-purple-500/10"
+                        upload.type === 'audio' && "bg-green-500/10"
                       )}>
                         <MediaIcon className={cn(
                           "h-4 w-4",
                           upload.type === 'image' && "text-blue-500",
-                          upload.type === 'audio' && "text-green-500",
-                          upload.type === 'video' && "text-purple-500"
+                          upload.type === 'audio' && "text-green-500"
                         )} />
                       </div>
                       
@@ -921,18 +914,7 @@ function MultimodalUploadTab({ t }: { t: (key: string, options?: Record<string, 
               </p>
             </div>
             
-            <div className="p-4 rounded-lg bg-purple-500/5 border border-purple-500/20">
-              <div className="flex items-center gap-2 mb-2">
-                <Video className="h-5 w-5 text-purple-500" />
-                <p className="font-medium text-purple-600">{t('training.multimodal.info.video.title')}</p>
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {t('training.multimodal.info.video.desc')}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                MP4, WebM, MOV (máx 100MB)
-              </p>
-            </div>
+            {/* REMOVIDO 23/12/2025: Seção de vídeo desabilitada (muito pesado para GPU) */}
           </div>
 
           <Alert>

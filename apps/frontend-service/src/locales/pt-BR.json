@@ -349,7 +349,6 @@
       "text": "Texto",
       "image": "Imagem",
       "audio": "Áudio",
-      "video": "Vídeo",
       "file": "Arquivo"
     },
     "actions": {
@@ -1012,11 +1011,7 @@
         },
         "audio": {
           "title": "Áudios",
-          "desc": "Whisper large-v3 transcreve o áudio, Qwen3-Embedding-8B gera embeddings do texto"
-        },
-        "video": {
-          "title": "Vídeos",
-          "desc": "Combina extração de frames (OpenCLIP) com transcrição de áudio (Whisper + Qwen3)"
+          "desc": "Canary-1B transcreve o áudio, Qwen3-Embedding-8B gera embeddings do texto"
         },
         "gpu": {
           "title": "Processamento GPU Salad Cloud",

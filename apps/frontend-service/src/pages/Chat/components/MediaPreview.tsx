@@ -4,7 +4,7 @@
  * @module Chat/components/MediaPreview
  */
 
-import { Music, Video, X } from 'lucide-react';
+import { Music, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { MediaAttachment, formatFileSize } from './types';
 
@@ -27,11 +27,7 @@ export function MediaPreview({ media, onRemove }: MediaPreviewProps) {
             <Music className="h-5 w-5 text-primary" />
           </div>
         )}
-        {media.type === 'video' && (
-          <div className="h-10 w-10 rounded bg-primary/10 flex items-center justify-center shrink-0">
-            <Video className="h-5 w-5 text-primary" />
-          </div>
-        )}
+        {/* REMOVIDO 23/12/2025: Suporte a vídeo desabilitado (muito pesado para GPU) */}
         
         <div className="flex-1 min-w-0">
           <p className="text-xs font-medium truncate">{media.fileName}</p>

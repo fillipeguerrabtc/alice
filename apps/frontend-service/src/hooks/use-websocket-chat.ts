@@ -52,7 +52,8 @@ const SSE_TIMEOUT = 60000; // 60 segundos
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
 // Tipos de mídia suportados
-export type MediaType = 'image' | 'audio' | 'video';
+// ATUALIZADO 23/12/2025: 'video' REMOVIDO (muito pesado para GPU)
+export type MediaType = 'image' | 'audio';
 
 // Anexo de mídia
 export interface MediaAttachment {
@@ -90,31 +91,34 @@ export interface ChatMessage {
   content: string;
   createdAt: string;
   tokensUsados?: number;
-  tipo?: 'text' | 'image' | 'audio' | 'video' | 'mixed';
+  // ATUALIZADO 23/12/2025: Removido 'video' (muito pesado para GPU)
+  tipo?: 'text' | 'image' | 'audio' | 'mixed';
   anexos?: unknown[];
   generatedImage?: GeneratedImageData;
   mediaAttachments?: MediaAttachment[];
 }
 
 // Limites de arquivo (em bytes)
-export const FILE_LIMITS: Record<MediaType, number> = {
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+export const FILE_LIMITS = {
   image: 10 * 1024 * 1024,  // 10MB
   audio: 25 * 1024 * 1024,  // 25MB
-  video: 100 * 1024 * 1024, // 100MB
-};
+  // video removido
+} as const;
 
 // Tipos MIME suportados
-export const ACCEPTED_TYPES: Record<MediaType, string[]> = {
+// ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+export const ACCEPTED_TYPES = {
   image: ['image/jpeg', 'image/png', 'image/gif', 'image/webp'],
   audio: ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/ogg', 'audio/webm'],
-  video: ['video/mp4', 'video/webm', 'video/quicktime'],
-};
+  // video removido
+} as const;
 
 // Helper para determinar tipo de mídia pelo MIME type
 export function getMediaType(mimeType: string): MediaType | null {
   if (ACCEPTED_TYPES.image.includes(mimeType)) return 'image';
   if (ACCEPTED_TYPES.audio.includes(mimeType)) return 'audio';
-  if (ACCEPTED_TYPES.video.includes(mimeType)) return 'video';
+  // REMOVIDO 23/12/2025: video não é mais aceito
   return null;
 }
 
@@ -319,15 +323,12 @@ export function useWebSocketChat(options: UseWebSocketChatOptions = {}): UseWebS
         };
         img.src = attachment.url;
       });
-    } else if (mediaType === 'audio' || mediaType === 'video') {
-      const media = document.createElement(mediaType === 'audio' ? 'audio' : 'video');
+    } else if (mediaType === 'audio') {
+      // ATUALIZADO 23/12/2025: Removido suporte a vídeo (muito pesado para GPU)
+      const media = document.createElement('audio');
       await new Promise<void>((resolve) => {
         media.onloadedmetadata = () => {
           attachment.duration = media.duration;
-          if (mediaType === 'video') {
-            attachment.width = (media as HTMLVideoElement).videoWidth;
-            attachment.height = (media as HTMLVideoElement).videoHeight;
-          }
           resolve();
         };
         media.src = attachment.url;
