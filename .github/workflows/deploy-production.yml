@@ -2557,10 +2557,14 @@ jobs:
                 # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
                 # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
                 # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
+                # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
+                # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
+                # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
+                # -T desabilita TTY, -i permite stdin mesmo sem TTY
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   --env-file "$MIGRATION_ENV_FILE" \
-                  exec -T postgres \
+                  exec -T -i postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
                   < "$migration_file" 2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 
@@ -2611,11 +2615,15 @@ jobs:
               # BUG FIX 23/12/2025: Usar --env-file ao invés de -e para evitar shell expansion
               # BUG FIX 23/12/2025: Aspas duplas escapadas necessárias para expansão de variáveis
               # Aspas simples impedem expansão - $PG_USER e $PG_DB seriam literais ao invés de valores
+              # BUG FIX 23/12/2025: stdin redirection deve ser passado explicitamente para psql dentro do container
+              # Problema: < "$migration_file" aplicado ao docker compose exec pode não chegar ao psql corretamente
+              # Solução: usar -i (interactive) junto com -T para garantir que stdin seja passado corretamente
+              # -T desabilita TTY, -i permite stdin mesmo sem TTY
               psql_output=$(
                 docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   --env-file "$MIGRATION_ENV_FILE" \
-                  exec -T postgres \
+                  exec -T -i postgres \
                   sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
                   < "$migration_file" 2>&1
               ) || psql_exit_code=$?
