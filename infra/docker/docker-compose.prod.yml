@@ -231,10 +231,13 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 23/12/2025: Usar timeout + /dev/tcp ao invés de nc
-      # A imagem dperson/torproxy é baseada em Alpine/busybox onde nc pode não estar disponível
-      # /dev/tcp é built-in do bash e funciona em qualquer shell POSIX
-      test: ["CMD-SHELL", "timeout 5 bash -c '</dev/tcp/localhost/9050' 2>/dev/null || exit 1"]
+      # CORREÇÃO 23/12/2025: Usar /proc/net/tcp para verificar porta SOCKS5
+      # A imagem dperson/torproxy é baseada em Alpine onde:
+      # - /dev/tcp NÃO funciona (bash Alpine não tem --enable-net-redirections)
+      # - nc/wget/curl podem não estar disponíveis
+      # Solução: /proc/net/tcp funciona em QUALQUER imagem Linux
+      # Porta 9050 decimal = 235A hexadecimal
+      test: ["CMD-SHELL", "grep -qi ':235A' /proc/net/tcp || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
