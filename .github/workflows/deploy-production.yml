@@ -2540,10 +2540,12 @@ jobs:
             # FASES 2-4: Alice Stack
             if [ "$DEPLOY_ALICE" = "true" ]; then
               # FASE 2: Infraestrutura base Alice
+              # NOTA: alice-qdrant tem start_period=120s, então timeout deve ser > 120s
+              # Usando 240s = start_period(120s) + buffer para healthchecks
               echo ""
               echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, searxng)..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                up -d --no-build --remove-orphans --wait --wait-timeout 120 \
+                up -d --no-build --remove-orphans --wait --wait-timeout 240 \
                 postgres alice-redis alice-qdrant alice-searxng || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 2 falhou"; }
               
               if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
@@ -2561,10 +2563,12 @@ jobs:
                 echo "✅ Gateway healthy"
                 
                 # FASE 4: Serviços Alice
+                # NOTA: alice-rag tem start_period=90s, mais 7 serviços em paralelo
+                # Usando 300s = start_period(90s) + buffer generoso para 7 containers
                 echo ""
                 echo "🤖 FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend)..."
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
-                  up -d --no-build --wait --wait-timeout 180 \
+                  up -d --no-build --wait --wait-timeout 300 \
                   alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 4 falhou"; }
               fi
               
