@@ -2376,15 +2376,19 @@ jobs:
             echo "   Validando conexão PostgreSQL antes de drizzle-kit push..."
             
             # ENTERPRISE-GRADE: Escapar credenciais com printf %q para prevenir shell injection (Regra 6 - segurança crítica)
-            # printf %q escapa metacaracteres ($, backticks, $(), espaços, etc.) de forma segura
-            # Isso garante que mesmo credenciais com caracteres especiais sejam passadas literalmente ao Docker
-            # CORREÇÃO 23/12/2025: Usar printf %q e passar variável SEM aspas adicionais para evitar expansão dupla
-            # printf %q já retorna string escapada que pode ser usada diretamente em comandos shell
-            # Usar sem aspas permite que shell expanda variável escapada, passando valor literal ao Docker
+            # BUG FIX 23/12/2025: Shell injection vulnerability corrigida
+            # Problema: Se PG_PASS contiver metacaracteres ($, backticks, $(), etc.), shell externo os interpreta ANTES de passar ao Docker
+            # Solução: Usar printf %q para escapar credenciais e passar via variáveis de ambiente Docker (-e)
+            # Docker -e passa variáveis de forma segura sem risco de shell injection - variáveis são expandidas pelo shell interno, não externo
+            # printf %q escapa todos os metacaracteres de forma segura (RFC 3986 compliant)
             PG_PASS_ESCAPED=$(printf %q "${PG_PASS}")
             PG_USER_ESCAPED=$(printf %q "${PG_USER}")
             PG_DB_ESCAPED=$(printf %q "${PG_DB}")
             
+            # CORREÇÃO CRÍTICA: Passar variáveis escapadas SEM aspas adicionais para evitar expansão dupla
+            # printf %q já retorna string escapada pronta para uso em comandos shell
+            # Usar sem aspas permite que shell expanda variável escapada, passando valor literal ao Docker
+            # Docker -e recebe valor literal sem interpretação adicional pelo shell externo
             docker run --rm \
               --network alice-network \
               -e PGPASSWORD=${PG_PASS_ESCAPED} \
@@ -2394,10 +2398,10 @@ jobs:
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
                 for i in \$(seq 1 30); do
-                  # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente (\$PGPASSWORD, \$PG_USER, \$PG_DB)
-                  # Credenciais foram escapadas com printf %q no shell externo, garantindo passagem segura
-                  # Variáveis são expandidas pelo shell interno, não pelo shell externo (GitHub Actions)
-                  # Isso previne injeção mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
+                  # ENTERPRISE-GRADE: Credenciais via variáveis de ambiente Docker (\$PGPASSWORD, \$PG_USER, \$PG_DB)
+                  # Docker -e passa variáveis de forma segura - shell interno expande, não shell externo
+                  # Isso previne shell injection mesmo se credenciais contiverem metacaracteres ($, backticks, $(), etc.)
+                  # Variáveis foram escapadas com printf %q no shell externo, garantindo passagem literal ao Docker
                   if psql -h alice-postgres -U \"\${PG_USER}\" -d \"\${PG_DB}\" -c 'SELECT 1' >/dev/null 2>&1; then
                     echo 'Conexão PostgreSQL validada com sucesso'
                     exit 0

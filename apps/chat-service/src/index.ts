@@ -2944,10 +2944,10 @@ wss.on('connection', (ws, req) => {
         const mediaSafeTenantId = mediaConversationTenantId;
 
         // Determinar tipo de mídia
-        // CORREÇÃO 23/12/2025: Validação explícita de tipos suportados ao invés de assumir 'image' por padrão
-        // Antes: Qualquer tipo não-audio/video era classificado como 'image', causando falhas no image processor
-        // Agora: Apenas tipos explicitamente suportados são aceitos, todos os outros são rejeitados
-        const mimeType = mediaMessage.media.mimeType.toLowerCase();
+        // BUG FIX 23/12/2025: Validação defensiva explícita de tipos suportados ao invés de assumir 'image' por padrão
+        // Problema: Validação anterior classificava qualquer tipo não-audio/video como 'image', causando falhas no image processor
+        // Solução: Lista explícita de tipos suportados com mensagem de erro clara e informativa
+        const mimeType = mediaMessage.media.mimeType.toLowerCase().trim();
         
         // Tipos de mídia suportados (consistente com RAG service e frontend)
         const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
@@ -2961,16 +2961,20 @@ wss.on('connection', (ws, req) => {
           mediaType = 'audio';
         }
         
-        // Rejeitar tipos não suportados (vídeo, documentos, texto, etc.)
+        // Validação defensiva: apenas tipos explicitamente suportados são aceitos
         if (!mediaType) {
           logger.warn({ 
             mimeType, 
             filename: mediaMessage.media.filename,
             conversationId: mediaMessage.conversationId,
+            supportedTypes: {
+              image: SUPPORTED_IMAGE_TYPES,
+              audio: SUPPORTED_AUDIO_TYPES,
+            },
           }, 'Tipo de mídia não suportado via WebSocket - rejeitado');
           ws.send(JSON.stringify({ 
             type: 'media_error',
-            error: `Tipo de arquivo não suportado: ${mimeType}. Envie apenas imagens (JPEG, PNG, WebP, GIF) ou áudio (MP3, WAV, OGG, WebM, MP4).`,
+            error: `Tipo de arquivo não suportado: ${mimeType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).`,
           }));
           return;
         }

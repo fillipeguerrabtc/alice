@@ -2132,17 +2132,30 @@ async function processWhatsAppMediaForRAG(
 ): Promise<{ success: boolean; uploadId?: string; error?: string }> {
   // Determinar tipo de mídia
   // ATUALIZADO 23/12/2025: Apenas imagem e áudio são suportados (vídeo removido - muito pesado para GPU)
-  const isImage = mediaContentType.startsWith('image/');
-  const isAudio = mediaContentType.startsWith('audio/');
+  // BUG FIX 23/12/2025: Validação defensiva explícita de tipos suportados ao invés de rejeitar tudo
+  // Problema: Validação anterior rejeitava TODOS os tipos não-image/audio, incluindo edge cases futuros
+  // Solução: Lista explícita de tipos suportados com mensagem de erro clara
+  const SUPPORTED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const;
+  const SUPPORTED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/webm', 'audio/mp4'] as const;
   
-  // CORREÇÃO 23/12/2025: Rejeitar explicitamente vídeos e outros tipos não suportados
-  // Antes: isVideo era aceito mas classificado incorretamente como 'audio'
+  const normalizedContentType = mediaContentType.toLowerCase().trim();
+  const isImage = SUPPORTED_IMAGE_TYPES.includes(normalizedContentType as typeof SUPPORTED_IMAGE_TYPES[number]);
+  const isAudio = SUPPORTED_AUDIO_TYPES.includes(normalizedContentType as typeof SUPPORTED_AUDIO_TYPES[number]);
+  
+  // Validação defensiva: apenas tipos explicitamente suportados são aceitos
   if (!isImage && !isAudio) {
     logger.warn({
-      mediaContentType,
+      mediaContentType: normalizedContentType,
       conversationId,
+      supportedTypes: {
+        image: SUPPORTED_IMAGE_TYPES,
+        audio: SUPPORTED_AUDIO_TYPES,
+      },
     }, 'Tipo de mídia WhatsApp não suportado para RAG - apenas imagem e áudio são aceitos');
-    return { success: false, error: 'Tipo de mídia não suportado. Apenas imagem e áudio são aceitos.' };
+    return { 
+      success: false, 
+      error: `Tipo de mídia não suportado: ${normalizedContentType}. Tipos suportados: imagens (${SUPPORTED_IMAGE_TYPES.join(', ')}) e áudio (${SUPPORTED_AUDIO_TYPES.join(', ')}).` 
+    };
   }
   
   // RESILIÊNCIA: AbortController com timeout de 60s para download + upload
