@@ -2368,27 +2368,23 @@ jobs:
             # Problema: drizzle-kit push pode hang indefinidamente se PostgreSQL não está totalmente pronto
             # mesmo com health check passando (connection pooling delays, initialization lag)
             # Solução: Teste de conexão explícito + timeout wrapper (300s = 5 min)
-            # CORREÇÃO 23/12/2025: Prevenção de shell injection - usar printf %q para escapar credenciais
-            # Problema: -e PGPASSWORD="${PG_PASS}" permite shell injection se PG_PASS contiver metacaracteres
-            # Se PG_PASS contiver $variable, backticks, ou $(command), shell externo os interpreta antes de passar ao Docker
-            # Solução: Usar printf %q para escapar credenciais antes de passar para docker run -e
-            # printf %q escapa todos os metacaracteres de forma segura, prevenindo shell injection
             echo "   Validando conexão PostgreSQL antes de drizzle-kit push..."
             
-            # ENTERPRISE-GRADE: Escapar credenciais com printf %q para prevenir shell injection (Regra 6 - segurança crítica)
-            # BUG FIX 23/12/2025: Shell injection vulnerability corrigida
-            # CORREÇÃO CRÍTICA 23/12/2025: Shell injection prevention enterprise-grade
-            # Problema: Se PG_PASS contiver metacaracteres ($, backticks, $(), etc.), shell externo os interpreta ANTES de passar ao Docker
-            # Solução: Docker -e passa variáveis de forma segura sem risco de shell injection - NÃO precisa de printf %q
-            # BUG FIX 23/12/2025: printf %q adiciona aspas literais (ex: 'my$pass') que se tornam parte do valor da variável de ambiente
-            # Isso causa falhas de autenticação no PostgreSQL porque as credenciais incluem aspas literais
-            # Docker -e já trata variáveis de forma segura - basta usar aspas duplas ao redor da expansão
-            # Docker processa -e de forma segura, não há risco de shell injection quando usamos aspas duplas
+            # CRITICAL SECURITY FIX 23/12/2025: Shell injection prevention via exported environment variables
+            # Problema: -e "PGPASSWORD=${PG_PASS}" permite shell injection quando GitHub Actions expande ${PG_PASS}
+            # Se PG_PASS contiver $variable, backticks, ou $(command), shell do runner os interpreta ANTES de passar ao Docker
+            # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
+            # Solução: Exportar variáveis no shell externo e usar docker run que herda essas variáveis
+            # docker run herda variáveis de ambiente do shell externo de forma segura, sem expansão pelo shell
+            # Isso evita shell injection sem adicionar aspas literais ao valor da variável de ambiente
+            export PGPASSWORD_VALIDATION="${PG_PASS}"
+            export PG_USER_VALIDATION="${PG_USER}"
+            export PG_DB_VALIDATION="${PG_DB}"
             docker run --rm \
               --network alice-network \
-              -e "PGPASSWORD=${PG_PASS}" \
-              -e "PG_USER=${PG_USER}" \
-              -e "PG_DB=${PG_DB}" \
+              -e PGPASSWORD="${PGPASSWORD_VALIDATION}" \
+              -e PG_USER="${PG_USER_VALIDATION}" \
+              -e PG_DB="${PG_DB_VALIDATION}" \
               postgres:16-alpine \
               sh -c "
                 apk add --no-cache postgresql-client >/dev/null 2>&1 && \
