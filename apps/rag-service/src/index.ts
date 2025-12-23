@@ -2375,13 +2375,6 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
         mediaType,
       });
     }
-    if (!mediaType) {
-      return res.status(400).json({ 
-        error: 'Tipo de mídia não suportado',
-        mimeType: body.mimeType,
-        supportedTypes: ALL_SUPPORTED_MIMES,
-      });
-    }
 
     // Gerar hash para deduplicação
     const fileHash = crypto.createHash('sha256').update(new Uint8Array(fileBuffer)).digest('hex');
@@ -3402,19 +3395,6 @@ app.use(createErrorHandler({
   logger,
   includeStackInDev: true,
 }));
-
-// BUG FIX 23/12/2025: Registrar database pool shutdown callback ANTES do async IIFE
-// Se a inicialização falhar, o callback ainda será registrado e executado durante shutdown
-// Isso garante que conexões do pool sejam fechadas mesmo em cenários de falha
-registerShutdownCallback(
-  'rag-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
 
 // CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
 // Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
