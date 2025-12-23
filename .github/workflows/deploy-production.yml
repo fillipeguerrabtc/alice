@@ -2376,13 +2376,27 @@ jobs:
             # Aspas duplas previnem word splitting mas NÃO previnem expansão de variáveis ou command substitution
             # Solução: Criar arquivo temporário com variáveis e usar --env-file para passar de forma segura
             # --env-file lê variáveis diretamente do arquivo sem expansão pelo shell, prevenindo shell injection
-            # BUG FIX 23/12/2025: Usar printf %s para escrever valores literalmente sem expansão adicional
-            # echo "PGPASSWORD=${PG_PASS}" ainda expande ${PG_PASS} pelo shell, permitindo shell injection
-            # printf 'PGPASSWORD=%s\n' "${PG_PASS}" escreve o valor literal sem expansão de metacaracteres
+            # BUG FIX 23/12/2025: Usar cat com heredoc para escrever valores literalmente sem expansão
+            # printf 'PGPASSWORD=%s\n' "${PG_PASS}" ainda expande ${PG_PASS} pelo shell antes de passar para printf
+            # cat com heredoc 'EOF' escreve valores literalmente sem expansão de metacaracteres
             VALIDATION_ENV_FILE=$(mktemp)
-            printf 'PGPASSWORD=%s\n' "${PG_PASS}" > "$VALIDATION_ENV_FILE"
-            printf 'PG_USER=%s\n' "${PG_USER}" >> "$VALIDATION_ENV_FILE"
-            printf 'PG_DB=%s\n' "${PG_DB}" >> "$VALIDATION_ENV_FILE"
+            {
+              cat <<'EOF'
+PGPASSWORD=
+EOF
+              printf '%s' "${PG_PASS}"
+              echo
+              cat <<'EOF'
+PG_USER=
+EOF
+              printf '%s' "${PG_USER}"
+              echo
+              cat <<'EOF'
+PG_DB=
+EOF
+              printf '%s' "${PG_DB}"
+              echo
+            } > "$VALIDATION_ENV_FILE"
             docker run --rm \
               --network alice-network \
               --env-file "$VALIDATION_ENV_FILE" \
