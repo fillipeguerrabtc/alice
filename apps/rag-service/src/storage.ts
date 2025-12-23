@@ -254,11 +254,23 @@ class LocalStorageService implements StorageService {
         // ATUALIZADO 23/12/2025: Removidos diretórios de vídeo (lip-sync, talking-head, long-video)
         // BUG FIX 23/12/2025: Manter diretórios antigos na lista para compatibilidade com diretórios existentes
         // Se diretórios antigos ainda existem em disco, devem ser tratados como job output, não como tenantId
+        // BUG FIX 23/12/2025: Diretórios antigos de vídeo devem ser categorizados como 'video' para manter
+        // compatibilidade com estatísticas existentes e categorização correta de analytics/monitoring
         const isJobOutputDir = ['tts', 'media', 'lip-sync', 'talking-head', 'long-video'].includes(entry);
         
         if (isJobOutputDir) {
           // Estrutura 2: Outputs de jobs Salad (/uploads/{jobType}/output-{jobId}.{ext})
-          const jobType = entry === 'tts' ? 'audio' : 'media';
+          // BUG FIX 23/12/2025: Diretórios antigos de vídeo (lip-sync, talking-head, long-video) devem ser
+          // categorizados como 'video' para manter compatibilidade com estatísticas existentes
+          // Isso garante que analytics e monitoring que dependem de categorização correta continuem funcionando
+          let jobType: 'audio' | 'media' | 'video';
+          if (entry === 'tts') {
+            jobType = 'audio';
+          } else if (['lip-sync', 'talking-head', 'long-video'].includes(entry)) {
+            jobType = 'video'; // Diretórios antigos de vídeo mantêm tipo original para compatibilidade
+          } else {
+            jobType = 'media';
+          }
           
           if (!stats.byMediaType[jobType]) {
             stats.byMediaType[jobType] = { files: 0, size: '0 B', sizeBytes: 0 };

@@ -2570,17 +2570,23 @@ jobs:
                 # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
                 # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
                 # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
-                # BUG FIX 23/12/2025: stdin redirection com -T -i pode não funcionar corretamente em todos os contextos
-                # Solução enterprise-grade: usar cat para passar conteúdo via pipe, garantindo que psql receba o arquivo corretamente
-                # cat lê o arquivo e passa para stdin do docker compose exec, que repassa para psql via /dev/stdin
-                cat "$migration_file" | docker compose -f docker-compose.prod.yml \
+                # BUG FIX 23/12/2025: Pipe para docker compose exec -T pode não conectar stdin corretamente
+                # Solução enterprise-grade: copiar arquivo para dentro do container e executar psql -f diretamente
+                # docker compose cp copia arquivo para /tmp dentro do container, garantindo que psql receba o arquivo corretamente
+                # Isso é mais confiável que pipes ou stdin redirection, especialmente com -T flag
+                local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
+                docker compose -f docker-compose.prod.yml \
+                  --env-file .env.prod \
+                  cp "$migration_file" postgres:"$MIGRATION_CONTAINER_PATH" > /dev/null 2>&1
+                
+                docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   exec -T \
                   -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
                   -e "PG_USER=${MIGRATION_PG_USER}" \
                   -e "PG_DB=${MIGRATION_PG_DB}" \
                   postgres \
-                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f /dev/stdin" \
+                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=0 -f \"$MIGRATION_CONTAINER_PATH\" && rm -f \"$MIGRATION_CONTAINER_PATH\"" \
                   2>&1 | grep -v "already exists" | grep -v "NOTICE:" || true
                 echo "  ✓ $migration_name aplicada"
               else
@@ -2646,18 +2652,24 @@ jobs:
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
               # BUG FIX 23/12/2025: docker compose exec suporta -e flags, não --env-file
               # Passar variáveis via -e com valores já lidos do arquivo (sem shell expansion)
-              # BUG FIX 23/12/2025: stdin redirection com -T -i pode não funcionar corretamente em todos os contextos
-              # Solução enterprise-grade: usar cat para passar conteúdo via pipe, garantindo que psql receba o arquivo corretamente
-              # cat lê o arquivo e passa para stdin do docker compose exec, que repassa para psql via /dev/stdin
+              # BUG FIX 23/12/2025: Pipe para docker compose exec -T pode não conectar stdin corretamente
+              # Solução enterprise-grade: copiar arquivo para dentro do container e executar psql -f diretamente
+              # docker compose cp copia arquivo para /tmp dentro do container, garantindo que psql receba o arquivo corretamente
+              # Isso é mais confiável que pipes ou stdin redirection, especialmente com -T flag
+              local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
+              docker compose -f docker-compose.prod.yml \
+                --env-file .env.prod \
+                cp "$migration_file" postgres:"$MIGRATION_CONTAINER_PATH" > /dev/null 2>&1
+              
               psql_output=$(
-                cat "$migration_file" | docker compose -f docker-compose.prod.yml \
+                docker compose -f docker-compose.prod.yml \
                   --env-file .env.prod \
                   exec -T \
                   -e "PGPASSWORD=${MIGRATION_PGPASSWORD}" \
                   -e "PG_USER=${MIGRATION_PG_USER}" \
                   -e "PG_DB=${MIGRATION_PG_DB}" \
                   postgres \
-                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f /dev/stdin" \
+                  sh -c "psql -U \"\$PG_USER\" -d \"\$PG_DB\" -v ON_ERROR_STOP=1 -f \"$MIGRATION_CONTAINER_PATH\" && rm -f \"$MIGRATION_CONTAINER_PATH\"" \
                   2>&1
               ) || psql_exit_code=$?
               
