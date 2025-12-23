@@ -14,6 +14,7 @@
  */
 
 import express, { Request, Response } from 'express';
+import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils
 import compression from 'compression';
@@ -2345,17 +2346,35 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
     const fileBuffer = Buffer.from(body.file, 'base64');
     const fileSize = fileBuffer.length;
     
-    // Limitar tamanho (100MB)
-    const maxSize = 100 * 1024 * 1024;
-    if (fileSize > maxSize) {
+    // BUG FIX 23/12/2025: Detectar tipo de mídia ANTES de validar tamanho
+    // Limites são diferentes por tipo: 10MB para imagens, 25MB para áudio
+    // Limite hardcoded de 100MB (vídeo) foi removido após remoção de suporte a vídeo
+    const mediaType = detectMediaType(body.mimeType);
+    if (!mediaType) {
       return res.status(400).json({ 
-        error: 'Arquivo muito grande',
-        maxSizeMb: 100,
-        receivedSizeMb: Math.round(fileSize / 1024 / 1024),
+        error: 'Tipo de mídia não suportado',
+        mimeType: body.mimeType,
+        supportedTypes: ALL_SUPPORTED_MIMES,
       });
     }
-
-    const mediaType = detectMediaType(body.mimeType);
+    
+    // Limites por tipo de mídia (consistente com frontend FILE_LIMITS)
+    const FILE_LIMITS = {
+      image: 10 * 1024 * 1024,  // 10MB para imagens
+      audio: 25 * 1024 * 1024,  // 25MB para áudio
+      document: 50 * 1024 * 1024, // 50MB para documentos
+    } as const;
+    
+    const maxSize = FILE_LIMITS[mediaType];
+    if (fileSize > maxSize) {
+      const maxSizeMb = maxSize / (1024 * 1024);
+      return res.status(400).json({ 
+        error: 'Arquivo muito grande',
+        maxSizeMb: Math.round(maxSizeMb),
+        receivedSizeMb: Math.round(fileSize / 1024 / 1024),
+        mediaType,
+      });
+    }
     if (!mediaType) {
       return res.status(400).json({ 
         error: 'Tipo de mídia não suportado',
@@ -3384,6 +3403,19 @@ app.use(createErrorHandler({
   includeStackInDev: true,
 }));
 
+// BUG FIX 23/12/2025: Registrar database pool shutdown callback ANTES do async IIFE
+// Se a inicialização falhar, o callback ainda será registrado e executado durante shutdown
+// Isso garante que conexões do pool sejam fechadas mesmo em cenários de falha
+registerShutdownCallback(
+  'rag-database-pool',
+  async () => {
+    logger.info('Encerrando pool de conexões database...');
+    await closeDatabasePool();
+    logger.info('Pool de conexões encerrado com sucesso');
+  },
+  { priority: ShutdownPriority.DATABASE }
+);
+
 // CORREÇÃO 23/12/2025: Inicializar Redis cache ANTES de iniciar o servidor
 // Evita race condition onde clientes WebSocket podem conectar antes do Redis estar pronto
 // O embedding-websocket usa getRedisClient() que precisa do cliente inicializado
@@ -3408,10 +3440,21 @@ app.use(createErrorHandler({
       }
     }
     
-    // Iniciar servidor HTTP APÓS Redis estar pronto (ou falhar graciosamente)
-    // BUG FIX 23/12/2025: app.listen() pode falhar se porta já estiver em uso
-    // Erros síncronos são capturados pelo try-catch externo, erros assíncronos pelo error handler do server
-    const server = app.listen(PORT, () => {
+    // BUG FIX 23/12/2025: Criar servidor HTTP mas NÃO iniciar ainda
+    // Isso permite inicializar WebSocket ANTES de aceitar conexões
+    // app.listen() começa a aceitar conexões imediatamente, causando race condition
+    // Solução: Criar servidor manualmente, inicializar WebSocket, depois iniciar servidor
+    const server = http.createServer(app);
+    
+    // BUG FIX 23/12/2025: Inicializar WebSocket ANTES de iniciar servidor HTTP
+    // Isso garante que Redis Pub/Sub esteja pronto antes de aceitar qualquer conexão
+    // Evita race condition onde clientes conectam antes do Redis estar inicializado
+    await initEmbeddingWebSocket(server);
+    logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
+    
+    // BUG FIX 23/12/2025: Iniciar servidor HTTP APÓS WebSocket estar pronto
+    // Agora que Redis Pub/Sub está inicializado, podemos aceitar conexões com segurança
+    server.listen(PORT, () => {
       logger.info({ 
         port: PORT, 
         embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
@@ -3428,7 +3471,7 @@ app.use(createErrorHandler({
     });
     
     // BUG FIX 23/12/2025: Capturar erros assíncronos de inicialização do servidor (ex: porta em uso)
-    // app.listen() emite evento 'error' se falhar após callback ser chamado
+    // server.listen() emite evento 'error' se falhar após callback ser chamado
     // Isso previne unhandled promise rejections e garante fail-fast adequado
     server.on('error', (err: NodeJS.ErrnoException) => {
       logger.error({ 
@@ -3440,13 +3483,6 @@ app.use(createErrorHandler({
       // ENTERPRISE-GRADE: Fail-fast se servidor não pode iniciar (Regra 6 - sem workarounds)
       process.exit(1);
     });
-    
-    // Inicializar WebSocket para notificações de embeddings (após servidor estar pronto)
-    // BUG FIX 23/12/2025: initEmbeddingWebSocket é async e precisa ser aguardado
-    // Aguarda inicialização do Redis Pub/Sub antes de aceitar conexões WebSocket
-    // Evita race condition onde clientes podem conectar antes do Redis estar pronto
-    await initEmbeddingWebSocket(server);
-    logger.info({ path: '/ws/embeddings' }, 'WebSocket para notificações de embeddings ativo');
     
     // Configurar timeouts do servidor
     server.timeout = 60000; // 60s para processamento de embeddings/uploads
