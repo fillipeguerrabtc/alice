@@ -186,12 +186,18 @@ app.set('trust proxy', 1);
 // CORREÇÃO 22/12/2025: Não fazer exit(1) no startup - URLs GPU são configuradas
 // DEPOIS pelo job deploy-salad-gpu e atualizadas no .env.prod automaticamente.
 // Serviço deve iniciar e retornar erro 503 quando embeddings for chamado sem URL.
+// CORREÇÃO 24/12/2025: PROIBIDO fallback localhost em produção (Regra 6)
 const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL;
 if (!EMBEDDINGS_GPU_URL && process.env.NODE_ENV === 'production') {
   logger.warn('EMBEDDINGS_GPU_URL não configurado - funcionalidade de embeddings desabilitada até URL ser configurada');
   logger.warn('URLs GPU são configuradas automaticamente após deploy do Salad Cloud');
 }
-const EMBEDDINGS_SERVICE_URL = EMBEDDINGS_GPU_URL || 'http://localhost:8080';
+// REGRA 6: Em produção, SEM fallback localhost. Em dev, permite localhost apenas para desenvolvimento local
+const EMBEDDINGS_SERVICE_URL = EMBEDDINGS_GPU_URL || (
+  process.env.NODE_ENV === 'production' 
+    ? '' // Em produção, string vazia força erro 503 quando tentar usar
+    : 'http://localhost:8080' // Apenas em dev/test
+);
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -205,6 +211,12 @@ const EXTERNAL_API_TIMEOUT_MS = 25000;
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
   // ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B via Salad Cloud
   // Embeddings de texto com 4096 dimensões para máxima qualidade
+  
+  // REGRA 6: Validação fail-fast - URL deve estar configurada (sem fallback localhost em produção)
+  if (!EMBEDDINGS_SERVICE_URL || EMBEDDINGS_SERVICE_URL.trim() === '') {
+    throw new Error('EMBEDDINGS_GPU_URL não configurado - funcionalidade de embeddings desabilitada até URL ser configurada');
+  }
+  
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
   
