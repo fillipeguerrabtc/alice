@@ -28,7 +28,7 @@
     "zod": "3.25.67"
   },
   "peerDependencies": {
-    "drizzle-orm": "^0.39.1"
+    "drizzle-orm": "0.45.1"
   },
   "devDependencies": {
     "@types/node": "^22.19.1",
