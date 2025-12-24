@@ -3022,7 +3022,7 @@ jobs:
             PHASE3_TIMEOUT=120   # traefik: start_period=30s + buffer
             PHASE4_TIMEOUT=300   # alice-rag: start_period=90s + 7 serviços
             PHASE5_TIMEOUT=120   # erpnext-mariadb: start_period=60s + buffer
-            PHASE6_TIMEOUT=180   # erpnext-backend: start_period=60s + 9 workers
+            PHASE6_TIMEOUT=300   # erpnext-backend: start_period=120s + 9 workers + buffer
             PHASE7_TIMEOUT=$WAIT_TIMEOUT  # clickhouse: até 360s
             
             # Timeouts para init containers (one-shot)

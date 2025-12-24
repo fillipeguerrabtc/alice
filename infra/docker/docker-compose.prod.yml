@@ -1601,17 +1601,55 @@ services:
         # O bench new-site faz sua própria verificação de conexão
         
         echo "🔧 Criando site $${SITE_NAME}..."
+        # BUG FIX 24/12/2025: Substituir --no-mariadb-socket (DEPRECATED) por --mariadb-user-host-login-scope
+        # Ref: https://frappeframework.com/docs/user/en/bench/reference/new-site
+        # --mariadb-user-host-login-scope='%' permite conexão de qualquer host (equivalente ao antigo --no-mariadb-socket)
         bench new-site "$${SITE_NAME}" \
           --db-host erpnext-mariadb \
           --db-port 3306 \
           --mariadb-root-password "${ERPNEXT_MYSQL_ROOT_PASSWORD}" \
           --admin-password "${ERPNEXT_ADMIN_PASSWORD}" \
-          --no-mariadb-socket \
+          --mariadb-user-host-login-scope='%' \
           --install-app erpnext \
-          --verbose 2>&1 || {
-          echo "❌ ERRO: bench new-site falhou!"
-          echo "=== Logs do bench ==="
-          cat logs/*.log 2>/dev/null || echo "Sem logs disponíveis"
+          --verbose 2>&1 | tee /tmp/bench-new-site.log || {
+          BENCH_EXIT_CODE=$?
+          echo ""
+          echo "❌ ERRO: bench new-site falhou com exit code: $BENCH_EXIT_CODE"
+          echo ""
+          echo "=== Últimas 200 linhas do output do bench (contexto completo) ==="
+          tail -200 /tmp/bench-new-site.log 2>/dev/null || echo "Sem output disponível"
+          echo ""
+          echo "=== Verificando uso de memória durante falha ==="
+          free -h 2>/dev/null || echo "  (comando free não disponível)"
+          echo ""
+          echo "=== Logs do bench (últimos arquivos com mais contexto) ==="
+          if [ -d "logs" ]; then
+            # Mostrar últimos 100 linhas de cada log para ter contexto completo
+            find logs -name "*.log" -type f -exec sh -c 'echo "=== $1 ==="; tail -100 "$1" 2>/dev/null || echo "  (erro ao ler log)"' _ {} \; 2>/dev/null || echo "Sem logs disponíveis"
+          else
+            echo "Diretório logs não existe"
+          fi
+          echo ""
+          echo "=== Verificando se site foi criado parcialmente ==="
+          if [ -d "sites/$${SITE_NAME}" ]; then
+            echo "⚠️ Diretório do site existe - instalação pode ter falhado parcialmente"
+            echo "   Conteúdo do diretório:"
+            ls -la "sites/$${SITE_NAME}/" || true
+            if [ -f "sites/$${SITE_NAME}/site_config.json" ]; then
+              echo "   ✅ site_config.json existe (site foi criado)"
+            else
+              echo "   ❌ site_config.json NÃO existe (site não foi criado completamente)"
+            fi
+          else
+            echo "   ❌ Diretório do site NÃO existe (site não foi criado)"
+          fi
+          echo ""
+          echo "=== Verificando se erpnext foi instalado parcialmente ==="
+          if [ -d "apps/erpnext" ]; then
+            echo "   ✅ Diretório apps/erpnext existe"
+          else
+            echo "   ❌ Diretório apps/erpnext NÃO existe"
+          fi
           exit 1
         }
         echo "✅ Site $${SITE_NAME} criado com sucesso!"
@@ -1644,15 +1682,16 @@ services:
     # REGRA 16: Resource limits para init containers (best practice enterprise)
     # CORREÇÃO 22/12/2025: bench new-site precisa de MUITA memória!
     # 256MB→1GB ainda insuficiente - ERPNext v15.91.3 usa >1GB durante instalação
-    # Aumentado para 2GB conforme observado em deploys falhados
+    # BUG FIX 24/12/2025: Aumentado para 3GB - instalação do erpnext após frappe pode precisar de mais memória
+    # Durante "Installing erpnext..." o processo cria ~300 tabelas e instala módulos, consumindo muita memória
     deploy:
       resources:
         limits:
-          memory: 2G
-          cpus: '1.5'
+          memory: 3G
+          cpus: '2.0'
         reservations:
-          memory: 1G
-          cpus: '0.5'
+          memory: 1.5G
+          cpus: '0.75'
 
   erpnext-backend:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
@@ -1693,11 +1732,14 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     healthcheck:
+      # BUG FIX 24/12/2025: Aumentado start_period de 60s para 120s
+      # ERPNext backend pode demorar mais para iniciar após create-site
+      # Especialmente em primeira instalação quando precisa processar migrations
       test: ["CMD-SHELL", "curl -f http://localhost:8000/api/method/ping || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
+      start_period: 120s
 
   erpnext-frontend:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
@@ -1737,12 +1779,14 @@ services:
       - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
       - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
     healthcheck:
+      # BUG FIX 24/12/2025: Aumentado start_period de 30s para 90s
+      # ERPNext frontend depende do backend estar healthy, pode demorar mais
       # Imagem unificada frappe/erpnext tem wget disponível
       test: ["CMD-SHELL", "wget -q --spider http://localhost:8080 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 30s
+      start_period: 90s
 
   erpnext-websocket:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
