@@ -2099,6 +2099,93 @@ jobs:
             fi
             echo "✅ Estrutura do repositório validada"
             
+            # ==========================================================
+            # VALIDAÇÃO PRÉ-DEPLOY: Verificar TODOS os arquivos necessários
+            # BUG FIX 24/12/2025: Fail-fast se arquivos críticos não existirem
+            # ==========================================================
+            echo ""
+            echo "🔍 VALIDAÇÃO PRÉ-DEPLOY: Verificando arquivos necessários..."
+            
+            MISSING_FILES=0
+            
+            # Arquivos de configuração SearXNG
+            if [ ! -f "infra/searxng/settings.yml" ]; then
+              echo "❌ ERRO: infra/searxng/settings.yml não encontrado"
+              MISSING_FILES=$((MISSING_FILES + 1))
+            else
+              echo "  ✓ infra/searxng/settings.yml"
+            fi
+            
+            if [ ! -f "infra/searxng/limiter.toml" ]; then
+              echo "❌ ERRO: infra/searxng/limiter.toml não encontrado"
+              MISSING_FILES=$((MISSING_FILES + 1))
+            else
+              echo "  ✓ infra/searxng/limiter.toml"
+            fi
+            
+            # Arquivos de migração críticos (OBRIGATÓRIOS)
+            CRITICAL_MIGRATIONS=(
+              "migrations/0003_update_embedding_dimensions_768.sql"
+              "migrations/0005_update_embedding_dimensions_1024.sql"
+            )
+            
+            for migration in "${CRITICAL_MIGRATIONS[@]}"; do
+              if [ ! -f "$migration" ]; then
+                echo "❌ ERRO CRÍTICO: $migration não encontrado"
+                echo "   Esta migration é OBRIGATÓRIA e o deploy NÃO pode continuar sem ela."
+                MISSING_FILES=$((MISSING_FILES + 1))
+              else
+                echo "  ✓ $migration"
+              fi
+            done
+            
+            # Arquivos de migração idempotentes (não críticos, mas devem existir)
+            IDEMPOTENT_MIGRATIONS=(
+              "migrations/0001_rls_security_enterprise.sql"
+              "migrations/0002_create_feature_flags.sql"
+              "migrations/0004_multimodal_learning_and_crawler.sql"
+            )
+            
+            for migration in "${IDEMPOTENT_MIGRATIONS[@]}"; do
+              if [ ! -f "$migration" ]; then
+                echo "⚠️ AVISO: $migration não encontrado (pode ser normal em primeiro deploy)"
+              else
+                echo "  ✓ $migration"
+              fi
+            done
+            
+            # Verificar se diretório migrations existe
+            if [ ! -d "migrations" ]; then
+              echo "❌ ERRO CRÍTICO: Diretório migrations não encontrado"
+              MISSING_FILES=$((MISSING_FILES + 1))
+            else
+              echo "  ✓ Diretório migrations existe"
+            fi
+            
+            # Verificar docker-compose.prod.yml
+            if [ ! -f "infra/docker/docker-compose.prod.yml" ]; then
+              echo "❌ ERRO CRÍTICO: infra/docker/docker-compose.prod.yml não encontrado"
+              MISSING_FILES=$((MISSING_FILES + 1))
+            else
+              echo "  ✓ infra/docker/docker-compose.prod.yml"
+            fi
+            
+            if [ "$MISSING_FILES" -gt 0 ]; then
+              echo ""
+              echo "❌ ERRO CRÍTICO: $MISSING_FILES arquivo(s) obrigatório(s) não encontrado(s)"
+              echo "   O deploy NÃO pode continuar sem estes arquivos."
+              echo "   Verifique se todos os arquivos foram commitados e estão no repositório."
+              echo "   Estrutura esperada:"
+              echo "     - infra/searxng/settings.yml"
+              echo "     - infra/searxng/limiter.toml"
+              echo "     - migrations/0003_update_embedding_dimensions_768.sql"
+              echo "     - migrations/0005_update_embedding_dimensions_1024.sql"
+              echo "     - infra/docker/docker-compose.prod.yml"
+              exit 1
+            fi
+            
+            echo "✅ Todos os arquivos necessários foram encontrados"
+            
             # REGRA 6: mover .env.prod imediatamente após validação
             if [ -f /tmp/.env.prod ]; then
               mv /tmp/.env.prod infra/docker/.env.prod
@@ -2739,9 +2826,15 @@ jobs:
               # Evita problema de pipeline onde exit code vem do último comando (grep)
               # Em vez de pipe, usamos variável para capturar output do psql
               # ENTERPRISE-GRADE: Credenciais dinâmicas de .env.prod (não hardcoded)
-              # BUG FIX 23/12/2025: Resolver caminho absoluto do arquivo de migration
-              # migration_file é relativo a infra/docker (ex: ../../migrations/0001.sql)
-              # Precisamos do caminho absoluto para montar como volume no container temporário
+              # BUG FIX 24/12/2025: Usar caminho absoluto já resolvido (se disponível)
+              # Se MIGRATION_ABSOLUTE_PATH foi definido na verificação acima, usar ele
+              # Caso contrário, resolver caminho normalmente
+              if [ -z "${MIGRATION_ABSOLUTE_PATH:-}" ]; then
+                # BUG FIX 23/12/2025: Resolver caminho absoluto do arquivo de migration
+                # migration_file é relativo a infra/docker (ex: ../../migrations/0001.sql)
+                # Precisamos do caminho absoluto para montar como volume no container temporário
+                MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
+              fi
               # BUG FIX 23/12/2025: Usar volume mount ao invés de stdin redirection para garantir que psql receba o arquivo
               # stdin redirection através de pipes para comandos containerizados é não confiável
               # Volume mount garante que o arquivo esteja disponível dentro do container
@@ -2752,7 +2845,6 @@ jobs:
               # O shell externo vê \$ e passa $PG_USER literal ao shell interno, que então expande corretamente via --env-file
               # BUG FIX: MIGRATION_CONTAINER_PATH também deve seguir o mesmo padrão de segurança (escape \$ para prevenir shell injection)
               # Passamos MIGRATION_CONTAINER_PATH via -e para o container e usamos \$MIGRATION_CONTAINER_PATH no sh -c
-              local MIGRATION_ABSOLUTE_PATH="$(cd "$(dirname "$migration_file")" && pwd)/$(basename "$migration_file")"
               local MIGRATION_CONTAINER_PATH="/tmp/$(basename "$migration_file")"
               
               psql_output=$(
