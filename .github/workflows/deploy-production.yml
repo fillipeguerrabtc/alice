@@ -2976,14 +2976,26 @@ jobs:
                 ;;
             esac
             
+            # BUG FIX 24/12/2025: Garantir que estamos no diretório correto ANTES de todas as fases
+            # O repositório é clonado em /opt/alice/app, precisamos estar lá para acessar arquivos
+            cd /opt/alice/app || { echo "❌ ERRO: Não foi possível entrar em /opt/alice/app"; exit 1; }
+            echo "📂 Diretório atual: $(pwd)"
+            
             # FASE 1: Pull de imagens (sempre executa)
             echo ""
             echo "📦 FASE 1: Pull de imagens..."
+            # BUG FIX 24/12/2025: docker-compose precisa estar no diretório infra/docker
+            cd infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures || true
             echo "✅ Pull concluído"
             
             # FASES 2-4: Alice Stack
             if [ "$DEPLOY_ALICE" = "true" ]; then
+              # BUG FIX 24/12/2025: Garantir que estamos no diretório correto antes da FASE 2
+              # Voltar para /opt/alice/app para acessar arquivos do repositório
+              cd /opt/alice/app || { echo "❌ ERRO: Não foi possível entrar em /opt/alice/app"; exit 1; }
+              echo "📂 Diretório atual: $(pwd)"
+              
               # FASE 2: Infraestrutura base Alice
               echo ""
               echo "🔧 FASE 2: Infraestrutura base (postgres, redis, qdrant, tor, searxng) [timeout: ${PHASE2_TIMEOUT}s]..."
@@ -2992,33 +3004,39 @@ jobs:
               echo "   Configurando SearXNG com Tor proxy e bot detection..."
               mkdir -p /opt/alice/data/searxng-config
               
-              # settings.yml - Configuração principal com Tor proxy
-              # BUG FIX 23/12/2025: Verificar se arquivo existe antes de copiar
-              # Se arquivo não existir, cp falhará e abortará o deploy
-              if [ ! -f /opt/alice/app/infra/searxng/settings.yml ]; then
-                echo "❌ ERRO: /opt/alice/app/infra/searxng/settings.yml não encontrado"
+              # BUG FIX 24/12/2025: Garantir que repositório foi clonado e arquivos existem
+              # Verificar se arquivos existem no repositório clonado (caminhos relativos ao /opt/alice/app)
+              SEARXNG_SETTINGS="infra/searxng/settings.yml"
+              SEARXNG_LIMITER="infra/searxng/limiter.toml"
+              
+              if [ ! -f "$SEARXNG_SETTINGS" ]; then
+                echo "❌ ERRO: $SEARXNG_SETTINGS não encontrado em $(pwd)"
+                echo "   Arquivo deve existir no repositório para configurar SearXNG"
+                echo "   Verificando estrutura do repositório:"
+                ls -la infra/ 2>/dev/null || echo "  Diretório infra não existe"
+                ls -la infra/searxng/ 2>/dev/null || echo "  Diretório searxng não existe"
+                exit 1
+              fi
+              
+              if [ ! -f "$SEARXNG_LIMITER" ]; then
+                echo "❌ ERRO: $SEARXNG_LIMITER não encontrado em $(pwd)"
                 echo "   Arquivo deve existir no repositório para configurar SearXNG"
                 exit 1
               fi
-              cp /opt/alice/app/infra/searxng/settings.yml /opt/alice/data/searxng-config/settings.yml
+              
+              # Copiar arquivos (caminhos relativos ao diretório atual /opt/alice/app)
+              cp "$SEARXNG_SETTINGS" /opt/alice/data/searxng-config/settings.yml
               chown 977:977 /opt/alice/data/searxng-config/settings.yml
               chmod 644 /opt/alice/data/searxng-config/settings.yml
               
-              # limiter.toml - Bot detection para rede interna
-              # CORREÇÃO 23/12/2025: Elimina warnings "missing config file: limiter.toml"
-              # e "X-Forwarded-For nor X-Real-IP header is set!"
-              # BUG FIX 23/12/2025: Verificar se arquivo existe antes de copiar
-              # Se arquivo não existir, cp falhará e abortará o deploy
-              if [ ! -f /opt/alice/app/infra/searxng/limiter.toml ]; then
-                echo "❌ ERRO: /opt/alice/app/infra/searxng/limiter.toml não encontrado"
-                echo "   Arquivo deve existir no repositório para configurar SearXNG"
-                exit 1
-              fi
-              cp /opt/alice/app/infra/searxng/limiter.toml /opt/alice/data/searxng-config/limiter.toml
+              cp "$SEARXNG_LIMITER" /opt/alice/data/searxng-config/limiter.toml
               chown 977:977 /opt/alice/data/searxng-config/limiter.toml
               chmod 644 /opt/alice/data/searxng-config/limiter.toml
               
               echo "   ✅ SearXNG configurado (settings.yml + limiter.toml)"
+              
+              # BUG FIX 24/12/2025: docker-compose precisa estar no diretório infra/docker
+              cd infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
               
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --remove-orphans --wait --wait-timeout $PHASE2_TIMEOUT \
@@ -3030,6 +3048,8 @@ jobs:
                 # FASE 3: Gateway (Traefik)
                 echo ""
                 echo "🌐 FASE 3: Gateway (dockerproxy, traefik) [timeout: ${PHASE3_TIMEOUT}s]..."
+                # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+                cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   up -d --no-build --wait --wait-timeout $PHASE3_TIMEOUT \
                   dockerproxy traefik-init traefik || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 3 falhou"; }
@@ -3041,6 +3061,8 @@ jobs:
                 # FASE 4: Serviços Alice
                 echo ""
                 echo "🤖 FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend) [timeout: ${PHASE4_TIMEOUT}s]..."
+                # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+                cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   up -d --no-build --wait --wait-timeout $PHASE4_TIMEOUT \
                   alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 4 falhou"; }
@@ -3059,6 +3081,8 @@ jobs:
               # FASE 5: Infraestrutura ERPNext
               echo ""
               echo "📊 FASE 5: Infraestrutura ERPNext (mariadb, redis) [timeout: ${PHASE5_TIMEOUT}s]..."
+              # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+              cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --wait --wait-timeout $PHASE5_TIMEOUT \
                 erpnext-mariadb erpnext-redis-cache erpnext-redis-queue || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 5 falhou"; }
@@ -3069,6 +3093,8 @@ jobs:
                 # FASE 6: Init e Serviços ERPNext
                 echo ""
                 echo "🏢 FASE 6: ERPNext (configurator, create-site, backend, workers)..."
+                # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+                cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
                 # Init containers primeiro (sem --wait pois são one-shot)
                 docker compose -f docker-compose.prod.yml --env-file .env.prod \
                   up -d --no-build \
@@ -3100,6 +3126,9 @@ jobs:
                 fi
                 
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                  # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+                  cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
+                  
                   # Create-site
                   docker compose -f docker-compose.prod.yml --env-file .env.prod \
                     up -d --no-build \
@@ -3134,6 +3163,8 @@ jobs:
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
                   # Serviços ERPNext
                   echo "   Iniciando serviços ERPNext [timeout: ${PHASE6_TIMEOUT}s]..."
+                  # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+                  cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
                   docker compose -f docker-compose.prod.yml --env-file .env.prod \
                     up -d --no-build --wait --wait-timeout $PHASE6_TIMEOUT \
                     erpnext-backend erpnext-frontend erpnext-websocket \
@@ -3154,6 +3185,8 @@ jobs:
             if [ "$DEPLOY_EXIT_CODE" -eq 0 ] && [ "$DEPLOY_OBSERVABILITY" = "true" ]; then
               echo ""
               echo "📈 FASE 7: Observability (prometheus, grafana, langfuse, etc.) [timeout: ${PHASE7_TIMEOUT}s]..."
+              # BUG FIX 24/12/2025: Garantir que estamos em infra/docker
+              cd /opt/alice/app/infra/docker || { echo "❌ ERRO: Não foi possível entrar em infra/docker"; exit 1; }
               docker compose -f docker-compose.prod.yml --env-file .env.prod \
                 up -d --no-build --wait --wait-timeout $PHASE7_TIMEOUT \
                 clickhouse langfuse langfuse-worker langfuse-db \
