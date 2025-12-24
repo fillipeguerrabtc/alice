@@ -1129,12 +1129,16 @@ services:
       - "traefik.http.routers.alice-integrations.entrypoints=websecure"
       - "traefik.http.routers.alice-integrations.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-integrations.middlewares=security-headers@docker,rate-limit@docker"
+      # BUG FIX 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
+      - "traefik.http.routers.alice-integrations.service=alice-integrations"
       - "traefik.http.services.alice-integrations.loadbalancer.server.port=3005"
       # Webhook Stripe (rota específica)
       - "traefik.http.routers.alice-webhook.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/webhook`)"
       - "traefik.http.routers.alice-webhook.entrypoints=websecure"
       - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-webhook.middlewares=security-headers@docker"
+      # BUG FIX 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
+      - "traefik.http.routers.alice-webhook.service=alice-webhook"
       - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente

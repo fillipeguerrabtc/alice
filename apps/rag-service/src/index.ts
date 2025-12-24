@@ -3523,6 +3523,23 @@ registerShutdownCallback(
     // Solução: Criar servidor manualmente, inicializar WebSocket, depois iniciar servidor
     const server = http.createServer(app);
     
+    // BUG FIX 23/12/2025: Inicializar Qdrant collection ANTES de iniciar servidor HTTP
+    // Isso garante que a collection text_embeddings exista antes de aceitar requisições
+    if (isQdrantConfigured()) {
+      try {
+        await initTextCollection();
+        logger.info({ 
+          collection: TEXT_COLLECTION_NAME, 
+          dimension: TEXT_EMBEDDING_DIM 
+        }, 'Coleção Qdrant para embeddings de texto inicializada');
+      } catch (error) {
+        logger.error({ error }, 'Falha ao inicializar coleção Qdrant - servidor não iniciará');
+        throw error; // Fail-fast se Qdrant não puder ser inicializado
+      }
+    } else {
+      logger.warn('Qdrant não configurado (QDRANT_URL/QDRANT_API_KEY) - buscas de texto indisponíveis');
+    }
+    
     // BUG FIX 23/12/2025: Inicializar WebSocket ANTES de iniciar servidor HTTP
     // Isso garante que Redis Pub/Sub esteja pronto antes de aceitar qualquer conexão
     // Evita race condition onde clientes conectam antes do Redis estar inicializado
@@ -3642,20 +3659,9 @@ registerShutdownCallback(
 // - Texto: Qdrant (Qwen3-Embedding-8B, 4096 dim)
 // - Imagem: pgvector (OpenCLIP, 1024 dim)
 // ============================================================================
-if (isQdrantConfigured()) {
-  initTextCollection()
-    .then(() => {
-      logger.info({ 
-        collection: TEXT_COLLECTION_NAME, 
-        dimension: TEXT_EMBEDDING_DIM 
-      }, 'Coleção Qdrant para embeddings de texto inicializada');
-    })
-    .catch((error) => {
-      logger.error({ error }, 'Falha ao inicializar coleção Qdrant - buscas de texto indisponíveis');
-    });
-} else {
-  logger.warn('Qdrant não configurado (QDRANT_URL/QDRANT_API_KEY) - buscas de texto indisponíveis');
-}
+// BUG FIX 23/12/2025: Inicialização movida para dentro do IIFE async (linha ~3527)
+// Isso garante que a collection seja criada ANTES do servidor aceitar conexões
+// Previne erro "Collection text_embeddings doesn't exist" em requisições precoces
 
 // CORREÇÃO 23/12/2025: Timeouts e shutdown callbacks movidos para dentro do callback de inicialização do Redis
 // Isso garante que o servidor só aceita conexões após dependências críticas estarem prontas
