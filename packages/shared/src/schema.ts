@@ -492,7 +492,7 @@ export const tenants = pgTable("tenants", {
 export const users = pgTable(
   "users",
   {
-    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
     email: varchar("email", { length: 255 }).unique(),
     firstName: varchar("first_name", { length: 100 }),
@@ -597,7 +597,7 @@ export const oauthAuthorizationCodes = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     code: varchar("code", { length: 255 }).notNull().unique(),
     clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
-    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     redirectUri: text("redirect_uri").notNull(),
     scopes: text("scopes").array().notNull(),
     codeChallenge: text("code_challenge"),
@@ -620,7 +620,7 @@ export const oauthTokens = pgTable(
     refreshToken: text("refresh_token").unique(),
     tokenType: varchar("token_type", { length: 50 }).default("Bearer"),
     clientId: uuid("client_id").references(() => oauthClients.id, { onDelete: "cascade" }).notNull(),
-    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     scopes: text("scopes").array().notNull(),
     accessTokenExpiresAt: timestamp("access_token_expires_at").notNull(),
     refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
@@ -734,13 +734,13 @@ export const userModules = pgTable(
   "user_modules",
   {
     id: uuid("id").primaryKey().defaultRandom(),
-    userId: varchar("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
     moduleId: uuid("module_id").references(() => systemModules.id, { onDelete: "cascade" }).notNull(),
     permitido: boolean("permitido").notNull(),
     acessoLeitura: boolean("acesso_leitura").default(true),
     acessoEscrita: boolean("acesso_escrita").default(false),
     acessoAdmin: boolean("acesso_admin").default(false),
-    criadoPor: varchar("criado_por").references(() => users.id),
+    criadoPor: uuid("criado_por").references(() => users.id),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -844,7 +844,7 @@ export const conversations = pgTable(
     // tenantId nullable para compatibilidade com migração de dados existentes
     // Validação obrigatória na camada de aplicação via validateTenantConsistency()
     tenantId: uuid("tenant_id").references(() => tenants.id),
-    userId: varchar("user_id").references(() => users.id),
+    userId: uuid("user_id").references(() => users.id),
     agentId: uuid("agent_id").references(() => agents.id),
     namespaceId: uuid("namespace_id").references(() => namespaces.id),
     titulo: varchar("titulo", { length: 500 }),
@@ -877,7 +877,7 @@ export const messages = pgTable(
     conversationId: uuid("conversation_id")
       .references(() => conversations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: varchar("user_id").references(() => users.id),
+    userId: uuid("user_id").references(() => users.id),
     agentId: uuid("agent_id").references(() => agents.id),
     tipo: messageTypeEnum("tipo").default("text"),
     conteudo: text("conteudo"),
@@ -977,7 +977,7 @@ export const learningTasks = pgTable(
     iniciadoEm: timestamp("iniciado_em"),
     finalizadoEm: timestamp("finalizado_em"),
     criadoEm: timestamp("criado_em").defaultNow(),
-    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
+    criadoPor: uuid("criado_por").references(() => users.id),
   },
   (table) => ({
     idxLearningTasksStatus: index("idx_learning_tasks_status").on(table.tenantId, table.status),
@@ -1029,7 +1029,7 @@ export const webCrawlRequests = pgTable(
     iniciadoEm: timestamp("iniciado_em"),
     finalizadoEm: timestamp("finalizado_em"),
     erro: text("erro"),
-    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
+    criadoPor: uuid("criado_por").references(() => users.id),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
@@ -1088,7 +1088,7 @@ export const mediaJobs = pgTable(
     agendadoPara: timestamp("agendado_para"),
     iniciadoEm: timestamp("iniciado_em"),
     finalizadoEm: timestamp("finalizado_em"),
-    criadoPor: varchar("criado_por", { length: 255 }).references(() => users.id),
+    criadoPor: uuid("criado_por").references(() => users.id),
     criadoEm: timestamp("criado_em").defaultNow(),
   },
   (table) => ({
@@ -1150,7 +1150,7 @@ export const auditLogs = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
-    userId: varchar("user_id").references(() => users.id),
+    userId: uuid("user_id").references(() => users.id),
     acao: varchar("acao", { length: 100 }).notNull(),
     recurso: varchar("recurso", { length: 100 }).notNull(),
     recursoId: varchar("recurso_id", { length: 255 }),
@@ -1176,7 +1176,7 @@ export const usageMetrics = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id),
-    userId: varchar("user_id").references(() => users.id),
+    userId: uuid("user_id").references(() => users.id),
     type: varchar("type", { length: 50 }).notNull().default("message"),
     data: timestamp("data").notNull().defaultNow(),
     totalMensagens: integer("total_mensagens").default(0),
@@ -2268,7 +2268,7 @@ export const conversationStates = pgTable(
       .notNull()
       .unique(),
     controlMode: conversationControlModeEnum("control_mode").default("bot"),
-    assignedAgentId: varchar("assigned_agent_id").references(() => users.id),
+    assignedAgentId: uuid("assigned_agent_id").references(() => users.id),
     pendingSince: timestamp("pending_since"),
     lastBotMessage: timestamp("last_bot_message"),
     lastHumanMessage: timestamp("last_human_message"),
@@ -2299,7 +2299,7 @@ export const conversationParticipants = pgTable(
     conversationId: uuid("conversation_id")
       .references(() => conversations.id, { onDelete: "cascade" })
       .notNull(),
-    userId: varchar("user_id").references(() => users.id),
+    userId: uuid("user_id").references(() => users.id),
     role: varchar("role", { length: 50 }).notNull(), // customer, agent, supervisor
     joinedAt: timestamp("joined_at").defaultNow(),
     leftAt: timestamp("left_at"),
@@ -2323,8 +2323,8 @@ export const conversationEscalations = pgTable(
     trigger: escalationTriggerEnum("trigger").notNull(),
     fromMode: conversationControlModeEnum("from_mode").notNull(),
     toMode: conversationControlModeEnum("to_mode").notNull(),
-    requestedBy: varchar("requested_by").references(() => users.id),
-    handledBy: varchar("handled_by").references(() => users.id),
+    requestedBy: uuid("requested_by").references(() => users.id),
+    handledBy: uuid("handled_by").references(() => users.id),
     confidenceAtEscalation: real("confidence_at_escalation"),
     sentimentAtEscalation: real("sentiment_at_escalation"),
     fallbackCountAtEscalation: integer("fallback_count_at_escalation"),
@@ -2438,7 +2438,7 @@ export const generatedImages = pgTable(
     tenantId: uuid("tenant_id").references(() => tenants.id),
     conversationId: uuid("conversation_id").references(() => conversations.id),
     messageId: uuid("message_id").references(() => messages.id),
-    createdBy: varchar("created_by").references(() => users.id),
+    createdBy: uuid("created_by").references(() => users.id),
     
     // Parâmetros de geração
     prompt: text("prompt").notNull(),
@@ -2506,7 +2506,7 @@ export const mediaUploads = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     tenantId: uuid("tenant_id").references(() => tenants.id, { onDelete: "cascade" }).notNull(),
-    userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
     conversationId: uuid("conversation_id").references(() => conversations.id, { onDelete: "cascade" }),
     messageId: uuid("message_id").references(() => messages.id, { onDelete: "cascade" }),
     
@@ -2585,7 +2585,7 @@ export const featureFlags = pgTable(
     description: text("description"),
     metadata: jsonb("metadata").default({}),
     createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
-    updatedBy: varchar("updated_by").references(() => users.id, { onDelete: "set null" }),
+    updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
   },
@@ -2878,7 +2878,7 @@ export const externalUserMappings = pgTable('external_user_mappings', {
   id: varchar('id').primaryKey().default(sql`gen_random_uuid()`),
   
   // Usuário Alice
-  userId: varchar('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: uuid('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
   
   // Sistema externo: grafana, erpnext
   externalSystem: varchar('external_system', { length: 50 }).notNull(),

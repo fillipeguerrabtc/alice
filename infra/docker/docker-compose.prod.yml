@@ -226,8 +226,9 @@ services:
     environment:
       # Porta SOCKS5 padrão - SearXNG conecta via socks5h://alice-tor:9050
       TOR_SOCKS_PORT: "9050"
-      # Desabilitar DNS sobre Tor (usamos DNS do host para resolução normal)
-      TOR_DNSPORT: "0"
+      # BUG FIX 23/12/2025: Removido TOR_DNSPORT: "0" - causa conflito com torrc padrão da imagem
+      # A imagem dperson/torproxy já desabilita DNS por padrão se TOR_DNSPORT não for definido
+      # Definir TOR_DNSPORT: "0" junto com torrc padrão causa "Invalid DNSPort configuration"
     networks:
       - alice-network
     healthcheck:
