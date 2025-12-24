@@ -1461,11 +1461,22 @@ services:
         set -euo pipefail
         cd /home/frappe/frappe-bench
         
+        # BUG FIX 24/12/2025: Verificar se diretório apps existe antes de listar
+        if [ ! -d "apps" ]; then
+          echo "❌ ERRO: Diretório apps não existe em /home/frappe/frappe-bench"
+          echo "   Estrutura esperada do bench não foi encontrada"
+          exit 1
+        fi
+        
         # Criar apps.txt dinamicamente (padrão oficial frappe_docker)
         # Lista os apps instalados no bench, não hardcoded
         echo "📋 Criando apps.txt..."
-        ls -1 apps > sites/apps.txt
-        cat sites/apps.txt
+        if ! ls -1 apps > sites/apps.txt 2>/dev/null; then
+          echo "❌ ERRO: Falha ao listar apps e criar apps.txt"
+          exit 1
+        fi
+        echo "   Apps encontrados:"
+        cat sites/apps.txt || echo "  (apps.txt vazio ou não legível)"
         
         # Construir URLs Redis com senha (ACL habilitado)
         CACHE_URL="redis://:$${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379"
@@ -1473,17 +1484,46 @@ services:
         
         # Configurar globalmente (seguindo padrão oficial)
         echo "⚙️ Configurando bench..."
-        bench set-config -g db_host erpnext-mariadb
-        bench set-config -g db_port 3306
-        bench set-config -g redis_cache "$${CACHE_URL}"
-        bench set-config -g redis_queue "$${QUEUE_URL}"
-        bench set-config -g redis_socketio "$${QUEUE_URL}"
-        bench set-config -g socketio_port 9000
+        if ! bench set-config -g db_host erpnext-mariadb; then
+          echo "❌ ERRO: Falha ao configurar db_host"
+          exit 1
+        fi
+        if ! bench set-config -g db_port 3306; then
+          echo "❌ ERRO: Falha ao configurar db_port"
+          exit 1
+        fi
+        if ! bench set-config -g redis_cache "$${CACHE_URL}"; then
+          echo "❌ ERRO: Falha ao configurar redis_cache"
+          exit 1
+        fi
+        if ! bench set-config -g redis_queue "$${QUEUE_URL}"; then
+          echo "❌ ERRO: Falha ao configurar redis_queue"
+          exit 1
+        fi
+        if ! bench set-config -g redis_socketio "$${QUEUE_URL}"; then
+          echo "❌ ERRO: Falha ao configurar redis_socketio"
+          exit 1
+        fi
+        if ! bench set-config -g socketio_port 9000; then
+          echo "❌ ERRO: Falha ao configurar socketio_port"
+          exit 1
+        fi
+        
+        # Verificar se common_site_config.json foi criado
+        if [ ! -f "sites/common_site_config.json" ]; then
+          echo "❌ ERRO: common_site_config.json não foi criado após bench set-config"
+          exit 1
+        fi
         
         echo "✅ ERPNext configurator concluído com sucesso"
         # SEGURANÇA: Mostrar apenas chaves, não valores (contém senhas Redis)
         echo "=== Chaves em common_site_config.json ==="
-        jq -r 'keys[]' sites/common_site_config.json 2>/dev/null || echo "  (jq não disponível)"
+        if command -v jq >/dev/null 2>&1; then
+          jq -r 'keys[]' sites/common_site_config.json 2>/dev/null || echo "  (jq falhou ao ler chaves)"
+        else
+          echo "  (jq não disponível - mostrando apenas tamanho do arquivo)"
+          wc -c sites/common_site_config.json || true
+        fi
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       DB_ROOT_USER: root

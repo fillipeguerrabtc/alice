@@ -3101,26 +3101,40 @@ jobs:
                   erpnext-configurator || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6a falhou (configurator)"; }
                 
                 if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
+                  # BUG FIX 24/12/2025: Capturar logs ANTES de aguardar para debug
+                  echo "   📋 Logs iniciais do erpnext-configurator:"
+                  docker logs erpnext-configurator 2>&1 | tail -20 || echo "  (container ainda não iniciou)"
+                  
                   # Aguardar configurator completar
                   echo "   Aguardando erpnext-configurator [timeout: ${CONFIGURATOR_TIMEOUT}s]..."
-                  timeout $CONFIGURATOR_TIMEOUT docker wait erpnext-configurator || true
+                  timeout $CONFIGURATOR_TIMEOUT docker wait erpnext-configurator || {
+                    echo "⚠️ timeout ao aguardar erpnext-configurator (continuando verificação)..."
+                  }
                   
                   # CORREÇÃO 23/12/2025: Verificar se container REALMENTE terminou
                   # antes de confiar no ExitCode (que é 0 por padrão se ainda rodando)
                   CONFIGURATOR_STATUS=$(docker inspect erpnext-configurator --format '{{.State.Status}}' 2>/dev/null || echo "unknown")
+                  echo "   Status do container: $CONFIGURATOR_STATUS"
+                  
                   if [ "$CONFIGURATOR_STATUS" != "exited" ]; then
                     echo "❌ erpnext-configurator não terminou (status: $CONFIGURATOR_STATUS) - timeout expirou"
-                    docker logs erpnext-configurator 2>&1 | tail -50
+                    echo "   📋 Logs completos do erpnext-configurator:"
+                    docker logs erpnext-configurator 2>&1 || echo "  (não foi possível capturar logs)"
                     DEPLOY_EXIT_CODE=1
                   else
                     # Container terminou, agora podemos confiar no ExitCode
                     CONFIGURATOR_EXIT=$(docker inspect erpnext-configurator --format '{{.State.ExitCode}}' 2>/dev/null || echo "1")
+                    echo "   Exit code do container: $CONFIGURATOR_EXIT"
+                    
                     if [ "$CONFIGURATOR_EXIT" != "0" ]; then
                       echo "❌ erpnext-configurator falhou com exit code: $CONFIGURATOR_EXIT"
-                      docker logs erpnext-configurator 2>&1 | tail -50
+                      echo "   📋 Logs completos do erpnext-configurator:"
+                      docker logs erpnext-configurator 2>&1 || echo "  (não foi possível capturar logs)"
                       DEPLOY_EXIT_CODE=1
                     else
                       echo "   ✅ erpnext-configurator completou com sucesso"
+                      echo "   📋 Logs finais do erpnext-configurator:"
+                      docker logs erpnext-configurator 2>&1 | tail -30 || echo "  (não foi possível capturar logs)"
                     fi
                   fi
                 fi
