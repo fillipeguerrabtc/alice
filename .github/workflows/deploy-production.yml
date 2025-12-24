@@ -3257,10 +3257,16 @@ jobs:
                       CREATE_SITE_EXIT=$(docker inspect erpnext-create-site --format '{{.State.ExitCode}}' 2>/dev/null || echo "1")
                       if [ "$CREATE_SITE_EXIT" != "0" ]; then
                         echo "❌ erpnext-create-site falhou com exit code: $CREATE_SITE_EXIT"
-                        docker logs erpnext-create-site 2>&1 | tail -50
+                        echo "=== LOGS COMPLETOS DO ERPNEXT-CREATE-SITE (últimas 200 linhas) ==="
+                        docker logs erpnext-create-site 2>&1 | tail -200
+                        echo ""
+                        echo "=== Buscando erros específicos nos logs ==="
+                        docker logs erpnext-create-site 2>&1 | grep -i "error\|exception\|traceback\|failed\|fatal" | tail -30 || echo "  (nenhum erro encontrado via grep)"
                         DEPLOY_EXIT_CODE=1
                       else
                         echo "   ✅ erpnext-create-site completou com sucesso"
+                        echo "=== LOGS FINAIS DO ERPNEXT-CREATE-SITE (últimas 50 linhas) ==="
+                        docker logs erpnext-create-site 2>&1 | tail -50
                       fi
                     fi
                   fi
