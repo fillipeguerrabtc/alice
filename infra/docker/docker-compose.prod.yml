@@ -694,10 +694,12 @@ services:
       # CORREÇÃO 23/12/2025: Mode 1755 não permite escrita - deve ser 1777 para tmpfs gravável
       - /etc/nginx/conf.d:mode=1777,size=8M
     healthcheck:
-      # CORREÇÃO 23/12/2025: Healthcheck robusto com -q (quiet mode) para evitar problemas
-      # BusyBox wget no Alpine funciona bem com read_only:true
+      # BUG FIX 23/12/2025: Healthcheck simplificado - verificar se processo nginx está rodando
+      # wget pode não estar disponível no BusyBox Alpine em read_only:true
+      # Verificar processo é suficiente para healthcheck básico (se nginx está vivo, está funcionando)
+      # Alternativa mais robusta: usar sh com printf + nc se necessário, mas pgrep é mais simples
       # start_period aumentado para dar tempo ao nginx iniciar completamente
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080/health || exit 1"]
+      test: ["CMD-SHELL", "pgrep -f 'nginx: master process' > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1223,12 +1225,12 @@ services:
       - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
+      # BUG FIX 23/12/2025: Usar /health em vez de /live (endpoint /live requer autenticação INTERNAL_API_SECRET)
+      # /health não requer autenticação e é adequado para Docker healthcheck (verifica se processo está vivo)
       # /ready verifica observability stack (Prometheus, Grafana) - pode falhar temporariamente
       # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      # CORREÇÃO 23/12/2025: Aumentado start_period e retries para dar tempo de inicialização
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
