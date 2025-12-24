@@ -904,8 +904,8 @@ importers:
         specifier: ^5.10.0
         version: 5.10.0
       stripe:
-        specifier: 18.5.0
-        version: 18.5.0(@types/node@22.10.2)
+        specifier: ^20.1.0
+        version: 20.1.0(@types/node@22.10.2)
       swagger-ui-express:
         specifier: ^5.0.1
         version: 5.0.1(express@5.2.1)
@@ -5112,15 +5112,6 @@ packages:
     resolution: {integrity: sha512-zUn077vkcYnCie5VP1AfS8QlB+ZGgPp49gPC+NxH5gSHjdSLjaxJ/poBS7SYByPuZWpGo6QMoNf4kzPMMaSP7g==}
     peerDependencies:
       stripe: '> 11'
-
-  stripe@18.5.0:
-    resolution: {integrity: sha512-Hp+wFiEQtCB0LlNgcFh5uVyKznpDjzyUZ+CNVEf+I3fhlYvh7rZruIg+jOwzJRCpy0ZTPMjlzm7J2/M2N6d+DA==}
-    engines: {node: '>=12.*'}
-    peerDependencies:
-      '@types/node': '>=12.x.x'
-    peerDependenciesMeta:
-      '@types/node':
-        optional: true
 
   stripe@20.1.0:
     resolution: {integrity: sha512-o1VNRuMkY76ZCq92U3EH3/XHm/WHp7AerpzDs4Zyo8uE5mFL4QUcv/2SudWsSnhBSp4moO2+ZoGCZ7mT8crPmQ==}
@@ -9428,7 +9419,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  stripe@18.5.0(@types/node@22.10.2):
+  stripe@20.1.0(@types/node@22.10.2):
     dependencies:
       qs: 6.14.0
     optionalDependencies:
