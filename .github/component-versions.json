@@ -6,7 +6,7 @@
   "loki": "3.6.2",
   "promtail": "3.6.2",
   "jaeger": "1.76.0",
-  "langfuse": "2.39.1",
+  "langfuse": "3.139.0",
   "erpnext": "91.0",
   "docker-socket-proxy": "0.4.1",
   "busybox": "1.37",
