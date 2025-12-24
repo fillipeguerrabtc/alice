@@ -767,18 +767,7 @@ jobs:
           
           # Langfuse
           # REGRA 6: Enterprise-grade - usar variável de ambiente para fallback (não hardcoded)
-          # BUG FIX 23/12/2025: Validar que versão existe no Docker Hub antes de usar
-          # Se versão do GitHub não existir no Docker Hub, usar fallback (3.139.0)
           LANGFUSE_VERSION=$(fetch_github_release "langfuse/langfuse" "LANGFUSE_FALLBACK")
-          
-          # Validar que versão existe no Docker Hub (testar digest antes de usar)
-          # Se digest não for encontrado, usar fallback
-          LANGFUSE_DIGEST_TEST=$(fetch_docker_digest "langfuse/langfuse" "${LANGFUSE_VERSION}")
-          if [ -z "$LANGFUSE_DIGEST_TEST" ]; then
-            echo "⚠️ AVISO: Versão ${LANGFUSE_VERSION} não encontrada no Docker Hub, usando fallback: ${LANGFUSE_FALLBACK}" >&2
-            LANGFUSE_VERSION="$LANGFUSE_FALLBACK"
-          fi
-          
           echo "LANGFUSE_VERSION=$LANGFUSE_VERSION" >> $GITHUB_ENV
           echo "langfuse_version=$LANGFUSE_VERSION" >> $GITHUB_OUTPUT
           echo "✅ Langfuse: $LANGFUSE_VERSION"
@@ -909,7 +898,21 @@ jobs:
           LOKI_DIGEST=$(fetch_docker_digest "grafana/loki" "${LOKI_VERSION}")
           PROMTAIL_DIGEST=$(fetch_docker_digest "grafana/promtail" "${PROMTAIL_VERSION}")
           JAEGER_DIGEST=$(fetch_docker_digest "jaegertracing/all-in-one" "${JAEGER_VERSION}")
+          
+          # BUG FIX 23/12/2025: Validar que versão Langfuse existe no Docker Hub antes de usar
+          # Se versão do GitHub não existir no Docker Hub, usar fallback (3.139.0)
+          # Validação movida para este passo onde fetch_docker_digest está definida
           LANGFUSE_DIGEST=$(fetch_docker_digest "langfuse/langfuse" "${LANGFUSE_VERSION}")
+          if [ -z "$LANGFUSE_DIGEST" ]; then
+            echo "⚠️ AVISO: Versão ${LANGFUSE_VERSION} não encontrada no Docker Hub, usando fallback: ${LANGFUSE_FALLBACK}" >&2
+            LANGFUSE_VERSION="$LANGFUSE_FALLBACK"
+            LANGFUSE_DIGEST=$(fetch_docker_digest "langfuse/langfuse" "${LANGFUSE_VERSION}")
+            if [ -z "$LANGFUSE_DIGEST" ]; then
+              echo "::error::Fallback ${LANGFUSE_FALLBACK} também não encontrado no Docker Hub" >&2
+              exit 1
+            fi
+            echo "✅ Langfuse usando fallback: ${LANGFUSE_VERSION}" >&2
+          fi
           ERPNEXT_DIGEST=$(fetch_docker_digest "frappe/erpnext" "v15.${ERPNEXT_VERSION}")
           ERPNEXT_NGINX_DIGEST=$(fetch_docker_digest "frappe/erpnext-nginx" "v15.${ERPNEXT_VERSION}")
           ERPNEXT_SOCKETIO_DIGEST=$(fetch_docker_digest "frappe/frappe-socketio" "v15.${ERPNEXT_VERSION}")
