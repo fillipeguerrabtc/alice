@@ -1611,21 +1611,26 @@ services:
           --admin-password "${ERPNEXT_ADMIN_PASSWORD}" \
           --mariadb-user-host-login-scope='%' \
           --install-app erpnext \
-          --verbose 2>&1 | tee /tmp/bench-new-site.log || {
-          BENCH_EXIT_CODE=$?
+          --verbose 2>&1 | tee /tmp/bench-new-site.log
+        BENCH_EXIT_CODE=${PIPESTATUS[0]}
+        
+        if [ "$BENCH_EXIT_CODE" -ne 0 ]; then
           echo ""
           echo "❌ ERRO: bench new-site falhou com exit code: $BENCH_EXIT_CODE"
           echo ""
-          echo "=== Últimas 200 linhas do output do bench (contexto completo) ==="
-          tail -200 /tmp/bench-new-site.log 2>/dev/null || echo "Sem output disponível"
+          echo "=== Últimas 300 linhas do output do bench (contexto completo) ==="
+          tail -300 /tmp/bench-new-site.log 2>/dev/null || echo "Sem output disponível"
+          echo ""
+          echo "=== Buscando erros específicos no log (grep ERROR/error/Error/Exception/Traceback/Failed/Fatal) ==="
+          grep -i "error\|exception\|traceback\|failed\|fatal" /tmp/bench-new-site.log 2>/dev/null | tail -50 || echo "  (nenhum erro encontrado via grep)"
           echo ""
           echo "=== Verificando uso de memória durante falha ==="
           free -h 2>/dev/null || echo "  (comando free não disponível)"
           echo ""
           echo "=== Logs do bench (últimos arquivos com mais contexto) ==="
           if [ -d "logs" ]; then
-            # Mostrar últimos 100 linhas de cada log para ter contexto completo
-            find logs -name "*.log" -type f -exec sh -c 'echo "=== $1 ==="; tail -100 "$1" 2>/dev/null || echo "  (erro ao ler log)"' _ {} \; 2>/dev/null || echo "Sem logs disponíveis"
+            # Mostrar últimos 150 linhas de cada log para ter contexto completo
+            find logs -name "*.log" -type f -exec sh -c 'echo "=== $1 ==="; tail -150 "$1" 2>/dev/null || echo "  (erro ao ler log)"' _ {} \; 2>/dev/null || echo "Sem logs disponíveis"
           else
             echo "Diretório logs não existe"
           fi
@@ -1640,6 +1645,11 @@ services:
             else
               echo "   ❌ site_config.json NÃO existe (site não foi criado completamente)"
             fi
+            # Verificar se há migrations pendentes ou erros
+            if [ -d "sites/$${SITE_NAME}/migrations" ]; then
+              echo "   Migrations encontradas:"
+              ls -la "sites/$${SITE_NAME}/migrations/" | head -20 || true
+            fi
           else
             echo "   ❌ Diretório do site NÃO existe (site não foi criado)"
           fi
@@ -1647,9 +1657,13 @@ services:
           echo "=== Verificando se erpnext foi instalado parcialmente ==="
           if [ -d "apps/erpnext" ]; then
             echo "   ✅ Diretório apps/erpnext existe"
+            echo "   Tamanho: $$(du -sh apps/erpnext 2>/dev/null || echo 'desconhecido')"
           else
             echo "   ❌ Diretório apps/erpnext NÃO existe"
           fi
+          echo ""
+          echo "=== Verificando se há processos Python rodando (bench pode ter travado) ==="
+          ps aux | grep -i "python\|bench\|frappe" | grep -v grep || echo "  (nenhum processo encontrado)"
           exit 1
         }
         echo "✅ Site $${SITE_NAME} criado com sucesso!"

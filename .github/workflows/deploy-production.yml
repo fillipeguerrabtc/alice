@@ -3026,8 +3026,8 @@ jobs:
             PHASE7_TIMEOUT=$WAIT_TIMEOUT  # clickhouse: até 360s
             
             # Timeouts para init containers (one-shot)
-            CONFIGURATOR_TIMEOUT=120   # erpnext-configurator: escreve configs
-            CREATE_SITE_TIMEOUT=300    # erpnext-create-site: cria ~300 tabelas
+            CONFIGURATOR_TIMEOUT=180   # erpnext-configurator: escreve configs (aumentado de 120s)
+            CREATE_SITE_TIMEOUT=600    # erpnext-create-site: cria site + instala erpnext (~300 tabelas) - BUG FIX 24/12/2025: aumentado de 300s para 600s
             
             # ==============================================
             # DEPLOY EM FASES SEQUENCIAIS (Enterprise Best Practice)
