@@ -2584,7 +2584,7 @@ export const featureFlags = pgTable(
     enabled: boolean("enabled").notNull().default(false),
     description: text("description"),
     metadata: jsonb("metadata").default({}),
-    createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+    createdBy: uuid("created_by").references(() => users.id, { onDelete: "set null" }),
     updatedBy: uuid("updated_by").references(() => users.id, { onDelete: "set null" }),
     criadoEm: timestamp("criado_em").defaultNow(),
     atualizadoEm: timestamp("atualizado_em").defaultNow(),
