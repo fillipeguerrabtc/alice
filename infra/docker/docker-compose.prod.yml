@@ -1133,13 +1133,14 @@ services:
       - "traefik.http.routers.alice-integrations.service=alice-integrations"
       - "traefik.http.services.alice-integrations.loadbalancer.server.port=3005"
       # Webhook Stripe (rota específica)
+      # BUG FIX 23/12/2025: Router alice-webhook deve usar o mesmo serviço alice-integrations
+      # Não existe serviço separado alice-webhook - ambos routers apontam para alice-integrations:3005
       - "traefik.http.routers.alice-webhook.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/webhook`)"
       - "traefik.http.routers.alice-webhook.entrypoints=websecure"
       - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-webhook.middlewares=security-headers@docker"
-      # BUG FIX 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
-      - "traefik.http.routers.alice-webhook.service=alice-webhook"
-      - "traefik.http.services.alice-webhook.loadbalancer.server.port=3005"
+      # BUG FIX 23/12/2025: Especificar service explícito apontando para alice-integrations (mesmo serviço)
+      - "traefik.http.routers.alice-webhook.service=alice-integrations"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
