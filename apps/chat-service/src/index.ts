@@ -868,7 +868,14 @@ async function proxyStreamFromGpuManager(
   onChunk: (content: string) => void,
   onDone?: (fullResponse: string) => Promise<void> | void
 ): Promise<string> {
-  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+  // BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
+  // INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
+  // Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
+  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+  if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
+    logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
+    throw new Error('INTERNAL_API_SECRET não configurado - autenticação service-to-service requerida');
+  }
   
   // Fazer requisição streaming ao GPU Manager Service
   const gpuResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
@@ -1998,6 +2005,11 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
+  // BUG FIX 25/12/2025: Enviar headers explicitamente para garantir que res.headersSent seja true
+  // Se nenhum chunk for recebido, onChunk nunca é chamado e headers nunca são enviados
+  // Isso causa condição onde onDone verifica res.headersSent && !res.writableEnded e falha
+  // Enviar headers explicitamente garante que resposta pode ser fechada mesmo sem dados
+  res.flushHeaders();
 
   try {
     let systemPrompt = 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
@@ -2041,9 +2053,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // BUG FIX 25/12/2025: onDone sempre será chamado (mesmo em caso de erro)
           // Garantir que não tentamos fechar resposta já fechada
           // BUG FIX 25/12/2025: Usar AND (&&) ao invés de OR (||) - só escrever se headers foram enviados E resposta não foi finalizada
-          // Para SSE, headers já foram enviados (linha 2000), então verificamos apenas se resposta não foi finalizada
-          if (res.headersSent && !res.writableEnded) {
+          // BUG FIX 25/12/2025: Headers são enviados explicitamente via res.flushHeaders() (linha 2004)
+          // Mesmo se nenhum chunk for recebido, headers já foram enviados, então podemos fechar a resposta
+          if (!res.writableEnded) {
             try {
+              // Se nenhum dado foi enviado, enviar [DONE] para fechar o stream corretamente
+              if (!res.headersSent) {
+                // Headers ainda não enviados (edge case), enviar agora
+                res.setHeader('Content-Type', 'text/event-stream');
+                res.setHeader('Cache-Control', 'no-cache');
+                res.setHeader('Connection', 'keep-alive');
+                res.flushHeaders();
+              }
               res.write('data: [DONE]\n\n');
               res.end();
             } catch (endError) {

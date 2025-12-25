@@ -50,7 +50,14 @@ const logger = createLogger('gpu-manager');
 
 const PORT = process.env.PORT || 3010;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+// BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
+// INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
+// Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
+  logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 // Middleware de autenticação interna (service-to-service)

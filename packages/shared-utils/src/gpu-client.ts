@@ -15,7 +15,14 @@ const logger = createLogger('gpu-client');
 // BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
 // URL padrão deve corresponder ao container_name, não ao service name
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+// BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
+// INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
+// Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
+if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
+  logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
+  process.exit(1);
+}
 
 /** Prioridades de requisições GPU (maior = mais prioritário) */
 export enum GpuRequestPriority {
