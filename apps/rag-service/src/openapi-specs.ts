@@ -219,7 +219,7 @@ export const ragServicePaths = {
       },
       responses: {
         200: {
-          description: 'Embedding (4096 dim - Qwen3-Embedding-8B GPU via Salad Cloud → Qdrant)',
+          description: 'Embedding (4096 dim - Qwen3-Embedding-8B GPU via GPU Manager Service → Qdrant)',
           content: {
             'application/json': {
               schema: {
@@ -255,7 +255,7 @@ export const ragServicePaths = {
           },
         },
       },
-      responses: { 200: { description: 'OpenCLIP embedding (1024 dim - ViT-H/14 GPU via Salad Cloud)' } },
+      responses: { 200: { description: 'OpenCLIP embedding (1024 dim - ViT-H/14 GPU via GPU Manager Service)' } },
     },
   },
   '/api/rag/stats': {

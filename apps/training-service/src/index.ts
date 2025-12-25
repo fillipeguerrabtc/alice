@@ -6,8 +6,8 @@
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
  * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Manager Service → Qdrant)
- * - Fine-tuning: Salad Cloud (GPUs externas) - SALAD_API_KEY obrigatória
- *   NOTA: Fine-tuning será migrado para Hetzner GPU em fase futura
+ * - Fine-tuning: Em migração para Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
+ *   NOTA: Funcionalidade de fine-tuning temporariamente desabilitada durante migração
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -47,15 +47,9 @@ import {
   requirePermission, 
   extractAuthContext,
 } from '@alice/shared-utils';
-import { 
-  createFineTuningJob as createSaladJob,
-  getJobStatus as getSaladJobStatus,
-  cancelJob as cancelSaladJob,
-  mapContainerStatusToJobStatus,
-  generateTrainingJSONL,
-  getSaladBreakerStats,
-  verificarDisponibilidadeSalad,
-} from './salad-client.js';
+// Fine-tuning será migrado para Hetzner GPU GEX44
+// Funcionalidade temporariamente desabilitada durante migração
+// TODO: Implementar fine-tuning local via GPU Manager Service
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('training-service');
@@ -112,24 +106,11 @@ if (!DATABASE_URL) {
 }
 
 // ==============================================================================
-// VALIDAÇÃO OBRIGATÓRIA: Salad Cloud Credentials (Regra 6 - Fail-Fast)
-// Training-service usa Salad Cloud para fine-tuning (GPUs externas)
-// SALAD_API_KEY e SALAD_ORGANIZATION_ID são OBRIGATÓRIAS para este serviço
+// FINE-TUNING: Em migração para Hetzner GPU GEX44
+// Funcionalidade temporariamente desabilitada durante migração
+// TODO: Implementar fine-tuning local via GPU Manager Service
 // ==============================================================================
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-
-if (!SALAD_API_KEY) {
-  logger.error('SALAD_API_KEY não configurada - obrigatória para fine-tuning na Salad Cloud');
-  process.exit(1);
-}
-
-if (!SALAD_ORGANIZATION_ID) {
-  logger.error('SALAD_ORGANIZATION_ID não configurada - obrigatória para fine-tuning na Salad Cloud');
-  process.exit(1);
-}
-
-logger.info('Credenciais Salad Cloud validadas - fine-tuning habilitado');
+logger.info('Training service inicializado - fine-tuning em migração para Hetzner GPU GEX44');
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -162,7 +143,7 @@ app.use(metricsRouter);
 setupSwaggerUI(app, {
   serviceName: 'training-service',
   version: '1.0.0',
-  description: 'Serviço de fine-tuning com SemHash, auto-learning e Salad Cloud.',
+  description: 'Serviço de fine-tuning com SemHash, auto-learning e GPU Manager Service (Hetzner GEX44).',
   port: Number(PORT),
   tags: TRAINING_SERVICE_TAGS,
   paths: trainingServicePaths,
@@ -319,8 +300,6 @@ function cosineSimilarity(a: number[], b: number[]): number {
 
 app.get('/api/training/health', async (_req: Request, res: Response) => {
   const embeddingsCircuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
-  const saladStats = getSaladBreakerStats();
-  const saladAvailable = await verificarDisponibilidadeSalad();
   
   const overallStatus = embeddingsCircuitState === 'open' ? 'degraded' : 'ok';
   
@@ -330,7 +309,7 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     embeddingsProvider: 'gpu-manager-service', // ARQUITETURA ENTERPRISE (25/12/2025)
     model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
-    saladCloudAvailable: saladAvailable,
+    fineTuningStatus: 'migrating', // Em migração para Hetzner GPU GEX44
     circuitBreakers: {
       embeddings: {
         state: embeddingsCircuitState,
@@ -340,7 +319,6 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
           timeouts: embeddingsBreaker.stats.timeouts,
         },
       },
-      saladContainerGroups: saladStats,
     },
   });
 });
@@ -647,135 +625,35 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
 
 const activePollingJobs = new Map<string, NodeJS.Timeout>();
 
+// TODO: Migrar fine-tuning para Hetzner GPU GEX44 via GPU Manager Service
+// Funcionalidade temporariamente desabilitada durante migração
 async function startFineTuningJob(jobId: string, hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
-  logger.info({ jobId }, 'Iniciando job de fine-tuning na Salad Cloud');
+  logger.warn({ jobId }, 'Fine-tuning temporariamente desabilitado - em migração para Hetzner GPU GEX44');
   
   await db.update(schema.fineTuningJobs)
     .set({ 
-      status: 'preparing',
+      status: 'failed',
+      errorMessage: 'Fine-tuning em migração para Hetzner GPU GEX44. Funcionalidade temporariamente desabilitada.',
       iniciadoEm: new Date(),
     })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
-  try {
-    const job = await db.query.fineTuningJobs.findFirst({
-      where: eq(schema.fineTuningJobs.id, jobId),
-    });
-    
-    if (!job) {
-      throw new Error('Job não encontrado');
-    }
-
-    const trainingData = await db.query.trainingData.findMany({
-      where: eq(schema.trainingData.usedInJobId, jobId),
-    });
-
-    if (trainingData.length === 0) {
-      throw new Error('Nenhum dado de treinamento associado ao job');
-    }
-
-    const jsonlData = generateTrainingJSONL(
-      trainingData.map(d => ({
-        messages: d.messages as Array<{ role: string; content: string }>,
-      }))
-    );
-    const jsonlSizeBytes = Buffer.byteLength(jsonlData, 'utf-8');
-    logger.debug({ jobId, jsonlSizeBytes }, 'Payload JSONL de treinamento gerado');
-
-    const dataUrl = `s3://alice-training-data/${jobId}/training.jsonl`;
-    const outputUrl = `s3://alice-training-output/${jobId}/`;
-
-    logger.info({ jobId, dataCount: trainingData.length }, 'Criando Container Group na Salad Cloud');
-    
-    const saladResponse = await createSaladJob(jobId, {
-      baseModel: job.baseModel,
-      dataUrl,
-      outputUrl,
-      hyperparameters,
-    });
-
-    await db.update(schema.fineTuningJobs)
-      .set({ 
-        status: 'training',
-        progress: 0,
-        containerGroupId: saladResponse.name,
-      })
-      .where(eq(schema.fineTuningJobs.id, jobId));
-
-    logger.info({ 
-      jobId, 
-      containerGroupName: saladResponse.name,
-      containerGroupId: saladResponse.id,
-    }, 'Container Group criado - iniciando polling de status');
-
-    startStatusPolling(jobId, saladResponse.name);
-
-  } catch (error) {
-    logger.error({ error, jobId }, 'Erro ao iniciar fine-tuning na Salad Cloud');
-    
-    await db.update(schema.fineTuningJobs)
-      .set({ 
-        status: 'failed',
-        errorMessage: error instanceof Error ? error.message : 'Erro desconhecido',
-      })
-      .where(eq(schema.fineTuningJobs.id, jobId));
-  }
+  // TODO: Implementar fine-tuning local via GPU Manager Service
+  // - Preparar dataset JSONL
+  // - Solicitar recursos GPU via GPU Manager Service
+  // - Executar treinamento LoRA no servidor Hetzner GEX44
+  // - Monitorar progresso e atualizar status no banco
 }
 
-function startStatusPolling(jobId: string, containerGroupName: string): void {
-  const pollStatus = async () => {
-    try {
-      const status = await getSaladJobStatus(containerGroupName);
-      const mappedStatus = mapContainerStatusToJobStatus(status.currentState.status);
-      
-      logger.debug({ 
-        jobId, 
-        containerStatus: status.currentState.status,
-        mappedStatus,
-      }, 'Status do job atualizado');
-
-      const updateData: Record<string, unknown> = { status: mappedStatus };
-      
-      if (status.currentState.instanceStatusCounts) {
-        const running = status.currentState.instanceStatusCounts.running || 0;
-        const total = Object.values(status.currentState.instanceStatusCounts).reduce((a, b) => a + b, 0);
-        if (total > 0) {
-          updateData.progress = Math.round((running / total) * 100);
-        }
-      }
-
-      if (mappedStatus === 'completed') {
-        updateData.completadoEm = new Date();
-        updateData.resultModel = `Mixtral-8x7B-ft-${jobId.slice(0, 8)}`;
-        updateData.metrics = {
-          mode: 'production',
-          containerGroupName,
-          finishTime: status.currentState.finishTime,
-        };
-        stopStatusPolling(jobId);
-        logger.info({ jobId, containerGroupName }, 'Job de fine-tuning concluído com sucesso');
-      } else if (mappedStatus === 'failed') {
-        updateData.errorMessage = status.currentState.description || 'Falha no Container Group';
-        stopStatusPolling(jobId);
-        logger.error({ jobId, containerGroupName, description: status.currentState.description }, 'Job de fine-tuning falhou');
-      } else if (mappedStatus === 'cancelled') {
-        stopStatusPolling(jobId);
-        logger.warn({ jobId, containerGroupName }, 'Job de fine-tuning cancelado');
-      }
-
-      await db.update(schema.fineTuningJobs)
-        .set(updateData)
-        .where(eq(schema.fineTuningJobs.id, jobId));
-
-    } catch (error) {
-      logger.warn({ error, jobId }, 'Erro ao verificar status do job - tentará novamente');
-    }
-  };
-
-  pollStatus();
+// TODO: Migrar polling de status para Hetzner GPU GEX44
+// Funcionalidade temporariamente desabilitada durante migração
+function startStatusPolling(jobId: string, _containerGroupName: string): void {
+  logger.warn({ jobId }, 'Polling de status temporariamente desabilitado - em migração para Hetzner GPU GEX44');
   
-  const intervalId = setInterval(pollStatus, JOB_POLLING_INTERVAL_MS);
-  activePollingJobs.set(jobId, intervalId);
+  // TODO: Implementar polling de status para fine-tuning local
+  // - Verificar status do job via GPU Manager Service
+  // - Atualizar progresso no banco de dados
+  // - Parar polling quando job completar/falhar/cancelar
 }
 
 function stopStatusPolling(jobId: string): void {
@@ -834,13 +712,10 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
 
     stopStatusPolling(id);
 
+    // TODO: Cancelar job no Hetzner GPU GEX44 via GPU Manager Service
+    // Funcionalidade temporariamente desabilitada durante migração
     if (job.containerGroupId) {
-      try {
-        await cancelSaladJob(job.containerGroupId);
-        logger.info({ jobId: id, containerGroupId: job.containerGroupId }, 'Container Group cancelado na Salad Cloud');
-      } catch (saladError) {
-        logger.warn({ saladError, jobId: id }, 'Erro ao cancelar na Salad Cloud - continuando com cancelamento local');
-      }
+      logger.warn({ jobId: id, containerGroupId: job.containerGroupId }, 'Cancelamento de job em migração - apenas cancelamento local');
     }
 
     const [updated] = await db.update(schema.fineTuningJobs)

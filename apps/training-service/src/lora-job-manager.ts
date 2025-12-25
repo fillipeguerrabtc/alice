@@ -2,16 +2,16 @@
  * Trading LoRA Job Manager - Alice Enterprise Platform
  * 
  * Gerencia ciclo de vida de jobs de treinamento LoRA para trading.
- * Integra com Salad Cloud para execução de treinamento em GPU.
+ * Em migração para Hetzner GPU GEX44 (RTX 4000 Ada 20GB).
  * 
  * Funcionalidades:
  * - Criação e gerenciamento de jobs
  * - Preparação de datasets para treinamento
  * - Monitoramento de progresso
- * - Integração com Salad Cloud
+ * - Integração com GPU Manager Service (Hetzner GEX44) - em migração
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  */
 
 import { createLogger } from '@alice/logger';
@@ -410,9 +410,8 @@ export async function updateJobProgress(
 /**
  * Cancela um job
  * 
- * Regra 6 CLAUDE.md: Integração real enterprise com Salad Cloud
- * Se job estiver rodando na Salad Cloud, cancela o container group
- * para evitar custos desnecessários de GPU
+ * Regra 6 CLAUDE.md: Integração real enterprise com Hetzner GPU GEX44
+ * Em migração - funcionalidade temporariamente desabilitada
  */
 export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
   const db = getDatabase();
@@ -431,25 +430,11 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
     throw new Error(`Job já está ${job.status}, não pode ser cancelado`);
   }
 
-  // Se job estiver preparando ou treinando, cancelar container group na Salad Cloud
+  // TODO: Cancelar job no Hetzner GPU GEX44 via GPU Manager Service
   // Regra 6: Integração real enterprise (PROIBIDO deixar recursos órfãos)
   if (job.status === 'preparing' || job.status === 'training') {
-    try {
-      const containerGroupName = `alice-ft-${jobId.slice(0, 8)}`;
-      const { cancelJob: cancelSaladJob } = await import('./salad-client.js');
-      
-      logger.info({ jobId, containerGroupName }, 'Cancelando container group na Salad Cloud');
-      await cancelSaladJob(containerGroupName);
-      logger.info({ jobId, containerGroupName }, 'Container group cancelado com sucesso');
-    } catch (error) {
-      // Log erro mas continua com cancelamento local
-      // Container pode não existir se job falhou antes de criar
-      const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
-      logger.warn({ 
-        jobId, 
-        error: errorMessage,
-      }, 'Aviso: Não foi possível cancelar container group na Salad Cloud (pode não existir)');
-    }
+    logger.warn({ jobId }, 'Cancelamento de job em migração - apenas cancelamento local');
+    // TODO: Implementar cancelamento via GPU Manager Service
   }
 
   const [updated] = await db

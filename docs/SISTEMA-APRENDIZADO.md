@@ -16,29 +16,29 @@ A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressi
 
 ### Mudança Crítica
 
-A partir de 17/12/2025, a Alice utiliza **arquitetura dual-dimension 100% GPU via Salad Cloud** para processamento de IA:
+A partir de 25/12/2025, a Alice utiliza **arquitetura 100% GPU local via Hetzner GPU GEX44** para processamento de IA:
 
 | Componente | Modelo | Dimensões | Infraestrutura |
 |------------|--------|-----------|----------------|
-| **Embeddings de Texto** | Qwen3-Embedding-8B | **4096 dim** → Qdrant | GPU Salad Cloud RTX 4090 |
-| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | GPU Salad Cloud RTX 4090 |
-| **Transcrição de Áudio** | Canary-Qwen-2.5B (NeMo) | - | GPU Salad Cloud RTX 4090 |
-| **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Salad Cloud RTX 4090 |
-| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Salad Cloud RTX 4090 |
-| **Fine-tuning** | LoRA Progressive | - | GPU Salad Cloud RTX 4090 |
+| **Embeddings de Texto** | Qwen3-Embedding-8B | **4096 dim** → Qdrant | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Embeddings de Imagem** | OpenCLIP ViT-H/14 | 1024 dim → pgvector | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Transcrição de Áudio** | Canary-1B (NeMo) | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Geração de Imagens** | FLUX.1 Schnell | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
+| **Fine-tuning** | LoRA Progressive | - | Hetzner GEX44 (em migração) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
 ### Estratégia "Warm on Demand"
 
-Para otimizar custos e latência:
+Para otimizar latência e uso de VRAM:
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
-| **Primeira requisição** | 5-30 segundos | GPU cold start no Salad Cloud |
-| **Requisições subsequentes** | ~1 segundo | GPU permanece "quente" |
-| **Após 30 min inatividade** | 5-30 segundos | GPU é desligada, cold start novamente |
+| **Primeira requisição** | 2-5 segundos | Modelo carregando na GPU (se não estiver em memória) |
+| **Requisições subsequentes** | ~0.5-1 segundo | GPU permanece "quente" (modelo em memória) |
+| **Após período de inatividade** | 2-5 segundos | GPU Manager mantém serviços ativos por período configurável |
 
-> **Abordagem Híbrida (22/12/2025):** Container Groups são **pré-criados manualmente** no Salad Cloud Dashboard. URLs configuradas como secrets no GitHub. Ver [docs/SECRETS.md](SECRETS.md) para guia completo.
+> **Arquitetura Enterprise (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
 
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings
@@ -113,7 +113,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 **Como funciona:**
 - Documentos são uploadeados via `/api/rag/documents`
 - Texto é dividido em chunks (1000 chars, 200 overlap)
-- Embeddings são gerados via GPU Salad Cloud (Qwen3-Embedding-8B, 4096 dim)
+- Embeddings são gerados via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim - Hetzner GEX44)
 - Chunks ficam disponíveis IMEDIATAMENTE para busca semântica no Qdrant
 
 ### 4. Dashboard Admin (Manual) ✅
@@ -160,7 +160,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
-│           PROCESSAMENTO MULTIMODAL (GPU Salad Cloud)        │
+│      PROCESSAMENTO MULTIMODAL (GPU Manager Service)       │
 │  • Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant            │
 │  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
 │  • Áudio: Canary-1B + Qwen3 (4096 dim) → Qdrant             │
@@ -185,7 +185,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 │              PROGRESSIVE LoRA (A cada 4 dias)               │
 │  • Coleta dados aprovados                                   │
 │  • Gera dataset JSONL                                       │
-│  • Inicia job no Salad Cloud                                │
+│  • Inicia job no Hetzner GPU GEX44 (via GPU Manager)        │
 │  • GPU: RTX 3090/4090/A100                                  │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -236,9 +236,9 @@ if (evaluation.recommendation === 'proceed' && job.tenantId) {
 
 ### Visão Geral
 
-O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
+O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
-| Aspecto | GPU Salad Cloud |
+| Aspecto | GPU Manager Service (Hetzner GEX44) |
 |---------|-----------------|
 | **Modelo Transcrição** | Canary-Qwen-2.5B (NeMo) |
 | **Velocidade** | 7-9x realtime |
@@ -259,7 +259,7 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 │  • Canary-Qwen-2.5B (NeMo)                                  │
 │  • 7-9x realtime                                            │
 │  • CUDA accelerated RTX 4090                                │
-│  • SALAD_ASR_URL é OBRIGATÓRIO em produção                 │
+│  • GPU Manager Service gerencia requisições ASR             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -279,8 +279,7 @@ O processamento de áudio utiliza **GPU obrigatória** via Salad Cloud:
 
 | Variável | Descrição | Obrigatoriedade |
 |----------|-----------|-----------------|
-| `SALAD_WHISPER_URL` | URL do serviço whisper-gpu no Salad | **OBRIGATÓRIO** |
-| `EMBEDDINGS_GPU_URL` | URL do serviço embeddings-gpu no Salad | **OBRIGATÓRIO** |
+| `GPU_MANAGER_URL` | URL do GPU Manager Service (localhost:3008) | **OBRIGATÓRIO** |
 
 ---
 
@@ -347,7 +346,7 @@ Acessíveis em `/dashboard/analytics`:
 ## Segurança e Privacidade
 
 - Dados NUNCA saem da infraestrutura controlada
-- Fine-tuning acontece no Salad Cloud (self-hosted)
+- Fine-tuning acontece no Hetzner GPU GEX44 (em migração - atualmente ainda usa Salad Cloud)
 - Multi-tenant: dados isolados por tenant_id
 - Auditoria completa de todas as operações
 - RBAC: apenas admins aprovam dados
@@ -376,10 +375,10 @@ Acessíveis em `/dashboard/analytics`:
 ## ✅ IMPLEMENTADO CORRETAMENTE
 
 ### 1. Arquitetura Enterprise 100% GPU
-- ✅ Embeddings de texto (Qwen3-Embedding-8B, **4096 dim**) via GPU Salad RTX 4090 → Qdrant
-- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Salad RTX 4090 → pgvector
-- ✅ Transcrição de áudio (Canary-1B NeMo) via GPU Salad RTX 4090
-- ✅ LLM Trading (Mixtral 8x7B vLLM AWQ) via GPU Salad RTX 4090
+- ✅ Embeddings de texto (Qwen3-Embedding-8B, **4096 dim**) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) → Qdrant
+- ✅ Embeddings de imagem (OpenCLIP ViT-H/14, 1024 dim) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) → pgvector
+- ✅ Transcrição de áudio (Canary-1B NeMo) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)
+- ✅ LLM Trading (Mixtral 8x7B vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)
 - ✅ Qdrant para texto (4096 dim com HNSW) + pgvector para imagem (1024 dim)
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
@@ -463,7 +462,7 @@ Acessíveis em `/dashboard/analytics`:
 **Próximos passos (manual):**
 1. Rodar workflow `build-media-images` manualmente no GitHub Actions
 2. Pegar digests SHA256 das imagens geradas
-3. Criar secrets no repositório: `EMBEDDINGS_GPU_URL` e `SALAD_WHISPER_URL`
+3. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 4. Deploy em produção
 
 ### GAP 5: Arquivo clip-service-url.ts Obsoleto ✅ RESOLVIDO
@@ -498,7 +497,7 @@ Acessíveis em `/dashboard/analytics`:
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 3.5 - 19 de Dezembro de 2025*
-*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
+*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
 *Análise de Licenças (17/12/2025): Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5, Linq-Embed-Mistral e NV-Embed-v2 são CC BY-NC (Non-Commercial).*

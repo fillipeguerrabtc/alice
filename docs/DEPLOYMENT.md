@@ -1,11 +1,11 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 23 de Dezembro de 2025
+**Data:** 25 de Dezembro de 2025
 
-## Visão Geral da Arquitetura - 45 Containers em Produção
+## Visão Geral da Arquitetura - 50 Containers em Produção
 
-A plataforma Alice é composta por **45 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **50 containers** organizados em 7 categorias (45 serviços + 4 GPU + 1 backup):
 
 ### Categoria 1: Infraestrutura Core (8 serviços)
 
@@ -113,10 +113,10 @@ A plataforma Alice é composta por **45 containers** organizados em 6 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - CX43) - 45 CONTAINERS           │
+│               PRODUÇÃO (Hetzner Cloud - GEX44) - 50 CONTAINERS         │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │             CX43 (8 vCPUs, 16GB RAM, 160GB SSD)                    │ │
+│  │    GEX44 (Intel i5-13500 14 Core, 64GB DDR4, 1.92TB NVMe RAID 1)  │ │
 │  │                                                                     │ │
 │  │  ┌──────────────────────────────────────────────────────────────┐  │ │
    │  │  │ INFRAESTRUTURA CORE (6)                                       │  │ │
@@ -157,10 +157,11 @@ A plataforma Alice é composta por **45 containers** organizados em 6 categorias
 │  └────────────────────────────────────────────────────────────────────┘ │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
-│  │ Recursos Hetzner CX43:                                             │ │
-│  │  • vCPUs: 8 (AMD EPYC)      • RAM: 16GB                           │ │
-│  │  • SSD: 160GB NVMe          • Tráfego: 20TB/mês                   │ │
-│  │  • IPv4 + IPv6              • Custo: €9.49/mês                    │ │
+│  │ Recursos Hetzner GEX44:                                            │ │
+│  │  • CPU: Intel Core i5-13500 14 Core (6 P-cores, 8 E-cores)       │ │
+│  │  • RAM: 64GB DDR4 ECC      • GPU: RTX 4000 Ada 20GB VRAM         │ │
+│  │  • SSD: 2x 1.92TB NVMe (RAID 1 = 1.92TB utilizável)               │ │
+│  │  • Tráfego: 1 Gbit/s       • Custo: €184.00/mês                  │ │
 │  └────────────────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
@@ -173,34 +174,34 @@ A plataforma Alice é composta por **45 containers** organizados em 6 categorias
 
 | Recurso | Especificação | Custo |
 |---------|---------------|-------|
-| CX43 (Cost-Optimized) | 8 vCPU, 16GB RAM, 160GB SSD | €8.99/mês |
+| GEX44 (Dedicated GPU) | Intel i5-13500 14 Core, 64GB DDR4, 2x 1.92TB NVMe RAID 1, RTX 4000 Ada 20GB | €184.00/mês |
 | IPv4 Público | Endereço dedicado | €0.50/mês |
-| **Volume alice-data** | 100GB EXT4 (dados + uploads + backups) | €4.40/mês |
+| **Volume alice-data** | Não necessário - servidor GEX44 possui 1.92TB interno | €0.00/mês |
 | Snapshots | Backup automático | €0.012/GB/mês |
-| **Total Base** | | **€13.89/mês** |
+| **Total Base** | | **€184.00/mês** |
 
 ### Volume Hetzner (alice-data)
 
-Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice`:
+Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/opt/alice`:
 
 **Estrutura Enterprise (13/12/2025):**
 
 | Diretório | Propósito | Permissões | Uso Estimado |
 |-----------|-----------|------------|--------------|
-| `/opt/alice/data/` | Dados de DBs e serviços | 750 | ~20-50GB |
-| `/opt/alice/uploads/` | Uploads multimodais (DUAS estruturas) | 750 | ~10-30GB |
+| `/opt/alice/data/` | Dados de DBs e serviços | 750 | ~50-200GB (com 1.92TB disponível) |
+| `/opt/alice/uploads/` | Uploads multimodais (DUAS estruturas) | 750 | ~100-500GB (com 1.92TB disponível) |
 | ├── `{tenantId}/` | Uploads gerais de usuários (isolamento por tenant) | 750 | |
 | │   ├── `image/` | Imagens enviadas via /api/media/upload | 750 | |
 | │   ├── `audio/` | Áudios enviados via /api/media/upload | 750 | |
 | │   └── `document/` | Documentos enviados via /api/media/upload | 750 | |
-| `/opt/alice/backups/` | Backups enterprise | 750 | ~20-40GB |
+| `/opt/alice/backups/` | Backups enterprise | 750 | ~100-300GB (com 1.92TB disponível) |
 | ├── `postgresql/` | Backups PostgreSQL (pgBackRest) | 750 | |
 | ├── `mariadb/` | Backups MariaDB | 750 | |
 | ├── `redis/` | Snapshots Redis | 750 | |
 | └── `manifests/` | Manifestos JSON de backups | 750 | |
 | `/opt/alice/logs/` | Logs de serviços | 750 | ~1-5GB |
 
-> **NOTA:** Volume expansível até 10TB a qualquer momento via Console Hetzner.
+> **NOTA:** Servidor GEX44 possui 1.92TB de storage interno (muito superior aos 160GB do servidor anterior). Não é necessário volume externo adicional.
 
 ### GitHub (Gratuito)
 
@@ -237,7 +238,7 @@ Volume persistente de 100GB montado em `/mnt/alice-data` com symlink `/opt/alice
 4. Configure:
    - **Location:** Nuremberg (recomendado) ou Helsinki
    - **Image:** Ubuntu 24.04
-   - **Type:** Cost-Optimized → **CX43**
+   - **Type:** Dedicated GPU-Server → **GEX44**
    - **SSH Key:** Adicione sua chave pública
    - **IPv4:** Habilitado
    - **Name:** `alice-prod`
@@ -351,9 +352,10 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 | **SO** | Ubuntu 24.04.3 LTS (Noble Numbat) |
 | **Docker** | 29.1.3 |
 | **Docker Compose** | v5.0.0 |
-| **CPU** | 8 vCPUs (AMD EPYC) |
-| **RAM** | 16GB |
-| **Disco** | 160GB NVMe SSD |
+| **CPU** | Intel Core i5-13500 14 Core (6 P-cores, 8 E-cores) |
+| **RAM** | 64GB DDR4 ECC |
+| **GPU** | NVIDIA RTX 4000 SFF Ada Generation (20GB VRAM) |
+| **Disco** | 2x 1.92TB NVMe SSD Datacenter Edition (Software RAID 1 = 1.92TB utilizável) |
 | **IP** | 46.224.46.93 |
 | **Localização** | Hetzner Cloud |
 
@@ -908,7 +910,7 @@ Retenção Arquivo:   30 dias
 
 | Componente | Custo Mensal |
 |------------|--------------|
-| Hetzner CX43 | €8.99 |
+| Hetzner GEX44 | €184.00 |
 | IPv4 Público | €0.50 |
 | DuckDNS | $0 (gratuito) |
 | GitHub Actions | $0 (gratuito) |

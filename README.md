@@ -70,7 +70,7 @@
 ┌─────────────────────────────────────────────────────────────────────┐
 │                  PRODUÇÃO (Hetzner GPU Server - Nuremberg)           │
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │    GPU Server (RTX 4090 24GB, 64GB RAM, 1TB NVMe SSD)           ││
+│  │    GPU Server GEX44 (RTX 4000 Ada 20GB, 64GB DDR4, 1.92TB NVMe)  ││
 │  │    IP: 46.224.46.93 | Domínio: yesyoudeserve.duckdns.org       ││
 │  │  ┌─────────┐ ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────────┐     ││
 │  │  │ Traefik │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
@@ -208,7 +208,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | Ambiente | Plataforma | Descrição |
 |----------|------------|-----------|
 | **Desenvolvimento** | Cursor IDE | IDE, hot reload, debugging, AI-assisted |
-| **Produção** | Hetzner Cloud CX43 | 8 vCPU, 16GB RAM, 160GB SSD + Volume 100GB |
+| **Produção** | Hetzner Cloud GEX44 | Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD (RAID 1) |
 
 ### Volume Persistente (alice-data)
 
@@ -312,7 +312,7 @@ alice/
 ├── .github/workflows/              # CI/CD (4 workflows)
 │   ├── ci.yml                      # Build & Test
 │   ├── release.yml                 # Versionamento semântico
-│   ├── deploy-production.yml       # Deploy Hetzner + Salad GPU
+│   ├── deploy-production.yml       # Deploy Hetzner GPU (100% automático)
 │   └── update-system-packages.yml  # Manutenção semanal
 │
 ├── client/                         # Frontend React
@@ -442,17 +442,17 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.12 - 23 de Dezembro de 2025*
+*Versão 4.13 - 25 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
 *PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
-*Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
+*Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
-*LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server RTX 4090 24GB*
+*LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
 *GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
 *Pipeline Unificada: Hetzner GPU 100% automático - todos os 50 containers no servidor único*
 

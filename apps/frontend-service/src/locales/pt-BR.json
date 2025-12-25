@@ -211,8 +211,8 @@
       "databaseFeature": "Busca vetorial",
       "rbac": "RBAC Enterprise",
       "rbacPermissions": "160+ permissões",
-      "server": "Hetzner CX43",
-      "serverSpecs": "8 vCPUs, 16GB RAM"
+      "server": "Hetzner GEX44",
+      "serverSpecs": "Intel i5-13500 14 Core, 64GB DDR4, RTX 4000 Ada 20GB"
     },
     "stats": {
       "activeConversations": "Conversas Ativas",

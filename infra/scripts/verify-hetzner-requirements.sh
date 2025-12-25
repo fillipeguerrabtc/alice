@@ -112,9 +112,9 @@ fi
 # Verificar memória
 MEM_TOTAL=$(free -g | awk '/^Mem:/{print $2}')
 if [ "$MEM_TOTAL" -ge 16 ]; then
-    log_ok "Memória RAM: ${MEM_TOTAL}GB (mínimo: 16GB)"
+    log_ok "Memória RAM: ${MEM_TOTAL}GB (mínimo: 64GB para GEX44)"
 else
-    log_warn "Memória RAM: ${MEM_TOTAL}GB (recomendado: 16GB+)"
+    log_warn "Memória RAM: ${MEM_TOTAL}GB (recomendado: 64GB+ para GEX44)"
 fi
 
 # Verificar disco

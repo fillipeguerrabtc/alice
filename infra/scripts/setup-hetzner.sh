@@ -3,17 +3,18 @@
 # Script de Configuração Inicial do Servidor Hetzner - Alice Enterprise Platform
 # =============================================================================
 # Descrição: Configura servidor Hetzner para deploy da Alice Enterprise Platform
-#            com arquitetura 100% GPU Salad Cloud
+#            com arquitetura 100% GPU local (Hetzner GPU GEX44)
 #
-# ARQUITETURA ENTERPRISE (17/12/2025):
-# - 43 containers (7 infra + 7 Alice + 15 ERPNext + 13 obs + 1 backup)
-# - LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud GPUs RTX 4090
+# ARQUITETURA ENTERPRISE (25/12/2025):
+# - 50 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 5 GPU + 1 backup)
+# - LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)
 # - Vector DB: Qdrant (texto) + PostgreSQL pgvector (imagem)
 # - API Gateway: Traefik v3.6.4 (NÃO Nginx)
+# - GPU Manager Service: Gerenciamento centralizado de requisições GPU
 #
-# Servidor: CX43 (8 vCPU AMD EPYC, 16GB RAM, 160GB NVMe SSD)
-# Volume: 100GB (alice-data) montado em /mnt/alice-data
+# Servidor: GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB)
+# Storage: 1.92TB interno (não é necessário volume externo)
 # SO: Ubuntu 24.04 LTS
 # IP: 46.224.46.93
 # Domínio: yesyoudeserve.duckdns.org

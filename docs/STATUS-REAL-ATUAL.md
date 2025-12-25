@@ -12,14 +12,14 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 45 (produção) |
-| **Servidor** | Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe) |
-| **Volume Adicional** | Hetzner Volume 100GB (alice-data) em /opt/alice |
+| **Total de Containers** | 50 (produção: 45 serviços + 4 GPU + 1 backup) |
+| **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
+| **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
 | **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
 | **IP** | 46.224.46.93 |
-| **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM) via Salad Cloud + Trading BTC |
+| **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB) + Trading BTC |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |
 | **Storage** | Volume local Hetzner (SEM S3 externo) |
@@ -38,7 +38,7 @@
 
 > Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` verifica que `version` é obrigatória e válida (formato v1.0.0). Impede disparo acidental. Script externo `infra/scripts/generate-env-prod.sh` para .env.prod. Pipeline sequencial: CI → Release → Deploy (sem execução paralela).
 
-> Atualização 21/12/2025: Healthchecks dos 6 serviços Alice corrigidos de `/ready` para `/live`. Docker healthcheck verifica se PROCESSO está vivo, não dependências externas (GPU Salad Cloud). Endpoint `/ready` é para Kubernetes readiness (roteamento de tráfego). Corrige erro "container alice-rag is unhealthy" em primeiro deploy.
+> Atualização 21/12/2025: Healthchecks dos 6 serviços Alice corrigidos de `/ready` para `/live`. Docker healthcheck verifica se PROCESSO está vivo, não dependências externas (GPU Manager Service). Endpoint `/ready` é para Kubernetes readiness (roteamento de tráfego). Corrige erro "container alice-rag is unhealthy" em primeiro deploy.
 
 > **CORREÇÃO CRÍTICA 21/12/2025:** Variáveis `QDRANT_URL` e `QDRANT_API_KEY` estavam **FALTANDO** no docker-compose.prod.yml para `alice-rag`. Sem estas variáveis, RAG service não conseguia conectar ao Qdrant (banco vetorial de texto 4096 dim), causando falha no healthcheck. Training e integrations tinham, mas rag não.
 
@@ -46,7 +46,7 @@
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
-> **Salad Cloud Abordagem Híbrida 22/12/2025:** Container Groups GPU são **PRÉ-CRIADOS MANUALMENTE** no Salad Cloud Dashboard. URLs são configuradas como **secrets no GitHub**: `SALAD_MIXTRAL_URL`, `EMBEDDINGS_GPU_URL`, `SALAD_FLUX_URL`, `SALAD_ASR_URL`. Pipeline apenas **valida** que URLs estão configuradas e faz health check. Benefícios: deploy mais rápido (sem cold start 2-5 min), mais confiável (GPUs quentes), menor custo (evita cold start repetido). Guia completo: [docs/SECRETS.md](SECRETS.md) seção "Salad Cloud GPU URLs".
+> **GPU Manager Service 25/12/2025:** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service com fila priorizada, monitoramento VRAM e circuit breakers. Elimina latência de rede e simplifica arquitetura. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
 
 > **Bug Fix ERPNext install-app --verbose 25/12/2025:** O comando `bench install-app` no container `erpnext-create-site` (ETAPA 2) usava a flag `--verbose` que não é suportada. Erro: "No such option: --verbose" causava falha na instalação do ERPNext durante o deploy. Corrigido: Removida flag `--verbose` do comando `bench install-app` na linha 1641 do docker-compose.prod.yml. O `bench new-site` (ETAPA 1) aceita `--verbose` e funcionou corretamente, mas `bench install-app` não aceita essa flag. Comando corrigido: `timeout 1200 bench --site "${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log`.
 
@@ -92,7 +92,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 8 | Multimodal Inference | `docker/gpu/embeddings-gpu` | embeddings-gpu | 8080 | GPU Salad Cloud - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B |
+| 43-47 | GPU Services | `gpu-manager-service`, `gpu-mixtral`, `gpu-embeddings`, `gpu-flux`, `gpu-asr` | - | - | GPU Manager Service + 4 serviços GPU locais (Hetzner GEX44) - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B, LLM: Mixtral 8x7B |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
@@ -129,7 +129,7 @@
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
 | WebSocket tempo real | ✅ | `index.ts` |
-| LLM Salad Cloud (Mixtral 8x7B) | ✅ | `index.ts` |
+| LLM Hetzner GPU (Mixtral 8x7B vLLM AWQ) | ✅ | `index.ts` (via GPU Manager Service) |
 | RAG Client (busca contexto) | ✅ | `rag-client.ts` |
 | Image Generation (FLUX.1 Schnell) | ✅ | `image-generation-client.ts` |
 | FLUX.1 Deployment Management | ✅ | `flux-deployment.ts` |
@@ -189,29 +189,29 @@
 >
 > **Nota (23/12/2025 - Vídeo DESABILITADO):** Processamento de vídeo foi **removido** por ser muito pesado para GPU. Plataforma suporta apenas: **texto, áudio e imagem**.
 >
-> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/document** (sem "pendente" hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com `EMBEDDINGS_GPU_URL` (Salad Cloud).
+> **Nota (Health enterprise):** o endpoint `GET /api/media/health` reporta prontidão real de **image/audio/document** (sem "pendente" hardcoded) e **sempre responde** (handler completo envolto em `try/catch`). Internamente, não propaga exceções de readiness (usa `Promise.allSettled` + logs). Para **document**, a prontidão valida conectividade com GPU Manager Service (Hetzner GPU local).
 
 > **Nota (Observability):** no `audio-processor`, `durationSeconds` usa preferencialmente a duração extraída do header (`metadata.duration`) como fallback quando a transcrição falha; quando não for possível determinar a duração (ex: formato sem parser), `durationSeconds` permanece `null` (estado **desconhecido**), evitando reportar `0` (que pode significar “áudio vazio/silencioso”).
 
 > **Nota (Regra 6 - sem valores falsos):** `audio-processor`, `image-processor` e `document-processor` **não** retornam mais embeddings "falsos" (ex: vetor de zeros) em cenários de erro. Em falha de geração de embedding, retornam **embedding vazio** (`[]`) com `embeddingModel: "unavailable"` e o pipeline persiste como **NULL/ignora** (evitando "hardcoded", "mock" ou "default falso").
 
-> **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via Salad Cloud GPUs (Container Groups).
+> **Nota (GPU Enterprise - 17/12/2025):** Todos os embeddings e transcrição agora são 100% via GPU Manager Service (Hetzner GEX44) GPUs (Container Groups).
 >
-> **Endpoints GPU Salad Cloud:**
-> - `SALAD_MIXTRAL_URL` - LLM Mixtral 8x7B vLLM (`/v1/chat/completions`)
-> - `SALAD_FLUX_URL` - FLUX.1 Schnell (`/generate`)
-> - `SALAD_WHISPER_URL` - Whisper large-v3 (`/transcribe`)
-> - `EMBEDDINGS_GPU_URL` - Qwen3 + OpenCLIP (`/embed/text`, `/embed/image`)
+> **Endpoints GPU GPU Manager Service (Hetzner GEX44):**
+> - `gpu-mixtral (localhost)` - LLM Mixtral 8x7B vLLM (`/v1/chat/completions`)
+> - `gpu-flux (localhost)` - FLUX.1 Schnell (`/generate`)
+> - `gpu-asr (localhost)` - Whisper large-v3 (`/transcribe`)
+> - `gpu-embeddings (localhost)` - Qwen3 + OpenCLIP (`/embed/text`, `/embed/image`)
 >
 > **Semântica HTTP (enterprise-grade):** quando `WHISPER_REQUIRED=false` e Whisper não está carregado, o endpoint `POST /inference/transcribe` responde **501 (Not Implemented)** com a mensagem “Transcrição desabilitada…”, evitando retornar **503** (que sinaliza indisponibilidade temporária).
 >
-> **Arquitetura Enterprise (22/12/2025):** Container Groups Salad Cloud **pré-criados manualmente** no Dashboard. URLs configuradas como secrets no GitHub. RTX 4090 (24GB VRAM).
+> **Arquitetura Enterprise (22/12/2025):** Container Groups GPU Manager Service (Hetzner GEX44) **pré-criados manualmente** no Dashboard. URLs configuradas como secrets no GitHub. RTX 4000 Ada (20GB VRAM).
 
 > **Nota (Readiness por capability):** Endpoints GPU validam disponibilidade via health checks dedicados:
-> - `EMBEDDINGS_GPU_URL/health` (embeddings)
-> - `SALAD_WHISPER_URL/health` (transcrição)
-> - `SALAD_MIXTRAL_URL/health` (LLM)
-> - `SALAD_FLUX_URL/health` (imagens)
+> - `gpu-embeddings (localhost)/health` (embeddings)
+> - `gpu-asr (localhost)/health` (transcrição)
+> - `gpu-mixtral (localhost)/health` (LLM)
+> - `gpu-flux (localhost)/health` (imagens)
 
 > **Nota (Robustez enterprise):**
 > - `document-processor`: valida **explicitamente** a dimensão de cada embedding de chunk (4096 dim) antes de inserir no Qdrant.
@@ -230,19 +230,19 @@
 |----------------|--------|---------|
 | Fine-tuning Jobs | ✅ | `index.ts` |
 | Auto-learning Scheduler | ✅ | `auto-learning-scheduler.ts` |
-| Salad Cloud Client | ✅ | `salad-client.ts` |
+| GPU Manager Client | ✅ | `gpu-client.ts` (shared-utils) |
 | SemHash Deduplication | ✅ | `index.ts` |
 | LoRA Progressive (4 dias) | ✅ | `auto-learning-scheduler.ts` |
 | Full Fine-tuning (14 dias) | ✅ | `auto-learning-scheduler.ts` |
 | Model Versioning | ✅ | `index.ts` |
 | Rollback automático | ✅ | `auto-learning-scheduler.ts` |
-| Circuit Breakers | ✅ | Salad Cloud |
+| Circuit Breakers | ✅ | GPU Manager Service (interno) |
 | Prometheus Metrics | ✅ | `/metrics` |
 
 > **Bug Fix AUDITORIA (17/12/2025):** Correções Enterprise identificadas na auditoria completa linha-a-linha:
 > - **index.ts**: Webhook secret comparison agora usa `crypto.timingSafeEqual()` (OWASP - evita timing attacks)
-> - **salad-client.ts**: Logger agora usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
-> - **salad-client.ts**: 5 chamadas `fetch()` agora têm timeout de 30s via `AbortSignal.timeout()` (Best Practices 2025)
+> - **gpu-client.ts**: Logger usa `createLogger()` padronizado (Regra 2 - Não Duplicar)
+> - **gpu-client.ts**: Chamadas `fetch()` têm timeout configurável via `AbortSignal.timeout()` (Best Practices 2025)
 > - **market-data-collector.ts**: 4 chamadas `fetch()` agora têm timeout de 15s (corrigido antes desta fase)
 > - **Total**: 7 bugs corrigidos, 3496 linhas auditadas
 
@@ -330,13 +330,15 @@
 > - **BackupAdmin.tsx**: Frontend atualizado para exibir Qdrant nos componentes monitorados
 > - **Total**: 2 bugs corrigidos + feature Qdrant backup, 4 arquivos auditados (~3500 linhas)
 
-### 7. Embeddings GPU Service - Multimodal Inference (Salad Cloud)
+### 7. GPU Services - Multimodal Inference (Hetzner GPU GEX44)
 
 | Funcionalidade | Status | Tecnologia |
 |----------------|--------|------------|
-| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU Salad |
-| **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Salad |
-| **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Salad |
+| **Embeddings de Texto (Trading/RAG)** | ✅ | Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU Manager Service (Hetzner GEX44) |
+| **Embeddings de Imagem** | ✅ | OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU Manager Service (Hetzner GEX44) |
+| **ASR (Transcrição)** | ✅ | Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44) |
+| **LLM (Chat/Trading)** | ✅ | Mixtral 8x7B vLLM AWQ - GPU Manager Service (Hetzner GEX44) |
+| **Geração de Imagens** | ✅ | FLUX.1 Schnell - GPU Manager Service (Hetzner GEX44) |
 | Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
 | Warm on Demand (30 min keep-warm) | ✅ | Estratégia enterprise |
 | Rate Limiting | ✅ | `serve.py` |
@@ -346,7 +348,7 @@
 > **ARQUITETURA ENTERPRISE (17/12/2025):**
 > - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) - **Qdrant** (máxima qualidade)
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
-> - **ASR:** Canary-1B (NeMo) - GPU Salad Cloud
+> - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
 > - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
 > - **LLM Trading:** Mixtral 8x7B (MoE ~12B ativos) via vLLM - Trading BTC Futures KuCoin
 >
@@ -517,7 +519,7 @@ Retenção Arquivo:   30 dias
 | Tabela | Propósito |
 |--------|-----------|
 | `training_data` | Dados para fine-tuning |
-| `fine_tuning_jobs` | Jobs Salad Cloud |
+| `fine_tuning_jobs` | Jobs de fine-tuning (em migração para Hetzner GPU) |
 | `model_versions` | Versionamento LoRA |
 | `auto_learning_schedule` | Agendamento auto-learning |
 
@@ -554,7 +556,7 @@ Retenção Arquivo:   30 dias
 
 > **Arquitetura Trading:**
 > - **Exchange:** KuCoin Futures (XBTUSDTM - BTC/USDT Perpetual)
-> - **LLM:** Mixtral 8x7B (MoE ~12B ativos) via vLLM na Salad Cloud
+> - **LLM:** Mixtral 8x7B (MoE ~12B ativos) via vLLM AWQ no Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 > - **Embeddings:** Qwen3-Embedding-8B (4096 dim) para análise de mercado
 > - **Circuit Breaker:** Preset `kucoinFutures` (timeout 5s, threshold 30%)
 > - **Risk Management:** Limites diários, max posições, alavancagem configurável
@@ -655,7 +657,7 @@ Retenção Arquivo:   30 dias
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
 | 14 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim HNSW) |
 
-> **ARQUITETURA GPU ENTERPRISE (22/12/2025):** Embeddings 100% via Salad Cloud Container Groups (pré-criados manualmente):
+> **ARQUITETURA GPU ENTERPRISE (25/12/2025):** Todos os serviços GPU 100% locais no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service:
 > - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
 > - **Configuração:** URLs configuradas como secrets no GitHub (ver [docs/SECRETS.md](SECRETS.md))
@@ -825,7 +827,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **ESCLARECIMENTO - Regra 4 vs Pipeline Automática**: A Regra 4 ("APROVAÇÃO OBRIGATÓRIA") do CLAUDE.md refere-se ao workflow de DESENVOLVIMENTO (pedir aprovação ao usuário antes de mudanças grandes no código), NÃO a aprovação manual de deploy. A remoção de `environment: production` foi intencional - o security scan (Trivy) nas imagens Docker é o gate de qualidade enterprise antes do deploy. Pipeline 100% automática está CORRETA conforme definido em "Pipeline: Push → CI (auto) → Release (auto) → Deploy (auto)".
 
-> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Validação Salad Cloud**: Implementada validação enterprise-grade para variáveis Salad Cloud. Em vez de usar `vars.* || 'default'` silenciosamente, o workflow agora: (1) Separa variáveis configuradas dos defaults, (2) Emite `::warning::` quando usando defaults para auditoria, (3) Loga resumo completo dos valores Salad para rastreabilidade. Os defaults são valores de produção válidos (API oficial Salad), não mocks. Esta abordagem garante visibilidade quando variáveis não estão configuradas, mantendo compatibilidade com repositórios que usam defaults.
+> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Validação GPU Manager Service (Hetzner GEX44)**: Implementada validação enterprise-grade para variáveis GPU Manager Service (Hetzner GEX44). Em vez de usar `vars.* || 'default'` silenciosamente, o workflow agora: (1) Separa variáveis configuradas dos defaults, (2) Emite `::warning::` quando usando defaults para auditoria, (3) Loga resumo completo dos valores Salad para rastreabilidade. Os defaults são valores de produção válidos (API oficial Salad), não mocks. Esta abordagem garante visibilidade quando variáveis não estão configuradas, mantendo compatibilidade com repositórios que usam defaults.
 
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Versionamento Consistente**: Corrigido bug crítico no `release.yml` onde `createWorkflowDispatch` usava `ref: 'main'` ao invés da TAG da release. Isso causava inconsistência: imagens Docker eram buildadas da TAG (commit específico), mas deploy usava scripts/docker-compose da main (potencialmente diferente). Correção: `ref` agora usa `${{ needs.create-release.outputs.version }}` (a TAG). Garante reprodutibilidade total: mesma tag = mesmo resultado. Cache enterprise (Registry Cache GHCR) não é afetado pois usa tag fixa `:cache` compartilhada entre branches/tags.
 
@@ -838,7 +840,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > **NOTA (17/12/2025):** **CORREÇÃO DE 3 STUBS/TODOs CRÍTICOS**: Auditoria completa identificou 3 violações da Regra 6 que foram corrigidas:
 > - **learning-worker.ts**: Era um STUB que apenas marcava tasks como completed sem fazer nada. Corrigido com lógica real para: `rag_update`, `auto_indexing`, `incremental_fine_tuning`, `complete_fine_tuning`, `embedding_generation`. Usa circuit breakers e integra com training-service.
 > - **chat-service trading TODO**: Comandos de trading eram reconhecidos mas NÃO executados. Corrigido com integração real via HTTP com integrations-service para execução de buy/sell/status/positions/orders.
-> - **lora-job-manager.ts TODO**: Ao cancelar job, o container group na Salad Cloud NÃO era cancelado (custo órfão!). Corrigido para chamar `salad-client.cancelJob()` ao cancelar jobs em status `preparing` ou `training`.
+> - **lora-job-manager.ts TODO**: Ao cancelar job, o container group na GPU Manager Service (Hetzner GEX44) NÃO era cancelado (custo órfão!). Corrigido para chamar `salad-client.cancelJob()` ao cancelar jobs em status `preparing` ou `training`.
 
 > **NOTA (17/12/2025):** **CORREÇÃO TOCTOU RACE CONDITION** em `trading-orchestrator.ts`:
 > - **Problema**: `initiateTradingTakeover` e `handbackTradingToAlice` liam estado FORA da transação e usavam valores hardcoded (`'alice'` ou `'manual'`) para `previousMode` DENTRO da transação.
@@ -867,7 +869,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Infraestrutura** | HETZNER_VM_HOST, HETZNER_VM_USER, HETZNER_SSH_PRIVATE_KEY, GH_PAT |
 | **Database** | POSTGRES_PASSWORD |
 | **Auth** | SESSION_SECRET, ADMIN_USER, ADMIN_PWD, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_GITHUB_CLIENT_ID, OAUTH_GITHUB_CLIENT_SECRET |
-| **LLM** | SALAD_API_KEY, SALAD_ORGANIZATION_ID |
+| **LLM** | GPU Manager Service (sem secrets externos) |
 | **Payments** | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET |
 | **Communication** | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, RESEND_API_KEY |
 | **ERPNext** | ERPNEXT_ADMIN_PASSWORD, ERPNEXT_DB_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
@@ -935,7 +937,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Capacidade | Tecnologia | Status |
 |------------|------------|--------|
 | Chat Conversacional + Trading | Mixtral 8x7B (MoE ~12B, vLLM) | ✅ |
-| Geração de Imagens | FLUX.1 Schnell (Salad Cloud) | ✅ |
+| Geração de Imagens | FLUX.1 Schnell (Hetzner GPU GEX44) | ✅ |
 | Embeddings Imagem | OpenCLIP ViT-H/14 (1024 dim → pgvector) | ✅ |
 | Embeddings Texto (Trading/RAG) | Qwen3-Embedding-8B (4096 dim → Qdrant) | ✅ |
 | Trading BTC Futures | KuCoin Futures API + LoRA Mixtral | ✅ API REST (22 endpoints) |
@@ -945,16 +947,16 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > **ARQUITETURA ENTERPRISE:**
 > - **Embeddings Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant
 > - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector
-> - **ASR:** Canary-1B (NeMo, GPU Salad Cloud)
+> - **ASR:** Canary-1B (NeMo, GPU Manager Service - Hetzner GEX44)
 > - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
 
 | Tipo | Processador | Tecnologia | Output |
 |------|-------------|------------|--------|
-| Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Salad) | 1024 dim (pgvector) |
+| Imagem | `image-processor.ts` | OpenCLIP ViT-H/14 (GPU Manager Service) | 1024 dim (pgvector) |
 | Áudio | `audio-processor.ts` | Canary-1B + Qwen3-Embedding-8B | Transcrição + 4096 dim (Qdrant) |
 | Documento | `document-processor.ts` | pdf-parse, mammoth, xlsx + Qwen3 | 4096 dim (Qdrant) |
 
-**Serviços de Inferência (GPU Salad Cloud):**
+**Serviços de Inferência (GPU Manager Service - Hetzner GEX44):**
 - **LLM:** Mixtral 8x7B (vLLM, quantizado 4/5-bit) - Chat e Trading
 - **Embeddings Texto:** Qwen3-Embedding-8B (4096 dim → Qdrant)
 - **Embeddings Imagem:** OpenCLIP ViT-H/14 (1024 dim → pgvector)
@@ -967,8 +969,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 |------|------------|------------|
 | RAG Update | Tempo real | pgvector |
 | Auto-indexing | Diário | Embeddings |
-| LoRA Progressive | 4 dias | Salad Cloud |
-| Full Fine-tuning | 14 dias | Salad Cloud |
+| LoRA Progressive | 4 dias | Hetzner GPU GEX44 (em migração) |
+| Full Fine-tuning | 14 dias | Hetzner GPU GEX44 (em migração) |
 
 ---
 
@@ -987,7 +989,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | 9 | VALIDAÇÃO CONTÍNUA | ✅ | CI automático |
 | 10 | DOCUMENTAÇÃO PT-BR | ✅ | Este documento |
 | 11 | SEGUIR DOCS OFICIAIS | ✅ | Best practices 2025 |
-| 12 | PRODUÇÃO HETZNER | ✅ | CX43 configurado |
+| 12 | PRODUÇÃO HETZNER GPU | ✅ | GEX44 configurado (RTX 4000 Ada 20GB) |
 | 13 | INTERNACIONALIZAÇÃO | ✅ | PT-BR primário |
 | 14 | VERIFICAR SECRETS | ✅ | 27 no GitHub |
 | 15 | MICROSSERVIÇOS | ✅ | 9 em apps/, 5 packages/ |
@@ -1098,7 +1100,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Documento atualizado em: 25/12/2025*
 *Autor: Fillipe Guerra*
 *Versão: 4.12 - Correção ERPNext install-app --verbose flag inválida*
-*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
+*Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
@@ -1130,7 +1132,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Pipeline CI/CD: 100% automático - versionamento, cache, auto-correção de requisitos*
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() que parametrizava string inteira como único valor. Corrigido para usar inArray() do Drizzle ORM (3 ocorrências: processRagUpdate, processAutoIndexing, processEmbeddingGeneration)*
-*CI/CD Cleanup (19/12/2025): Removido job build-clip-inference do CI workflow - serviço migrado 100% para Salad Cloud GPU. Adicionado @alice/logger às dependências do observability-service e autoprefixer ao frontend-service*
+*CI/CD Cleanup (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente. Adicionado @alice/logger às dependências do observability-service e autoprefixer ao frontend-service*
 *Performance Otimização (19/12/2025): Express 5.2.1 (breaking changes mitigados), Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6)*
 *HTTP/2 Enterprise (19/12/2025): Habilitado no Traefik via maxConcurrentStreams=250 para melhor multiplexing*
 *SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, deploy-production.yml*
@@ -1213,7 +1215,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | chat-service | ✅ | WebSocket, LLM, escalação, RAG |
 | integrations-service | ✅ | Stripe, Wise, webhooks, idempotency |
 | rag-service | ✅ | embeddings, busca semântica, upload |
-| training-service | ✅ | Salad Cloud, SemHash, JSONL |
+| training-service | ✅ | GPU Manager Service (embeddings), SemHash, JSONL, Fine-tuning (em migração) |
 | observability-service | ✅ | backup, restore, métricas |
 
 ### Cobertura por Processor:

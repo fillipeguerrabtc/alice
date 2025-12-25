@@ -1,7 +1,7 @@
 /**
  * Embedding Queue Service - Alice Enterprise Platform
  * 
- * Fila Redis para processamento assíncrono de embeddings com GPUs Salad Cloud.
+ * Fila Redis para processamento assíncrono de embeddings com GPU Manager Service (Hetzner GEX44).
  * Implementa estratégia "Warm on Demand" para otimização de custos.
  * 
  * Estratégia:

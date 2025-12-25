@@ -1377,9 +1377,9 @@ const DEFAULT_SCHEDULE: BackupSchedule = {
     description: 'Backup incremental de segunda a sábado às 03:00 UTC',
   },
   retention: {
-    fullBackupDays: 15,      // Otimizado para Volume 100GB
+    fullBackupDays: 30,      // Otimizado para servidor GEX44 (1.92TB disponível)
     incrementalBackupDays: 7,
-    archiveDays: 30,         // Otimizado para Volume 100GB
+    archiveDays: 90,         // Otimizado para servidor GEX44 (1.92TB disponível)
   },
   storage: {
     type: 'local',

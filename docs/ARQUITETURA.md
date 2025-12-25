@@ -430,7 +430,7 @@ C4Deployment
     title Alice Platform - Deployment View
 
     Deployment_Node(hetzner, "Hetzner Cloud", "Nuremberg, Germany") {
-        Deployment_Node(vm, "CX43 VM", "8 vCPU, 16GB RAM, 160GB NVMe") {
+        Deployment_Node(vm, "GEX44 GPU Server", "Intel i5-13500 14 Core, 64GB DDR4, 2x 1.92TB NVMe RAID 1, RTX 4000 Ada 20GB") {
             Deployment_Node(docker, "Docker 29.1.2") {
                 Container(traefik, "Traefik", "API Gateway")
                 Container(services, "Alice Services", "7 containers")
@@ -833,7 +833,7 @@ logger.info({
 
 | Risco | Probabilidade | Impacto | Mitigação |
 |-------|---------------|---------|-----------|
-| Salad Cloud indisponível | Baixa | Alto | Circuit breaker, retry policy |
+| GPU GEX44 indisponível | Baixa | Alto | GPU Manager Service com circuit breakers, monitoramento VRAM |
 | KuCoin API rate limit | Média | Médio | Rate limiting local, backoff |
 | PostgreSQL disk full | Baixa | Alto | Alertas, backup rotation |
 | Token limit LLM excedido | Média | Baixo | Truncation, context management |

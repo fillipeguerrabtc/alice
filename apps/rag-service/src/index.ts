@@ -550,7 +550,7 @@ if (!DATABASE_URL) {
 // ==============================================================================
 // ARQUITETURA MULTIMODAL ENTERPRISE (17/12/2025)
 // ==============================================================================
-// TODOS os processamentos multimodais via GPU Salad Cloud:
+// TODOS os processamentos multimodais via GPU Manager Service (Hetzner GEX44):
 // - Text embeddings: Qwen3-Embedding-8B (4096 dim) → Qdrant
 // - Image embeddings: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 // - Transcrição de áudio: Canary-1B (NeMo)
@@ -564,9 +564,9 @@ if (!DATABASE_URL) {
 // - Imagem (1024 dim): pgvector vector(1024)
 // - Dados legados texto: pgvector halfvec(3584) - DEPRECATED
 //
-// SALAD CLOUD é usado para:
-// - chat-service: LLM inference (Mixtral 8x7B vLLM)
-// - training-service: fine-tuning de modelos (LoRA)
+// GPU MANAGER SERVICE (Hetzner GEX44) é usado para:
+// - chat-service: LLM inference (Mixtral 8x7B vLLM AWQ)
+// - training-service: fine-tuning de modelos (LoRA) - em migração
 // - image-generation: FLUX.1 Schnell
 // - embeddings-gpu: Qwen3-Embedding-8B (4096) + OpenCLIP (1024)
 // - asr-canary: Canary-1B (NeMo) para transcrição
@@ -694,11 +694,11 @@ const mediaUpload = multer({
 
 // ============================================================================
 // CIRCUIT BREAKER - Text Embeddings GPU (ARQUITETURA ENTERPRISE - 17/12/2025)
-// Usa serviço GPU embeddings-gpu via Salad Cloud (Qwen3-Embedding-8B, 4096 dim → Qdrant)
+// Usa serviço GPU embeddings via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim → Qdrant)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-/** URL do serviço de embeddings GPU (Salad Cloud) */
+/** GPU Manager Service gerencia embeddings GPU (Hetzner GEX44) */
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
@@ -2186,7 +2186,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Processar documento: extrai texto e gera embeddings
           const documentProcessor = getDocumentProcessor();
           
-          // Prontidão REAL: document depende de embeddings GPU (Salad Cloud)
+          // Prontidão REAL: document depende de embeddings GPU (GPU Manager Service)
           // Evita falso-positivo de "ready" quando a dependência está indisponível.
           if (!(await documentProcessor.isReadyAsync())) {
             throw new Error(
@@ -3032,7 +3032,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
 
       queryEmbedding = referenceImage.clipEmbedding as number[];
     } else if (query) {
-      // Busca por texto: gerar embedding via GPU (Salad Cloud)
+      // Busca por texto: gerar embedding via GPU Manager Service (Hetzner GEX44)
       // ARQUITETURA 100% GPU - sem fallback CPU (Regra 6)
       const imageProcessor = getImageProcessor();
       
@@ -3116,7 +3116,7 @@ app.post('/api/media/search', requireAuth(), requireSameTenant(getTenantIdFromRe
         mime_type as "mimeType",
         extracted_metadata as "extractedMetadata",
         criado_em as "criadoEm",
-        -- Image embeddings via GPU Salad Cloud (OpenCLIP ViT-H/14 - 1024 dim)
+        -- Image embeddings via GPU Manager Service (OpenCLIP ViT-H/14 - 1024 dim)
         -- GPU é OBRIGATÓRIO - schema usa vector(1024)
         1 - (clip_embedding <=> $1::vector(1024)) / 2 as similarity
       FROM media_uploads

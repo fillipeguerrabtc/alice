@@ -200,7 +200,7 @@ class DocumentProcessorService {
   private isConfigured: boolean;
 
   constructor() {
-    // ARQUITETURA ENTERPRISE (17/12/2025) - Qwen3-Embedding-8B via Salad Cloud → Qdrant
+    // ARQUITETURA ENTERPRISE (25/12/2025) - Qwen3-Embedding-8B via GPU Manager Service (Hetzner GEX44) → Qdrant
     this.isConfigured = typeof GPU_MANAGER_URL === 'string' && GPU_MANAGER_URL.length > 0;
     
     if (!this.isConfigured) {

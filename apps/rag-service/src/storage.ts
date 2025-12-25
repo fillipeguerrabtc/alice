@@ -18,7 +18,7 @@
  * │   ├── image/                     # Imagens enviadas via /api/media/upload
  * │   ├── audio/                     # Áudios enviados via /api/media/upload
  * │   └── document/                  # Documentos enviados via /api/media/upload
- * ├── tts/                           # Outputs de jobs TTS (Salad) - output-{jobId}.wav
+ * ├── tts/                           # Outputs de jobs TTS (GPU Manager Service) - output-{jobId}.wav
  * └── media/                         # Outros arquivos multimodais (reservado)
  * 
  * NOTA (23/12/2025): Vídeo REMOVIDO - muito pesado para GPU. Plataforma suporta apenas texto, áudio e imagem.
@@ -228,7 +228,7 @@ class LocalStorageService implements StorageService {
    * Obter estatísticas de uso de disco
    * Considera AMBAS as estruturas:
    * 1. Uploads gerais: /uploads/{tenantId}/{mediaType}/{filename}
-   * 2. Outputs de jobs Salad: /uploads/{tts}/output-{jobId}.{ext}
+   * 2. Outputs de jobs GPU: /uploads/{tts}/output-{jobId}.{ext}
    * 
    * NOTA (23/12/2025): Diretórios de vídeo removidos (lip-sync, talking-head, long-video)
    */
@@ -250,7 +250,7 @@ class LocalStorageService implements StorageService {
         if (!entryStat.isDirectory()) continue;
         
         // Estrutura 1: Uploads gerais por tenant (/uploads/{tenantId}/{mediaType}/...)
-        // Detecta se é UUID (tenantId) ou nome de diretório de job Salad
+        // Detecta se é UUID (tenantId) ou nome de diretório de job GPU
         // ATUALIZADO 23/12/2025: Removidos diretórios de vídeo (lip-sync, talking-head, long-video)
         // BUG FIX 23/12/2025: Manter diretórios antigos na lista para compatibilidade com diretórios existentes
         // Se diretórios antigos ainda existem em disco, devem ser tratados como job output, não como tenantId
@@ -259,7 +259,7 @@ class LocalStorageService implements StorageService {
         const isJobOutputDir = ['tts', 'media', 'lip-sync', 'talking-head', 'long-video'].includes(entry);
         
         if (isJobOutputDir) {
-          // Estrutura 2: Outputs de jobs Salad (/uploads/{jobType}/output-{jobId}.{ext})
+          // Estrutura 2: Outputs de jobs GPU (/uploads/{jobType}/output-{jobId}.{ext})
           // BUG FIX 23/12/2025: Diretórios antigos de vídeo (lip-sync, talking-head, long-video) devem ser
           // categorizados como 'video' para manter compatibilidade com estatísticas existentes
           // Isso garante que analytics e monitoring que dependem de categorização correta continuem funcionando

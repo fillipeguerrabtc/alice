@@ -356,14 +356,13 @@ Estes são necessários para o deploy funcionar:
 | `OAUTH_GITHUB_CLIENT_ID` | ✅ |
 | `OAUTH_GITHUB_CLIENT_SECRET` | ✅ |
 
-### Salad Cloud (LLM + GPU)
+### GPU Manager Service (Hetzner GPU GEX44)
 
 | Secret | Status |
 |--------|--------|
-| `SALAD_API_KEY` | ✅ |
-| `SALAD_ORGANIZATION_ID` | ✅ |
-| `SALAD_PROJECT_ID` | ✅ (adicionado 17/12/2025 - projeto: `default`) |
-| `HUGGINGFACE_TOKEN` | ✅ (opcional mas recomendado para downloads confiáveis) |
+| `HUGGINGFACE_TOKEN` | ✅ (obrigatório para downloads de modelos - Mixtral, Qwen3, OpenCLIP, FLUX, Canary) |
+
+> **NOTA (25/12/2025):** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU (Salad Cloud removido).
 
 ### Stripe (Pagamentos)
 
@@ -538,7 +537,7 @@ openssl rand -base64 24
 | Twilio | https://www.twilio.com/docs/usage/webhooks |
 | Resend | https://resend.com/docs |
 | Wise | https://docs.wise.com/ |
-| Salad Cloud | https://docs.salad.com/ |
+| GPU Manager Service | Local (Hetzner GEX44) |
 
 ---
 
@@ -549,8 +548,8 @@ openssl rand -base64 24
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
 *Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
-*SALAD_PROJECT_ID (17/12/2025): Adicionado para Python SDK - projeto no Salad Cloud*
-*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*  
+*GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*
+*Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*  
 *ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
 *Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido | Risk Config API | orderValue multiplier*  
 *Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*  

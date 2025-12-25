@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Hetzner GPU server (RTX 4090 24GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
+Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -19,7 +19,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU (RTX 4090 24GB) hospeda todos os 50 containers (45 serviços + 4 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
+| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 50 containers (45 serviços + 4 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -47,7 +47,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 50 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience. All services run on a single Hetzner GPU server (RTX 4090 24GB) to eliminate network latency and simplify management.
+Alice employs a microservices architecture with 50 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
 
 **Core Architectural Components:**
 - **Infrastructure Core (8 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**.
@@ -111,8 +111,8 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
 
 ## Deploy Information
-- **Servidor**: Hetzner GPU (RTX 3090/4090 24GB ou RTX 4000 20GB), 8+ vCPU, 64GB+ RAM, 500GB+ NVMe SSD
-- **Volume Adicional**: Hetzner Volume 100GB (alice-data) montado em /opt/alice
+- **Servidor**: Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1 = 1.92TB utilizável)
+- **Volume Adicional**: Não necessário - servidor GEX44 possui 1.92TB de storage interno (substitui volume externo de 100GB)
 - **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
