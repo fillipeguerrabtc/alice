@@ -968,7 +968,15 @@ async function proxyStreamFromGpuManager(
     throw error;
   } finally {
     // BUG FIX 25/12/2025: Garantir que reader seja liberado SEMPRE, mesmo em caso de erro ou early return
-    reader.releaseLock();
+    // O finally block sempre executa, mesmo quando há return statements dentro do try block
+    // Isso garante que o lock do ReadableStream seja sempre liberado, prevenindo vazamentos de recursos
+    try {
+      reader.releaseLock();
+    } catch (releaseError) {
+      // Se releaseLock() falhar (ex: já foi liberado ou reader foi cancelado), apenas logar
+      // Não propagar erro para não mascarar erros originais
+      logger.warn({ error: releaseError }, 'Erro ao liberar lock do reader (pode já estar liberado)');
+    }
   }
 }
 
