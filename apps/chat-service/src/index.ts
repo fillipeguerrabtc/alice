@@ -2040,7 +2040,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
           // HTTP SSE: não precisa do responseText, apenas fecha a conexão
           // BUG FIX 25/12/2025: onDone sempre será chamado (mesmo em caso de erro)
           // Garantir que não tentamos fechar resposta já fechada
-          if (!res.headersSent || !res.writableEnded) {
+          // BUG FIX 25/12/2025: Usar AND (&&) ao invés de OR (||) - só escrever se headers foram enviados E resposta não foi finalizada
+          // Para SSE, headers já foram enviados (linha 2000), então verificamos apenas se resposta não foi finalizada
+          if (res.headersSent && !res.writableEnded) {
             try {
               res.write('data: [DONE]\n\n');
               res.end();
@@ -2056,7 +2058,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       // BUG FIX 25/12/2025: onDone já foi chamado no catch interno de proxyStreamFromGpuManager
       // Mas pode ter fechado a resposta com [DONE] ao invés de erro
       // Tentar enviar mensagem de erro apenas se resposta ainda estiver aberta
-      if (!res.headersSent || !res.writableEnded) {
+      // BUG FIX 25/12/2025: Usar AND (&&) ao invés de OR (||) - só escrever se headers foram enviados E resposta não foi finalizada
+      // Para SSE, headers já foram enviados (linha 2000), então verificamos apenas se resposta não foi finalizada
+      if (res.headersSent && !res.writableEnded) {
         try {
           res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
           res.end();
