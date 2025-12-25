@@ -1638,9 +1638,11 @@ jobs:
               echo "runner_type=production-server" >> $GITHUB_OUTPUT
               echo "⚠️ Production Server runner detectado (legado) - executando deploy local"
             fi
-          elif [ "${{ runner.os }}" == "Self-hosted" ]; then
+          elif [ "${{ runner.name }}" != "GitHub Actions" ] && [ "${{ runner.name }}" != "" ]; then
+            # BUG FIX 25/12/2025: runner.os retorna "Linux"/"Windows"/"macOS", não "Self-hosted"
+            # Usar runner.name ao invés - qualquer runner com nome customizado é self-hosted
             echo "runner_type=deploy-server" >> $GITHUB_OUTPUT
-            echo "✅ Self-hosted runner detectado - assumindo Deploy Server"
+            echo "✅ Self-hosted runner detectado (${{ runner.name }}) - assumindo Deploy Server"
           else
             echo "runner_type=github-hosted" >> $GITHUB_OUTPUT
             echo "ℹ️ GitHub-hosted runner - usando SSH como fallback"

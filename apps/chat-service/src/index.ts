@@ -49,6 +49,12 @@ import {
   registerShutdownCallback,
   ShutdownPriority,
   permissionCache,
+  requestGpu,
+  requestGpuStream,
+  GpuServiceType,
+  GpuRequestPriority,
+  createCircuitBreaker,
+  CIRCUIT_BREAKER_PRESETS,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from '@alice/database';
@@ -730,54 +736,32 @@ interface LLMRequest {
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
   const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
 
-  // BUG FIX 25/12/2025: Streaming requer conexão direta ao gpu-mixtral (GPU Manager não suporta streaming ainda)
-  // Para não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
-  // Para streaming: conectar diretamente ao gpu-mixtral:8000 (vLLM suporta streaming nativo)
+  // BUG FIX 25/12/2025: TODAS as requisições passam pelo GPU Manager Service
+  // Streaming: usa endpoint /api/gpu/stream (proxy direto com verificação de circuit breaker e VRAM)
+  // Não-streaming: usa fila priorizada (/api/gpu/queue)
   if (request.stream) {
-    // Streaming: conexão direta ao gpu-mixtral (bypass GPU Manager)
-    const MIXTRAL_GPU_URL = process.env.MIXTRAL_GPU_URL || 'http://gpu-mixtral:8000';
-    
+    // Streaming: usar GPU Manager Service (endpoint /api/gpu/stream)
+    // Passa por circuit breaker, VRAM monitoring, mas faz proxy direto (sem fila)
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), timeout);
-      
-      const response = await fetch(`${MIXTRAL_GPU_URL}/v1/chat/completions`, {
+      const response = await requestGpuStream({
+        serviceType: GpuServiceType.MIXTRAL,
+        endpoint: '/v1/chat/completions',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+        timeout,
+        body: {
           model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
           messages: request.messages,
           max_tokens: 4096,
           temperature: 0.7,
           stream: true,
-        }),
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Erro na API LLM (streaming): ${response.status} - ${errorText}`);
-      }
-      
-      if (!response.body) {
-        throw new Error('Resposta de streaming não contém body');
-      }
-      
-      // Retornar Response com stream diretamente do gpu-mixtral
-      return new Response(response.body, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
         },
       });
+      
+      // BUG FIX 25/12/2025: Stream body é one-time-readable - retornar Response diretamente
+      // O GPU Manager Service já faz proxy do stream, então apenas retornamos a Response
+      return response;
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.message.includes('Timeout')) {
         logger.warn({ timeout }, 'Chamada LLM streaming abortada por timeout');
         throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM streaming`);
       }
@@ -805,8 +789,19 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
         throw new Error(gpuResponse.error || 'Erro desconhecido na API LLM');
       }
 
-      // Converter resposta do GPU Manager para formato Response
+      // BUG FIX 25/12/2025: Adicionar validação antes de type assertion
+      // Validar estrutura da resposta antes de usar como LLMResponse
+      if (!gpuResponse.data || typeof gpuResponse.data !== 'object') {
+        throw new Error('Resposta inválida do GPU Manager: data não é um objeto');
+      }
+      
       const responseData = gpuResponse.data as LLMResponse;
+      
+      // Validar estrutura esperada
+      if (!responseData.choices || !Array.isArray(responseData.choices) || responseData.choices.length === 0) {
+        throw new Error('Resposta inválida do GPU Manager: choices não encontrado ou vazio');
+      }
+      
       return new Response(JSON.stringify(responseData), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

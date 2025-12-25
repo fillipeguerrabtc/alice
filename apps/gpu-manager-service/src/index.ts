@@ -72,12 +72,13 @@ export enum GpuServiceType {
   ASR = 'asr',                   // Transcrição de áudio
 }
 
-/** URLs dos serviços GPU (localhost no servidor único) */
+/** URLs dos serviços GPU (container names na rede Docker) */
+// BUG FIX 25/12/2025: Defaults devem usar container names, não localhost (não funciona em Docker network)
 const GPU_SERVICE_URLS = {
-  [GpuServiceType.MIXTRAL]: process.env.MIXTRAL_GPU_URL || 'http://localhost:8000',
-  [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://localhost:8001',
-  [GpuServiceType.FLUX]: process.env.FLUX_GPU_URL || 'http://localhost:8002',
-  [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://localhost:8003',
+  [GpuServiceType.MIXTRAL]: process.env.MIXTRAL_GPU_URL || 'http://gpu-mixtral:8000',
+  [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
+  [GpuServiceType.FLUX]: process.env.FLUX_GPU_URL || 'http://gpu-flux:8000',
+  [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
 };
 
 /** VRAM necessária por serviço (GB) */
@@ -343,8 +344,9 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const circuitBreaker = circuitBreakers[serviceType];
   
   try {
+    // BUG FIX 25/12/2025: Opossum usa .opened (boolean) não .state === 'OPEN'
     // Verificar circuit breaker
-    if (circuitBreaker.state === 'OPEN') {
+    if (circuitBreaker.opened) {
       throw new Error(`Circuit breaker OPEN para ${serviceType}`);
     }
     
@@ -615,6 +617,112 @@ app.get('/api/gpu/queue/:requestId', requireAuth, asyncHandler(async (req: Reque
   
   const response: GpuResponse = JSON.parse(result);
   res.json(response);
+}));
+
+// Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
+// BUG FIX 25/12/2025: Streaming requer proxy direto (não pode usar fila com polling)
+app.post('/api/gpu/stream', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const schema = z.object({
+    serviceType: z.nativeEnum(GpuServiceType),
+    endpoint: z.string(),
+    method: z.enum(['GET', 'POST', 'PUT', 'DELETE']).optional(),
+    body: z.unknown().optional(),
+    headers: z.record(z.string()).optional(),
+    timeout: z.number().optional(),
+  });
+  
+  const body = schema.parse(req.body);
+  const serviceType = body.serviceType;
+  
+  // Apenas MIXTRAL suporta streaming no momento
+  if (serviceType !== GpuServiceType.MIXTRAL) {
+    return res.status(400).json({ error: 'Streaming suportado apenas para MIXTRAL' });
+  }
+  
+  const url = GPU_SERVICE_URLS[serviceType];
+  const circuitBreaker = circuitBreakers[serviceType];
+  
+  // Verificar circuit breaker
+  if (circuitBreaker.opened) {
+    return res.status(503).json({ error: 'Circuit breaker OPEN' });
+  }
+  
+  // Verificar VRAM disponível
+  const vramStatus = await getVramStatus();
+  if (!hasEnoughVram(serviceType, vramStatus)) {
+    return res.status(503).json({ 
+      error: 'VRAM insuficiente',
+      requiredGB: VRAM_REQUIREMENTS[serviceType],
+      availableGB: vramStatus.freeGB,
+    });
+  }
+  
+  try {
+    const controller = new AbortController();
+    const timeout = body.timeout || 60000;
+    const timeoutId = setTimeout(() => controller.abort(), timeout);
+    
+    // Fazer requisição streaming ao gpu-mixtral
+    const response = await circuitBreaker.fire(async () => {
+      return fetch(`${url}${body.endpoint}`, {
+        method: body.method || 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...body.headers,
+        },
+        body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
+        signal: controller.signal,
+      });
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ error: errorText });
+    }
+    
+    if (!response.body) {
+      return res.status(500).json({ error: 'Resposta de streaming não contém body' });
+    }
+    
+    // Proxy do stream diretamente para o cliente
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    // Pipe do stream (proxy direto)
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        // BUG FIX 25/12/2025: Stream body é one-time-readable - pipe direto para res
+        res.write(decoder.decode(value, { stream: true }));
+      }
+      
+      res.end();
+    } catch (error) {
+      logger.error({ error }, 'Erro ao fazer proxy de stream');
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Erro ao fazer proxy de stream' });
+      } else {
+        res.end();
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  } catch (error) {
+    logger.error({ error }, 'Erro na requisição streaming');
+    if (!res.headersSent) {
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : 'Erro desconhecido' 
+      });
+    }
+  }
 }));
 
 // Status de VRAM

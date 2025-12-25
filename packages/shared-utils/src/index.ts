@@ -28,6 +28,7 @@ export * from './openapi.js';
 export * from './multi-tenant-validation.js';
 export * from './qdrant-client.js';
 export * from './gpu-client.js';
+export { requestGpuStream } from './gpu-client.js';
 
 export * as rbac from './rbac/index.js';
 export { 

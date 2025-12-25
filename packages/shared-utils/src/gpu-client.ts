@@ -191,3 +191,38 @@ export async function getGpuResult(requestId: string): Promise<GpuResponse | nul
   return response.json() as Promise<GpuResponse>;
 }
 
+/**
+ * Requisição GPU com streaming (proxy direto via GPU Manager Service)
+ * BUG FIX 25/12/2025: Streaming passa pelo GPU Manager Service para fila, VRAM monitoring e circuit breaker
+ */
+export async function requestGpuStream(options: GpuRequestOptions): Promise<globalThis.Response> {
+  const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+      ...options.headers,
+    },
+    body: JSON.stringify({
+      serviceType: options.serviceType,
+      endpoint: options.endpoint,
+      method: options.method || 'POST',
+      body: options.body,
+      timeout: options.timeout || 60000,
+    }),
+  });
+  
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Erro na requisição GPU streaming: ${response.status} - ${errorText}`);
+  }
+  
+  // BUG FIX 25/12/2025: Stream body é one-time-readable - retornar Response diretamente
+  // O GPU Manager Service faz proxy do stream, então apenas retornamos a Response
+  if (!response.body) {
+    throw new Error('Resposta de streaming não contém body');
+  }
+  
+  return response;
+}
+
