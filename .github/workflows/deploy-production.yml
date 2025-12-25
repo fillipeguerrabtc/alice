@@ -1168,6 +1168,19 @@ jobs:
 
       # NOTA: CLIP Inference Service - Embeddings de imagem processados via OpenCLIP no GPU Manager Service (25/12/2025)
       
+      - name: Build e Push - GPU Manager Service
+        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
+        with:
+          context: .
+          file: apps/gpu-manager-service/Dockerfile
+          push: true
+          tags: |
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ steps.image-tag.outputs.value }}
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:latest
+          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-gpu-manager:cache
+          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-gpu-manager:cache,mode=max
+          platforms: linux/amd64
+
       - name: Build e Push - API Gateway (Traefik Config)
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:

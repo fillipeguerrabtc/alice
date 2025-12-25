@@ -239,13 +239,16 @@ async function getVramStatus(): Promise<VramStatus> {
     const utilizationPercent = Math.round((used / total) * 100);
 
     // Obter serviços ativos do Redis
+    // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
     const redis = getRedisClient();
     const activeServices: GpuServiceType[] = [];
-    for (const serviceType of Object.values(GpuServiceType)) {
-      const key = `${REDIS_ACTIVE_PREFIX}:${serviceType}`;
-      const exists = await redis.exists(key);
-      if (exists) {
-        activeServices.push(serviceType);
+    if (redis) {
+      for (const serviceType of Object.values(GpuServiceType)) {
+        const key = `${REDIS_ACTIVE_PREFIX}:${serviceType}`;
+        const exists = await redis.exists(key);
+        if (exists) {
+          activeServices.push(serviceType);
+        }
       }
     }
 
@@ -284,9 +287,14 @@ function hasEnoughVram(serviceType: GpuServiceType, currentVram: VramStatus): bo
 
 /**
  * Adiciona requisição à fila priorizada
+ * BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
  */
 async function enqueueRequest(request: GpuRequest): Promise<void> {
   const redis = getRedisClient();
+  if (!redis) {
+    throw new Error('Redis não disponível - não é possível enfileirar requisição GPU');
+  }
+  
   const queueKey = `${REDIS_QUEUE_PREFIX}:${request.serviceType}`;
   const requestKey = `${REDIS_QUEUE_PREFIX}:request:${request.id}`;
   
@@ -313,9 +321,15 @@ async function enqueueRequest(request: GpuRequest): Promise<void> {
 /**
  * Remove e retorna próxima requisição da fila
  * BUG FIX 25/12/2025: Corrigido para pegar maior prioridade (zPopMax ao invés de zRange(-1, -1))
+ * BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
  */
 async function dequeueRequest(serviceType: GpuServiceType): Promise<GpuRequest | null> {
   const redis = getRedisClient();
+  if (!redis) {
+    logger.warn('Redis não disponível - não é possível desenfileirar requisição GPU');
+    return null;
+  }
+  
   const queueKey = `${REDIS_QUEUE_PREFIX}:${serviceType}`;
   
   // BUG FIX 25/12/2025: zRange(-1, -1) pega o último elemento (menor score se ordem crescente)
@@ -348,18 +362,28 @@ async function dequeueRequest(serviceType: GpuServiceType): Promise<GpuRequest |
 
 /**
  * Marca serviço como ativo
+ * BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
  */
 async function markServiceActive(serviceType: GpuServiceType, requestId: string): Promise<void> {
   const redis = getRedisClient();
+  if (!redis) {
+    logger.warn({ serviceType, requestId }, 'Redis não disponível - não é possível marcar serviço como ativo');
+    return;
+  }
   const key = `${REDIS_ACTIVE_PREFIX}:${serviceType}`;
   await redis.setEx(key, 300, JSON.stringify({ requestId, startedAt: Date.now() })); // 5 min TTL
 }
 
 /**
  * Marca serviço como inativo
+ * BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
  */
 async function markServiceInactive(serviceType: GpuServiceType): Promise<void> {
   const redis = getRedisClient();
+  if (!redis) {
+    logger.warn({ serviceType }, 'Redis não disponível - não é possível marcar serviço como inativo');
+    return;
+  }
   const key = `${REDIS_ACTIVE_PREFIX}:${serviceType}`;
   await redis.del(key);
 }
@@ -507,9 +531,14 @@ async function startQueueWorker(): Promise<void> {
           const response = await processGpuRequest(request);
           
           // Armazenar resultado no Redis (para polling)
+          // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
           const redis = getRedisClient();
-          const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
-          await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
+          if (redis) {
+            const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
+            await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
+          } else {
+            logger.warn({ requestId: request.id }, 'Redis não disponível - resultado não foi armazenado para polling');
+          }
           
           logger.info({
             requestId: request.id,
@@ -646,6 +675,10 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
 app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const { requestId } = req.params;
   const redis = getRedisClient();
+  if (!redis) {
+    return res.status(503).json({ error: 'Redis não disponível' });
+  }
+  
   const resultKey = `${REDIS_QUEUE_PREFIX}:result:${requestId}`;
   
   const result = await redis.get(resultKey);
@@ -775,11 +808,15 @@ app.get('/api/gpu/vram', requireInternalAuth, asyncHandler(async (req: Request, 
 // BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
 app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const redis = getRedisClient();
+  if (!redis) {
+    return res.status(503).json({ error: 'Redis não disponível' });
+  }
+  
   const status: Record<string, number> = {};
   
   for (const serviceType of Object.values(GpuServiceType)) {
     const queueKey = `${REDIS_QUEUE_PREFIX}:${serviceType}`;
-        const count = await redis.zCard(queueKey);
+    const count = await redis.zCard(queueKey);
     status[serviceType] = count;
   }
   
