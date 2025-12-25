@@ -860,34 +860,46 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<str
 }
 
 async function* streamResponse(response: globalThis.Response): AsyncGenerator<string> {
-  const reader = response.body?.getReader();
-  if (!reader) return;
+  // BUG FIX 25/12/2025: Validar response.body e reader antes de usar
+  if (!response.body) {
+    return; // Retorna generator vazio se não há body
+  }
+
+  const reader = response.body.getReader();
+  if (!reader) {
+    return; // Retorna generator vazio se não há reader
+  }
 
   const decoder = new TextDecoder();
   let buffer = '';
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || '';
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-    for (const line of lines) {
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6);
-        if (data === '[DONE]') return;
-        
-        try {
-          const parsed = JSON.parse(data) as LLMResponse;
-          const content = parsed.choices[0]?.delta?.content;
-          if (content) yield content;
-        } catch {
-          continue;
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          const data = line.slice(6);
+          if (data === '[DONE]') return;
+          
+          try {
+            const parsed = JSON.parse(data) as LLMResponse;
+            const content = parsed.choices[0]?.delta?.content;
+            if (content) yield content;
+          } catch {
+            continue;
+          }
         }
       }
     }
+  } finally {
+    // BUG FIX 25/12/2025: Garantir que reader seja liberado mesmo em caso de erro
+    reader.releaseLock();
   }
 }
 

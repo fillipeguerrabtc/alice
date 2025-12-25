@@ -110,15 +110,17 @@ const GPU_SERVICE_URLS = {
 };
 
 /** VRAM necessária por serviço (GB) */
+// BUG FIX 25/12/2025: Ajustado para RTX 4000 Ada (20GB) - Hetzner GEX44
 const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
-  [GpuServiceType.MIXTRAL]: 20,      // ~18-20GB
-  [GpuServiceType.EMBEDDINGS]: 18,   // ~16-18GB
-  [GpuServiceType.FLUX]: 14,         // ~12-16GB
-  [GpuServiceType.ASR]: 3,           // ~2-4GB
+  [GpuServiceType.MIXTRAL]: 18,      // ~16-18GB (reduzido de 20GB para caber em 20GB com margem)
+  [GpuServiceType.EMBEDDINGS]: 16,   // ~14-16GB (reduzido de 18GB)
+  [GpuServiceType.FLUX]: 12,         // ~10-12GB (reduzido de 14GB)
+  [GpuServiceType.ASR]: 3,           // ~2-4GB (mantido)
 };
 
-/** VRAM total disponível (24GB para RTX 4090) */
-const TOTAL_VRAM_GB = 24;
+/** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
+// BUG FIX 25/12/2025: Corrigido de 24GB (RTX 4090) para 20GB (RTX 4000 Ada)
+const TOTAL_VRAM_GB = 20;
 
 /** Margem de segurança (GB) */
 const VRAM_SAFETY_MARGIN_GB = 2;
@@ -310,32 +312,36 @@ async function enqueueRequest(request: GpuRequest): Promise<void> {
 
 /**
  * Remove e retorna próxima requisição da fila
+ * BUG FIX 25/12/2025: Corrigido para pegar maior prioridade (zPopMax ao invés de zRange(-1, -1))
  */
 async function dequeueRequest(serviceType: GpuServiceType): Promise<GpuRequest | null> {
   const redis = getRedisClient();
   const queueKey = `${REDIS_QUEUE_PREFIX}:${serviceType}`;
   
-  // Obter requisição com maior prioridade (ZREVRANGE com LIMIT 1)
-  const result = await redis.zRange(queueKey, -1, -1);
-  if (result.length === 0) {
+  // BUG FIX 25/12/2025: zRange(-1, -1) pega o último elemento (menor score se ordem crescente)
+  // Precisamos do maior score (maior prioridade), então usamos zPopMax (atômico)
+  // Prioridades: CRITICAL=10 > HIGH=8 > MEDIUM=5 > LOW=2
+  const result = await redis.zPopMax(queueKey, 1);
+  if (!result || result.length === 0) {
     return null;
   }
   
-  const requestId = result[0];
+  const requestId = result[0].value;
   const requestKey = `${REDIS_QUEUE_PREFIX}:request:${requestId}`;
   
   // Obter requisição completa
   const requestData = await redis.get(requestKey);
   if (!requestData) {
-    // Requisição expirou, remover da fila
-    await redis.zRem(queueKey, requestId);
+    // BUG FIX 25/12/2025: zPopMax já removeu da fila atomicamente
+    // Dados expiraram, mas elemento já foi removido da fila
+    logger.warn({ requestId }, 'Dados da requisição expiraram após remoção da fila');
     return null;
   }
   
   const request: GpuRequest = JSON.parse(requestData);
   
-  // Remover da fila
-  await redis.zRem(queueKey, requestId);
+  // BUG FIX 25/12/2025: zPopMax já remove o elemento da fila atomicamente
+  // Não precisamos chamar zRem novamente
   
   return request;
 }
