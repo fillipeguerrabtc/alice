@@ -1638,8 +1638,25 @@ services:
         # BUG FIX 24/12/2025: bench install-app pode levar 15-20 minutos e usar muita memória
         # timeout de 20 minutos para garantir que instalação completa tenha tempo suficiente
         # CORREÇÃO 25/12/2025: bench install-app NÃO aceita flag --verbose (removida)
-        timeout 1200 bench --site "$${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log
-        BENCH_EXIT_CODE=$${PIPESTATUS[0]}
+        # CORREÇÃO 25/12/2025: Capturar stderr separadamente para melhor diagnóstico
+        echo "=== Verificando ambiente antes de instalar ERPNext ==="
+        echo "SITE_NAME: $${SITE_NAME}"
+        echo "DB_HOST: $${DB_HOST:-não definido}"
+        echo "DB_PORT: $${DB_PORT:-não definido}"
+        echo "Verificando se site existe:"
+        ls -la "sites/$${SITE_NAME}/" 2>/dev/null || echo "  (diretório do site não encontrado)"
+        echo "=== Iniciando instalação do ERPNext ==="
+        # CORREÇÃO 25/12/2025: Usar redirecionamento separado para capturar ambos os streams
+        timeout 1200 bench --site "$${SITE_NAME}" install-app erpnext > /tmp/bench-install-app-stdout.log 2> /tmp/bench-install-app-stderr.log
+        BENCH_EXIT_CODE=$$?
+        # Combinar stdout e stderr para log completo
+        {
+          echo "=== STDOUT (últimas 500 linhas) ==="
+          tail -500 /tmp/bench-install-app-stdout.log 2>/dev/null || echo "(sem stdout)"
+          echo ""
+          echo "=== STDERR (últimas 500 linhas) ==="
+          tail -500 /tmp/bench-install-app-stderr.log 2>/dev/null || echo "(sem stderr)"
+        } | tee -a /tmp/bench-new-site.log
         
         set -o pipefail  # Reabilitar pipefail
         
@@ -1747,8 +1764,10 @@ services:
       INSTALL_APPS: "erpnext"
       # CORREÇÃO 20/12/2025: Redis com senha - necessário para bench new-site funcionar
       # O configurator criou URLs Redis com senha, o create-site precisa das mesmas configs
-      REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
-      REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
+      # CORREÇÃO 25/12/2025: Passar senhas como variáveis separadas para evitar problemas de interpolação do Docker Compose
+      # URLs serão construídas dentro do script se necessário (atualmente não são usadas diretamente)
+      REDIS_CACHE_PASSWORD: ${REDIS_CACHE_PASSWORD}
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
     volumes:
       - erpnext_sites:/home/frappe/frappe-bench/sites
       - erpnext_logs:/home/frappe/frappe-bench/logs
