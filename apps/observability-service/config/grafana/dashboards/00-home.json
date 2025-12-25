@@ -274,9 +274,9 @@
       "gridPos": { "h": 3, "w": 4, "x": 0, "y": 25 },
       "id": 31,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Salad Cloud LLM",
+      "title": "GPU Manager Service LLM",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-llm\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

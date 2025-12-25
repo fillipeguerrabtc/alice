@@ -58,7 +58,7 @@ processors:
         value: "mixtral-8x7b"
       - key: llm.provider
         action: upsert
-        value: "salad-cloud"
+        value: "gpu-manager-service"
 
   # Filtro para remover spans de health check
   filter:

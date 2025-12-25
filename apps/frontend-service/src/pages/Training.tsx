@@ -2,7 +2,7 @@
  * Training - Gestão de Fine-tuning
  * 
  * Página para gerenciar dados de treinamento e jobs de fine-tuning
- * na Salad Cloud para o modelo Mixtral 8x7B.
+ * via GPU Manager Service (Hetzner GEX44) para o modelo Mixtral 8x7B.
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR

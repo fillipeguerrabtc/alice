@@ -27,7 +27,7 @@ async function setupPreviewData() {
 
 // ============================================================================
 // PREVIEW CHAT ENDPOINT - APENAS DESENVOLVIMENTO
-// Permite testar a UI de chat sem Salad Cloud
+// Permite testar a UI de chat sem GPU Manager Service
 // ============================================================================
 
 function setupPreviewChatEndpoint(app: express.Express) {

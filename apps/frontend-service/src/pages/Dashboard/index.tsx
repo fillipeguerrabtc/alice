@@ -170,7 +170,7 @@ export default function Dashboard() {
   };
 
   const displayCircuitBreakers: CircuitBreakerStatus[] = [
-    { name: 'LLM (Salad Cloud)', status: 'closed', failures: 0, successRate: 100 },
+    { name: 'LLM (GPU Manager Service)', status: 'closed', failures: 0, successRate: 100 },
     { name: 'RAG Embeddings', status: 'closed', failures: 0, successRate: 100 },
     { name: 'Wise API', status: 'closed', failures: 0, successRate: 100 },
     { name: 'ERPNext', status: 'closed', failures: 0, successRate: 100 },

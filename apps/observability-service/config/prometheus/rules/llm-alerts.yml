@@ -66,7 +66,7 @@ groups:
           service: chat-service
         annotations:
           summary: "Taxa crítica de erros no LLM"
-          description: "Taxa de erros acima de 15% - possível problema com Salad Cloud."
+          description: "Taxa de erros acima de 15% - possível problema com GPU Manager Service (Hetzner GEX44)."
 
       # ========================================================================
       # CIRCUIT BREAKER

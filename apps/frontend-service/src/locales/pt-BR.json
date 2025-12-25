@@ -1014,8 +1014,8 @@
           "desc": "Canary-1B transcreve o áudio, Qwen3-Embedding-8B gera embeddings do texto"
         },
         "gpu": {
-          "title": "Processamento GPU Salad Cloud",
-          "desc": "Todo processamento multimodal é feito em GPUs dedicadas na Salad Cloud para máxima qualidade e performance. Os primeiros uploads podem levar alguns segundos adicionais enquanto as GPUs são ativadas."
+          "title": "Processamento GPU (Hetzner GEX44)",
+          "desc": "Todo processamento multimodal é feito em GPUs dedicadas no servidor Hetzner GEX44 (RTX 4000 Ada 20GB) via GPU Manager Service para máxima qualidade e performance. Os primeiros uploads podem levar alguns segundos adicionais enquanto as GPUs são ativadas."
         }
       },
       "errors": {

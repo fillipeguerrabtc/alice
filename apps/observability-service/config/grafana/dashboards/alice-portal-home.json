@@ -243,9 +243,9 @@
       "gridPos": { "h": 4, "w": 6, "x": 0, "y": 14 },
       "id": 20,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Circuit Breaker - Salad Cloud",
+      "title": "Circuit Breaker - GPU Manager Service",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"salad-cloud\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=~\".*gpu.*|.*llm.*\",state=\"open\"}", "legendFormat": "", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
