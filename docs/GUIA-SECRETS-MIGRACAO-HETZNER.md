@@ -29,9 +29,9 @@ Este guia lista **todos os secrets obsoletos** que devem ser **removidos** do Gi
 | 9 | `SALAD_EMBEDDINGS_URL` | ❌ **REMOVER** | Delete no GitHub |
 | 10 | `SALAD_MEDIA_PROJECT` | ❌ **REMOVER** | Delete no GitHub |
 | 11 | `SALAD_GPU_CLASS` | ❌ **REMOVER** | Delete no GitHub |
-| 12 | `EMBEDDINGS_GPU_URL` | ⚠️ **VERIFICAR** | Remover apenas se apontava para Salad Cloud |
+| 12 | `EMBEDDINGS_GPU_URL` | ❌ **REMOVER** | Remover completamente - tem fallback para URL interna (`http://gpu-embeddings:8000` ou `http://localhost:8001`) |
 
-**Total:** 11-12 secrets a remover
+**Total:** 12 secrets a remover
 
 ### Como Remover:
 
@@ -103,7 +103,7 @@ Os secrets `HETZNER_VM_HOST`, `HETZNER_VM_USER` e `HETZNER_SSH_PRIVATE_KEY` são
 - [ ] Remover `SALAD_EMBEDDINGS_URL`
 - [ ] Remover `SALAD_MEDIA_PROJECT`
 - [ ] Remover `SALAD_GPU_CLASS`
-- [ ] Verificar `EMBEDDINGS_GPU_URL` (remover se apontava para Salad)
+- [ ] Remover `EMBEDDINGS_GPU_URL` (tem fallback para URL interna - não precisa de secret)
 
 ### Fase 2: Criar Secrets Novos
 

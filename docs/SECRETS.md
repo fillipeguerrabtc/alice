@@ -343,7 +343,7 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_EMBEDDINGS_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_MEDIA_PROJECT` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `SALAD_GPU_CLASS` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
-| `EMBEDDINGS_GPU_URL` | ⚠️ **VERIFICAR** | Remover apenas se apontava para Salad Cloud (não remover se for local) |
+| `EMBEDDINGS_GPU_URL` | ❌ **REMOVER** | Remover completamente - tem fallback para URL interna (`http://gpu-embeddings:8000` ou `http://localhost:8001`) |
 
 **Como Remover:**
 1. Acesse: `https://github.com/fillipeguerrabtc/alice/settings/secrets/actions`

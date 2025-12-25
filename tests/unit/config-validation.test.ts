@@ -120,17 +120,7 @@ describe('Config - Variáveis de Ambiente (envSchema)', () => {
       expect(config.DATABASE_URL).toBeUndefined();
     });
 
-    it('SALAD_API_KEY deve ser opcional', () => {
-      delete process.env.SALAD_API_KEY;
-      const config = getEnvConfig();
-      expect(config.SALAD_API_KEY).toBeUndefined();
-    });
-
-    it('SALAD_ORGANIZATION_ID deve ser opcional', () => {
-      delete process.env.SALAD_ORGANIZATION_ID;
-      const config = getEnvConfig();
-      expect(config.SALAD_ORGANIZATION_ID).toBeUndefined();
-    });
+    // SALAD_API_KEY e SALAD_ORGANIZATION_ID removidos - migrados para GPU Manager Service (25/12/2025)
 
     it('CORS_ORIGINS deve ser opcional', () => {
       delete process.env.CORS_ORIGINS;
