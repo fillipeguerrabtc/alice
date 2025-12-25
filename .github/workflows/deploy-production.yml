@@ -3881,11 +3881,29 @@ jobs:
           fi
           
           echo "Verificando GPU Manager Service..."
-          if ! curl -sf --max-time 30 http://localhost:3010/live; then
-            echo "❌ GPU Manager Service health check FALHOU"
-            FAILED=$((FAILED + 1))
+          # BUG FIX 25/12/2025: GPU Manager Service é interno - não exposto via Traefik
+          # Em self-hosted runner (servidor Hetzner), verificar via docker ps + localhost
+          # Em github-hosted runner, não é possível verificar (serviço interno)
+          RUNNER_NAME="${{ runner.name }}"
+          if [ "$RUNNER_NAME" == "hetzner-deploy-runner" ] || [ "$RUNNER_NAME" == "hetzner-gpu-runner" ] || ([ "${{ runner.os }}" == "Linux" ] && [ "$RUNNER_NAME" != "GitHub Actions" ] && [ -n "$RUNNER_NAME" ]); then
+            # Self-hosted runner: verificar container diretamente
+            if docker ps --filter "name=alice-gpu-manager" --filter "status=running" --format "{{.Names}}" | grep -q "alice-gpu-manager"; then
+              # Container está rodando, verificar health endpoint via localhost
+              if curl -sf --max-time 10 http://localhost:3010/live > /dev/null 2>&1; then
+                echo "✅ GPU Manager Service OK (container rodando e health check passou)"
+              else
+                echo "⚠️ GPU Manager Service container rodando mas health check falhou"
+                FAILED=$((FAILED + 1))
+              fi
+            else
+              echo "❌ GPU Manager Service health check FALHOU (container não está rodando)"
+              FAILED=$((FAILED + 1))
+            fi
           else
-            echo "✅ GPU Manager Service OK"
+            # GitHub-hosted runner: GPU Manager Service é interno, não acessível externamente
+            # Pular verificação (serviço interno não exposto publicamente)
+            echo "⚠️ GPU Manager Service: serviço interno - health check não disponível em GitHub-hosted runner"
+            echo "   (Serviço é acessível apenas internamente no servidor Hetzner)"
           fi
           
           echo "Verificando ERPNext..."

@@ -858,12 +858,13 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
  * @param onChunk Callback chamado para cada chunk de conteúdo (para WebSocket: ws.send)
  * @param onDone Callback chamado quando stream termina (para WebSocket: salvar mensagem)
  *                 BUG FIX 25/12/2025: Suporta callbacks async para operações de banco de dados
+ *                 BUG FIX 25/12/2025: Recebe fullResponse como parâmetro para evitar closure sobre variável vazia
  * @returns Promise que resolve com a resposta completa (concatenada)
  */
 async function proxyStreamFromGpuManager(
   llmMessages: LLMMessage[],
   onChunk: (content: string) => void,
-  onDone?: () => Promise<void> | void
+  onDone?: (fullResponse: string) => Promise<void> | void
 ): Promise<string> {
   const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
   
@@ -919,7 +920,8 @@ async function proxyStreamFromGpuManager(
           if (data === '[DONE]') {
             // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
             // Callback pode fazer operações de banco de dados que precisam ser completadas
-            if (onDone) await onDone();
+            // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
+            if (onDone) await onDone(fullResponse);
             return fullResponse;
           }
           
@@ -939,7 +941,8 @@ async function proxyStreamFromGpuManager(
     
     // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
     // Callback pode fazer operações de banco de dados que precisam ser completadas
-    if (onDone) await onDone();
+    // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
+    if (onDone) await onDone(fullResponse);
     return fullResponse;
   } catch (error) {
     logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
@@ -2005,7 +2008,8 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         (content) => {
           res.write(`data: ${JSON.stringify({ content })}\n\n`);
         },
-        () => {
+        (_responseText: string) => {
+          // HTTP SSE: não precisa do responseText, apenas fecha a conexão
           res.write('data: [DONE]\n\n');
           res.end();
         }
@@ -2888,7 +2892,9 @@ wss.on('connection', (ws, req) => {
             (content) => {
               ws.send(JSON.stringify({ type: 'stream', data: content }));
             },
-            async () => {
+            async (responseText: string) => {
+              // BUG FIX 25/12/2025: Usar responseText do parâmetro ao invés de fullResponse do closure
+              // fullResponse do escopo externo está vazio quando callback executa
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
               const totalLatency = Date.now() - ragStartTime;
@@ -2896,7 +2902,7 @@ wss.on('connection', (ws, req) => {
               const [assistantMsg] = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
-                conteudo: fullResponse,
+                conteudo: responseText,
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: totalLatency,
@@ -2929,7 +2935,7 @@ wss.on('connection', (ws, req) => {
               // ======================================================================
               const postResponseEscalation = await processLLMResponseForEscalation(
                 conversationId,
-                fullResponse
+                responseText
               );
               
               if (postResponseEscalation) {
@@ -3223,14 +3229,16 @@ wss.on('connection', (ws, req) => {
             (content) => {
               ws.send(JSON.stringify({ type: 'stream', data: content }));
             },
-            async () => {
+            async (responseText: string) => {
+              // BUG FIX 25/12/2025: Usar responseText do parâmetro ao invés de fullResponse do closure
+              // fullResponse do escopo externo está vazio quando callback executa
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
               
               const [assistantMsg] = await db.insert(schema.messages).values({
                 conversationId: mediaMessage.conversationId,
                 agentId: conversation.agentId,
-                conteudo: fullResponse,
+                conteudo: responseText,
                 tipo: 'text',
                 isFromUser: false,
                 latenciaMs: llmLatency,
