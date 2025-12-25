@@ -763,9 +763,10 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
       }
 
       // BUG FIX 25/12/2025: Validar estrutura da resposta antes de type assertion
-      // BUG FIX 25/12/2025: Não verificar nulidade novamente - já verificado acima
-      // Apenas validar que é um objeto (não null, não array, etc)
-      if (typeof gpuResponse.data !== 'object' || Array.isArray(gpuResponse.data)) {
+      // BUG FIX 25/12/2025: typeof null === 'object' em JavaScript, então precisa verificar explicitamente
+      // A verificação anterior (!gpuResponse.data) já deveria pegar null, mas adicionar verificação explícita
+      // torna o código mais defensivo e previne crashes caso a verificação anterior falhe
+      if (gpuResponse.data === null || typeof gpuResponse.data !== 'object' || Array.isArray(gpuResponse.data)) {
         throw new Error('Resposta inválida do GPU Manager: data não é um objeto válido');
       }
       
