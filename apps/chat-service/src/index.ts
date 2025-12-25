@@ -762,10 +762,11 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
         throw new Error(gpuResponse.error || 'Erro desconhecido na API LLM');
       }
 
-      // BUG FIX 25/12/2025: Adicionar validação antes de type assertion
-      // Validar estrutura da resposta antes de usar como LLMResponse
-      if (!gpuResponse.data || typeof gpuResponse.data !== 'object') {
-        throw new Error('Resposta inválida do GPU Manager: data não é um objeto');
+      // BUG FIX 25/12/2025: Validar estrutura da resposta antes de type assertion
+      // BUG FIX 25/12/2025: Não verificar nulidade novamente - já verificado acima
+      // Apenas validar que é um objeto (não null, não array, etc)
+      if (typeof gpuResponse.data !== 'object' || Array.isArray(gpuResponse.data)) {
+        throw new Error('Resposta inválida do GPU Manager: data não é um objeto válido');
       }
       
       const responseData = gpuResponse.data as LLMResponse;
@@ -876,7 +877,7 @@ async function proxyStreamFromGpuManager(
       'X-Internal-Api-Secret': INTERNAL_API_SECRET,
     },
     body: JSON.stringify({
-      serviceType: 'mixtral',
+      serviceType: GpuServiceType.MIXTRAL,
       endpoint: '/v1/chat/completions',
       method: 'POST',
       body: {
