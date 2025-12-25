@@ -791,7 +791,7 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
 
 const gpuManagerBreaker = createCircuitBreaker(callLlamaAPIInternal, {
   name: 'gpu-manager-llm',
-  ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
+  ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
@@ -2870,86 +2870,97 @@ wss.on('connection', (ws, req) => {
         }
 
         const llmStartTime = Date.now();
-        // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content
-        const stream = await callLlamaAPI([
+        // BUG FIX 25/12/2025: Usar proxyStreamFromGpuManager para streaming via GPU Manager Service
+        const llmMessages: LLMMessage[] = [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: messageContent },
-        ], true) as AsyncGenerator<string>;
+        ];
 
         let fullResponse = '';
-        for await (const chunk of stream) {
-          fullResponse += chunk;
-          ws.send(JSON.stringify({ type: 'stream', data: chunk }));
-        }
-        const llmLatency = Date.now() - llmStartTime;
-        const totalLatency = Date.now() - ragStartTime;
+        try {
+          fullResponse = await proxyStreamFromGpuManager(
+            llmMessages,
+            (content) => {
+              ws.send(JSON.stringify({ type: 'stream', data: content }));
+            },
+            async () => {
+              // Salvar resposta do assistente APÓS o stream completo
+              const llmLatency = Date.now() - llmStartTime;
+              const totalLatency = Date.now() - ragStartTime;
+              
+              const [assistantMsg] = await db.insert(schema.messages).values({
+                conversationId,
+                agentId: conversation?.agentId,
+                conteudo: fullResponse,
+                tipo: 'text',
+                isFromUser: false,
+                latenciaMs: totalLatency,
+              }).returning();
 
-        const [assistantMsg] = await db.insert(schema.messages).values({
-          conversationId,
-          agentId: conversation?.agentId,
-          conteudo: fullResponse,
-          tipo: 'text',
-          isFromUser: false,
-          latenciaMs: totalLatency,
-        }).returning();
-
-        ws.send(JSON.stringify({ 
-          type: 'complete', 
-          data: assistantMsg,
-          metrics: {
-            ragLatencyMs: ragLatency,
-            llmLatencyMs: llmLatency,
-            totalLatencyMs: totalLatency,
-            usedRag: !!ragResult?.context,
-            ragChunks: ragResult?.sources?.length || 0,
-          },
-        }));
-        
-        logger.info({
-          conversationId,
-          ragLatencyMs: ragLatency,
-          llmLatencyMs: llmLatency,
-          totalLatencyMs: totalLatency,
-          usedRag: !!ragResult?.context,
-        }, 'Mensagem WebSocket processada com integração RAG');
-        
-        // ======================================================================
-        // ANÁLISE PÓS-RESPOSTA: Verificar se LLM deu resposta de baixa confiança
-        // Se sim, incrementa fallback counter e pode escalar automaticamente
-        // (Mixtral 8x7B não retorna confidence score - usamos indicadores proxy)
-        // ======================================================================
-        const postResponseEscalation = await processLLMResponseForEscalation(
-          conversationId,
-          fullResponse
-        );
-        
-        if (postResponseEscalation) {
-          // LLM atingiu limite de respostas de baixa confiança - escalar
-          const _escalationResult = await processAutoEscalation(postResponseEscalation);
-          
-          ws.send(JSON.stringify({
-            type: 'escalation',
-            trigger: postResponseEscalation.trigger,
-            message: 'A conversa foi encaminhada para um atendente humano devido a respostas inconclusivas.',
-            confidence: postResponseEscalation.confidence,
-            fallbackCount: postResponseEscalation.fallbackCount,
-          }));
-          
-          // Notificar agentes conectados
-          notifyAgentsAboutEvent('new_handoff', {
-            conversationId,
-            tenantId: safeTenantId,
-            trigger: postResponseEscalation.trigger,
-            priority: 'medium',
-            reason: 'low_confidence_responses',
-          });
-          
-          logger.info({
-            conversationId,
-            trigger: postResponseEscalation.trigger,
-            fallbackCount: postResponseEscalation.fallbackCount,
-            confidence: postResponseEscalation.confidence,
-          }, 'Escalação automática após resposta de baixa confiança do LLM');
+              ws.send(JSON.stringify({ 
+                type: 'complete', 
+                data: assistantMsg,
+                metrics: {
+                  ragLatencyMs: ragLatency,
+                  llmLatencyMs: llmLatency,
+                  totalLatencyMs: totalLatency,
+                  usedRag: !!ragResult?.context,
+                  ragChunks: ragResult?.sources?.length || 0,
+                },
+              }));
+              
+              logger.info({
+                conversationId,
+                ragLatencyMs: ragLatency,
+                llmLatencyMs: llmLatency,
+                totalLatencyMs: totalLatency,
+                usedRag: !!ragResult?.context,
+              }, 'Mensagem WebSocket processada com integração RAG');
+              
+              // ======================================================================
+              // ANÁLISE PÓS-RESPOSTA: Verificar se LLM deu resposta de baixa confiança
+              // Se sim, incrementa fallback counter e pode escalar automaticamente
+              // (Mixtral 8x7B não retorna confidence score - usamos indicadores proxy)
+              // ======================================================================
+              const postResponseEscalation = await processLLMResponseForEscalation(
+                conversationId,
+                fullResponse
+              );
+              
+              if (postResponseEscalation) {
+                // LLM atingiu limite de respostas de baixa confiança - escalar
+                const _escalationResult = await processAutoEscalation(postResponseEscalation);
+                
+                ws.send(JSON.stringify({
+                  type: 'escalation',
+                  trigger: postResponseEscalation.trigger,
+                  message: 'A conversa foi encaminhada para um atendente humano devido a respostas inconclusivas.',
+                  confidence: postResponseEscalation.confidence,
+                  fallbackCount: postResponseEscalation.fallbackCount,
+                }));
+                
+                // Notificar agentes conectados
+                notifyAgentsAboutEvent('new_handoff', {
+                  conversationId,
+                  tenantId: safeTenantId,
+                  trigger: postResponseEscalation.trigger,
+                  priority: 'medium',
+                  reason: 'low_confidence_responses',
+                });
+                
+                logger.info({
+                  conversationId,
+                  trigger: postResponseEscalation.trigger,
+                  fallbackCount: postResponseEscalation.fallbackCount,
+                  confidence: postResponseEscalation.confidence,
+                }, 'Escalação automática após resposta de baixa confiança do LLM');
+              }
+            }
+          );
+        } catch (streamError) {
+          logger.error({ error: streamError }, 'Erro no streaming WebSocket');
+          ws.send(JSON.stringify({ type: 'error', error: 'Falha ao processar mensagem' }));
+          return;
         }
       }
       
@@ -3189,7 +3200,7 @@ wss.on('connection', (ws, req) => {
           }));
         }
 
-        // Chamar LLM com streaming
+        // BUG FIX 25/12/2025: Chamar LLM com streaming via proxyStreamFromGpuManager
         const llmStartTime = Date.now();
         
         // CORREÇÃO 17/12/2025: Mixtral 8x7B é SOMENTE TEXTO
@@ -3200,42 +3211,50 @@ wss.on('connection', (ws, req) => {
           { role: 'user', content: userContent },
         ];
 
-        const stream = await callLlamaAPI(llmMessages, true) as AsyncGenerator<string>;
-
         let fullResponse = '';
-        for await (const chunk of stream) {
-          fullResponse += chunk;
-          ws.send(JSON.stringify({ type: 'stream', data: chunk }));
+        try {
+          fullResponse = await proxyStreamFromGpuManager(
+            llmMessages,
+            (content) => {
+              ws.send(JSON.stringify({ type: 'stream', data: content }));
+            },
+            async () => {
+              // Salvar resposta do assistente APÓS o stream completo
+              const llmLatency = Date.now() - llmStartTime;
+              
+              const [assistantMsg] = await db.insert(schema.messages).values({
+                conversationId: mediaMessage.conversationId,
+                agentId: conversation.agentId,
+                conteudo: fullResponse,
+                tipo: 'text',
+                isFromUser: false,
+                latenciaMs: llmLatency,
+              }).returning();
+
+              ws.send(JSON.stringify({ 
+                type: 'complete', 
+                data: assistantMsg,
+                metrics: {
+                  llmLatencyMs: llmLatency,
+                  mediaType: validatedMediaType,
+                  uploadId: uploadResult.uploadId,
+                  usedRag: !!ragResult?.context,
+                },
+              }));
+
+              logger.info({
+                conversationId: mediaMessage.conversationId,
+                uploadId: uploadResult.uploadId,
+                mediaType: validatedMediaType,
+                llmLatencyMs: llmLatency,
+              }, 'Mensagem multimodal processada via WebSocket');
+            }
+          );
+        } catch (streamError) {
+          logger.error({ error: streamError }, 'Erro no streaming WebSocket');
+          ws.send(JSON.stringify({ type: 'error', error: 'Falha ao processar mensagem' }));
+          return;
         }
-        const llmLatency = Date.now() - llmStartTime;
-
-        // Salvar resposta do assistente
-        const [assistantMsg] = await db.insert(schema.messages).values({
-          conversationId: mediaMessage.conversationId,
-          agentId: conversation.agentId,
-          conteudo: fullResponse,
-          tipo: 'text',
-          isFromUser: false,
-          latenciaMs: llmLatency,
-        }).returning();
-
-        ws.send(JSON.stringify({ 
-          type: 'complete', 
-          data: assistantMsg,
-          metrics: {
-            llmLatencyMs: llmLatency,
-            mediaType: validatedMediaType,
-            uploadId: uploadResult.uploadId,
-            usedRag: !!ragResult?.context,
-          },
-        }));
-
-        logger.info({
-          conversationId: mediaMessage.conversationId,
-          uploadId: uploadResult.uploadId,
-          mediaType: validatedMediaType,
-          llmLatencyMs: llmLatency,
-        }, 'Mensagem multimodal processada via WebSocket');
       }
     } catch (error) {
       logger.error({ error }, 'Erro na mensagem WebSocket');
