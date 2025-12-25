@@ -84,41 +84,32 @@ async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Prom
  * NÃO confundir com /embed/text que usa Qwen3-Embedding-8B (4096 dim - espaço vetorial diferente!)
  */
 async function callTextForImageGpuApi(params: TextForImageApiParams): Promise<{ embedding: number[]; model: string }> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings text-to-image (OpenCLIP 1024 dim)');
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/text-for-image',
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: 30000, // 30s timeout
+    body: params,
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto para imagem');
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
-  try {
-    // IMPORTANTE: Usar /embed/text-for-image (OpenCLIP 1024) e NÃO /embed/text (Qwen3 4096)
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text-for-image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: controller.signal,
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GPU Text-for-Image API error: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json() as { embedding: number[]; model: string; dimension: number };
+  const result = gpuResponse.data as { embedding: number[]; model: string; dimension: number };
   
   if (!result.embedding || !Array.isArray(result.embedding)) {
-      throw new Error('Resposta GPU inválida - embedding ausente');
+    throw new Error('Resposta GPU inválida - embedding ausente');
   }
 
   return {
     embedding: result.embedding,
-      model: result.model || 'OpenCLIP-ViT-H-14-text',
+    model: result.model || 'OpenCLIP-ViT-H-14',
   };
-  } finally {
-    clearTimeout(timeoutId);
-  }
 }
+
 
 // Circuit breaker para chamadas GPU de IMAGEM
 const gpuImageBreaker = createCircuitBreaker(callImageEmbeddingsGpuApi, {
@@ -175,7 +166,7 @@ class ImageProcessorService {
     this.isConfigured = true;
     
     if (!this.isConfigured) {
-      logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de imagem não funcionarão');
+      logger.warn('GPU embeddings service não acessível - embeddings de imagem não funcionarão');
     } else {
     logger.info(
         { gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: CLIP_EMBEDDING_DIM },

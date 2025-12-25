@@ -34,7 +34,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
 
-> **NOTA (17/12/2025):** Container `embeddings-gpu` foi removido. Processamento multimodal agora usa EMBEDDINGS_GPU_URL (Salad Cloud) com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
+> **NOTA (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 e são gerenciados pelo GPU Manager Service. Processamento multimodal usa serviços GPU locais com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
 
 > **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
@@ -299,8 +299,9 @@ OAUTH_GITHUB_CLIENT_ID=Ov23xxxxx
 OAUTH_GITHUB_CLIENT_SECRET=xxxxx
 
 # ========== SALAD CLOUD (LLM) ==========
-SALAD_API_KEY=sua-api-key
-SALAD_ORGANIZATION_ID=org_xxxxx
+# GPU Services agora rodam localmente (Hetzner GEX44)
+# GPU Manager Service gerencia todas as requisições GPU
+# Não são necessários secrets externos para GPU
 
 # ========== TWILIO (WHATSAPP) ==========
 TWILIO_ACCOUNT_SID=ACxxxxx

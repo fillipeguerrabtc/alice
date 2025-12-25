@@ -235,8 +235,9 @@ Status das filas.
 
 ### Chat Service
 
-**Antes:**
+**Antes (Salad Cloud - removido):**
 ```typescript
+// Código legado removido - Salad Cloud não é mais usado
 const response = await fetch(`${SALAD_MIXTRAL_URL}/v1/chat/completions`, { ... });
 ```
 
@@ -255,8 +256,9 @@ const response = await requestGpu({
 
 ### RAG Service
 
-**Antes:**
+**Antes (URL direta - removido):**
 ```typescript
+// Código legado removido - usar GPU Manager Service
 const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, { ... });
 ```
 

@@ -64,7 +64,9 @@ interface TaskResult {
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL || 'http://alice-training:3004';
 
 // URL do embeddings GPU para geração de embeddings
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service gerencia embeddings localmente (Hetzner GEX44)
+// URL interna: http://gpu-embeddings:8000 (não precisa de secret)
+const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000';
 
 // Timeout para chamadas HTTP (em ms)
 const HTTP_TIMEOUT = 60000; // 60 segundos
@@ -106,9 +108,7 @@ async function callTrainingServiceInternal(
 async function callEmbeddingsGpuInternal(
   texts: string[]
 ): Promise<{ embeddings: number[][] }> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado');
-  }
+  // EMBEDDINGS_GPU_URL tem fallback para serviço local (não precisa validar)
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), HTTP_TIMEOUT);
@@ -469,7 +469,7 @@ async function processEmbeddingGeneration(
   if (!EMBEDDINGS_GPU_URL) {
     return {
       success: false,
-      message: 'EMBEDDINGS_GPU_URL não configurado - GPU é obrigatório (Regra 6)',
+      message: 'GPU embeddings service não acessível - GPU é obrigatório (Regra 6)',
       data: {},
     };
   }

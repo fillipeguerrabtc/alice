@@ -265,7 +265,7 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 ┌─────────────────────────────────────────────────────────────┐
 │              GERAÇÃO DE EMBEDDING (GPU)                    │
 │  • Qwen3-Embedding-8B (4096 dim) → Qdrant                  │
-│  • EMBEDDINGS_GPU_URL é OBRIGATÓRIO em produção            │
+│  • GPU Manager Service gerencia embeddings localmente     │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐

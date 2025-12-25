@@ -63,6 +63,7 @@ REQUIRED_VARS=(
     "GITHUB_SHA"
     "PRODUCTION_SERVER_HOST"
     "PRODUCTION_SERVER_USER"
+    "PRODUCTION_SERVER_SSH_PRIVATE_KEY"
 )
 
 MISSING_VARS=()
@@ -87,13 +88,15 @@ log_header "CONFIGURANDO ACESSO SSH AO PRODUCTION SERVER"
 PRODUCTION_SERVER_HOST="${PRODUCTION_SERVER_HOST:-production-server}"
 PRODUCTION_SERVER_USER="${PRODUCTION_SERVER_USER:-alice-deploy}"
 
-# Verificar se SSH está configurado
-if [ ! -f ~/.ssh/config ] || ! grep -q "Host ${PRODUCTION_SERVER_HOST}" ~/.ssh/config; then
-    log_warn "SSH config não encontrado. Usando conexão direta."
-    SSH_CMD="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null ${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST}"
-else
-    SSH_CMD="ssh ${PRODUCTION_SERVER_HOST}"
-fi
+# Configurar chave SSH privada
+mkdir -p ~/.ssh
+echo "${PRODUCTION_SERVER_SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa_prod
+chmod 600 ~/.ssh/id_rsa_prod
+ssh-keyscan -H "${PRODUCTION_SERVER_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
+
+# Comando SSH com chave privada
+SSH_CMD="ssh -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no ${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST}"
+SCP_CMD="scp -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no"
 
 # Testar conexão SSH
 log_info "Testando conexão SSH ao Production Server..."
@@ -141,8 +144,7 @@ fi
 
 log_header "TRANSFERINDO ARQUIVOS PARA PRODUCTION SERVER"
 
-# Usar scp para transferir arquivos
-SCP_CMD="scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+# SCP_CMD já foi definido acima (com chave SSH privada)
 
 if [ -f "$TEMP_DIR/.env.prod" ]; then
     $SCP_CMD "$TEMP_DIR/.env.prod" "${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST}:/tmp/.env.prod" || log_error "Falha ao transferir .env.prod"

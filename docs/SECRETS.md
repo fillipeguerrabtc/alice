@@ -1,13 +1,14 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra
-**Data:** 21 de Dezembro de 2025
+**Data:** 25 de Dezembro de 2025
 
 ## Visão Geral
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** 50 configurados no repositório GitHub (verificado em 25/12/2025)
+**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 25/12/2025)
+**Arquitetura:** Deploy Server (CX11) + Production Server (GEX44 GPU)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 50 em produção (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -55,14 +56,15 @@ Estes são necessários para o deploy funcionar:
 
 | Secret | Valor | Descrição |
 |--------|-------|-----------|
-| `HETZNER_VM_HOST` | `46.224.46.93` | IP do Production Server (GPU Server) |
-| `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado) |
-| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` (legado) |
-| `PRODUCTION_SERVER_HOST` | `46.224.46.93` | IP do Production Server (para Deploy Server) |
-| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server (enterprise) |
-| `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) |
+| `PRODUCTION_SERVER_HOST` | `46.224.46.93` | IP do Production Server (GPU Server GEX44) | ✅ **OBRIGATÓRIO** |
+| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server | ✅ **OBRIGATÓRIO** |
+| `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH para Deploy Server acessar Production Server (incluir `-----BEGIN...-----END`) | ✅ **OBRIGATÓRIO** |
+| `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) | ✅ **OBRIGATÓRIO** |
+| `HETZNER_VM_HOST` | `46.224.46.93` | IP do Production Server (legado - fallback) | ⚠️ **Legado** |
+| `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado - fallback) | ⚠️ **Legado** |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Chave SSH legada (fallback se runner não disponível) | ⚠️ **Legado** |
 
-> **ENTERPRISE-GRADE (25/12/2025):** Para arquitetura com Deploy Server separado, use `PRODUCTION_SERVER_HOST` e `PRODUCTION_SERVER_USER`. `HETZNER_VM_HOST` e `HETZNER_VM_USER` são mantidos apenas para compatibilidade (fallback SSH).
+> **ENTERPRISE-GRADE (25/12/2025):** Arquitetura com Deploy Server separado (CX11) e Production Server (GEX44 GPU). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |

@@ -1661,7 +1661,7 @@ jobs:
         env:
           PRODUCTION_SERVER_HOST: ${{ secrets.PRODUCTION_SERVER_HOST || secrets.HETZNER_VM_HOST }}
           PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || 'alice-deploy' }}
-        env:
+          PRODUCTION_SERVER_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SERVER_SSH_PRIVATE_KEY || secrets.HETZNER_SSH_PRIVATE_KEY }}
           GH_PAT: ${{ secrets.GH_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice

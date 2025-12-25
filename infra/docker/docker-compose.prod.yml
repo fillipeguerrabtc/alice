@@ -1237,7 +1237,7 @@ services:
   # - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
   # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
   # - ASR: Canary-1B → GPU Manager Service
-  # Serviços agora usam EMBEDDINGS_GPU_URL diretamente.
+      # Serviços agora usam GPU Manager Service (Hetzner GEX44) - URLs locais.
   # ===========================================================================
   
   # MariaDB - Banco de dados ERPNext
@@ -3221,7 +3221,8 @@ services:
       - PORT=3010
       - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD}@alice-redis:6379/0}
       - MIXTRAL_GPU_URL=${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
-      - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
+      # GPU Manager Service gerencia embeddings localmente (Hetzner GEX44)
+      # URL interna: http://gpu-embeddings:8000 (não precisa de secret)
       - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - NODE_ENV=production
