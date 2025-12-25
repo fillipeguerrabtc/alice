@@ -31,8 +31,8 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 | Aspecto | Salad Cloud | Hetzner Cloud GPU | Vencedor |
 |---------|-------------|-------------------|----------|
 | **RTX 4090 (24GB)** | ~$0.16-0.18/hora | ~$1.42/hora (RTX 6000 Ada 48GB) | Salad (custo) |
-| **Custo Mensal (24/7)** | ~$115-130/mês | ~$1,020/mês (RTX 6000) | Salad (custo) |
-| **Custo Anual** | ~$1,380-1,560/ano | ~$12,240/ano | Salad (custo) |
+| **Custo Mensal (24/7)** | ~$115-130/mês | ~€184-300/mês (RTX 4000/3090) | **Hetzner** (melhor TCO) |
+| **Custo Anual** | ~$1,380-1,560/ano | ~€2,208-3,600/ano | **Hetzner** (melhor TCO) |
 | **Previsibilidade** | Variável (uso real) | Fixo (reservado) | **Hetzner** |
 | **Cold Start** | 5-30s (custo adicional) | 0s (sempre on) | **Hetzner** |
 | **Disponibilidade** | 99.5% (distribuída) | 99.9%+ (dedicado) | **Hetzner** |
@@ -51,7 +51,7 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 | **Latência de Rede** | 50-200ms (internet) | <1ms (rede interna) | **Hetzner** |
 | **Cold Start** | 5-30 segundos | 0 segundos | **Hetzner** |
 | **Throughput** | Variável (depende do nó) | Consistente (bare metal) | **Hetzner** |
-| **VRAM Disponível** | 24GB (RTX 4090) | 48GB (RTX 6000 Ada) | **Hetzner** |
+| **VRAM Disponível** | 24GB (RTX 4090) | 20-24GB (RTX 4000/3090) | **Empate** |
 | **Uptime** | ~99.5% | 99.9%+ | **Hetzner** |
 | **Consistência** | Variável | Constante | **Hetzner** |
 
@@ -74,37 +74,43 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 
 ### 1.4 Especificações Técnicas
 
-#### Hetzner Cloud GPU - GEX130
+#### Opções Hetzner Cloud GPU
 
-| Especificação | Valor |
-|---------------|-------|
-| **GPU** | NVIDIA RTX 6000 Ada Generation |
-| **VRAM** | 48GB GDDR6 ECC |
-| **CPU** | AMD EPYC (múltiplos cores) |
-| **RAM** | 128GB+ DDR4 |
-| **Storage** | NVMe SSD (alta performance) |
-| **Rede** | 10Gbps+ (mesma rede interna) |
-| **Preço** | ~€950-1,100/mês (~$1,020-1,200/mês) |
+**OPÇÃO 1: Servidor Dedicado com GPU de 24GB (Recomendado)**
 
-**Vantagens sobre RTX 4090:**
+| Modelo | GPU | VRAM | CPU | RAM | Storage | Preço Mensal | Setup Fee |
+|--------|-----|------|-----|-----|---------|--------------|-----------|
+| **GEX44** | RTX 4000 SFF Ada | 20GB | Intel Core i5-13500 | 64GB | 2x 1.92TB NVMe | €184/mês | €79 |
+| **Servidor Custom** | RTX 3090/4090 | 24GB | AMD/Intel | 64GB+ | NVMe SSD | ~€200-300/mês | €0-79 |
 
-- **48GB VRAM** vs. 24GB = **2x capacidade** para modelos maiores
-- **ECC Memory** = **correção de erros** (crítico para produção)
-- **Enterprise-grade** = **suporte profissional**
+**Nota**: Hetzner não oferece RTX 4090 diretamente, mas podemos:
+1. Usar servidor dedicado customizado (contatar suporte)
+2. Usar múltiplos GEX44 (1 GPU por serviço)
+3. Usar servidor com RTX 3090 (24GB) se disponível
+
+**OPÇÃO 2: Múltiplos Servidores GEX44 (Isolamento Total)**
+
+| Configuração | Servidores | GPU Total | VRAM Total | Custo Mensal |
+|--------------|------------|-----------|------------|--------------|
+| **4x GEX44** | 4 servidores | 4x RTX 4000 | 80GB total | €736/mês |
+| **1x GEX44 (Compartilhado)** | 1 servidor | 1x RTX 4000 | 20GB | €184/mês |
+
+**Recomendação**: Começar com **1 servidor dedicado customizado** com RTX 3090 ou RTX 4090 (24GB) por ~€200-300/mês, ou usar **1x GEX44** compartilhando a GPU entre serviços (20GB pode ser suficiente com otimização).
 
 #### Comparação de Modelos Suportados
 
-| Modelo | RTX 4090 (Salad) | RTX 6000 Ada (Hetzner) |
-|--------|------------------|------------------------|
-| **Mixtral 8x7B (vLLM)** | ✅ 24GB suficiente | ✅ 48GB (margem) |
-| **Qwen3-Embedding-8B** | ✅ 24GB suficiente | ✅ 48GB (margem) |
-| **OpenCLIP ViT-H/14** | ✅ 24GB suficiente | ✅ 48GB (margem) |
-| **FLUX.1 Schnell** | ✅ 24GB suficiente | ✅ 48GB (margem) |
-| **Canary-1B (ASR)** | ✅ 24GB suficiente | ✅ 48GB (margem) |
-| **Fine-tuning LoRA** | ⚠️ Limite próximo | ✅ 48GB (confortável) |
-| **Full Fine-tuning** | ❌ Pode não caber | ✅ 48GB (possível) |
+| Modelo | RTX 4090 24GB (Salad) | RTX 4000 20GB (GEX44) | RTX 3090/4090 24GB (Custom) |
+|--------|----------------------|----------------------|----------------------------|
+| **Mixtral 8x7B (vLLM)** | ✅ 24GB suficiente | ⚠️ 20GB (pode precisar otimização) | ✅ 24GB suficiente |
+| **Qwen3-Embedding-8B** | ✅ 24GB suficiente | ✅ 20GB suficiente | ✅ 24GB suficiente |
+| **OpenCLIP ViT-H/14** | ✅ 24GB suficiente | ✅ 20GB suficiente | ✅ 24GB suficiente |
+| **FLUX.1 Schnell** | ✅ 24GB suficiente | ⚠️ 20GB (pode precisar otimização) | ✅ 24GB suficiente |
+| **Canary-1B (ASR)** | ✅ 24GB suficiente | ✅ 20GB suficiente | ✅ 24GB suficiente |
+| **Fine-tuning LoRA** | ⚠️ Limite próximo | ❌ Pode não caber | ✅ 24GB suficiente |
 
-**Conclusão**: RTX 6000 Ada oferece **margem de segurança** e **capacidade para crescimento futuro**.
+**Conclusão**: 
+- **RTX 3090/4090 24GB (Custom)**: Ideal, mesma capacidade que Salad
+- **RTX 4000 20GB (GEX44)**: Viável com otimização, mais barato (€184/mês)
 
 ---
 
@@ -431,7 +437,8 @@ services:
 - **Desenvolvedor Backend**: 2 semanas (Fase 2-3)
 - **DevOps**: 4 semanas (Fase 1-4)
 - **QA**: 1 semana (Fase 3)
-- **Servidor GEX130**: €950-1,100/mês (~$1,020-1,200/mês)
+- **Servidor Custom (RTX 3090/4090)**: €200-300/mês (~$220-330/mês) - **Recomendado**
+- **Servidor GEX44 (RTX 4000)**: €184/mês + €79 setup (~$200/mês) - Alternativa mais barata
 
 ---
 
