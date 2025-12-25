@@ -55,10 +55,14 @@ Estes são necessários para o deploy funcionar:
 
 | Secret | Valor | Descrição |
 |--------|-------|-----------|
-| `HETZNER_VM_HOST` | `46.224.46.93` | IP do servidor |
-| `HETZNER_VM_USER` | `root` | Usuário SSH |
-| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` |
+| `HETZNER_VM_HOST` | `46.224.46.93` | IP do Production Server (GPU Server) |
+| `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado) |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Incluir `-----BEGIN...-----END` (legado) |
+| `PRODUCTION_SERVER_HOST` | `46.224.46.93` | IP do Production Server (para Deploy Server) |
+| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server (enterprise) |
 | `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) |
+
+> **ENTERPRISE-GRADE (25/12/2025):** Para arquitetura com Deploy Server separado, use `PRODUCTION_SERVER_HOST` e `PRODUCTION_SERVER_USER`. `HETZNER_VM_HOST` e `HETZNER_VM_USER` são mantidos apenas para compatibilidade (fallback SSH).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |

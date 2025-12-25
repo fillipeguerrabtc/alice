@@ -1509,8 +1509,12 @@ jobs:
   # ===========================================================================
   deploy:
     name: Deploy Hetzner Cloud
-    runs-on: ubuntu-latest
-    # CRÍTICO: timeout para evitar jobs stuck em deploy
+    # ENTERPRISE-GRADE (25/12/2025): Runner no Deploy Server (separado de produção)
+    # Runner no Deploy Server executa deploy remoto no Production Server via SSH
+    # Isolamento completo entre CI/CD e produção (best practice enterprise 2025/2026)
+    runs-on: [self-hosted, hetzner, deploy]
+    # Fallback para GitHub-hosted runner se self-hosted não disponível
+    # timeout para evitar jobs stuck em deploy
     timeout-minutes: 30
     needs: [build-docker, image-security-scan]
     # Deploy automático se build e security scan passarem
@@ -1618,16 +1622,25 @@ jobs:
           ./infra/scripts/generate-env-prod.sh
 
       # =============================================================================
-      # ENTERPRISE-GRADE (25/12/2025): Detectar se está rodando em self-hosted runner
-      # Se estiver, executar script localmente (zero latência)
-      # Se não, usar SSH como fallback (compatibilidade)
+      # ENTERPRISE-GRADE (25/12/2025): Detectar tipo de runner e localização
+      # Deploy Server: Runner separado → deploy remoto via SSH
+      # Production Server: Runner local (legado) → deploy local
+      # GitHub-hosted: Fallback → deploy via SSH
       # =============================================================================
       - name: Detectar tipo de runner
         id: detect-runner
         run: |
-          if [ "${{ runner.name }}" == "hetzner-gpu-runner" ] || [ "${{ runner.os }}" == "Self-hosted" ]; then
-            echo "runner_type=self-hosted" >> $GITHUB_OUTPUT
-            echo "✅ Self-hosted runner detectado - executando deploy localmente"
+          if [ "${{ runner.name }}" == "hetzner-deploy-runner" ] || [ "${{ runner.name }}" == "hetzner-gpu-runner" ]; then
+            if [ "${{ runner.name }}" == "hetzner-deploy-runner" ]; then
+              echo "runner_type=deploy-server" >> $GITHUB_OUTPUT
+              echo "✅ Deploy Server runner detectado - executando deploy remoto"
+            else
+              echo "runner_type=production-server" >> $GITHUB_OUTPUT
+              echo "⚠️ Production Server runner detectado (legado) - executando deploy local"
+            fi
+          elif [ "${{ runner.os }}" == "Self-hosted" ]; then
+            echo "runner_type=deploy-server" >> $GITHUB_OUTPUT
+            echo "✅ Self-hosted runner detectado - assumindo Deploy Server"
           else
             echo "runner_type=github-hosted" >> $GITHUB_OUTPUT
             echo "ℹ️ GitHub-hosted runner - usando SSH como fallback"
@@ -1639,11 +1652,15 @@ jobs:
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password alertmanager_smtp_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
 
       # =============================================================================
-      # ENTERPRISE-GRADE (25/12/2025): Deploy via Self-Hosted Runner (local)
-      # Execução local no servidor Hetzner - zero latência, cache local
+      # ENTERPRISE-GRADE (25/12/2025): Deploy via Deploy Server (remoto)
+      # Runner no Deploy Server executa deploy remoto no Production Server via SSH
+      # Isolamento completo entre CI/CD e produção (best practice enterprise 2025/2026)
       # =============================================================================
-      - name: Deploy via Self-Hosted Runner (local)
-        if: steps.detect-runner.outputs.runner_type == 'self-hosted'
+      - name: Deploy via Deploy Server (remoto)
+        if: steps.detect-runner.outputs.runner_type == 'deploy-server'
+        env:
+          PRODUCTION_SERVER_HOST: ${{ secrets.PRODUCTION_SERVER_HOST || secrets.HETZNER_VM_HOST }}
+          PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || 'alice-deploy' }}
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
@@ -1687,13 +1704,68 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          # Copiar .env.prod para /tmp (self-hosted runner já está no servidor)
+          # Executar script de deploy remoto (Deploy Server → Production Server)
+          chmod +x infra/scripts/deploy-remote.sh
+          bash infra/scripts/deploy-remote.sh
+
+      # =============================================================================
+      # LEGADO: Deploy via Production Server Runner (não recomendado)
+      # Runner no Production Server executa deploy localmente
+      # ⚠️ NÃO é best practice enterprise (runner em produção)
+      # Mantido apenas para compatibilidade durante migração
+      # =============================================================================
+      - name: Deploy via Production Server Runner (legado)
+        if: steps.detect-runner.outputs.runner_type == 'production-server'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
+          DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
+          DEPLOY_VERSION: ${{ github.event.inputs.version || github.ref_name || 'main' }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          PGBACKREST_VERSION: ${{ needs.build-docker.outputs.pgbackrest_version }}
+          TRAEFIK_VERSION: ${{ needs.build-docker.outputs.traefik_version }}
+          TRAEFIK_DIGEST: ${{ needs.build-docker.outputs.traefik_digest }}
+          PROMETHEUS_VERSION: ${{ needs.build-docker.outputs.prometheus_version }}
+          PROMETHEUS_DIGEST: ${{ needs.build-docker.outputs.prometheus_digest }}
+          GRAFANA_VERSION: ${{ needs.build-docker.outputs.grafana_version }}
+          GRAFANA_DIGEST: ${{ needs.build-docker.outputs.grafana_digest }}
+          LOKI_VERSION: ${{ needs.build-docker.outputs.loki_version }}
+          LOKI_DIGEST: ${{ needs.build-docker.outputs.loki_digest }}
+          PROMTAIL_VERSION: ${{ needs.build-docker.outputs.promtail_version }}
+          PROMTAIL_DIGEST: ${{ needs.build-docker.outputs.promtail_digest }}
+          JAEGER_VERSION: ${{ needs.build-docker.outputs.jaeger_version }}
+          JAEGER_DIGEST: ${{ needs.build-docker.outputs.jaeger_digest }}
+          LANGFUSE_VERSION: ${{ needs.build-docker.outputs.langfuse_version }}
+          LANGFUSE_DIGEST: ${{ needs.build-docker.outputs.langfuse_digest }}
+          ERPNEXT_VERSION: ${{ needs.build-docker.outputs.erpnext_version }}
+          ERPNEXT_DIGEST: ${{ needs.build-docker.outputs.erpnext_digest }}
+          ERPNEXT_NGINX_DIGEST: ${{ needs.build-docker.outputs.erpnext_nginx_digest }}
+          ERPNEXT_SOCKETIO_DIGEST: ${{ needs.build-docker.outputs.erpnext_socketio_digest }}
+          ERPNEXT_WORKER_DIGEST: ${{ needs.build-docker.outputs.erpnext_worker_digest }}
+          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.build-docker.outputs.docker_socket_proxy_version }}
+          DOCKER_SOCKET_PROXY_DIGEST: ${{ needs.build-docker.outputs.docker_socket_proxy_digest }}
+          BUSYBOX_VERSION: ${{ needs.build-docker.outputs.busybox_version }}
+          BUSYBOX_DIGEST: ${{ needs.build-docker.outputs.busybox_digest }}
+          REDIS_VERSION: ${{ needs.build-docker.outputs.redis_version }}
+          REDIS_DIGEST: ${{ needs.build-docker.outputs.redis_digest }}
+          MARIADB_VERSION: ${{ needs.build-docker.outputs.mariadb_version }}
+          MARIADB_DIGEST: ${{ needs.build-docker.outputs.mariadb_digest }}
+          PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
+          PGVECTOR_DIGEST: ${{ needs.build-docker.outputs.pgvector_digest }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # Copiar .env.prod para /tmp (runner no Production Server)
           if [ -f .env.prod ]; then
             cp .env.prod /tmp/.env.prod
             chmod 600 /tmp/.env.prod
           fi
           
-          # Copiar secrets para /tmp (self-hosted runner já está no servidor)
+          # Copiar secrets para /tmp
           if [ -f langfuse_db_password ]; then
             cp langfuse_db_password /tmp/langfuse_db_password
             chmod 600 /tmp/langfuse_db_password
@@ -1704,7 +1776,7 @@ jobs:
             chmod 600 /tmp/alertmanager_smtp_password
           fi
           
-          # Executar script de deploy local
+          # Executar script de deploy local (legado - não recomendado)
           chmod +x infra/scripts/deploy-local.sh
           bash infra/scripts/deploy-local.sh
 
