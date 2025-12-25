@@ -3037,7 +3037,10 @@ services:
       - MODEL_NAME=${MIXTRAL_MODEL_NAME:-TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ}
       - QUANTIZATION=${MIXTRAL_QUANTIZATION:-awq}
       - MAX_MODEL_LEN=${MIXTRAL_MAX_MODEL_LEN:-32768}
-      - GPU_MEMORY_UTILIZATION=${MIXTRAL_GPU_MEMORY_UTILIZATION:-0.90}
+      # ENTERPRISE-GRADE (25/12/2025): Otimizado para 20GB VRAM (GEX44 RTX 4000 Ada)
+      # 0.85 = 85% de 20GB = 17GB (margem de ~3GB para variações)
+      # Mixtral 8x7B AWQ 4-bit usa ~16-18GB, então 17GB é suficiente e seguro
+      - GPU_MEMORY_UTILIZATION=${MIXTRAL_GPU_MEMORY_UTILIZATION:-0.85}
       - TENSOR_PARALLEL_SIZE=${MIXTRAL_TENSOR_PARALLEL_SIZE:-1}
       - HOST=0.0.0.0
       - PORT=8000
