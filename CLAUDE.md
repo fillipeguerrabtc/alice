@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 ## Overview
-Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Salad Cloud RTX 4090 GPUs. Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
+Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Hetzner GPU server (RTX 4090 24GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim → Qdrant, OpenCLIP 1024 dim → pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
 
 ## User Preferences
 ### 18 Regras Fundamentais
@@ -19,7 +19,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER + SALAD CLOUD** | Deploy Hetzner via GitHub Actions (100% automático). GPUs Salad Cloud: Container Groups pré-criados manualmente, URLs configuradas como secrets. |
+| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU (RTX 4090 24GB) hospeda todos os 50 containers (45 serviços + 4 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -42,12 +42,12 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
 | DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
-| PRODUÇÃO | Hetzner Cloud (containers) + Salad Cloud (GPUs) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+| PRODUÇÃO | Hetzner Cloud GPU (servidor único - 50 containers) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
 ## System Architecture
-Alice employs a microservices architecture with 45 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience.
+Alice employs a microservices architecture with 50 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience. All services run on a single Hetzner GPU server (RTX 4090 24GB) to eliminate network latency and simplify management.
 
 **Core Architectural Components:**
 - **Infrastructure Core (8 serviços)**: Docker Socket Proxy, Traefik Init, Traefik API Gateway, PostgreSQL (with pgvector for image embeddings and RLS for multi-tenancy), Alice Redis (dedicated cache), **SearXNG (metabusca interna para Web Search)**, **Qdrant (banco vetorial para texto 4096 dim)**, **Tor Proxy (acesso a .onion para SearXNG engines ahmia/torch)**.
@@ -59,11 +59,12 @@ Alice employs a microservices architecture with 45 containerized services orches
     - **Training Service**: Fine-tuning and self-learning scheduler.
     - **Integrations Service**: Handles external APIs (Stripe, Wise, Twilio, Resend).
     - **Observability Service**: Prometheus, Grafana, Jaeger for metrics, dashboards, and tracing.
-    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Salad Cloud:
+    - **Multimodal Inference (100% GPU)**: Processamento multimodal via GPU Manager Service (servidor único Hetzner):
         - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant - GPU OBRIGATÓRIO
         - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector - GPU OBRIGATÓRIO
         - ASR: Canary-1B (NeMo) - GPU OBRIGATÓRIO
         - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
+        - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
 - **Observability Stack (14 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
@@ -77,15 +78,16 @@ Alice employs a microservices architecture with 45 containerized services orches
 
 ## External Dependencies
 
-### Salad Cloud (GPUs Externas) - Atualizado 16/12/2025
+### GPU Services (Hetzner GPU Server) - Atualizado 25/12/2025
 - **LLM Inference**: Mixtral 8x7B (MoE ~12B ativos, quantizado 4/5-bit via vLLM) - chat, trading, geração de texto
 - **Image Generation**: FLUX.1 Schnell - geração de imagens
-- **Fine-tuning**: Treinamento de modelos customizados, LoRA para trading BTC
+- **Fine-tuning**: Treinamento de modelos customizados, LoRA para trading BTC (ainda em migração)
 - **Embeddings Texto**: Qwen3-Embedding-8B (4096 dim) → Qdrant - máxima qualidade
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
 - **ASR**: Canary-1B (NeMo) - transcrição de áudio
+- **GPU Manager Service**: Gerenciamento centralizado com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus
 
-### Processamento Multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
+### Processamento Multimodal - ARQUITETURA ENTERPRISE (25/12/2025)
 Embeddings otimizados por caso de uso para máxima qualidade:
 
 | Modalidade | Modelo | Dimensões | Storage | Licença |
@@ -96,17 +98,9 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 
 - **GPU é OBRIGATÓRIO** - sem fallback CPU (Regra 6)
 - **Qdrant para Texto**: Suporta HNSW com 4096+ dim (pgvector limita em 4000 para halfvec)
-- **Estratégia "Warm on Demand"**: GPUs mantidas quentes por 30 minutos após último uso
+- **Estratégia "Warm on Demand"**: GPU Manager mantém serviços GPU ativos por período configurável após último uso
 - **Texto unificado**: Trading e RAG usam mesmo modelo (Qwen3-Embedding-8B)
-
-### Estratégia de GPU "Warm on Demand" (15/12/2025)
-Otimização de custos para GPUs Salad Cloud:
-- **Fila Redis**: Processamento assíncrono de embeddings (`embedding-queue.ts`)
-- **Worker dedicado**: `embedding-worker.ts` processa fila em background
-- **Keep-warm 30 min**: GPU mantida ativa por 30 minutos após último uso
-- **WebSocket**: Notificações em tempo real quando embedding está pronto (`/ws/embeddings`)
-- **Endpoints assíncronos**: `POST /api/rag/embeddings/queue` retorna `jobId` imediatamente
-- **Benefícios**: Cold start apenas no primeiro request; custo proporcional ao uso real
+- **Arquitetura Single Server**: Todos os 50 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -117,9 +111,9 @@ Otimização de custos para GPUs Salad Cloud:
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
 
 ## Deploy Information
-- **Servidor**: Hetzner CX43 (8 vCPU, 16GB RAM, 160GB NVMe SSD)
-- **Volume Adicional**: Hetzner Volume 100GB (alice-data) montado em /mnt/alice-data
-- **GPUs**: Salad Cloud (Container Groups pré-criados manualmente, URLs em secrets GitHub)
+- **Servidor**: Hetzner GPU (RTX 3090/4090 24GB ou RTX 4000 20GB), 8+ vCPU, 64GB+ RAM, 500GB+ NVMe SSD
+- **Volume Adicional**: Hetzner Volume 100GB (alice-data) montado em /opt/alice
+- **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
 - **IP**: 46.224.46.93
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
@@ -362,8 +356,8 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Embeddings (17/12/2025): Embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim), não PostgreSQL*
 *LLM Trading: Mixtral 8x7B (MoE ~12B ativos, vLLM) para Trading BTC Futures KuCoin*
 *Estratégia "Warm on Demand": Fila Redis + Worker assíncrono + Keep-warm 30 min + Métricas Prometheus*
-*Salad Cloud: Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR)*
-*Pipeline CI/CD Unificada (17/12/2025): 4 workflows (CI → Release → Deploy) + GPU deploy integrado via Python SDK (salad-cloud-sdk)*
+*GPU Services (Hetzner): Mixtral 8x7B (vLLM AWQ), FLUX.1 Schnell, Qwen3-Embedding-8B (embeddings 4096), OpenCLIP ViT-H/14 (1024), Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
+*Pipeline CI/CD Unificada (17/12/2025): 4 workflows (CI → Release → Deploy) - 100% automático no servidor Hetzner GPU*
 *Code Review Enterprise (17/12/2025): 100% validado - zero TODO/FIXME/HACK, zero console.log, zero any, zero mocks/stubs*
 *Bug Fix maxOrderValue (17/12/2025): Campo adicionado ao schema tradingRiskConfig + migration 0006*
 *Bug Fix initTradingOrchestrator (17/12/2025): Adicionada chamada de inicialização faltante em chat-service/index.ts*
@@ -381,17 +375,14 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix messageContent Inconsistente (17/12/2025): buscarContextoRAG e callLlamaAPI agora usam messageContent (com fallback) ao invés de message.content*
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
 *Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
-*Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml, workflow deploy-salad-gpu.yml excluído, Terraform obsoleto removido, Python SDK*
+*Pipeline Unificada (17/12/2025): Deploy 100% automático no servidor Hetzner GPU único - todos os 50 containers (45 serviços + 4 GPU + 1 backup)*
 *Auditoria KuCoin Completa (17/12/2025): 3 bugs corrigidos - DEFAULT_SYMBOL não definido, riskConfig.enabled→tradingEnabled, stop orders não exportadas*
 *Backup Enterprise Completo (17/12/2025): Qdrant backup/restore implementado - snapshot por coleção, upload via API REST, frontend atualizado*
-*Bug Fix Health-Check always() (17/12/2025): Job health-check agora usa always() para executar mesmo quando deploy-salad-gpu falha (GPU é opcional)*
-*GPU OBRIGATÓRIO Enterprise (17/12/2025): Deploy GPU Salad Cloud agora é OBRIGATÓRIO - GPUs são o coração da IA, plataforma não funciona sem eles*
-*Health Check Completo (17/12/2025): Health check agora verifica Hetzner (6 serviços) + GPU Salad Cloud (4 Container Groups) - tolerância zero para falhas*
-*Rollback Enterprise Unificado (17/12/2025): Rollback integrado Hetzner + Salad Cloud GPU - cleanup completo de todos os recursos*
-*Rollback Script Salad Cloud (17/12/2025): infra/salad-cloud/rollback.py - cleanup de Container Groups via SDK/REST API*
+*Health Check Completo (17/12/2025): Health check verifica todos os 50 containers no servidor Hetzner GPU único - tolerância zero para falhas*
+*Rollback Enterprise Unificado (17/12/2025): Rollback completo de todos os 50 containers no servidor Hetzner GPU*
 *Learning Worker Enterprise (17/12/2025): learning-worker.ts corrigido - lógica real para rag_update, auto_indexing, incremental/complete fine-tuning, embedding_generation*
 *Trading Commands Integration (17/12/2025): chat-service integrado com integrations-service via HTTP para execução real de comandos de trading*
-*LoRA Job Cancel GPU (17/12/2025): lora-job-manager.ts agora cancela container group na Salad Cloud ao cancelar job (evita custos órfãos)*
+*LoRA Job Cancel GPU (17/12/2025): lora-job-manager.ts gerencia cancelamento de jobs de fine-tuning (ainda em migração para Hetzner GPU)*
 *Code Review Auditoria (17/12/2025): Removidos 3 TODOs/stubs críticos - 100% enterprise compliance (Regra 6)*
 *Bug Fix TOCTOU Race Condition (17/12/2025): trading-orchestrator.ts - initiateTradingTakeover e handbackTradingToAlice agora usam SELECT FOR UPDATE dentro da transação*
 *Bug Fix validateCommand Missing (17/12/2025): chat-service/index.ts agora chama validateCommand antes de executeTradingCommand - evita requests inválidos (ex: DELETE /orders/ sem orderId)*
@@ -481,7 +472,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix ws Dynamic Require (21/12/2025): Adicionado ws como dependência direta do rag-service - evita "Dynamic require of events is not supported" causado por ytdl-core*
 *Bug Fix ClickHouse Healthcheck Auth (21/12/2025): Healthcheck agora inclui --user e --password para autenticação - sem credenciais o clickhouse-client retorna erro*
 *Bug Fix Langfuse SSL (21/12/2025): DATABASE_URL do langfuse e langfuse-worker alterado de sslmode=prefer para sslmode=disable - PostgreSQL interno sem SSL*
-*Bug Fix Secrets Validação Fail-Fast (21/12/2025): Adicionada validação fail-fast para TODAS as secrets obrigatórias (QDRANT_API_KEY, SALAD_API_KEY, SALAD_ORGANIZATION_ID, SESSION_SECRET, INTERNAL_API_SECRET, SEARXNG_SECRET_KEY, CLICKHOUSE_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, ERPNEXT_DB_PASSWORD) - deploy falha imediatamente se qualquer secret obrigatória não estiver configurada*
+*Bug Fix Secrets Validação Fail-Fast (21/12/2025): Adicionada validação fail-fast para TODAS as secrets obrigatórias (QDRANT_API_KEY, HUGGINGFACE_TOKEN, SESSION_SECRET, INTERNAL_API_SECRET, SEARXNG_SECRET_KEY, CLICKHOUSE_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, ERPNEXT_DB_PASSWORD) - deploy falha imediatamente se qualquer secret obrigatória não estiver configurada*
 *Bug Fix Uploads Directory Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/uploads - alice-rag roda como UID 1000 (node) e precisa de permissão de escrita no diretório de uploads*
 *Bug Fix CLICKHOUSE_USER Default (21/12/2025): Corrigido default de CLICKHOUSE_USER - se secret vazio, usa "langfuse" como default ao invés de escrever valor vazio no .env.prod*
 *Bug Fix SMTP Secrets Removidos (21/12/2025): Removidos secrets SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD do workflow - Resend usa valores SMTP fixos (smtp.resend.com:587) + RESEND_API_KEY como senha. Docs: https://resend.com/docs/send-with-smtp*
@@ -509,7 +500,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Deploy Workflow Gate (21/12/2025): Adicionado job validate-trigger como gate de segurança - version é OBRIGATÓRIO e deve ser tag válida (v1.0.0). Impede disparo acidental do deploy sem versão. Release workflow passa triggered_by: release-workflow para auditoria*
 *ESLint Cleanup (21/12/2025): Removidos imports não utilizados (Tooltip, TooltipContent, TooltipTrigger) de TechnicalAnalysisPanel.tsx e variável opens não utilizada de technical-indicators.ts - Zero warnings no CI*
 *Bug Fix AlertTriangle Import (21/12/2025): Adicionado import AlertTriangle faltante em TechnicalAnalysisPanel.tsx - erro TS2304 no build*
-*Healthchecks /live Enterprise (21/12/2025): Todos healthchecks dos 6 serviços Alice alterados de /ready para /live - /ready verifica dependências externas (GPU Salad Cloud) e falha se não estiverem prontas. Docker healthcheck deve verificar se PROCESSO está vivo, não dependências. Corrige erro "container alice-rag is unhealthy" em primeiro deploy*
+*Healthchecks /live Enterprise (21/12/2025): Todos healthchecks dos 6 serviços Alice alterados de /ready para /live - /ready verifica dependências externas (GPU Manager Service) e falha se não estiverem prontas. Docker healthcheck deve verificar se PROCESSO está vivo, não dependências. Corrige erro "container alice-rag is unhealthy" em primeiro deploy*
 *Healthchecks Dockerfiles Sync (21/12/2025): Dockerfiles de todos 6 serviços Alice atualizados com /live para consistência com docker-compose.prod.yml*
 *ClickHouse start_period (21/12/2025): Aumentado start_period de 60s para 120s e retries de 5 para 8 - primeira inicialização do ClickHouse pode demorar mais*
 *RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant, FFmpeg)*
@@ -518,7 +509,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Rollback Enterprise Volumes (21/12/2025): FASE 4 do full_system_cleanup() agora remove resíduos de volumes em /var/lib/docker/volumes/ (erpnext-sites, erpnext-logs) e verifica conflitos arquivo/diretório*
 *Bug Fix Dangling Symlink Detection (21/12/2025): Corrigido safe_mkdir() e verificações de conflito arquivo/diretório para detectar dangling symlinks. Condição `[ -e ]` segue symlinks e retorna false se target não existe. Adicionado `[ -L ]` para detectar symlinks independente do target*
 *Bug Fix erpnext-logs Path (21/12/2025): Corrigido caminho de verificação de conflito - era /opt/alice/data/erpnext-logs (errado), agora é /opt/alice/logs/erpnext (correto conforme docker-compose.prod.yml)*
-*Salad Cloud Warnings Removidos (21/12/2025): SALAD_API_URL, SALAD_MEDIA_PROJECT e SALAD_GPU_CLASS são valores de produção reais (não mocks) - removidos warnings desnecessários. URL da API é fixa (https://api.salad.com/api/public) conforme documentação oficial*
+*GPU Manager Service (25/12/2025): Serviço centralizado para gerenciar todas as requisições GPU com fila priorizada, monitoramento VRAM, circuit breakers e retry logic*
 *Bug Fix QDRANT_URL Faltante alice-rag (21/12/2025): Variáveis QDRANT_URL e QDRANT_API_KEY estavam FALTANDO no docker-compose.prod.yml para alice-rag. Sem estas variáveis, RAG service não conseguia conectar ao Qdrant (banco vetorial de texto 4096 dim), causando erro "container alice-rag is unhealthy". Training e integrations tinham, mas rag não*
 *Deploy Timeout Reduzido (21/12/2025): Reduzido --wait-timeout de 300s (5 min) para 120s (2 min). 5 minutos era muito longo - workflow ficava "pendurado" esperando containers que já haviam falhado. 2 minutos é suficiente para containers iniciarem - fail fast é melhor prática*
 *Deploy Fail Fast (21/12/2025): Adicionada captura IMEDIATA de logs quando DEPLOY_EXIT_CODE != 0. Antes o workflow continuava para verificações pós-deploy mesmo após falha. Agora captura logs de TODOS containers Alice problemáticos e falha imediatamente com exit 1*
@@ -526,11 +517,11 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Container Names (21/12/2025): Corrigidos nomes postgres→alice-postgres, traefik→alice-traefik na lista de captura de logs. grep usa match exato (^${container}$) - nomes devem bater exatamente com docker-compose.prod.yml*
 *Bug Fix ERPNext Workers -2 (21/12/2025): Adicionados erpnext-worker-default-2, erpnext-worker-short-2, erpnext-worker-long-2 na lista ERPNEXT_CONTAINERS. Eram 12 containers, agora 15 (todos os workers incluídos)*
 *Bug Fix ERPNext Configurator $$ Escape (21/12/2025): Escapar $ com $$ no command do erpnext-configurator para evitar substituição pelo Docker Compose. Bug: Docker Compose interpreta $CACHE_URL e $QUEUE_URL como env vars, mas são variáveis bash internas. Aviso: "The CACHE_URL variable is not set. Defaulting to a blank string."*
-*URLs GPU Automáticas (21/12/2025): deploy.py agora captura URLs dos Container Groups automaticamente após criação. URLs são passadas como outputs do job deploy-salad-gpu e atualizadas no .env.prod do servidor Hetzner. Elimina necessidade de configurar secrets SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc. manualmente.*
+*GPU Services Integrados (25/12/2025): Todos os serviços GPU (gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr) rodam localmente no servidor Hetzner GPU e são gerenciados pelo GPU Manager Service*
 *Bug Fix Paths Workflow (21/12/2025): Corrigidos TODOS os paths no deploy-production.yml. Repositório é clonado em /opt/alice/app, então todos os paths devem usar /opt/alice/app/infra/docker (não /opt/alice/infra/docker). Adicionado cd /opt/alice/app após o clone. Corrigidos paths de validação, .env.prod, cleanup, rollback e URLs GPU.*
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
 *Bug Fix ERPNext Configurator PRE-DEPLOY (21/12/2025): erpnext-configurator falhava porque volume montado sobrescreve arquivos originais do container. Solução: apps.txt e common_site_config.json agora são criados no PRÉ-DEPLOY (workflow) em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe). Erros corrigidos: "OSError: b'./apps.txt' Not Found", "JSONDecodeError", "PermissionError".*
-*Pipeline 100% Automática (21/12/2025): Deploy na Hetzner é 100% automático. Salad Cloud usa abordagem híbrida - Container Groups são pré-criados manualmente e URLs configuradas como secrets (ver entrada 22/12/2025).*
+*Pipeline 100% Automática (21/12/2025): Deploy no servidor Hetzner GPU único é 100% automático - todos os 50 containers gerenciados via Docker Compose*
 *Bug Fix ClickHouse override.xml (22/12/2025): REMOVIDO mount de override.xml que causava falha na inicialização do ClickHouse. A imagem oficial já tem docker_related_config.xml com listen_host correto (0.0.0.0 e ::) e listen_try=1 para ignorar falhas de IPv6. O override.xml sobrescrevia essas configurações e fazia ClickHouse escutar apenas em 127.0.0.1:9009, sem abrir portas 8123 (HTTP) e 9000 (TCP).*
 *Bug Fix ClickHouse CLICKHOUSE_LISTEN_HOST (22/12/2025): Adicionada variável de ambiente CLICKHOUSE_LISTEN_HOST="0.0.0.0". O entrypoint da imagem oficial passa --listen_host=127.0.0.1 por padrão durante inicialização. Sem esta variável, Langfuse não conseguia conectar ao ClickHouse.*
 *Bug Fix Redis SHA256 Digest (22/12/2025): Atualizado digest do Redis de sha256:4e053b71... para sha256:3b73847e... - digest anterior estava obsoleto e causava erro "manifest unknown" no docker pull.*
@@ -548,10 +539,9 @@ git commit -a -m "test: adiciona testes unitários"
 *Código Morto Removido (22/12/2025): Removido script /tmp/update_gpu_urls.sh que era criado no runner GitHub Actions mas nunca executado. O passo SSH posterior já tinha seu próprio script inline funcionando corretamente com path /opt/alice/app/infra/docker.*
 *Bug Fix Redis URL-Safe Passwords (22/12/2025): Senhas Redis geradas com base64 contêm +, /, = que quebram URLs Redis. Erro: "ValueError: Port could not be cast to integer value". Adicionada validação fail-fast em generate-env-prod.sh para rejeitar senhas com caracteres especiais de URL. Documentação atualizada: OBRIGATÓRIO usar `openssl rand -hex 32` para REDIS_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD.*
 *Bug Fix auth-service koa Dynamic Require (22/12/2025): oidc-provider depende de koa que usa require() dinâmico. Erro: "Dynamic require of node:util is not supported". Adicionado koa e oidc-provider como dependências diretas do auth-service para serem externalizadas pelo esbuild.*
-*Bug Fix training-service EMBEDDINGS_GPU_URL Exit (22/12/2025): training-service fazia process.exit(1) se EMBEDDINGS_GPU_URL não estivesse configurada. Isso impedia o deploy porque URLs GPU são configuradas DEPOIS pelo job deploy-salad-gpu. Alterado para logger.warn() e o serviço inicia normalmente.*
-*Salad Cloud Abordagem Híbrida (22/12/2025): Container Groups GPU agora são PRÉ-CRIADOS MANUALMENTE no Salad Cloud Dashboard. URLs são configuradas como secrets no GitHub (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, SALAD_FLUX_URL, SALAD_ASR_URL). Pipeline apenas VALIDA que URLs estão configuradas e faz health check. Benefícios: deploy mais rápido (sem cold start 2-5 min), mais confiável (GPUs quentes), menor custo (evita cold start repetido). Guia completo em docs/SECRETS.md seção "Salad Cloud GPU URLs".*
-*Bug Fix SALAD_WHISPER_URL Mapping (22/12/2025): Código audio-processor.ts usa SALAD_WHISPER_URL mas secret no GitHub é SALAD_ASR_URL. Adicionado mapeamento automático em generate-env-prod.sh: SALAD_WHISPER_URL=${SALAD_ASR_URL}. Sem este fix, transcrição de áudio falhava silenciosamente.*
-*Bug Fix Rollback GPU Delete (22/12/2025): Com abordagem híbrida, Container Groups são PRÉ-CRIADOS manualmente. O rollback rodava `python rollback.py delete --force` que destruiria Container Groups do usuário em qualquer falha transitória. Corrigido: rollback agora apenas verifica status (não deleta). Container Groups GPU são persistentes.*
+*Bug Fix training-service GPU Manager Integration (25/12/2025): training-service agora usa GPU Manager Service para embeddings - integração enterprise com fila priorizada e monitoramento VRAM*
+*GPU Manager Service Architecture (25/12/2025): Serviço centralizado gerencia todas as requisições GPU (LLM, Embeddings, FLUX, ASR) com fila priorizada (Redis), monitoramento VRAM (nvidia-smi), circuit breakers, retry logic e métricas Prometheus. Todos os serviços GPU rodam localmente no servidor Hetzner GPU único.*
+*Migração Salad Cloud → Hetzner GPU (25/12/2025): Removidas todas as referências ao Salad Cloud. Serviços GPU agora rodam localmente no servidor Hetzner GPU único, eliminando latência de rede e simplificando arquitetura. GPU Manager Service gerencia todas as requisições GPU de forma enterprise-grade.*
 *Bug Fix ERPNext Workers Site Dependency (22/12/2025): ERPNext workers/scheduler iniciavam em PARALELO com erpnext-create-site, mas precisam do SITE existir para funcionar (leem config do site). Corrigido: adicionada dependência `erpnext-create-site: service_completed_successfully` em todos os 7 workers/scheduler. Healthchecks usam `pgrep` para verificar processo local.*
 *Bug Fix Docker Compose WAIT_TIMEOUT (22/12/2025): Timeout de 120s era insuficiente - ClickHouse tem start_period: 120s + 8 retries × 30s. Aumentado para 300s (5 min) para dar margem adequada para todos os serviços ficarem healthy.*
 *Bug Fix ERPNext Redis Healthchecks (22/12/2025): erpnext-redis-cache e erpnext-redis-queue não tinham start_period (começavam healthcheck imediatamente). Adicionado start_period: 15s e --no-auth-warning para evitar logs com warning sobre senha na linha de comando.*

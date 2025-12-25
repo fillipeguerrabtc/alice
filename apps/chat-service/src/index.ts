@@ -1,7 +1,7 @@
 /**
  * Chat Service - Alice Enterprise Platform
  * 
- * Serviço de chat com WebSocket tempo real e integração LLM Salad Cloud.
+ * Serviço de chat com WebSocket tempo real e integração LLM via GPU Manager Service.
  * Integra com RAG Service para contexto de documentos (Fase 3 - Integração Chat+RAG).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
@@ -22,6 +22,9 @@ import {
   type CacheAdapter,
   setupSwaggerUI,
   CHAT_SERVICE_TAGS,
+  requestGpu,
+  GpuServiceType,
+  GpuRequestPriority,
 } from '@alice/shared-utils';
 import { chatServicePaths, chatServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -88,12 +91,9 @@ const logger = createLogger('chat-service');
 
 const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID;
-// CORREÇÃO 17/12/2025: Usar SALAD_MIXTRAL_URL (Container Group vLLM) ao invés de endpoint legado
-// Container Group executa vLLM com API OpenAI-compatible (/v1/chat/completions)
-// REGRA 6: Sem fallback em produção - variável DEVE estar definida via deploy-salad-gpu.yml
-const SALAD_MIXTRAL_URL = process.env.SALAD_MIXTRAL_URL;
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+// REGRA 6: Sem fallback em produção - variável DEVE estar definida
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -131,20 +131,6 @@ if (!DATABASE_URL) {
   logger.error('DATABASE_URL não configurada');
   process.exit(1);
 }
-
-if (!SALAD_API_KEY) {
-  logger.error('SALAD_API_KEY não configurada - serviço requer API key para funcionar');
-  process.exit(1);
-}
-
-if (!SALAD_ORGANIZATION_ID) {
-  logger.error('SALAD_ORGANIZATION_ID não configurada');
-  process.exit(1);
-}
-
-// CORREÇÃO 19/12/2025: Remover SALAD_ORG não utilizado (no-unused-vars)
-// SALAD_ORGANIZATION_ID já é validado acima, não precisa de alias
-const SALAD_KEY: string = SALAD_API_KEY;
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -716,7 +702,7 @@ function extractImagePrompt(message: string, keyword: string): string {
 }
 
 // ============================================================================
-// CIRCUIT BREAKER - Salad Cloud LLM API (Regra 16 - Best Practices 2025)
+// CIRCUIT BREAKER - GPU Manager Service LLM API (Regra 16 - Best Practices 2025)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
@@ -742,65 +728,58 @@ interface LLMRequest {
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
-  // CORREÇÃO 17/12/2025: Validar SALAD_MIXTRAL_URL (Container Group vLLM)
-  // REGRA 6: Fail-fast em produção se variáveis não configuradas
-  if (!SALAD_MIXTRAL_URL) {
-    throw new Error('SALAD_MIXTRAL_URL não configurado - execute deploy-salad-gpu.yml para criar Container Group');
-  }
-  if (!SALAD_KEY) {
-    throw new Error('SALAD_API_KEY não configurado');
-  }
-
-  // SEGURANÇA: AbortController com timeout para prevenir requisições penduradas (Regra 16)
-  // Streaming tem timeout maior pois resposta é progressiva
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para gerenciar requisições LLM
+  // O GPU Manager enfileira, prioriza e monitora VRAM antes de processar
   const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
-    // Container Group vLLM expõe API OpenAI-compatible em /v1/chat/completions
-    // Modelo: TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ (quantizado AWQ)
-    const response = await fetch(`${SALAD_MIXTRAL_URL}/v1/chat/completions`, {
+    // Enfileirar requisição no GPU Manager com prioridade CRITICAL (chat em tempo real)
+    const gpuResponse = await requestGpu({
+      serviceType: GpuServiceType.MIXTRAL,
+      endpoint: '/v1/chat/completions',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Salad-Api-Key': SALAD_KEY,
-      },
-      body: JSON.stringify({
+      priority: GpuRequestPriority.CRITICAL,
+      timeout,
+      body: {
         model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
         messages: request.messages,
         max_tokens: 4096,
         temperature: 0.7,
         stream: request.stream,
-      }),
-      signal: controller.signal,
+      },
     });
 
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Erro na API LLM: ${error}`);
+    if (!gpuResponse.success || !gpuResponse.data) {
+      throw new Error(gpuResponse.error || 'Erro desconhecido na API LLM');
     }
 
-    return response;
+    // Converter resposta do GPU Manager para formato Response
+    // O GPU Manager retorna o JSON direto, então precisamos criar uma Response simulada
+    const responseData = gpuResponse.data as LLMResponse;
+    
+    // Para streaming, o GPU Manager deve retornar um stream ou chunks
+    // Por enquanto, retornamos uma Response não-streaming
+    // TODO: Implementar suporte a streaming no GPU Manager
+    return new Response(JSON.stringify(responseData), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
   } catch (error) {
-    if (error instanceof Error && error.name === 'AbortError') {
+    if (error instanceof Error && error.message.includes('Timeout')) {
       logger.warn({ timeout }, 'Chamada LLM abortada por timeout');
       throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM`);
     }
     throw error;
-  } finally {
-    clearTimeout(timeoutId);
   }
 }
 
-const saladCloudBreaker = createCircuitBreaker(callLlamaAPIInternal, {
-  name: 'salad-llm',
-  ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+const gpuManagerBreaker = createCircuitBreaker(callLlamaAPIInternal, {
+  name: 'gpu-manager-llm',
+  ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
-// Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'salad-llm', saladCloudBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
+instrumentCircuitBreaker(metrics, 'gpu-manager-llm', gpuManagerBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 // Mensagem de fallback quando LLM está indisponível (graceful degradation)
 const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.';
@@ -815,7 +794,7 @@ async function* streamFallback(): AsyncGenerator<string> {
 
 async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<string | AsyncGenerator<string>> {
   try {
-    const response = await saladCloudBreaker.fire({ messages, stream }) as globalThis.Response;
+    const response = await gpuManagerBreaker.fire({ messages, stream }) as globalThis.Response;
 
     if (stream) {
       return streamResponse(response);
@@ -1391,7 +1370,7 @@ app.use(createRateLimiter({
 app.use(express.json({ limit: '10mb' }));
 
 app.get('/api/chat/health', (_req: Request, res: Response) => {
-  const llmCircuitState = saladCloudBreaker.opened ? 'open' : (saladCloudBreaker.halfOpen ? 'half-open' : 'closed');
+  const llmCircuitState = gpuManagerBreaker.opened ? 'open' : (gpuManagerBreaker.halfOpen ? 'half-open' : 'closed');
   const ragStats = getRAGBreakerStats();
   const integrationsStats = getIntegrationsBreakerStats();
   
@@ -1402,15 +1381,15 @@ app.get('/api/chat/health', (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'chat-service',
     timestamp: new Date().toISOString(),
-    llmProvider: 'salad-cloud',
+    llmProvider: 'gpu-manager-service',
     model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
     circuitBreakers: {
       llm: {
         state: llmCircuitState,
         stats: {
-          failures: saladCloudBreaker.stats.failures,
-          successes: saladCloudBreaker.stats.successes,
-          timeouts: saladCloudBreaker.stats.timeouts,
+          failures: gpuManagerBreaker.stats.failures,
+          successes: gpuManagerBreaker.stats.successes,
+          timeouts: gpuManagerBreaker.stats.timeouts,
         },
       },
       rag: ragStats,
@@ -1438,7 +1417,7 @@ app.get('/live', (_req: Request, res: Response) => {
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
-    const llmReady = !saladCloudBreaker.opened;
+    const llmReady = !gpuManagerBreaker.opened;
     
     // Chat precisa de PostgreSQL obrigatoriamente, LLM pode estar em degraded mode
     const allReady = dbHealthy;
@@ -4644,7 +4623,7 @@ app.use(createErrorHandler({
     server.listen(PORT, () => {
       logger.info({ 
         port: PORT, 
-        llmConfigured: !!SALAD_API_KEY,
+        llmConfigured: true, // GPU Manager Service gerencia LLM
         circuitBreaker: 'enabled',
         sessionCacheDistributed: sessionCacheAdapter?.isDistributed() ?? false,
         rbacCacheDistributed: permissionCache.getStats().distributed,

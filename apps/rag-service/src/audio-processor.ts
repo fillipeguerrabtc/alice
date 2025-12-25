@@ -1,27 +1,27 @@
 /**
  * Audio Processor Service - Alice Enterprise Platform
  * 
- * ARQUITETURA 100% GPU (17/12/2025):
- * - Transcrição: Canary-1B via GPU (Salad Cloud)
- * - Text embedding: Qwen3-Embedding-8B via GPU (Salad Cloud, 4096 dim)
+ * ARQUITETURA 100% GPU (25/12/2025):
+ * - Transcrição: Canary-1B via GPU Manager Service
+ * - Text embedding: Qwen3-Embedding-8B via GPU Manager Service (4096 dim)
  * - Extração de metadata (duração, formato, bitrate)
  * - Embeddings de texto armazenados em Qdrant
  * 
  * GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createLogger } from '@alice/logger';
 import { validateEmbeddingDimension } from '@alice/database';
+import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 
 const logger = createLogger('audio-processor');
 
-// URLs dos serviços GPU (Salad Cloud) - OBRIGATÓRIOS
-const SALAD_WHISPER_URL = process.env.SALAD_WHISPER_URL || '';
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
 // Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
 // Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
@@ -59,35 +59,24 @@ export interface AudioProcessorOptions {
 }
 
 /**
- * Audio Processor Service - ARQUITETURA ENTERPRISE (17/12/2025)
+ * Audio Processor Service - ARQUITETURA ENTERPRISE (25/12/2025)
  * 
- * - Transcrição: Canary-1B GPU (Salad Cloud)
- * - Embeddings: Qwen3-Embedding-8B GPU (Salad Cloud, 4096 dim → Qdrant)
+ * - Transcrição: Canary-1B GPU via GPU Manager Service
+ * - Embeddings: Qwen3-Embedding-8B GPU via GPU Manager Service (4096 dim → Qdrant)
  * 
  * GPU é OBRIGATÓRIO - sem fallback (Regra 6)
  */
 class AudioProcessorService {
-  private whisperConfigured: boolean;
-  private embeddingsConfigured: boolean;
+  private configured: boolean;
 
   constructor() {
-    this.whisperConfigured = SALAD_WHISPER_URL.length > 0;
-    this.embeddingsConfigured = EMBEDDINGS_GPU_URL.length > 0;
-    
-    if (!this.whisperConfigured) {
-      logger.warn('SALAD_WHISPER_URL não configurado - transcrição não funcionará');
-    }
-    if (!this.embeddingsConfigured) {
-      logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings não funcionarão');
-    }
+    // GPU Manager Service é sempre usado, não precisa validar URLs individuais
+    this.configured = true;
     
     logger.info({ 
-      whisperUrl: SALAD_WHISPER_URL || '(não configurado)',
-      embeddingsUrl: EMBEDDINGS_GPU_URL || '(não configurado)',
-      whisperConfigured: this.whisperConfigured,
-      embeddingsConfigured: this.embeddingsConfigured,
+      gpuManager: 'enabled',
       embeddingDim: TEXT_EMBEDDING_DIM,
-    }, 'Audio Processor - ARQUITETURA ENTERPRISE (Canary-1B + Qwen3-Embedding-8B → Qdrant)');
+    }, 'Audio Processor - ARQUITETURA ENTERPRISE (Canary-1B + Qwen3-Embedding-8B → Qdrant via GPU Manager Service)');
   }
 
   /**
@@ -189,29 +178,28 @@ class AudioProcessorService {
     duration_seconds: number;
     processing_time_ms: number;
   }> {
-    const base64Audio = audioBuffer.toString('base64');
-    const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), WHISPER_TIMEOUT_MS);
-
     try {
-      const response = await fetch(`${SALAD_WHISPER_URL}/transcribe`, {
+      // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para ASR
+      const base64Audio = audioBuffer.toString('base64');
+      const audioDataUri = `data:${mimeType};base64,${base64Audio}`;
+      
+      const gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.ASR,
+        endpoint: '/transcribe',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+        priority: GpuRequestPriority.LOW,
+        timeout: WHISPER_TIMEOUT_MS,
+        body: {
           audio: audioDataUri,
           language: (!language || language === 'auto') ? null : language,
-        }),
-        signal: controller.signal,
+        },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Whisper GPU API error: ${response.status} - ${errorText}`);
+      if (!gpuResponse.success || !gpuResponse.data) {
+        throw new Error(gpuResponse.error || 'Erro na transcrição de áudio');
       }
 
-      const result = await response.json() as {
+      const result = gpuResponse.data as {
         text: string;
         language: string;
         confidence?: number;
@@ -227,12 +215,10 @@ class AudioProcessorService {
         processing_time_ms: result.processing_time_ms,
       };
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
+      if (error instanceof Error && error.message.includes('Timeout')) {
         throw new Error(`Timeout na transcrição GPU após ${WHISPER_TIMEOUT_MS}ms`);
       }
       throw error;
-    } finally {
-      clearTimeout(timeoutId);
     }
   }
 
@@ -242,23 +228,22 @@ class AudioProcessorService {
   private async generateTextEmbedding(
     text: string
   ): Promise<{ embedding: number[]; model: string }> {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), EMBEDDING_TIMEOUT_MS);
-
     try {
-      const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
+      // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para embeddings
+      const gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.EMBEDDINGS,
+        endpoint: '/embed/text',
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-        signal: controller.signal,
+        priority: GpuRequestPriority.MEDIUM,
+        timeout: EMBEDDING_TIMEOUT_MS,
+        body: { text },
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Embeddings GPU API error: ${response.status} - ${errorText}`);
+      if (!gpuResponse.success || !gpuResponse.data) {
+        throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
       }
 
-      const result = await response.json() as {
+      const result = gpuResponse.data as {
         embedding: number[];
         model: string;
         dimension: number;
@@ -268,14 +253,82 @@ class AudioProcessorService {
         throw new Error('Resposta de embedding GPU vazia');
       }
 
+      // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
+      validateEmbeddingDimension(result.embedding, 4096, 'TEXT');
+
+      return {
+        embedding: result.embedding,
+        model: result.model || 'Qwen/Qwen3-Embedding-8B',
+      };
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Erro desconhecido ao gerar embedding: ${String(error)}`);
+    }
+  }
+
+  /**
+   * Verifica se o serviço está pronto (health check)
+   */
+  async isReadyAsync(): Promise<boolean> {
+    if (!this.configured) return false;
+
+    try {
+      // Verificar se GPU Manager Service está pronto
+      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010'}/ready`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Gera embedding de texto via GPU (Qwen3-Embedding-8B, 4096 dim → Qdrant)
+   */
+  private async generateTextEmbedding(
+    text: string
+  ): Promise<{ embedding: number[]; model: string }> {
+    try {
+      // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para embeddings
+      const gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.EMBEDDINGS,
+        endpoint: '/embed/text',
+        method: 'POST',
+        priority: GpuRequestPriority.MEDIUM,
+        timeout: EMBEDDING_TIMEOUT_MS,
+        body: { text },
+      });
+
+      if (!gpuResponse.success || !gpuResponse.data) {
+        throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
+      }
+
+      const result = gpuResponse.data as {
+        embedding: number[];
+        model: string;
+        dimension: number;
+      };
+
+      if (!result.embedding || result.embedding.length === 0) {
+        throw new Error('Resposta de embedding GPU vazia');
+      }
+
+      // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
       validateEmbeddingDimension(result.embedding, TEXT_EMBEDDING_DIM, 'TEXT');
 
       return {
         embedding: result.embedding,
         model: result.model || 'Qwen/Qwen3-Embedding-8B',
       };
-    } finally {
-      clearTimeout(timeoutId);
+    } catch (error) {
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error(`Erro desconhecido ao gerar embedding: ${String(error)}`);
     }
   }
 
@@ -404,34 +457,22 @@ class AudioProcessorService {
   }
 
   isReady(): boolean {
-    return this.whisperConfigured && this.embeddingsConfigured;
+    return this.configured;
   }
 
   async isReadyAsync(): Promise<boolean> {
-    if (!this.isReady()) return false;
+    if (!this.configured) return false;
 
-    const checkEndpoint = async (url: string, path: string): Promise<boolean> => {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      try {
-        const response = await fetch(`${url}${path}`, {
-          method: 'GET',
-          signal: controller.signal,
-        });
-        return response.ok;
-      } catch {
-        return false;
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    };
-
-    const [whisperReady, embeddingsReady] = await Promise.all([
-      checkEndpoint(SALAD_WHISPER_URL, '/ready'),
-      checkEndpoint(EMBEDDINGS_GPU_URL, '/ready'),
-    ]);
-
-    return whisperReady && embeddingsReady;
+    try {
+      // Verificar se GPU Manager Service está pronto
+      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010'}/ready`, {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000),
+      });
+      return response.ok;
+    } catch {
+      return false;
+    }
   }
 
   getConfig(): {
@@ -439,16 +480,14 @@ class AudioProcessorService {
     embeddingDim: number;
     transcriptionModel: string;
     embeddingModel: string;
-    whisperUrl: string;
-    embeddingsUrl: string;
+    gpuManager: string;
   } {
     return {
-      configured: this.isReady(),
+      configured: this.configured,
       embeddingDim: TEXT_EMBEDDING_DIM,
-      transcriptionModel: 'Canary-1B (GPU - Salad Cloud)',
-      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU - Salad Cloud, 4096 dim → Qdrant)',
-      whisperUrl: SALAD_WHISPER_URL,
-      embeddingsUrl: EMBEDDINGS_GPU_URL,
+      transcriptionModel: 'Canary-1B (GPU Manager Service)',
+      embeddingModel: 'Qwen/Qwen3-Embedding-8B (GPU Manager Service, 4096 dim → Qdrant)',
+      gpuManager: 'enabled',
     };
   }
 }

@@ -17,13 +17,13 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ)** hospedado em infraestrutura própria (Salad Cloud GPUs RTX 4090), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server RTX 4090 24GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Mixtral 8x7B vLLM AWQ) hospedado em Salad Cloud GPUs RTX 4090 |
+| **IA 100% Autônoma** | LLM próprio (Mixtral 8x7B vLLM AWQ) hospedado em servidor Hetzner GPU RTX 4090 24GB |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
 | **Geração de Imagens** | FLUX.1 Schnell self-hosted (1-3 segundos por imagem) |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
@@ -68,9 +68,9 @@
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                  PRODUÇÃO (Hetzner Cloud - Nuremberg)                │
+│                  PRODUÇÃO (Hetzner GPU Server - Nuremberg)           │
 │  ┌─────────────────────────────────────────────────────────────────┐│
-│  │    CX43 VM (8 vCPU AMD EPYC, 16GB RAM, 160GB NVMe SSD)          ││
+│  │    GPU Server (RTX 4090 24GB, 64GB RAM, 1TB NVMe SSD)           ││
 │  │    IP: 46.224.46.93 | Domínio: yesyoudeserve.duckdns.org       ││
 │  │  ┌─────────┐ ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────────┐     ││
 │  │  │ Traefik │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
@@ -80,20 +80,17 @@
 │  │  │Integrations │ │         OBSERVABILITY STACK             │   ││
 │  │  │   :3005     │ │ Prometheus │ Grafana │ Jaeger │ Langfuse│   ││
 │  │  └─────────────┘ └─────────────────────────────────────────┘   ││
+│  │  ┌─────────────────────────────────────────────────────────┐   ││
+│  │  │              GPU SERVICES (Localhost)                    │   ││
+│  │  │  GPU Manager │ Mixtral vLLM │ FLUX │ Embeddings │ ASR   │   ││
+│  │  └─────────────────────────────────────────────────────────┘   ││
 │  └─────────────────────────────────────────────────────────────────┘│
-└───────────────────────────────────┬─────────────────────────────────┘
-                                    │ API Calls
-                                    ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      SALAD CLOUD (GPUs)                              │
-│  Mixtral 8x7B vLLM (LLM Trading) + FLUX.1 Schnell (Imagens) +       │
-│  Whisper large-v3 (Transcrição áudio - 7-9x mais rápido)            │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 43 Containers em Produção
+### Arquitetura de Microsserviços - 50 Containers em Produção
 
-A plataforma Alice é composta por **43 containers** organizados em 6 categorias:
+A plataforma Alice é composta por **50 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
 
 #### Categoria 1: Infraestrutura Core (7 serviços)
 
@@ -113,13 +110,13 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 |---|---------|-----------|-------|-----------|
 | 8 | Frontend | `alice-frontend` | 5000 | React 18 + Vite 7.3 + shadcn/ui |
 | 9 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
-| 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM Salad Cloud |
+| 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM via GPU Manager |
 | 11 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
 | 12 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
 | 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend, KuCoin Futures |
 | 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
 
-> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via Salad Cloud (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
+> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
 
 #### Categoria 3: ERPNext Stack (15 serviços)
 
@@ -159,11 +156,21 @@ A plataforma Alice é composta por **43 containers** organizados em 6 categorias
 | 41 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
 | 42 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
 
-#### Categoria 5: Backup (1 serviço)
+#### Categoria 5: GPU Services (5 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 43 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
+| 43 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
+| 44 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
+| 45 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 46 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
+| 47 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+
+#### Categoria 6: Backup (1 serviço)
+
+| # | Serviço | Container | Descrição |
+|---|---------|-----------|-----------|
+| 48 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
 
 ---
 
@@ -228,20 +235,18 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner (45 containers)
-   ├── Validate Salad Cloud GPU (URLs pré-configuradas)
+   ├── Deploy Hetzner GPU (50 containers - 45 serviços + 4 GPU + 1 backup)
    ├── Health checks + Rollback automático
-   └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings
+   └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
-**Hetzner 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback.
+**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (45 serviços + 4 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
 
-**Salad Cloud GPU - Abordagem Híbrida:**
-- Container Groups são **pré-criados manualmente** no [Salad Cloud Dashboard](https://portal.salad.com)
-- URLs são configuradas como **secrets no GitHub** (SALAD_MIXTRAL_URL, EMBEDDINGS_GPU_URL, etc.)
-- Pipeline apenas **valida** que os serviços estão respondendo
-- **Rollback NÃO deleta** Container Groups (são persistentes)
-- Guia completo: [docs/SECRETS.md](docs/SECRETS.md) - Seção "Salad Cloud GPU URLs"
+**GPU Manager Service:**
+- Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
+- Fila priorizada (Redis) com monitoramento VRAM em tempo real (nvidia-smi)
+- Circuit breakers, retry logic e métricas Prometheus
+- Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](docs/ARQUITETURA-GPU-MANAGER.md)
 
 ### Acesso SSH à Hetzner (Produção)
 
@@ -403,9 +408,9 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 43/43 containers | 100% |
-| **read_only: true** | 24/43 containers | 100% aplicável (somente onde não há escrita) |
-| **security_opt: no-new-privileges** | 43/43 containers | 100% |
+| **Resource Limits** | 50/50 containers | 100% |
+| **read_only: true** | 24/50 containers | 100% aplicável (somente onde não há escrita) |
+| **security_opt: no-new-privileges** | 50/50 containers | 100% |
 | **Healthchecks** | 38/38 containers | 100% (3 init usam service_completed_successfully) |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
@@ -426,7 +431,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 43 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (19 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager) mantêm `security_opt: no-new-privileges:true` e resource limits.
+Todos os 50 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (26 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager, serviços GPU) mantêm `security_opt: no-new-privileges:true` e resource limits.
 
 - Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
@@ -439,7 +444,7 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *Autor: Fillipe Guerra*
 *Versão 4.12 - 23 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
 *PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
@@ -447,8 +452,8 @@ Todos os 43 containers têm security hardening completo aplicado. Containers que
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*
 *Trading BTC Futures: KuCoin Perpetuals + Indicadores Técnicos Determinísticos + Validação Cruzada Anti-Alucinação*
 *Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
-*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090*
-*Salad Cloud: LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR)*
-*Pipeline Unificada: Hetzner 100% automático + Salad Cloud abordagem híbrida (Container Groups manuais, URLs em secrets)*
+*LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server RTX 4090 24GB*
+*GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
+*Pipeline Unificada: Hetzner GPU 100% automático - todos os 50 containers no servidor único*
 
 </div>

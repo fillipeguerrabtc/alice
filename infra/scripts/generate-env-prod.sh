@@ -20,47 +20,25 @@ echo "GERANDO .env.prod PARA PRODUÇÃO"
 echo "=============================================="
 
 # =============================================================================
-# FASE 1: Validação das variáveis Salad Cloud
+# FASE 1: GPU Services (Hetzner GPU Server)
 # =============================================================================
-echo "🔍 Configurando variáveis Salad Cloud..."
+echo "🔍 Configurando GPU Services (Hetzner GPU Server)..."
 
 # =============================================================================
-# SALAD CLOUD - Valores de Produção Enterprise (Best Practice 2025)
+# GPU SERVICES - Arquitetura Single Server (25/12/2025)
 # =============================================================================
-# NOTA: Esses são valores de PRODUÇÃO REAIS, não mocks ou placeholders.
-# A URL da API do Salad Cloud é pública e bem conhecida.
-# Não há necessidade de configurar como secrets - são configurações padrão.
-# Documentação: https://docs.salad.com/reference/api-reference
+# Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
+# e são gerenciados pelo GPU Manager Service com fila priorizada,
+# monitoramento VRAM e circuit breakers.
+# Documentação: docs/ARQUITETURA-GPU-MANAGER.md
 # =============================================================================
 
-# URL oficial da API do Salad Cloud (valor fixo de produção)
-# Esta é a URL pública oficial - não muda e não precisa de customização
-SALAD_API_URL_VAR="https://api.salad.com/api/public"
-
-# Nome do projeto no Salad Cloud para a Alice Platform
-# Pode ser customizado via secret SALAD_MEDIA_PROJECT se necessário
-if [ -n "${SALAD_MEDIA_PROJECT_CONFIGURED:-}" ]; then
-  SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_CONFIGURED}"
-  echo "✅ SALAD_MEDIA_PROJECT: usando valor customizado: ${SALAD_MEDIA_PROJECT_VAR}"
-else
-  SALAD_MEDIA_PROJECT_VAR="alice-media"
-  echo "✅ SALAD_MEDIA_PROJECT: usando valor padrão enterprise: ${SALAD_MEDIA_PROJECT_VAR}"
-fi
-
-# Classe de GPU para inferência (premium-gpu = RTX 4090)
-# Pode ser customizado via secret SALAD_GPU_CLASS se necessário
-if [ -n "${SALAD_GPU_CLASS_CONFIGURED:-}" ]; then
-  SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_CONFIGURED}"
-  echo "✅ SALAD_GPU_CLASS: usando valor customizado: ${SALAD_GPU_CLASS_VAR}"
-else
-  SALAD_GPU_CLASS_VAR="premium-gpu"
-  echo "✅ SALAD_GPU_CLASS: usando valor padrão enterprise: ${SALAD_GPU_CLASS_VAR}"
-fi
-
-echo "📋 Resumo Salad Cloud:"
-echo "   API URL: ${SALAD_API_URL_VAR}"
-echo "   Project: ${SALAD_MEDIA_PROJECT_VAR}"
-echo "   GPU Class: ${SALAD_GPU_CLASS_VAR}"
+# GPU Services (Hetzner GPU Server)
+# Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
+# e são gerenciados pelo GPU Manager Service
+echo "📋 GPU Services:"
+echo "   Arquitetura: Servidor único Hetzner GPU (RTX 4090 24GB)"
+echo "   Gerenciamento: GPU Manager Service (fila priorizada, VRAM monitoring)"
 echo ""
 
 # =============================================================================
@@ -104,18 +82,6 @@ fi
 QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
 if [ -z "${QDRANT_API_KEY}" ]; then
   echo "::error::QDRANT_API_KEY não definido. Configure o secret QDRANT_API_KEY no repositório (necessário para alice-qdrant)." >&2
-  exit 1
-fi
-
-SALAD_API_KEY="${SALAD_API_KEY_SECRET:-}"
-if [ -z "${SALAD_API_KEY}" ]; then
-  echo "::error::SALAD_API_KEY não definido. Configure o secret SALAD_API_KEY no repositório (necessário para GPU Salad Cloud)." >&2
-  exit 1
-fi
-
-SALAD_ORGANIZATION_ID="${SALAD_ORGANIZATION_ID_SECRET:-}"
-if [ -z "${SALAD_ORGANIZATION_ID}" ]; then
-  echo "::error::SALAD_ORGANIZATION_ID não definido. Configure o secret SALAD_ORGANIZATION_ID no repositório (necessário para GPU Salad Cloud)." >&2
   exit 1
 fi
 
@@ -182,52 +148,22 @@ if [ -z "${ERPNEXT_DB_PASSWORD}" ]; then
 fi
 
 # =============================================================================
-# VALIDAÇÃO URLs GPU SALAD CLOUD (Abordagem Híbrida - 22/12/2025)
+# VALIDAÇÃO GPU SERVICES (Hetzner GPU Server - 25/12/2025)
 # =============================================================================
-# Container Groups são PRÉ-CRIADOS manualmente no Salad Cloud Dashboard
-# URLs são configuradas como secrets no GitHub
-# Pipeline valida que os serviços estão acessíveis
+# Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
+# e são gerenciados pelo GPU Manager Service
+# HUGGINGFACE_TOKEN é obrigatório para download de modelos
 # =============================================================================
 echo ""
-echo "🔐 Validando URLs GPU Salad Cloud (abordagem híbrida)..."
+echo "🔐 Validando GPU Services (Hetzner GPU Server)..."
 
-SALAD_MIXTRAL_URL="${SALAD_MIXTRAL_URL:-}"
-if [ -z "${SALAD_MIXTRAL_URL}" ]; then
-  echo "::error::SALAD_MIXTRAL_URL não definido. Crie o Container Group 'alice-mixtral-vllm' no Salad Cloud e adicione a URL como secret." >&2
-  exit 1
+HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
+if [ -z "${HUGGINGFACE_TOKEN}" ]; then
+  echo "::warning::HUGGINGFACE_TOKEN não definido. Configure o secret HUGGINGFACE_TOKEN no repositório (recomendado para downloads confiáveis de modelos)." >&2
+  # Não é obrigatório, mas recomendado
 fi
 
-EMBEDDINGS_GPU_URL="${EMBEDDINGS_GPU_URL:-}"
-if [ -z "${EMBEDDINGS_GPU_URL}" ]; then
-  echo "::error::EMBEDDINGS_GPU_URL não definido. Crie o Container Group 'alice-embeddings-gpu' no Salad Cloud e adicione a URL como secret." >&2
-  exit 1
-fi
-
-SALAD_FLUX_URL="${SALAD_FLUX_URL:-}"
-if [ -z "${SALAD_FLUX_URL}" ]; then
-  echo "::error::SALAD_FLUX_URL não definido. Crie o Container Group 'alice-flux-schnell' no Salad Cloud e adicione a URL como secret." >&2
-  exit 1
-fi
-
-SALAD_ASR_URL="${SALAD_ASR_URL:-}"
-if [ -z "${SALAD_ASR_URL}" ]; then
-  echo "::error::SALAD_ASR_URL não definido. Crie o Container Group 'alice-asr-canary' no Salad Cloud e adicione a URL como secret." >&2
-  exit 1
-fi
-
-# MAPEAMENTO ENTERPRISE (22/12/2025): Código usa SALAD_WHISPER_URL, secret é SALAD_ASR_URL
-# O secret SALAD_ASR_URL é o nome padronizado no GitHub
-# O código audio-processor.ts usa SALAD_WHISPER_URL internamente
-# Este mapeamento garante compatibilidade sem alterar o código existente
-SALAD_WHISPER_URL="${SALAD_ASR_URL}"
-
-echo "✅ URLs GPU Salad Cloud validadas:"
-echo "   SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL}"
-echo "   EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL}"
-echo "   SALAD_FLUX_URL: ${SALAD_FLUX_URL}"
-echo "   SALAD_ASR_URL: ${SALAD_ASR_URL}"
-echo "   SALAD_WHISPER_URL: ${SALAD_WHISPER_URL} (mapeado de SALAD_ASR_URL)"
-
+echo "✅ GPU Services validados (Hetzner GPU Server)"
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================
@@ -411,17 +347,9 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'OAUTH_GITHUB_CLIENT_ID=%s\n' "${OAUTH_GITHUB_CLIENT_ID:-}"
   printf 'OAUTH_GITHUB_CLIENT_SECRET=%s\n' "${OAUTH_GITHUB_CLIENT_SECRET:-}"
   printf '\n'
-  printf '# Salad Cloud (LLM + GPU Embeddings)\n'
-  printf 'SALAD_API_KEY=%s\n' "${SALAD_API_KEY}"
-  printf 'SALAD_ORGANIZATION_ID=%s\n' "${SALAD_ORGANIZATION_ID}"
-  printf 'SALAD_API_URL=%s\n' "${SALAD_API_URL_VAR}"
-  printf 'SALAD_MEDIA_PROJECT=%s\n' "${SALAD_MEDIA_PROJECT_VAR}"
-  printf 'SALAD_WHISPER_URL=%s\n' "${SALAD_WHISPER_URL:-}"
-  printf 'EMBEDDINGS_GPU_URL=%s\n' "${EMBEDDINGS_GPU_URL:-}"
-  printf 'SALAD_MIXTRAL_URL=%s\n' "${SALAD_MIXTRAL_URL:-}"
-  printf 'SALAD_FLUX_URL=%s\n' "${SALAD_FLUX_URL:-}"
-  printf 'SALAD_ASR_URL=%s\n' "${SALAD_ASR_URL:-}"
-  printf 'SALAD_GPU_CLASS=%s\n' "${SALAD_GPU_CLASS_VAR}"
+  printf '# GPU Services (Hetzner GPU Server)\n'
+  printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
+  printf 'GPU_MANAGER_URL=http://gpu-manager-service:3010\n'
   printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
   printf '\n'
   printf '# Qdrant - Banco Vetorial para Texto\n'

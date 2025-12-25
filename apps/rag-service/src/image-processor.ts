@@ -2,33 +2,27 @@
  * Image Processor Service - Alice Enterprise Platform
  * 
  * Processamento de imagens:
- * - OpenCLIP ViT-H/14 embeddings (1024 dimensões) via GPU (Salad Cloud)
+ * - OpenCLIP ViT-H/14 embeddings (1024 dimensões) via GPU Manager Service
  * - Thumbnails via sharp (quando disponível)
  * - Extração de metadata EXIF
  * - Circuit breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA 100% GPU (Opção B - Alta Qualidade) - 15/12/2025:
- * - OpenCLIP ViT-H/14 roda em GPU via Salad Cloud (1024 dim)
+ * ARQUITETURA 100% GPU (25/12/2025):
+ * - OpenCLIP ViT-H/14 roda em GPU via GPU Manager Service (1024 dim)
  * - GPU é OBRIGATÓRIO - SEM fallback CPU (Regra 6 - sem workarounds)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import pino from 'pino';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { createLogger } from '@alice/logger';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import { validateEmbeddingDimension } from '@alice/database';
 
-const logger = pino({
-  level: process.env.LOG_LEVEL || 'info',
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}).child({ service: 'image-processor' });
+const logger = createLogger('image-processor');
 
-// Configuração Embeddings GPU (Salad Cloud) - ARQUITETURA ENTERPRISE (17/12/2025)
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 // GPU é OBRIGATÓRIO - OpenCLIP ViT-H/14 (1024 dim) → pgvector
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
 // Dimensão dos embeddings de imagem (OpenCLIP ViT-H/14 - 1024 dim → pgvector)
 export const CLIP_EMBEDDING_DIM = 1024;
@@ -55,39 +49,30 @@ interface TextForImageApiParams {
  * Chama API GPU para embedding de IMAGEM (OpenCLIP ViT-H/14)
  */
 async function callImageEmbeddingsGpuApi(params: ImageEmbeddingsApiParams): Promise<{ embedding: number[]; model: string }> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)');
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout
-
-  try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/image',
     method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: controller.signal,
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: 60000, // 60s timeout
+    body: params,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-      throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de imagem');
   }
 
-    const result = await response.json() as { embedding: number[]; model: string; dimension: number };
-    
-    if (!result.embedding || !Array.isArray(result.embedding)) {
-      throw new Error('Resposta GPU inválida - embedding ausente');
-    }
-
-    return {
-      embedding: result.embedding,
-      model: result.model || 'OpenCLIP-ViT-H-14',
-    };
-  } finally {
-    clearTimeout(timeoutId);
+  const result = gpuResponse.data as { embedding: number[]; model: string; dimension: number };
+  
+  if (!result.embedding || !Array.isArray(result.embedding)) {
+    throw new Error('Resposta GPU inválida - embedding ausente');
   }
+
+  return {
+    embedding: result.embedding,
+    model: result.model || 'OpenCLIP-ViT-H-14',
+  };
 }
 
 /**
@@ -186,13 +171,14 @@ class ImageProcessorService {
   private isConfigured: boolean = false;
 
   constructor() {
-    this.isConfigured = typeof EMBEDDINGS_GPU_URL === 'string' && EMBEDDINGS_GPU_URL.length > 0;
+    // GPU Manager Service é sempre usado, não precisa validar URL individual
+    this.isConfigured = true;
     
     if (!this.isConfigured) {
       logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de imagem não funcionarão');
     } else {
     logger.info(
-        { gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: CLIP_EMBEDDING_DIM },
+        { gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: CLIP_EMBEDDING_DIM },
         'Image Processor configurado - ARQUITETURA 100% GPU (OpenCLIP ViT-H/14, 1024 dim)'
     );
     }
@@ -276,7 +262,7 @@ class ImageProcessorService {
    */
   async generateTextEmbedding(text: string): Promise<{ embedding: number[]; model: string }> {
     if (!this.isConfigured) {
-      throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO');
+      throw new Error('GPU_MANAGER_URL não configurado - GPU é OBRIGATÓRIO');
     }
 
     if (!text || text.trim().length === 0) {
@@ -531,7 +517,8 @@ class ImageProcessorService {
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     try {
-      const response = await fetch(`${EMBEDDINGS_GPU_URL}/ready`, {
+      // Verificar se GPU Manager Service está pronto
+      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010'}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });
@@ -547,13 +534,13 @@ class ImageProcessorService {
     configured: boolean; 
     embeddingDim: number; 
     model: string; 
-    gpuUrl: string;
+    gpuManagerUrl: string;
   } {
     return {
       configured: this.isConfigured,
       embeddingDim: CLIP_EMBEDDING_DIM,
-      model: 'OpenCLIP-ViT-H-14 (GPU - Salad Cloud)',
-      gpuUrl: EMBEDDINGS_GPU_URL,
+      model: 'OpenCLIP-ViT-H-14 (GPU Manager Service)',
+      gpuManagerUrl: GPU_MANAGER_URL,
     };
   }
 }

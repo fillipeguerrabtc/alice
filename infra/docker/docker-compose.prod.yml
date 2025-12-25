@@ -26,14 +26,14 @@
 # ARQUITETURA ENTERPRISE (17/12/2025):
 # - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant | Licença Apache 2.0
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector | Licença MIT
-# - LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud RTX 4090
-# - alice-clip-inference REMOVIDO - migrado para EMBEDDINGS_GPU_URL (Salad Cloud)
+# - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GPU)
+# - GPU Manager Service gerencia todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
 #
 # HEALTHCHECKS ENTERPRISE (21/12/2025):
 # - Serviços Alice usam /live (liveness probe) para Docker healthchecks
 # - /live: verifica se processo está vivo (não dependências externas)
 # - /ready: usado para Kubernetes readiness (roteamento de tráfego)
-# - Evita falsos positivos quando GPUs Salad Cloud não estão prontas
+# - Evita falsos positivos quando GPU Manager Service não está pronto
 #
 # SECURITY: 100% SHA256 digests em todas as 26 imagens externas (Supply Chain Security 2025)
 # ERPNEXT: Arquitetura unificada v15 - imagem única frappe/erpnext com comandos por serviço
@@ -815,20 +815,14 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # Sessão WebSocket (OBRIGATÓRIO em produção - Regra 6)
       SESSION_SECRET: ${SESSION_SECRET}
-      # Salad Cloud LLM
-      SALAD_API_KEY: ${SALAD_API_KEY}
-      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
+      # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
       # Comunicação inter-service (URLs Docker DNS)
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
-      # Embeddings GPU (Salad Cloud) - CORREÇÃO 17/12/2025
-      # Removido alice-clip-inference legado - agora usa 100% GPU Salad Cloud
-      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
-      # LLM Mixtral 8x7B (Salad Cloud Container Group) - CORREÇÃO 17/12/2025
-      SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL:-}
-      # FLUX.1 Schnell Image Generation (Salad Cloud Container Group) - CORREÇÃO 17/12/2025
-      SALAD_FLUX_URL: ${SALAD_FLUX_URL:-}
+      # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
@@ -859,7 +853,7 @@ services:
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready verifica dependências externas (GPU Salad Cloud) - pode falhar sem GPU estar pronta
+      # /ready verifica dependências externas (GPU Manager Service) - pode falhar sem GPU estar pronta
       # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
       test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
@@ -878,10 +872,10 @@ services:
 
   # ===========================================================================
   # ALICE RAG SERVICE - Knowledge Base + Multimodal Processing + Storage Local
-  # ARQUITETURA ENTERPRISE (17/12/2025) via Salad Cloud:
+  # ARQUITETURA ENTERPRISE (25/12/2025) via GPU Manager Service:
   # - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
   # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
-  # - Transcrição de áudio: Whisper large-v3 - GPU Salad Cloud
+  # - Transcrição de áudio: Canary-1B - GPU Manager Service
   # ===========================================================================
   alice-rag:
     image: ${IMAGE_PREFIX}-rag:${IMAGE_TAG:-latest}
@@ -911,29 +905,21 @@ services:
       # ARQUITETURA ENTERPRISE (17/12/2025):
       # - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant | Licença Apache 2.0
       # - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector | Licença MIT
-      # - Transcrição: Whisper large-v3 via GPU Salad Cloud
+      # - Transcrição: Canary-1B via GPU Manager Service
       # Qdrant - Banco vetorial para texto (4096 dim) - CORREÇÃO 21/12/2025
       # BUG: Variáveis QDRANT_URL e QDRANT_API_KEY estavam FALTANDO neste serviço!
       # RAG service usa Qdrant para embeddings de texto - conexão falhava sem estas variáveis
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
-      # Whisper GPU (Salad Cloud) - OBRIGATÓRIO para transcrição de áudio
-      SALAD_WHISPER_URL: ${SALAD_WHISPER_URL:-}
-      # Embeddings GPU (Salad Cloud) - OBRIGATÓRIO para embeddings (1024 dim)
-      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
+      # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
       # Web Search interno (SearXNG self-hosted) - sem dependências externas
       SEARXNG_URL: http://alice-searxng:8080
       SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY}
-      # Salad Cloud (multimodal GPU) - imagens pinadas por digest
-      SALAD_API_URL: ${SALAD_API_URL:-https://api.salad.com/api/public}
-      SALAD_API_KEY: ${SALAD_API_KEY:?SALAD_API_KEY é obrigatório}
-      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID:?SALAD_ORGANIZATION_ID é obrigatório}
-      SALAD_MEDIA_PROJECT: ${SALAD_MEDIA_PROJECT:-alice-media}
-      SALAD_GPU_CLASS: ${SALAD_GPU_CLASS:-premium-gpu}
       # Storage local (SEM S3)
       STORAGE_BASE_DIR: /opt/alice/uploads
       STORAGE_BASE_URL: /api/media/files
-      # URL pública do RAG para upload dos artefatos Salad (HTTPS Traefik)
+      # URL pública do RAG para upload de arquivos (HTTPS Traefik)
       RAG_PUBLIC_BASE_URL: ${RAG_PUBLIC_BASE_URL:?RAG_PUBLIC_BASE_URL é obrigatório}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - causava "REDIS_URL não configurado em produção"
@@ -960,7 +946,7 @@ services:
     healthcheck:
       # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready verifica dependências externas (GPU Salad Cloud, Qdrant) - pode falhar sem GPU pronta
+      # /ready verifica dependências externas (GPU Manager Service, Qdrant) - pode falhar sem GPU pronta
       # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
       test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3003/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
@@ -1002,12 +988,8 @@ services:
       # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
-      # Salad Cloud GPUs para FINE-TUNING (treinamento de modelos)
-      SALAD_API_KEY: ${SALAD_API_KEY}
-      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID}
-      # Embeddings GPU (Salad Cloud) - CORREÇÃO 17/12/2025
-      # Removido alice-clip-inference legado - agora usa 100% GPU Salad Cloud
-      EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-}
+      # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
       # Qdrant - Banco vetorial para texto (4096 dim)
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}
@@ -1251,10 +1233,10 @@ services:
   # ERPNEXT STACK - Baseado em frappe_docker oficial
   # ===========================================================================
   # NOTA (17/12/2025): Container alice-clip-inference foi REMOVIDO.
-  # Motivo: Arquitetura migrada para 100% GPU Salad Cloud:
+  # Motivo: Arquitetura migrada para 100% GPU Manager Service (Hetzner GPU):
   # - Embeddings de texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
   # - Embeddings de imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
-  # - ASR: Canary-1B → Salad Cloud
+  # - ASR: Canary-1B → GPU Manager Service
   # Serviços agora usam EMBEDDINGS_GPU_URL diretamente.
   # ===========================================================================
   

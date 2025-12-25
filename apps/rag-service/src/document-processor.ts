@@ -9,26 +9,26 @@
  * - Text embeddings via GPU (Qwen3-Embedding-8B, 4096 dim)
  * - Circuit Breaker para resiliência (Regra 16 CLAUDE.md)
  * 
- * ARQUITETURA 100% GPU (17/12/2025):
- * - Embeddings via GPU Salad Cloud (Qwen3-Embedding-8B, 4096 dim)
+ * ARQUITETURA 100% GPU (25/12/2025):
+ * - Embeddings via GPU Manager Service (Qwen3-Embedding-8B, 4096 dim)
  * - Embeddings de texto armazenados em Qdrant
  * - GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  *
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  */
 
 import { createLogger } from '@alice/logger';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import type { Worksheet, Row } from 'exceljs';
 
 const logger = createLogger('document-processor');
 
-// Configuração - Embeddings via GPU (Salad Cloud) - ARQUITETURA 100% GPU
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
 // Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
 // Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)
@@ -138,29 +138,27 @@ interface EmbeddingParams {
 }
 
 async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ embedding: number[]; model: string }> {
-  // ARQUITETURA ENTERPRISE (17/12/2025) - Qwen3-Embedding-8B via Salad Cloud (4096 dim → Qdrant)
+  // ARQUITETURA ENTERPRISE (25/12/2025) - Qwen3-Embedding-8B via GPU Manager Service (4096 dim → Qdrant)
   // GPU é OBRIGATÓRIO - sem fallback CPU (Regra 6)
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings');
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
+  
   try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
+    // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings RAG)
+    const gpuResponse = await requestGpu({
+      serviceType: GpuServiceType.EMBEDDINGS,
+      endpoint: '/embed/text',
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: params.text }),
-      signal: controller.signal,
+      priority: GpuRequestPriority.MEDIUM,
+      timeout: 30000, // 30s timeout
+      body: {
+        text: params.text,
+      },
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GPU Embedding API error: ${response.status} - ${errorText}`);
+    if (!gpuResponse.success || !gpuResponse.data) {
+      throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
     }
 
-    const result = await response.json() as {
+    const result = gpuResponse.data as {
       embedding: number[];
       model: string;
       dimension: number;
@@ -177,8 +175,11 @@ async function generateEmbeddingInternal(params: EmbeddingParams): Promise<{ emb
       embedding: result.embedding,
       model: result.model || 'Qwen/Qwen3-Embedding-8B',
     };
-  } finally {
-    clearTimeout(timeoutId);
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(`Erro desconhecido ao gerar embedding: ${String(error)}`);
   }
 }
 
@@ -200,12 +201,12 @@ class DocumentProcessorService {
 
   constructor() {
     // ARQUITETURA ENTERPRISE (17/12/2025) - Qwen3-Embedding-8B via Salad Cloud → Qdrant
-    this.isConfigured = typeof EMBEDDINGS_GPU_URL === 'string' && EMBEDDINGS_GPU_URL.length > 0;
+    this.isConfigured = typeof GPU_MANAGER_URL === 'string' && GPU_MANAGER_URL.length > 0;
     
     if (!this.isConfigured) {
-      logger.warn('EMBEDDINGS_GPU_URL não configurado - embeddings de documento não funcionarão');
+      logger.warn('GPU Manager Service não configurado - embeddings de documento não funcionarão');
     } else {
-      logger.info({ gpuUrl: EMBEDDINGS_GPU_URL, embeddingDim: TEXT_EMBEDDING_DIM }, 
+      logger.info({ gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: TEXT_EMBEDDING_DIM }, 
         'Document Processor - ARQUITETURA ENTERPRISE (Qwen3-Embedding-8B, 4096 dim → Qdrant)');
     }
   }
@@ -750,14 +751,15 @@ class DocumentProcessorService {
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
     try {
-      const response = await fetch(`${EMBEDDINGS_GPU_URL}/ready`, {
+      // Verificar se GPU Manager Service está pronto
+      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010'}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });
 
       if (!response.ok) {
         logger.warn(
-          { status: response.status, gpuUrl: EMBEDDINGS_GPU_URL },
+          { status: response.status, gpuManagerUrl: GPU_MANAGER_URL },
           'Serviço GPU de embeddings não está pronto'
         );
         return false;
@@ -765,7 +767,7 @@ class DocumentProcessorService {
 
       return true;
     } catch (error) {
-      logger.error({ error, gpuUrl: EMBEDDINGS_GPU_URL }, 'Erro ao verificar readiness do serviço GPU de embeddings');
+      logger.error({ error }, 'Erro ao verificar readiness do GPU Manager Service');
       return false;
     } finally {
       clearTimeout(timeoutId);

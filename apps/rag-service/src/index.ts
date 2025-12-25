@@ -4,12 +4,12 @@
  * Serviço de Retrieval-Augmented Generation com busca vetorial enterprise.
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA ENTERPRISE (17/12/2025):
- * - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant
- * - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
+ * ARQUITETURA ENTERPRISE (25/12/2025):
+ * - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant via GPU Manager Service
+ * - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -47,6 +47,9 @@ import {
   RAG_SERVICE_TAGS,
   // CORREÇÃO 23/12/2025: Redis cache distribuído para embedding-websocket
   initializeRedisCache,
+  requestGpu,
+  GpuServiceType,
+  GpuRequestPriority,
 } from '@alice/shared-utils';
 import { ragServicePaths, ragServiceSchemas } from './openapi-specs.js';
 import { createLogger } from '@alice/logger';
@@ -696,7 +699,8 @@ const mediaUpload = multer({
 // ============================================================================
 
 /** URL do serviço de embeddings GPU (Salad Cloud) */
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -706,59 +710,58 @@ interface TextEmbeddingResponse {
 }
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B via Salad Cloud (4096 dim)
+  // ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B via GPU Manager Service (4096 dim)
   // GPU é OBRIGATÓRIO - embeddings armazenados em Qdrant
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings (Qwen3-Embedding-8B 4096 dim)');
-  }
-
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
-
+  
   try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/text`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-      body: JSON.stringify({ text }),
-      signal: controller.signal,
-  });
+    // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings RAG)
+    const gpuResponse = await requestGpu({
+      serviceType: GpuServiceType.EMBEDDINGS,
+      endpoint: '/embed/text',
+      method: 'POST',
+      priority: GpuRequestPriority.MEDIUM,
+      timeout: 30000, // 30s timeout
+      body: {
+        text,
+      },
+    });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-      throw new Error(`GPU Embeddings API error: ${response.status} - ${errorText}`);
-  }
+    if (!gpuResponse.success || !gpuResponse.data) {
+      throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
+    }
 
-  const data = await response.json() as TextEmbeddingResponse;
-  const resultEmbedding = data.embedding;
-  
-  if (!resultEmbedding || resultEmbedding.length === 0) {
+    const data = gpuResponse.data as TextEmbeddingResponse;
+    const resultEmbedding = data.embedding;
+    
+    if (!resultEmbedding || resultEmbedding.length === 0) {
       throw new Error('Serviço GPU de embeddings retornou resultado vazio');
-  }
-  
+    }
+    
     // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
-  // Lança erro se dimensão estiver incorreta (não apenas warning)
-  validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
-  
-  return resultEmbedding;
-  } finally {
-    clearTimeout(timeoutId);
+    // Lança erro se dimensão estiver incorreta (não apenas warning)
+    validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
+    
+    return resultEmbedding;
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error(`Erro desconhecido ao gerar embedding: ${String(error)}`);
   }
 }
 
-const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
+const gpuManagerEmbeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
   name: 'text-embeddings-local',
   ...CIRCUIT_BREAKER_PRESETS.textEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'text-embeddings-local', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
+instrumentCircuitBreaker(metrics, 'gpu-manager-embeddings', gpuManagerEmbeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    return await embeddingsBreaker.fire(text) as number[];
+    return await gpuManagerEmbeddingsBreaker.fire(text) as number[];
   } catch (error) {
     if (error instanceof Error && error.message.includes('Breaker is open')) {
       logger.warn('Circuit breaker aberto - Embeddings temporariamente indisponível');
@@ -1062,7 +1065,7 @@ function hashContent(content: string): string {
 }
 
 app.get('/api/rag/health', async (_req: Request, res: Response) => {
-  const circuitState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+  const circuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
   const qdrantStatus = getQdrantCircuitBreakerStatus();
 
   // Verificar saúde do Qdrant (assíncrono)
@@ -1084,7 +1087,7 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
       text: 'Qwen3-Embedding-8B (4096 dim) → Qdrant',
       image: 'OpenCLIP ViT-H/14 (1024 dim) → pgvector',
     },
-    embeddingsProvider: 'gpu-salad-cloud',
+    embeddingsProvider: 'gpu-manager-service',
     qdrant: {
       configured: isQdrantConfigured(),
       healthy: qdrantHealthy,
@@ -1122,7 +1125,7 @@ app.get('/live', (_req: Request, res: Response) => {
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
-    const embeddingsReady = !embeddingsBreaker.opened;
+    const embeddingsReady = !gpuManagerEmbeddingsBreaker.opened;
     
     const allReady = dbHealthy && embeddingsReady;
     
@@ -1823,9 +1826,9 @@ app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Res
       embeddings: {
         state: embeddingsState,
         stats: {
-          failures: embeddingsBreaker.stats.failures,
-          successes: embeddingsBreaker.stats.successes,
-          timeouts: embeddingsBreaker.stats.timeouts,
+          failures: gpuManagerEmbeddingsBreaker.stats.failures,
+          successes: gpuManagerEmbeddingsBreaker.stats.successes,
+          timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
         },
       },
       webSearch: {
@@ -2187,7 +2190,7 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
           // Evita falso-positivo de "ready" quando a dependência está indisponível.
           if (!(await documentProcessor.isReadyAsync())) {
             throw new Error(
-              'Document Processor não está pronto. Verifique conectividade com EMBEDDINGS_GPU_URL (Salad Cloud).'
+              'Document Processor não está pronto. Verifique conectividade com GPU Manager Service.'
             );
           }
           
@@ -2575,7 +2578,7 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
           
           if (!(await documentProcessor.isReadyAsync())) {
             throw new Error(
-              'Document Processor não está pronto. Verifique conectividade com EMBEDDINGS_GPU_URL (Salad Cloud).'
+              'Document Processor não está pronto. Verifique conectividade com GPU Manager Service.'
             );
           }
           
@@ -3619,7 +3622,7 @@ registerShutdownCallback(
     server.listen(PORT, () => {
       logger.info({ 
         port: PORT, 
-        embeddingsGpuUrl: process.env.EMBEDDINGS_GPU_URL || 'not_configured',
+        gpuManagerUrl: GPU_MANAGER_URL,
         qdrantConfigured: isQdrantConfigured(),
         qdrantUrl: process.env.QDRANT_URL || 'not_configured',
         architecture: {
@@ -3629,7 +3632,7 @@ registerShutdownCallback(
         circuitBreaker: 'enabled',
         strategy: 'warm-on-demand',
         redisConnected,
-      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (17/12/2025)');
+      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (25/12/2025) via GPU Manager Service');
     });
   } catch (error) {
     // BUG FIX 23/12/2025: Capturar TODOS os erros (síncronos e assíncronos) da inicialização

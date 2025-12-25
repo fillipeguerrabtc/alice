@@ -1,42 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🔍 Validando variáveis Salad Cloud..."
+echo "🔍 Validando secrets obrigatórias..."
 
-# Defaults de produção (valores reais, não mocks)
-SALAD_API_URL_DEFAULT="https://api.salad.com/api/public"
-SALAD_MEDIA_PROJECT_DEFAULT="alice-media"
-SALAD_GPU_CLASS_DEFAULT="premium-gpu"
-
-# Aplicar valores com logging de auditoria
-if [ -n "${SALAD_API_URL_CONFIGURED:-}" ]; then
-  SALAD_API_URL_VAR="${SALAD_API_URL_CONFIGURED}"
-  echo "✅ SALAD_API_URL: usando valor configurado no repositório"
-else
-  SALAD_API_URL_VAR="${SALAD_API_URL_DEFAULT}"
-  echo "::warning::SALAD_API_URL não configurado - usando default: ${SALAD_API_URL_DEFAULT}"
-fi
-
-if [ -n "${SALAD_MEDIA_PROJECT_CONFIGURED:-}" ]; then
-  SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_CONFIGURED}"
-  echo "✅ SALAD_MEDIA_PROJECT: usando valor configurado no repositório"
-else
-  SALAD_MEDIA_PROJECT_VAR="${SALAD_MEDIA_PROJECT_DEFAULT}"
-  echo "::warning::SALAD_MEDIA_PROJECT não configurado - usando default: ${SALAD_MEDIA_PROJECT_DEFAULT}"
-fi
-
-if [ -n "${SALAD_GPU_CLASS_CONFIGURED:-}" ]; then
-  SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_CONFIGURED}"
-  echo "✅ SALAD_GPU_CLASS: usando valor configurado no repositório"
-else
-  SALAD_GPU_CLASS_VAR="${SALAD_GPU_CLASS_DEFAULT}"
-  echo "::warning::SALAD_GPU_CLASS não configurado - usando default: ${SALAD_GPU_CLASS_DEFAULT}"
-fi
-
-echo "📋 Resumo Salad Cloud:"
-echo "   API URL: ${SALAD_API_URL_VAR}"
-echo "   Project: ${SALAD_MEDIA_PROJECT_VAR}"
-echo "   GPU Class: ${SALAD_GPU_CLASS_VAR}"
+# GPU Services (Hetzner GPU Server)
+# Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
+# e são gerenciados pelo GPU Manager Service
+echo "📋 GPU Services:"
+echo "   Arquitetura: Servidor único Hetzner GPU (RTX 4090 24GB)"
+echo "   Gerenciamento: GPU Manager Service (fila priorizada, VRAM monitoring)"
 echo ""
 
 echo "🔐 Validando secrets obrigatórias..."
@@ -59,8 +31,6 @@ MANDATORY_SECRETS=(
   ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET
   ERPNEXT_DB_PASSWORD_SECRET
   RESEND_API_KEY_SECRET
-  SALAD_API_KEY_SECRET
-  SALAD_ORGANIZATION_ID_SECRET
   SESSION_SECRET_SECRET
   INTERNAL_API_SECRET_SECRET
   SEARXNG_SECRET_KEY_SECRET

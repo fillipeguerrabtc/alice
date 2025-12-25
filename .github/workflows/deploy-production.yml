@@ -1166,8 +1166,7 @@ jobs:
           cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-observability:cache,mode=max
           platforms: linux/amd64
 
-      # NOTA: CLIP Inference Service REMOVIDO - migrado 100% para Salad Cloud GPU (19/12/2025)
-      # Embeddings de imagem agora são processados via OpenCLIP no Salad Cloud
+      # NOTA: CLIP Inference Service - Embeddings de imagem processados via OpenCLIP no GPU Manager Service (25/12/2025)
       
       - name: Build e Push - API Gateway (Traefik Config)
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
@@ -1547,8 +1546,6 @@ jobs:
           ADMIN_USER_SECRET: ${{ secrets.ADMIN_USER }}
           ADMIN_PWD_SECRET: ${{ secrets.ADMIN_PWD }}
           QDRANT_API_KEY_SECRET: ${{ secrets.QDRANT_API_KEY }}
-          SALAD_API_KEY_SECRET: ${{ secrets.SALAD_API_KEY }}
-          SALAD_ORGANIZATION_ID_SECRET: ${{ secrets.SALAD_ORGANIZATION_ID }}
           SESSION_SECRET_SECRET: ${{ secrets.SESSION_SECRET }}
           INTERNAL_API_SECRET_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
           SEARXNG_SECRET_KEY_SECRET: ${{ secrets.SEARXNG_SECRET_KEY }}
@@ -1573,10 +1570,6 @@ jobs:
           WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}
           ERPNEXT_API_KEY_SECRET: ${{ secrets.ERPNEXT_API_KEY }}
           ERPNEXT_API_SECRET_SECRET: ${{ secrets.ERPNEXT_API_SECRET }}
-          # Variáveis Salad
-          SALAD_API_URL_CONFIGURED: ${{ vars.SALAD_API_URL }}
-          SALAD_MEDIA_PROJECT_CONFIGURED: ${{ vars.SALAD_MEDIA_PROJECT }}
-          SALAD_GPU_CLASS_CONFIGURED: ${{ vars.SALAD_GPU_CLASS }}
           # Variáveis de versão (outputs do build-docker)
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
@@ -1599,11 +1592,6 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           OAUTH_GITHUB_CLIENT_ID: ${{ secrets.OAUTH_GITHUB_CLIENT_ID }}
           OAUTH_GITHUB_CLIENT_SECRET: ${{ secrets.OAUTH_GITHUB_CLIENT_SECRET }}
-          SALAD_WHISPER_URL: ${{ secrets.SALAD_WHISPER_URL }}
-          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
-          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
           HUGGINGFACE_TOKEN: ${{ secrets.HUGGINGFACE_TOKEN }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
@@ -3560,182 +3548,17 @@ jobs:
             docker compose -f docker-compose.prod.yml --env-file .env.prod ps
 
   # ===========================================================================
-  # Job 6: Validate GPU Services (Salad Cloud) - Abordagem Híbrida
+  # Job 6: GPU Services (Hetzner GPU Server)
   # ===========================================================================
-  # ENTERPRISE-GRADE (22/12/2025): Container Groups PRÉ-CRIADOS manualmente
-  # URLs configuradas como secrets no GitHub (não criadas automaticamente)
-  # Pipeline apenas VALIDA que os serviços estão respondendo
-  # 
-  # Benefícios da Abordagem Híbrida:
-  # - Deploy mais rápido (sem cold start de GPU de 2-5 min)
-  # - Mais confiável (GPUs já "quentes")
-  # - Health checks sempre passam
-  # - Menor custo (evita cold start repetido)
-  # 
-  # Configuração: Ver docs/SECRETS.md - Seção "Salad Cloud GPU URLs"
+  # ENTERPRISE-GRADE (25/12/2025): Todos os serviços GPU rodam localmente
+  # no servidor Hetzner GPU único e são gerenciados pelo GPU Manager Service
+  # com fila priorizada, monitoramento VRAM e circuit breakers.
+  # Configuração: Ver docs/ARQUITETURA-GPU-MANAGER.md
   # ===========================================================================
-  deploy-salad-gpu:
-    name: Validate GPU Services (Salad Cloud)
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    needs: deploy
-    if: needs.deploy.result == 'success'
-    
-    permissions:
-      contents: read
-    
-    # URLs vêm dos secrets (configurados após criar Container Groups no Salad Cloud Dashboard)
-    outputs:
-      SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-      EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
-      SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-      SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
-    
-    steps:
-      - name: Validar URLs GPU configuradas
-        id: validate-urls
-        env:
-          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
-          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
-        run: |
-          echo "=============================================="
-          echo "VALIDANDO URLs GPU SALAD CLOUD"
-          echo "=============================================="
-          echo ""
-          echo "Abordagem: Híbrida (Container Groups pré-criados manualmente)"
-          echo ""
-          echo "Container Groups esperados no Salad Cloud:"
-          echo "  - alice-mixtral-vllm (Mixtral 8x7B - LLM)"
-          echo "  - alice-embeddings-gpu (Qwen3-Embedding-8B + OpenCLIP)"
-          echo "  - alice-flux-schnell (FLUX.1 Schnell - Image Gen)"
-          echo "  - alice-asr-canary (Canary-1B - ASR)"
-          echo ""
-          
-          MISSING=0
-          
-          if [ -z "$SALAD_MIXTRAL_URL" ]; then
-            echo "❌ SALAD_MIXTRAL_URL não configurado no GitHub Secrets"
-            MISSING=$((MISSING + 1))
-          else
-            echo "✅ SALAD_MIXTRAL_URL configurado"
-          fi
-          
-          if [ -z "$EMBEDDINGS_GPU_URL" ]; then
-            echo "❌ EMBEDDINGS_GPU_URL não configurado no GitHub Secrets"
-            MISSING=$((MISSING + 1))
-          else
-            echo "✅ EMBEDDINGS_GPU_URL configurado"
-          fi
-          
-          if [ -z "$SALAD_FLUX_URL" ]; then
-            echo "❌ SALAD_FLUX_URL não configurado no GitHub Secrets"
-            MISSING=$((MISSING + 1))
-          else
-            echo "✅ SALAD_FLUX_URL configurado"
-          fi
-          
-          if [ -z "$SALAD_ASR_URL" ]; then
-            echo "❌ SALAD_ASR_URL não configurado no GitHub Secrets"
-            MISSING=$((MISSING + 1))
-          else
-            echo "✅ SALAD_ASR_URL configurado"
-          fi
-          
-          echo ""
-          if [ $MISSING -gt 0 ]; then
-            echo "::error::$MISSING URLs GPU não configuradas!"
-            echo ""
-            echo "📋 AÇÃO NECESSÁRIA:"
-            echo "   1. Crie os Container Groups no Salad Cloud Dashboard"
-            echo "   2. Copie as URLs geradas"
-            echo "   3. Adicione como secrets no GitHub:"
-            echo "      - SALAD_MIXTRAL_URL"
-            echo "      - EMBEDDINGS_GPU_URL"
-            echo "      - SALAD_FLUX_URL"
-            echo "      - SALAD_ASR_URL"
-            echo ""
-            echo "📖 Guia completo: docs/SECRETS.md - Seção 'Salad Cloud GPU URLs'"
-            exit 1
-          fi
-          
-          echo "✅ Todas as URLs GPU configuradas!"
-
-      - name: Health Check - GPU Services (opcional)
-        id: health-gpu
-        continue-on-error: true
-        env:
-          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
-          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
-        run: |
-          echo "=============================================="
-          echo "HEALTH CHECK - GPU SERVICES (INFORMATIVO)"
-          echo "=============================================="
-          echo ""
-          echo "Nota: GPUs podem estar em 'cold start' se não usadas recentemente."
-          echo "      Primeira requisição real vai acordar os serviços (~30-60s)."
-          echo ""
-          
-          # Mixtral 8x7B
-          echo "Verificando Mixtral 8x7B..."
-          if curl -sf --max-time 10 "${SALAD_MIXTRAL_URL}/health" > /dev/null 2>&1; then
-            echo "✅ Mixtral 8x7B: ONLINE"
-          else
-            echo "⏳ Mixtral 8x7B: Aguardando (cold start ou iniciando)"
-          fi
-          
-          # Embeddings GPU
-          echo "Verificando Embeddings GPU..."
-          if curl -sf --max-time 10 "${EMBEDDINGS_GPU_URL}/health" > /dev/null 2>&1; then
-            echo "✅ Embeddings GPU: ONLINE"
-          else
-            echo "⏳ Embeddings GPU: Aguardando (cold start ou iniciando)"
-          fi
-          
-          # FLUX.1 Schnell
-          echo "Verificando FLUX.1 Schnell..."
-          if curl -sf --max-time 10 "${SALAD_FLUX_URL}/health" > /dev/null 2>&1; then
-            echo "✅ FLUX.1 Schnell: ONLINE"
-          else
-            echo "⏳ FLUX.1 Schnell: Aguardando (cold start ou iniciando)"
-          fi
-          
-          # ASR Canary-1B
-          echo "Verificando ASR Canary-1B..."
-          if curl -sf --max-time 10 "${SALAD_ASR_URL}/health" > /dev/null 2>&1; then
-            echo "✅ ASR Canary-1B: ONLINE"
-          else
-            echo "⏳ ASR Canary-1B: Aguardando (cold start ou iniciando)"
-          fi
-          
-          echo ""
-          echo "=============================================="
-          echo "✅ VALIDAÇÃO GPU CONCLUÍDA"
-          echo "=============================================="
-
-      - name: Resumo Validação GPU
-        if: always()
-        run: |
-          echo "=============================================="
-          echo "SALAD CLOUD GPU - VALIDAÇÃO COMPLETA"
-          echo "=============================================="
-          echo ""
-          echo "Abordagem: Híbrida (Enterprise Best Practice)"
-          echo "  - Container Groups: Pré-criados manualmente no Salad Cloud"
-          echo "  - URLs: Configuradas como secrets no GitHub"
-          echo "  - Pipeline: Apenas valida que URLs estão configuradas"
-          echo ""
-          echo "Container Groups:"
-          echo "  - alice-mixtral-vllm (Mixtral 8x7B - LLM principal)"
-          echo "  - alice-embeddings-gpu (Qwen3-Embedding-8B 4096dim + OpenCLIP 1024dim)"
-          echo "  - alice-flux-schnell (FLUX.1 Schnell - Geração de imagens)"
-          echo "  - alice-asr-canary (Canary-1B - Transcrição de áudio)"
-          echo ""
-          echo "GPU: RTX 4090 (24GB VRAM)"
-          echo "=============================================="
+  # NOTA: Job removido - GPU services são parte do deploy principal (job deploy)
+  # Todos os 50 containers (45 serviços + 4 GPU + 1 backup) rodam no mesmo servidor
+  # Health checks dos serviços GPU são feitos pelo job health-check via GPU Manager Service
+  # ===========================================================================
 
   # ===========================================================================
   # Job 7: Health Check Pós-Deploy (com trigger de rollback)
@@ -3750,11 +3573,12 @@ jobs:
     runs-on: ubuntu-latest
     # CRÍTICO: timeout para evitar jobs stuck em health checks
     timeout-minutes: 10
-    needs: [deploy, deploy-salad-gpu]
-    # ENTERPRISE: GPU é OBRIGATÓRIO - ambos deploys devem passar
-    # GPUs são o coração da IA - plataforma não funciona sem eles
+    needs: [deploy]
+    # ENTERPRISE: Deploy único no servidor Hetzner GPU
+    # Todos os 50 containers (45 serviços + 4 GPU + 1 backup) rodam no mesmo servidor
+    # GPU Manager Service gerencia todas as requisições GPU localmente
     # Best Practices 2025: Fail-fast para detectar problemas imediatamente
-    if: needs.deploy.result == 'success' && needs.deploy-salad-gpu.result == 'success'
+    if: needs.deploy.result == 'success'
     
     permissions:
       contents: read
@@ -3765,18 +3589,16 @@ jobs:
     steps:
       - name: Aguardar serviços iniciarem
         run: |
-          echo "Aguardando 60s para serviços Hetzner iniciarem..."
-          sleep 60
-          echo "Aguardando 30s adicionais para serviços GPU Salad Cloud..."
-          sleep 30
+          echo "Aguardando 90s para todos os serviços iniciarem (incluindo GPU Manager Service)..."
+          sleep 90
 
-      - name: Health Check - Serviços Hetzner (43 containers)
-        id: health-hetzner
+      - name: Health Check - Todos os Serviços (50 containers)
+        id: health-all
         run: |
           FAILED=0
           
           echo "=============================================="
-          echo "HEALTH CHECK - SERVIÇOS HETZNER"
+          echo "HEALTH CHECK - SERVIÇOS HETZNER GPU (50 containers)"
           echo "=============================================="
           
           echo "Verificando Frontend..."
@@ -3811,6 +3633,14 @@ jobs:
             echo "✅ RAG OK"
           fi
           
+          echo "Verificando GPU Manager Service..."
+          if ! curl -sf --max-time 30 http://localhost:3010/live; then
+            echo "❌ GPU Manager Service health check FALHOU"
+            FAILED=$((FAILED + 1))
+          else
+            echo "✅ GPU Manager Service OK"
+          fi
+          
           echo "Verificando ERPNext..."
           if ! curl -sf --max-time 30 https://erp.yesyoudeserve.duckdns.org/api/method/frappe.ping; then
             echo "❌ ERPNext health check FALHOU"
@@ -3827,107 +3657,30 @@ jobs:
             echo "✅ Grafana OK"
           fi
           
-          echo "hetzner_failed=$FAILED" >> $GITHUB_OUTPUT
-          echo "=============================================="
-          echo "Serviços Hetzner com falha: $FAILED"
-          echo "=============================================="
-
-      - name: Health Check - Serviços GPU Salad Cloud (4 Container Groups)
-        id: health-gpu
-        env:
-          # ENTERPRISE-GRADE (22/12/2025): URLs vêm dos secrets (abordagem híbrida)
-          # Container Groups são pré-criados manualmente no Salad Cloud
-          SALAD_MIXTRAL_URL: ${{ secrets.SALAD_MIXTRAL_URL }}
-          SALAD_FLUX_URL: ${{ secrets.SALAD_FLUX_URL }}
-          SALAD_ASR_URL: ${{ secrets.SALAD_ASR_URL }}
-          EMBEDDINGS_GPU_URL: ${{ secrets.EMBEDDINGS_GPU_URL }}
-        run: |
-          FAILED=0
-          
-          echo "=============================================="
-          echo "HEALTH CHECK - SERVIÇOS GPU SALAD CLOUD"
-          echo "=============================================="
-          echo ""
-          echo "URLs sendo verificadas:"
-          echo "  SALAD_MIXTRAL_URL: ${SALAD_MIXTRAL_URL:-'(não configurada)'}"
-          echo "  EMBEDDINGS_GPU_URL: ${EMBEDDINGS_GPU_URL:-'(não configurada)'}"
-          echo "  SALAD_FLUX_URL: ${SALAD_FLUX_URL:-'(não configurada)'}"
-          echo "  SALAD_ASR_URL: ${SALAD_ASR_URL:-'(não configurada)'}"
-          echo ""
-          
-          # Mixtral 8x7B (LLM - coração do chat e trading)
-          echo "Verificando Mixtral 8x7B (LLM)..."
-          if [ -n "$SALAD_MIXTRAL_URL" ]; then
-            if ! curl -sf --max-time 60 "${SALAD_MIXTRAL_URL}/health"; then
-              echo "❌ Mixtral 8x7B health check FALHOU"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ Mixtral 8x7B OK"
-            fi
+          # ENTERPRISE: Tolerância zero para serviços críticos
+          # Se qualquer serviço falhar, deploy é considerado failed
+          if [ "$FAILED" -gt 0 ]; then
+            echo "status=failed" >> $GITHUB_OUTPUT
+            echo "❌ CRÍTICO: $FAILED serviços falharam no health check!"
+            echo "Deploy será revertido automaticamente."
           else
-            echo "❌ SALAD_MIXTRAL_URL não configurado"
-            FAILED=$((FAILED + 1))
+            echo "status=success" >> $GITHUB_OUTPUT
+            echo "✅ Todos os serviços estão saudáveis!"
           fi
           
-          # Embeddings GPU (Qwen3-Embedding-8B + OpenCLIP - coração do RAG)
-          echo "Verificando Embeddings GPU (Qwen3 + OpenCLIP)..."
-          if [ -n "$EMBEDDINGS_GPU_URL" ]; then
-            if ! curl -sf --max-time 60 "${EMBEDDINGS_GPU_URL}/health"; then
-              echo "❌ Embeddings GPU health check FALHOU"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ Embeddings GPU OK"
-            fi
-          else
-            echo "❌ EMBEDDINGS_GPU_URL não configurado"
-            FAILED=$((FAILED + 1))
-          fi
-          
-          # FLUX.1 Schnell (geração de imagens)
-          echo "Verificando FLUX.1 Schnell (Image Generation)..."
-          if [ -n "$SALAD_FLUX_URL" ]; then
-            if ! curl -sf --max-time 60 "${SALAD_FLUX_URL}/health"; then
-              echo "❌ FLUX.1 Schnell health check FALHOU"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ FLUX.1 Schnell OK"
-            fi
-          else
-            echo "❌ SALAD_FLUX_URL não configurado"
-            FAILED=$((FAILED + 1))
-          fi
-          
-          # ASR Canary-1B (transcrição de áudio)
-          echo "Verificando ASR Canary-1B (Speech Recognition)..."
-          if [ -n "$SALAD_ASR_URL" ]; then
-            if ! curl -sf --max-time 60 "${SALAD_ASR_URL}/health"; then
-              echo "❌ ASR Canary-1B health check FALHOU"
-              FAILED=$((FAILED + 1))
-            else
-              echo "✅ ASR Canary-1B OK"
-            fi
-          else
-            echo "❌ SALAD_ASR_URL não configurado"
-            FAILED=$((FAILED + 1))
-          fi
-          
-          echo "gpu_failed=$FAILED" >> $GITHUB_OUTPUT
+          echo "total_failed=$FAILED" >> $GITHUB_OUTPUT
           echo "=============================================="
-          echo "Serviços GPU com falha: $FAILED"
+          echo "Total de falhas: $FAILED"
           echo "=============================================="
 
       - name: Consolidar Resultado Health Check
         id: health
         run: |
-          HETZNER_FAILED=${{ steps.health-hetzner.outputs.hetzner_failed }}
-          GPU_FAILED=${{ steps.health-gpu.outputs.gpu_failed }}
-          TOTAL_FAILED=$((HETZNER_FAILED + GPU_FAILED))
+          TOTAL_FAILED=${{ steps.health-all.outputs.total_failed }}
           
           echo "=============================================="
           echo "RESULTADO CONSOLIDADO HEALTH CHECK"
           echo "=============================================="
-          echo "Serviços Hetzner com falha: $HETZNER_FAILED"
-          echo "Serviços GPU com falha: $GPU_FAILED"
           echo "Total de falhas: $TOTAL_FAILED"
           echo "=============================================="
           
@@ -3948,16 +3701,17 @@ jobs:
           echo "DEPLOY HEALTH CHECK ENTERPRISE CONCLUÍDO"
           echo "=============================================="
           echo ""
-          echo "📦 SERVIÇOS HETZNER (43 containers):"
+          echo "📦 SERVIÇOS HETZNER GPU (50 containers):"
           echo "   Frontend: https://yesyoudeserve.duckdns.org"
           echo "   ERPNext: https://erp.yesyoudeserve.duckdns.org"
           echo "   Grafana: https://observability.yesyoudeserve.duckdns.org"
+          echo "   GPU Manager: http://localhost:3010 (interno)"
           echo ""
-          echo "🚀 SERVIÇOS GPU SALAD CLOUD (4 Container Groups):"
-          echo "   Mixtral 8x7B (LLM): RTX 4090"
-          echo "   Embeddings GPU (Qwen3 + OpenCLIP): RTX 4090"
-          echo "   FLUX.1 Schnell (Images): RTX 4090"
-          echo "   ASR Canary-1B (Speech): RTX 4090"
+          echo "🚀 SERVIÇOS GPU (gerenciados pelo GPU Manager Service):"
+          echo "   Mixtral 8x7B (LLM): RTX 4090 24GB"
+          echo "   Embeddings GPU (Qwen3 + OpenCLIP): RTX 4090 24GB"
+          echo "   FLUX.1 Schnell (Images): RTX 4090 24GB"
+          echo "   ASR Canary-1B (Speech): RTX 4090 24GB"
           echo ""
           echo "📊 RESULTADO:"
           echo "   Commit: ${{ github.sha }}"
@@ -3977,17 +3731,15 @@ jobs:
     runs-on: ubuntu-latest
     # CRÍTICO: timeout para evitar jobs stuck em rollback
     timeout-minutes: 20
-    needs: [deploy, deploy-salad-gpu, health-check]
+    needs: [deploy, health-check]
     # ENTERPRISE: Rollback se QUALQUER componente crítico falhar
-    # - Deploy Hetzner falhou
-    # - Deploy GPU Salad Cloud falhou (GPU é OBRIGATÓRIO)
+    # - Deploy Hetzner GPU falhou
     # - Health check falhou ou foi pulado
     # - Health status retornou 'failed'
     # always() necessário porque health-check pode ser pulado se deploy falhar
     if: |
       always() && (
         needs.deploy.result == 'failure' ||
-        needs.deploy-salad-gpu.result == 'failure' ||
         needs.health-check.result == 'failure' ||
         needs.health-check.result == 'skipped' ||
         needs.health-check.outputs.health_status == 'failed'
@@ -4001,61 +3753,33 @@ jobs:
       - name: Checkout (para scripts de rollback)
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      # SHA: actions/setup-python@v5.3.0 (2024-11-14) - Supply Chain Security
-      - name: Setup Python (para Salad Cloud SDK)
-        uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-
-      - name: Install Salad Cloud SDK
-        run: |
-          pip install --upgrade pip
-          pip install salad-cloud-sdk || echo "SDK não disponível, usando REST API"
-
       # ================================================================
-      # SALAD CLOUD GPU - ABORDAGEM HÍBRIDA (NÃO DELETAR!)
+      # GPU SERVICES - HETZNER GPU SERVER
       # ================================================================
-      # ENTERPRISE BEST PRACTICE (22/12/2025):
-      # Container Groups são PRÉ-CRIADOS MANUALMENTE pelo usuário.
-      # Rollback NÃO deve deletar - apenas logar status para diagnóstico.
-      # Deletar destruiria Container Groups que levam tempo para recriar.
+      # ENTERPRISE BEST PRACTICE (25/12/2025):
+      # Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
+      # e são gerenciados pelo GPU Manager Service. Rollback reverte todos os
+      # 50 containers (45 serviços + 4 GPU + 1 backup) no mesmo servidor.
       # ================================================================
-      - name: Verificar Status Salad Cloud GPU (informativo)
-        env:
-          SALAD_API_KEY: ${{ secrets.SALAD_API_KEY }}
-          SALAD_ORG: ${{ secrets.SALAD_ORGANIZATION_ID }}
-          SALAD_PROJECT: ${{ secrets.SALAD_PROJECT_ID }}
+      - name: Verificar Status GPU Services (informativo)
         run: |
           echo "=============================================="
-          echo "📊 SALAD CLOUD GPU STATUS (Abordagem Híbrida)"
+          echo "📊 GPU SERVICES STATUS (Hetzner GPU Server)"
           echo "=============================================="
-          echo "⚠️  Container Groups são PRÉ-CRIADOS MANUALMENTE"
-          echo "⚠️  Rollback NÃO deleta Container Groups GPU"
-          echo "⚠️  Verifique status manualmente em portal.salad.com"
+          echo "✅ Todos os serviços GPU rodam localmente no servidor Hetzner GPU"
+          echo "✅ GPU Manager Service gerencia requisições com fila priorizada"
+          echo "✅ Rollback reverte todos os 50 containers no servidor único"
           echo ""
-          echo "Container Groups esperados:"
-          echo "  - alice-mixtral-vllm (LLM Mixtral 8x7B)"
-          echo "  - alice-embeddings-gpu (Qwen3 + OpenCLIP)"
-          echo "  - alice-flux-schnell (FLUX.1 Schnell)"
-          echo "  - alice-asr-canary (ASR Canary-1B)"
+          echo "Serviços GPU (gerenciados pelo GPU Manager Service):"
+          echo "  - gpu-mixtral (LLM Mixtral 8x7B)"
+          echo "  - gpu-embeddings (Qwen3 + OpenCLIP)"
+          echo "  - gpu-flux (FLUX.1 Schnell)"
+          echo "  - gpu-asr (ASR Canary-1B)"
           echo ""
-          
-          # Apenas verificar status (não deletar)
-          if [ -f "infra/salad-cloud/rollback.py" ]; then
-            cd infra/salad-cloud
-            python rollback.py status || echo "⚠️ Não foi possível verificar status"
-          else
-            echo "ℹ️  Script rollback.py não encontrado (normal após refatoração)"
-          fi
-          
-          echo ""
-          echo "=============================================="
-          echo "ℹ️  GPU rollback SKIPPED (abordagem híbrida)"
           echo "=============================================="
 
       # ================================================================
-      # ROLLBACK HETZNER - SEGUNDO (após GPU estar limpo)
+      # ROLLBACK HETZNER GPU - ÚNICO SERVIDOR
       # ================================================================
       - name: Configurar SSH
         run: |
@@ -4702,12 +4426,10 @@ jobs:
           echo "   Timestamp: $(date -Iseconds)"
           echo ""
           echo "🔄 COMPONENTES REVERTIDOS:"
-          echo "   ✅ Salad Cloud GPU (4 Container Groups)"
-          echo "   ✅ Hetzner Cloud (43 containers)"
+          echo "   ✅ Hetzner GPU Server (50 containers - 45 serviços + 4 GPU + 1 backup)"
           echo ""
           echo "📊 STATUS DOS JOBS:"
-          echo "   Deploy Hetzner: ${{ needs.deploy.result }}"
-          echo "   Deploy GPU: ${{ needs.deploy-salad-gpu.result }}"
+          echo "   Deploy Hetzner GPU: ${{ needs.deploy.result }}"
           echo "   Health Check: ${{ needs.health-check.result }}"
           echo ""
           echo "⚠️ AÇÃO NECESSÁRIA:"
@@ -4723,15 +4445,13 @@ jobs:
     runs-on: ubuntu-latest
     # CRÍTICO: timeout para evitar jobs stuck
     timeout-minutes: 5
-    needs: [deploy, deploy-salad-gpu, health-check]
-    # ENTERPRISE (17/12/2025): Registrar sucesso APENAS se TODOS os componentes passaram
-    # - Deploy Hetzner: OBRIGATÓRIO
-    # - Deploy GPU Salad Cloud: OBRIGATÓRIO (GPUs são o coração da IA)
-    # - Health Check: OBRIGATÓRIO (verifica Hetzner + GPU)
+    needs: [deploy, health-check]
+    # ENTERPRISE (25/12/2025): Registrar sucesso APENAS se TODOS os componentes passaram
+    # - Deploy Hetzner GPU: OBRIGATÓRIO (todos os 50 containers no servidor único)
+    # - Health Check: OBRIGATÓRIO (verifica todos os serviços incluindo GPU Manager Service)
     # Best Practices 2025: Não registrar deploy parcial como sucesso
     if: |
       needs.deploy.result == 'success' &&
-      needs.deploy-salad-gpu.result == 'success' &&
       needs.health-check.result == 'success' &&
       needs.health-check.outputs.health_status == 'success'
     

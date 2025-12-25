@@ -1,16 +1,16 @@
 /**
  * Image Generation Client - Alice Enterprise Platform
  * 
- * Cliente para FLUX.1 Schnell self-hosted no Salad Cloud.
- * Gera imagens em 1-3 segundos com custo ~$0.20/hora.
+ * Cliente para FLUX.1 Schnell self-hosted via GPU Manager Service.
+ * Gera imagens em 1-3 segundos com custo otimizado.
  * 
  * Modelo: FLUX.1 Schnell (Apache 2.0, uso comercial permitido)
- * Hospedagem: Salad Cloud Container Group dedicado
+ * Hospedagem: GPU Manager Service (Hetzner GPU)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { eq, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import * as schema from '@alice/shared/schema';
@@ -20,12 +20,8 @@ import type { Database } from '@alice/database';
 // Bug: pino direto com pino-pretty não segue padrão enterprise (Regra 2)
 const logger = createLogger('image-generation');
 
-const SALAD_API_KEY = process.env.SALAD_API_KEY;
-// CORREÇÃO 19/12/2025: Remover SALAD_ORGANIZATION_ID não utilizado (no-unused-vars)
-// SALAD_ORGANIZATION_ID é usado apenas em chat-service/index.ts para validação no startup
-// CORREÇÃO 17/12/2025: Usar SALAD_FLUX_URL (Container Group dedicado) ao invés de endpoint legado
-// REGRA 6: Sem fallback em produção - variável DEVE estar definida via deploy-salad-gpu.yml
-const SALAD_FLUX_URL = process.env.SALAD_FLUX_URL;
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010';
 
 let db: Database;
 
@@ -65,25 +61,17 @@ interface CLIPEmbeddingResponse {
 // ============================================================================
 
 async function generateImageInternal(request: ImageGenerationRequest): Promise<ImageGenerationResponse> {
-  // CORREÇÃO 17/12/2025: Validar SALAD_FLUX_URL (Container Group dedicado)
-  // REGRA 6: Fail-fast em produção se variáveis não configuradas
-  if (!SALAD_FLUX_URL) {
-    throw new Error('SALAD_FLUX_URL não configurado - execute deploy-salad-gpu.yml para criar Container Group');
-  }
-  if (!SALAD_API_KEY) {
-    throw new Error('SALAD_API_KEY não configurado');
-  }
-
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para gerenciar requisições FLUX
   const startTime = Date.now();
 
-  // Endpoint direto do Container Group (sem path /organizations/.../inference-endpoints/...)
-  const response = await fetch(`${SALAD_FLUX_URL}/generate`, {
+  // Enfileirar requisição no GPU Manager com prioridade LOW (geração de imagens)
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.FLUX,
+    endpoint: '/generate',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Salad-Api-Key': SALAD_API_KEY,
-    },
-    body: JSON.stringify({
+    priority: GpuRequestPriority.LOW,
+    timeout: 30000, // 30s para geração de imagens
+    body: {
       prompt: request.prompt,
       negative_prompt: request.negativePrompt || '',
       width: request.width || 1024,
@@ -91,13 +79,14 @@ async function generateImageInternal(request: ImageGenerationRequest): Promise<I
       num_inference_steps: request.steps || 4,
       seed: request.seed || Math.floor(Math.random() * 2147483647),
       guidance_scale: request.guidanceScale || 3.5,
-    }),
+    },
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro na geração de imagem: ${error}`);
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro na geração de imagem');
   }
+
+  const response = gpuResponse.data as ImageGenerationResponse;
 
   const data = await response.json() as {
     image: string;
@@ -196,21 +185,17 @@ export async function generateImage(
 
 // ============================================================================
 // IMAGE EMBEDDINGS (Para RAG Multimodal)
-// ARQUITETURA 100% GPU (15/12/2025): OpenCLIP ViT-H/14 via Salad Cloud
+// ARQUITETURA 100% GPU (25/12/2025): OpenCLIP ViT-H/14 via GPU Manager Service
 // Embeddings de imagem com 1024 dimensões para máxima qualidade
 // ============================================================================
 
 // CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
 // GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)
-const CLIP_EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
-  // REGRA 6: Fail-fast se GPU não configurada
-  if (!CLIP_EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)');
-  }
-  
-  // ARQUITETURA 100% GPU (15/12/2025): OpenCLIP ViT-H/14 via Salad Cloud
+  // ARQUITETURA ENTERPRISE (25/12/2025): OpenCLIP ViT-H/14 via GPU Manager Service
   // Embeddings de imagem com 1024 dimensões para máxima qualidade
   // NOTA: imageBase64 pode vir com ou sem prefixo data:image/...;base64,
   // O servidor Python trata ambos os formatos, mas padronizamos para incluir prefixo
@@ -219,22 +204,23 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
     ? imageBase64 
     : `data:image/png;base64,${imageBase64}`;
   
-  const response = await fetch(`${CLIP_EMBEDDINGS_GPU_URL}/embed/image`, {
+  // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings)
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/image',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: 30000, // 30s para embeddings
+    body: {
       image: imageData,
-    }),
+    },
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Erro ao gerar embedding de imagem (GPU): ${error}`);
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de imagem (GPU)');
   }
 
-  const data = await response.json() as { embedding: number[]; model: string };
+  const data = gpuResponse.data as { embedding: number[]; model: string };
   return { embedding: data.embedding };
 }
 

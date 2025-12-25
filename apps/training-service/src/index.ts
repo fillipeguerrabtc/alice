@@ -4,12 +4,13 @@
  * Serviço de treinamento e fine-tuning com deduplicação semântica (SemHash).
  * Implementa Circuit Breaker pattern (Regra 16 - Best Practices 2025).
  * 
- * ARQUITETURA ENTERPRISE (17/12/2025):
- * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Salad Cloud → Qdrant)
+ * ARQUITETURA ENTERPRISE (25/12/2025):
+ * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Manager Service → Qdrant)
  * - Fine-tuning: Salad Cloud (GPUs externas) - SALAD_API_KEY obrigatória
+ *   NOTA: Fine-tuning será migrado para Hetzner GPU em fase futura
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -35,6 +36,9 @@ import {
   ShutdownPriority,
   setupSwaggerUI,
   TRAINING_SERVICE_TAGS,
+  requestGpu,
+  GpuServiceType,
+  GpuRequestPriority,
 } from '@alice/shared-utils';
 import { trainingServicePaths, trainingServiceSchemas } from './openapi-specs.js';
 import { eq, and, desc, sql, isNull, not } from '@alice/database';
@@ -177,27 +181,13 @@ app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
 // ============================================================================
-// CIRCUIT BREAKER - Text Embeddings GPU (Salad Cloud)
-// ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B (4096 dim) via Salad Cloud → Qdrant
+// CIRCUIT BREAKER - Text Embeddings GPU (GPU Manager Service)
+// ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B (4096 dim) via GPU Manager Service → Qdrant
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-// Embeddings GPU Service URL (Salad Cloud)
-// CORREÇÃO 22/12/2025: Não fazer exit(1) no startup - URLs GPU são configuradas
-// DEPOIS pelo job deploy-salad-gpu e atualizadas no .env.prod automaticamente.
-// Serviço deve iniciar e retornar erro 503 quando embeddings for chamado sem URL.
-// CORREÇÃO 24/12/2025: PROIBIDO fallback localhost em produção (Regra 6)
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL;
-if (!EMBEDDINGS_GPU_URL && process.env.NODE_ENV === 'production') {
-  logger.warn('EMBEDDINGS_GPU_URL não configurado - funcionalidade de embeddings desabilitada até URL ser configurada');
-  logger.warn('URLs GPU são configuradas automaticamente após deploy do Salad Cloud');
-}
-// REGRA 6: Em produção, SEM fallback localhost. Em dev, permite localhost apenas para desenvolvimento local
-const EMBEDDINGS_SERVICE_URL = EMBEDDINGS_GPU_URL || (
-  process.env.NODE_ENV === 'production' 
-    ? '' // Em produção, string vazia força erro 503 quando tentar usar
-    : 'http://localhost:8080' // Apenas em dev/test
-);
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
 interface TextEmbeddingResponse {
   embedding: number[];
@@ -209,35 +199,27 @@ interface TextEmbeddingResponse {
 const EXTERNAL_API_TIMEOUT_MS = 25000;
 
 async function generateEmbeddingInternal(text: string): Promise<number[]> {
-  // ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B via Salad Cloud
+  // ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B via GPU Manager Service
   // Embeddings de texto com 4096 dimensões para máxima qualidade
   
-  // REGRA 6: Validação fail-fast - URL deve estar configurada (sem fallback localhost em produção)
-  if (!EMBEDDINGS_SERVICE_URL || EMBEDDINGS_SERVICE_URL.trim() === '') {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado - funcionalidade de embeddings desabilitada até URL ser configurada');
-  }
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
-  
   try {
-    const response = await fetch(`${EMBEDDINGS_SERVICE_URL}/embed/text`, {
+    // Enfileirar requisição no GPU Manager com prioridade MEDIUM (embeddings para fine-tuning)
+    const gpuResponse = await requestGpu({
+      serviceType: GpuServiceType.EMBEDDINGS,
+      endpoint: '/embed/text',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
+      priority: GpuRequestPriority.MEDIUM,
+      timeout: EXTERNAL_API_TIMEOUT_MS,
+      body: {
+        text: text.slice(0, 2000), // Limitar tamanho para evitar problemas
       },
-      body: JSON.stringify({
-        text: text.slice(0, 2000),
-      }),
-      signal: controller.signal,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Falha ao gerar embedding GPU: ${response.status} - ${errorText}`);
+    if (!gpuResponse.success || !gpuResponse.data) {
+      throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
     }
 
-    const data = await response.json() as TextEmbeddingResponse;
+    const data = gpuResponse.data as TextEmbeddingResponse;
     const resultEmbedding = data.embedding;
     
     if (!resultEmbedding || resultEmbedding.length === 0) {
@@ -249,23 +231,27 @@ async function generateEmbeddingInternal(text: string): Promise<number[]> {
     validateEmbeddingDimension(resultEmbedding, EMBEDDING_DIMENSIONS.TEXT, 'TEXT');
     
     return resultEmbedding;
-  } finally {
-    clearTimeout(timeoutId);
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('Timeout')) {
+      logger.warn({ timeout: EXTERNAL_API_TIMEOUT_MS }, 'Chamada de embedding abortada por timeout');
+      throw new Error(`Timeout de ${EXTERNAL_API_TIMEOUT_MS / 1000}s excedido na chamada de embedding`);
+    }
+    throw error;
   }
 }
 
-const embeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
-  name: 'training-embeddings-local',
+const gpuManagerEmbeddingsBreaker = createCircuitBreaker(generateEmbeddingInternal, {
+  name: 'gpu-manager-embeddings',
   ...CIRCUIT_BREAKER_PRESETS.textEmbeddings,
 });
 
 // Instrumentar circuit breaker com métricas Prometheus
 // Type assertion necessária: Opossum CircuitBreaker tem tipos de eventos mais específicos
-instrumentCircuitBreaker(metrics, 'training-embeddings-local', embeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
+instrumentCircuitBreaker(metrics, 'gpu-manager-embeddings', gpuManagerEmbeddingsBreaker as unknown as Parameters<typeof instrumentCircuitBreaker>[2]);
 
 async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    return await embeddingsBreaker.fire(text) as number[];
+    return await gpuManagerEmbeddingsBreaker.fire(text) as number[];
   } catch (error) {
     if (error instanceof Error && error.message.includes('Breaker is open')) {
       logger.warn('Circuit breaker aberto - Embeddings temporariamente indisponível');
@@ -332,7 +318,7 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 app.get('/api/training/health', async (_req: Request, res: Response) => {
-  const embeddingsCircuitState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+  const embeddingsCircuitState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
   const saladStats = getSaladBreakerStats();
   const saladAvailable = await verificarDisponibilidadeSalad();
   
@@ -342,7 +328,7 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     status: overallStatus, 
     service: 'training-service', 
     timestamp: new Date().toISOString(),
-    embeddingsProvider: 'salad-gpu', // ARQUITETURA ENTERPRISE (17/12/2025)
+    embeddingsProvider: 'gpu-manager-service', // ARQUITETURA ENTERPRISE (25/12/2025)
     model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
     saladCloudAvailable: saladAvailable,
     circuitBreakers: {
@@ -378,7 +364,7 @@ app.get('/live', (_req: Request, res: Response) => {
 app.get('/ready', async (_req: Request, res: Response) => {
   try {
     const dbHealthy = await isPoolHealthy();
-    const embeddingsReady = !embeddingsBreaker.opened;
+    const embeddingsReady = !gpuManagerEmbeddingsBreaker.opened;
     
     const allReady = dbHealthy && embeddingsReady;
     

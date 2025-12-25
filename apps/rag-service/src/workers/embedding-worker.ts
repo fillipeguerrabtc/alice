@@ -2,7 +2,7 @@
  * Embedding Worker - Alice Enterprise Platform
  * 
  * Worker para processamento assíncrono de embeddings via fila Redis.
- * Implementa estratégia "Warm on Demand" com GPUs Salad Cloud.
+ * Implementa estratégia "Warm on Demand" com GPU Manager Service.
  * 
  * Estratégia de processamento:
  * - Poll contínuo da fila Redis
@@ -10,17 +10,17 @@
  * - Keep-warm de 30 minutos após último processamento
  * - Circuit breaker para resiliência (Regra 16)
  * 
- * ARQUITETURA ENTERPRISE (17/12/2025):
- * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant)
- * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector)
+ * ARQUITETURA ENTERPRISE (25/12/2025):
+ * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant) via GPU Manager Service
+ * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector) via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 25 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
 import { createLogger } from '@alice/logger';
-import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, instrumentCircuitBreaker } from '@alice/shared-utils';
+import { createCircuitBreaker, CIRCUIT_BREAKER_PRESETS, instrumentCircuitBreaker, requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import type { AliceMetrics } from '@alice/shared-utils';
 import { validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import {
@@ -40,8 +40,8 @@ const logger = createLogger('embedding-worker');
 // CONFIGURAÇÃO
 // ============================================================================
 
-/** URL do serviço de embeddings GPU (Salad Cloud) */
-const EMBEDDINGS_GPU_URL = process.env.EMBEDDINGS_GPU_URL || '';
+// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
 
 /** Intervalo de polling em ms */
 const POLL_INTERVAL_MS = 1000;
@@ -79,84 +79,61 @@ interface GpuResponse {
 }
 
 async function callGpuTextApi(params: GpuTextParams): Promise<GpuResponse> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado');
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: params.endpoint,
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: GPU_TIMEOUT_MS,
+    body: {
+      text: params.text,
+    },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
   }
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), GPU_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}${params.endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: params.text }),
-      signal: controller.signal,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GPU API error: ${response.status} - ${errorText}`);
-    }
-    
-    return await response.json() as GpuResponse;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+
+  return gpuResponse.data as GpuResponse;
 }
 
 async function callGpuImageApi(params: GpuImageParams): Promise<GpuResponse> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado');
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/image',
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: GPU_TIMEOUT_MS,
+    body: {
+      image: params.image,
+    },
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embedding de imagem');
   }
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), GPU_TIMEOUT_MS);
-  
-  try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/image`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: params.image }),
-      signal: controller.signal,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GPU API error: ${response.status} - ${errorText}`);
-    }
-    
-    return await response.json() as GpuResponse;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+
+  return gpuResponse.data as GpuResponse;
 }
 
 async function callGpuBatchApi(params: GpuBatchParams): Promise<GpuResponse> {
-  if (!EMBEDDINGS_GPU_URL) {
-    throw new Error('EMBEDDINGS_GPU_URL não configurado');
+  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para batch
+  const gpuResponse = await requestGpu({
+    serviceType: GpuServiceType.EMBEDDINGS,
+    endpoint: '/embed/batch',
+    method: 'POST',
+    priority: GpuRequestPriority.MEDIUM,
+    timeout: GPU_TIMEOUT_MS * 2, // Batch leva mais tempo
+    body: params,
+  });
+
+  if (!gpuResponse.success || !gpuResponse.data) {
+    throw new Error(gpuResponse.error || 'Erro ao gerar embeddings em batch');
   }
-  
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), GPU_TIMEOUT_MS * 2); // Batch leva mais tempo
-  
-  try {
-    const response = await fetch(`${EMBEDDINGS_GPU_URL}/embed/batch`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
-      signal: controller.signal,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`GPU Batch API error: ${response.status} - ${errorText}`);
-    }
-    
-    return await response.json() as GpuResponse;
-  } finally {
-    clearTimeout(timeoutId);
-  }
+
+  return gpuResponse.data as GpuResponse;
 }
 
 // Circuit breakers serão criados no start do worker
@@ -464,7 +441,7 @@ export interface EmbeddingWorkerStatus {
   currentConcurrent: number;
   queueSize: number;
   gpuWarm: boolean;
-  gpuUrl: string;
+  gpuManagerUrl: string;
 }
 
 /**
@@ -476,8 +453,7 @@ export function startEmbeddingWorker(config: EmbeddingWorkerConfig): void {
     return;
   }
   
-  if (!EMBEDDINGS_GPU_URL) {
-    logger.error('EMBEDDINGS_GPU_URL não configurado - embedding worker não iniciará');
+  // GPU Manager Service é usado via requestGpu, não precisa validar URL aqui
     return;
   }
   
@@ -506,7 +482,7 @@ export function startEmbeddingWorker(config: EmbeddingWorkerConfig): void {
   isRunning = true;
   
   logger.info({
-    gpuUrl: EMBEDDINGS_GPU_URL,
+    gpuManager: 'enabled',
     pollIntervalMs: POLL_INTERVAL_MS,
     maxConcurrent: MAX_CONCURRENT,
   }, 'Embedding worker iniciado - Estratégia Warm on Demand (30 min keep-warm)');
@@ -541,7 +517,7 @@ export async function getEmbeddingWorkerStatus(): Promise<EmbeddingWorkerStatus>
     currentConcurrent,
     queueSize: await getQueueSize(),
     gpuWarm: isGpuWarm(),
-    gpuUrl: EMBEDDINGS_GPU_URL,
+    gpuManager: 'enabled',
   };
 }
 
