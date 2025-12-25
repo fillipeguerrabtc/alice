@@ -3884,8 +3884,10 @@ jobs:
           # BUG FIX 25/12/2025: GPU Manager Service é interno - não exposto via Traefik
           # Em self-hosted runner (servidor Hetzner), verificar via docker ps + localhost
           # Em github-hosted runner, não é possível verificar (serviço interno)
+          # BUG FIX 25/12/2025: Usar runner.name ao invés de runner.os (runner.os retorna "Linux"/"Windows"/"macOS")
+          # runner.name é "GitHub Actions" para GitHub-hosted, ou nome customizado para self-hosted
           RUNNER_NAME="${{ runner.name }}"
-          if [ "$RUNNER_NAME" == "hetzner-deploy-runner" ] || [ "$RUNNER_NAME" == "hetzner-gpu-runner" ] || ([ "${{ runner.os }}" == "Linux" ] && [ "$RUNNER_NAME" != "GitHub Actions" ] && [ -n "$RUNNER_NAME" ]); then
+          if [ "$RUNNER_NAME" == "hetzner-deploy-runner" ] || [ "$RUNNER_NAME" == "hetzner-gpu-runner" ] || ([ "$RUNNER_NAME" != "GitHub Actions" ] && [ -n "$RUNNER_NAME" ]); then
             # Self-hosted runner: verificar container diretamente
             if docker ps --filter "name=alice-gpu-manager" --filter "status=running" --format "{{.Names}}" | grep -q "alice-gpu-manager"; then
               # Container está rodando, verificar health endpoint via localhost
