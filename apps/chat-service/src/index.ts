@@ -904,6 +904,7 @@ async function proxyStreamFromGpuManager(
   const decoder = new TextDecoder();
   let buffer = '';
   let fullResponse = '';
+  let onDoneCalled = false; // Guard para garantir que onDone seja chamado apenas uma vez
   
   try {
     while (true) {
@@ -921,7 +922,10 @@ async function proxyStreamFromGpuManager(
             // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
             // Callback pode fazer operações de banco de dados que precisam ser completadas
             // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
-            if (onDone) await onDone(fullResponse);
+            if (onDone && !onDoneCalled) {
+              onDoneCalled = true;
+              await onDone(fullResponse);
+            }
             return fullResponse;
           }
           
@@ -942,10 +946,24 @@ async function proxyStreamFromGpuManager(
     // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
     // Callback pode fazer operações de banco de dados que precisam ser completadas
     // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
-    if (onDone) await onDone(fullResponse);
+    if (onDone && !onDoneCalled) {
+      onDoneCalled = true;
+      await onDone(fullResponse);
+    }
     return fullResponse;
   } catch (error) {
     logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
+    // BUG FIX 25/12/2025: Garantir que onDone seja chamado mesmo em caso de erro
+    // Importante para HTTP SSE onde onDone fecha a resposta (res.end())
+    // Sem isso, o cliente HTTP fica pendurado indefinidamente
+    if (onDone && !onDoneCalled) {
+      onDoneCalled = true;
+      try {
+        await onDone(fullResponse); // Passar fullResponse parcial (pode estar vazio em caso de erro precoce)
+      } catch (onDoneError) {
+        logger.error({ error: onDoneError }, 'Erro ao executar callback onDone durante tratamento de erro');
+      }
+    }
     throw error;
   } finally {
     // BUG FIX 25/12/2025: Garantir que reader seja liberado SEMPRE, mesmo em caso de erro ou early return
@@ -2010,15 +2028,32 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         },
         (_responseText: string) => {
           // HTTP SSE: não precisa do responseText, apenas fecha a conexão
-          res.write('data: [DONE]\n\n');
-          res.end();
+          // BUG FIX 25/12/2025: onDone sempre será chamado (mesmo em caso de erro)
+          // Garantir que não tentamos fechar resposta já fechada
+          if (!res.headersSent || !res.writableEnded) {
+            try {
+              res.write('data: [DONE]\n\n');
+              res.end();
+            } catch (endError) {
+              // Resposta já fechada, ignorar
+              logger.debug({ error: endError }, 'Tentativa de fechar resposta já fechada');
+            }
+          }
         }
       );
     } catch (streamError) {
       logger.error({ error: streamError }, 'Erro no streaming do GPU Manager Service');
-      if (!res.headersSent) {
-        res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
-        res.end();
+      // BUG FIX 25/12/2025: onDone já foi chamado no catch interno de proxyStreamFromGpuManager
+      // Mas pode ter fechado a resposta com [DONE] ao invés de erro
+      // Tentar enviar mensagem de erro apenas se resposta ainda estiver aberta
+      if (!res.headersSent || !res.writableEnded) {
+        try {
+          res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
+          res.end();
+        } catch (endError) {
+          // Resposta já fechada (provavelmente por onDone), ignorar
+          logger.debug({ error: endError }, 'Resposta já fechada por onDone callback');
+        }
       }
     }
   } catch (error) {
