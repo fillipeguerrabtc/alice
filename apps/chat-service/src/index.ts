@@ -857,12 +857,13 @@ async function* streamResponse(response: globalThis.Response): AsyncGenerator<st
  * @param llmMessages Mensagens para enviar ao LLM
  * @param onChunk Callback chamado para cada chunk de conteúdo (para WebSocket: ws.send)
  * @param onDone Callback chamado quando stream termina (para WebSocket: salvar mensagem)
+ *                 BUG FIX 25/12/2025: Suporta callbacks async para operações de banco de dados
  * @returns Promise que resolve com a resposta completa (concatenada)
  */
 async function proxyStreamFromGpuManager(
   llmMessages: LLMMessage[],
   onChunk: (content: string) => void,
-  onDone?: () => void
+  onDone?: () => Promise<void> | void
 ): Promise<string> {
   const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
   
@@ -916,7 +917,9 @@ async function proxyStreamFromGpuManager(
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
           if (data === '[DONE]') {
-            if (onDone) onDone();
+            // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
+            // Callback pode fazer operações de banco de dados que precisam ser completadas
+            if (onDone) await onDone();
             return fullResponse;
           }
           
@@ -934,7 +937,9 @@ async function proxyStreamFromGpuManager(
       }
     }
     
-    if (onDone) onDone();
+    // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
+    // Callback pode fazer operações de banco de dados que precisam ser completadas
+    if (onDone) await onDone();
     return fullResponse;
   } catch (error) {
     logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
