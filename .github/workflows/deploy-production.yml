@@ -1525,8 +1525,15 @@ jobs:
     # ENTERPRISE-GRADE (25/12/2025): Runner no Deploy Server (separado de produção)
     # Runner no Deploy Server executa deploy remoto no Production Server via SSH
     # Isolamento completo entre CI/CD e produção (best practice enterprise 2025/2026)
-    runs-on: [self-hosted, hetzner, deploy]
-    # Fallback para GitHub-hosted runner se self-hosted não disponível
+    # BUG FIX 25/12/2025: Usar apenas 'self-hosted' permite qualquer runner self-hosted
+    # O step detect-runner (linhas 1643-1662) identifica runner específico via runner.name
+    # Se runner.name == 'hetzner-deploy-runner', executa deploy remoto
+    # Se runner.name == 'hetzner-gpu-runner', executa deploy local (legado)
+    # Se runner.name != 'GitHub Actions' (outro self-hosted), assume deploy-server
+    # Se runner.name == 'GitHub Actions' (github-hosted), executa via SSH (fallback)
+    # NOTA: Para garantir runners self-hosted, configure labels no runner registration
+    # Fallback para github-hosted via SSH se self-hosted não disponível (detect-runner step)
+    runs-on: self-hosted
     # timeout para evitar jobs stuck em deploy
     timeout-minutes: 30
     needs: [build-docker, image-security-scan]
