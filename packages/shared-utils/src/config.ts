@@ -76,9 +76,7 @@ const envSchema = z.object({
   
   DATABASE_URL: z.string().optional(),
   
-  SALAD_API_KEY: z.string().optional(),
-  SALAD_ORGANIZATION_ID: z.string().optional(),
-  SALAD_API_URL: z.string().default('https://api.salad.com/api/public'),
+  // Salad Cloud removido - migrado para GPU Manager Service (Hetzner GEX44)
   
   CORS_ORIGINS: corsOriginsSchema,
   
@@ -371,22 +369,19 @@ export const RAG_CHUNK_CONFIG = {
 };
 
 /**
- * Configuração Salad Cloud (LLM e Treinamento)
- * CORREÇÃO 17/12/2025: Migrado para Container Groups vLLM (API OpenAI-compatible)
- * Modelo: Mixtral 8x7B AWQ (quantizado para RTX 4090 24GB VRAM)
+ * Configuração GPU Manager Service (Hetzner GEX44)
+ * ARQUITETURA ENTERPRISE (25/12/2025): Todos os serviços GPU rodam localmente
+ * Modelo: Mixtral 8x7B AWQ (quantizado para RTX 4000 Ada 20GB VRAM)
  */
-export const SALAD_CONFIG = {
-  // Container Group URLs (geradas pelo deploy-salad-gpu.yml via Terraform)
-  // IMPORTANTE: Nomes devem corresponder ao que os serviços esperam
-  mixtralUrl: process.env.SALAD_MIXTRAL_URL || '',
-  fluxUrl: process.env.SALAD_FLUX_URL || '',
-  whisperUrl: process.env.SALAD_WHISPER_URL || '',
-  embeddingsUrl: process.env.EMBEDDINGS_GPU_URL || '',
-  // Legacy (mantido para compatibilidade com código existente)
-  apiUrl: process.env.SALAD_API_URL || 'https://api.salad.com/api/public',
-  organizationId: process.env.SALAD_ORGANIZATION_ID || '',
+export const GPU_MANAGER_CONFIG = {
+  // GPU Manager Service URL (localhost em produção)
+  url: process.env.GPU_MANAGER_URL || 'http://localhost:3008',
   models: {
     chat: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+    embeddings: 'Qwen/Qwen3-Embedding-8B',
+    image: 'laion/CLIP-ViT-H-14-laion2B-s32B-b79K',
+    asr: 'nvidia/Canary-1B',
+    flux: 'black-forest-labs/FLUX.1-schnell',
   },
   defaults: {
     maxTokens: 4096,
@@ -394,3 +389,6 @@ export const SALAD_CONFIG = {
     topP: 0.9,
   },
 };
+
+// Legacy: SALAD_CONFIG removido - usar GPU_MANAGER_CONFIG
+export const SALAD_CONFIG = GPU_MANAGER_CONFIG;

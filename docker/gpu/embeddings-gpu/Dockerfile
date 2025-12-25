@@ -5,11 +5,14 @@
 # - Texto: Qwen3-Embedding-8B (4096 dim) - armazenado em Qdrant
 # - Imagem: OpenCLIP ViT-H/14 (1024 dim) - armazenado em pgvector
 # 
-# GPU: RTX 4090 (24GB VRAM)
+# GPU: RTX 4000 Ada (20GB VRAM) - Hetzner GEX44
 # VRAM estimado: ~16GB para Qwen3 + ~2GB para OpenCLIP
 # 
+# NOTA: Este Dockerfile é legado - embeddings agora via GPU Manager Service
+# Mantido apenas para referência histórica
+# 
 # Autor: Fillipe Guerra
-# Data: 17 de Dezembro de 2025
+# Data: 25 de Dezembro de 2025
 # =============================================================================
 
 FROM nvidia/cuda:12.1-runtime-ubuntu22.04

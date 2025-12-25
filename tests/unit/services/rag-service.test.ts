@@ -272,7 +272,7 @@ describe('RAG Service - Health Check', () => {
       status: 'ok',
       service: 'rag-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'salad-gpu',
+      embeddingsProvider: 'gpu-manager-service',
       model: 'Qwen/Qwen3-Embedding-8B',
       circuitBreaker: {
         state: 'closed',
@@ -281,7 +281,7 @@ describe('RAG Service - Health Check', () => {
     };
 
     expect(health.status).toBe('ok');
-    expect(health.embeddingsProvider).toBe('salad-gpu');
+    expect(health.embeddingsProvider).toBe('gpu-manager-service');
     expect(health.model).toBe('Qwen/Qwen3-Embedding-8B');
   });
 });
@@ -385,7 +385,7 @@ describe('RAG Service - Deduplicação', () => {
 // ============================================================================
 
 describe('RAG Service - Circuit Breakers', () => {
-  // ARQUITETURA 100% GPU (15/12/2025) - Salad Cloud
+  // ARQUITETURA 100% GPU (25/12/2025) - GPU Manager Service (Hetzner GEX44)
   const breakers = {
     embeddings: {
       name: 'embedding-gpu',

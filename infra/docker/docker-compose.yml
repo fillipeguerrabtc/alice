@@ -68,8 +68,6 @@ services:
       PORT: 3002
       SERVICE_NAME: chat-service
       DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
-      SALAD_API_KEY: ${SALAD_API_KEY:-}
-      SALAD_ORGANIZATION_ID: ${SALAD_ORGANIZATION_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -110,7 +108,6 @@ services:
       PORT: 3004
       SERVICE_NAME: training-service
       DATABASE_URL: postgresql://alice:alice_dev_password@postgres:5432/alice_development
-      SALAD_API_KEY: ${SALAD_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy

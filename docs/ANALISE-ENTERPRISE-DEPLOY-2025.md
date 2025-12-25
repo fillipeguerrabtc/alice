@@ -88,7 +88,7 @@
 #### Opção 1: Runner em Servidor Separado (Recomendado para Alice)
 
 **Arquitetura:**
-- **Deploy Server:** Hetzner CX43 (8 vCPU, 16GB RAM) - ~€20/mês
+- **Deploy Server:** Hetzner CX11 (1 vCPU, 2GB RAM) - ~€4.51/mês (mínimo para runner)
 - **Production Server:** Hetzner GPU Server (já existente)
 - Runner no Deploy Server, deploy via SSH/API para Production
 
@@ -192,7 +192,7 @@ spec:
 - ✅ Alinhado com best practices enterprise 2025
 
 **Plano de Implementação:**
-1. Provisionar Hetzner CX43 como Deploy Server
+1. Provisionar Hetzner CX11 como Deploy Server (mínimo para runner)
 2. Instalar GitHub Actions Runner no Deploy Server
 3. Configurar SSH do Deploy Server para Production Server
 4. Atualizar workflow para usar runner separado

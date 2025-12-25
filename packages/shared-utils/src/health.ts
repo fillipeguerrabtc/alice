@@ -68,7 +68,7 @@ export interface HealthCheckConfig {
  *   service: 'chat-service',
  *   version: '1.0.0',
  *   circuitBreakers: new Map([
- *     ['salad-llm', saladBreaker],
+ *     ['gpu-llm', gpuBreaker],
  *     ['rag-service', ragBreaker],
  *   ]),
  * });

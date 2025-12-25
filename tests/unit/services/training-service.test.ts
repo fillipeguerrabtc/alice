@@ -2,7 +2,7 @@
  * Testes do Training Service - Alice Enterprise Platform
  * 
  * Testes unitários para treinamento e fine-tuning:
- * - Salad Cloud integration
+ * - GPU Manager Service integration (Hetzner GEX44)
  * - Deduplicação semântica (SemHash)
  * - Auto-learning scheduler
  * - JSONL generation
@@ -89,7 +89,7 @@ describe('Training Service - Deduplicação Semântica', () => {
   // ARQUITETURA 100% GPU (15/12/2025)
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
-    embeddingDim: 4096, // Qwen3-Embedding-8B GPU (Salad Cloud)
+    embeddingDim: 4096, // Qwen3-Embedding-8B GPU (GPU Manager Service)
     batchSize: 100,
   };
 
@@ -288,7 +288,7 @@ describe('Training Service - Health Check', () => {
     timestamp: string;
     embeddingsProvider: string;
     model: string;
-    saladCloudAvailable: boolean;
+    fineTuningStatus: string;
     circuitBreakers: {
       embeddings: { state: string; stats: object };
       saladContainerGroups: { state: string; stats: object };
@@ -390,8 +390,7 @@ describe('Training Service - Circuit Breakers', () => {
       failureThreshold: 5,
       resetTimeout: 30000,
     },
-    saladContainerGroups: {
-      name: 'salad-container-groups',
+    // saladContainerGroups removido - migrado para GPU Manager Service
       failureThreshold: 3,
       resetTimeout: 60000,
     },
@@ -402,10 +401,7 @@ describe('Training Service - Circuit Breakers', () => {
     expect(breakers.embeddings.failureThreshold).toBe(5);
   });
 
-  it('deve ter circuit breaker para Salad Container Groups', () => {
-    expect(breakers.saladContainerGroups.name).toBe('salad-container-groups');
-    expect(breakers.saladContainerGroups.resetTimeout).toBe(60000);
-  });
+  // Circuit breaker para Salad Container Groups removido - migrado para GPU Manager Service
 });
 
 // ============================================================================

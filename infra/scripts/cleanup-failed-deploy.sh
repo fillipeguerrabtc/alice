@@ -188,7 +188,6 @@ log_info "═══ 4. ARQUIVOS TEMPORÁRIOS ═══"
 
 TEMP_FILES=(
     "/tmp/.env.prod"
-    "/tmp/salad_endpoints.env"
     "/tmp/langfuse_db_password"
     "/tmp/alertmanager_smtp_password"
     "/tmp/.env.prod.tmp"

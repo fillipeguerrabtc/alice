@@ -1067,7 +1067,7 @@ export const webCrawlResults = pgTable(
 );
 
 // ============================================================================
-// MEDIA JOBS (Pipeline multimodal pesado - GPU Salad / CPU local)
+// MEDIA JOBS (Pipeline multimodal pesado - GPU Manager Service / CPU local)
 // ============================================================================
 
 export const mediaJobs = pgTable(
@@ -1123,7 +1123,7 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - Salad Cloud GPU)
+// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - GPU Manager Service Hetzner GEX44)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {
@@ -2139,7 +2139,7 @@ export const tradingDataset = pgTable(
   })
 );
 
-// JOBS DE TREINAMENTO LORA (Executados na Salad Cloud)
+// JOBS DE TREINAMENTO LORA (Executados no Hetzner GPU GEX44 - em migração)
 // Gerencia ciclo de vida do treinamento LoRA para trading
 export const tradingLoraJobs = pgTable(
   "trading_lora_jobs",
@@ -2181,9 +2181,8 @@ export const tradingLoraJobs = pgTable(
     resultAdapterPath: varchar("result_adapter_path", { length: 500 }),  // Path do adapter LoRA
     resultAdapterSize: integer("result_adapter_size"),                    // Tamanho em bytes
     
-    // Salad Cloud
-    saladContainerGroupId: varchar("salad_container_group_id", { length: 255 }),
-    saladMachineId: varchar("salad_machine_id", { length: 255 }),
+    // GPU Manager Service (Hetzner GEX44) - campos removidos (migração completa)
+    // TODO: Adicionar campos para tracking de jobs GPU locais se necessário
     
     // Erro
     errorMessage: text("error_message"),
@@ -2530,7 +2529,7 @@ export const mediaUploads = pgTable(
     processingTimeMs: integer("processing_time_ms"),
     
     // Embeddings para RAG multimodal - ARQUITETURA ENTERPRISE (17/12/2025)
-    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Salad Cloud → pgvector
+    // Imagem: OpenCLIP ViT-H/14 (1024 dim) - GPU Manager Service (Hetzner GEX44) → pgvector
     clipEmbedding: imageVector("clip_embedding"),
     // Texto: DEPRECATED - Novos embeddings vão para Qdrant (Qwen3-Embedding-8B, 4096 dim)
     textEmbedding: textVector("text_embedding"),

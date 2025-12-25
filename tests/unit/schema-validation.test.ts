@@ -360,7 +360,7 @@ describe('Schema - Tabelas Principais', () => {
   });
 
   describe('fineTuningJobs', () => {
-    it('deve ter campos de Salad Cloud', () => {
+    it('deve ter campos de GPU Manager Service (migração)', () => {
       const columns = Object.keys(fineTuningJobs);
       expect(columns).toContain('containerGroupId');
       expect(columns).toContain('baseModel');
@@ -498,7 +498,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
         modelo: 'Mixtral-8x7B',
-        endpoint: 'https://salad-cloud.example.com/v1/chat',
+        endpoint: 'http://localhost:3008/v1/chat',
         maxTokens: 4096,
         temperatura: 0.7,
       };

@@ -715,10 +715,10 @@ describe('Config - RAG Chunk Configuration', () => {
   });
 });
 
-describe('Config - Salad Cloud Configuration', () => {
-  describe('SALAD_CONFIG', () => {
-    it('deve ter URL padrão da API Salad Cloud', () => {
-      expect(SALAD_CONFIG.apiUrl).toBe('https://api.salad.com/api/public');
+describe('Config - GPU Manager Service Configuration', () => {
+  describe('GPU_MANAGER_CONFIG', () => {
+    it('deve ter URL padrão do GPU Manager Service', () => {
+      expect(SALAD_CONFIG.url).toBe('http://localhost:3008');
     });
 
     it('deve ter modelo de chat configurado como Mixtral 8x7B AWQ', () => {

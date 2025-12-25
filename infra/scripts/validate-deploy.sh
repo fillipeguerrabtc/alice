@@ -211,11 +211,11 @@ fi
 # =============================================================================
 echo -e "\n${YELLOW}═══ 5. SERVIÇOS EXTERNOS ═══${NC}\n"
 
-# Salad Cloud (LLM)
-if curl -s --connect-timeout 5 "https://api.salad.com/api/public/health" > /dev/null 2>&1; then
-    log_success "Salad Cloud (LLM) - acessível"
+# GPU Manager Service (Hetzner GEX44)
+if curl -s --connect-timeout 5 "http://localhost:3008/health" > /dev/null 2>&1; then
+    log_success "GPU Manager Service - acessível"
 else
-    log_warn "Salad Cloud (LLM) - não acessível (verificar API key)"
+    log_warn "GPU Manager Service - não acessível (verificar se está rodando)"
 fi
 
 # Stripe

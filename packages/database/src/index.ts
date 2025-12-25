@@ -377,8 +377,8 @@ export const toSql = pgvector.toSql;
 // - Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant (suporta HNSW com 4096+ dim)
 // - Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector
 export const EMBEDDING_DIMENSIONS = {
-  TEXT: 4096,    // Qwen3-Embedding-8B (GPU Salad Cloud) → Qdrant
-  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Salad Cloud) → pgvector
+  TEXT: 4096,    // Qwen3-Embedding-8B (GPU Manager Service - Hetzner GEX44) → Qdrant
+  CLIP: 1024,    // OpenCLIP ViT-H/14 (GPU Manager Service - Hetzner GEX44) → pgvector
 } as const;
 
 /**

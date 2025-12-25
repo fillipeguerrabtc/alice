@@ -54,7 +54,7 @@ fi
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════════════╗"
 echo "║     ALICE ENTERPRISE PLATFORM - SETUP HETZNER SERVER              ║"
-echo "║     Arquitetura: 100% GPU Salad Cloud (17/12/2025)                ║"
+echo "║     Arquitetura: 100% GPU Local (Hetzner GEX44 - 25/12/2025)     ║"
 echo "╚═══════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 

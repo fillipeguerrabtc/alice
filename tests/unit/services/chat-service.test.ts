@@ -22,15 +22,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 describe('Chat Service - Configuração LLM', () => {
   const LLM_CONFIG = {
-    provider: 'salad-cloud',
+    provider: 'gpu-manager-service',
     model: 'Mixtral-8x7B',
     maxTokens: 4096,
     temperature: 0.7,
     topP: 0.9,
   };
 
-  it('deve usar Salad Cloud como provider', () => {
-    expect(LLM_CONFIG.provider).toBe('salad-cloud');
+  it('deve usar GPU Manager Service como provider', () => {
+    expect(LLM_CONFIG.provider).toBe('gpu-manager-service');
   });
 
   it('deve usar modelo Mixtral 8x7B', () => {
@@ -416,7 +416,7 @@ describe('Chat Service - Health Check', () => {
       status: 'ok',
       service: 'chat-service',
       timestamp: new Date().toISOString(),
-      llmProvider: 'salad-cloud',
+      llmProvider: 'gpu-manager-service',
       model: 'Mixtral-8x7B',
       circuitBreakers: {
         llm: { state: 'closed', stats: {} },
@@ -425,7 +425,7 @@ describe('Chat Service - Health Check', () => {
     };
 
     expect(health.status).toBe('ok');
-    expect(health.llmProvider).toBe('salad-cloud');
+    expect(health.llmProvider).toBe('gpu-manager-service');
     expect(health.model).toBe('Mixtral-8x7B');
   });
 });

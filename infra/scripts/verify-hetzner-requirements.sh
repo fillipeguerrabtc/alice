@@ -3,20 +3,20 @@
 # Script de Verificação/Configuração de Requisitos - Hetzner Server
 # =============================================================================
 # Descrição: Verifica e configura automaticamente todos os requisitos para
-#            a arquitetura 100% GPU Salad Cloud + Hetzner
+#            a arquitetura 100% GPU local (Hetzner GPU GEX44)
 #
-# ARQUITETURA ENTERPRISE (17/12/2025):
-# - LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud
-# - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim) via Salad Cloud
+# ARQUITETURA ENTERPRISE (25/12/2025):
+# - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)
+# - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim) via GPU Manager Service
 # - Vector DB: Qdrant (texto 4096 dim) + PostgreSQL pgvector (imagem 1024 dim)
-# - Containers: 43 totais (7 infra + 7 Alice + 15 ERPNext + 13 obs + 1 backup)
+# - Containers: 50 totais (8 infra + 7 Alice + 15 ERPNext + 14 obs + 5 GPU + 1 backup)
 #
 # Uso: ./verify-hetzner-requirements.sh [--fix] [--verbose]
 #   --fix     : Corrige automaticamente problemas encontrados
 #   --verbose : Mostra detalhes adicionais
 #
 # Autor: Fillipe Guerra
-# Data: 17 de Dezembro de 2025
+# Data: 25 de Dezembro de 2025
 # =============================================================================
 
 set -euo pipefail
@@ -83,7 +83,7 @@ fi
 echo -e "${CYAN}"
 echo "╔═══════════════════════════════════════════════════════════════════╗"
 echo "║     ALICE ENTERPRISE - VERIFICAÇÃO DE REQUISITOS HETZNER          ║"
-echo "║     Arquitetura: 100% GPU Salad Cloud + Hetzner                   ║"
+echo "║     Arquitetura: 100% GPU Local (Hetzner GEX44)                    ║"
 echo "╚═══════════════════════════════════════════════════════════════════╝"
 echo -e "${NC}"
 echo "Data: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -343,15 +343,16 @@ else
 fi
 
 # =============================================================================
-# 7. VERIFICAÇÃO DE CONECTIVIDADE SALAD CLOUD
+# 7. VERIFICAÇÃO DE GPU (Hetzner GEX44)
 # =============================================================================
-log_header "7. CONECTIVIDADE SALAD CLOUD (GPUs)"
+log_header "7. GPU LOCAL (Hetzner GEX44)"
 
-# API Salad
-if curl -s --connect-timeout 5 "https://api.salad.com" > /dev/null 2>&1; then
-    log_ok "Salad Cloud API: acessível"
+# Verificar NVIDIA GPU
+if command -v nvidia-smi >/dev/null 2>&1; then
+    GPU_INFO=$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader 2>/dev/null || echo "N/A")
+    log_ok "NVIDIA GPU: ${GPU_INFO}"
 else
-    log_warn "Salad Cloud API: não acessível (verificar DNS/firewall)"
+    log_warn "NVIDIA GPU: nvidia-smi não encontrado (verificar drivers NVIDIA)"
 fi
 
 # Container Registry (GHCR)

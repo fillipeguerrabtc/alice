@@ -2,7 +2,7 @@
  * Response Cache (Greetings Gate) - Alice Enterprise Platform
  * 
  * Sistema de cache para respostas de saudações e mensagens simples.
- * Evita chamadas desnecessárias ao LLM GPU Salad Cloud para mensagens triviais.
+ * Evita chamadas desnecessárias ao LLM GPU (GPU Manager Service) para mensagens triviais.
  * 
  * Funcionalidades:
  * - Detecção de saudações (PT-BR e EN)

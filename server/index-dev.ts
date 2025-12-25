@@ -56,7 +56,7 @@ function setupPreviewChatEndpoint(app: express.Express) {
       previewMode: true,
       model: 'Mixtral-8x7B-preview',
       provider: 'Preview (desenvolvimento)',
-      note: 'Em producao, conecta ao Salad Cloud com Mixtral 8x7B'
+      note: 'Em produção, conecta ao GPU Manager Service (Hetzner GEX44) com Mixtral 8x7B'
     });
   });
 }
@@ -65,7 +65,7 @@ function generatePreviewResponse(userMessage: string): string {
   const lowerMessage = userMessage.toLowerCase();
   
   if (lowerMessage.includes('ola') || lowerMessage.includes('oi') || lowerMessage.includes('hello')) {
-    return 'Ola! Sou Alice, sua assistente de IA enterprise. Este e o modo preview de desenvolvimento. Em producao, estarei conectada ao Mixtral 8x7B no Salad Cloud. Como posso ajudar?';
+    return 'Olá! Sou Alice, sua assistente de IA enterprise. Este é o modo preview de desenvolvimento. Em produção, estarei conectada ao Mixtral 8x7B via GPU Manager Service (Hetzner GEX44). Como posso ajudar?';
   }
   
   if (lowerMessage.includes('quem') && lowerMessage.includes('voce')) {
@@ -76,7 +76,7 @@ function generatePreviewResponse(userMessage: string): string {
     return 'Posso ajudar com diversas tarefas: responder perguntas, analisar documentos, gerar insights de negocios, e muito mais. Em producao, terei acesso ao modelo Mixtral 8x7B.';
   }
 
-  return `Recebi sua mensagem. Este e o modo preview de desenvolvimento. Em producao (Hetzner Cloud), estarei conectada ao Mixtral 8x7B no Salad Cloud para respostas completas e inteligentes.`;
+  return `Recebi sua mensagem. Este é o modo preview de desenvolvimento. Em produção (Hetzner GEX44), estarei conectada ao Mixtral 8x7B via GPU Manager Service para respostas completas e inteligentes.`;
 }
 
 // ============================================================================

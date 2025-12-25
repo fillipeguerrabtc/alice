@@ -268,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({
       available: llmClient.isAvailable(),
       model: "Mixtral-8x7B",
-      provider: "Salad Cloud",
+      provider: "GPU Manager Service (Hetzner GEX44)",
     });
   });
 
@@ -296,7 +296,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (!llmClient.isAvailable()) {
         return res.status(503).json({ 
-          message: "LLM não disponível. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID." 
+          message: "LLM não disponível. GPU Manager Service deve estar configurado em produção." 
         });
       }
 

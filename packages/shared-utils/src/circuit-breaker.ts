@@ -5,7 +5,7 @@
  * Protege contra falhas em cascata em serviços externos.
  * 
  * SEGURANÇA 2025: Integra AbortController para cancelar requisições HTTP em timeout.
- * Evita resource leaks quando o circuit breaker atinge timeout (Salad Cloud Guide 2025).
+ * Evita resource leaks quando o circuit breaker atinge timeout (Best Practices 2025).
  * 
  * @module @alice/shared-utils/circuit-breaker
  */
@@ -45,12 +45,19 @@ export interface CircuitBreakerConfig {
  * 
  * const breaker = createCircuitBreaker(myAsyncFunction, {
  *   name: 'my-service',
- *   ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+ *   ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
  * });
  * ```
  */
 export const CIRCUIT_BREAKER_PRESETS = {
-  /** Serviço LLM Salad Cloud - timeout alto para inferência Mixtral 8x7B */
+  /** Serviço LLM GPU Manager Service - timeout alto para inferência Mixtral 8x7B */
+  gpuLLM: {
+    timeout: 60000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 5,
+  },
+  // Legacy: saladLLM mantido para compatibilidade
   saladLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
@@ -64,14 +71,21 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  /** FLUX deployment management - operações de container (timeout alto) */
+  /** GPU Manager Service - operações de gerenciamento GPU (timeout alto) */
+  gpuManager: {
+    timeout: 60000,
+    errorThresholdPercentage: 50,
+    resetTimeout: 30000,
+    volumeThreshold: 3,
+  },
+  // Legacy: saladDeployment mantido para compatibilidade
   saladDeployment: {
     timeout: 60000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  /** OpenCLIP ViT-H/14 embeddings - ARQUITETURA 100% GPU (Salad Cloud) */
+  /** OpenCLIP ViT-H/14 embeddings - ARQUITETURA 100% GPU (GPU Manager Service) */
   clipEmbeddings: {
     timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)
     errorThresholdPercentage: 50,
@@ -267,7 +281,7 @@ export interface CircuitBreakerStats {
  * 
  * const breaker = createCircuitBreaker(apiCall, {
  *   name: 'example-api',
- *   ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+ *   ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
  * });
  * 
  * const result = await breaker.fire({ message: 'Hello' });
@@ -369,7 +383,7 @@ export interface AbortableFetchOptions extends RequestInit {
  * Wrapper de fetch com AbortController integrado.
  * 
  * SEGURANÇA 2025: Cancela requisições HTTP pendentes quando timeout é atingido.
- * Evita resource leaks em cenários de alta latência (Salad Cloud, APIs externas).
+ * Evita resource leaks em cenários de alta latência (GPU Manager Service, APIs externas).
  * 
  * @param url - URL da requisição
  * @param options - Opções de fetch com timeout
@@ -431,10 +445,10 @@ export async function fetchWithAbort(
  * 
  * const { breaker, fetch: protectedFetch } = createProtectedFetch({
  *   name: 'salad-llm',
- *   ...CIRCUIT_BREAKER_PRESETS.saladLLM,
+ *   ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
  * });
  * 
- * const response = await protectedFetch('https://api.salad.com/v1/chat', {
+ * const response = await protectedFetch('http://localhost:3008/v1/chat', {
  *   method: 'POST',
  *   body: JSON.stringify({ model: 'Mixtral-8x7B', messages: [] }),
  *   headers: { 'Authorization': 'Bearer xxx' },

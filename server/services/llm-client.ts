@@ -4,9 +4,10 @@ import { createLogger } from "@alice/shared-utils";
 // Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger("llm-client");
 
-const SALAD_API_KEY = process.env.SALAD_API_KEY || "";
-const SALAD_ORGANIZATION_ID = process.env.SALAD_ORGANIZATION_ID || "";
-const SALAD_LLM_ENDPOINT = process.env.SALAD_LLM_ENDPOINT || "https://api.salad.com/api/public";
+// NOTA: Este arquivo é apenas para desenvolvimento local (server/index-dev.ts)
+// Em produção, o chat-service usa GPU Manager Service (Hetzner GEX44)
+// LLM Client desabilitado - usar chat-service em produção
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || "http://localhost:3008";
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -38,39 +39,16 @@ export class LLMClient {
   private isConfigured: boolean;
 
   constructor() {
-    this.isConfigured = !!(SALAD_API_KEY && SALAD_ORGANIZATION_ID);
-    if (!this.isConfigured) {
-      logger.warn("LLM Client: SALAD_API_KEY ou SALAD_ORGANIZATION_ID nao configurados - LLM indisponivel");
-    }
+    // NOTA: LLM Client desabilitado - desenvolvimento local apenas
+    // Em produção, usar chat-service que integra com GPU Manager Service
+    this.isConfigured = false;
+    logger.warn("LLM Client: Desabilitado - usar chat-service em produção (GPU Manager Service)");
   }
 
   async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
-    if (!this.isConfigured) {
-      throw new Error("LLM nao configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
-    }
-
-    const {
-      messages,
-      model = "Mixtral-8x7B",
-      temperature = 0.7,
-      maxTokens = 4096,
-    } = options;
-
-    const response = await fetch(`${SALAD_LLM_ENDPOINT}/inference/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Salad-Api-Key": SALAD_API_KEY,
-        "Salad-Organization": SALAD_ORGANIZATION_ID,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: false,
-      }),
-    });
+    // NOTA: LLM Client desabilitado - desenvolvimento local apenas
+    // Em produção, usar chat-service que integra com GPU Manager Service
+    throw new Error("LLM Client desabilitado - usar chat-service em produção (GPU Manager Service)");
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -106,32 +84,9 @@ export class LLMClient {
   }
 
   async *chatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
-    if (!this.isConfigured) {
-      throw new Error("LLM nao configurado. Configure SALAD_API_KEY e SALAD_ORGANIZATION_ID.");
-    }
-
-    const {
-      messages,
-      model = "Mixtral-8x7B",
-      temperature = 0.7,
-      maxTokens = 4096,
-    } = options;
-
-    const response = await fetch(`${SALAD_LLM_ENDPOINT}/inference/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Salad-Api-Key": SALAD_API_KEY,
-        "Salad-Organization": SALAD_ORGANIZATION_ID,
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-        stream: true,
-      }),
-    });
+    // NOTA: LLM Client desabilitado - desenvolvimento local apenas
+    // Em produção, usar chat-service que integra com GPU Manager Service
+    throw new Error("LLM Client desabilitado - usar chat-service em produção (GPU Manager Service)");
 
     if (!response.ok) {
       const errorText = await response.text();

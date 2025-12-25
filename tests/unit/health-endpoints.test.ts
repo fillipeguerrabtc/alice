@@ -88,7 +88,7 @@ const authHealthSchema = baseHealthSchema.extend({
  * Nota: O RAG breaker retorna estrutura flat (não nested em stats)
  */
 const chatHealthSchema = baseHealthSchema.extend({
-  llmProvider: z.literal('salad-cloud'),
+  llmProvider: z.literal('gpu-manager-service'),
   model: z.literal('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ'),
   circuitBreakers: z.object({
     llm: z.object({
@@ -104,7 +104,7 @@ const chatHealthSchema = baseHealthSchema.extend({
  */
 // ARQUITETURA 100% GPU (15/12/2025)
 const ragHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('salad-gpu'),
+  embeddingsProvider: z.literal('gpu-manager-service'),
   model: z.literal('Qwen/Qwen3-Embedding-8B'),
   circuitBreaker: z.object({
     state: z.enum(['open', 'closed', 'half-open']),
@@ -117,15 +117,11 @@ const ragHealthSchema = baseHealthSchema.extend({
  */
 // ARQUITETURA 100% GPU (15/12/2025)
 const trainingHealthSchema = baseHealthSchema.extend({
-  embeddingsProvider: z.literal('salad-gpu'),
+  embeddingsProvider: z.literal('gpu-manager-service'),
   model: z.literal('Qwen/Qwen3-Embedding-8B'),
-  saladCloudAvailable: z.boolean(),
+  fineTuningStatus: z.literal('migrating'),
   circuitBreakers: z.object({
     embeddings: z.object({
-      state: z.enum(['open', 'closed', 'half-open']),
-      stats: circuitBreakerStatsSchema,
-    }),
-    saladContainerGroups: z.object({
       state: z.enum(['open', 'closed', 'half-open']),
       stats: circuitBreakerStatsSchema,
     }),
@@ -209,7 +205,7 @@ const mockChatHealthResponse = {
   status: 'ok',
   service: 'chat-service',
   timestamp: FIXED_TIMESTAMP,
-  llmProvider: 'salad-cloud',
+  llmProvider: 'gpu-manager-service',
   model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
   circuitBreakers: {
     llm: {
@@ -230,8 +226,8 @@ const mockRagHealthResponse = {
   status: 'ok',
   service: 'rag-service',
   timestamp: FIXED_TIMESTAMP,
-  // ARQUITETURA ENTERPRISE (17/12/2025): Embeddings via Salad Cloud GPU
-  embeddingsProvider: 'salad-gpu',
+  // ARQUITETURA ENTERPRISE (25/12/2025): Embeddings via GPU Manager Service
+  embeddingsProvider: 'gpu-manager-service',
   model: 'Qwen/Qwen3-Embedding-8B',
   circuitBreaker: {
     state: 'closed',
@@ -252,7 +248,7 @@ const mockTrainingHealthResponse = {
       state: 'closed',
       stats: { failures: 0, successes: 50, timeouts: 0 },
     },
-    saladContainerGroups: {
+    // saladContainerGroups removido - migrado para GPU Manager Service
       state: 'closed',
       stats: { failures: 0, successes: 10, timeouts: 0 },
     },
@@ -345,8 +341,8 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockChatHealthResponse.service).toBe('chat-service');
     });
 
-    it('deve usar llmProvider "salad-cloud"', () => {
-      expect(mockChatHealthResponse.llmProvider).toBe('salad-cloud');
+    it('deve usar llmProvider "gpu-manager-service"', () => {
+      expect(mockChatHealthResponse.llmProvider).toBe('gpu-manager-service');
     });
 
     it('deve usar modelo "Mixtral-8x7B-AWQ"', () => {
@@ -379,8 +375,8 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockRagHealthResponse.service).toBe('rag-service');
     });
 
-    it('deve usar embeddingsProvider "salad-gpu"', () => {
-      expect(mockRagHealthResponse.embeddingsProvider).toBe('salad-gpu');
+    it('deve usar embeddingsProvider "gpu-manager-service"', () => {
+      expect(mockRagHealthResponse.embeddingsProvider).toBe('gpu-manager-service');
     });
 
     it('deve usar modelo "Qwen/Qwen3-Embedding-8B" (GPU)', () => {

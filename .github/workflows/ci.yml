@@ -778,7 +778,7 @@ jobs:
           # APENAS durante `pnpm install` em CI (não aplicar localmente via .npmrc).
           NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
 
-      # NOTA: Instalação Python removida - clip-inference-service migrado para Salad Cloud GPU (19/12/2025)
+      # NOTA: Instalação Python removida - serviços GPU migrados para Hetzner GPU GEX44 (25/12/2025)
       # O scan de segurança agora foca apenas em dependências Node.js (pnpm-lock.yaml)
 
       # SHA: aquasecurity/trivy-action@v0.28.0 (2024-10-15) - Supply Chain Security
