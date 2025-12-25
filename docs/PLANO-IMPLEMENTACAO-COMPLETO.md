@@ -15,21 +15,22 @@ Este documento fornece um plano passo a passo completo para implementar a migra�
 
 ## Fase 1: Preparação (Semana 1)
 
-### 1.1 Provisionamento Hetzner GPU
+### 1.1 Provisionamento Servidor Único com GPU
 
 **Duração**: 1-2 dias (depende da disponibilidade)
 
 **Passos**:
 
-1. **Escolher servidor GPU**:
+1. **Escolher servidor GPU** (substituirá CX43):
    - **Opção A**: Servidor customizado com RTX 3090/4090 (24GB) - €200-300/mês
    - **Opção B**: GEX44 com RTX 4000 (20GB) - €184/mês + €79 setup
+   - **Recomendado**: GEX44 (64GB RAM suficiente para 49 containers)
 
 2. **Seguir guia completo**: `docs/GUIA-PROVISIONAMENTO-HETZNER-GPU.md`
 
 3. **Verificações**:
    ```bash
-   # No servidor GPU
+   # No novo servidor
    nvidia-smi                    # Deve mostrar GPU
    docker --version              # Docker instalado
    docker compose version        # Docker Compose instalado
@@ -37,12 +38,12 @@ Este documento fornece um plano passo a passo completo para implementar a migra�
    ```
 
 **Checklist**:
-- [ ] Servidor GPU provisionado
+- [ ] Servidor GPU provisionado (substitui CX43)
 - [ ] Docker e NVIDIA Container Toolkit instalados
 - [ ] GPU detectada e funcionando
-- [ ] Rede interna configurada (se aplicável)
-- [ ] Firewall configurado
+- [ ] Firewall configurado (portas 22, 80, 443)
 - [ ] SSH acesso configurado
+- [ ] **CX43 pode ser desligado/excluído** (não há dados para migrar)
 
 ### 1.2 Preparação de Código
 
@@ -119,14 +120,13 @@ environment:
 - [ ] `GPU_FLUX_URL` (http://<IP>:8002)
 - [ ] `GPU_ASR_URL` (http://<IP>:8003)
 
-**Arquivo `.env.prod`** (no servidor CX43):
+**Arquivo `.env.prod`** (no servidor único):
 ```bash
-# GPU Services (Hetzner GPU Server)
-GPU_SERVER_IP=10.0.0.20  # ou IP público se não usar rede interna
-GPU_MIXTRAL_URL=http://${GPU_SERVER_IP}:8000
-GPU_EMBEDDINGS_URL=http://${GPU_SERVER_IP}:8001
-GPU_FLUX_URL=http://${GPU_SERVER_IP}:8002
-GPU_ASR_URL=http://${GPU_SERVER_IP}:8003
+# GPU Services (localhost - mesmo servidor)
+GPU_MIXTRAL_URL=http://localhost:8000
+GPU_EMBEDDINGS_URL=http://localhost:8001
+GPU_FLUX_URL=http://localhost:8002
+GPU_ASR_URL=http://localhost:8003
 ```
 
 ### 1.3 Testes Locais
@@ -235,16 +235,15 @@ curl http://<IP_GPU_SERVER>:8000/health  # Após deploy
 
 **Duração**: 2 dias
 
-**No servidor CX43**:
+**No servidor único**:
 
 1. **Atualizar .env.prod**:
    ```bash
-   # Adicionar variáveis GPU
-   echo "GPU_SERVER_IP=<IP_GPU_SERVER>" >> .env.prod
-   echo "GPU_MIXTRAL_URL=http://\${GPU_SERVER_IP}:8000" >> .env.prod
-   echo "GPU_EMBEDDINGS_URL=http://\${GPU_SERVER_IP}:8001" >> .env.prod
-   echo "GPU_FLUX_URL=http://\${GPU_SERVER_IP}:8002" >> .env.prod
-   echo "GPU_ASR_URL=http://\${GPU_SERVER_IP}:8003" >> .env.prod
+   # Adicionar variáveis GPU (localhost - mesmo servidor)
+   echo "GPU_MIXTRAL_URL=http://localhost:8000" >> .env.prod
+   echo "GPU_EMBEDDINGS_URL=http://localhost:8001" >> .env.prod
+   echo "GPU_FLUX_URL=http://localhost:8002" >> .env.prod
+   echo "GPU_ASR_URL=http://localhost:8003" >> .env.prod
    ```
 
 2. **Atualizar código** (já feito na Fase 1.2.3)
@@ -290,11 +289,13 @@ curl http://<IP_GPU_SERVER>:8000/health  # Após deploy
    ufw reload
    ```
 
-3. **Teste de conectividade**:
+3. **Teste de conectividade** (tudo localhost):
    ```bash
-   # Do CX43
-   ping <IP_GPU_SERVER>
-   curl http://<IP_GPU_SERVER>:8000/health
+   # No servidor único
+   curl http://localhost:8000/health  # Mixtral
+   curl http://localhost:8001/health  # Embeddings
+   curl http://localhost:8002/health  # FLUX
+   curl http://localhost:8003/health  # ASR
    ```
 
 **Checklist**:

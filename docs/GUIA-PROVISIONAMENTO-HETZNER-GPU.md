@@ -20,6 +20,8 @@ Este guia fornece instruções passo a passo para provisionar um servidor GPU na
 - [ ] Acesso SSH configurado (chave SSH)
 - [ ] Conhecimento básico de Linux e Docker
 
+> **⚠️ IMPORTANTE**: Este guia é para criar um **NOVO servidor GPU que SUBSTITUIRÁ o CX43 atual**. Todos os 45 containers serão migrados para o novo servidor, que também terá os 4 serviços GPU. **Total: 49 containers em 1 servidor único**. Como não há dados ainda (deploy nunca funcionou), a migração será simples - apenas provisionar novo servidor e fazer deploy completo.
+
 ---
 
 ## 2. Escolha do Servidor GPU
@@ -213,24 +215,31 @@ ufw enable
 ufw status
 ```
 
-### 5.2 Configurar Rede Interna Hetzner
+### 5.2 Configurar Rede (Servidor Único)
 
-**Opção 1: Private Network (Recomendado)**
+Como tudo roda no mesmo servidor, não é necessário configurar rede interna:
 
-1. Acesse [Hetzner Cloud Console](https://console.hetzner.cloud/)
-2. Vá em "Networks" → "Create Network"
-3. Nome: `alice-internal`
-4. IP Range: `10.0.0.0/16` (ou outro range privado)
-5. Adicione servidor CX43 e servidor GPU à mesma rede
-6. Configure IPs estáticos:
-   - CX43: `10.0.0.10`
-   - GPU: `10.0.0.20`
+- **Todos os serviços usam localhost** (latência zero)
+- **Firewall**: Apenas portas públicas necessárias (80, 443)
+- **Portas internas**: 8000-8003 (GPU services) não precisam ser expostas externamente
+- **Traefik**: Roteia internamente para serviços GPU via localhost
 
-**Opção 2: Usar IPs Públicos (Menos Seguro)**
+**Configuração de Firewall Simplificada:**
 
-- Servidor GPU terá IP público
-- Configurar firewall para permitir apenas do IP do CX43
-- **Não recomendado** para produção
+```bash
+# Permitir SSH
+ufw allow 22/tcp
+
+# Permitir HTTP/HTTPS (Traefik)
+ufw allow 80/tcp
+ufw allow 443/tcp
+
+# Portas GPU (apenas localhost, não expor)
+# 8000-8003 ficam apenas para comunicação interna
+
+# Ativar firewall
+ufw enable
+```
 
 ---
 

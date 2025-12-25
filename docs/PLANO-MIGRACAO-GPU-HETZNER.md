@@ -152,32 +152,46 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 - Dependência de internet
 - Complexidade de monitoramento
 
-### 2.2 Arquitetura Proposta (Hetzner GPU)
+### 2.2 Arquitetura Proposta (Servidor Único com GPU)
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│              Hetzner Cloud (GEX130 + CX43)                  │
+│         Hetzner Cloud - Servidor Único com GPU              │
 │                                                              │
 │  ┌───────────────────────────────────────────────────────┐  │
-│  │  CX43: Alice Services (7 containers)                  │  │
-│  │  - auth, chat, rag, training, integrations, etc.     │  │
-│  └───────────────────────────────────────────────────────┘  │
-│                          │                                    │
-│                          │ Rede Interna (<1ms latência)       │
-│                          ▼                                    │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  GEX130: GPU Services (4 containers)                  │  │
-│  │  ┌──────────────┐ ┌──────────────┐                   │  │
-│  │  │ Mixtral 8x7B │ │ Embeddings   │                   │  │
-│  │  │ RTX 6000 Ada │ │ RTX 6000 Ada │                   │  │
-│  │  └──────────────┘ └──────────────┘                   │  │
-│  │  ┌──────────────┐ ┌──────────────┐                   │  │
-│  │  │ FLUX.1       │ │ ASR Canary   │                   │  │
-│  │  │ RTX 6000 Ada │ │ RTX 6000 Ada │                   │  │
-│  │  └──────────────┘ └──────────────┘                   │  │
+│  │  TODOS os 49 containers em 1 servidor                 │  │
+│  │                                                         │  │
+│  │  INFRAESTRUTURA (8):                                    │  │
+│  │  postgres, redis, qdrant, traefik, dockerproxy, etc.   │  │
+│  │                                                         │  │
+│  │  ALICE SERVICES (7):                                    │  │
+│  │  auth, chat, rag, training, integrations, etc.         │  │
+│  │                                                         │  │
+│  │  ERPNEXT (15):                                         │  │
+│  │  mariadb, backend, workers, scheduler, etc.            │  │
+│  │                                                         │  │
+│  │  OBSERVABILITY (14):                                   │  │
+│  │  prometheus, grafana, jaeger, loki, etc.              │  │
+│  │                                                         │  │
+│  │  BACKUP (1):                                           │  │
+│  │  pgBackRest                                            │  │
+│  │                                                         │  │
+│  │  GPU SERVICES (4):                                     │  │
+│  │  ┌──────────────┐ ┌──────────────┐                    │  │
+│  │  │ Mixtral 8x7B │ │ Embeddings   │                    │  │
+│  │  │ RTX 3090/4090│ │ RTX 3090/4090│                    │  │
+│  │  └──────────────┘ └──────────────┘                    │  │
+│  │  ┌──────────────┐ ┌──────────────┐                    │  │
+│  │  │ FLUX.1       │ │ ASR Canary   │                    │  │
+│  │  │ RTX 3090/4090│ │ RTX 3090/4090│                    │  │
+│  │  └──────────────┘ └──────────────┘                    │  │
 │  └───────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+> **✅ VANTAGEM**: Tudo em **1 servidor único** = **latência zero** (localhost), arquitetura mais simples, menor custo total, mais fácil de gerenciar.
+
+> **⚠️ IMPORTANTE**: O servidor CX43 atual **será substituído** pelo novo servidor GPU. Todos os 45 containers serão migrados para o novo servidor, que também terá os 4 serviços GPU. **Total: 49 containers em 1 servidor**.
 
 **Vantagens:**
 - ✅ 1 ambiente unificado
@@ -189,22 +203,32 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 
 ### 2.3 Distribuição de Serviços
 
-#### Servidor GEX130 (GPU)
+#### Servidor Único com GPU (Substitui CX43)
 
-| Container | GPU | VRAM | Porta | Descrição |
-|-----------|-----|------|-------|-----------|
-| `gpu-mixtral` | RTX 6000 Ada | 48GB | 8000 | Mixtral 8x7B vLLM |
-| `gpu-embeddings` | RTX 6000 Ada | 48GB | 8001 | Qwen3 + OpenCLIP |
-| `gpu-flux` | RTX 6000 Ada | 48GB | 8002 | FLUX.1 Schnell |
-| `gpu-asr` | RTX 6000 Ada | 48GB | 8003 | Canary-1B ASR |
+**Especificações Recomendadas:**
+- **GPU**: RTX 3090/4090 (24GB) ou RTX 4000 (20GB)
+- **CPU**: 8+ cores (Intel Core i5-13500 ou superior)
+- **RAM**: 64GB+ (GEX44 tem 64GB, suficiente para 49 containers)
+- **Storage**: 500GB+ NVMe SSD (GEX44 tem 2x 1.92TB)
+- **Custo**: €184-300/mês
 
-**Nota**: Todos os serviços GPU podem rodar no **mesmo servidor GEX130** compartilhando a GPU, ou podemos usar **4 servidores GEX130** (1 GPU por serviço) para isolamento total.
+**Todos os 49 containers no mesmo servidor:**
 
-#### Servidor CX43 (Core - Mantido)
+| Categoria | Containers | Descrição |
+|-----------|------------|-----------|
+| **Infraestrutura** | 8 | postgres, redis, qdrant, traefik, dockerproxy, tor, searxng, traefik-init |
+| **Alice Services** | 7 | auth, chat, rag, training, integrations, observability, frontend |
+| **ERPNext** | 15 | mariadb, redis-cache, redis-queue, configurator, create-site, backend, frontend, websocket, scheduler, 6 workers |
+| **Observability** | 14 | langfuse (web+worker+db), clickhouse, prometheus, grafana, loki, promtail, jaeger, vector, alertmanager, otel-collector, node-exporter, cadvisor |
+| **Backup** | 1 | pgBackRest |
+| **GPU Services** | 4 | gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr |
+| **TOTAL** | **49** | Todos em 1 servidor |
 
-| Container | Descrição |
-|-----------|-----------|
-| Todos os 45 containers atuais | Mantidos como estão |
+**Vantagens:**
+- ✅ Latência zero (localhost entre serviços)
+- ✅ Arquitetura mais simples (1 servidor vs. 2)
+- ✅ Custo total menor (1 servidor vs. 2)
+- ✅ Mais fácil de gerenciar e monitorar
 
 ---
 
@@ -214,10 +238,12 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 
 #### 1.1 Provisionamento Hetzner
 
-- [ ] Criar servidor GEX130 na Hetzner
-- [ ] Configurar rede interna entre CX43 e GEX130
-- [ ] Instalar Docker e Docker Compose no GEX130
+- [ ] Escolher servidor GPU (GEX44 ou Custom RTX 3090/4090)
+- [ ] Criar novo servidor GPU na Hetzner (substituirá CX43)
+- [ ] Instalar Docker e Docker Compose no novo servidor
+- [ ] Instalar NVIDIA Driver e Container Toolkit
 - [ ] Configurar SSH keys e acesso
+- [ ] **Migrar dados do CX43** (se houver - como não há dados ainda, pode pular)
 
 #### 1.2 Preparação de Código
 
@@ -250,9 +276,10 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 
 #### 2.3 Configuração de Rede
 
-- [ ] Configurar Traefik no CX43 para rotear para GEX130
-- [ ] Configurar firewall (apenas rede interna)
-- [ ] Configurar health checks entre servidores
+- [ ] Configurar Traefik para rotear para serviços GPU (localhost)
+- [ ] Configurar firewall (apenas portas necessárias)
+- [ ] Configurar health checks (todos locais)
+- [ ] **Atualizar IP/DNS** se necessário (novo servidor terá novo IP)
 
 ### Fase 3: Validação (Semana 3)
 
