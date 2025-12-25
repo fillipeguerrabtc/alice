@@ -1748,6 +1748,33 @@ jobs:
             echo "=============================================="
             
             # ==========================================================
+            # ENTERPRISE 25/12/2025: Executar script de setup GPU se necessário
+            # Script instala Docker, NVIDIA Driver, Container Toolkit automaticamente
+            # ==========================================================
+            if [ ! -f /opt/alice/.setup-complete ]; then
+              echo ""
+              echo "🔧 PRIMEIRA EXECUÇÃO - Executando setup automático..."
+              echo "=============================================="
+              
+              # Baixar script de setup
+              SETUP_SCRIPT="/tmp/setup-hetzner-gpu.sh"
+              curl -fsSL https://raw.githubusercontent.com/${REPO_FULL_NAME}/main/infra/scripts/setup-hetzner-gpu.sh -o "$SETUP_SCRIPT" || {
+                echo "::warning::Não foi possível baixar script de setup. Continuando com verificação manual..."
+                SETUP_SCRIPT=""
+              }
+              
+              if [ -n "$SETUP_SCRIPT" ] && [ -f "$SETUP_SCRIPT" ]; then
+                chmod +x "$SETUP_SCRIPT"
+                # Executar setup (não falha se GPU não estiver presente)
+                bash "$SETUP_SCRIPT" || echo "::warning::Setup script teve avisos, mas continuando..."
+                touch /opt/alice/.setup-complete
+                echo "✅ Setup automático concluído"
+              fi
+            else
+              echo "ℹ️ Setup já foi executado anteriormente (pulando)"
+            fi
+            
+            # ==========================================================
             # ENTERPRISE: Verificação de TODOS os requisitos do servidor
             # Regra 6: Deploy DEVE verificar e instalar tudo automaticamente
             # ORDEM: Dependências são verificadas na ordem correta de uso
@@ -1786,7 +1813,58 @@ jobs:
               echo "✅ Docker instalado com sucesso"
             fi
             
-            # 3. Docker Compose (CRÍTICO - incluído no Docker moderno)
+            # 3. NVIDIA Driver (se GPU presente) - VERIFICAÇÃO PRIMEIRO
+            if lspci | grep -i nvidia >/dev/null 2>&1; then
+              echo "✅ GPU NVIDIA detectada no hardware"
+              
+              # Verificar se driver está instalado
+              if command -v nvidia-smi >/dev/null 2>&1; then
+                GPU_INFO=$(nvidia-smi --query-gpu=name,driver_version --format=csv,noheader | head -1)
+                echo "✅ NVIDIA Driver: ${GPU_INFO}"
+              else
+                echo "⚠️ NVIDIA Driver NÃO INSTALADO"
+                echo "   Instalando NVIDIA Driver 535..."
+                apt-get update -qq
+                DEBIAN_FRONTEND=noninteractive apt-get install -y nvidia-driver-535 >/dev/null 2>&1 || {
+                  echo "::error::Falha ao instalar NVIDIA Driver. Deploy continuará sem GPU."
+                  echo "::warning::REINICIE o servidor após deploy para carregar driver: reboot"
+                }
+                echo "✅ NVIDIA Driver instalado (REINICIE servidor após deploy)"
+              fi
+              
+              # Verificar NVIDIA Container Toolkit
+              if command -v nvidia-container-cli >/dev/null 2>&1; then
+                echo "✅ NVIDIA Container Toolkit: instalado"
+              else
+                echo "⚠️ NVIDIA Container Toolkit NÃO INSTALADO"
+                echo "   Instalando NVIDIA Container Toolkit..."
+                distribution=$(. /etc/os-release;echo $ID$VERSION_ID)
+                curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add - >/dev/null 2>&1
+                curl -s -L https://nvidia.github.io/nvidia-docker/$distribution/nvidia-docker.list | \
+                  tee /etc/apt/sources.list.d/nvidia-docker.list >/dev/null
+                apt-get update -qq
+                apt-get install -y nvidia-container-toolkit >/dev/null 2>&1 || {
+                  echo "::error::Falha ao instalar NVIDIA Container Toolkit. Deploy continuará sem GPU."
+                }
+                systemctl restart docker
+                echo "✅ NVIDIA Container Toolkit instalado"
+              fi
+              
+              # Testar GPU no Docker (se driver carregado)
+              if nvidia-smi >/dev/null 2>&1; then
+                if docker run --rm --gpus all nvidia/cuda:12.0.0-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+                  echo "✅ GPU funcionando no Docker"
+                else
+                  echo "::warning::GPU detectada mas não funciona no Docker. Verifique driver."
+                fi
+              else
+                echo "::warning::nvidia-smi não funciona. Driver pode não estar carregado (reboot necessário)."
+              fi
+            else
+              echo "ℹ️ GPU NVIDIA não detectada - servidor sem GPU"
+            fi
+            
+            # 4. Docker Compose (CRÍTICO - incluído no Docker moderno)
             if docker compose version >/dev/null 2>&1; then
               COMPOSE_VER=$(docker compose version 2>/dev/null | head -1)
               echo "✅ Docker Compose: ${COMPOSE_VER}"

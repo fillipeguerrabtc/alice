@@ -76,26 +76,29 @@ Este documento apresenta uma análise completa da migração da arquitetura de G
 
 #### Opções Hetzner Cloud GPU
 
-**OPÇÃO 1: Servidor Dedicado com GPU de 24GB (Recomendado)**
+**OPÇÕES DISPONÍVEIS NA HETZNER ROBOT:**
 
-| Modelo | GPU | VRAM | CPU | RAM | Storage | Preço Mensal | Setup Fee |
-|--------|-----|------|-----|-----|---------|--------------|-----------|
-| **GEX44** | RTX 4000 SFF Ada | 20GB | Intel Core i5-13500 | 64GB | 2x 1.92TB NVMe | €184/mês | €79 |
-| **Servidor Custom** | RTX 3090/4090 | 24GB | AMD/Intel | 64GB+ | NVMe SSD | ~€200-300/mês | €0-79 |
+| Modelo | GPU | VRAM | CPU | RAM | Storage | Preço Mensal | Setup Fee | Status |
+|--------|-----|------|-----|-----|---------|--------------|-----------|--------|
+| **GEX131** | RTX PRO 6000 Blackwell | 96GB | Intel Xeon Gold 5412U (24-core) | 256GB DDR5 | 2x 960GB NVMe | €889/mês | €159 | ✅ Disponível |
+| **GEX44** | RTX 4000 SFF Ada | 20GB | Intel Core i5-13500 | 64GB DDR4 | 2x 1.92TB NVMe | €184/mês | €79 | ⚠️ Pode não aparecer |
+| **Servidor Custom** | RTX 3090/4090 | 24GB | Variável | 64GB+ | Variável | ~€200-300/mês | €0-159 | 📞 Contatar suporte |
 
-**Nota**: Hetzner não oferece RTX 4090 diretamente, mas podemos:
-1. Usar servidor dedicado customizado (contatar suporte)
-2. Usar múltiplos GEX44 (1 GPU por serviço)
-3. Usar servidor com RTX 3090 (24GB) se disponível
+**NOTA IMPORTANTE**: 
+- Se **GEX44 não aparece** na Robot, pode estar esgotado ou disponível apenas sob demanda
+- **GEX131** é muito mais caro (€889/mês) mas tem GPU muito mais potente (96GB VRAM)
+- **Alternativa**: Contatar suporte Hetzner para servidor customizado com RTX 3090/4090 (24GB)
 
-**OPÇÃO 2: Múltiplos Servidores GEX44 (Isolamento Total)**
+**RECOMENDAÇÃO BASEADA NA DISPONIBILIDADE:**
 
-| Configuração | Servidores | GPU Total | VRAM Total | Custo Mensal |
-|--------------|------------|-----------|------------|--------------|
-| **4x GEX44** | 4 servidores | 4x RTX 4000 | 80GB total | €736/mês |
-| **1x GEX44 (Compartilhado)** | 1 servidor | 1x RTX 4000 | 20GB | €184/mês |
+1. **Se GEX44 disponível**: ✅ **GEX44** (€184/mês) - 20GB suficiente com otimização
+2. **Se apenas GEX131 disponível**: ⚠️ **GEX131** (€889/mês) - muito caro, mas GPU excelente (96GB)
+3. **Se nenhum disponível**: 📞 **Contatar suporte Hetzner** para servidor customizado RTX 3090/4090
 
-**Recomendação**: Começar com **1 servidor dedicado customizado** com RTX 3090 ou RTX 4090 (24GB) por ~€200-300/mês, ou usar **1x GEX44** compartilhando a GPU entre serviços (20GB pode ser suficiente com otimização).
+**Para verificar disponibilidade:**
+- Acesse: https://robot.your-server.de/
+- Vá em "Order Server" → "GPU Servers"
+- Verifique quais modelos aparecem
 
 #### Comparação de Modelos Suportados
 

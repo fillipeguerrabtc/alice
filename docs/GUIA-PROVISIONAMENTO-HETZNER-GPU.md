@@ -26,24 +26,26 @@ Este guia fornece instruções passo a passo para provisionar um servidor GPU na
 
 ## 2. Escolha do Servidor GPU
 
-### Opção A: Servidor Dedicado Customizado (Recomendado)
+### Opção A: Servidor GEX131 (Disponível na Robot)
 
-**Especificações Desejadas:**
-- GPU: NVIDIA RTX 3090 ou RTX 4090 (24GB VRAM)
-- CPU: 8+ cores (AMD ou Intel)
-- RAM: 64GB+ DDR4
-- Storage: 500GB+ NVMe SSD
-- Rede: 1Gbps+ (mesma rede interna Hetzner)
+**Especificações:**
+- GPU: NVIDIA RTX PRO 6000 Blackwell Max-Q (96GB VRAM)
+- CPU: Intel Xeon Gold 5412U (24-core)
+- RAM: 256GB DDR5 ECC
+- Storage: 2x 960GB NVMe SSD (Software RAID 1)
+- **Custo**: €889/mês + €159 setup fee
 
 **Passos:**
-1. Acesse [Hetzner Robot](https://robot.your-server.de/) (servidores dedicados)
-2. Clique em "Order Server" → "Custom Server"
-3. Selecione localização (Nuremberg recomendado - mesma do CX43)
-4. Contate suporte via ticket para solicitar RTX 3090/4090
-5. Configure servidor conforme especificações acima
-6. **Custo estimado**: €200-300/mês
+1. Acesse [Hetzner Robot](https://robot.your-server.de/)
+2. Clique em "Order Server" → "GPU Servers"
+3. Selecione **GEX131**
+4. Escolha localização (Nuremberg)
+5. Configure sistema operacional (Ubuntu 24.04 LTS recomendado)
+6. Finalize pedido
 
-### Opção B: Servidor GEX44 (Mais Barato)
+**Nota**: Muito mais caro, mas GPU excelente (96GB VRAM permite modelos muito maiores).
+
+### Opção B: Servidor GEX44 (Se Disponível)
 
 **Especificações:**
 - GPU: NVIDIA RTX 4000 SFF Ada (20GB VRAM)
@@ -55,12 +57,29 @@ Este guia fornece instruções passo a passo para provisionar um servidor GPU na
 **Passos:**
 1. Acesse [Hetzner Robot](https://robot.your-server.de/)
 2. Clique em "Order Server" → "GPU Servers"
-3. Selecione **GEX44**
+3. Se **GEX44** aparecer, selecione
 4. Escolha localização (Nuremberg)
 5. Configure sistema operacional (Ubuntu 24.04 LTS recomendado)
 6. Finalize pedido
 
-**Nota**: 20GB pode ser suficiente com otimização, mas 24GB é ideal.
+**Nota**: Se não aparecer, pode estar esgotado. Use GEX131 ou contate suporte.
+
+### Opção C: Servidor Customizado (Contatar Suporte)
+
+**Especificações Desejadas:**
+- GPU: NVIDIA RTX 3090 ou RTX 4090 (24GB VRAM)
+- CPU: 8+ cores (AMD ou Intel)
+- RAM: 64GB+ DDR4
+- Storage: 500GB+ NVMe SSD
+
+**Passos:**
+1. Acesse [Hetzner Robot](https://robot.your-server.de/)
+2. Abra ticket de suporte
+3. Solicite servidor customizado com RTX 3090/4090
+4. Especifique localização (Nuremberg)
+5. **Custo estimado**: €200-300/mês
+
+**Recomendação**: Se GEX44 não aparecer, **GEX131** é a opção mais rápida (mas cara). Para economia, contate suporte para customizado.
 
 ---
 
@@ -115,7 +134,29 @@ apt install -y \
 
 ---
 
-## 4. Instalação do Docker e NVIDIA Container Toolkit
+## 4. Instalação Automática via Pipeline
+
+> **✅ IMPORTANTE**: Você **NÃO precisa instalar nada manualmente**! O pipeline CI/CD instala tudo automaticamente na primeira execução.
+
+O workflow `deploy-production.yml` verifica e instala automaticamente:
+- ✅ Docker e Docker Compose
+- ✅ NVIDIA Driver (se GPU presente)
+- ✅ NVIDIA Container Toolkit (se GPU presente)
+- ✅ Estrutura de diretórios
+- ✅ Redes Docker
+- ✅ Firewall
+
+**Você só precisa:**
+1. Provisionar o servidor GPU na Hetzner
+2. Configurar SSH access (chave SSH)
+3. Atualizar GitHub Secrets com novo IP
+4. Fazer push → Pipeline instala tudo automaticamente
+
+---
+
+## 4. Instalação Manual (Opcional - Apenas se quiser testar antes)
+
+> **Nota**: Esta seção é opcional. O pipeline faz tudo automaticamente.
 
 ### 4.1 Instalar Docker
 
@@ -417,15 +458,20 @@ nc -zv <IP_DO_CX43> 8000
 
 ### Estimativa de Custos
 
-| Item | Custo Mensal | Observação |
-|------|--------------|------------|
-| **Servidor GPU (GEX44)** | €184 | RTX 4000 20GB |
-| **Servidor GPU (Custom)** | €200-300 | RTX 3090/4090 24GB |
-| **Setup Fee (GEX44)** | €79 | Uma vez |
-| **Tráfego** | Incluído | Primeiros 20TB/mês |
-| **Backup** | Opcional | ~€10-20/mês |
+| Item | Custo Mensal | Setup Fee | Observação |
+|------|--------------|-----------|------------|
+| **GEX131** | €889 | €159 | RTX PRO 6000 96GB (disponível) |
+| **GEX44** | €184 | €79 | RTX 4000 20GB (pode não aparecer) |
+| **Custom RTX 3090/4090** | €200-300 | €0-159 | 24GB (contatar suporte) |
+| **Tráfego** | Incluído | - | Primeiros 20TB/mês |
+| **Backup** | Opcional | - | ~€10-20/mês |
 
-**Total Estimado**: €184-300/mês (sem setup fee após primeira vez)
+**Total Estimado**: 
+- **GEX131**: €889/mês (mais caro, mas GPU excelente)
+- **GEX44**: €184/mês (mais barato, se disponível)
+- **Custom**: €200-300/mês (ideal, mas precisa contatar suporte)
+
+**Recomendação**: Se GEX44 não aparecer, use **GEX131** para começar rápido, ou contate suporte para customizado mais barato.
 
 ---
 
