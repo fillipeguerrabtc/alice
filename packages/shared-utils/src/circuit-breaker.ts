@@ -448,7 +448,7 @@ export async function fetchWithAbort(
  *   ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
  * });
  * 
- * const response = await protectedFetch('http://localhost:3008/v1/chat', {
+ * const response = await protectedFetch('http://alice-gpu-manager:3010/v1/chat', {
  *   method: 'POST',
  *   body: JSON.stringify({ model: 'Mixtral-8x7B', messages: [] }),
  *   headers: { 'Authorization': 'Bearer xxx' },

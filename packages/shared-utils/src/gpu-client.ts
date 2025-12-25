@@ -12,7 +12,9 @@ import { createLogger } from '@alice/logger';
 
 const logger = createLogger('gpu-client');
 
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010';
+// BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
+// URL padrão deve corresponder ao container_name, não ao service name
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
 
 /** Prioridades de requisições GPU (maior = mais prioritário) */

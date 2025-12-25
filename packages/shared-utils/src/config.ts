@@ -374,8 +374,9 @@ export const RAG_CHUNK_CONFIG = {
  * Modelo: Mixtral 8x7B AWQ (quantizado para RTX 4000 Ada 20GB VRAM)
  */
 export const GPU_MANAGER_CONFIG = {
-  // GPU Manager Service URL (localhost em produção)
-  url: process.env.GPU_MANAGER_URL || 'http://localhost:3008',
+  // GPU Manager Service URL (container name em produção: alice-gpu-manager:3010)
+  // BUG FIX 25/12/2025: URL padrão corrigida para corresponder ao container_name do docker-compose.prod.yml
+  url: process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010',
   models: {
     chat: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
     embeddings: 'Qwen/Qwen3-Embedding-8B',

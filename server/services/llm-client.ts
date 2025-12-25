@@ -7,7 +7,8 @@ const logger = createLogger("llm-client");
 // NOTA: Este arquivo é apenas para desenvolvimento local (server/index-dev.ts)
 // Em produção, o chat-service usa GPU Manager Service (Hetzner GEX44)
 // LLM Client desabilitado - usar chat-service em produção
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || "http://localhost:3008";
+// BUG FIX 25/12/2025: URL padrão corrigida para corresponder ao container_name do docker-compose.prod.yml
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || "http://alice-gpu-manager:3010";
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),

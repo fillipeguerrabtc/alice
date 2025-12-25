@@ -21,7 +21,9 @@ import type { Database } from '@alice/database';
 const logger = createLogger('image-generation');
 
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010';
+// BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
+// Este fallback não será usado se GPU_MANAGER_URL estiver definido no docker-compose.prod.yml
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 let db: Database;
 
@@ -86,9 +88,10 @@ async function generateImageInternal(request: ImageGenerationRequest): Promise<I
     throw new Error(gpuResponse.error || 'Erro na geração de imagem');
   }
 
-  const response = gpuResponse.data as ImageGenerationResponse;
-
-  const data = await response.json() as {
+  // BUG FIX 25/12/2025: gpuResponse.data já é um objeto parseado (não um Response)
+  // requestGpu retorna GpuResponse onde data é unknown (objeto já parseado do JSON)
+  // Não devemos chamar .json() em um objeto já parseado
+  const data = gpuResponse.data as {
     image: string;
     seed: number;
     metadata?: Record<string, unknown>;

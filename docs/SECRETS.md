@@ -26,7 +26,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 |-----------|----------|----------------------|
 | **Infraestrutura** | postgres, traefik, alice-redis | POSTGRES_PASSWORD, REDIS_PASSWORD, ACME_EMAIL |
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
-| **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://gpu-manager-service:3010) |
+| **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010) |
 | **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
 | **GPU Manager Service** | gpu-manager-service | GPU_MANAGER_URL, INTERNAL_API_SECRET, REDIS_URL |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
@@ -110,7 +110,7 @@ Estes são necessários para o deploy funcionar:
 | Secret | Onde Obter | Descrição | Obrigatório? |
 |--------|------------|-----------|--------------|
 | `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) | ✅ **SIM** |
-| `GPU_MANAGER_URL` | Opcional (default: `http://gpu-manager-service:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
+| `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
 **NOTA:** O GPU Manager Service gerencia automaticamente:

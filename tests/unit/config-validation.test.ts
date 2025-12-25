@@ -718,7 +718,7 @@ describe('Config - RAG Chunk Configuration', () => {
 describe('Config - GPU Manager Service Configuration', () => {
   describe('GPU_MANAGER_CONFIG', () => {
     it('deve ter URL padrão do GPU Manager Service', () => {
-      expect(SALAD_CONFIG.url).toBe('http://localhost:3008');
+      expect(SALAD_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
     it('deve ter modelo de chat configurado como Mixtral 8x7B AWQ', () => {

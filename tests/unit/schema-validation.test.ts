@@ -498,7 +498,7 @@ describe('Schema - Insert Schemas (Zod Validation)', () => {
     it('deve aceitar configuração de LLM', () => {
       const validConfig = {
         modelo: 'Mixtral-8x7B',
-        endpoint: 'http://localhost:3008/v1/chat',
+        endpoint: 'http://alice-gpu-manager:3010/v1/chat',
         maxTokens: 4096,
         temperatura: 0.7,
       };

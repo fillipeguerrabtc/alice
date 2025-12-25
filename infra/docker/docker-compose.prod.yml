@@ -815,13 +815,12 @@ services:
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # Sessão WebSocket (OBRIGATÓRIO em produção - Regra 6)
       SESSION_SECRET: ${SESSION_SECRET}
-      # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
       # Comunicação inter-service (URLs Docker DNS)
       RAG_SERVICE_URL: http://alice-rag:3003
       INTEGRATIONS_SERVICE_URL: http://alice-integrations:3005
       TRAINING_SERVICE_URL: http://alice-training:3004
       # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
+      # BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido no service gpu-manager)
       GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
@@ -912,7 +911,8 @@ services:
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY é obrigatório em produção}
       # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
+      # BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido no service gpu-manager)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       # Web Search interno (SearXNG self-hosted) - sem dependências externas
       SEARXNG_URL: http://alice-searxng:8080
       SEARXNG_SECRET_KEY: ${SEARXNG_SECRET_KEY}
@@ -989,7 +989,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-alice}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-alice_prod}?sslmode=disable
       INTERNAL_API_SECRET: ${INTERNAL_API_SECRET}
       # GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://gpu-manager-service:3010}
+      # BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido no service gpu-manager)
+      GPU_MANAGER_URL: ${GPU_MANAGER_URL:-http://alice-gpu-manager:3010}
       # Qdrant - Banco vetorial para texto (4096 dim)
       QDRANT_URL: http://alice-qdrant:6333
       QDRANT_API_KEY: ${QDRANT_API_KEY}

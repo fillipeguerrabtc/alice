@@ -349,8 +349,8 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# GPU Services (Hetzner GPU Server)\n'
   printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
-  printf 'GPU_MANAGER_URL=http://gpu-manager-service:3010\n'
-  printf 'HUGGINGFACE_TOKEN=%s\n' "${HUGGINGFACE_TOKEN:-}"
+  # BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
+  printf 'GPU_MANAGER_URL=http://alice-gpu-manager:3010\n'
   printf '\n'
   printf '# Qdrant - Banco Vetorial para Texto\n'
   printf 'QDRANT_API_KEY=%s\n' "${QDRANT_API_KEY}"

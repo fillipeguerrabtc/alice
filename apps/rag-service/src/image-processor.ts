@@ -509,7 +509,8 @@ class ImageProcessorService {
 
     try {
       // Verificar se GPU Manager Service está pronto
-      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://gpu-manager-service:3010'}/ready`, {
+      // BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
+      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010'}/ready`, {
         method: 'GET',
         signal: controller.signal,
       });

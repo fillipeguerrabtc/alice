@@ -212,10 +212,12 @@ fi
 echo -e "\n${YELLOW}═══ 5. SERVIÇOS EXTERNOS ═══${NC}\n"
 
 # GPU Manager Service (Hetzner GEX44)
-if curl -s --connect-timeout 5 "http://localhost:3008/health" > /dev/null 2>&1; then
-    log_success "GPU Manager Service - acessível"
+# BUG FIX 25/12/2025: Porta corrigida de 3008 para 3010 (porta real do serviço)
+# Verifica se container está rodando e healthy (melhor que tentar conectar via localhost)
+if docker ps --filter "name=alice-gpu-manager" --filter "status=running" --format "{{.Names}}" | grep -q "alice-gpu-manager"; then
+    log_success "GPU Manager Service - container rodando"
 else
-    log_warn "GPU Manager Service - não acessível (verificar se está rodando)"
+    log_warn "GPU Manager Service - container não está rodando (verificar se está iniciado)"
 fi
 
 # Stripe

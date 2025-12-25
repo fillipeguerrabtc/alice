@@ -279,7 +279,7 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 
 | Variável | Descrição | Obrigatoriedade |
 |----------|-----------|-----------------|
-| `GPU_MANAGER_URL` | URL do GPU Manager Service (localhost:3008) | **OBRIGATÓRIO** |
+| `GPU_MANAGER_URL` | URL do GPU Manager Service (default: http://alice-gpu-manager:3010) | ⏳ **Opcional** (tem default) |
 
 ---
 
