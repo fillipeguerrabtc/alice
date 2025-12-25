@@ -107,11 +107,11 @@ Estes são necessários para o deploy funcionar:
 
 **ARQUITETURA ENTERPRISE (25/12/2025):** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) são gerenciados pelo GPU Manager Service, que roda localmente no servidor Hetzner GPU.
 
-| Secret | Onde Obter | Descrição |
-|--------|------------|-----------|
-| `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) |
-| `GPU_MANAGER_URL` | Opcional (default: `http://gpu-manager-service:3010`) | URL do GPU Manager Service (usado internamente pelos serviços) |
-| `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) |
+| Secret | Onde Obter | Descrição | Obrigatório? |
+|--------|------------|-----------|--------------|
+| `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) | ✅ **SIM** |
+| `GPU_MANAGER_URL` | Opcional (default: `http://gpu-manager-service:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
+| `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
 **NOTA:** O GPU Manager Service gerencia automaticamente:
 - Fila priorizada de requisições (chat > trading > embeddings > outros)
@@ -119,6 +119,8 @@ Estes são necessários para o deploy funcionar:
 - Circuit breakers por serviço GPU
 - Retry logic com backoff exponencial
 - Métricas Prometheus (latência, fila, VRAM, erros)
+
+> **IMPORTANTE:** Não são necessários secrets para URLs dos serviços GPU (Mixtral, Embeddings, FLUX, ASR) - todos rodam localmente no servidor Hetzner GEX44 e são gerenciados pelo GPU Manager Service. URLs são internas (localhost) e não precisam de secrets.
 
 ### FASE 4: Pagamentos Stripe (receber EUR/SEPA)
 
@@ -324,6 +326,33 @@ Estes são necessários para o deploy funcionar:
 
 ---
 
+## 🗑️ Secrets Obsoletos - Remover do GitHub
+
+**ARQUITETURA ATUALIZADA (25/12/2025):** Todos os serviços GPU migraram para Hetzner GPU GEX44. Os seguintes secrets do Salad Cloud devem ser **removidos completamente** do GitHub Secrets:
+
+| Secret | Status | Como Remover |
+|--------|--------|--------------|
+| `SALAD_API_KEY` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_ORGANIZATION_ID` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_PROJECT_ID` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_API_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_MIXTRAL_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_FLUX_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_WHISPER_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_ASR_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_EMBEDDINGS_URL` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_MEDIA_PROJECT` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `SALAD_GPU_CLASS` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
+| `EMBEDDINGS_GPU_URL` | ⚠️ **VERIFICAR** | Remover apenas se apontava para Salad Cloud (não remover se for local) |
+
+**Como Remover:**
+1. Acesse: `https://github.com/fillipeguerrabtc/alice/settings/secrets/actions`
+2. Para cada secret listado acima, clique no secret → **"Delete"** → Confirme
+
+> **NOTA:** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU.
+
+---
+
 ## Checklist de Verificação
 
 > **Status atualizado em:** 20 de Dezembro de 2025  
@@ -360,11 +389,11 @@ Estes são necessários para o deploy funcionar:
 
 ### GPU Manager Service (Hetzner GPU GEX44)
 
-| Secret | Status |
-|--------|--------|
-| `HUGGINGFACE_TOKEN` | ✅ (obrigatório para downloads de modelos - Mixtral, Qwen3, OpenCLIP, FLUX, Canary) |
+| Secret | Status | Obrigatório? |
+|--------|--------|--------------|
+| `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Mixtral, Qwen3, OpenCLIP, FLUX, Canary) |
 
-> **NOTA (25/12/2025):** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU (Salad Cloud removido).
+> **NOTA (25/12/2025):** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU (Salad Cloud removido). URLs dos serviços GPU são internas (localhost) e não precisam de secrets.
 
 ### Stripe (Pagamentos)
 
@@ -544,16 +573,16 @@ openssl rand -base64 24
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 23 de Dezembro de 2025*
-*Versão: 7.9 - Verificação Completa SearXNG*
-*Total de Secrets: 54 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*  
-*Backup: Volume Hetzner 100GB local (/opt/alice/backups)*  
+*Documento atualizado em: 25 de Dezembro de 2025*
+*Versão: 8.0 - Migração Completa para Hetzner GPU GEX44 + Deploy Server*
+*Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
+*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*  
+*Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
-*GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*
-*Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*  
-*ARQUITETURA ENTERPRISE (17/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
-*Bug Fixes (17/12/2025): TODOS embeddings texto → Qdrant | KuCoin sync 'active' | documents.embedding corrigido | Risk Config API | orderValue multiplier*  
-*Análise de Licenças: Qwen3 é ÚNICO modelo top-tier com licença comercial. Fin-E5/Linq-Embed/NV-Embed são CC BY-NC (Non-Commercial).*  
+*GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
+*Arquitetura Deploy (25/12/2025): Deploy Server (CX11) separado + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
+*ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
+*Secrets Obsoletos Removidos (25/12/2025): Todos os secrets do Salad Cloud removidos (SALAD_API_KEY, SALAD_ORGANIZATION_ID, SALAD_*_URL, etc.)*  
+*Novos Secrets (25/12/2025): PRODUCTION_SERVER_HOST, PRODUCTION_SERVER_USER, PRODUCTION_SERVER_SSH_PRIVATE_KEY para Deploy Server*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
 *Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*

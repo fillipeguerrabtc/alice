@@ -17,13 +17,13 @@
 
 ## Visão Geral
 
-**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server RTX 4090 24GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
+**Alice** é uma plataforma enterprise de IA autônoma pronta para produção. Utiliza o modelo LLM **Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ)** hospedado em infraestrutura própria (Hetzner GPU Server GEX44 - RTX 4000 Ada 20GB), garantindo 100% de autonomia sem dependência de APIs externas como OpenAI ou Anthropic.
 
 ### Capacidades Principais
 
 | Capacidade | Descrição |
 |------------|-----------|
-| **IA 100% Autônoma** | LLM próprio (Mixtral 8x7B vLLM AWQ) hospedado em servidor Hetzner GPU RTX 4090 24GB |
+| **IA 100% Autônoma** | LLM próprio (Mixtral 8x7B vLLM AWQ) hospedado em servidor Hetzner GPU GEX44 (RTX 4000 Ada 20GB) |
 | **Chat em Tempo Real** | Conversação via WebSocket com streaming de tokens |
 | **Geração de Imagens** | FLUX.1 Schnell self-hosted (1-3 segundos por imagem) |
 | **Deduplicação Semântica** | SemHash para filtragem de dados duplicados no treinamento |
@@ -237,7 +237,7 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    ├── Dispara automaticamente após Release
    ├── Deploy Hetzner GPU (50 containers - 45 serviços + 4 GPU + 1 backup)
    ├── Health checks + Rollback automático
-   └── GPU: RTX 4090 (24GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
+   └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
 **Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (45 serviços + 4 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.

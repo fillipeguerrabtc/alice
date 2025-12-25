@@ -28,9 +28,9 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 |---|---------|-----------|-----------|-----------|------------|
 | 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 7.3, shadcn/ui, i18n PT-BR |
 | 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
-| 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, Salad Cloud |
-| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU Salad Cloud. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
-| 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração Salad Cloud. | Node.js, Salad Cloud |
+| 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, GPU Manager Service |
+| 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU local. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
+| 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração GPU Manager Service. | Node.js, GPU Manager Service |
 | 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
 
@@ -211,12 +211,13 @@ Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/
 | Actions (Privado) | 2000 min/mês | ~500 min |
 | Container Registry | 500MB | Imagens Docker |
 
-### SaladCloud (Pago - GPUs para LLM)
+### GPU Services (Hetzner GPU GEX44 - Local)
 
 | Recurso | Custo |
 |---------|-------|
-| Horas GPU | $0.10-0.30/hora |
-| Mixtral 8x7B (vLLM) | Sob demanda |
+| Servidor GPU GEX44 | €184.00/mês (fixo) |
+| GPU Manager Service | Incluído (gerencia requisições localmente) |
+| Mixtral 8x7B (vLLM) | Local (sem custo adicional) |
 | FLUX.1 Schnell | Sob demanda |
 
 ### DuckDNS (Gratuito)
@@ -298,10 +299,10 @@ GOOGLE_CLIENT_SECRET=GOCSPX-xxxxx
 OAUTH_GITHUB_CLIENT_ID=Ov23xxxxx
 OAUTH_GITHUB_CLIENT_SECRET=xxxxx
 
-# ========== SALAD CLOUD (LLM) ==========
-# GPU Services agora rodam localmente (Hetzner GEX44)
-# GPU Manager Service gerencia todas as requisições GPU
-# Não são necessários secrets externos para GPU
+# ========== GPU SERVICES (Hetzner GEX44 - Local) ==========
+# Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44
+# GPU Manager Service gerencia todas as requisições GPU com fila priorizada
+# Não são necessários secrets externos para GPU (tudo local)
 
 # ========== TWILIO (WHATSAPP) ==========
 TWILIO_ACCOUNT_SID=ACxxxxx
@@ -529,46 +530,29 @@ O deploy é **100% automático** via GitHub Actions:
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
-### GPU é OBRIGATÓRIO - Enterprise-Grade (17/12/2025)
+### GPU é OBRIGATÓRIO - Enterprise-Grade (25/12/2025)
 
-**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU Salad Cloud são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona.
-
-**ABORDAGEM HÍBRIDA (22/12/2025):** Container Groups são **pré-criados manualmente** no Salad Cloud Dashboard. URLs são configuradas como **secrets no GitHub**. Ver [docs/SECRETS.md](SECRETS.md) para guia passo a passo.
+**⚠️ ARQUITETURA ENTERPRISE:** Os serviços GPU são **OBRIGATÓRIOS**, não opcionais. GPUs são o coração da plataforma de IA - sem eles, a plataforma não funciona. Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service.
 
 | Serviço GPU | Função | Impacto se Falhar |
 |-------------|--------|-------------------|
+| **GPU Manager Service** | Gerenciamento centralizado (fila, VRAM, circuit breakers) | Todas as requisições GPU falham |
 | **Mixtral 8x7B** | LLM (chat, trading) | Chat não funciona |
 | **Embeddings GPU** | Qwen3 + OpenCLIP (RAG) | RAG não funciona |
 | **FLUX.1 Schnell** | Geração de imagens | Imagens não funcionam |
 | **ASR Canary-1B** | Transcrição de áudio | Áudio não funciona |
 
-**Best Practices 2025 - Fail-Fast:**
-```yaml
-# CORRETO: GPU é OBRIGATÓRIO - ambos devem passar
-needs: [deploy, deploy-salad-gpu]
-if: needs.deploy.result == 'success' && needs.deploy-salad-gpu.result == 'success'
-
-# INCORRETO: Tratar GPU como opcional (deploy parcial = plataforma quebrada)
-if: always() && needs.deploy.result == 'success'
-```
-
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana
-- Valida **4 URLs GPU** (Container Groups pré-criados): Mixtral, Embeddings, FLUX, ASR
+- Valida **GPU Manager Service** e serviços GPU locais
 - **Tolerância zero**: Qualquer falha dispara rollback automático
 
-> **NOTA:** Health check de GPU é informativo - Container Groups podem estar em cold start (~30-60s após inatividade de 30min).
+**Rollback Enterprise (25/12/2025):**
+- Dispara se deploy falhar
+- Reverte containers para última versão estável
+- GPU services são parte do deploy único (não separado)
 
-**Rollback Enterprise (Abordagem Híbrida 22/12/2025):**
-- Dispara se deploy Hetzner **OU** validação GPU falhar
-- **GPU NÃO é deletado** - Container Groups são pré-criados manualmente
-- Apenas Hetzner é revertido para última versão estável
-- Container Groups GPU permanecem intactos (persistentes)
-- Diagnóstico GPU via `python rollback.py status` (não delete!)
-
-> **IMPORTANTE:** Com a abordagem híbrida, Container Groups Salad Cloud são **permanentes**. O rollback apenas reverte os containers Hetzner, não deleta os GPU Container Groups pré-criados pelo usuário.
-
-Pipeline: push para `main` → CI → Release → Deploy Hetzner (100% auto) + Valida GPU (híbrido).
+Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 50 containers no servidor único).
 
 ### Versionamento Automático
 
@@ -1145,7 +1129,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Unificada (22/12/2025): Hetzner 100% automático + Salad Cloud abordagem híbrida (Container Groups manuais, URLs em secrets)*
+*Pipeline Enterprise (25/12/2025): Deploy Server (CX11) separado + Production Server (GEX44 GPU). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 *GPU: RTX 4090 (24GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

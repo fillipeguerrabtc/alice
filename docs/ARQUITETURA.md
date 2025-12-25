@@ -104,7 +104,7 @@ alice/
 │   └── shared-utils/        # Utilities enterprise
 ├── infra/                   # Infraestrutura
 │   ├── docker/              # Docker Compose
-│   ├── salad-cloud/         # Scripts GPU (obsoleto - abordagem híbrida)
+│   └── scripts/             # Automação e deploy
 │   └── scripts/             # Automação
 └── docs/                    # Documentação
 ```
@@ -124,7 +124,7 @@ C4Context
     
     System(alice, "Alice Platform", "Plataforma de IA Autônoma Enterprise")
     
-    System_Ext(saladCloud, "Salad Cloud", "GPUs RTX 4090 para LLM/Embeddings")
+    System_Ext(gpuServer, "Hetzner GPU GEX44", "GPU Manager Service - LLM/Embeddings local")
     System_Ext(kucoin, "KuCoin Futures", "Trading BTC Perpetuals")
     System_Ext(stripe, "Stripe", "Pagamentos")
     System_Ext(twilio, "Twilio", "WhatsApp/SMS")
@@ -132,7 +132,7 @@ C4Context
     
     Rel(user, alice, "Chat, consultas, trading")
     Rel(admin, alice, "Configuração, monitoramento")
-    Rel(alice, saladCloud, "Inferência LLM, Embeddings GPU")
+    Rel(alice, gpuServer, "Inferência LLM, Embeddings GPU (local)")
     Rel(alice, kucoin, "Ordens de trading")
     Rel(alice, stripe, "Webhooks de pagamento")
     Rel(alice, twilio, "Mensagens WhatsApp")
@@ -143,7 +143,7 @@ C4Context
 
 | Sistema | Propósito | Protocolo | Autenticação |
 |---------|-----------|-----------|--------------|
-| **Salad Cloud** | GPUs para LLM/Embeddings (Container Groups pré-criados) | REST/WebSocket | API Key |
+| **Hetzner GPU GEX44** | GPU Manager Service local - LLM/Embeddings/FLUX/ASR | HTTP (localhost) | N/A (interno) |
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
@@ -178,15 +178,15 @@ C4Container
         ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 4096 dim")
     }
     
-    System_Ext(salad, "Salad Cloud", "GPUs")
+    System_Ext(gpuManager, "GPU Manager Service", "Gerenciamento GPU local")
     
     Rel(user, traefik, "HTTPS")
     Rel(traefik, frontend, "HTTP")
     Rel(traefik, auth, "HTTP")
     Rel(traefik, chat, "HTTP/WS")
     Rel(traefik, rag, "HTTP")
-    Rel(chat, salad, "HTTPS", "LLM Inference")
-    Rel(rag, salad, "HTTPS", "Embeddings")
+    Rel(chat, gpuManager, "HTTP", "LLM Inference (local)")
+    Rel(rag, gpuManager, "HTTP", "Embeddings (local)")
     Rel(chat, postgres, "TCP")
     Rel(rag, qdrant, "HTTP", "Vector Search")
     Rel(auth, redis, "TCP", "Sessions")
@@ -261,7 +261,7 @@ C4Component
     ComponentDb(db, "PostgreSQL", "Conversations, Messages")
     ComponentDb(redis, "Redis", "Sessions, Cache")
     
-    System_Ext(salad, "Salad Cloud", "LLM GPU")
+    System_Ext(gpuManager, "GPU Manager Service", "LLM GPU (local)")
     System_Ext(kucoin, "KuCoin", "Trading API")
     
     Rel(wsHandler, responseCache, "Check cache")
@@ -270,7 +270,7 @@ C4Component
     Rel(wsHandler, tradingParser, "Parse commands")
     Rel(tradingParser, tradingOrch, "Execute trading")
     Rel(tradingOrch, kucoin, "Place orders")
-    Rel(llmClient, salad, "Inference")
+    Rel(llmClient, gpuManager, "Inference (local)")
 ```
 
 ### 5.2 RAG Service - Componentes
@@ -439,20 +439,17 @@ C4Deployment
                 Container(backup, "pgBackRest", "Backup")
             }
         }
-        Deployment_Node(volume, "Hetzner Volume", "100GB EXT4") {
-            ContainerDb(data, "Persistent Data", "/mnt/alice-data")
+        Deployment_Node(gpuServices, "GPU Services", "Local GPU Services") {
+            Container(gpuManager, "GPU Manager Service", "Fila priorizada, VRAM monitoring")
+            Container(mixtral, "Mixtral 8x7B", "vLLM AWQ")
+            Container(flux, "FLUX.1 Schnell", "Image Gen")
+            Container(qwen, "Qwen3-Embedding", "4096 dim")
+            Container(canary, "Canary-1B", "ASR")
         }
     }
     
-    Deployment_Node(salad, "Salad Cloud", "Distributed GPUs") {
-        Container(mixtral, "Mixtral 8x7B", "vLLM AWQ")
-        Container(flux, "FLUX.1 Schnell", "Image Gen")
-        Container(qwen, "Qwen3-Embedding", "4096 dim")
-        Container(canary, "Canary-1B", "ASR")
-    }
-    
     Rel(traefik, services, "HTTP")
-    Rel(services, salad, "HTTPS", "GPU Inference")
+    Rel(services, gpuServices, "HTTP", "GPU Inference (local)")
 ```
 
 ### 7.2 Estrutura de Volumes
@@ -494,19 +491,19 @@ flowchart LR
     subgraph CD
         F --> G[Create Release]
         G --> H[Deploy Hetzner]
-        H --> I[Deploy Salad GPU]
+        H --> I[Deploy Production Server]
         I --> J[Health Checks]
         J --> K[Rollback if failed]
     end
     
     subgraph Production
-        K --> L[44 Containers Hetzner]
-        L --> M[4 GPU Salad Cloud - URLs pré-configuradas]
+        K --> L[50 Containers Hetzner GEX44]
+        L --> M[GPU Manager Service + 4 GPU Services (local)]
         M --> N[Prometheus Monitoring]
     end
 ```
 
-> **Pipeline Híbrida (22/12/2025):** Hetzner 100% automático. Salad Cloud usa abordagem híbrida - Container Groups pré-criados manualmente, URLs em secrets.
+> **Pipeline Enterprise (25/12/2025):** Deploy Server (CX11) separado + Production Server (GEX44 GPU). Todos os serviços GPU rodam localmente no servidor único, eliminando latência de rede.
 
 ---
 
@@ -752,10 +749,10 @@ logger.info({
 | Aspecto | Decisão |
 |---------|---------|
 | **Status** | Aceito |
-| **Contexto** | Otimização de custos GPU Salad Cloud |
-| **Decisão** | Fila Redis + Worker assíncrono + Keep-warm 30 min |
-| **Alternativas** | GPU sempre ativa, Cold start a cada request |
-| **Consequências** | + Custo proporcional ao uso, - Latência no primeiro request |
+| **Contexto** | Gerenciamento de requisições GPU no servidor único |
+| **Decisão** | GPU Manager Service com fila priorizada (Redis) + Monitoramento VRAM + Keep-warm 30 min |
+| **Alternativas** | GPU sempre ativa, Sem gerenciamento centralizado |
+| **Consequências** | + Otimização de VRAM, + Priorização de requisições, + Latência mínima (local) |
 
 ### ADR-005: Response Cache (Greetings Gate)
 
@@ -898,7 +895,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Versão: 1.5.0 - Verificação Completa SearXNG*
 *Total de Containers: 45*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
-*LLM: Mixtral 8x7B (vLLM AWQ) via Salad Cloud*  
+*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*  
 *Framework: arc42 + C4 Model + ADRs*  
