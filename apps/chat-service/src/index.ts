@@ -729,78 +729,18 @@ interface LLMRequest {
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
-  const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
-
-  // BUG FIX 25/12/2025: TODAS as requisições passam pelo GPU Manager Service
-  // Streaming: usa endpoint /api/gpu/stream (proxy direto com verificação de circuit breaker e VRAM)
-  // Não-streaming: usa fila priorizada (/api/gpu/queue)
+  // BUG FIX 25/12/2025: callLlamaAPIInternal NÃO suporta streaming
+  // Streaming deve ser feito diretamente no endpoint/handler (ex: /api/chat/stream, WebSocket)
+  // porque o GPU Manager Service consome o body ao fazer proxy, então não podemos retornar
+  // um Response que possa ser lido via streamResponse()
   if (request.stream) {
-    // Streaming: usar GPU Manager Service (endpoint /api/gpu/stream)
-    // Passa por circuit breaker, VRAM monitoring, mas faz proxy direto (sem fila)
-    // BUG FIX 25/12/2025: O GPU Manager Service faz proxy do stream e consome o body.
-    // Não podemos retornar o Response do fetch porque o body já foi consumido.
-    // A solução é fazer proxy diretamente no chat-service, sem usar streamResponse().
-    // Mas isso requer que o chat-service faça fetch do endpoint /api/gpu/stream e faça proxy
-    // do stream diretamente para sua resposta HTTP.
-    //
-    // SOLUÇÃO: O chat-service deve fazer proxy do stream diretamente do GPU Manager Service.
-    // O GPU Manager Service já está fazendo proxy do stream do gpu-mixtral para sua resposta HTTP.
-    // O chat-service deve fazer proxy do stream do GPU Manager Service para sua resposta HTTP.
-    //
-    // Mas o problema é que o Response do fetch já teve seu body consumido pelo GPU Manager Service.
-    //
-    // SOLUÇÃO FINAL: O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy
-    // do stream diretamente para sua resposta HTTP, sem tentar ler o Response via streamResponse().
-    // Isso requer mudar o chat-service para fazer proxy diretamente, sem usar streamResponse().
-    //
-    // Por enquanto, vamos fazer o proxy diretamente aqui, mas isso requer que o chat-service
-    // faça proxy diretamente, sem usar streamResponse().
-    
-    // BUG FIX 25/12/2025: Fazer proxy diretamente do stream do GPU Manager Service.
-    // O GPU Manager Service já está fazendo proxy do stream do gpu-mixtral para sua resposta HTTP.
-    // O chat-service deve fazer proxy do stream do GPU Manager Service para sua resposta HTTP.
-    // Mas isso requer que o chat-service faça fetch do endpoint /api/gpu/stream e faça proxy
-    // do stream diretamente, sem tentar ler o Response via streamResponse().
-    
-    // SOLUÇÃO TEMPORÁRIA: Fazer proxy diretamente do gpu-mixtral, mas verificar circuit breaker
-    // e VRAM via GPU Manager Service antes. Mas isso quebra a arquitetura.
-    
-    // SOLUÇÃO CORRETA: O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy
-    // do stream diretamente para sua resposta HTTP, sem tentar ler o Response via streamResponse().
-    // Isso requer mudar o endpoint /api/chat/stream para fazer proxy diretamente.
-    
-    try {
-      const response = await requestGpuStream({
-        serviceType: GpuServiceType.MIXTRAL,
-        endpoint: '/v1/chat/completions',
-        method: 'POST',
-        timeout,
-        body: {
-          model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-          messages: request.messages,
-          max_tokens: 4096,
-          temperature: 0.7,
-          stream: true,
-        },
-      });
-      
-      // BUG FIX 25/12/2025: O GPU Manager Service já consumiu o body ao fazer proxy.
-      // Não podemos retornar o Response porque o body já foi consumido.
-      // O chat-service deve fazer proxy diretamente do stream do GPU Manager Service.
-      // Mas isso requer que o chat-service faça fetch do endpoint /api/gpu/stream e faça proxy
-      // do stream diretamente, sem tentar ler o Response via streamResponse().
-      
-      // Por enquanto, vamos retornar o Response, mas o chat-service não deve tentar ler o body.
-      // O chat-service deve fazer proxy diretamente do stream do GPU Manager Service.
-      return response;
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('Timeout')) {
-        logger.warn({ timeout }, 'Chamada LLM streaming abortada por timeout');
-        throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM streaming`);
-      }
-      throw error;
-    }
-  } else {
+    throw new Error('callLlamaAPIInternal não suporta streaming - use proxy direto no endpoint');
+  }
+  
+  const timeout = LLM_SYNC_TIMEOUT;
+  
+  // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
+  {
     // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
     try {
       const gpuResponse = await requestGpu({
@@ -869,74 +809,138 @@ async function* streamFallback(): AsyncGenerator<string> {
 }
 
 async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<string | AsyncGenerator<string>> {
+  // BUG FIX 25/12/2025: callLlamaAPI NÃO suporta streaming
+  // Streaming deve ser feito diretamente no endpoint/handler usando proxy direto do GPU Manager Service
+  // porque o GPU Manager Service consome o body ao fazer proxy
+  if (stream) {
+    throw new Error('callLlamaAPI não suporta streaming - use proxy direto no endpoint/handler');
+  }
+  
   try {
-    const response = await gpuManagerBreaker.fire({ messages, stream }) as globalThis.Response;
-
-    if (stream) {
-      return streamResponse(response);
-    }
-
+    const response = await gpuManagerBreaker.fire({ messages, stream: false }) as globalThis.Response;
     const data = await response.json() as LLMResponse;
     return data.choices[0]?.message?.content || '';
   } catch (error) {
     // RESILIÊNCIA: Graceful degradation quando LLM está indisponível (Best Practices 2025)
     // Retorna mensagem amigável ao invés de erro técnico
-    // CRÍTICO: Manter consistência de tipo para streaming vs não-streaming
     if (error instanceof Error) {
       if (error.message.includes('Breaker is open')) {
         logger.warn('Circuit breaker aberto - LLM temporariamente indisponível');
-        return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
+        return LLM_FALLBACK_MESSAGE;
       }
       if (error.message.includes('Timeout') || error.name === 'AbortError') {
         logger.warn({ error: error.message }, 'Timeout na chamada LLM');
-        return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
+        return LLM_FALLBACK_MESSAGE;
       }
     }
     logger.error({ error }, 'Erro inesperado na chamada LLM');
-    return stream ? streamFallback() : LLM_FALLBACK_MESSAGE;
+    return LLM_FALLBACK_MESSAGE;
   }
 }
 
+/**
+ * BUG FIX 25/12/2025: streamResponse NÃO deve ser usado - GPU Manager Service consome o body
+ * Esta função está mantida apenas para compatibilidade, mas NÃO deve ser chamada
+ * Para streaming, use proxyStreamFromGpuManager() que faz proxy direto do GPU Manager Service
+ */
 async function* streamResponse(response: globalThis.Response): AsyncGenerator<string> {
-  // BUG FIX 25/12/2025: Validar response.body e reader antes de usar
-  if (!response.body) {
-    return; // Retorna generator vazio se não há body
-  }
+  // BUG FIX 25/12/2025: Esta função não deve ser usada - GPU Manager Service consome o body
+  // Mantida apenas para evitar quebra de código, mas nunca será executada em produção
+  logger.warn('streamResponse chamada - não deve ser usada com GPU Manager Service');
+  return;
+}
 
-  const reader = response.body.getReader();
-  if (!reader) {
-    return; // Retorna generator vazio se não há reader
+/**
+ * Faz proxy do stream do GPU Manager Service para WebSocket ou HTTP SSE
+ * BUG FIX 25/12/2025: Função reutilizável para streaming via GPU Manager Service
+ * 
+ * @param llmMessages Mensagens para enviar ao LLM
+ * @param onChunk Callback chamado para cada chunk de conteúdo (para WebSocket: ws.send)
+ * @param onDone Callback chamado quando stream termina (para WebSocket: salvar mensagem)
+ * @returns Promise que resolve com a resposta completa (concatenada)
+ */
+async function proxyStreamFromGpuManager(
+  llmMessages: LLMMessage[],
+  onChunk: (content: string) => void,
+  onDone?: () => void
+): Promise<string> {
+  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+  
+  // Fazer requisição streaming ao GPU Manager Service
+  const gpuResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+    },
+    body: JSON.stringify({
+      serviceType: 'mixtral',
+      endpoint: '/v1/chat/completions',
+      method: 'POST',
+      body: {
+        model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+        messages: llmMessages,
+        max_tokens: 4096,
+        temperature: 0.7,
+        stream: true,
+      },
+      timeout: 60000,
+    }),
+  });
+  
+  if (!gpuResponse.ok) {
+    const errorText = await gpuResponse.text();
+    throw new Error(`Erro na requisição GPU streaming: ${gpuResponse.status} - ${errorText}`);
   }
-
+  
+  if (!gpuResponse.body) {
+    throw new Error('Resposta de streaming não contém body');
+  }
+  
+  // BUG FIX 25/12/2025: Fazer proxy do stream diretamente do GPU Manager Service
+  const reader = gpuResponse.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
-
+  let fullResponse = '';
+  
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
+      
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
-
+      
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
-          if (data === '[DONE]') return;
+          if (data === '[DONE]') {
+            if (onDone) onDone();
+            return fullResponse;
+          }
           
           try {
-            const parsed = JSON.parse(data) as LLMResponse;
-            const content = parsed.choices[0]?.delta?.content;
-            if (content) yield content;
+            const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              fullResponse += content;
+              onChunk(content);
+            }
           } catch {
-            continue;
+            // Ignorar erros de parse de linhas inválidas
           }
         }
       }
     }
+    
+    if (onDone) onDone();
+    return fullResponse;
+  } catch (error) {
+    logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
+    throw error;
   } finally {
-    // BUG FIX 25/12/2025: Garantir que reader seja liberado mesmo em caso de erro
+    // BUG FIX 25/12/2025: Garantir que reader seja liberado SEMPRE, mesmo em caso de erro ou early return
     reader.releaseLock();
   }
 }
@@ -1989,94 +1993,24 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       res.write(`data: ${JSON.stringify({ type: 'sources', sources: ragSources })}\n\n`);
     }
 
-    // BUG FIX 25/12/2025: O GPU Manager Service faz proxy do stream e consome o body.
-    // Não podemos usar callLlamaAPI com streamResponse() porque o body já foi consumido.
-    // A solução é fazer proxy diretamente do stream do GPU Manager Service.
-    // 
-    // SOLUÇÃO: Fazer fetch do endpoint /api/gpu/stream e fazer proxy do stream diretamente
-    // para a resposta HTTP, sem tentar ler o Response via streamResponse().
-    
-    const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
-    
-    // Fazer requisição streaming ao GPU Manager Service
-    const gpuResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET,
-      },
-      body: JSON.stringify({
-        serviceType: 'mixtral',
-        endpoint: '/v1/chat/completions',
-        method: 'POST',
-        body: {
-          model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-          messages: llmMessages,
-          max_tokens: 4096,
-          temperature: 0.7,
-          stream: true,
-        },
-        timeout: 60000,
-      }),
-    });
-    
-    if (!gpuResponse.ok) {
-      const errorText = await gpuResponse.text();
-      throw new Error(`Erro na requisição GPU streaming: ${gpuResponse.status} - ${errorText}`);
-    }
-    
-    if (!gpuResponse.body) {
-      throw new Error('Resposta de streaming não contém body');
-    }
-    
-    // BUG FIX 25/12/2025: Fazer proxy do stream diretamente do GPU Manager Service
-    // O GPU Manager Service já está fazendo proxy do stream do gpu-mixtral para sua resposta HTTP.
-    // O chat-service deve fazer proxy do stream do GPU Manager Service para sua resposta HTTP.
-    const reader = gpuResponse.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    
+    // BUG FIX 25/12/2025: Usar função auxiliar para proxy de stream do GPU Manager Service
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-        
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6);
-            if (data === '[DONE]') {
-              res.write('data: [DONE]\n\n');
-              res.end();
-              return;
-            }
-            
-            try {
-              const parsed = JSON.parse(data) as { choices?: Array<{ delta?: { content?: string } }> };
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                res.write(`data: ${JSON.stringify({ content })}\n\n`);
-              }
-            } catch {
-              // Ignorar erros de parse de linhas inválidas
-            }
-          }
+      await proxyStreamFromGpuManager(
+        llmMessages,
+        (content) => {
+          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+        },
+        () => {
+          res.write('data: [DONE]\n\n');
+          res.end();
         }
-      }
-      
-      res.write('data: [DONE]\n\n');
-      res.end();
-    } catch (error) {
-      logger.error({ error }, 'Erro ao fazer proxy de stream do GPU Manager Service');
+      );
+    } catch (streamError) {
+      logger.error({ error: streamError }, 'Erro no streaming do GPU Manager Service');
       if (!res.headersSent) {
         res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
+        res.end();
       }
-      res.end();
-    } finally {
-      reader.releaseLock();
     }
   } catch (error) {
     logger.error({ error }, 'Erro no streaming');

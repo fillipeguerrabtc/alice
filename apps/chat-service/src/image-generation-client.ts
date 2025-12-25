@@ -130,8 +130,11 @@ export async function generateImage(
   imageBase64: string;
   generationTimeMs: number;
 }> {
+  // BUG FIX 25/12/2025: Declarar pendingRecord no escopo da função para estar disponível no catch
+  let pendingRecord: { id: string } | undefined;
+  
   try {
-    const [pendingRecord] = await db.insert(schema.generatedImages).values({
+    [pendingRecord] = await db.insert(schema.generatedImages).values({
       tenantId: options?.tenantId,
       conversationId: options?.conversationId,
       messageId: options?.messageId,
@@ -180,10 +183,8 @@ export async function generateImage(
     
     // BUG FIX 25/12/2025: Atualizar status do registro para 'failed' quando geração falha
     // Previne registros órfãos com status permanente 'generating'
-    try {
-      // Tentar obter o ID do registro pendente se disponível
-      // Se o erro ocorreu antes de criar o registro, pendingRecord pode não existir
-      if (typeof pendingRecord !== 'undefined' && pendingRecord?.id) {
+    if (pendingRecord?.id) {
+      try {
         await db.update(schema.generatedImages)
           .set({
             status: 'failed',
@@ -195,10 +196,10 @@ export async function generateImage(
           .where(eq(schema.generatedImages.id, pendingRecord.id));
         
         logger.info({ imageId: pendingRecord.id }, 'Status da imagem atualizado para failed após erro');
+      } catch (updateError) {
+        // Se falhar ao atualizar, logar mas não impedir o throw do erro original
+        logger.error({ error: updateError, imageId: pendingRecord.id }, 'Erro ao atualizar status da imagem para failed');
       }
-    } catch (updateError) {
-      // Se falhar ao atualizar, logar mas não impedir o throw do erro original
-      logger.error({ error: updateError, imageId: pendingRecord?.id }, 'Erro ao atualizar status da imagem para failed');
     }
     
     if (error instanceof Error && error.message.includes('Breaker is open')) {

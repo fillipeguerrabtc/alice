@@ -1673,6 +1673,7 @@ jobs:
       # =============================================================================
       - name: Deploy via Deploy Server (remoto)
         if: steps.detect-runner.outputs.runner_type == 'deploy-server'
+        continue-on-error: false
         env:
           PRODUCTION_SERVER_HOST: ${{ secrets.PRODUCTION_SERVER_HOST || secrets.HETZNER_VM_HOST }}
           PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || 'alice-deploy' }}
@@ -1731,6 +1732,7 @@ jobs:
       # =============================================================================
       - name: Deploy via Production Server Runner (legado)
         if: steps.detect-runner.outputs.runner_type == 'production-server'
+        continue-on-error: false
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
