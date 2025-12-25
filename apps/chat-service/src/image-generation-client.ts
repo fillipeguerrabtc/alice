@@ -178,6 +178,29 @@ export async function generateImage(
   } catch (error) {
     logger.error({ error, request }, 'Erro ao gerar imagem');
     
+    // BUG FIX 25/12/2025: Atualizar status do registro para 'failed' quando geração falha
+    // Previne registros órfãos com status permanente 'generating'
+    try {
+      // Tentar obter o ID do registro pendente se disponível
+      // Se o erro ocorreu antes de criar o registro, pendingRecord pode não existir
+      if (typeof pendingRecord !== 'undefined' && pendingRecord?.id) {
+        await db.update(schema.generatedImages)
+          .set({
+            status: 'failed',
+            metadata: {
+              error: error instanceof Error ? error.message : 'Erro desconhecido',
+              failedAt: new Date().toISOString(),
+            },
+          })
+          .where(eq(schema.generatedImages.id, pendingRecord.id));
+        
+        logger.info({ imageId: pendingRecord.id }, 'Status da imagem atualizado para failed após erro');
+      }
+    } catch (updateError) {
+      // Se falhar ao atualizar, logar mas não impedir o throw do erro original
+      logger.error({ error: updateError, imageId: pendingRecord?.id }, 'Erro ao atualizar status da imagem para failed');
+    }
+    
     if (error instanceof Error && error.message.includes('Breaker is open')) {
       throw new Error('Serviço de geração de imagens temporariamente indisponível. Tente novamente em alguns segundos.');
     }

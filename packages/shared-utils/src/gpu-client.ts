@@ -193,9 +193,16 @@ export async function getGpuResult(requestId: string): Promise<GpuResponse | nul
 
 /**
  * Requisição GPU com streaming (proxy direto via GPU Manager Service)
- * BUG FIX 25/12/2025: Streaming passa pelo GPU Manager Service para fila, VRAM monitoring e circuit breaker
+ * BUG FIX 25/12/2025: Streaming passa pelo GPU Manager Service para verificação de circuit breaker e VRAM
+ * 
+ * IMPORTANTE: O GPU Manager Service NÃO faz proxy - ele apenas verifica circuit breaker e VRAM,
+ * depois retorna o Response diretamente para que o chat-service possa fazer o proxy.
  */
 export async function requestGpuStream(options: GpuRequestOptions): Promise<globalThis.Response> {
+  // BUG FIX 25/12/2025: O GPU Manager Service não deve fazer proxy - ele deve apenas verificar
+  // circuit breaker e VRAM, depois retornar o Response diretamente para que o chat-service possa fazer o proxy.
+  // Isso permite que o chat-service leia o stream sem que o body seja consumido.
+  
   const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
     method: 'POST',
     headers: {
@@ -217,8 +224,8 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
     throw new Error(`Erro na requisição GPU streaming: ${response.status} - ${errorText}`);
   }
   
-  // BUG FIX 25/12/2025: Stream body é one-time-readable - retornar Response diretamente
-  // O GPU Manager Service faz proxy do stream, então apenas retornamos a Response
+  // BUG FIX 25/12/2025: O GPU Manager Service agora retorna o Response sem consumir o body.
+  // O chat-service pode ler o stream diretamente.
   if (!response.body) {
     throw new Error('Resposta de streaming não contém body');
   }

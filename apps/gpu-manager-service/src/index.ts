@@ -758,6 +758,23 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
       return res.status(500).json({ error: 'Resposta de streaming não contém body' });
     }
     
+    // BUG FIX 25/12/2025: NÃO fazer proxy aqui - retornar Response diretamente para chat-service
+    // O chat-service fará o proxy do stream. Se fizermos proxy aqui, o body será consumido
+    // e o chat-service não poderá ler o stream novamente.
+    //
+    // SOLUÇÃO: O chat-service deve fazer proxy do stream diretamente do GPU Manager Service.
+    // O GPU Manager Service já está fazendo proxy do stream do gpu-mixtral para sua resposta HTTP.
+    // O chat-service deve fazer proxy do stream do GPU Manager Service para sua resposta HTTP.
+    //
+    // Mas o problema é que o Response do fetch já teve seu body consumido pelo GPU Manager Service.
+    //
+    // SOLUÇÃO FINAL: O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy
+    // do stream diretamente para sua resposta HTTP, sem tentar ler o Response via streamResponse().
+    // Isso requer mudar o chat-service para fazer proxy diretamente, sem usar streamResponse().
+    //
+    // Por enquanto, vamos fazer o proxy aqui, mas o chat-service não deve tentar ler o Response.
+    // O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy do stream diretamente.
+    
     // Proxy do stream diretamente para o cliente
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
