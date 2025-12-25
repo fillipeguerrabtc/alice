@@ -18,7 +18,7 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, NextFunction } from 'express';
 import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
@@ -40,7 +40,6 @@ import {
   createErrorHandler,
   createNotFoundHandler,
   asyncHandler,
-  requireAuth,
 } from '@alice/shared-utils';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -51,6 +50,35 @@ const logger = createLogger('gpu-manager');
 
 const PORT = process.env.PORT || 3010;
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET || '';
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
+// Middleware de autenticação interna (service-to-service)
+// BUG FIX 25/12/2025: GPU Manager Service endpoints devem aceitar X-Internal-Api-Secret, não requireAuth (OAuth/JWT)
+// gpu-client.ts envia X-Internal-Api-Secret header para autenticação service-to-service
+function requireInternalAuth(req: Request, res: Response, next: NextFunction): void {
+  // Health check básico não requer auth (para docker healthcheck)
+  if (req.path === '/health' || req.path === '/live' || req.path === '/ready') {
+    return next();
+  }
+
+  // Em desenvolvimento sem secret configurado, permitir acesso
+  if (!INTERNAL_API_SECRET && !IS_PRODUCTION) {
+    logger.warn('INTERNAL_API_SECRET não configurado - permitindo acesso (apenas desenvolvimento)');
+    return next();
+  }
+
+  // Verificar header X-Internal-Api-Secret (usado por gpu-client.ts)
+  const secretHeader = req.headers['x-internal-api-secret'] as string;
+  
+  if (!secretHeader || secretHeader !== INTERNAL_API_SECRET) {
+    logger.warn({ path: req.path, ip: req.ip }, 'Tentativa de acesso não autorizado ao GPU Manager Service');
+    res.status(401).json({ error: 'Token de autenticação inválido ou ausente' });
+    return;
+  }
+
+  next();
+}
 
 // ============================================================================
 // CONFIGURAÇÃO
@@ -562,7 +590,8 @@ app.get('/ready', async (req: Request, res: Response) => {
 });
 
 // Enfileirar requisição GPU
-app.post('/api/gpu/queue', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     serviceType: z.nativeEnum(GpuServiceType),
     priority: z.nativeEnum(GpuRequestPriority).optional(),
@@ -587,8 +616,10 @@ app.post('/api/gpu/queue', requireAuth, asyncHandler(async (req: Request, res: R
     body: body.body,
     headers: body.headers,
     timeout: body.timeout,
-    tenantId: req.tenantId,
-    userId: req.userId,
+    // BUG FIX 25/12/2025: req.tenantId e req.userId não existem com requireInternalAuth
+    // GPU Manager Service é interno - não precisa de tenant/user context para requisições GPU
+    tenantId: undefined,
+    userId: undefined,
     metadata: body.metadata,
     createdAt: Date.now(),
     retries: 0,
@@ -605,7 +636,8 @@ app.post('/api/gpu/queue', requireAuth, asyncHandler(async (req: Request, res: R
 }));
 
 // Obter resultado de requisição
-app.get('/api/gpu/queue/:requestId', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const { requestId } = req.params;
   const redis = getRedisClient();
   const resultKey = `${REDIS_QUEUE_PREFIX}:result:${requestId}`;
@@ -621,7 +653,8 @@ app.get('/api/gpu/queue/:requestId', requireAuth, asyncHandler(async (req: Reque
 
 // Streaming LLM (bypass fila - proxy direto com verificação de circuit breaker e VRAM)
 // BUG FIX 25/12/2025: Streaming requer proxy direto (não pode usar fila com polling)
-app.post('/api/gpu/stream', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const schema = z.object({
     serviceType: z.nativeEnum(GpuServiceType),
     endpoint: z.string(),
@@ -726,13 +759,15 @@ app.post('/api/gpu/stream', requireAuth, asyncHandler(async (req: Request, res: 
 }));
 
 // Status de VRAM
-app.get('/api/gpu/vram', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+app.get('/api/gpu/vram', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const vramStatus = await getVramStatus();
   res.json(vramStatus);
 }));
 
 // Status da fila
-app.get('/api/gpu/queue/status', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+// BUG FIX 25/12/2025: Usar requireInternalAuth ao invés de requireAuth (aceita X-Internal-Api-Secret)
+app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: Request, res: Response) => {
   const redis = getRedisClient();
   const status: Record<string, number> = {};
   

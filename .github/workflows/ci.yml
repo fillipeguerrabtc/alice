@@ -308,6 +308,7 @@ jobs:
           - api-gateway
           - auth-service
           - chat-service
+          - gpu-manager-service
           - integrations-service
           - observability-service
           - rag-service
