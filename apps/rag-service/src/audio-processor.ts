@@ -223,52 +223,6 @@ class AudioProcessorService {
   }
 
   /**
-   * Gera embedding de texto via GPU (Qwen3-Embedding-8B, 4096 dim → Qdrant)
-   */
-  private async generateTextEmbedding(
-    text: string
-  ): Promise<{ embedding: number[]; model: string }> {
-    try {
-      // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para embeddings
-      const gpuResponse = await requestGpu({
-        serviceType: GpuServiceType.EMBEDDINGS,
-        endpoint: '/embed/text',
-        method: 'POST',
-        priority: GpuRequestPriority.MEDIUM,
-        timeout: EMBEDDING_TIMEOUT_MS,
-        body: { text },
-      });
-
-      if (!gpuResponse.success || !gpuResponse.data) {
-        throw new Error(gpuResponse.error || 'Erro ao gerar embedding de texto');
-      }
-
-      const result = gpuResponse.data as {
-        embedding: number[];
-        model: string;
-        dimension: number;
-      };
-
-      if (!result.embedding || result.embedding.length === 0) {
-        throw new Error('Resposta de embedding GPU vazia');
-      }
-
-      // Validar dimensão (deve ser 4096 para Qwen3-Embedding-8B) - Enterprise-Grade
-      validateEmbeddingDimension(result.embedding, 4096, 'TEXT');
-
-      return {
-        embedding: result.embedding,
-        model: result.model || 'Qwen/Qwen3-Embedding-8B',
-      };
-    } catch (error) {
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error(`Erro desconhecido ao gerar embedding: ${String(error)}`);
-    }
-  }
-
-  /**
    * Verifica se o serviço está pronto (health check)
    */
   async isReadyAsync(): Promise<boolean> {
@@ -289,6 +243,7 @@ class AudioProcessorService {
 
   /**
    * Gera embedding de texto via GPU (Qwen3-Embedding-8B, 4096 dim → Qdrant)
+   * BUG FIX 25/12/2025: Método duplicado removido - mantida apenas a versão que usa TEXT_EMBEDDING_DIM
    */
   private async generateTextEmbedding(
     text: string

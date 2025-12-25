@@ -192,10 +192,8 @@ export async function generateImage(
 // Embeddings de imagem com 1024 dimensões para máxima qualidade
 // ============================================================================
 
-// CORREÇÃO 17/12/2025: Sem fallback localhost (Regra 6 - fail-fast)
-// GPU é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim)
+// BUG FIX 25/12/2025: GPU_MANAGER_URL já declarado na linha 26 - removida declaração duplicada
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIPEmbeddingResponse> {
   // ARQUITETURA ENTERPRISE (25/12/2025): OpenCLIP ViT-H/14 via GPU Manager Service

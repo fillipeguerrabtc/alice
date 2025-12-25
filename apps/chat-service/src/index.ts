@@ -728,48 +728,96 @@ interface LLMRequest {
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
-  // ARQUITETURA ENTERPRISE (25/12/2025): Usar GPU Manager Service para gerenciar requisições LLM
-  // O GPU Manager enfileira, prioriza e monitora VRAM antes de processar
   const timeout = request.stream ? LLM_STREAM_TIMEOUT : LLM_SYNC_TIMEOUT;
 
-  try {
-    // Enfileirar requisição no GPU Manager com prioridade CRITICAL (chat em tempo real)
-    const gpuResponse = await requestGpu({
-      serviceType: GpuServiceType.MIXTRAL,
-      endpoint: '/v1/chat/completions',
-      method: 'POST',
-      priority: GpuRequestPriority.CRITICAL,
-      timeout,
-      body: {
-        model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-        messages: request.messages,
-        max_tokens: 4096,
-        temperature: 0.7,
-        stream: request.stream,
-      },
-    });
-
-    if (!gpuResponse.success || !gpuResponse.data) {
-      throw new Error(gpuResponse.error || 'Erro desconhecido na API LLM');
-    }
-
-    // Converter resposta do GPU Manager para formato Response
-    // O GPU Manager retorna o JSON direto, então precisamos criar uma Response simulada
-    const responseData = gpuResponse.data as LLMResponse;
+  // BUG FIX 25/12/2025: Streaming requer conexão direta ao gpu-mixtral (GPU Manager não suporta streaming ainda)
+  // Para não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
+  // Para streaming: conectar diretamente ao gpu-mixtral:8000 (vLLM suporta streaming nativo)
+  if (request.stream) {
+    // Streaming: conexão direta ao gpu-mixtral (bypass GPU Manager)
+    const MIXTRAL_GPU_URL = process.env.MIXTRAL_GPU_URL || 'http://gpu-mixtral:8000';
     
-    // Para streaming, o GPU Manager deve retornar um stream ou chunks
-    // Por enquanto, retornamos uma Response não-streaming
-    // TODO: Implementar suporte a streaming no GPU Manager
-    return new Response(JSON.stringify(responseData), {
-      status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  } catch (error) {
-    if (error instanceof Error && error.message.includes('Timeout')) {
-      logger.warn({ timeout }, 'Chamada LLM abortada por timeout');
-      throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM`);
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeout);
+      
+      const response = await fetch(`${MIXTRAL_GPU_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+          messages: request.messages,
+          max_tokens: 4096,
+          temperature: 0.7,
+          stream: true,
+        }),
+        signal: controller.signal,
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Erro na API LLM (streaming): ${response.status} - ${errorText}`);
+      }
+      
+      if (!response.body) {
+        throw new Error('Resposta de streaming não contém body');
+      }
+      
+      // Retornar Response com stream diretamente do gpu-mixtral
+      return new Response(response.body, {
+        status: 200,
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.warn({ timeout }, 'Chamada LLM streaming abortada por timeout');
+        throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM streaming`);
+      }
+      throw error;
     }
-    throw error;
+  } else {
+    // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
+    try {
+      const gpuResponse = await requestGpu({
+        serviceType: GpuServiceType.MIXTRAL,
+        endpoint: '/v1/chat/completions',
+        method: 'POST',
+        priority: GpuRequestPriority.CRITICAL,
+        timeout,
+        body: {
+          model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+          messages: request.messages,
+          max_tokens: 4096,
+          temperature: 0.7,
+          stream: false,
+        },
+      });
+
+      if (!gpuResponse.success || !gpuResponse.data) {
+        throw new Error(gpuResponse.error || 'Erro desconhecido na API LLM');
+      }
+
+      // Converter resposta do GPU Manager para formato Response
+      const responseData = gpuResponse.data as LLMResponse;
+      return new Response(JSON.stringify(responseData), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Timeout')) {
+        logger.warn({ timeout }, 'Chamada LLM abortada por timeout');
+        throw new Error(`Timeout de ${timeout / 1000}s excedido na chamada LLM`);
+      }
+      throw error;
+    }
   }
 }
 

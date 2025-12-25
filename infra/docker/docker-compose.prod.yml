@@ -825,10 +825,14 @@ services:
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # CORREÇÃO SEGURANÇA: REDIS_URL inclui senha para autenticação
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379
+      # Mixtral GPU URL para streaming direto (bypass GPU Manager quando stream=true)
+      MIXTRAL_GPU_URL: ${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
     depends_on:
       postgres:
         condition: service_healthy
       alice-redis:
+        condition: service_healthy
+      gpu-manager:
         condition: service_healthy
     networks:
       - alice-network
@@ -934,6 +938,8 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
+      gpu-manager:
+        condition: service_healthy
     networks:
       - alice-network
     labels:
@@ -1003,6 +1009,8 @@ services:
       alice-qdrant:
         condition: service_healthy
       alice-redis:
+        condition: service_healthy
+      gpu-manager:
         condition: service_healthy
     networks:
       - alice-network
