@@ -14,10 +14,11 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 49 total (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup + 4 GPU)
+# CONTAINERS: 50 total (8 infra + 8 Alice + 15 ERPNext + 14 observability + 1 backup + 4 GPU)
 # GPU SERVICES (4): gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr
+# GPU MANAGER (1): gpu-manager (gerenciamento centralizado de requisições GPU)
 # INFRAESTRUTURA (8): dockerproxy, traefik-init, traefik, postgres, redis, qdrant, tor, searxng
-# ALICE (7): frontend, auth, chat, rag, training, integrations, observability
+# ALICE (8): frontend, auth, chat, rag, training, integrations, observability, gpu-manager
 # - alice-qdrant: Banco vetorial para embeddings de texto 4096 dim (Qwen3-Embedding-8B)
 # - alice-redis: Cache distribuído dedicado para serviços Alice (Regra 15)
 # - alice-searxng: Metabusca interna (SearXNG) para Web Search
@@ -3214,6 +3215,52 @@ services:
       interval: 30s
       timeout: 10s
       start_period: 120s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
+  # GPU Manager Service - Gerenciamento Centralizado de Requisições GPU
+  # =============================================================================
+  gpu-manager:
+    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-gpu-manager:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-gpu-manager
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PORT=3010
+      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD}@alice-redis:6379/0}
+      - MIXTRAL_GPU_URL=${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
+      - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
+      - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
+      - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
+      - NODE_ENV=production
+    ports:
+      - "127.0.0.1:3010:3010"  # Apenas localhost
+    networks:
+      - alice-network
+    depends_on:
+      alice-redis:
+        condition: service_healthy
+      gpu-mixtral:
+        condition: service_healthy
+      gpu-embeddings:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3010/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
       retries: 3
     logging:
       driver: "json-file"

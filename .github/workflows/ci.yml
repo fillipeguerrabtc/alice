@@ -69,6 +69,7 @@ jobs:
               - 'apps/api-gateway/**'
               - 'apps/auth-service/**'
               - 'apps/chat-service/**'
+              - 'apps/gpu-manager-service/**'
               - 'apps/integrations-service/**'
               - 'apps/observability-service/**'
               - 'apps/rag-service/**'
