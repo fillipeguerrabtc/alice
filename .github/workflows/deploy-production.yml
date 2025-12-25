@@ -3027,7 +3027,10 @@ jobs:
             
             # Timeouts para init containers (one-shot)
             CONFIGURATOR_TIMEOUT=180   # erpnext-configurator: escreve configs (aumentado de 120s)
-            CREATE_SITE_TIMEOUT=600    # erpnext-create-site: cria site + instala erpnext (~300 tabelas) - BUG FIX 24/12/2025: aumentado de 300s para 600s
+            # BUG FIX 24/12/2025: Aumentado para 20 minutos - ERPNext instalação pode levar 15-20 min
+            # Durante "Installing erpnext..." o processo cria ~300 tabelas, instala módulos,
+            # executa migrations, e configura dependências - processo muito demorado
+            CREATE_SITE_TIMEOUT=1200   # erpnext-create-site: cria site + instala erpnext (~300 tabelas + migrations)
             
             # ==============================================
             # DEPLOY EM FASES SEQUENCIAIS (Enterprise Best Practice)
@@ -3241,9 +3244,21 @@ jobs:
                     erpnext-create-site || { DEPLOY_EXIT_CODE=$?; echo "❌ FASE 6b falhou (create-site)"; }
                   
                   if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then
-                    # Aguardar create-site completar (pode demorar até 5 min)
+                    # Aguardar create-site completar (pode demorar até 20 min para instalação completa do ERPNext)
+                    # BUG FIX 24/12/2025: ERPNext cria ~300 tabelas durante instalação - pode levar mais de 10 minutos
                     echo "   Aguardando erpnext-create-site [timeout: ${CREATE_SITE_TIMEOUT}s]..."
-                    timeout $CREATE_SITE_TIMEOUT docker wait erpnext-create-site || true
+                    # Capturar exit code do timeout para detectar timeouts explicitamente
+                    if timeout $CREATE_SITE_TIMEOUT docker wait erpnext-create-site; then
+                      echo "   Container terminou dentro do timeout"
+                    else
+                      TIMEOUT_EXIT=$?
+                      if [ "$TIMEOUT_EXIT" -eq 124 ]; then
+                        echo "⚠️ TIMEOUT: erpnext-create-site excedeu timeout de ${CREATE_SITE_TIMEOUT}s"
+                        echo "   Verificando status atual do container..."
+                      else
+                        echo "⚠️ docker wait falhou com exit code: $TIMEOUT_EXIT"
+                      fi
+                    fi
                     
                     # CORREÇÃO 23/12/2025: Verificar se container REALMENTE terminou
                     # antes de confiar no ExitCode (que é 0 por padrão se ainda rodando)
