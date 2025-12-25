@@ -1499,11 +1499,13 @@ jobs:
   # Job 5: Deploy para Hetzner Cloud via Docker Compose
   # PIPELINE 100% AUTOMÁTICO: Push → CI → Release → Deploy (sem aprovação manual)
   # ===========================================================================
-  # SEGURANÇA (GAP-GHACTIONS-002):
-  # - GITHUB_TOKEN: Usado para GHCR (OIDC nativo, sem PAT)
-  # - GH_PAT: Ainda necessário para git clone no servidor Hetzner
-  #   (GITHUB_TOKEN não funciona fora do runner GitHub Actions)
-  # - SSH keys: Padrão da indústria para VPS (OIDC não suportado por Hetzner)
+  # ENTERPRISE-GRADE (25/12/2025): Self-Hosted Runner com fallback SSH
+  # - Self-Hosted Runner: Execução local no servidor Hetzner (zero latência)
+  # - Fallback SSH: Se runner não disponível, usa SSH (compatibilidade)
+  # - SEGURANÇA (GAP-GHACTIONS-002):
+  #   - GITHUB_TOKEN: Usado para GHCR (OIDC nativo, sem PAT)
+  #   - GH_PAT: Necessário para git clone no servidor Hetzner
+  #   - SSH keys: Fallback quando self-hosted runner não disponível
   # ===========================================================================
   deploy:
     name: Deploy Hetzner Cloud
@@ -1615,12 +1617,103 @@ jobs:
           chmod +x infra/scripts/generate-env-prod.sh
           ./infra/scripts/generate-env-prod.sh
 
-      - name: Transferir arquivos via SCP
+      # =============================================================================
+      # ENTERPRISE-GRADE (25/12/2025): Detectar se está rodando em self-hosted runner
+      # Se estiver, executar script localmente (zero latência)
+      # Se não, usar SSH como fallback (compatibilidade)
+      # =============================================================================
+      - name: Detectar tipo de runner
+        id: detect-runner
+        run: |
+          if [ "${{ runner.name }}" == "hetzner-gpu-runner" ] || [ "${{ runner.os }}" == "Self-hosted" ]; then
+            echo "runner_type=self-hosted" >> $GITHUB_OUTPUT
+            echo "✅ Self-hosted runner detectado - executando deploy localmente"
+          else
+            echo "runner_type=github-hosted" >> $GITHUB_OUTPUT
+            echo "ℹ️ GitHub-hosted runner - usando SSH como fallback"
+          fi
+
+      - name: Transferir arquivos via SCP (apenas se GitHub-hosted runner)
+        if: steps.detect-runner.outputs.runner_type == 'github-hosted'
         run: |
           scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password alertmanager_smtp_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
 
+      # =============================================================================
+      # ENTERPRISE-GRADE (25/12/2025): Deploy via Self-Hosted Runner (local)
+      # Execução local no servidor Hetzner - zero latência, cache local
+      # =============================================================================
+      - name: Deploy via Self-Hosted Runner (local)
+        if: steps.detect-runner.outputs.runner_type == 'self-hosted'
+        env:
+          GH_PAT: ${{ secrets.GH_PAT }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
+          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
+          DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
+          DEPLOY_VERSION: ${{ github.event.inputs.version || github.ref_name || 'main' }}
+          REPO_FULL_NAME: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_ACTOR: ${{ github.actor }}
+          PGBACKREST_VERSION: ${{ needs.build-docker.outputs.pgbackrest_version }}
+          TRAEFIK_VERSION: ${{ needs.build-docker.outputs.traefik_version }}
+          TRAEFIK_DIGEST: ${{ needs.build-docker.outputs.traefik_digest }}
+          PROMETHEUS_VERSION: ${{ needs.build-docker.outputs.prometheus_version }}
+          PROMETHEUS_DIGEST: ${{ needs.build-docker.outputs.prometheus_digest }}
+          GRAFANA_VERSION: ${{ needs.build-docker.outputs.grafana_version }}
+          GRAFANA_DIGEST: ${{ needs.build-docker.outputs.grafana_digest }}
+          LOKI_VERSION: ${{ needs.build-docker.outputs.loki_version }}
+          LOKI_DIGEST: ${{ needs.build-docker.outputs.loki_digest }}
+          PROMTAIL_VERSION: ${{ needs.build-docker.outputs.promtail_version }}
+          PROMTAIL_DIGEST: ${{ needs.build-docker.outputs.promtail_digest }}
+          JAEGER_VERSION: ${{ needs.build-docker.outputs.jaeger_version }}
+          JAEGER_DIGEST: ${{ needs.build-docker.outputs.jaeger_digest }}
+          LANGFUSE_VERSION: ${{ needs.build-docker.outputs.langfuse_version }}
+          LANGFUSE_DIGEST: ${{ needs.build-docker.outputs.langfuse_digest }}
+          ERPNEXT_VERSION: ${{ needs.build-docker.outputs.erpnext_version }}
+          ERPNEXT_DIGEST: ${{ needs.build-docker.outputs.erpnext_digest }}
+          ERPNEXT_NGINX_DIGEST: ${{ needs.build-docker.outputs.erpnext_nginx_digest }}
+          ERPNEXT_SOCKETIO_DIGEST: ${{ needs.build-docker.outputs.erpnext_socketio_digest }}
+          ERPNEXT_WORKER_DIGEST: ${{ needs.build-docker.outputs.erpnext_worker_digest }}
+          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.build-docker.outputs.docker_socket_proxy_version }}
+          DOCKER_SOCKET_PROXY_DIGEST: ${{ needs.build-docker.outputs.docker_socket_proxy_digest }}
+          BUSYBOX_VERSION: ${{ needs.build-docker.outputs.busybox_version }}
+          BUSYBOX_DIGEST: ${{ needs.build-docker.outputs.busybox_digest }}
+          REDIS_VERSION: ${{ needs.build-docker.outputs.redis_version }}
+          REDIS_DIGEST: ${{ needs.build-docker.outputs.redis_digest }}
+          MARIADB_VERSION: ${{ needs.build-docker.outputs.mariadb_version }}
+          MARIADB_DIGEST: ${{ needs.build-docker.outputs.mariadb_digest }}
+          PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
+          PGVECTOR_DIGEST: ${{ needs.build-docker.outputs.pgvector_digest }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          # Copiar .env.prod para /tmp (self-hosted runner já está no servidor)
+          if [ -f .env.prod ]; then
+            cp .env.prod /tmp/.env.prod
+            chmod 600 /tmp/.env.prod
+          fi
+          
+          # Copiar secrets para /tmp (self-hosted runner já está no servidor)
+          if [ -f langfuse_db_password ]; then
+            cp langfuse_db_password /tmp/langfuse_db_password
+            chmod 600 /tmp/langfuse_db_password
+          fi
+          
+          if [ -f alertmanager_smtp_password ]; then
+            cp alertmanager_smtp_password /tmp/alertmanager_smtp_password
+            chmod 600 /tmp/alertmanager_smtp_password
+          fi
+          
+          # Executar script de deploy local
+          chmod +x infra/scripts/deploy-local.sh
+          bash infra/scripts/deploy-local.sh
+
+      # =============================================================================
+      # FALLBACK: Deploy via SSH (quando self-hosted runner não disponível)
       # SHA: appleboy/ssh-action@v1.2.0 (2024-09-16)
-      - name: Deploy via SSH
+      # =============================================================================
+      - name: Deploy via SSH (fallback)
+        if: steps.detect-runner.outputs.runner_type == 'github-hosted'
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
           GH_PAT: ${{ secrets.GH_PAT }}
@@ -1678,6 +1771,71 @@ jobs:
           envs: GH_PAT,POSTGRES_PASSWORD,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,PGBACKREST_VERSION,TRAEFIK_VERSION,TRAEFIK_DIGEST,PROMETHEUS_VERSION,PROMETHEUS_DIGEST,GRAFANA_VERSION,GRAFANA_DIGEST,LOKI_VERSION,LOKI_DIGEST,PROMTAIL_VERSION,PROMTAIL_DIGEST,JAEGER_VERSION,JAEGER_DIGEST,LANGFUSE_VERSION,LANGFUSE_DIGEST,ERPNEXT_VERSION,ERPNEXT_DIGEST,ERPNEXT_NGINX_DIGEST,ERPNEXT_SOCKETIO_DIGEST,ERPNEXT_WORKER_DIGEST,DOCKER_SOCKET_PROXY_VERSION,DOCKER_SOCKET_PROXY_DIGEST,BUSYBOX_VERSION,BUSYBOX_DIGEST,REDIS_VERSION,REDIS_DIGEST,MARIADB_VERSION,MARIADB_DIGEST,PGVECTOR_TAG,PGVECTOR_DIGEST,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
+            
+            # =============================================================================
+            # ENTERPRISE-GRADE (25/12/2025): Usar script de deploy local se disponível
+            # Se o script existir no repositório, usá-lo (mais organizado e versionado)
+            # Caso contrário, usar lógica inline como fallback (compatibilidade)
+            # =============================================================================
+            
+            # Verificar se script de deploy local existe no repositório
+            if [ -f "/opt/alice/app/infra/scripts/deploy-local.sh" ]; then
+              echo "✅ Script de deploy local encontrado - usando script versionado"
+              chmod +x /opt/alice/app/infra/scripts/deploy-local.sh
+              
+              # Exportar todas as variáveis de ambiente necessárias
+              export GH_PAT="${GH_PAT}"
+              export POSTGRES_PASSWORD="${POSTGRES_PASSWORD}"
+              export IMAGE_PREFIX="${IMAGE_PREFIX}"
+              export IMAGE_TAG="${IMAGE_TAG}"
+              export DEPLOY_SERVICES="${DEPLOY_SERVICES}"
+              export DEPLOY_VERSION="${DEPLOY_VERSION}"
+              export REPO_FULL_NAME="${REPO_FULL_NAME}"
+              export GITHUB_SHA="${GITHUB_SHA}"
+              export GITHUB_ACTOR="${GITHUB_ACTOR}"
+              export PGBACKREST_VERSION="${PGBACKREST_VERSION}"
+              export TRAEFIK_VERSION="${TRAEFIK_VERSION}"
+              export TRAEFIK_DIGEST="${TRAEFIK_DIGEST}"
+              export PROMETHEUS_VERSION="${PROMETHEUS_VERSION}"
+              export PROMETHEUS_DIGEST="${PROMETHEUS_DIGEST}"
+              export GRAFANA_VERSION="${GRAFANA_VERSION}"
+              export GRAFANA_DIGEST="${GRAFANA_DIGEST}"
+              export LOKI_VERSION="${LOKI_VERSION}"
+              export LOKI_DIGEST="${LOKI_DIGEST}"
+              export PROMTAIL_VERSION="${PROMTAIL_VERSION}"
+              export PROMTAIL_DIGEST="${PROMTAIL_DIGEST}"
+              export JAEGER_VERSION="${JAEGER_VERSION}"
+              export JAEGER_DIGEST="${JAEGER_DIGEST}"
+              export LANGFUSE_VERSION="${LANGFUSE_VERSION}"
+              export LANGFUSE_DIGEST="${LANGFUSE_DIGEST}"
+              export ERPNEXT_VERSION="${ERPNEXT_VERSION}"
+              export ERPNEXT_DIGEST="${ERPNEXT_DIGEST}"
+              export ERPNEXT_NGINX_DIGEST="${ERPNEXT_NGINX_DIGEST}"
+              export ERPNEXT_SOCKETIO_DIGEST="${ERPNEXT_SOCKETIO_DIGEST}"
+              export ERPNEXT_WORKER_DIGEST="${ERPNEXT_WORKER_DIGEST}"
+              export DOCKER_SOCKET_PROXY_VERSION="${DOCKER_SOCKET_PROXY_VERSION}"
+              export DOCKER_SOCKET_PROXY_DIGEST="${DOCKER_SOCKET_PROXY_DIGEST}"
+              export BUSYBOX_VERSION="${BUSYBOX_VERSION}"
+              export BUSYBOX_DIGEST="${BUSYBOX_DIGEST}"
+              export REDIS_VERSION="${REDIS_VERSION}"
+              export REDIS_DIGEST="${REDIS_DIGEST}"
+              export MARIADB_VERSION="${MARIADB_VERSION}"
+              export MARIADB_DIGEST="${MARIADB_DIGEST}"
+              export PGVECTOR_TAG="${PGVECTOR_TAG}"
+              export PGVECTOR_DIGEST="${PGVECTOR_DIGEST}"
+              export DOCKERHUB_USERNAME="${DOCKERHUB_USERNAME}"
+              export DOCKERHUB_TOKEN="${DOCKERHUB_TOKEN}"
+              
+              # Executar script de deploy local
+              bash /opt/alice/app/infra/scripts/deploy-local.sh
+              exit 0
+            fi
+            
+            # =============================================================================
+            # FALLBACK: Lógica inline (compatibilidade com deploys antigos)
+            # TODO: Remover após migração completa para script de deploy local
+            # =============================================================================
+            echo "⚠️ Script de deploy local não encontrado - usando lógica inline (fallback)"
             
             # ==========================================================
             # ETAPA 1: CRIAR ESTRUTURA DE DIRETÓRIOS PRIMEIRO
