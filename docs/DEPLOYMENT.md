@@ -1000,6 +1000,23 @@ docker logs alice-langfuse --tail 50
 curl http://localhost:3010/health
 ```
 
+### ERPNext não instala (erro "No such option: --verbose")
+
+**Problema:** Deploy falha com erro `Error: No such option: --verbose` durante instalação do ERPNext.
+
+**Causa:** O comando `bench install-app` não aceita a flag `--verbose` (diferente de `bench new-site` que aceita).
+
+**Solução:** A flag `--verbose` foi removida do comando `bench install-app` no `docker-compose.prod.yml` (corrigido em 25/12/2025).
+
+**Verificação:**
+```bash
+# Verificar logs do container erpnext-create-site
+docker logs erpnext-create-site --tail 100
+
+# Verificar se site foi criado mas ERPNext não foi instalado
+docker exec erpnext-create-site ls -la /home/frappe/frappe-bench/sites/
+```
+
 ---
 
 ## Scripts Disponíveis
@@ -1116,9 +1133,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 23 de Dezembro de 2025*
-*Versão: 7.5 - Correções Enterprise drizzle-kit push (timeout + URL-encoding)*
-*Data: 23 de Dezembro de 2025*
+*Documento atualizado em: 25 de Dezembro de 2025*
+*Versão: 7.6 - Correção ERPNext install-app --verbose flag inválida*
+*Data: 25 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*

@@ -1637,8 +1637,8 @@ services:
         echo "📦 ETAPA 2: Instalando ERPNext no site $${SITE_NAME}..."
         # BUG FIX 24/12/2025: bench install-app pode levar 15-20 minutos e usar muita memória
         # timeout de 20 minutos para garantir que instalação completa tenha tempo suficiente
-        timeout 1200 bench --site "$${SITE_NAME}" install-app erpnext \
-          --verbose 2>&1 | tee -a /tmp/bench-new-site.log
+        # CORREÇÃO 25/12/2025: bench install-app NÃO aceita flag --verbose (removida)
+        timeout 1200 bench --site "$${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log
         BENCH_EXIT_CODE=$${PIPESTATUS[0]}
         
         set -o pipefail  # Reabilitar pipefail

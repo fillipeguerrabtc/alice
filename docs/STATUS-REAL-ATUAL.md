@@ -48,6 +48,8 @@
 
 > **Salad Cloud Abordagem Híbrida 22/12/2025:** Container Groups GPU são **PRÉ-CRIADOS MANUALMENTE** no Salad Cloud Dashboard. URLs são configuradas como **secrets no GitHub**: `SALAD_MIXTRAL_URL`, `EMBEDDINGS_GPU_URL`, `SALAD_FLUX_URL`, `SALAD_ASR_URL`. Pipeline apenas **valida** que URLs estão configuradas e faz health check. Benefícios: deploy mais rápido (sem cold start 2-5 min), mais confiável (GPUs quentes), menor custo (evita cold start repetido). Guia completo: [docs/SECRETS.md](SECRETS.md) seção "Salad Cloud GPU URLs".
 
+> **Bug Fix ERPNext install-app --verbose 25/12/2025:** O comando `bench install-app` no container `erpnext-create-site` (ETAPA 2) usava a flag `--verbose` que não é suportada. Erro: "No such option: --verbose" causava falha na instalação do ERPNext durante o deploy. Corrigido: Removida flag `--verbose` do comando `bench install-app` na linha 1641 do docker-compose.prod.yml. O `bench new-site` (ETAPA 1) aceita `--verbose` e funcionou corretamente, mas `bench install-app` não aceita essa flag. Comando corrigido: `timeout 1200 bench --site "${SITE_NAME}" install-app erpnext 2>&1 | tee -a /tmp/bench-new-site.log`.
+
 > **Bug Fix ERPNext Configurator 21/12/2025:** Escapar `$` com `$$` no comando do `erpnext-configurator` para evitar substituição pelo Docker Compose. Docker Compose interpreta `$CACHE_URL` e `$QUEUE_URL` como variáveis de ambiente, mas são variáveis bash internas do script. Aviso no log: "The CACHE_URL variable is not set. Defaulting to a blank string."
 
 **Row Level Security (RLS) - Tabelas Trading (21/12/2025)**
@@ -1093,9 +1095,9 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 ---
 
-*Documento atualizado em: 23/12/2025*
+*Documento atualizado em: 25/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.11 - Verificação Completa SearXNG + Correção Contagem Containers*
+*Versão: 4.12 - Correção ERPNext install-app --verbose flag inválida*
 *Pipeline Unificada (17/12/2025): GPU deploy integrado em deploy-production.yml via Python SDK (salad-cloud-sdk)*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
