@@ -12,7 +12,7 @@
       }
     ]
   },
-  "description": "Métricas LLM Enterprise - Mixtral 8x7B via Salad Cloud | Latência, Tokens, Erros, Circuit Breakers",
+  "description": "Métricas LLM Enterprise - Mixtral 8x7B via GPU Manager Service (Hetzner GEX44) | Latência, Tokens, Erros, Circuit Breakers",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
