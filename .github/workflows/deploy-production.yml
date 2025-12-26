@@ -3933,8 +3933,8 @@ jobs:
         # BUG FIX 25/12/2025: GPU Manager Service é interno ao servidor Hetzner
         # Não é acessível externamente, então usamos SSH para verificar no servidor remoto
         # Este step sempre executa porque health-check job sempre roda em ubuntu-latest (GitHub-hosted)
-        # continue-on-error: true permite que o step de consolidação capture o resultado
-        continue-on-error: true
+        # BUG FIX 25/12/2025: Removido continue-on-error: true - faz conclusion sempre retornar "success"
+        # Solução: usar if: always() no step health-all para sempre executar e verificar conclusion corretamente
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
@@ -3970,13 +3970,15 @@ jobs:
 
       - name: Health Check - Serviços Restantes e Consolidação
         id: health-all
+        if: always()  # BUG FIX 25/12/2025: Sempre executar mesmo se health-gpu-manager falhar
         run: |
           FAILED=${{ steps.health-public.outputs.PUBLIC_FAILED || 0 }}
           
           # BUG FIX 25/12/2025: Verificar resultado do health check do GPU Manager Service via SSH
-          # O step health-gpu-manager usa exit code para indicar sucesso/falha
-          # Quando continue-on-error: true, outcome sempre é "success", mas conclusion reflete o resultado real
-          # Usar conclusion ao invés de outcome para detectar falhas corretamente
+          # Removido continue-on-error: true do step SSH - agora conclusion funciona corretamente
+          # Quando continue-on-error: true está presente, tanto outcome quanto conclusion retornam "success"
+          # Sem continue-on-error, conclusion retorna "success" ou "failure" corretamente
+          # Usar conclusion para detectar falhas (outcome também funcionaria, mas conclusion é mais explícito)
           GPU_MANAGER_CONCLUSION="${{ steps.health-gpu-manager.conclusion }}"
           if [ "$GPU_MANAGER_CONCLUSION" != "success" ]; then
             echo "❌ GPU Manager Service health check FALHOU (verificado via SSH)"
