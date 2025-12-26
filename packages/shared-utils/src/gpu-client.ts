@@ -154,7 +154,7 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
       ...options.headers,
     },
     body: JSON.stringify({
@@ -184,7 +184,7 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
 export async function getGpuResult(requestId: string): Promise<GpuResponse | null> {
   const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
     headers: {
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
     },
   });
   
@@ -216,7 +216,7 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast (linhas 18-26) garante que está definido
       ...options.headers,
     },
     body: JSON.stringify({
