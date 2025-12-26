@@ -67,6 +67,12 @@
 
 ### 2.1 Restrições Técnicas
 
+#### Padrões de Repositório (Line Endings e EditorConfig)
+
+- **Line endings determinísticos (2025)**: o repositório usa **LF** como padrão para arquivos de texto, com exceção de scripts Windows (`.bat/.cmd/.ps1`) que usam **CRLF**.
+- **Fonte de verdade**: `.gitattributes` (Git) + `.editorconfig` (editores/IDE).
+- **Objetivo**: eliminar diffs ruidosos e garantir builds/reviews determinísticos em Windows/Linux/macOS.
+
 | Restrição | Descrição | Justificativa |
 |-----------|-----------|---------------|
 | **Node.js 22 LTS** | Runtime backend obrigatório | Performance, suporte long-term |

@@ -15,7 +15,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.37 |
 | 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting, HTTP/2. | Traefik v3.6.4 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.7 Alpine |
+| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.6 Alpine |
 | 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |

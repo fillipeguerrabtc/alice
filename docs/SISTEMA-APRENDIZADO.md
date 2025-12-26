@@ -6,6 +6,8 @@
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 
+> Atualização 26/12/2025: Padronização de line endings com `.gitattributes` e `.editorconfig` (LF padrão; CRLF apenas para scripts Windows) para eliminar diffs ruidosos e manter consistência enterprise.
+
 ## Visão Geral
 
 A Alice Enterprise Platform possui um sistema de aprendizado contínuo e agressivo que permite que o modelo evolua constantemente com base nas interações e dados fornecidos.

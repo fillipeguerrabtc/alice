@@ -44,6 +44,8 @@
 
 > **Deploy Fail Fast 21/12/2025:** Reduzido `--wait-timeout` de 300s (5 min) para 120s (2 min). Adicionada captura imediata de logs quando deploy falha - workflow não fica mais "pendurado" esperando, falha imediatamente e mostra logs dos containers problemáticos.
 
+> **Padronização de Line Endings 26/12/2025:** Adicionados `.gitattributes` e `.editorconfig` para eliminar diffs ruidosos (LF/CRLF) e garantir consistência enterprise em Windows/Linux/macOS.
+
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
 > **GPU Manager Service 25/12/2025:** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service com fila priorizada, monitoramento VRAM e circuit breakers. Elimina latência de rede e simplifica arquitetura. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).

@@ -1,5 +1,8 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
+**Autor:** Fillipe Guerra  
+**Data:** 26 de Dezembro de 2025
+
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
@@ -185,6 +188,8 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 
 ### Desenvolvimento (Cursor IDE)
 
+> **Padronização de Edição (Enterprise 2025):** O repositório usa `.gitattributes` + `.editorconfig` para padronizar line endings (**LF** para texto; **CRLF** apenas para scripts Windows) e evitar diffs ruidosos.
+
 ```bash
 # 1. Instalar dependências
 pnpm install
@@ -215,7 +220,7 @@ Consulte [docs/SECRETS.md](docs/SECRETS.md) para a lista completa de secrets nec
 | Diretório | Propósito |
 |-----------|-----------|
 | `/opt/alice/data` | Dados PostgreSQL, MariaDB, Redis |
-| `/opt/alice/uploads` | Uploads RAG (imagens, áudios, vídeos, docs) |
+| `/opt/alice/uploads` | Uploads RAG (imagens, áudios e documentos) |
 | `/opt/alice/backups` | Backups locais (pgBackRest, MariaDB, Redis) |
 
 ### Pipeline CI/CD Unificada (Best Practices 2025)

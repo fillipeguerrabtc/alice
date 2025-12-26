@@ -1,0 +1,66 @@
+# ==============================================================================
+# Alice Enterprise Platform - Git Attributes (Line Endings + Binary Safety)
+# ==============================================================================
+# Objetivo:
+# - Eliminar diffs ruidosos de CRLF/LF em múltiplos sistemas (Windows/Linux/macOS)
+# - Garantir determinismo e consistência (best practices 2025)
+# - Proteger arquivos binários de normalização acidental
+#
+# Política:
+# - Texto padrão: LF
+# - Scripts Windows: CRLF (somente quando aplicável)
+# - Binários: sempre tratados como binary
+#
+# Autor: Fillipe Guerra
+# Data: 26 de Dezembro de 2025
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Defaults
+# ------------------------------------------------------------------------------
+* text=auto eol=lf
+
+# ------------------------------------------------------------------------------
+# Windows scripts
+# ------------------------------------------------------------------------------
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# ------------------------------------------------------------------------------
+# Shell scripts
+# ------------------------------------------------------------------------------
+*.sh text eol=lf
+
+# ------------------------------------------------------------------------------
+# Source / configs / docs
+# ------------------------------------------------------------------------------
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.mjs text eol=lf
+*.cjs text eol=lf
+*.json text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+
+Dockerfile text eol=lf
+
+# Lockfiles
+pnpm-lock.yaml text eol=lf
+
+# ------------------------------------------------------------------------------
+# Binary files
+# ------------------------------------------------------------------------------
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.zip binary
+
