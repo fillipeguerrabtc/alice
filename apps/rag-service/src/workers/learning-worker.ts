@@ -466,13 +466,9 @@ async function processEmbeddingGeneration(
 
   logger.info({ taskId: task.id, textsCount: texts?.length, documentIds }, 'Iniciando geração de embeddings');
 
-  if (!EMBEDDINGS_GPU_URL) {
-    return {
-      success: false,
-      message: 'GPU embeddings service não acessível - GPU é obrigatório (Regra 6)',
-      data: {},
-    };
-  }
+  // BUG FIX 25/12/2025: EMBEDDINGS_GPU_URL tem fallback (linha 69), então sempre será truthy
+  // Removida validação inalcançável - o fallback garante que sempre haverá uma URL válida
+  // Se o serviço não estiver acessível, o erro será capturado na chamada fetch (linha 117)
 
   let textsToProcess: string[] = [];
 
