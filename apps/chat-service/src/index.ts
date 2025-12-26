@@ -2055,7 +2055,19 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
       await proxyStreamFromGpuManager(
         llmMessages,
         (content) => {
-          res.write(`data: ${JSON.stringify({ content })}\n\n`);
+          // BUG FIX 25/12/2025: Envolver res.write() em try-catch para tratamento gracioso de clientes desconectados
+          // Se cliente desconectar durante streaming, erro não deve interromper processamento do stream
+          try {
+            if (res.headersSent && !res.writableEnded) {
+              res.write(`data: ${JSON.stringify({ content })}\n\n`);
+            } else {
+              logger.debug({ conversationId: req.params.id }, 'Response fechada durante streaming SSE - ignorando chunk');
+            }
+          } catch (writeError) {
+            // Cliente desconectado - logar mas não interromper processamento do stream
+            // onDone callback ainda será executado para garantir que stream seja finalizado corretamente
+            logger.warn({ error: writeError, conversationId: req.params.id }, 'Erro ao escrever chunk SSE - cliente pode ter desconectado');
+          }
         },
         async (_responseText: string) => {
           // HTTP SSE: não precisa do responseText, apenas fecha a conexão
