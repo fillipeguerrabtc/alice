@@ -3884,6 +3884,9 @@ jobs:
 
       - name: Health Check - Serviços Públicos (Frontend, Auth, Chat, RAG)
         id: health-public
+        # BUG FIX 25/12/2025: continue-on-error permite que health-all execute mesmo se alguns checks falharem
+        # Sem isso, o job falha imediatamente e health_status nunca é definido, quebrando rollback logic
+        continue-on-error: true
         run: |
           FAILED=0
           
