@@ -505,59 +505,70 @@ async function startQueueWorker(): Promise<void> {
   isWorkerRunning = true;
   logger.info('Iniciando worker de fila GPU');
   
+  // BUG FIX 25/12/2025: Processar cada tipo de serviço de forma independente e paralela
+  // Evita head-of-line blocking onde requisições longas bloqueiam outros tipos de serviço
+  const processServiceType = async (serviceType: GpuServiceType): Promise<void> => {
+    try {
+      // Verificar se há requisições na fila
+      const request = await dequeueRequest(serviceType);
+      if (!request) {
+        return;
+      }
+      
+      // Verificar VRAM disponível
+      const vramStatus = await getVramStatus();
+      if (!hasEnoughVram(serviceType, vramStatus)) {
+        logger.warn({
+          serviceType,
+          requiredGB: VRAM_REQUIREMENTS[serviceType],
+          availableGB: vramStatus.freeGB,
+        }, 'VRAM insuficiente, reenfileirando requisição');
+        
+        // Reenfileirar com prioridade reduzida
+        request.priority = Math.max(1, request.priority - 1);
+        await enqueueRequest(request);
+        return;
+      }
+      
+      // Marcar serviço como ativo
+      await markServiceActive(serviceType, request.id);
+      
+      try {
+        // Processar requisição
+        const response = await processGpuRequest(request);
+        
+        // Armazenar resultado no Redis (para polling)
+        // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
+        const redis = getRedisClient();
+        if (redis) {
+          const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
+          await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
+        } else {
+          logger.warn({ requestId: request.id }, 'Redis não disponível - resultado não foi armazenado para polling');
+        }
+        
+        logger.info({
+          requestId: request.id,
+          serviceType,
+          success: response.success,
+          latencyMs: response.latencyMs,
+        }, 'Requisição GPU processada');
+      } finally {
+        // Marcar serviço como inativo
+        await markServiceInactive(serviceType);
+      }
+    } catch (error) {
+      logger.error({ error, serviceType }, 'Erro ao processar requisição GPU para tipo de serviço');
+    }
+  };
+
   const processQueue = async () => {
     try {
-      // Processar cada tipo de serviço
-      for (const serviceType of Object.values(GpuServiceType)) {
-        // Verificar se há requisições na fila
-        const request = await dequeueRequest(serviceType);
-        if (!request) {
-          continue;
-        }
-        
-        // Verificar VRAM disponível
-        const vramStatus = await getVramStatus();
-        if (!hasEnoughVram(serviceType, vramStatus)) {
-          logger.warn({
-            serviceType,
-            requiredGB: VRAM_REQUIREMENTS[serviceType],
-            availableGB: vramStatus.freeGB,
-          }, 'VRAM insuficiente, reenfileirando requisição');
-          
-          // Reenfileirar com prioridade reduzida
-          request.priority = Math.max(1, request.priority - 1);
-          await enqueueRequest(request);
-          continue;
-        }
-        
-        // Marcar serviço como ativo
-        await markServiceActive(serviceType, request.id);
-        
-        try {
-          // Processar requisição
-          const response = await processGpuRequest(request);
-          
-          // Armazenar resultado no Redis (para polling)
-          // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
-          const redis = getRedisClient();
-          if (redis) {
-            const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
-            await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
-          } else {
-            logger.warn({ requestId: request.id }, 'Redis não disponível - resultado não foi armazenado para polling');
-          }
-          
-          logger.info({
-            requestId: request.id,
-            serviceType,
-            success: response.success,
-            latencyMs: response.latencyMs,
-          }, 'Requisição GPU processada');
-        } finally {
-          // Marcar serviço como inativo
-          await markServiceInactive(serviceType);
-        }
-      }
+      // BUG FIX 25/12/2025: Processar todos os tipos de serviço em paralelo
+      // Permite que MIXTRAL (30s) não bloqueie EMBEDDINGS, FLUX ou ASR
+      // Cada tipo de serviço é processado independentemente, permitindo paralelismo real
+      const serviceTypes = Object.values(GpuServiceType);
+      await Promise.all(serviceTypes.map(serviceType => processServiceType(serviceType)));
     } catch (error) {
       logger.error({ error }, 'Erro no worker de fila GPU');
     }
