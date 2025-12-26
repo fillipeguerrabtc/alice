@@ -1981,21 +1981,22 @@ jobs:
             # ==========================================================
             echo "🔐 Preparando secrets (langfuse-db e alertmanager SMTP)..."
             
+            # BUG FIX 25/12/2025: Arquivos são opcionais - só mover se existirem
+            # SCP step trata como opcionais (linhas 1685-1695), então inline script deve fazer o mesmo
+            # Secrets podem não estar configurados (LANGFUSE_DB_PASSWORD ou RESEND_API_KEY)
             if [ -f /tmp/langfuse_db_password ]; then
               mv /tmp/langfuse_db_password /opt/alice/secrets/langfuse_db_password
               chmod 600 /opt/alice/secrets/langfuse_db_password
               echo "  ✓ langfuse_db_password movido"
             else
-              echo "::error::Arquivo /tmp/langfuse_db_password não encontrado. Verifique o passo de SCP." >&2
-              exit 1
+              echo "  ⚠️ langfuse_db_password não encontrado em /tmp (pode ser normal se LANGFUSE_DB_PASSWORD não estiver configurado)"
             fi
             if [ -f /tmp/alertmanager_smtp_password ]; then
               mv /tmp/alertmanager_smtp_password /opt/alice/secrets/alertmanager/smtp_password
               chmod 600 /opt/alice/secrets/alertmanager/smtp_password
               echo "  ✓ alertmanager_smtp_password movido"
             else
-              echo "::error::Arquivo /tmp/alertmanager_smtp_password não encontrado. Verifique o passo de SCP." >&2
-              exit 1
+              echo "  ⚠️ alertmanager_smtp_password não encontrado em /tmp (pode ser normal se RESEND_API_KEY não estiver configurado)"
             fi
             
             echo "✅ Secrets preparados"
@@ -3943,19 +3944,18 @@ jobs:
               # Verificar health endpoint via localhost (serviço interno)
               if curl -sf --max-time 10 http://localhost:3010/live > /dev/null 2>&1; then
                 echo "✅ GPU Manager Service OK (container rodando e health check passou)"
-                echo "GPU_MANAGER_STATUS=ok" >> $GITHUB_ENV
               else
                 echo "❌ GPU Manager Service container rodando mas health check falhou"
                 GPU_MANAGER_FAILED=1
-                echo "GPU_MANAGER_STATUS=failed" >> $GITHUB_ENV
               fi
             else
               echo "❌ GPU Manager Service health check FALHOU (container não está rodando)"
               GPU_MANAGER_FAILED=1
-              echo "GPU_MANAGER_STATUS=failed" >> $GITHUB_ENV
             fi
             
-            echo "GPU_MANAGER_FAILED=$GPU_MANAGER_FAILED" >> $GITHUB_ENV
+            # BUG FIX 25/12/2025: Removido código morto - $GITHUB_ENV não funciona em SSH remote shell
+            # $GITHUB_ENV é um arquivo no GitHub Actions runner, não no servidor remoto
+            # O exit code na linha seguinte já comunica o resultado corretamente ao workflow
             exit $GPU_MANAGER_FAILED
 
       - name: Health Check - Serviços Restantes e Consolidação
