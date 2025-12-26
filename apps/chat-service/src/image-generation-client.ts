@@ -273,7 +273,10 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
 const imageEmbeddingBreaker = createCircuitBreaker(generateImageEmbeddingInternal, {
   name: 'image-embeddings-gpu',
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-  timeout: 30000, // GPU pode precisar de tempo para warm-up
+  // BUG FIX 25/12/2025: Removida sobrescrita de timeout - preset clipEmbeddings já tem timeout: 60000
+  // O preset foi projetado com 60s especificamente para permitir warm-up da GPU (estratégia Warm on Demand)
+  // Sobrescrever para 30s contradiz a intenção do preset e causa timeouts durante cold starts
+  // timeout: 30000 removido - usar valor do preset (60000ms)
 });
 
 /**
