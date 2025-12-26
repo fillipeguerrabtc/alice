@@ -882,7 +882,7 @@ async function proxyStreamFromGpuManager(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
     },
     body: JSON.stringify({
       serviceType: GpuServiceType.MIXTRAL,

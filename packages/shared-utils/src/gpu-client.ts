@@ -72,7 +72,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+        'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
         ...options.headers,
       },
       body: JSON.stringify({
@@ -102,7 +102,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
     while (Date.now() - startPollTime < maxWaitTime) {
       const resultResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
         headers: {
-          'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+          'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
           ...options.headers,
         },
       });
@@ -152,7 +152,7 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
       ...options.headers,
     },
     body: JSON.stringify({
@@ -182,7 +182,7 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
 export async function getGpuResult(requestId: string): Promise<GpuResponse | null> {
   const response = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
     headers: {
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
     },
   });
   
@@ -214,7 +214,7 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET,
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
       ...options.headers,
     },
     body: JSON.stringify({
