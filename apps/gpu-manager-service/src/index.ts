@@ -395,13 +395,14 @@ async function dequeueRequest(serviceType: GpuServiceType): Promise<GpuRequest |
   
   // Obter requisição completa
   const requestData = await redis.get(requestKey);
-  if (!requestData) {
+  if (!requestData || typeof requestData !== 'string') {
     // BUG FIX 25/12/2025: zPopMax já removeu da fila atomicamente
     // Dados expiraram, mas elemento já foi removido da fila
     logger.warn({ requestId }, 'Dados da requisição expiraram após remoção da fila');
     return null;
   }
   
+  // BUG FIX 26/12/2025: Type guard para garantir que é string (Redis v5 pode retornar tipos variados)
   const request: GpuRequest = JSON.parse(requestData);
   
   // BUG FIX 25/12/2025: zPopMax já remove o elemento da fila atomicamente
@@ -745,10 +746,11 @@ app.get('/api/gpu/queue/:requestId', requireInternalAuth, asyncHandler(async (re
   const resultKey = `${REDIS_QUEUE_PREFIX}:result:${requestId}`;
   
   const result = await redis.get(resultKey);
-  if (!result) {
+  if (!result || typeof result !== 'string') {
     return res.status(404).json({ error: 'Resultado não encontrado' });
   }
   
+  // BUG FIX 26/12/2025: Type guard para garantir que é string (Redis v5 pode retornar tipos variados)
   const response: GpuResponse = JSON.parse(result);
   res.json(response);
 }));

@@ -111,7 +111,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
         throw new Error(`Erro ao obter resultado GPU: ${resultResponse.status} - ${errorText}`);
       }
       
-      const result: GpuResponse = await resultResponse.json();
+      const result = await resultResponse.json() as GpuResponse;
       
       if (!result.success) {
         throw new Error(result.error || 'Erro desconhecido no processamento GPU');
