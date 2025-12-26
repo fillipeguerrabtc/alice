@@ -1763,84 +1763,11 @@ jobs:
           bash infra/scripts/deploy-remote.sh
 
       # =============================================================================
-      # LEGADO: Deploy via Production Server Runner (não recomendado)
-      # Runner no Production Server executa deploy localmente
-      # ⚠️ NÃO é best practice enterprise (runner em produção)
-      # Mantido apenas para compatibilidade durante migração
+      # BUG FIX 26/12/2025: Removido step "Deploy via Production Server Runner (legado)"
+      # O detect-runner step nunca outputa runner_type=production-server (dead code)
+      # Arquitetura enterprise atual: Deploy Server separado → deploy remoto via SSH
+      # Runners no Production Server violam isolamento enterprise (Regra 12)
       # =============================================================================
-      - name: Deploy via Production Server Runner (legado)
-        if: steps.detect-runner.outputs.runner_type == 'production-server'
-        continue-on-error: false
-        env:
-          GH_PAT: ${{ secrets.GH_PAT }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
-          IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
-          DEPLOY_SERVICES: ${{ github.event.inputs.services || 'all' }}
-          DEPLOY_VERSION: ${{ github.event.inputs.version || github.ref_name || 'main' }}
-          REPO_FULL_NAME: ${{ github.repository }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_ACTOR: ${{ github.actor }}
-          PGBACKREST_VERSION: ${{ needs.build-docker.outputs.pgbackrest_version }}
-          TRAEFIK_VERSION: ${{ needs.build-docker.outputs.traefik_version }}
-          TRAEFIK_DIGEST: ${{ needs.build-docker.outputs.traefik_digest }}
-          PROMETHEUS_VERSION: ${{ needs.build-docker.outputs.prometheus_version }}
-          PROMETHEUS_DIGEST: ${{ needs.build-docker.outputs.prometheus_digest }}
-          GRAFANA_VERSION: ${{ needs.build-docker.outputs.grafana_version }}
-          GRAFANA_DIGEST: ${{ needs.build-docker.outputs.grafana_digest }}
-          LOKI_VERSION: ${{ needs.build-docker.outputs.loki_version }}
-          LOKI_DIGEST: ${{ needs.build-docker.outputs.loki_digest }}
-          PROMTAIL_VERSION: ${{ needs.build-docker.outputs.promtail_version }}
-          PROMTAIL_DIGEST: ${{ needs.build-docker.outputs.promtail_digest }}
-          JAEGER_VERSION: ${{ needs.build-docker.outputs.jaeger_version }}
-          JAEGER_DIGEST: ${{ needs.build-docker.outputs.jaeger_digest }}
-          LANGFUSE_VERSION: ${{ needs.build-docker.outputs.langfuse_version }}
-          LANGFUSE_DIGEST: ${{ needs.build-docker.outputs.langfuse_digest }}
-          ERPNEXT_VERSION: ${{ needs.build-docker.outputs.erpnext_version }}
-          ERPNEXT_DIGEST: ${{ needs.build-docker.outputs.erpnext_digest }}
-          ERPNEXT_NGINX_DIGEST: ${{ needs.build-docker.outputs.erpnext_nginx_digest }}
-          ERPNEXT_SOCKETIO_DIGEST: ${{ needs.build-docker.outputs.erpnext_socketio_digest }}
-          ERPNEXT_WORKER_DIGEST: ${{ needs.build-docker.outputs.erpnext_worker_digest }}
-          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.build-docker.outputs.docker_socket_proxy_version }}
-          DOCKER_SOCKET_PROXY_DIGEST: ${{ needs.build-docker.outputs.docker_socket_proxy_digest }}
-          BUSYBOX_VERSION: ${{ needs.build-docker.outputs.busybox_version }}
-          BUSYBOX_DIGEST: ${{ needs.build-docker.outputs.busybox_digest }}
-          REDIS_VERSION: ${{ needs.build-docker.outputs.redis_version }}
-          REDIS_DIGEST: ${{ needs.build-docker.outputs.redis_digest }}
-          MARIADB_VERSION: ${{ needs.build-docker.outputs.mariadb_version }}
-          MARIADB_DIGEST: ${{ needs.build-docker.outputs.mariadb_digest }}
-          PGVECTOR_TAG: ${{ needs.build-docker.outputs.pgvector_tag }}
-          PGVECTOR_DIGEST: ${{ needs.build-docker.outputs.pgvector_digest }}
-          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
-          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          # BUG FIX 25/12/2025: Validar que .env.prod foi criado antes de prosseguir
-          # deploy-local.sh requer .env.prod em /tmp/.env.prod ou infra/docker/.env.prod
-          # Se o arquivo não existir, o deploy falhará silenciosamente durante execução
-          # Validar explicitamente aqui, igual ao SCP step (linhas 1678-1682)
-          if [ ! -f .env.prod ]; then
-            echo "::error::.env.prod não encontrado - generate-env-prod.sh deve ter falhado" >&2
-            exit 1
-          fi
-          
-          # Copiar .env.prod para /tmp (runner no Production Server)
-          cp .env.prod /tmp/.env.prod
-          chmod 600 /tmp/.env.prod
-          
-          # Copiar secrets para /tmp (opcionais)
-          if [ -f langfuse_db_password ]; then
-            cp langfuse_db_password /tmp/langfuse_db_password
-            chmod 600 /tmp/langfuse_db_password
-          fi
-          
-          if [ -f alertmanager_smtp_password ]; then
-            cp alertmanager_smtp_password /tmp/alertmanager_smtp_password
-            chmod 600 /tmp/alertmanager_smtp_password
-          fi
-          
-          # Executar script de deploy local (legado - não recomendado)
-          chmod +x infra/scripts/deploy-local.sh
-          bash infra/scripts/deploy-local.sh
 
       # =============================================================================
       # FALLBACK: Deploy via SSH (quando self-hosted runner não disponível)

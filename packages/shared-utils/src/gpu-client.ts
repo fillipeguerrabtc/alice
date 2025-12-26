@@ -67,9 +67,14 @@ export interface GpuResponse {
  */
 export async function requestGpu(options: GpuRequestOptions): Promise<GpuResponse> {
   const startTime = Date.now();
+  const maxWaitTime = options.timeout || 60000;
+  // BUG FIX 26/12/2025: Timeout individual para cada fetch (30s ou metade do maxWaitTime)
+  // Impede que uma única requisição bloqueie indefinidamente além do timeout total
+  const fetchTimeout = Math.min(30000, Math.floor(maxWaitTime / 2));
   
   try {
     // Enfileirar requisição
+    // BUG FIX 26/12/2025: Adicionar AbortSignal.timeout() para garantir timeout individual
     const queueResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue`, {
       method: 'POST',
       headers: {
@@ -87,6 +92,7 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
         maxRetries: options.maxRetries || 3,
         metadata: options.metadata,
       }),
+      signal: AbortSignal.timeout(fetchTimeout),
     });
     
     if (!queueResponse.ok) {
@@ -98,15 +104,20 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
     
     // Polling para obter resultado
     const pollInterval = 500; // 500ms
-    const maxWaitTime = options.timeout || 60000;
     const startPollTime = Date.now();
+    // BUG FIX 26/12/2025: Timeout individual para polling (5s) - menor que fetchTimeout
+    // Polling é leve e frequente, não precisa de timeout longo
+    const pollFetchTimeout = 5000;
     
     while (Date.now() - startPollTime < maxWaitTime) {
+      // BUG FIX 26/12/2025: Adicionar AbortSignal.timeout() ao fetch do polling
+      // Sem isso, um único fetch pode bloquear indefinidamente, excedendo maxWaitTime
       const resultResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/queue/${requestId}`, {
         headers: {
           'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast garante que está definido
           ...options.headers,
         },
+        signal: AbortSignal.timeout(pollFetchTimeout),
       });
       
       if (resultResponse.status === 404) {
