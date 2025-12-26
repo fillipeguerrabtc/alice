@@ -49,7 +49,7 @@ import {
   registerShutdownCallback,
   ShutdownPriority,
   permissionCache,
-  // requestGpuStream removido - não usado, GPU Manager Service faz streaming via proxy
+  requestGpuStream,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from '@alice/database';
@@ -92,9 +92,8 @@ const logger = createLogger('chat-service');
 
 const PORT = process.env.PORT || 3002;
 const DATABASE_URL = process.env.DATABASE_URL;
-// GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-// REGRA 6: Sem fallback em produção - variável DEVE estar definida
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+// GPU Manager Service (25/12/2025): URL gerenciada por requestGpuStream em @alice/shared-utils
+// BUG FIX 26/12/2025: Removida declaração duplicada de GPU_MANAGER_URL - requestGpuStream centraliza o acesso
 const corsOriginsEnv = process.env.CORS_ORIGINS;
 if (!corsOriginsEnv && process.env.NODE_ENV === 'production') {
   logger.error('CORS_ORIGINS é obrigatório em produção (Regra 6 - fail-fast)');
@@ -860,50 +859,27 @@ async function proxyStreamFromGpuManager(
   onChunk: (content: string) => void,
   onDone?: (fullResponse: string) => Promise<void> | void
 ): Promise<string> {
-  // BUG FIX 25/12/2025: REGRA 6 - Fail-fast em TODOS os ambientes (não só produção)
-  // INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
-  // Validação apenas em produção permite que código continue silenciosamente em desenvolvimento
-  // com fallback || '' enviando string vazia no header, permitindo requisições não autenticadas
-  // Solução: Validar fail-fast em todos os ambientes para garantir segurança
-  const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-  if (!INTERNAL_API_SECRET) {
-    logger.error('INTERNAL_API_SECRET é obrigatório (Regra 6 - fail-fast) - configure a variável de ambiente');
-    throw new Error('INTERNAL_API_SECRET não configurado - autenticação service-to-service requerida');
-  }
-  
-  // Fazer requisição streaming ao GPU Manager Service
-  const gpuResponse = await fetch(`${GPU_MANAGER_URL}/api/gpu/stream`, {
+  // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
+  // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
+  // requestGpuStream já faz fail-fast da secret e usa a URL correta
+  const gpuResponse = await requestGpuStream({
+    serviceType: GpuServiceType.MIXTRAL,
+    priority: GpuRequestPriority.CRITICAL, // Chat em tempo real = prioridade máxima
+    endpoint: '/v1/chat/completions',
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast garante que está definido
+    body: {
+      model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+      messages: llmMessages,
+      max_tokens: 4096,
+      temperature: 0.7,
+      stream: true,
     },
-    body: JSON.stringify({
-      serviceType: GpuServiceType.MIXTRAL,
-      endpoint: '/v1/chat/completions',
-      method: 'POST',
-      body: {
-        model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
-        messages: llmMessages,
-        max_tokens: 4096,
-        temperature: 0.7,
-        stream: true,
-      },
-      timeout: 60000,
-    }),
+    timeout: 60000,
   });
   
-  if (!gpuResponse.ok) {
-    const errorText = await gpuResponse.text();
-    throw new Error(`Erro na requisição GPU streaming: ${gpuResponse.status} - ${errorText}`);
-  }
-  
-  if (!gpuResponse.body) {
-    throw new Error('Resposta de streaming não contém body');
-  }
-  
   // BUG FIX 25/12/2025: Fazer proxy do stream diretamente do GPU Manager Service
-  const reader = gpuResponse.body.getReader();
+  // requestGpuStream já validou response.ok e response.body
+  const reader = gpuResponse.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
   let fullResponse = '';
