@@ -1539,7 +1539,8 @@ jobs:
       contents: read
     
     env:
-      IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag }}
+      # BUG FIX 26/12/2025: Adicionar fallback consistente com linhas 1589 e 1646
+      IMAGE_TAG: ${{ needs.build-docker.outputs.image_tag || github.sha }}
       IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
     
     steps:
