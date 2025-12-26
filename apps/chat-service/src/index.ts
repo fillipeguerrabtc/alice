@@ -2057,7 +2057,7 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
         (content) => {
           res.write(`data: ${JSON.stringify({ content })}\n\n`);
         },
-        (_responseText: string) => {
+        async (_responseText: string) => {
           // HTTP SSE: não precisa do responseText, apenas fecha a conexão
           // BUG FIX 25/12/2025: onDone sempre será chamado (mesmo em caso de erro)
           // Garantir que não tentamos fechar resposta já fechada
@@ -2077,8 +2077,13 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
               res.write('data: [DONE]\n\n');
               res.end();
             } catch (endError) {
-              // Resposta já fechada, ignorar
-              logger.debug({ error: endError }, 'Tentativa de fechar resposta já fechada');
+              // BUG FIX 25/12/2025: Propagar erro de fechamento de resposta para visibilidade
+              // Erros em res.write()/res.end() indicam problemas críticos (ex: cliente desconectado)
+              // Logar em nível error para monitoramento e propagar para que seja capturado pelo handler externo
+              logger.error({ error: endError }, 'Erro ao fechar resposta SSE - possível desconexão do cliente ou erro de rede');
+              // Propagar erro para que seja visível em sistemas de monitoramento
+              // O erro será capturado pelo catch do proxyStreamFromGpuManager e re-lançado
+              throw endError;
             }
           }
         }
