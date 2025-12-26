@@ -235,6 +235,7 @@ export async function requestGpuStream(options: GpuRequestOptions): Promise<glob
     },
     body: JSON.stringify({
       serviceType: options.serviceType,
+      priority: options.priority || GpuRequestPriority.CRITICAL, // Streaming = chat em tempo real = prioridade máxima
       endpoint: options.endpoint,
       method: options.method || 'POST',
       body: options.body,
