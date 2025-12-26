@@ -1811,13 +1811,20 @@ jobs:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
-          # Copiar .env.prod para /tmp (runner no Production Server)
-          if [ -f .env.prod ]; then
-            cp .env.prod /tmp/.env.prod
-            chmod 600 /tmp/.env.prod
+          # BUG FIX 25/12/2025: Validar que .env.prod foi criado antes de prosseguir
+          # deploy-local.sh requer .env.prod em /tmp/.env.prod ou infra/docker/.env.prod
+          # Se o arquivo não existir, o deploy falhará silenciosamente durante execução
+          # Validar explicitamente aqui, igual ao SCP step (linhas 1678-1682)
+          if [ ! -f .env.prod ]; then
+            echo "::error::.env.prod não encontrado - generate-env-prod.sh deve ter falhado" >&2
+            exit 1
           fi
           
-          # Copiar secrets para /tmp
+          # Copiar .env.prod para /tmp (runner no Production Server)
+          cp .env.prod /tmp/.env.prod
+          chmod 600 /tmp/.env.prod
+          
+          # Copiar secrets para /tmp (opcionais)
           if [ -f langfuse_db_password ]; then
             cp langfuse_db_password /tmp/langfuse_db_password
             chmod 600 /tmp/langfuse_db_password
