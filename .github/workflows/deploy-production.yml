@@ -468,6 +468,28 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       # ===========================================================================
+      # BUG FIX 26/12/2025: Adicionar step image-tag que estava faltando
+      # Sem este step, o output image_tag do job build-docker ficava vazio,
+      # causando deploy com github.sha ao invés da versão solicitada (ex: v1.0.0)
+      # ===========================================================================
+      - name: Determinar tag da imagem (versão solicitada)
+        id: image-tag
+        env:
+          # `validate-trigger` garante que version é obrigatório e válido (ex: v1.0.0)
+          INPUT_VERSION: ${{ github.event.inputs.version }}
+        run: |
+          set -euo pipefail
+          TAG="${INPUT_VERSION}"
+          if [ -z "$TAG" ]; then
+            echo "::error::version é obrigatória (validate-trigger deve impedir este caso)" >&2
+            exit 1
+          fi
+          
+          echo "value=$TAG" >> "$GITHUB_OUTPUT"
+          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "🏷️ Tag efetiva das imagens: $TAG"
+
+      # ===========================================================================
       # VERSIONAMENTO AUTOMÁTICO: Buscar versões mais recentes de todos os componentes
       # REGRA 11: Todos os módulos devem seguir versionamento automático
       # REGRA 6: Enterprise-grade - versões fallback em arquivo de configuração (não hardcoded)

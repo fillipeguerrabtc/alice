@@ -20,7 +20,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
-> Atualização 26/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy roda **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`) e executa deploy remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy.
+> Atualização 26/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy roda **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`) e executa deploy remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy. **Bug Fix:** Step `image-tag` adicionado ao job `build-docker` para garantir que a versão solicitada seja propagada corretamente (antes usava fallback `github.sha`).
 
 ### Categoria 2: Microsserviços Alice (7 serviços)
 
