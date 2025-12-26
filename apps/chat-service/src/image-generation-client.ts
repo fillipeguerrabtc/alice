@@ -201,10 +201,15 @@ export async function generateImage(
     // Previne registros órfãos com status permanente 'generating'
     if (pendingRecord?.id) {
       try {
+        // BUG FIX 25/12/2025: Preservar metadata existente ao mesclar informações de erro
+        // Programação defensiva - se metadata tiver dados anteriores, não perder
+        const existingMetadata = (pendingRecord.metadata as Record<string, unknown>) || {};
+        
         await db.update(schema.generatedImages)
           .set({
             status: 'failed',
             metadata: {
+              ...existingMetadata,
               error: error instanceof Error ? error.message : 'Erro desconhecido',
               failedAt: new Date().toISOString(),
             },
