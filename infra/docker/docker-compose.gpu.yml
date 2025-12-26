@@ -3,7 +3,7 @@
 # =============================================================================
 # Versão: 1.0.0
 # Ambiente: Produção (Hetzner Cloud GPU Server)
-# Servidor: GPU Dedicado (RTX 3090/4090 24GB ou RTX 4000 20GB)
+# Servidor: Hetzner GEX44 (RTX 4000 Ada 20GB) - GPU dedicada 24/7
 # Rede: Rede interna Hetzner (10.0.0.0/16)
 #
 # SERVIÇOS GPU (4 containers):

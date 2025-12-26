@@ -3,7 +3,7 @@
 # =============================================================================
 # Versão: 4.5
 # Ambiente: Produção (Hetzner Cloud - Servidor Único com GPU)
-# Servidor: GPU (RTX 3090/4090 24GB ou RTX 4000 20GB), 8+ vCPU, 64GB+ RAM, 500GB+ NVMe SSD
+# Servidor: GPU Hetzner GEX44 (RTX 4000 Ada 20GB), Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD
 # NOTA: Servidor único GEX44 - todos os 50 containers rodam no mesmo servidor (45 serviços + 4 GPU + 1 backup)
 # Volume Adicional: Hetzner Volume 100GB (alice-data) montado em /opt/alice
 # Domínio: yesyoudeserve.duckdns.org

@@ -241,7 +241,7 @@ END $$;
 -- MIGRAÇÃO CONCLUÍDA
 -- Todas as colunas de embedding agora são vector(1024)
 -- Compatível com:
--- - OpenCLIP ViT-H/14 (1024 dim, imagem) via GPU Salad Cloud → pgvector
+-- - OpenCLIP ViT-H/14 (1024 dim, imagem) via GPU Manager Service (Hetzner GEX44) → pgvector
 -- - NOTA: Texto usa Qwen3-Embedding-8B (4096 dim) → Qdrant (não pgvector)
 -- 
 -- ARQUITETURA 100% GPU (Opção B - Alta Qualidade)
