@@ -72,7 +72,10 @@ async function generateImageInternal(request: ImageGenerationRequest): Promise<I
     endpoint: '/generate',
     method: 'POST',
     priority: GpuRequestPriority.LOW,
-    timeout: 30000, // 30s para geração de imagens
+    // BUG FIX 25/12/2025: Timeout aumentado de 30s para 60s para acomodar cold starts e prompts complexos
+    // FLUX.1 Schnell pode legitimamente levar mais de 30s durante cold starts ou com prompts complexos
+    // Timeout de 30s era muito agressivo e causava falhas em requisições válidas
+    timeout: 60000, // 60s para geração de imagens (acomoda cold starts e prompts complexos)
     body: {
       prompt: request.prompt,
       negative_prompt: request.negativePrompt || '',
@@ -256,7 +259,11 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
     endpoint: '/embed/image',
     method: 'POST',
     priority: GpuRequestPriority.MEDIUM,
-    timeout: 30000, // 30s para embeddings
+    // BUG FIX 25/12/2025: Timeout aumentado de 30s para 60s para corresponder ao circuit breaker preset
+    // clipEmbeddings preset tem timeout: 60000ms (60s) para acomodar warm-up da GPU
+    // requestGpu com timeout de 30s dava timeout antes do circuit breaker, contradizendo a intenção do preset
+    // Agora ambos usam 60s, permitindo que a GPU tenha tempo suficiente para warm-up
+    timeout: 60000, // 60s para embeddings (corresponde ao circuit breaker preset clipEmbeddings)
     body: {
       image: imageData,
     },
