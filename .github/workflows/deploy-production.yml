@@ -1648,12 +1648,15 @@ jobs:
         id: detect-runner
         run: |
           if [ "${{ runner.name }}" == "hetzner-deploy-runner" ] || [ "${{ runner.name }}" == "hetzner-gpu-runner" ]; then
+            # BUG FIX 25/12/2025: Ambos os runners (deploy-runner e gpu-runner) devem ser classificados como deploy-server
+            # GPU runner não deve executar deploy diretamente em produção (viola isolamento enterprise)
+            # De acordo com design intent (linhas 1525-1532), runners devem ser separados de produção
+            # GPU runner deve ser tratado como deploy-server, não production-server (legado)
+            echo "runner_type=deploy-server" >> $GITHUB_OUTPUT
             if [ "${{ runner.name }}" == "hetzner-deploy-runner" ]; then
-              echo "runner_type=deploy-server" >> $GITHUB_OUTPUT
               echo "✅ Deploy Server runner detectado - executando deploy remoto"
             else
-              echo "runner_type=production-server" >> $GITHUB_OUTPUT
-              echo "⚠️ Production Server runner detectado (legado) - executando deploy local"
+              echo "✅ GPU Server runner detectado - executando deploy remoto (classificado como deploy-server)"
             fi
           elif [ "${{ runner.name }}" != "GitHub Actions" ] && [ "${{ runner.name }}" != "" ]; then
             # BUG FIX 25/12/2025: runner.os retorna "Linux"/"Windows"/"macOS", não "Self-hosted"

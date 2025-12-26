@@ -868,12 +868,14 @@ async function proxyStreamFromGpuManager(
   onChunk: (content: string) => void,
   onDone?: (fullResponse: string) => Promise<void> | void
 ): Promise<string> {
-  // BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
+  // BUG FIX 25/12/2025: REGRA 6 - Fail-fast em TODOS os ambientes (não só produção)
   // INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
-  // Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
+  // Validação apenas em produção permite que código continue silenciosamente em desenvolvimento
+  // com fallback || '' enviando string vazia no header, permitindo requisições não autenticadas
+  // Solução: Validar fail-fast em todos os ambientes para garantir segurança
   const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-  if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
-    logger.error('INTERNAL_API_SECRET é obrigatório em produção (Regra 6 - fail-fast)');
+  if (!INTERNAL_API_SECRET) {
+    logger.error('INTERNAL_API_SECRET é obrigatório (Regra 6 - fail-fast) - configure a variável de ambiente');
     throw new Error('INTERNAL_API_SECRET não configurado - autenticação service-to-service requerida');
   }
   
@@ -882,7 +884,7 @@ async function proxyStreamFromGpuManager(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Internal-Api-Secret': INTERNAL_API_SECRET || '', // BUG FIX 25/12/2025: Fallback para string vazia em desenvolvimento
+      'X-Internal-Api-Secret': INTERNAL_API_SECRET, // BUG FIX 25/12/2025: Removido fallback || '' - validação fail-fast garante que está definido
     },
     body: JSON.stringify({
       serviceType: GpuServiceType.MIXTRAL,
