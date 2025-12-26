@@ -75,7 +75,10 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
     });
     
     if (!queueResponse.ok) {
-      throw new Error(`Erro ao enfileirar requisição GPU: ${queueResponse.status}`);
+      // BUG FIX 25/12/2025: Extrair texto de erro para debugging
+      // Sem o texto de erro, desenvolvedores não conseguem diagnosticar problemas
+      const errorText = await queueResponse.text();
+      throw new Error(`Erro ao enfileirar requisição GPU: ${queueResponse.status} - ${errorText}`);
     }
     
     const { requestId } = await queueResponse.json() as { requestId: string };
@@ -102,7 +105,10 @@ export async function requestGpu(options: GpuRequestOptions): Promise<GpuRespons
       }
       
       if (!resultResponse.ok) {
-        throw new Error(`Erro ao obter resultado GPU: ${resultResponse.status}`);
+        // BUG FIX 25/12/2025: Extrair texto de erro para debugging
+        // Sem o texto de erro, desenvolvedores não conseguem diagnosticar problemas
+        const errorText = await resultResponse.text();
+        throw new Error(`Erro ao obter resultado GPU: ${resultResponse.status} - ${errorText}`);
       }
       
       const result: GpuResponse = await resultResponse.json();
@@ -157,7 +163,10 @@ export async function requestGpuAsync(options: GpuRequestOptions): Promise<strin
   });
   
   if (!queueResponse.ok) {
-    throw new Error(`Erro ao enfileirar requisição GPU: ${queueResponse.status}`);
+    // BUG FIX 25/12/2025: Extrair texto de erro para debugging
+    // Sem o texto de erro, desenvolvedores não conseguem diagnosticar problemas
+    const errorText = await queueResponse.text();
+    throw new Error(`Erro ao enfileirar requisição GPU: ${queueResponse.status} - ${errorText}`);
   }
   
   const { requestId } = await queueResponse.json() as { requestId: string };
@@ -181,7 +190,10 @@ export async function getGpuResult(requestId: string): Promise<GpuResponse | nul
   }
   
   if (!response.ok) {
-    throw new Error(`Erro ao obter resultado GPU: ${response.status}`);
+    // BUG FIX 25/12/2025: Extrair texto de erro para debugging
+    // Sem o texto de erro, desenvolvedores não conseguem diagnosticar problemas
+    const errorText = await response.text();
+    throw new Error(`Erro ao obter resultado GPU: ${response.status} - ${errorText}`);
   }
   
   return response.json() as Promise<GpuResponse>;

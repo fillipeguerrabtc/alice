@@ -2093,8 +2093,18 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
   } catch (error) {
     logger.error({ error }, 'Erro no streaming');
-    res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
-    res.end();
+    // BUG FIX 25/12/2025: Verificar se resposta ainda não foi fechada antes de escrever
+    // O onDone callback pode ter fechado a resposta com res.end() (linha 2069)
+    // Tentar escrever em resposta já fechada causa erro
+    if (res.headersSent && !res.writableEnded) {
+      try {
+        res.write(`data: ${JSON.stringify({ error: 'Erro ao processar mensagem' })}\n\n`);
+        res.end();
+      } catch (endError) {
+        // Resposta já fechada (provavelmente por onDone), ignorar
+        logger.debug({ error: endError }, 'Resposta já fechada - não é possível enviar erro');
+      }
+    }
   }
 });
 
