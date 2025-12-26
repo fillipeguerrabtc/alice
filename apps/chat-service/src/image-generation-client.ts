@@ -151,9 +151,19 @@ export async function generateImage(
       status: 'generating',
     }).returning();
     
-    // BUG FIX 25/12/2025: .returning() sempre retorna array com pelo menos um elemento
-    // Extrair primeiro elemento explicitamente para garantir type safety
+    // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+    // Se array estiver vazio, algo está errado e deve falhar explicitamente
+    if (!inserted || inserted.length === 0) {
+      throw new Error('Falha ao criar registro de imagem - .returning() retornou array vazio');
+    }
+    
     pendingRecord = inserted[0];
+    
+    // BUG FIX 25/12/2025: Verificação adicional para garantir que pendingRecord existe
+    // Previne crash ao acessar pendingRecord.id na linha seguinte
+    if (!pendingRecord) {
+      throw new Error('Falha ao criar registro de imagem - primeiro elemento do array retornado é undefined');
+    }
 
     logger.info({ 
       imageId: pendingRecord.id, 
