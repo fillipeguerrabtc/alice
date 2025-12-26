@@ -18,7 +18,7 @@
 | **SO** | Ubuntu 24.04.3 LTS |
 | **Docker** | 29.1.3 + Compose v5.0.0 |
 | **Domínio** | yesyoudeserve.duckdns.org |
-| **IP** | 46.224.46.93 |
+| **IP** | 178.63.41.108 |
 | **LLM** | Mixtral 8x7B (MoE ~12B ativos, vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB) + Trading BTC |
 | **CI/CD** | 100% automatizado (Push → CI → Release → Deploy) |
 | **Imagens Docker** | Google Distroless (Node.js), Alpine (nginx, Python) |

@@ -53,7 +53,7 @@ Este guia lista **todos os secrets obsoletos** que devem ser **removidos** do Gi
 
 | # | Secret | Valor | Descrição | Obrigatório? |
 |---|--------|-------|-----------|--------------|
-| 1 | `PRODUCTION_SERVER_HOST` | `46.224.46.93` | IP do Production Server (GPU Server GEX44) | ✅ **SIM** |
+| 1 | `PRODUCTION_SERVER_HOST` | `178.63.41.108` | IP do Production Server (GPU Server GEX44) | ✅ **SIM** |
 | 2 | `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server | ✅ **SIM** |
 | 3 | `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH para Deploy Server acessar Production Server (incluir `-----BEGIN...-----END`) | ✅ **SIM** |
 
@@ -75,7 +75,7 @@ Este guia lista **todos os secrets obsoletos** que devem ser **removidos** do Gi
 ssh-keygen -t ed25519 -C "alice-deploy-runner" -f ~/.ssh/id_ed25519_prod
 
 # Copiar chave pública para Production Server
-ssh-copy-id -i ~/.ssh/id_ed25519_prod.pub alice-deploy@46.224.46.93
+ssh-copy-id -i ~/.ssh/id_ed25519_prod.pub alice-deploy@178.63.41.108
 
 # Copiar chave privada completa para GitHub Secret
 cat ~/.ssh/id_ed25519_prod

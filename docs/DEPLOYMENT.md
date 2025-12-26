@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 25 de Dezembro de 2025
+**Data:** 26 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
@@ -244,7 +244,7 @@ Storage interno do servidor GEX44 (1.92TB utilizável) montado diretamente em `/
    - **IPv4:** Habilitado
    - **Name:** `alice-prod`
 5. Clique **Create & Buy now**
-6. Anote o IP público (ex: `46.224.46.93`)
+6. Anote o IP público (ex: `178.63.41.108`)
 
 ### 2. Configurar DNS (DuckDNS)
 
@@ -271,7 +271,7 @@ Vá para: Repositório → **Settings** → **Secrets and variables** → **Acti
 ```bash
 # ========== INFRAESTRUTURA HETZNER ==========
 HETZNER_API_TOKEN=seu-token-api-hetzner
-HETZNER_VM_HOST=46.224.46.93
+HETZNER_VM_HOST=178.63.41.108
 HETZNER_VM_USER=root
 HETZNER_SSH_PRIVATE_KEY=<cole-sua-chave-ssh-privada-aqui>
 
@@ -328,11 +328,23 @@ GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 
 ### 5. Conexão SSH ao Servidor
 
-**Configuração local recomendada** (`~/.ssh/config`):
+**Arquitetura de 2 Servidores (26/12/2025):**
+
+| Servidor | Alias SSH | IP | Função |
+|----------|-----------|-----|--------|
+| **Deploy Server** | `alice-hetzner` | 5.78.77.83 | GitHub Actions Runner, CI/CD |
+| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (50 containers) |
+
+**Configuração SSH** (`~/.ssh/config`):
 
 ```text
 Host alice-hetzner
-    HostName 46.224.46.93
+    HostName 5.78.77.83
+    User root
+    IdentityFile ~/.ssh/alice-deploy
+
+Host alice-prod
+    HostName 178.63.41.108
     User root
     IdentityFile ~/.ssh/alice-deploy
 ```
@@ -340,11 +352,11 @@ Host alice-hetzner
 **Conexão rápida:**
 
 ```bash
-# Usando alias (recomendado)
+# Deploy Server (runner)
 ssh alice-hetzner
 
-# Ou diretamente com a chave
-ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+# Production Server (aplicação)
+ssh alice-prod
 ```
 
 **Especificações do Servidor (verificado em 03/12/2025):**
@@ -358,7 +370,7 @@ ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 | **RAM** | 64GB DDR4 ECC |
 | **GPU** | NVIDIA RTX 4000 SFF Ada Generation (20GB VRAM) |
 | **Disco** | 2x 1.92TB NVMe SSD Datacenter Edition (Software RAID 1 = 1.92TB utilizável) |
-| **IP** | 46.224.46.93 |
+| **IP** | 178.63.41.108 |
 | **Localização** | Hetzner Cloud |
 
 ### 6. Configurar Servidor Hetzner (Primeira vez)
@@ -711,8 +723,8 @@ Rollback automático acontece se health checks falharem após deploy.
 ### Manual
 
 ```bash
-# SSH para o servidor
-ssh root@46.224.46.93
+# SSH para o servidor de produção
+ssh alice-prod
 
 # Listar imagens disponíveis
 docker images | grep alice
@@ -917,7 +929,7 @@ cat ~/.ssh/config | grep -A3 alice-hetzner
 ssh alice-hetzner
 
 # Ou conectar diretamente com a chave
-ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+ssh -i ~/.ssh/alice-deploy root@178.63.41.108
 
 # Verificar conexão com verbose
 ssh -v alice-hetzner
@@ -927,15 +939,6 @@ chmod 600 ~/.ssh/alice-deploy
 
 # No Windows PowerShell, verificar config
 Get-Content $env:USERPROFILE\.ssh\config
-```
-
-**Configuração SSH recomendada** (`~/.ssh/config`):
-
-```text
-Host alice-hetzner
-    HostName 46.224.46.93
-    User root
-    IdentityFile ~/.ssh/alice-deploy
 ```
 
 ### Container não inicia
@@ -1120,16 +1123,16 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 25 de Dezembro de 2025*
-*Versão: 7.6 - Correção ERPNext install-app --verbose flag inválida*
-*Data: 25 de Dezembro de 2025*
+*Documento atualizado em: 26 de Dezembro de 2025*
+*Versão: 7.7 - Arquitetura 2 Servidores (Deploy + Production)*
+*Data: 26 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (25/12/2025): Deploy Server (CX11) separado + Production Server (GEX44 GPU). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
-*GPU: RTX 4090 (24GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
+*Pipeline Enterprise (26/12/2025): Deploy Server (CX22 - IP 5.78.77.83) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

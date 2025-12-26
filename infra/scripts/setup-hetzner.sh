@@ -16,7 +16,7 @@
 # Servidor: GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB)
 # Storage: 1.92TB interno (não é necessário volume externo)
 # SO: Ubuntu 24.04 LTS
-# IP: 46.224.46.93
+# IP: 178.63.41.108
 # Domínio: yesyoudeserve.duckdns.org
 #
 # Uso: curl -fsSL https://raw.githubusercontent.com/.../setup-hetzner.sh | bash

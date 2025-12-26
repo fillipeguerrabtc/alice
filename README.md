@@ -71,7 +71,7 @@
 │                  PRODUÇÃO (Hetzner GPU Server - Nuremberg)           │
 │  ┌─────────────────────────────────────────────────────────────────┐│
 │  │    GPU Server GEX44 (RTX 4000 Ada 20GB, 64GB DDR4, 1.92TB NVMe)  ││
-│  │    IP: 46.224.46.93 | Domínio: yesyoudeserve.duckdns.org       ││
+│  │    IP: 178.63.41.108 | Domínio: yesyoudeserve.duckdns.org      ││
 │  │  ┌─────────┐ ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────────┐     ││
 │  │  │ Traefik │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
 │  │  │ Gateway │ │:3001  │ │:3002  │ │  :3003  │ │  :3004    │     ││
@@ -250,15 +250,30 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
 
 ### Acesso SSH à Hetzner (Produção)
 
-- Alias recomendado (configurar em `~/.ssh/config`):
-  - `Host alice-hetzner`
-  - `HostName 46.224.46.93`
-  - `User root`
-  - `IdentityFile ~/.ssh/alice-deploy`
-- Conexão via alias: `ssh alice-hetzner`
-- Conexão direta: `ssh -i ~/.ssh/alice-deploy root@46.224.46.93`
+**Arquitetura de 2 Servidores (26/12/2025):**
+
+| Servidor | Alias SSH | IP | Função |
+|----------|-----------|-----|--------|
+| **Deploy Server** | `alice-hetzner` | 5.78.77.83 | GitHub Actions Runner |
+| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU |
+
+**Configuração SSH** (`~/.ssh/config`):
+
+```
+Host alice-hetzner
+    HostName 5.78.77.83
+    User root
+    IdentityFile ~/.ssh/alice-deploy
+
+Host alice-prod
+    HostName 178.63.41.108
+    User root
+    IdentityFile ~/.ssh/alice-deploy
+```
+
+- Conexão Deploy Server: `ssh alice-hetzner`
+- Conexão Production Server: `ssh alice-prod`
 - Permissões da chave: `chmod 600 ~/.ssh/alice-deploy`
-- Teste/verbo­se: `ssh -v alice-hetzner`
 
 ### URLs de Produção
 
@@ -442,7 +457,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.13 - 25 de Dezembro de 2025*
+*Versão 4.14 - 26 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*

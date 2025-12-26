@@ -76,7 +76,7 @@
 
 ```bash
 # SSH para o servidor Hetzner
-ssh root@46.224.46.93
+ssh root@178.63.41.108
 
 # Navegar para diretório Alice
 cd /opt/alice/app/infra/docker

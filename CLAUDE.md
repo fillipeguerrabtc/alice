@@ -114,7 +114,8 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Servidor**: Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1 = 1.92TB utilizável)
 - **Volume Adicional**: Não necessário - servidor GEX44 possui 1.92TB de storage interno (substitui volume externo de 100GB)
 - **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
-- **IP**: 46.224.46.93
+- **IP Production**: 178.63.41.108 (GEX44 GPU)
+- **IP Deploy Server**: 5.78.77.83 (CX22 Runner)
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
 - **Docker**: 29.1.3, Docker Compose v5.0.0
@@ -139,8 +140,11 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 # Usando alias (recomendado - configurar em ~/.ssh/config)
 ssh alice-hetzner
 
-# Conexão direta
-ssh -i ~/.ssh/alice-deploy root@46.224.46.93
+# Conexão direta Production
+ssh -i ~/.ssh/alice-deploy root@178.63.41.108
+
+# Conexão direta Deploy Server
+ssh -i ~/.ssh/alice-deploy root@5.78.77.83
 ```
 
 ## Estrutura do Projeto

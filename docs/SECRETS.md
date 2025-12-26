@@ -16,7 +16,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
 **URL de Produção:** `https://yesyoudeserve.duckdns.org`
 **URL ERPNext:** `https://erp.yesyoudeserve.duckdns.org`
-**IP:** 46.224.46.93
+**IP:** 178.63.41.108
 
 > Atualização 21/12/2025: Fluxo CI deduplicado (push somente em `main` + PR em `main`) e correções de tipos no frontend destravando Release & Tag.
 
@@ -56,11 +56,11 @@ Estes são necessários para o deploy funcionar:
 
 | Secret | Valor | Descrição |
 |--------|-------|-----------|
-| `PRODUCTION_SERVER_HOST` | `46.224.46.93` | IP do Production Server (GPU Server GEX44) | ✅ **OBRIGATÓRIO** |
+| `PRODUCTION_SERVER_HOST` | `178.63.41.108` | IP do Production Server (GPU Server GEX44) | ✅ **OBRIGATÓRIO** |
 | `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server | ✅ **OBRIGATÓRIO** |
 | `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH para Deploy Server acessar Production Server (incluir `-----BEGIN...-----END`) | ✅ **OBRIGATÓRIO** |
 | `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) | ✅ **OBRIGATÓRIO** |
-| `HETZNER_VM_HOST` | `46.224.46.93` | IP do Production Server (legado - fallback) | ⚠️ **Legado** |
+| `HETZNER_VM_HOST` | `178.63.41.108` | IP do Production Server (legado - fallback) | ⚠️ **Legado** |
 | `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado - fallback) | ⚠️ **Legado** |
 | `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Chave SSH legada (fallback se runner não disponível) | ⚠️ **Legado** |
 
@@ -171,7 +171,7 @@ Estes são necessários para o deploy funcionar:
 **Configuração:**
 1. KuCoin → Profile → API Management → Create API
 2. Permissions necessárias: `Futures Trading`, `General`
-3. IP Whitelist: Adicionar IP do servidor Hetzner (46.224.46.93)
+3. IP Whitelist: Adicionar IP do servidor Hetzner (178.63.41.108)
 4. Importante: **Guarde o API Secret imediatamente** - só é mostrado 1 vez
 
 **Sandbox para Testes:**
