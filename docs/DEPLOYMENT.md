@@ -20,7 +20,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
-> Atualização 21/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Impede disparo acidental ou paralelo com CI. Pipeline 100% sequencial: Push → CI → Release → Deploy.
+> Atualização 26/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy roda **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`) e executa deploy remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy.
 
 ### Categoria 2: Microsserviços Alice (7 serviços)
 
@@ -103,7 +103,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 │  │  1. Build Pacotes Compartilhados                                   │  │
 │  │  2. Build Imagens Docker                                           │  │
 │  │  3. Push para GHCR                                                 │  │
-│  │  4. SSH para Hetzner VM                                            │  │
+│  │  4. Deploy remoto via self-hosted runner (Deploy Server) → SSH      │  │
 │  │  5. Deploy Docker Compose                                          │  │
 │  │  6. Health Checks                                                  │  │
 │  └───────────────────────────────────────────────────────────────────┘  │
@@ -489,7 +489,7 @@ O deploy é **100% automático** via GitHub Actions:
 
 ## Fluxo de CI/CD (Best Practices 2025)
 
-**Tag única e determinística:** a pipeline de deploy agora usa a versão recebida pelo `release.yml` (`inputs.version`) como tag principal das imagens; se a versão não for informada, usa-se `GITHUB_SHA` como fallback. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
+**Tag única e determinística:** a pipeline de deploy usa a versão recebida pelo `release.yml` (`inputs.version`) como tag principal das imagens. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
 
 ### Pipeline Unificada (17/12/2025)
 

@@ -46,6 +46,8 @@
 
 > **Padronização de Line Endings 26/12/2025:** Adicionados `.gitattributes` e `.editorconfig` para eliminar diffs ruidosos (LF/CRLF) e garantir consistência enterprise em Windows/Linux/macOS.
 
+> **Deploy Runner 26/12/2025:** `deploy-production.yml` simplificado para operar **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`), removendo o bloco gigante de fallback. O deploy é executado via `infra/scripts/deploy-remote.sh` (Deploy Server → Production Server via SSH), mantendo isolamento e previsibilidade enterprise.
+
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
 > **GPU Manager Service 25/12/2025:** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service com fila priorizada, monitoramento VRAM e circuit breakers. Elimina latência de rede e simplifica arquitetura. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
