@@ -1669,7 +1669,37 @@ jobs:
       - name: Transferir arquivos via SCP (apenas se GitHub-hosted runner)
         if: steps.detect-runner.outputs.runner_type == 'github-hosted'
         run: |
-          scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no .env.prod langfuse_db_password alertmanager_smtp_password ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
+          # BUG FIX 25/12/2025: Verificar existência dos arquivos antes de transferir
+          # generate-env-prod.sh cria langfuse_db_password e alertmanager_smtp_password
+          # Mas se o script falhar ou secrets não estiverem configurados, arquivos não existirão
+          # SCP falha se qualquer arquivo não existir, então verificamos antes
+          FILES_TO_TRANSFER=()
+          
+          if [ -f .env.prod ]; then
+            FILES_TO_TRANSFER+=(".env.prod")
+          else
+            echo "::error::.env.prod não encontrado - generate-env-prod.sh deve ter falhado" >&2
+            exit 1
+          fi
+          
+          if [ -f langfuse_db_password ]; then
+            FILES_TO_TRANSFER+=("langfuse_db_password")
+          else
+            echo "⚠️ langfuse_db_password não encontrado - será ignorado (pode ser normal se LANGFUSE_DB_PASSWORD não estiver configurado)"
+          fi
+          
+          if [ -f alertmanager_smtp_password ]; then
+            FILES_TO_TRANSFER+=("alertmanager_smtp_password")
+          else
+            echo "⚠️ alertmanager_smtp_password não encontrado - será ignorado (pode ser normal se RESEND_API_KEY não estiver configurado)"
+          fi
+          
+          if [ ${#FILES_TO_TRANSFER[@]} -gt 0 ]; then
+            scp -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no "${FILES_TO_TRANSFER[@]}" ${{ secrets.HETZNER_VM_USER }}@${{ secrets.HETZNER_VM_HOST }}:/tmp/
+          else
+            echo "::error::Nenhum arquivo para transferir - verifique se generate-env-prod.sh foi executado corretamente" >&2
+            exit 1
+          fi
 
       # =============================================================================
       # ENTERPRISE-GRADE (25/12/2025): Deploy via Deploy Server (remoto)
@@ -4011,10 +4041,10 @@ jobs:
           echo "   GPU Manager: http://localhost:3010 (interno)"
           echo ""
           echo "🚀 SERVIÇOS GPU (gerenciados pelo GPU Manager Service):"
-          echo "   Mixtral 8x7B (LLM): RTX 4090 24GB"
-          echo "   Embeddings GPU (Qwen3 + OpenCLIP): RTX 4090 24GB"
-          echo "   FLUX.1 Schnell (Images): RTX 4090 24GB"
-          echo "   ASR Canary-1B (Speech): RTX 4090 24GB"
+          echo "   Mixtral 8x7B (LLM): RTX 4000 Ada 20GB"
+          echo "   Embeddings GPU (Qwen3 + OpenCLIP): RTX 4000 Ada 20GB"
+          echo "   FLUX.1 Schnell (Images): RTX 4000 Ada 20GB"
+          echo "   ASR Canary-1B (Speech): RTX 4000 Ada 20GB"
           echo ""
           echo "📊 RESULTADO:"
           echo "   Commit: ${{ github.sha }}"
