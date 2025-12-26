@@ -159,20 +159,17 @@ export interface ImageProcessorOptions {
 }
 
 class ImageProcessorService {
-  private isConfigured: boolean = false;
+  // GPU Manager Service (Hetzner GEX44) sempre disponível - GPU dedicada 24/7
+  private readonly isConfigured: boolean = true;
 
   constructor() {
-    // GPU Manager Service é sempre usado, não precisa validar URL individual
-    this.isConfigured = true;
-    
-    if (!this.isConfigured) {
-      logger.warn('GPU embeddings service não acessível - embeddings de imagem não funcionarão');
-    } else {
+    // ARQUITETURA ENTERPRISE (26/12/2025): GPU dedicada Hetzner GEX44 sempre disponível
+    // GPU Manager Service gerencia todos os serviços GPU via rede Docker interna
+    // Não há cold start - containers rodam 24/7
     logger.info(
-        { gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: CLIP_EMBEDDING_DIM },
-        'Image Processor configurado - ARQUITETURA 100% GPU (OpenCLIP ViT-H/14, 1024 dim)'
+      { gpuManagerUrl: GPU_MANAGER_URL, embeddingDim: CLIP_EMBEDDING_DIM },
+      'Image Processor configurado - GPU dedicada 24/7 (OpenCLIP ViT-H/14, 1024 dim)'
     );
-    }
   }
 
   /**
