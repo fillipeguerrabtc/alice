@@ -21,7 +21,7 @@ services:
       - alice-network
 
   traefik:
-    image: traefik:v3.0
+    image: traefik:v3.6.4
     container_name: alice-gateway
     command:
       - "--api.insecure=true"
@@ -144,7 +144,7 @@ services:
       - alice-network
 
   vector:
-    image: timberio/vector:0.34.0-alpine
+    image: timberio/vector:0.51.1-alpine
     container_name: alice-vector
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro

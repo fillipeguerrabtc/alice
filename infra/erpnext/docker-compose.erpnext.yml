@@ -48,7 +48,7 @@ services:
 
   # Redis para cache e queue
   erpnext-redis:
-    image: redis:7-alpine
+    image: redis:7.4.6-alpine
     container_name: alice-erpnext-redis
     restart: unless-stopped
     networks:
@@ -70,7 +70,7 @@ services:
   # ERPNext Backend
   # SEGURANÇA: v15.88.0 corrige CVE-2025-55732, CVE-2025-55731 (SQL Injection críticos)
   erpnext-backend:
-    image: frappe/erpnext:v15.88.0
+    image: frappe/erpnext:v15.91.3
     container_name: alice-erpnext-backend
     restart: unless-stopped
     networks:
@@ -113,7 +113,7 @@ services:
   # ERPNext Frontend (Nginx)
   # SEGURANÇA: v15.88.0 para compatibilidade com backend atualizado
   erpnext-frontend:
-    image: frappe/frappe-nginx:v15.88.0
+    image: frappe/frappe-nginx:v15.91.3
     container_name: alice-erpnext-frontend
     restart: unless-stopped
     networks:
@@ -144,7 +144,7 @@ services:
   # ERPNext Socket.IO
   # SEGURANÇA: v15.88.0 para compatibilidade com backend atualizado
   erpnext-socketio:
-    image: frappe/frappe-socketio:v15.88.0
+    image: frappe/frappe-socketio:v15.91.3
     container_name: alice-erpnext-socketio
     restart: unless-stopped
     networks:
@@ -162,7 +162,7 @@ services:
   # ERPNext Scheduler (Background Jobs)
   # SEGURANÇA: v15.88.0 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-scheduler:
-    image: frappe/erpnext:v15.88.0
+    image: frappe/erpnext:v15.91.3
     container_name: alice-erpnext-scheduler
     restart: unless-stopped
     networks:
@@ -182,7 +182,7 @@ services:
   # ERPNext Worker (Default Queue)
   # SEGURANÇA: v15.88.0 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-default:
-    image: frappe/erpnext:v15.88.0
+    image: frappe/erpnext:v15.91.3
     container_name: alice-erpnext-worker-default
     restart: unless-stopped
     networks:
@@ -202,7 +202,7 @@ services:
   # ERPNext Worker (Short Queue)
   # SEGURANÇA: v15.88.0 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-short:
-    image: frappe/erpnext:v15.88.0
+    image: frappe/erpnext:v15.91.3
     container_name: alice-erpnext-worker-short
     restart: unless-stopped
     networks:
@@ -222,7 +222,7 @@ services:
   # ERPNext Worker (Long Queue)
   # SEGURANÇA: v15.88.0 corrige CVE-2025-55732, CVE-2025-55731
   erpnext-worker-long:
-    image: frappe/erpnext:v15.88.0
+    image: frappe/erpnext:v15.91.3
     container_name: alice-erpnext-worker-long
     restart: unless-stopped
     networks:

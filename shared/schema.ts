@@ -544,7 +544,7 @@ export const conversations = pgTable(
 );
 
 // ============================================================================
-// MENSAGENS (Multimodal: texto, imagem, áudio, vídeo)
+// MENSAGENS (Multimodal: texto, imagem, áudio)
 // ============================================================================
 
 export const messages = pgTable(
@@ -1229,10 +1229,10 @@ export const mediaUploads = pgTable(
     fileUrl: text("file_url"),
     thumbnailPath: text("thumbnail_path"),
     
-    // Dimensões (para imagem/vídeo)
+    // Dimensões (para imagem)
     width: integer("width"),
     height: integer("height"),
-    duration: real("duration"), // Segundos (para áudio/vídeo)
+    duration: real("duration"), // Segundos (para áudio)
     
     // Processamento
     processingStatus: mediaProcessingStatusEnum("processing_status").default("pending"),
@@ -1243,7 +1243,7 @@ export const mediaUploads = pgTable(
     clipEmbedding: real("clip_embedding").array(), // OpenCLIP ViT-H/14 para imagens (1024 dim → pgvector)
     textEmbedding: real("text_embedding").array(), // Qwen3-Embedding-8B para transcrição de áudio (4096 dim → Qdrant)
     
-    // Transcrição (para áudio/vídeo)
+    // Transcrição (para áudio)
     transcription: text("transcription"),
     transcriptionLanguage: varchar("transcription_language", { length: 10 }),
     transcriptionConfidence: real("transcription_confidence"),

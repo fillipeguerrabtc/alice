@@ -479,7 +479,7 @@ function CreateJobDialog({ open, onClose, approvedCount, t }: {
 // ARQUITETURA 100% GPU (15/12/2025):
 // - Imagens: OpenCLIP ViT-H/14 embeddings (1024 dim)
 // - Áudios: Whisper large-v3 transcrição + Qwen3-Embedding-8B embeddings (4096 dim)
-// - Vídeos: Frames OpenCLIP + transcrição Qwen3-Embedding-8B
+// - Vídeo: NÃO suportado (desabilitado por custo/peso de GPU)
 // REGRA 8: TypeScript strict, zero any
 // REGRA 16: Validação client-side, error handling, UX feedback
 // ============================================================================

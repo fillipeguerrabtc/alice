@@ -135,6 +135,15 @@ const ALL_SUPPORTED_MIMES = [
 
 type MediaType = 'image' | 'audio' | 'document';
 
+// Limites de arquivo por tipo (Enterprise, consistente com /api/media/health e frontend)
+// NOTA: multer limits.fileSize deve usar o MAIOR limite (documento) e a validação fina por tipo
+// é feita no handler, pois o limite do multer é global por upload.
+const FILE_SIZE_LIMITS_BYTES: Record<MediaType, number> = {
+  image: 10 * 1024 * 1024,    // 10MB
+  audio: 25 * 1024 * 1024,    // 25MB
+  document: 50 * 1024 * 1024, // 50MB
+} as const;
+
 // BUG FIX 23/12/2025: Type assertions seguras - includes() retorna boolean, type assertion apenas para TypeScript
 // A validação real é feita pelo includes(), não pela type assertion
 // Se mimeType não estiver na lista, includes() retorna false e a função retorna null
@@ -197,9 +206,6 @@ const MAGIC_BYTES: Record<string, { bytes: number[]; offset?: number }[]> = {
     { bytes: [0xFF, 0xFA] }, // MPEG Audio Layer 3 sync (variante)
   ],
   // MP4/M4A: ftyp box (vários tipos)
-  'video/mp4': [
-    { bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // "ftyp" at offset 4
-  ],
   'audio/mp4': [
     { bytes: [0x66, 0x74, 0x79, 0x70], offset: 4 }, // "ftyp" at offset 4
   ],
@@ -675,11 +681,13 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-// Upload para mídia multimodal (imagem, áudio, vídeo)
+// Upload para mídia multimodal (imagem, áudio, documento) - vídeo NÃO suportado
 const mediaUpload = multer({
   storage: multer.memoryStorage(),
   limits: { 
-    fileSize: 100 * 1024 * 1024, // 100MB para vídeos
+    // Limite global do multer deve ser o maior limite permitido (documentos).
+    // A validação por tipo (10/25/50MB) é aplicada no handler após detectar mediaType.
+    fileSize: FILE_SIZE_LIMITS_BYTES.document,
   },
   fileFilter: (_req, file, cb) => {
     if (ALL_SUPPORTED_MIMES.includes(file.mimetype as typeof ALL_SUPPORTED_MIMES[number])) {
@@ -2000,6 +2008,22 @@ app.post('/api/media/upload', requireAuth(), requireSameTenant(getTenantIdFromRe
       });
     }
 
+    // Enforce limite por tipo (Enterprise): multer limit é global, então validamos aqui por mediaType.
+    const maxSize = FILE_SIZE_LIMITS_BYTES[mediaType];
+    if (!maxSize) {
+      // Impossível em runtime (MediaType é fechado), mas mantém fail-fast defensivo.
+      logger.error({ tenantId, mediaType }, 'mediaType inválido para FILE_SIZE_LIMITS_BYTES');
+      return res.status(400).json({ error: 'Tipo de mídia inválido' });
+    }
+    if (req.file.size > maxSize) {
+      return res.status(400).json({
+        error: 'Arquivo muito grande',
+        mediaType,
+        maxSizeMb: Math.round(maxSize / 1024 / 1024),
+        receivedSizeMb: Math.round(req.file.size / 1024 / 1024),
+      });
+    }
+
     // Gerar hash único para o arquivo
     const fileHash = crypto.createHash('sha256').update(new Uint8Array(req.file.buffer)).digest('hex');
     
@@ -2381,14 +2405,8 @@ app.post('/api/media/upload/json', requireAuth(), requireSameTenant(getTenantIdF
       });
     }
     
-    // Limites por tipo de mídia (consistente com frontend FILE_LIMITS)
-    const FILE_LIMITS = {
-      image: 10 * 1024 * 1024,  // 10MB para imagens
-      audio: 25 * 1024 * 1024,  // 25MB para áudio
-      document: 50 * 1024 * 1024, // 50MB para documentos
-    } as const;
-    
-    const maxSize = FILE_LIMITS[mediaType];
+    // Limites por tipo de mídia (consistente com /api/media/upload e /api/media/health)
+    const maxSize = FILE_SIZE_LIMITS_BYTES[mediaType];
     if (fileSize > maxSize) {
       const maxSizeMb = maxSize / (1024 * 1024);
       return res.status(400).json({ 
@@ -2952,12 +2970,9 @@ app.get('/api/media/files/:tenantId/:mediaType/:filename', requireAuth(), requir
         '.mp3': 'audio/mpeg',
         '.wav': 'audio/wav',
         '.ogg': 'audio/ogg',
-        // BUG FIX 23/12/2025: WebM pode ser vídeo ou áudio
-        // Usar 'video/webm' como fallback pois funciona para ambos (é um superconjunto)
-        // Arquivos legados de vídeo WebM serão servidos corretamente
-        // Novos uploads de áudio WebM terão 'audio/webm' no banco e serão servidos corretamente
-        '.webm': 'video/webm',
-        // REMOVIDO 23/12/2025: extensões de vídeo desabilitadas (.mp4, .mov)
+        // WebM suportado APENAS para áudio (vídeo é desabilitado na plataforma).
+        // Para arquivos sem registro no DB (edge case), servimos como audio/webm.
+        '.webm': 'audio/webm',
         '.pdf': 'application/pdf',
         '.txt': 'text/plain',
         '.md': 'text/markdown',

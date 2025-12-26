@@ -93,15 +93,16 @@ WORKDIR /app
 RUN pnpm --filter @alice/rag-service deploy --prod --legacy /prod/rag-service
 
 # ==============================================================================
-# Stage: runner - Node.js Bookworm Slim + FFmpeg para produção
-# 
-# NOTA: Usamos bookworm-slim em vez de Distroless porque este serviço precisa
-# de FFmpeg para processamento de vídeos. A imagem é segura e mantida.
-# 
+# Stage: runner - Node.js Bookworm Slim para produção
+#
+# NOTA: Este serviço usa node:22-bookworm-slim (não Distroless) para permitir
+# dependências de sistema quando necessário (ex.: CA certificates). Com vídeo
+# desabilitado na plataforma, FFmpeg NÃO é necessário no runtime.
+#
 # SEGURANÇA:
 # - Imagem oficial Node.js (mantida, patches de segurança regulares)
 # - Usuário non-root (node, uid 1000)
-# - Apenas FFmpeg instalado (mínimo necessário)
+# - Apenas pacotes essenciais instalados
 # - apt cache limpo após instalação
 # ==============================================================================
 FROM node:22-bookworm-slim AS runner
@@ -111,13 +112,8 @@ ENV NODE_ENV=production
 ENV SERVICE_NAME=rag-service
 ENV PORT=3003
 
-# Instalar FFmpeg para processamento de vídeo
-# FFmpeg é necessário para:
-# - Extração de áudio de vídeos (para transcrição Whisper)
-# - Extração de frames para CLIP embeddings
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ffmpeg \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/* && \
     apt-get clean

@@ -501,7 +501,7 @@ Acessíveis em `/dashboard/analytics`:
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
 *Análise de Licenças (17/12/2025): Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5, Linq-Embed-Mistral e NV-Embed-v2 são CC BY-NC (Non-Commercial).*
 *Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
-*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio/vídeo) agora vão para Qdrant (4096 dim)*
+*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*
 *GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodando continuamente, sem cold start. Estratégia "Warm on Demand" removida.*

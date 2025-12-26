@@ -3019,8 +3019,8 @@ services:
           memory: 512M
           cpus: '0.5'
         reservations:
-      memory: 128M
-      cpus: '0.1'
+          memory: 128M
+          cpus: '0.1'
 
 # =============================================================================
 # GPU SERVICES (4 containers) - Servidor Único com GPU

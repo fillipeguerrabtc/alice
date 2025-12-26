@@ -7,7 +7,7 @@
 # Data: 25 de Dezembro de 2025
 # =============================================================================
 
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -18,7 +18,8 @@ COPY apps/gpu-manager-service/package.json ./apps/gpu-manager-service/
 COPY tsconfig.json tsconfig.base.json ./
 
 # Instalar dependências
-RUN corepack enable && corepack prepare pnpm@latest --activate
+# Determinismo: usar a mesma versão do workspace (packageManager em package.json)
+RUN corepack enable && corepack prepare pnpm@10.26.1 --activate
 RUN pnpm install --frozen-lockfile
 
 # Copiar código fonte
@@ -32,7 +33,7 @@ RUN pnpm build
 # Production
 # =============================================================================
 
-FROM node:20-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 

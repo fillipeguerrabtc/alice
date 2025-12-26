@@ -2,7 +2,7 @@ version: "3.8"
 
 services:
   vector:
-    image: timberio/vector:latest-alpine
+    image: timberio/vector:0.51.1-alpine
     container_name: alice-vector
     restart: unless-stopped
     networks:
@@ -25,7 +25,7 @@ services:
 
   # Optional: Local Prometheus for metrics aggregation
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.8.0
     container_name: alice-prometheus
     restart: unless-stopped
     networks:

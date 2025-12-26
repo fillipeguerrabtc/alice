@@ -359,7 +359,7 @@
 > - ❌ NV-Embed-v2 (NVIDIA) - CC BY-NC 4.0 (Non-Commercial) - PROIBIDO uso comercial
 > - **Performance Qwen3 em Trading:** 79.43% return, Sharpe 0.322 (NOF1 AI Arena)
 
-> **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio/vídeo).
+> **Consistência Health/Readiness (Best Practices 2025):** quando o Whisper falha ao carregar, `/health` reporta `status: "degraded"` (e `whisper_model: ""`), alinhando o sinal com o `/ready` (que retorna `503` quando não pronto). Isso evita sinais contraditórios para consumidores internos (ex: RAG áudio).
 
 ### 8. frontend-service (Porta 5000)
 
@@ -1110,7 +1110,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Upload Multimodal: Nova tab em /training para imagens/áudios/vídeos (15/12/2025)*
 *WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
-*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio/vídeo) agora vão para Qdrant (4096 dim)*
+*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
 *Bug Fix KuCoin (17/12/2025): Corrigido status sync 'open'→'active' conforme documentação API KuCoin Futures*
 *Bug Fix Risk Config API (17/12/2025): Removidos maxDailyOrders e allowedSymbols (campos inexistentes) do schema Zod*
 *Bug Fix orderValue (17/12/2025): Cálculo agora usa contract.multiplier (0.001 BTC para XBTUSDTM) - evita rejeição de ordens legítimas*
