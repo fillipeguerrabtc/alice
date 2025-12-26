@@ -2686,7 +2686,7 @@ wss.on('connection', (ws, req) => {
         // Se já está em modo humano, apenas encaminhar para agente (sem LLM)
         if (conversationState.controlMode === 'human') {
           // Salvar mensagem do usuário com metadata indicando modo humano
-          const [userMsg] = await db.insert(schema.messages).values({
+          const inserted = await db.insert(schema.messages).values({
             conversationId,
             userId,
             conteudo: messageContent,
@@ -2697,6 +2697,15 @@ wss.on('connection', (ws, req) => {
               assignedAgentId: conversationState.assignedAgentId,
             },
           }).returning();
+          
+          // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+          // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+          if (!inserted || inserted.length === 0 || !inserted[0]) {
+            logger.error({ conversationId }, 'Falha ao salvar mensagem de takeover - .returning() retornou array vazio ou undefined');
+            throw new Error('Falha ao salvar mensagem de takeover - resultado do banco de dados inválido');
+          }
+          
+          const userMsg = inserted[0];
           
           ws.send(JSON.stringify({ type: 'message', data: userMsg }));
           ws.send(JSON.stringify({
@@ -2727,7 +2736,7 @@ wss.on('connection', (ws, req) => {
           const escalationResult = await processAutoEscalation(escalationContext);
           
           // Salvar mensagem do usuário com metadata indicando escalação
-          const [userMsg] = await db.insert(schema.messages).values({
+          const inserted = await db.insert(schema.messages).values({
             conversationId,
             userId,
             conteudo: messageContent,
@@ -2739,6 +2748,15 @@ wss.on('connection', (ws, req) => {
               handledBy: 'escalation',
             },
           }).returning();
+          
+          // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+          // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+          if (!inserted || inserted.length === 0 || !inserted[0]) {
+            logger.error({ conversationId }, 'Falha ao salvar mensagem de escalation - .returning() retornou array vazio ou undefined');
+            throw new Error('Falha ao salvar mensagem de escalation - resultado do banco de dados inválido');
+          }
+          
+          const userMsg = inserted[0];
           
           ws.send(JSON.stringify({ type: 'message', data: userMsg }));
           
@@ -2791,7 +2809,7 @@ wss.on('connection', (ws, req) => {
         // ========================================================================
         
         // Agora é seguro inserir a mensagem do usuário (será processada pelo bot)
-        const [userMsg] = await db.insert(schema.messages).values({
+        const inserted = await db.insert(schema.messages).values({
           conversationId,
           userId,
           conteudo: messageContent,
@@ -2799,6 +2817,15 @@ wss.on('connection', (ws, req) => {
           isFromUser: true,
           metadata: { handledBy: 'bot' },
         }).returning();
+        
+        // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+        // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+        if (!inserted || inserted.length === 0 || !inserted[0]) {
+          logger.error({ conversationId, userId }, 'Falha ao salvar mensagem do usuário - .returning() retornou array vazio ou undefined');
+          throw new Error('Falha ao salvar mensagem do usuário - resultado do banco de dados inválido');
+        }
+        
+        const userMsg = inserted[0];
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
@@ -2835,7 +2862,7 @@ wss.on('connection', (ws, req) => {
               generationTimeMs: imageResult.generationTimeMs,
             }));
 
-            const [imageMsg] = await db.insert(schema.messages).values({
+            const inserted = await db.insert(schema.messages).values({
               conversationId,
               agentId: conversation?.agentId,
               conteudo: `Imagem gerada com sucesso para: "${imageDetection.prompt}"`,
@@ -2847,6 +2874,15 @@ wss.on('connection', (ws, req) => {
                 prompt: imageDetection.prompt,
               },
             }).returning();
+            
+            // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+            // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+            if (!inserted || inserted.length === 0 || !inserted[0]) {
+              logger.error({ conversationId, imageId: imageResult.imageId }, 'Falha ao salvar mensagem de imagem - .returning() retornou array vazio ou undefined');
+              throw new Error('Falha ao salvar mensagem de imagem - resultado do banco de dados inválido');
+            }
+            
+            const imageMsg = inserted[0];
 
             ws.send(JSON.stringify({ 
               type: 'complete', 
@@ -2906,7 +2942,7 @@ wss.on('connection', (ws, req) => {
           const cacheLatency = cacheResult.latencyMs;
           
           // Salvar resposta no banco
-          const [cachedMsg] = await db.insert(schema.messages).values({
+          const inserted = await db.insert(schema.messages).values({
             conversationId,
             agentId: conversation?.agentId,
             conteudo: cacheResult.response,
@@ -2919,6 +2955,15 @@ wss.on('connection', (ws, req) => {
               isGreeting: true,
             },
           }).returning();
+          
+          // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+          // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+          if (!inserted || inserted.length === 0 || !inserted[0]) {
+            logger.error({ conversationId, userId }, 'Falha ao salvar mensagem de cache - .returning() retornou array vazio ou undefined');
+            throw new Error('Falha ao salvar mensagem de cache - resultado do banco de dados inválido');
+          }
+          
+          const cachedMsg = inserted[0];
           
           // Enviar resposta ao cliente (simular streaming para UX consistente)
           ws.send(JSON.stringify({ type: 'stream', data: cacheResult.response }));
@@ -2993,7 +3038,7 @@ wss.on('connection', (ws, req) => {
               const llmLatency = Date.now() - llmStartTime;
               const totalLatency = Date.now() - ragStartTime;
               
-              const [assistantMsg] = await db.insert(schema.messages).values({
+              const inserted = await db.insert(schema.messages).values({
                 conversationId,
                 agentId: conversation?.agentId,
                 conteudo: responseText,
@@ -3001,6 +3046,15 @@ wss.on('connection', (ws, req) => {
                 isFromUser: false,
                 latenciaMs: totalLatency,
               }).returning();
+              
+              // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+              // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+              if (!inserted || inserted.length === 0 || !inserted[0]) {
+                logger.error({ conversationId }, 'Falha ao salvar mensagem do assistente - .returning() retornou array vazio ou undefined');
+                throw new Error('Falha ao salvar mensagem do assistente - resultado do banco de dados inválido');
+              }
+              
+              const assistantMsg = inserted[0];
 
               ws.send(JSON.stringify({ 
                 type: 'complete', 
@@ -3203,7 +3257,7 @@ wss.on('connection', (ws, req) => {
 
         // Salvar mensagem do usuário com referência à mídia
         const mediaId = crypto.randomUUID();
-        const [userMsg] = await db.insert(schema.messages).values({
+        const inserted = await db.insert(schema.messages).values({
           conversationId: mediaMessage.conversationId,
           userId,
           conteudo: mediaMessage.content || `[${validatedMediaType.toUpperCase()}] ${mediaMessage.media.filename}`,
@@ -3217,6 +3271,15 @@ wss.on('connection', (ws, req) => {
             size: Buffer.from(mediaMessage.media.file, 'base64').length,
           }],
         }).returning();
+        
+        // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+        // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+        if (!inserted || inserted.length === 0 || !inserted[0]) {
+          logger.error({ conversationId: mediaMessage.conversationId, userId }, 'Falha ao salvar mensagem de mídia - .returning() retornou array vazio ou undefined');
+          throw new Error('Falha ao salvar mensagem de mídia - resultado do banco de dados inválido');
+        }
+        
+        const userMsg = inserted[0];
 
         ws.send(JSON.stringify({ type: 'message', data: userMsg }));
 
@@ -3329,7 +3392,7 @@ wss.on('connection', (ws, req) => {
               // Salvar resposta do assistente APÓS o stream completo
               const llmLatency = Date.now() - llmStartTime;
               
-              const [assistantMsg] = await db.insert(schema.messages).values({
+              const inserted = await db.insert(schema.messages).values({
                 conversationId: mediaMessage.conversationId,
                 agentId: conversation.agentId,
                 conteudo: responseText,
@@ -3337,6 +3400,15 @@ wss.on('connection', (ws, req) => {
                 isFromUser: false,
                 latenciaMs: llmLatency,
               }).returning();
+              
+              // BUG FIX 25/12/2025: Verificação defensiva - .returning() deve retornar pelo menos um elemento
+              // Previne crash se array estiver vazio (edge case durante erros de banco/transações)
+              if (!inserted || inserted.length === 0 || !inserted[0]) {
+                logger.error({ conversationId: mediaMessage.conversationId }, 'Falha ao salvar mensagem do assistente (mídia) - .returning() retornou array vazio ou undefined');
+                throw new Error('Falha ao salvar mensagem do assistente (mídia) - resultado do banco de dados inválido');
+              }
+              
+              const assistantMsg = inserted[0];
 
               ws.send(JSON.stringify({ 
                 type: 'complete', 
