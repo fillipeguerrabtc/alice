@@ -68,7 +68,7 @@ ENV IMAGE_MODEL_NAME="laion/CLIP-ViT-H-14-laion2B-s32B-b79K"
 ENV IMAGE_EMBEDDING_DIM="1024"
 ENV DEVICE="cuda"
 ENV PORT="8000"
-ENV KEEP_WARM_MINUTES="30"
+# ENV KEEP_WARM_MINUTES removido - GPU dedicada 24/7 (Hetzner GEX44)
 
 # Huggingface cache
 ENV HF_HOME="/app/.cache/huggingface"

@@ -2,20 +2,22 @@
  * Embedding Worker - Alice Enterprise Platform
  * 
  * Worker para processamento assíncrono de embeddings via fila Redis.
- * Implementa estratégia "Warm on Demand" com GPU Manager Service.
  * 
- * Estratégia de processamento:
+ * ARQUITETURA ENTERPRISE (26/12/2025):
+ * - GPU dedicada (Hetzner GEX44 RTX 4000 Ada 20GB) - SEMPRE disponível
  * - Poll contínuo da fila Redis
  * - Batching inteligente para amortizar latência
- * - Keep-warm de 30 minutos após último processamento
  * - Circuit breaker para resiliência (Regra 16)
  * 
- * ARQUITETURA ENTERPRISE (25/12/2025):
+ * NOTA (26/12/2025): Estratégia "Warm on Demand" REMOVIDA
+ * Com servidor GPU dedicado, containers Docker rodam 24/7 e não há cold start.
+ * 
+ * EMBEDDINGS:
  * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant) via GPU Manager Service
  * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector) via GPU Manager Service
  * 
  * Autor: Fillipe Guerra
- * Data: 25 de Dezembro de 2025
+ * Data: 26 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -441,7 +443,7 @@ export interface EmbeddingWorkerStatus {
   currentConcurrent: number;
   queueSize: number;
   gpuWarm: boolean;
-  gpuManagerUrl: string;
+  gpuManager: string;
 }
 
 /**
@@ -454,8 +456,6 @@ export function startEmbeddingWorker(config: EmbeddingWorkerConfig): void {
   }
   
   // GPU Manager Service é usado via requestGpu, não precisa validar URL aqui
-    return;
-  }
   
   // Criar circuit breakers
   gpuTextBreaker = createCircuitBreaker(callGpuTextApi, {
@@ -483,9 +483,10 @@ export function startEmbeddingWorker(config: EmbeddingWorkerConfig): void {
   
   logger.info({
     gpuManager: 'enabled',
+    gpuDedicated: true, // GPU Hetzner GEX44 dedicada - sempre disponível
     pollIntervalMs: POLL_INTERVAL_MS,
     maxConcurrent: MAX_CONCURRENT,
-  }, 'Embedding worker iniciado - Estratégia Warm on Demand (30 min keep-warm)');
+  }, 'Embedding worker iniciado - GPU dedicada Hetzner GEX44 (24/7)');
   
   // Iniciar loop em background
   workerLoop().catch(error => {

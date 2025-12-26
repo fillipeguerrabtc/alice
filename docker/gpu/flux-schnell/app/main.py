@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # Métricas
 IMAGE_GEN_COUNTER = Counter("flux_images_generated_total", "Total de imagens geradas", ["status"])
 IMAGE_GEN_DURATION = Histogram("flux_generation_duration_seconds", "Tempo de geração", buckets=[1, 2, 5, 10, 30, 60])
-LAST_REQUEST_TIME = Gauge("flux_last_request_timestamp", "Timestamp do último request (para keep-warm)")
+LAST_REQUEST_TIME = Gauge("flux_last_request_timestamp", "Timestamp do último request (para monitoramento)")
 GPU_MEMORY_USED = Gauge("flux_gpu_memory_bytes", "Memória GPU utilizada")
 
 MODEL_NAME = os.environ.get("MODEL_NAME", "black-forest-labs/FLUX.1-schnell")
@@ -80,7 +80,7 @@ async def load_model():
         )
         
         if DEVICE == "cuda":
-            # Arquitetura 100% GPU - RTX 4090 (24GB VRAM)
+            # Arquitetura 100% GPU - RTX 4000 SFF Ada (20GB VRAM)
             # NÃO usar enable_model_cpu_offload() - queremos GPU pura para máxima performance
             pipe = pipe.to(DEVICE)
         
@@ -93,7 +93,7 @@ async def load_model():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint com métricas de keep-warm."""
+    """Health check endpoint com métricas de atividade."""
     LAST_REQUEST_TIME.set(time_module.time())
     
     gpu_info = {}

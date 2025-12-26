@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 24 de Dezembro de 2025  
+> **Data:** 26 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.12 - Code Review Enterprise Completo + Correção Inconsistências de Versões
+> **Versão:** 4.13 - Consolidação Documentação + Correção Erros TypeScript
 
 ---
 
@@ -170,9 +170,9 @@
 | **Embedding Queue (Redis)** | ✅ | `embedding-queue.ts` |
 | **Embedding Worker** | ✅ | `workers/embedding-worker.ts` |
 | **WebSocket Notificações** | ✅ | `embedding-websocket.ts` (path: `/ws/embeddings`) |
-| **Estratégia Warm on Demand** | ✅ | Keep-warm 30 min após último uso |
+| **GPU Dedicada 24/7** | ✅ | Hetzner GEX44 - containers Docker rodando continuamente |
 
-#### Endpoints de Embedding Assíncrono (Warm on Demand)
+#### Endpoints de Embedding Assíncrono
 
 | Endpoint | Método | Descrição |
 |----------|--------|-----------|
@@ -340,7 +340,7 @@
 | **LLM (Chat/Trading)** | ✅ | Mixtral 8x7B vLLM AWQ - GPU Manager Service (Hetzner GEX44) |
 | **Geração de Imagens** | ✅ | FLUX.1 Schnell - GPU Manager Service (Hetzner GEX44) |
 | Suporte Multilíngue (100+ idiomas) | ✅ | Qwen3-Embedding-8B |
-| Warm on Demand (30 min keep-warm) | ✅ | Estratégia enterprise |
+| GPU Dedicada 24/7 | ✅ | Hetzner GEX44 - sem cold start |
 | Rate Limiting | ✅ | `serve.py` |
 | Circuit Breaker (Python) | ✅ | `pybreaker` |
 | Prometheus Metrics | ✅ | `/metrics` |
@@ -349,7 +349,7 @@
 > - **Embeddings de Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) - **Qdrant** (máxima qualidade)
 > - **Embeddings de imagem:** OpenCLIP ViT-H/14 (1024 dim) - pgvector
 > - **ASR:** Canary-1B (NeMo) - GPU Manager Service (Hetzner GEX44)
-> - **Estratégia Warm on Demand:** GPUs mantidas ativas por 30 min após último uso
+> - **GPU Dedicada 24/7:** Hetzner GEX44 com containers Docker rodando continuamente (sem cold start)
 > - **LLM Trading:** Mixtral 8x7B (MoE ~12B ativos) via vLLM - Trading BTC Futures KuCoin
 >
 > **Justificativa Qwen3-Embedding-8B (Análise de Licenças 17/12/2025):**
@@ -827,7 +827,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (14/12/2025):** **ESCLARECIMENTO - Regra 4 vs Pipeline Automática**: A Regra 4 ("APROVAÇÃO OBRIGATÓRIA") do CLAUDE.md refere-se ao workflow de DESENVOLVIMENTO (pedir aprovação ao usuário antes de mudanças grandes no código), NÃO a aprovação manual de deploy. A remoção de `environment: production` foi intencional - o security scan (Trivy) nas imagens Docker é o gate de qualidade enterprise antes do deploy. Pipeline 100% automática está CORRETA conforme definido em "Pipeline: Push → CI (auto) → Release (auto) → Deploy (auto)".
 
-> **NOTA (25/12/2025):** **MIGRAÇÃO COMPLETA - GPU Manager Service (Hetzner GEX44)**: Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service. Não são necessários secrets externos para GPU (Salad Cloud removido completamente). GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers.
+> **NOTA (26/12/2025):** **ARQUITETURA GPU DEDICADA 24/7**: Todos os serviços GPU rodam localmente no servidor Hetzner GEX44 (RTX 4000 Ada 20GB), gerenciados pelo GPU Manager Service. GPU dedicada elimina cold start - containers Docker rodam 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers.
 
 > **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Versionamento Consistente**: Corrigido bug crítico no `release.yml` onde `createWorkflowDispatch` usava `ref: 'main'` ao invés da TAG da release. Isso causava inconsistência: imagens Docker eram buildadas da TAG (commit específico), mas deploy usava scripts/docker-compose da main (potencialmente diferente). Correção: `ref` agora usa `${{ needs.create-release.outputs.version }}` (a TAG). Garante reprodutibilidade total: mesma tag = mesmo resultado. Cache enterprise (Registry Cache GHCR) não é afetado pois usa tag fixa `:cache` compartilhada entre branches/tags.
 

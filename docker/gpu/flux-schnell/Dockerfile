@@ -1,7 +1,7 @@
 # =============================================================================
 # Alice Enterprise Platform - FLUX.1 Schnell
 # =============================================================================
-# Dockerfile para geração de imagens com FLUX.1 Schnell em GPU RTX 4090
+# Dockerfile para geração de imagens com FLUX.1 Schnell em GPU RTX 4000 SFF Ada (20GB)
 # 
 # Autor: Fillipe Guerra
 # Data: 16 de Dezembro de 2025

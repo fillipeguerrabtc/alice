@@ -7,35 +7,40 @@
  * - Auto-learning scheduler
  * - JSONL generation
  * 
+ * ARQUITETURA ENTERPRISE (26/12/2025):
+ * - GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) - 24/7
+ * - GPU Manager Service gerencia todas as requisições GPU
+ * - Todos os serviços GPU rodam localmente no servidor dedicado
+ * 
  * Author: Fillipe Guerra
- * Data: 05/12/2025
+ * Data: 26/12/2025
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 
 // ============================================================================
-// TESTES DE CONFIGURAÇÃO SALAD CLOUD
+// TESTES DE CONFIGURAÇÃO GPU MANAGER SERVICE
 // ============================================================================
 
-describe('Training Service - Salad Cloud Config', () => {
-  const SALAD_CONFIG = {
-    apiUrl: 'https://api.salad.com/api/public',
+describe('Training Service - GPU Manager Config', () => {
+  const GPU_MANAGER_CONFIG = {
+    serviceUrl: 'http://alice-gpu-manager:3010',
     timeout: 30000,
     maxRetries: 3,
   };
 
-  it('deve usar URL correta da API Salad', () => {
-    expect(SALAD_CONFIG.apiUrl).toBe('https://api.salad.com/api/public');
+  it('deve usar URL correta do GPU Manager Service', () => {
+    expect(GPU_MANAGER_CONFIG.serviceUrl).toBe('http://alice-gpu-manager:3010');
   });
 
   it('deve ter timeout de 30 segundos', () => {
-    expect(SALAD_CONFIG.timeout).toBe(30000);
+    expect(GPU_MANAGER_CONFIG.timeout).toBe(30000);
   });
 
   it('deve ter máximo de 3 retries', () => {
-    expect(SALAD_CONFIG.maxRetries).toBe(3);
+    expect(GPU_MANAGER_CONFIG.maxRetries).toBe(3);
   });
 });
 
@@ -86,7 +91,7 @@ describe('Training Service - Estados de Job', () => {
 // ============================================================================
 
 describe('Training Service - Deduplicação Semântica', () => {
-  // ARQUITETURA 100% GPU (15/12/2025)
+  // ARQUITETURA 100% GPU (26/12/2025) - GPU Manager Service
   const SEMHASH_CONFIG = {
     similarityThreshold: 0.92, // 92% similar = duplicado
     embeddingDim: 4096, // Qwen3-Embedding-8B GPU (GPU Manager Service)
@@ -278,7 +283,7 @@ describe('Training Service - Filtros de Qualidade', () => {
 });
 
 // ============================================================================
-// TESTES DE HEALTH CHECK
+// TESTES DE HEALTH CHECK - GPU Manager Service
 // ============================================================================
 
 describe('Training Service - Health Check', () => {
@@ -289,29 +294,32 @@ describe('Training Service - Health Check', () => {
     embeddingsProvider: string;
     model: string;
     fineTuningStatus: string;
+    gpuManagerAvailable: boolean;
     circuitBreakers: {
       embeddings: { state: string; stats: object };
-      saladContainerGroups: { state: string; stats: object };
+      gpuManager: { state: string; stats: object };
     };
   }
 
-  it('deve retornar estrutura de health correta', () => {
-    // ARQUITETURA 100% GPU (15/12/2025)
+  it('deve retornar estrutura de health correta para GPU Manager', () => {
+    // ARQUITETURA GPU Manager Service (26/12/2025)
     const health: TrainingHealthResponse = {
       status: 'ok',
       service: 'training-service',
       timestamp: new Date().toISOString(),
-      embeddingsProvider: 'salad-gpu',
+      embeddingsProvider: 'gpu-manager-service',
       model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
-      saladCloudAvailable: true,
+      fineTuningStatus: 'idle',
+      gpuManagerAvailable: true,
       circuitBreakers: {
         embeddings: { state: 'closed', stats: {} },
-        saladContainerGroups: { state: 'closed', stats: {} },
+        gpuManager: { state: 'closed', stats: {} },
       },
     };
 
     expect(health.status).toBe('ok');
-    expect(health.saladCloudAvailable).toBe(true);
+    expect(health.gpuManagerAvailable).toBe(true);
+    expect(health.embeddingsProvider).toBe('gpu-manager-service');
   });
 });
 
@@ -380,7 +388,7 @@ describe('Training Service - Validação Zod', () => {
 });
 
 // ============================================================================
-// TESTES DE CIRCUIT BREAKER
+// TESTES DE CIRCUIT BREAKER - GPU Manager Service
 // ============================================================================
 
 describe('Training Service - Circuit Breakers', () => {
@@ -390,9 +398,10 @@ describe('Training Service - Circuit Breakers', () => {
       failureThreshold: 5,
       resetTimeout: 30000,
     },
-    // saladContainerGroups removido - migrado para GPU Manager Service
-      failureThreshold: 3,
-      resetTimeout: 60000,
+    gpuManager: {
+      name: 'gpu-manager-service',
+      failureThreshold: 5,
+      resetTimeout: 30000,
     },
   };
 
@@ -401,7 +410,10 @@ describe('Training Service - Circuit Breakers', () => {
     expect(breakers.embeddings.failureThreshold).toBe(5);
   });
 
-  // Circuit breaker para Salad Container Groups removido - migrado para GPU Manager Service
+  it('deve ter circuit breaker para GPU Manager Service', () => {
+    expect(breakers.gpuManager.name).toBe('gpu-manager-service');
+    expect(breakers.gpuManager.failureThreshold).toBe(5);
+  });
 });
 
 // ============================================================================
@@ -450,5 +462,40 @@ describe('Training Service - Métricas de Treinamento', () => {
     
     // 500 examples / 100 = 5 batches * 5 min = 25 min
     expect(metrics.estimatedTrainingTime).toBe(25);
+  });
+});
+
+// ============================================================================
+// TESTES DE GPU DEDICADA 24/7 (HETZNER GEX44)
+// ============================================================================
+
+describe('Training Service - GPU Dedicada 24/7', () => {
+  // ARQUITETURA ENTERPRISE (26/12/2025)
+  // GPU Hetzner GEX44 sempre disponível - sem cold start
+  
+  const GPU_CONFIG = {
+    serverType: 'GEX44',
+    gpu: 'RTX 4000 Ada 20GB',
+    vramTotal: 20 * 1024, // 20GB em MB
+    alwaysAvailable: true, // GPU dedicada 24/7
+  };
+
+  it('deve indicar GPU sempre disponível', () => {
+    expect(GPU_CONFIG.alwaysAvailable).toBe(true);
+  });
+
+  it('deve ter 20GB de VRAM', () => {
+    expect(GPU_CONFIG.vramTotal).toBe(20 * 1024);
+  });
+
+  it('deve usar servidor GEX44', () => {
+    expect(GPU_CONFIG.serverType).toBe('GEX44');
+  });
+
+  it('não deve ter conceito de cold start ou warm up', () => {
+    // GPU dedicada Hetzner - containers Docker rodam 24/7
+    // Não há warm up, cold start ou shutdown
+    const isGpuAvailable = () => GPU_CONFIG.alwaysAvailable;
+    expect(isGpuAvailable()).toBe(true);
   });
 });

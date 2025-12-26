@@ -7,7 +7,7 @@
  * - Funções de configuração CORS
  * - Constantes de rate limiting, timeouts, limites
  * - URLs de serviços (portas conforme Regra 16)
- * - Configuração Salad Cloud
+ * - Configuração GPU Manager Service (Hetzner GEX44)
  * 
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  * Regra 8: Usar Pino, console.log é PROIBIDO
@@ -27,7 +27,7 @@ import {
   DEFAULT_TIMEOUTS,
   SIZE_LIMITS,
   RAG_CHUNK_CONFIG,
-  SALAD_CONFIG,
+  GPU_MANAGER_CONFIG,
   resolveServiceUrls,
   getServiceUrls,
   resetConfigCache,
@@ -91,17 +91,11 @@ describe('Config - Variáveis de Ambiente (envSchema)', () => {
     });
   });
 
-  describe('SALAD_API_URL', () => {
-    it('deve ter URL padrão da Salad Cloud', () => {
-      delete process.env.SALAD_API_URL;
-      const config = getEnvConfig();
-      expect(config.SALAD_API_URL).toBe('https://api.salad.com/api/public');
-    });
-
-    it('deve aceitar URL customizada', () => {
-      process.env.SALAD_API_URL = 'https://custom.salad.api/v1';
-      const config = getEnvConfig();
-      expect(config.SALAD_API_URL).toBe('https://custom.salad.api/v1');
+  describe('GPU_MANAGER_URL (via GPU_MANAGER_CONFIG)', () => {
+    it('deve ter URL padrão do GPU Manager Service', () => {
+      // GPU Manager URL é configurado via GPU_MANAGER_CONFIG, não via getEnvConfig
+      // URL padrão: http://alice-gpu-manager:3010 (container name Docker)
+      expect(GPU_MANAGER_CONFIG.url).toContain('alice-gpu-manager');
     });
   });
 
@@ -120,7 +114,7 @@ describe('Config - Variáveis de Ambiente (envSchema)', () => {
       expect(config.DATABASE_URL).toBeUndefined();
     });
 
-    // SALAD_API_KEY e SALAD_ORGANIZATION_ID removidos - migrados para GPU Manager Service (25/12/2025)
+    // GPU Manager Service não requer API key - autenticação via rede Docker interna
 
     it('CORS_ORIGINS deve ser opcional', () => {
       delete process.env.CORS_ORIGINS;
@@ -708,33 +702,33 @@ describe('Config - RAG Chunk Configuration', () => {
 describe('Config - GPU Manager Service Configuration', () => {
   describe('GPU_MANAGER_CONFIG', () => {
     it('deve ter URL padrão do GPU Manager Service', () => {
-      expect(SALAD_CONFIG.url).toBe('http://alice-gpu-manager:3010');
+      expect(GPU_MANAGER_CONFIG.url).toBe('http://alice-gpu-manager:3010');
     });
 
     it('deve ter modelo de chat configurado como Mixtral 8x7B AWQ', () => {
-      expect(SALAD_CONFIG.models.chat).toBe('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ');
+      expect(GPU_MANAGER_CONFIG.models.chat).toBe('TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ');
     });
 
     it('deve ter maxTokens padrão de 4096', () => {
-      expect(SALAD_CONFIG.defaults.maxTokens).toBe(4096);
+      expect(GPU_MANAGER_CONFIG.defaults.maxTokens).toBe(4096);
     });
 
     it('deve ter temperature padrão de 0.7', () => {
-      expect(SALAD_CONFIG.defaults.temperature).toBe(0.7);
+      expect(GPU_MANAGER_CONFIG.defaults.temperature).toBe(0.7);
     });
 
     it('deve ter topP padrão de 0.9', () => {
-      expect(SALAD_CONFIG.defaults.topP).toBe(0.9);
+      expect(GPU_MANAGER_CONFIG.defaults.topP).toBe(0.9);
     });
 
     it('temperature deve estar entre 0 e 2', () => {
-      expect(SALAD_CONFIG.defaults.temperature).toBeGreaterThanOrEqual(0);
-      expect(SALAD_CONFIG.defaults.temperature).toBeLessThanOrEqual(2);
+      expect(GPU_MANAGER_CONFIG.defaults.temperature).toBeGreaterThanOrEqual(0);
+      expect(GPU_MANAGER_CONFIG.defaults.temperature).toBeLessThanOrEqual(2);
     });
 
     it('topP deve estar entre 0 e 1', () => {
-      expect(SALAD_CONFIG.defaults.topP).toBeGreaterThan(0);
-      expect(SALAD_CONFIG.defaults.topP).toBeLessThanOrEqual(1);
+      expect(GPU_MANAGER_CONFIG.defaults.topP).toBeGreaterThan(0);
+      expect(GPU_MANAGER_CONFIG.defaults.topP).toBeLessThanOrEqual(1);
     });
   });
 });

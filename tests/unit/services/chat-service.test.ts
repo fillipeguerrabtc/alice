@@ -3,7 +3,7 @@
  * 
  * Testes unitários para serviço de chat:
  * - WebSocket connections
- * - LLM integration (Salad Cloud)
+ * - LLM integration (GPU Manager Service - Hetzner GEX44)
  * - RAG context
  * - Conversation orchestration (takeover/handover)
  * - Image generation

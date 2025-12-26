@@ -7,8 +7,8 @@ const logger = createLogger("llm-client");
 // NOTA: Este arquivo é apenas para desenvolvimento local (server/index-dev.ts)
 // Em produção, o chat-service usa GPU Manager Service (Hetzner GEX44)
 // LLM Client desabilitado - usar chat-service em produção
-// BUG FIX 25/12/2025: URL padrão corrigida para corresponder ao container_name do docker-compose.prod.yml
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || "http://alice-gpu-manager:3010";
+// BUG FIX 26/12/2025: GPU_MANAGER_URL removido - não usado em dev (LLM desabilitado em dev)
+// Para produção, o chat-service usa requestGpu de @alice/shared-utils
 
 export const chatMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
@@ -46,94 +46,18 @@ export class LLMClient {
     logger.warn("LLM Client: Desabilitado - usar chat-service em produção (GPU Manager Service)");
   }
 
-  async chatCompletion(options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
+  async chatCompletion(_options: ChatCompletionOptions): Promise<ChatCompletionResponse> {
     // NOTA: LLM Client desabilitado - desenvolvimento local apenas
     // Em produção, usar chat-service que integra com GPU Manager Service
     throw new Error("LLM Client desabilitado - usar chat-service em produção (GPU Manager Service)");
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LLM API error: ${response.status} - ${errorText}`);
-    }
-
-    const result = (await response.json()) as {
-      id: string;
-      model: string;
-      choices: Array<{
-        message: { role: string; content: string };
-      }>;
-      usage: {
-        prompt_tokens: number;
-        completion_tokens: number;
-        total_tokens: number;
-      };
-    };
-
-    return {
-      id: result.id,
-      model: result.model,
-      message: {
-        role: "assistant",
-        content: result.choices[0]?.message?.content || "",
-      },
-      usage: {
-        promptTokens: result.usage.prompt_tokens,
-        completionTokens: result.usage.completion_tokens,
-        totalTokens: result.usage.total_tokens,
-      },
-    };
   }
 
-  async *chatCompletionStream(options: ChatCompletionOptions): AsyncGenerator<string> {
+  async *chatCompletionStream(_options: ChatCompletionOptions): AsyncGenerator<string> {
     // NOTA: LLM Client desabilitado - desenvolvimento local apenas
     // Em produção, usar chat-service que integra com GPU Manager Service
     throw new Error("LLM Client desabilitado - usar chat-service em produção (GPU Manager Service)");
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`LLM API error: ${response.status} - ${errorText}`);
-    }
-
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error("Response body nao disponivel");
-    }
-
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") {
-              return;
-            }
-            try {
-              const parsed = JSON.parse(data) as {
-                choices?: Array<{ delta?: { content?: string } }>;
-              };
-              const content = parsed.choices?.[0]?.delta?.content;
-              if (content) {
-                yield content;
-              }
-            } catch {
-              continue;
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
+    // TypeScript requires a yield in generator functions, but this is unreachable
+    yield "";
   }
 
   isAvailable(): boolean {

@@ -272,7 +272,7 @@ app.use(createRateLimiter({
 app.use(express.json({ limit: '10mb' }));
 
 const SIMILARITY_THRESHOLD = 0.85;
-const JOB_POLLING_INTERVAL_MS = 30000;
+// BUG FIX 26/12/2025: JOB_POLLING_INTERVAL_MS removido - fine-tuning em migração para Hetzner GPU
 
 function computeSemHash(text: string): string {
   const normalized = text.toLowerCase().trim().replace(/\s+/g, ' ');
@@ -314,9 +314,9 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
       embeddings: {
         state: embeddingsCircuitState,
         stats: {
-          failures: embeddingsBreaker.stats.failures,
-          successes: embeddingsBreaker.stats.successes,
-          timeouts: embeddingsBreaker.stats.timeouts,
+          failures: gpuManagerEmbeddingsBreaker.stats.failures,
+          successes: gpuManagerEmbeddingsBreaker.stats.successes,
+          timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
         },
       },
     },
@@ -611,7 +611,7 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       batchSize: 4,
     };
     
-    startFineTuningJob(job.id, jobHyperparameters).catch(err => {
+    _startFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
     });
 
@@ -627,7 +627,8 @@ const activePollingJobs = new Map<string, NodeJS.Timeout>();
 
 // TODO: Migrar fine-tuning para Hetzner GPU GEX44 via GPU Manager Service
 // Funcionalidade temporariamente desabilitada durante migração
-async function startFineTuningJob(jobId: string, hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
+// BUG FIX 26/12/2025: Prefixado com _ - função em migração para Hetzner GPU
+async function _startFineTuningJob(jobId: string, _hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
   logger.warn({ jobId }, 'Fine-tuning temporariamente desabilitado - em migração para Hetzner GPU GEX44');
   
   await db.update(schema.fineTuningJobs)
@@ -647,7 +648,8 @@ async function startFineTuningJob(jobId: string, hyperparameters: { epochs: numb
 
 // TODO: Migrar polling de status para Hetzner GPU GEX44
 // Funcionalidade temporariamente desabilitada durante migração
-function startStatusPolling(jobId: string, _containerGroupName: string): void {
+// BUG FIX 26/12/2025: Prefixado com _ - função em migração para Hetzner GPU
+function _startStatusPolling(jobId: string, _containerGroupName: string): void {
   logger.warn({ jobId }, 'Polling de status temporariamente desabilitado - em migração para Hetzner GPU GEX44');
   
   // TODO: Implementar polling de status para fine-tuning local
@@ -781,7 +783,7 @@ app.post('/api/training/bulk-import', requirePermission('training:training_data:
       let semhash: string | null = null;
 
       try {
-        embedding = await embeddingsBreaker.fire(text) as number[];
+        embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
         semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
 
         const existingDuplicate = await db.query.trainingData.findFirst({
@@ -937,7 +939,7 @@ app.post('/api/training/webhook', async (req: Request, res: Response) => {
       let semhash: string | null = null;
 
       try {
-        embedding = await embeddingsBreaker.fire(text) as number[];
+        embedding = await gpuManagerEmbeddingsBreaker.fire(text) as number[];
         semhash = crypto.createHash('sha256').update(text.toLowerCase().trim()).digest('hex');
       } catch (embError) {
         logger.warn({ error: embError }, 'Erro ao gerar embedding no webhook');

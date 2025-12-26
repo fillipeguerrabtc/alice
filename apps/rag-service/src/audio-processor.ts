@@ -68,10 +68,15 @@ export interface AudioProcessorOptions {
  */
 class AudioProcessorService {
   private configured: boolean;
+  private whisperConfigured: boolean;
+  private embeddingsConfigured: boolean;
 
   constructor() {
     // GPU Manager Service é sempre usado, não precisa validar URLs individuais
+    // ARQUITETURA ENTERPRISE (26/12/2025): GPU é OBRIGATÓRIO para todos serviços
     this.configured = true;
+    this.whisperConfigured = true;  // ASR via GPU Manager Service
+    this.embeddingsConfigured = true;  // Qwen3-Embedding-8B via GPU Manager Service
     
     logger.info({ 
       gpuManager: 'enabled',
@@ -416,21 +421,7 @@ class AudioProcessorService {
     return this.configured;
   }
 
-  async isReadyAsync(): Promise<boolean> {
-    if (!this.configured) return false;
-
-    try {
-      // Verificar se GPU Manager Service está pronto
-      // BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
-      const response = await fetch(`${process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010'}/ready`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(3000),
-      });
-      return response.ok;
-    } catch {
-      return false;
-    }
-  }
+  // BUG FIX 26/12/2025: Removida função duplicada isReadyAsync (já definida na linha 233)
 
   getConfig(): {
     configured: boolean;

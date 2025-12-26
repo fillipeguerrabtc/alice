@@ -115,13 +115,18 @@ const ragHealthSchema = baseHealthSchema.extend({
 /**
  * Schema para training-service /api/training/health
  */
-// ARQUITETURA 100% GPU (15/12/2025)
+// ARQUITETURA GPU Manager Service (26/12/2025)
+// GPU dedicada Hetzner GEX44 - 24/7, sem cold start
 const trainingHealthSchema = baseHealthSchema.extend({
   embeddingsProvider: z.literal('gpu-manager-service'),
   model: z.literal('Qwen/Qwen3-Embedding-8B'),
-  fineTuningStatus: z.literal('migrating'),
+  gpuManagerAvailable: z.boolean(),
   circuitBreakers: z.object({
     embeddings: z.object({
+      state: z.enum(['open', 'closed', 'half-open']),
+      stats: circuitBreakerStatsSchema,
+    }),
+    gpuManager: z.object({
       state: z.enum(['open', 'closed', 'half-open']),
       stats: circuitBreakerStatsSchema,
     }),
@@ -235,22 +240,23 @@ const mockRagHealthResponse = {
   },
 };
 
-// ARQUITETURA 100% GPU (15/12/2025)
+// ARQUITETURA GPU Manager Service (26/12/2025)
+// GPU dedicada Hetzner GEX44 - 24/7, sem cold start
 const mockTrainingHealthResponse = {
   status: 'ok',
   service: 'training-service',
   timestamp: FIXED_TIMESTAMP,
-  embeddingsProvider: 'salad-gpu',
+  embeddingsProvider: 'gpu-manager-service',
   model: 'Qwen/Qwen3-Embedding-8B',
-  saladCloudAvailable: true,
+  gpuManagerAvailable: true,
   circuitBreakers: {
     embeddings: {
       state: 'closed',
       stats: { failures: 0, successes: 50, timeouts: 0 },
     },
-    // saladContainerGroups removido - migrado para GPU Manager Service
+    gpuManager: {
       state: 'closed',
-      stats: { failures: 0, successes: 10, timeouts: 0 },
+      stats: { failures: 0, successes: 100, timeouts: 0 },
     },
   },
 };
@@ -404,14 +410,14 @@ describe('Health Endpoints - Contratos de Schema', () => {
       expect(mockTrainingHealthResponse.service).toBe('training-service');
     });
 
-    it('deve indicar disponibilidade da Salad Cloud', () => {
-      expect(mockTrainingHealthResponse).toHaveProperty('saladCloudAvailable');
-      expect(typeof mockTrainingHealthResponse.saladCloudAvailable).toBe('boolean');
+    it('deve indicar disponibilidade do GPU Manager Service', () => {
+      expect(mockTrainingHealthResponse).toHaveProperty('gpuManagerAvailable');
+      expect(typeof mockTrainingHealthResponse.gpuManagerAvailable).toBe('boolean');
     });
 
-    it('deve ter circuit breakers para embeddings e containerGroups', () => {
+    it('deve ter circuit breakers para embeddings e GPU Manager', () => {
       expect(mockTrainingHealthResponse.circuitBreakers).toHaveProperty('embeddings');
-      expect(mockTrainingHealthResponse.circuitBreakers).toHaveProperty('saladContainerGroups');
+      expect(mockTrainingHealthResponse.circuitBreakers).toHaveProperty('gpuManager');
     });
   });
 

@@ -33,7 +33,7 @@ const authConfigSchema = z.object({
 });
 
 const llmConfigSchema = z.object({
-  // Salad Cloud removido - migrado para GPU Manager Service (Hetzner GEX44)
+  // GPU Manager Service (Hetzner GEX44) - GPU dedicada 24/7
   LLM_MODEL: z.string().default('Mixtral-8x7B'),
   LLM_MAX_TOKENS: z.coerce.number().default(4096),
   LLM_TEMPERATURE: z.coerce.number().default(0.7),
@@ -149,7 +149,7 @@ export function getServiceUrl(serviceName: string): string {
 const SECRET_KEYS = new Set([
   'SESSION_SECRET',
   'DATABASE_URL',
-  // 'SALAD_API_KEY', // Removido - migrado para GPU Manager Service
+  'INTERNAL_API_SECRET', // GPU Manager Service authentication
   'GOOGLE_CLIENT_SECRET',
   'GITHUB_CLIENT_SECRET',
   'STRIPE_SECRET_KEY',

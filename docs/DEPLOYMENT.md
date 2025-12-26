@@ -525,7 +525,7 @@ O deploy é **100% automático** via GitHub Actions:
 │  │ • SSH para Hetzner  │   45 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
-│  │ • Health checks     │   RTX 4090 (Mixtral, FLUX, ASR, Emb.)  │
+│  │ • Health checks     │   RTX 4000 Ada 20GB (Mixtral, FLUX, ASR, Emb.)  │
 │  │ • Rollback auto     │                                        │
 │  └─────────────────────┘                                        │
 │                                                                  │
@@ -911,7 +911,6 @@ Retenção Arquivo:   30 dias
 | IPv4 Público | €0.50 |
 | DuckDNS | $0 (gratuito) |
 | GitHub Actions | $0 (gratuito) |
-| **SaladCloud GPUs** | **Variável ($50-200)** |
 | **Total Infraestrutura** | **~€9.49/mês** |
 | **Total com LLM** | **~$60-210/mês** |
 

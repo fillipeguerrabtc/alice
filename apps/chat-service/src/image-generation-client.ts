@@ -21,9 +21,8 @@ import type { Database } from '@alice/database';
 const logger = createLogger('image-generation');
 
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-// BUG FIX 25/12/2025: Container name correto é alice-gpu-manager (definido em docker-compose.prod.yml)
-// Este fallback não será usado se GPU_MANAGER_URL estiver definido no docker-compose.prod.yml
-const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
+// BUG FIX 26/12/2025: URL gerenciada internamente pelo requestGpu de @alice/shared-utils
+// Não é necessário declarar GPU_MANAGER_URL aqui - requestGpu usa a variável de ambiente internamente
 
 let db: Database;
 
@@ -72,10 +71,9 @@ async function generateImageInternal(request: ImageGenerationRequest): Promise<I
     endpoint: '/generate',
     method: 'POST',
     priority: GpuRequestPriority.LOW,
-    // BUG FIX 25/12/2025: Timeout aumentado de 30s para 60s para acomodar cold starts e prompts complexos
-    // FLUX.1 Schnell pode legitimamente levar mais de 30s durante cold starts ou com prompts complexos
-    // Timeout de 30s era muito agressivo e causava falhas em requisições válidas
-    timeout: 60000, // 60s para geração de imagens (acomoda cold starts e prompts complexos)
+    // Timeout de 60s para geração de imagens (prompts complexos podem levar mais tempo)
+    // GPU Hetzner GEX44 dedicada 24/7 - sem cold start
+    timeout: 60000, // 60s para geração de imagens (prompts complexos)
     body: {
       prompt: request.prompt,
       negative_prompt: request.negativePrompt || '',
@@ -259,11 +257,9 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
     endpoint: '/embed/image',
     method: 'POST',
     priority: GpuRequestPriority.MEDIUM,
-    // BUG FIX 25/12/2025: Timeout aumentado de 30s para 60s para corresponder ao circuit breaker preset
-    // clipEmbeddings preset tem timeout: 60000ms (60s) para acomodar warm-up da GPU
-    // requestGpu com timeout de 30s dava timeout antes do circuit breaker, contradizendo a intenção do preset
-    // Agora ambos usam 60s, permitindo que a GPU tenha tempo suficiente para warm-up
-    timeout: 60000, // 60s para embeddings (corresponde ao circuit breaker preset clipEmbeddings)
+    // Timeout de 60s para embeddings (corresponde ao circuit breaker preset)
+    // GPU Hetzner GEX44 dedicada 24/7 - sem cold start
+    timeout: 60000, // 60s para embeddings (imagens maiores podem levar mais tempo)
     body: {
       image: imageData,
     },
@@ -280,10 +276,8 @@ async function generateImageEmbeddingInternal(imageBase64: string): Promise<CLIP
 const imageEmbeddingBreaker = createCircuitBreaker(generateImageEmbeddingInternal, {
   name: 'image-embeddings-gpu',
   ...CIRCUIT_BREAKER_PRESETS.clipEmbeddings,
-  // BUG FIX 25/12/2025: Removida sobrescrita de timeout - preset clipEmbeddings já tem timeout: 60000
-  // O preset foi projetado com 60s especificamente para permitir warm-up da GPU (estratégia Warm on Demand)
-  // Sobrescrever para 30s contradiz a intenção do preset e causa timeouts durante cold starts
-  // timeout: 30000 removido - usar valor do preset (60000ms)
+  // Timeout de 60s do preset (imagens maiores podem demorar mais)
+  // GPU Hetzner GEX44 dedicada 24/7 - sem cold start
 });
 
 /**

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 21 de Dezembro de 2025  
-> **Versão:** 1.4.0 - Trading Analysis Enterprise: Indicadores Técnicos Determinísticos + Validação Cruzada  
+> **Data:** 26 de Dezembro de 2025  
+> **Versão:** 1.5.0 - Arquitetura 2 Servidores (Deploy CX22 + Production GEX44 GPU)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -284,17 +284,17 @@ C4Component
         Component(audioProc, "Audio Processor", "Canary-1B", "Transcrição ASR")
         Component(imageProc, "Image Processor", "OpenCLIP", "Embeddings 1024 dim")
         Component(embQueue, "Embedding Queue", "Redis", "Processamento assíncrono")
-        Component(embWorker, "Embedding Worker", "Background", "Warm-on-Demand GPU")
+        Component(embWorker, "Embedding Worker", "Background", "GPU dedicada 24/7")
         Component(vectorSearch, "Vector Search", "Qdrant", "Busca semântica")
     }
     
     ComponentDb(postgres, "PostgreSQL", "Documentos, Metadados")
     ComponentDb(qdrant, "Qdrant", "Embeddings 4096 dim")
     
-    System_Ext(salad, "Salad Cloud", "GPU Embeddings")
+    System_Ext(gpuManager, "GPU Manager Service", "GPU Processing (Hetzner GEX44)")
     
     Rel(docProc, embQueue, "Enqueue")
-    Rel(embWorker, salad, "Generate embeddings")
+    Rel(embWorker, gpuManager, "Generate embeddings")
     Rel(embWorker, qdrant, "Store vectors")
     Rel(vectorSearch, qdrant, "Query")
 ```
@@ -389,7 +389,7 @@ sequenceDiagram
     end
 ```
 
-### 6.3 Fluxo de Embeddings (Warm-on-Demand)
+### 6.3 Fluxo de Embeddings (GPU Dedicada 24/7)
 
 ```mermaid
 sequenceDiagram
@@ -398,7 +398,7 @@ sequenceDiagram
     participant RAG as RAG Service
     participant Queue as Redis Queue
     participant Worker as Embedding Worker
-    participant GPU as Salad GPU
+    participant GPU as GPU Manager (Hetzner GEX44)
     participant Qdrant as Qdrant
     participant WS as WebSocket
     
@@ -410,7 +410,7 @@ sequenceDiagram
     loop Worker Background
         Worker->>Queue: Dequeue job
         Worker->>GPU: POST /embeddings (batch)
-        Note over GPU: Keep-warm 30 min
+        Note over GPU: GPU dedicada 24/7
         GPU-->>Worker: Embeddings 4096 dim
         Worker->>Qdrant: Upsert vectors
         Worker->>WS: Notify completion
@@ -744,15 +744,15 @@ logger.info({
 | **Alternativas** | Schema por tenant, Database por tenant |
 | **Consequências** | + Simplicidade, + Performance, - Complexidade de queries |
 
-### ADR-004: Estratégia GPU Warm-on-Demand
+### ADR-004: GPU Dedicada 24/7 (Hetzner GEX44)
 
 | Aspecto | Decisão |
 |---------|---------|
-| **Status** | Aceito |
-| **Contexto** | Gerenciamento de requisições GPU no servidor único |
-| **Decisão** | GPU Manager Service com fila priorizada (Redis) + Monitoramento VRAM + Keep-warm 30 min |
-| **Alternativas** | GPU sempre ativa, Sem gerenciamento centralizado |
-| **Consequências** | + Otimização de VRAM, + Priorização de requisições, + Latência mínima (local) |
+| **Status** | Aceito (atualizado 26/12/2025) |
+| **Contexto** | Gerenciamento de requisições GPU no servidor dedicado |
+| **Decisão** | GPU Manager Service com fila priorizada (Redis) + Monitoramento VRAM + GPU dedicada 24/7 (sem cold start) |
+| **Alternativas** | Sem gerenciamento centralizado |
+| **Consequências** | + Otimização de VRAM, + Priorização de requisições, + Latência mínima (local), + Sem cold start |
 
 ### ADR-005: Response Cache (Greetings Gate)
 

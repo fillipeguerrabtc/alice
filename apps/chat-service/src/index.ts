@@ -49,7 +49,7 @@ import {
   registerShutdownCallback,
   ShutdownPriority,
   permissionCache,
-  requestGpuStream,
+  // requestGpuStream removido - não usado, GPU Manager Service faz streaming via proxy
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray } from '@alice/database';
@@ -707,8 +707,8 @@ function extractImagePrompt(message: string, keyword: string): string {
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
 
-// Timeout para chamadas LLM (60 segundos para streaming, 30 para não-streaming)
-const LLM_STREAM_TIMEOUT = 60000;
+// Timeout para chamadas LLM (30 segundos para não-streaming)
+// BUG FIX 26/12/2025: LLM_STREAM_TIMEOUT removido - streaming usa timeout do GPU Manager Service
 const LLM_SYNC_TIMEOUT = 30000;
 
 interface LLMMessage {
@@ -802,13 +802,8 @@ instrumentCircuitBreaker(metrics, 'gpu-manager-llm', gpuManagerBreaker as unknow
 // Mensagem de fallback quando LLM está indisponível (graceful degradation)
 const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por favor, tente novamente em alguns instantes. Se o problema persistir, entre em contato com o suporte.';
 
-/**
- * Generator de fallback para modo streaming - mantém consistência de tipo
- * Yield único chunk com mensagem de fallback
- */
-async function* streamFallback(): AsyncGenerator<string> {
-  yield LLM_FALLBACK_MESSAGE;
-}
+// BUG FIX 26/12/2025: streamFallback removido - não usado com arquitetura GPU Manager Service
+// Fallback agora é tratado diretamente no handler com mensagem de erro apropriada
 
 async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<string | AsyncGenerator<string>> {
   // BUG FIX 25/12/2025: callLlamaAPI NÃO suporta streaming
@@ -845,12 +840,9 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<str
  * Esta função está mantida apenas para compatibilidade, mas NÃO deve ser chamada
  * Para streaming, use proxyStreamFromGpuManager() que faz proxy direto do GPU Manager Service
  */
-async function* streamResponse(response: globalThis.Response): AsyncGenerator<string> {
-  // BUG FIX 25/12/2025: Esta função não deve ser usada - GPU Manager Service consome o body
-  // Mantida apenas para evitar quebra de código, mas nunca será executada em produção
-  logger.warn('streamResponse chamada - não deve ser usada com GPU Manager Service');
-  return;
-}
+// BUG FIX 26/12/2025: Função removida - GPU Manager Service consome o body diretamente
+// Para streaming, use proxyStreamFromGpuManager() que faz proxy direto do GPU Manager Service
+// Função streamResponse removida pois não é mais necessária com a arquitetura GPU Manager Service
 
 /**
  * Faz proxy do stream do GPU Manager Service para WebSocket ou HTTP SSE
@@ -3038,9 +3030,10 @@ wss.on('connection', (ws, req) => {
           { role: 'user', content: messageContent },
         ];
 
-        let fullResponse = '';
+        // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
+        let _fullResponse = '';
         try {
-          fullResponse = await proxyStreamFromGpuManager(
+          _fullResponse = await proxyStreamFromGpuManager(
             llmMessages,
             (content) => {
               // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
@@ -3416,9 +3409,10 @@ wss.on('connection', (ws, req) => {
           { role: 'user', content: userContent },
         ];
 
-        let fullResponse = '';
+        // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
+        let _fullResponse = '';
         try {
-          fullResponse = await proxyStreamFromGpuManager(
+          _fullResponse = await proxyStreamFromGpuManager(
             llmMessages,
             (content) => {
               // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados

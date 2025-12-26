@@ -7,7 +7,7 @@ echo "🔍 Validando secrets obrigatórias..."
 # Todos os serviços GPU rodam localmente no servidor Hetzner GPU único
 # e são gerenciados pelo GPU Manager Service
 echo "📋 GPU Services:"
-echo "   Arquitetura: Servidor único Hetzner GPU (RTX 4090 24GB)"
+echo "   Arquitetura: Servidor único Hetzner GPU GEX44 (RTX 4000 SFF Ada 20GB)"
 echo "   Gerenciamento: GPU Manager Service (fila priorizada, VRAM monitoring)"
 echo ""
 

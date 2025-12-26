@@ -69,8 +69,6 @@ import {
   getEmbeddingJobStatus,
   getEmbeddingQueueStats,
   isQueueAvailable,
-  isGpuWarm,
-  getGpuWarmUntil,
   type EmbeddingJobType,
 } from './embedding-queue.js';
 import { initEmbeddingWebSocket, closeEmbeddingWebSocket, getWebSocketStats } from './embedding-websocket.js';
@@ -929,7 +927,7 @@ if (WORKER_TENANT_ID) {
     searxngKey: SEARXNG_SECRET_KEY,
   });
 
-  // Embedding Worker - Estratégia "Warm on Demand" (30 min keep-warm)
+  // Embedding Worker - GPU Dedicada 24/7 (Hetzner GEX44)
   // Processa embeddings assíncronos via fila Redis
   startEmbeddingWorker({ metrics });
 
@@ -1098,9 +1096,9 @@ app.get('/api/rag/health', async (_req: Request, res: Response) => {
     circuitBreaker: {
       state: circuitState,
       stats: {
-        failures: embeddingsBreaker.stats.failures,
-        successes: embeddingsBreaker.stats.successes,
-        timeouts: embeddingsBreaker.stats.timeouts,
+        failures: gpuManagerEmbeddingsBreaker.stats.failures,
+        successes: gpuManagerEmbeddingsBreaker.stats.successes,
+        timeouts: gpuManagerEmbeddingsBreaker.stats.timeouts,
       },
     },
   });
@@ -1817,7 +1815,7 @@ function buildAgenticContext(
 }
 
 app.get('/api/rag/agentic/status', requireAuth(), async (_req: Request, res: Response) => {
-  const embeddingsState = embeddingsBreaker.opened ? 'open' : (embeddingsBreaker.halfOpen ? 'half-open' : 'closed');
+  const embeddingsState = gpuManagerEmbeddingsBreaker.opened ? 'open' : (gpuManagerEmbeddingsBreaker.halfOpen ? 'half-open' : 'closed');
   const webSearchState = webSearchClient.breakerState();
 
   res.json({
@@ -3277,7 +3275,7 @@ app.get('/api/rag/circuit-breaker/embeddings', (_req: Request, res: Response) =>
 });
 
 // ============================================================================
-// EMBEDDING QUEUE - Processamento Assíncrono (Warm on Demand)
+// EMBEDDING QUEUE - Processamento Assíncrono (GPU Dedicada 24/7)
 // ============================================================================
 
 /**
@@ -3350,13 +3348,11 @@ app.post('/api/rag/embeddings/queue',
         metadata: body.metadata,
       });
       
-      const gpuWarmUntil = getGpuWarmUntil();
-      
       logger.info({
         jobId,
         type: body.type,
         tenantId,
-        gpuWarm: isGpuWarm(),
+        gpuAvailable: true, // GPU dedicada Hetzner GEX44 24/7
       }, 'Job de embedding enfileirado');
       
       res.status(202).json({
@@ -3364,9 +3360,9 @@ app.post('/api/rag/embeddings/queue',
         status: 'pending',
         message: 'Job enfileirado para processamento',
         gpuStatus: {
-          warm: isGpuWarm(),
-          warmUntil: gpuWarmUntil?.toISOString() || null,
-          estimatedWaitMs: isGpuWarm() ? 1000 : 30000, // 1s se warm, 30s se cold
+          available: true, // GPU dedicada Hetzner GEX44 - sempre disponível
+          dedicatedServer: true, // 24/7 - sem cold start
+          estimatedWaitMs: 1000, // GPU sempre disponível
         },
         statusUrl: `/api/rag/embeddings/queue/${jobId}`,
       });
@@ -3394,8 +3390,7 @@ app.get('/api/rag/embeddings/queue/stats',
         queue: queueStats,
         worker: workerStatus,
         websocket: wsStats,
-        strategy: 'warm-on-demand',
-        keepWarmMinutes: 30,
+        gpuDedicated: true, // GPU Hetzner GEX44 24/7
         timestamp: new Date().toISOString(),
       });
     } catch (error) {
@@ -3630,9 +3625,9 @@ registerShutdownCallback(
           image: 'OpenCLIP (1024 dim) → pgvector',
         },
         circuitBreaker: 'enabled',
-        strategy: 'warm-on-demand',
+        gpuDedicated: true, // Hetzner GEX44 24/7
         redisConnected,
-      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (25/12/2025) via GPU Manager Service');
+      }, 'RAG service iniciado - ARQUITETURA ENTERPRISE (26/12/2025) via GPU Manager Service');
     });
   } catch (error) {
     // BUG FIX 23/12/2025: Capturar TODOS os erros (síncronos e assíncronos) da inicialização

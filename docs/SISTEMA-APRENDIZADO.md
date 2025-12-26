@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.6 - Deploy Fixes: ERPNext Idempotente + Rollback Robusto  
-**Data:** 21 de Dezembro de 2025
+**Versão:** 3.7 - Consolidação Documentação  
+**Data:** 26 de Dezembro de 2025
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 
@@ -28,17 +28,15 @@ A partir de 25/12/2025, a Alice utiliza **arquitetura 100% GPU local via Hetzner
 | **Fine-tuning** | LoRA Progressive | - | Hetzner GEX44 (em migração) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
-### Estratégia "Warm on Demand"
+### GPU Dedicada 24/7 (Hetzner GEX44)
 
-Para otimizar latência e uso de VRAM:
+Com servidor GPU dedicado, os modelos estão sempre carregados em memória:
 
 | Cenário | Latência | Motivo |
 |---------|----------|--------|
-| **Primeira requisição** | 2-5 segundos | Modelo carregando na GPU (se não estiver em memória) |
-| **Requisições subsequentes** | ~0.5-1 segundo | GPU permanece "quente" (modelo em memória) |
-| **Após período de inatividade** | 2-5 segundos | GPU Manager mantém serviços ativos por período configurável |
+| **Qualquer requisição** | ~0.5-1 segundo | Modelos sempre carregados na VRAM (containers Docker 24/7) |
 
-> **Arquitetura Enterprise (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
+> **Arquitetura Enterprise (26/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 com containers Docker 24/7. Não há cold start - GPU está sempre disponível. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers. A estratégia "Warm on Demand" foi removida pois não se aplica a servidor dedicado. Ver [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md) para guia completo.
 
 **Componentes:**
 - **Redis Queue:** Processamento assíncrono de embeddings
@@ -258,7 +256,7 @@ O processamento de áudio utiliza **GPU obrigatória** via GPU Manager Service:
 │          TRANSCRIÇÃO GPU (OBRIGATÓRIA)                     │
 │  • Canary-Qwen-2.5B (NeMo)                                  │
 │  • 7-9x realtime                                            │
-│  • CUDA accelerated RTX 4090                                │
+│  • CUDA accelerated RTX 4000 Ada 20GB                       │
 │  • GPU Manager Service gerencia requisições ASR             │
 └─────────────────────────────────────────────────────────────┘
                               ↓
@@ -346,7 +344,7 @@ Acessíveis em `/dashboard/analytics`:
 ## Segurança e Privacidade
 
 - Dados NUNCA saem da infraestrutura controlada
-- Fine-tuning acontece no Hetzner GPU GEX44 (em migração - atualmente ainda usa Salad Cloud)
+- Fine-tuning acontece no Hetzner GPU GEX44 (GPU dedicada 24/7)
 - Multi-tenant: dados isolados por tenant_id
 - Auditoria completa de todas as operações
 - RBAC: apenas admins aprovam dados
@@ -362,7 +360,7 @@ Acessíveis em `/dashboard/analytics`:
 | Categoria | Status | Prioridade |
 |-----------|--------|------------|
 | Arquitetura 100% GPU | ✅ Implementada | - |
-| Warm on Demand | ✅ Implementada | - |
+| GPU Dedicada 24/7 | ✅ Hetzner GEX44 | Sem cold start |
 | Coleta Chat → Training | ✅ Implementada | - |
 | Coleta WhatsApp → Training | ✅ Implementada | - |
 | WhatsApp Mídia → RAG | ✅ Implementada (15/12/2025) | - |
@@ -383,12 +381,13 @@ Acessíveis em `/dashboard/analytics`:
 - ✅ Validação de dimensão em `validateEmbeddingDimension`
 - ✅ Sem fallback CPU (Regra 6)
 
-### 2. Estratégia "Warm on Demand"
+### 2. GPU Dedicada 24/7 (Hetzner GEX44)
+- ✅ Containers Docker rodando 24/7 - sem cold start
 - ✅ Redis Queue para processamento assíncrono (`embedding-queue.ts`)
 - ✅ Worker dedicado (`embedding-worker.ts`)
 - ✅ WebSocket para notificações (`embedding-websocket.ts`)
-- ✅ Keep-warm por 30 minutos após último uso
 - ✅ Endpoints REST: `/api/rag/embeddings/queue/*`
+- ⚠️ Estratégia "Warm on Demand" removida (26/12/2025) - não se aplica a GPU dedicada
 
 ### 3. Coleta de Dados para Treinamento
 - ✅ **Chat Web:** `chat-service/index.ts` linha 3905 - POST `/api/training/data`
@@ -483,7 +482,7 @@ Acessíveis em `/dashboard/analytics`:
 | Bug ordenação rotas Express | ✅ Corrigido | - |
 | Bug `generateEmbeddingInternal` | ✅ Corrigido | - |
 | Arquitetura 100% GPU | ✅ Implementada | - |
-| Warm on Demand | ✅ Implementada | - |
+| GPU Dedicada 24/7 | ✅ Hetzner GEX44 | Sem cold start |
 | Coleta Chat → Training | ✅ Funcionando | - |
 | Coleta WhatsApp → Training | ✅ Funcionando | - |
 | Dashboard Upload Multimodal | ✅ GAP #1 Resolvido | Nova tab em /training |
@@ -505,4 +504,4 @@ Acessíveis em `/dashboard/analytics`:
 *Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio/vídeo) agora vão para Qdrant (4096 dim)*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
 *Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*
-*Estratégia "Warm on Demand": Keep-warm 30 min, Redis Queue, WebSocket notifications, Prometheus metrics*
+*GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodando continuamente, sem cold start. Estratégia "Warm on Demand" removida.*

@@ -37,7 +37,7 @@ TRANSCRIPTION_DURATION = Histogram(
 )
 LAST_REQUEST_TIME = Gauge(
     "asr_last_request_timestamp",
-    "Timestamp do último request (para keep-warm)"
+    "Timestamp do último request (para monitoramento)"
 )
 GPU_MEMORY_USED = Gauge(
     "asr_gpu_memory_bytes",
@@ -99,7 +99,7 @@ async def load_model():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint com métricas de keep-warm."""
+    """Health check endpoint com métricas de atividade."""
     LAST_REQUEST_TIME.set(time_module.time())
     
     gpu_info = {}

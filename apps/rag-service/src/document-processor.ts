@@ -28,7 +28,7 @@ import type { Worksheet, Row } from 'exceljs';
 const logger = createLogger('document-processor');
 
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
-// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 // Dimensão dos embeddings de texto - ARQUITETURA UNIFICADA (17/12/2025)
 // Qwen3-Embedding-8B: 4096 dim (8B params, máxima qualidade)

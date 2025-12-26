@@ -21,13 +21,13 @@ const testLogger = pino({
 }).child({ module: 'test-setup' });
 
 // Configurar variáveis de ambiente para testes
+// NOTA (26/12/2025): Definir ANTES do beforeAll para evitar fail-fast no import de gpu-client
+process.env.NODE_ENV = 'test';
+process.env.INTERNAL_API_SECRET = 'test-secret-for-unit-tests';
+process.env.LOG_LEVEL = 'error';
+process.env.PINO_LOG_LEVEL = 'silent';
+
 beforeAll(() => {
-  process.env.NODE_ENV = 'test';
-  process.env.LOG_LEVEL = 'error';
-  
-  // Desabilitar logs durante testes para output limpo
-  process.env.PINO_LOG_LEVEL = 'silent';
-  
   testLogger.info('Iniciando suite de testes Alice Enterprise Platform');
 });
 

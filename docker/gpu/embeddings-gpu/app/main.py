@@ -51,7 +51,7 @@ GPU_MEMORY_USED = Gauge(
 )
 LAST_REQUEST_TIME = Gauge(
     "embeddings_last_request_timestamp",
-    "Timestamp do último request (para keep-warm)"
+    "Timestamp do último request (para monitoramento)"
 )
 
 # =============================================================================
@@ -63,7 +63,7 @@ TEXT_EMBEDDING_DIM = int(os.environ.get("TEXT_EMBEDDING_DIM", "4096"))
 IMAGE_MODEL_NAME = os.environ.get("IMAGE_MODEL_NAME", "laion/CLIP-ViT-H-14-laion2B-s32B-b79K")
 IMAGE_EMBEDDING_DIM = int(os.environ.get("IMAGE_EMBEDDING_DIM", "1024"))
 DEVICE = os.environ.get("DEVICE", "cuda" if torch.cuda.is_available() else "cpu")
-KEEP_WARM_MINUTES = int(os.environ.get("KEEP_WARM_MINUTES", "30"))
+# KEEP_WARM_MINUTES removido - GPU dedicada 24/7 (Hetzner GEX44)
 
 # =============================================================================
 # FASTAPI APP

@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
-**Autor:** Fillipe Guerra
-**Data:** 25 de Dezembro de 2025
+**Autor:** Fillipe Guerra  
+**Data:** 26 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -326,9 +326,9 @@ Estes são necessários para o deploy funcionar:
 
 ---
 
-## 🗑️ Secrets Obsoletos - Remover do GitHub
+## 🗑️ Secrets Obsoletos - REMOVIDOS (26/12/2025)
 
-**ARQUITETURA ATUALIZADA (25/12/2025):** Todos os serviços GPU migraram para Hetzner GPU GEX44. Os seguintes secrets do Salad Cloud devem ser **removidos completamente** do GitHub Secrets:
+**ARQUITETURA GPU DEDICADA 24/7:** Todos os serviços GPU rodam no servidor Hetzner GEX44 dedicado. Os seguintes secrets já foram **removidos do GitHub Secrets** (não são mais necessários):
 
 | Secret | Status | Como Remover |
 |--------|--------|--------------|
@@ -345,11 +345,7 @@ Estes são necessários para o deploy funcionar:
 | `SALAD_GPU_CLASS` | ❌ **REMOVER** | GitHub → Settings → Secrets → Delete |
 | `EMBEDDINGS_GPU_URL` | ❌ **REMOVER** | Remover completamente - tem fallback para URL interna (`http://gpu-embeddings:8000` ou `http://localhost:8001`) |
 
-**Como Remover:**
-1. Acesse: `https://github.com/fillipeguerrabtc/alice/settings/secrets/actions`
-2. Para cada secret listado acima, clique no secret → **"Delete"** → Confirme
-
-> **NOTA:** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU.
+> **NOTA (26/12/2025):** Todos estes secrets foram removidos. GPU Manager Service (Hetzner GEX44) usa comunicação interna via rede Docker, sem necessidade de secrets externos.
 
 ---
 
@@ -393,7 +389,7 @@ Estes são necessários para o deploy funcionar:
 |--------|--------|--------------|
 | `HUGGINGFACE_TOKEN` | ✅ | ✅ **SIM** (obrigatório para downloads de modelos - Mixtral, Qwen3, OpenCLIP, FLUX, Canary) |
 
-> **NOTA (25/12/2025):** Todos os serviços GPU agora rodam localmente no servidor Hetzner GPU GEX44. Não são necessários secrets externos para GPU (Salad Cloud removido). URLs dos serviços GPU são internas (localhost) e não precisam de secrets.
+> **NOTA (26/12/2025):** GPU dedicada Hetzner GEX44 (24/7) - containers Docker rodam continuamente. URLs dos serviços GPU são internas via rede Docker e não precisam de secrets.
 
 ### Stripe (Pagamentos)
 
@@ -582,7 +578,7 @@ openssl rand -base64 24
 *GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
 *Arquitetura Deploy (25/12/2025): Deploy Server (CX11) separado + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
 *ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
-*Secrets Obsoletos Removidos (25/12/2025): Todos os secrets do Salad Cloud removidos (SALAD_API_KEY, SALAD_ORGANIZATION_ID, SALAD_*_URL, etc.)*  
+*GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
 *Novos Secrets (25/12/2025): PRODUCTION_SERVER_HOST, PRODUCTION_SERVER_USER, PRODUCTION_SERVER_SSH_PRIVATE_KEY para Deploy Server*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
 *Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*

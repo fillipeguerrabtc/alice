@@ -2,20 +2,23 @@
  * Embedding Queue Service - Alice Enterprise Platform
  * 
  * Fila Redis para processamento assíncrono de embeddings com GPU Manager Service (Hetzner GEX44).
- * Implementa estratégia "Warm on Demand" para otimização de custos.
  * 
- * Estratégia:
- * - GPUs mantidas "quentes" por 30 minutos após último uso
+ * ARQUITETURA ENTERPRISE (26/12/2025):
+ * - GPU dedicada (Hetzner GEX44 RTX 4000 Ada 20GB) - SEMPRE disponível
  * - Processamento assíncrono via fila Redis
  * - WebSocket para notificações em tempo real
  * - Circuit breaker para resiliência (Regra 16)
  * 
- * ARQUITETURA ENTERPRISE (17/12/2025):
+ * NOTA (26/12/2025): Arquitetura simplificada para GPU dedicada
+ * Com servidor Hetzner GEX44, os containers Docker rodam 24/7 e a GPU está sempre disponível.
+ * Não há cold start - GPU dedicada elimina necessidade de warm on demand.
+ * 
+ * EMBEDDINGS:
  * - Qwen3-Embedding-8B: 4096 dim (texto/documentos → Qdrant)
  * - OpenCLIP ViT-H/14: 1024 dim (imagens + text-to-image → pgvector)
  * 
  * Autor: Fillipe Guerra
- * Data: 17 de Dezembro de 2025
+ * Data: 26 de Dezembro de 2025
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
@@ -29,8 +32,8 @@ const logger = createLogger('embedding-queue');
 // CONFIGURAÇÃO
 // ============================================================================
 
-/** Tempo de keep-warm em ms (30 minutos) */
-const KEEP_WARM_MS = 30 * 60 * 1000;
+// NOTA (26/12/2025): KEEP_WARM_MS removido - GPU dedicada está sempre disponível
+// Não há mais cold start com servidor Hetzner GEX44 dedicado
 
 /** Prefixo para chaves Redis */
 const REDIS_PREFIX = 'alice:embeddings';
@@ -106,54 +109,47 @@ export interface EmbeddingQueueStats {
 }
 
 // ============================================================================
-// GPU WARM STATE (Singleton)
+// GPU STATE - SIMPLIFICADO (26/12/2025)
 // ============================================================================
-
-interface GpuWarmState {
-  warmUntil: number; // timestamp em ms
-  lastActivity: number; // timestamp em ms
-}
-
-const gpuState: GpuWarmState = {
-  warmUntil: 0,
-  lastActivity: 0,
-};
+// NOTA: Com servidor Hetzner GEX44 dedicado, a GPU está SEMPRE disponível.
+// Containers Docker rodam 24/7 - não há cold start.
+// Funções mantidas para compatibilidade com código existente, mas simplificadas.
 
 /**
- * Atualiza timestamp de última atividade e estende período warm
+ * Atualiza timestamp de última atividade (mantido para compatibilidade)
+ * NOTA (26/12/2025): Não faz mais nada - GPU sempre disponível
  */
-function touchGpuWarm(): void {
-  const now = Date.now();
-  gpuState.lastActivity = now;
-  gpuState.warmUntil = now + KEEP_WARM_MS;
-  
-  logger.debug({
-    warmUntil: new Date(gpuState.warmUntil).toISOString(),
-    keepWarmMinutes: KEEP_WARM_MS / 60000,
-  }, 'GPU warm period estendido');
+export function touchGpuWarm(): void {
+  // No-op: GPU dedicada Hetzner GEX44 está sempre disponível
+  // Containers Docker rodam 24/7, não há cold start
+  logger.debug('touchGpuWarm chamado - GPU dedicada sempre disponível (Hetzner GEX44)');
 }
 
 /**
- * Verifica se GPU está "quente" (dentro do período warm)
+ * Verifica se GPU está "quente" (disponível)
+ * NOTA (26/12/2025): Sempre retorna true - GPU dedicada está sempre disponível
  */
 export function isGpuWarm(): boolean {
-  return Date.now() < gpuState.warmUntil;
+  // GPU dedicada Hetzner GEX44 está sempre disponível (24/7)
+  return true;
 }
 
 /**
  * Retorna timestamp até quando GPU estará warm
+ * NOTA (26/12/2025): Sempre retorna null - conceito não se aplica a GPU dedicada
  */
 export function getGpuWarmUntil(): Date | null {
-  if (!isGpuWarm()) return null;
-  return new Date(gpuState.warmUntil);
+  // GPU dedicada está sempre disponível - não há período de warm
+  return null;
 }
 
 /**
  * Retorna timestamp da última atividade
+ * NOTA (26/12/2025): Sempre retorna null - conceito não se aplica a GPU dedicada
  */
 export function getLastGpuActivity(): Date | null {
-  if (gpuState.lastActivity === 0) return null;
-  return new Date(gpuState.lastActivity);
+  // GPU dedicada Hetzner GEX44 está sempre disponível - não há tracking de atividade
+  return null;
 }
 
 // ============================================================================
@@ -610,8 +606,8 @@ export function getNotificationChannel(): string {
 // EXPORTS ADICIONAIS
 // ============================================================================
 
+// BUG FIX 26/12/2025: KEEP_WARM_MS removido - não se aplica a GPU dedicada
+// touchGpuWarm já exportada na definição da função
 export {
-  KEEP_WARM_MS,
   MAX_BATCH_SIZE,
-  touchGpuWarm,
 };

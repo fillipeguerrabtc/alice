@@ -57,8 +57,8 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 5,
   },
-  // Legacy: saladLLM mantido para compatibilidade
-  saladLLM: {
+  // GPU Manager LLM - enterprise preset
+  gpuManagerLLM: {
     timeout: 60000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
@@ -78,8 +78,8 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 30000,
     volumeThreshold: 3,
   },
-  // Legacy: saladDeployment mantido para compatibilidade
-  saladDeployment: {
+  // GPU Manager Deployment - enterprise preset
+  gpuManagerDeployment: {
     timeout: 60000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
@@ -87,7 +87,7 @@ export const CIRCUIT_BREAKER_PRESETS = {
   },
   /** OpenCLIP ViT-H/14 embeddings - ARQUITETURA 100% GPU (GPU Manager Service) */
   clipEmbeddings: {
-    timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)
+    timeout: 60000, // Timeout para embeddings de imagem (imagens maiores levam mais tempo)
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
@@ -218,10 +218,10 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 15000,
     volumeThreshold: 5,
   },
-  /** Qwen3-Embedding-8B Text Embeddings - ARQUITETURA ENTERPRISE (17/12/2025) - 4096 dim → Qdrant */
-  /** Timeout ajustado para GPU com estratégia Warm on Demand */
+  /** Qwen3-Embedding-8B Text Embeddings - ARQUITETURA ENTERPRISE (26/12/2025) - 4096 dim → Qdrant */
+  /** GPU dedicada Hetzner GEX44 - 24/7 */
   textEmbeddings: {
-    timeout: 60000, // GPU pode precisar warm-up (estratégia Warm on Demand)
+    timeout: 60000, // Timeout para embeddings de texto (textos longos levam mais tempo)
     errorThresholdPercentage: 50,
     resetTimeout: 30000,
     volumeThreshold: 5,
@@ -433,7 +433,7 @@ export async function fetchWithAbort(
 /**
  * Cria uma função fetch protegida por circuit breaker com AbortController.
  * 
- * RECOMENDADO: Use esta função para todas as chamadas HTTP externas (Salad Cloud, APIs).
+ * RECOMENDADO: Use esta função para todas as chamadas HTTP externas (GPU Manager, APIs).
  * Combina proteção de circuit breaker com cancelamento de requisições.
  * 
  * @param config - Configuração do circuit breaker
@@ -444,7 +444,7 @@ export async function fetchWithAbort(
  * import { createProtectedFetch, CIRCUIT_BREAKER_PRESETS } from '@alice/shared-utils/circuit-breaker';
  * 
  * const { breaker, fetch: protectedFetch } = createProtectedFetch({
- *   name: 'salad-llm',
+ *   name: 'gpu-manager-llm',
  *   ...CIRCUIT_BREAKER_PRESETS.gpuLLM,
  * });
  * 

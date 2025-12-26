@@ -22,7 +22,7 @@ const logger = createLogger('image-processor');
 
 // GPU Manager Service - Gerenciamento centralizado de requisições GPU (25/12/2025)
 // GPU é OBRIGATÓRIO - OpenCLIP ViT-H/14 (1024 dim) → pgvector
-// URL é usada internamente pelo requestGpu, não precisa ser exposta aqui
+const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager:3010';
 
 // Dimensão dos embeddings de imagem (OpenCLIP ViT-H/14 - 1024 dim → pgvector)
 export const CLIP_EMBEDDING_DIM = 1024;

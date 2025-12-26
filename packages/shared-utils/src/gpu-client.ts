@@ -20,11 +20,13 @@ const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://alice-gpu-manager
 // Validação apenas em produção permite que código continue silenciosamente em desenvolvimento
 // com fallback || '' enviando string vazia no header, permitindo requisições não autenticadas
 // Solução: Validar fail-fast em todos os ambientes para garantir segurança
-const INTERNAL_API_SECRET = process.env.INTERNAL_API_SECRET;
-if (!INTERNAL_API_SECRET) {
+const INTERNAL_API_SECRET_RAW = process.env.INTERNAL_API_SECRET;
+if (!INTERNAL_API_SECRET_RAW) {
   logger.error('INTERNAL_API_SECRET é obrigatório (Regra 6 - fail-fast) - configure a variável de ambiente');
   process.exit(1);
 }
+// TypeScript agora sabe que é string (após validação fail-fast)
+const INTERNAL_API_SECRET: string = INTERNAL_API_SECRET_RAW;
 
 /** Prioridades de requisições GPU (maior = mais prioritário) */
 export enum GpuRequestPriority {

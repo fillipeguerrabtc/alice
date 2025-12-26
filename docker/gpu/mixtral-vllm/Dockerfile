@@ -1,7 +1,7 @@
 # =============================================================================
 # Alice Enterprise Platform - Mixtral 8x7B vLLM
 # =============================================================================
-# Dockerfile para LLM inference com vLLM em GPU RTX 4090
+# Dockerfile para LLM inference com vLLM em GPU RTX 4000 SFF Ada (20GB)
 # Modelo: Mixtral 8x7B Instruct (quantizado AWQ 4-bit)
 # 
 # Autor: Fillipe Guerra

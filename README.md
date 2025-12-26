@@ -43,7 +43,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` exige `version` obrigatória (tag v1.0.0). Impede disparo paralelo com CI. Pipeline 100% sequencial: Push → CI → Release → Deploy. Script externo para .env.prod.
+> **Atualização 26/12/2025:** GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CX22) para GitHub Actions self-hosted runner + Production Server (GEX44) com GPU dedicada.
 
 ---
 

@@ -1,7 +1,7 @@
 # =============================================================================
 # Alice Enterprise Platform - ASR Canary-Qwen-2.5B
 # =============================================================================
-# Dockerfile para transcrição de áudio com Canary/Whisper em GPU RTX 4090
+# Dockerfile para transcrição de áudio com Canary/Whisper em GPU RTX 4000 SFF Ada (20GB)
 # 
 # Autor: Fillipe Guerra
 # Data: 16 de Dezembro de 2025

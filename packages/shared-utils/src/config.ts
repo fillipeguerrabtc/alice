@@ -76,7 +76,7 @@ const envSchema = z.object({
   
   DATABASE_URL: z.string().optional(),
   
-  // Salad Cloud removido - migrado para GPU Manager Service (Hetzner GEX44)
+  // GPU Manager Service (Hetzner GEX44) - GPU dedicada 24/7
   
   CORS_ORIGINS: corsOriginsSchema,
   
@@ -391,5 +391,6 @@ export const GPU_MANAGER_CONFIG = {
   },
 };
 
-// Legacy: SALAD_CONFIG removido - usar GPU_MANAGER_CONFIG
-export const SALAD_CONFIG = GPU_MANAGER_CONFIG;
+// NOTA (26/12/2025): Alias SALAD_CONFIG removido completamente
+// GPU Manager Service (Hetzner GEX44) é a única forma de acessar serviços GPU
+// Ver GPU_MANAGER_CONFIG acima para configuração

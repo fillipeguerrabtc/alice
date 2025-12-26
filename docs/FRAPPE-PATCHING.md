@@ -1,7 +1,7 @@
 # Frappe Framework Patching - Guia de Atualização de Segurança
 
 **Autor:** Fillipe Guerra  
-**Data:** 09 de Dezembro de 2025
+**Data:** 26 de Dezembro de 2025
 
 ## Sumário
 

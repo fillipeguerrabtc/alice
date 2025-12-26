@@ -30,13 +30,12 @@ import {
   createAlicePrometheus,
   registerShutdownCallback,
   ShutdownPriority,
-  instrumentCircuitBreaker,
 } from '@alice/shared-utils';
 import { createLogger } from '@alice/logger';
 import { 
   createCorrelationMiddleware, 
   createSecurityMiddleware,
-  createRateLimiter,
+  // createRateLimiter removido - não usado (GPU Manager Service usa autenticação interna)
   createErrorHandler,
   createNotFoundHandler,
   asyncHandler,
@@ -49,7 +48,7 @@ const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
 
 const PORT = process.env.PORT || 3010;
-const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+// BUG FIX 26/12/2025: REDIS_URL removido - Redis é configurado via getRedisClient() de @alice/shared-utils
 // BUG FIX 25/12/2025: REGRA 6 - Sem fallback em produção - variável DEVE estar definida
 // INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
 // Fallback para string vazia desabilita autenticação, permitindo requisições não autenticadas
@@ -135,7 +134,7 @@ const VRAM_SAFETY_MARGIN_GB = 2;
 /** Prefixo Redis para fila GPU */
 const REDIS_QUEUE_PREFIX = 'alice:gpu:queue';
 const REDIS_ACTIVE_PREFIX = 'alice:gpu:active';
-const REDIS_METRICS_PREFIX = 'alice:gpu:metrics';
+// BUG FIX 26/12/2025: REDIS_METRICS_PREFIX removido - métricas via Prometheus, não Redis
 
 // ============================================================================
 // TIPOS E INTERFACES
@@ -186,7 +185,7 @@ const circuitBreakers = {
       if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
     },
     {
-      ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
+      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
       name: 'gpu-mixtral',
     }
   ),
@@ -197,7 +196,7 @@ const circuitBreakers = {
       if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
     },
     {
-      ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
+      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
       name: 'gpu-embeddings',
     }
   ),
@@ -208,7 +207,7 @@ const circuitBreakers = {
       if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
     },
     {
-      ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
+      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
       name: 'gpu-flux',
     }
   ),
@@ -219,14 +218,11 @@ const circuitBreakers = {
       if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
     },
     {
-      ...CIRCUIT_BREAKER_PRESETS.ENTERPRISE,
+      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
       name: 'gpu-asr',
     }
   ),
 };
-
-// Instrumentar circuit breakers para métricas
-Object.values(circuitBreakers).forEach(cb => instrumentCircuitBreaker(cb, 'gpu-manager'));
 
 // ============================================================================
 // MONITORAMENTO DE VRAM
@@ -342,12 +338,13 @@ async function dequeueRequest(serviceType: GpuServiceType): Promise<GpuRequest |
   // BUG FIX 25/12/2025: zRange(-1, -1) pega o último elemento (menor score se ordem crescente)
   // Precisamos do maior score (maior prioridade), então usamos zPopMax (atômico)
   // Prioridades: CRITICAL=10 > HIGH=8 > MEDIUM=5 > LOW=2
-  const result = await redis.zPopMax(queueKey, 1);
-  if (!result || result.length === 0) {
+  // BUG FIX 26/12/2025: zPopMax sem count retorna objeto único { value, score } ou null
+  const result = await redis.zPopMax(queueKey);
+  if (!result) {
     return null;
   }
   
-  const requestId = result[0].value;
+  const requestId = result.value;
   const requestKey = `${REDIS_QUEUE_PREFIX}:request:${requestId}`;
   
   // Obter requisição completa
@@ -421,16 +418,17 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
     try {
-      const response = await circuitBreaker.fire(async () => {
-        return fetch(`${url}${request.endpoint}`, {
-          method: request.method,
-          headers: {
-            'Content-Type': 'application/json',
-            ...request.headers,
-          },
-          body: request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
-          signal: controller.signal,
-        });
+      // BUG FIX 26/12/2025: Circuit breaker fire() não pode receber nova função
+      // O circuit breaker protege health check, não a chamada de API
+      // Fazer fetch direto com AbortController para timeout
+      const response = await fetch(`${url}${request.endpoint}`, {
+        method: request.method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...request.headers,
+        },
+        body: request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
+        signal: controller.signal,
       });
       
       clearTimeout(timeoutId);
@@ -601,7 +599,7 @@ const server = createServer(app);
 app.use(compression());
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
-app.use(createCorrelationMiddleware());
+app.use(createCorrelationMiddleware({ serviceName: 'gpu-manager' }));
 app.use(createSecurityMiddleware());
 
 // Health check
@@ -752,17 +750,15 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
     const timeout = body.timeout || 60000;
     const timeoutId = setTimeout(() => controller.abort(), timeout);
     
-    // Fazer requisição streaming ao gpu-mixtral
-    const response = await circuitBreaker.fire(async () => {
-      return fetch(`${url}${body.endpoint}`, {
-        method: body.method || 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...body.headers,
-        },
-        body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
-        signal: controller.signal,
-      });
+    // BUG FIX 26/12/2025: Fazer fetch direto (circuit breaker protege health check apenas)
+    const response = await fetch(`${url}${body.endpoint}`, {
+      method: body.method || 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...body.headers,
+      },
+      body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
+      signal: controller.signal,
     });
     
     clearTimeout(timeoutId);
@@ -861,10 +857,10 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
 }));
 
 // Métricas Prometheus
-const prometheus = createAlicePrometheus('gpu-manager');
-app.get('/metrics', (req: Request, res: Response) => {
+const prometheus = createAlicePrometheus({ serviceName: 'gpu-manager' });
+app.get('/metrics', async (req: Request, res: Response) => {
   res.set('Content-Type', 'text/plain');
-  res.send(prometheus.register.metrics());
+  res.send(await prometheus.registry.metrics());
 });
 
 // Error handlers
@@ -891,11 +887,11 @@ async function start(): Promise<void> {
     });
     
     // Graceful shutdown
-    registerShutdownCallback(async () => {
+    registerShutdownCallback('gpu-manager-server', async () => {
       logger.info('Encerrando GPU Manager Service...');
       stopQueueWorker();
       server.close();
-    }, ShutdownPriority.HIGH);
+    }, { priority: ShutdownPriority.HTTP_SERVER });
     
   } catch (error) {
     logger.error({ error }, 'Erro ao iniciar GPU Manager Service');

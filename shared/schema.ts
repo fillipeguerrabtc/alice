@@ -677,7 +677,7 @@ export const integrations = pgTable(
 );
 
 // ============================================================================
-// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - Salad Cloud GPU)
+// CONFIGURAÇÕES DO MODELO LLM (Mixtral 8x7B - GPU Manager Service Hetzner GEX44)
 // ============================================================================
 
 export const llmConfig = pgTable("llm_config", {

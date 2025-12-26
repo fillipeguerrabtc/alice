@@ -1,14 +1,14 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 25 de Dezembro de 2025  
-**Versão:** 1.0.0
+**Data:** 26 de Dezembro de 2025  
+**Versão:** 1.2.0
 
 ---
 
 ## Visão Geral
 
-O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa fila priorizada, monitoramento de VRAM, circuit breakers e métricas enterprise para garantir uso eficiente e confiável da GPU RTX 4090 24GB.
+O **GPU Manager Service** é um serviço centralizado que gerencia todas as requisições para serviços GPU na Alice Enterprise Platform. Ele implementa fila priorizada, monitoramento de VRAM, circuit breakers e métricas enterprise para garantir uso eficiente e confiável da GPU RTX 4000 SFF Ada 20GB.
 
 ---
 
@@ -61,7 +61,7 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 │  └──────────────────────────────────────────────────────┘   │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Monitoramento VRAM (nvidia-smi)                     │   │
-│  │  - Total: 24GB                                       │   │
+│  │  - Total: 20GB (RTX 4000 SFF Ada)                    │   │
 │  │  - Usado: tempo real                                 │   │
 │  │  - Serviços ativos: tracking                         │   │
 │  └──────────────────────────────────────────────────────┘   │
@@ -73,7 +73,7 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐   │
 │  │ Mixtral  │  │Embeddings│  │  FLUX    │  │   ASR    │   │
 │  │ :8000    │  │  :8001   │  │  :8002   │  │  :8003   │   │
-│  │ ~20GB    │  │  ~18GB   │  │  ~14GB   │  │  ~3GB    │   │
+│  │ ~18GB    │  │  ~16GB   │  │  ~12GB   │  │  ~3GB    │   │
 │  └──────────┘  └──────────┘  └──────────┘  └──────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -120,10 +120,10 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 
 **Verificação:**
 - Antes de processar requisição, verifica se há VRAM suficiente
-- Requisitos por serviço:
-  - Mixtral: 20GB + 2GB margem = 22GB mínimo
-  - Embeddings: 18GB + 2GB margem = 20GB mínimo
-  - FLUX: 14GB + 2GB margem = 16GB mínimo
+- Requisitos por serviço (ajustados para RTX 4000 Ada 20GB - Hetzner GEX44):
+  - Mixtral: 18GB + 2GB margem = 20GB mínimo
+  - Embeddings: 16GB + 2GB margem = 18GB mínimo
+  - FLUX: 12GB + 2GB margem = 14GB mínimo
   - ASR: 3GB + 2GB margem = 5GB mínimo
 
 ### 4. Circuit Breakers
@@ -235,13 +235,7 @@ Status das filas.
 
 ### Chat Service
 
-**Antes (Salad Cloud - removido):**
-```typescript
-// Código legado removido - Salad Cloud não é mais usado
-const response = await fetch(`${SALAD_MIXTRAL_URL}/v1/chat/completions`, { ... });
-```
-
-**Depois:**
+**Integração com GPU Manager Service (Hetzner GEX44):**
 ```typescript
 import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/gpu-manager';
 
@@ -434,5 +428,5 @@ gpu-manager:
 ---
 
 **Autor:** Fillipe Guerra  
-**Data:** 25 de Dezembro de 2025
+**Data:** 26 de Dezembro de 2025
 
