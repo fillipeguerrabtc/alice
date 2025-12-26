@@ -1024,22 +1024,9 @@ jobs:
           echo "📊 Espaço após limpeza:"
           df -h /
 
-      - name: Determinar tag da imagem (versão solicitada)
-        id: image-tag
-        env:
-          # `validate-trigger` garante que version é obrigatório e válido (ex: v1.0.0)
-          INPUT_VERSION: ${{ github.event.inputs.version }}
-        run: |
-          set -euo pipefail
-          TAG="${INPUT_VERSION}"
-          if [ -z "$TAG" ]; then
-            echo "::error::version é obrigatória (validate-trigger deve impedir este caso)" >&2
-            exit 1
-          fi
-          
-          echo "value=$TAG" >> "$GITHUB_OUTPUT"
-          echo "IMAGE_TAG=$TAG" >> "$GITHUB_ENV"
-          echo "🏷️ Tag efetiva das imagens: $TAG"
+      # BUG FIX 26/12/2025: Step image-tag duplicado removido
+      # O step image-tag já existe no início do job (linha ~476)
+      # Duplicação causava override do output em GitHub Actions
 
       - name: Extrair metadata
         id: meta
