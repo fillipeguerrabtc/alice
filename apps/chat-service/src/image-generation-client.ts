@@ -131,10 +131,12 @@ export async function generateImage(
   generationTimeMs: number;
 }> {
   // BUG FIX 25/12/2025: Declarar pendingRecord no escopo da função para estar disponível no catch
-  let pendingRecord: { id: string } | undefined;
+  // BUG FIX 25/12/2025: .returning() retorna array - usar destructuring para extrair primeiro elemento
+  // TypeScript infere tipo corretamente do schema, mas precisamos garantir que primeiro elemento existe
+  let pendingRecord: typeof schema.generatedImages.$inferSelect | undefined;
   
   try {
-    [pendingRecord] = await db.insert(schema.generatedImages).values({
+    const inserted = await db.insert(schema.generatedImages).values({
       tenantId: options?.tenantId,
       conversationId: options?.conversationId,
       messageId: options?.messageId,
@@ -148,6 +150,10 @@ export async function generateImage(
       guidanceScale: request.guidanceScale || 3.5,
       status: 'generating',
     }).returning();
+    
+    // BUG FIX 25/12/2025: .returning() sempre retorna array com pelo menos um elemento
+    // Extrair primeiro elemento explicitamente para garantir type safety
+    pendingRecord = inserted[0];
 
     logger.info({ 
       imageId: pendingRecord.id, 

@@ -924,18 +924,18 @@ async function proxyStreamFromGpuManager(
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
       
+      // BUG FIX 25/12/2025: Flag para indicar que [DONE] foi encontrado
+      // Não retornar imediatamente - processar todas as linhas antes para não perder chunks
+      let foundDone = false;
+      
       for (const line of lines) {
         if (line.startsWith('data: ')) {
           const data = line.slice(6);
           if (data === '[DONE]') {
-            // BUG FIX 25/12/2025: Aguardar callback async para evitar race conditions
-            // Callback pode fazer operações de banco de dados que precisam ser completadas
-            // BUG FIX 25/12/2025: Passar fullResponse como parâmetro para evitar closure sobre variável vazia
-            if (onDone && !onDoneCalled) {
-              onDoneCalled = true;
-              await onDone(fullResponse);
-            }
-            return fullResponse;
+            foundDone = true;
+            // Não retornar imediatamente - continuar processando linhas restantes
+            // para garantir que nenhum chunk seja perdido
+            continue;
           }
           
           try {
@@ -949,6 +949,15 @@ async function proxyStreamFromGpuManager(
             // Ignorar erros de parse de linhas inválidas
           }
         }
+      }
+      
+      // Se [DONE] foi encontrado, chamar onDone e retornar após processar todas as linhas
+      if (foundDone) {
+        if (onDone && !onDoneCalled) {
+          onDoneCalled = true;
+          await onDone(fullResponse);
+        }
+        return fullResponse;
       }
     }
     
