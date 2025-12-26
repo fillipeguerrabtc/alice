@@ -33,7 +33,7 @@ export enum GpuRequestPriority {
   CRITICAL = 10,  // Chat em tempo real
   HIGH = 8,       // Trading (time-sensitive)
   MEDIUM = 5,     // Embeddings (RAG)
-  LOW = 2,        // Geração de imagens, ASR
+  LOW = 2,        // Geração de imagens, ASR, Treinamento (LoRA)
 }
 
 /** Tipos de serviços GPU */
@@ -42,6 +42,7 @@ export enum GpuServiceType {
   EMBEDDINGS = 'embeddings',     // Qwen3 + OpenCLIP
   FLUX = 'flux',                 // Geração de imagens
   ASR = 'asr',                   // Transcrição de áudio
+  TRAINING = 'training',         // Fine-tuning LoRA (GPU dedicada 20GB - prioridade baixa)
 }
 
 export interface GpuRequestOptions {

@@ -2,13 +2,13 @@
  * Trading LoRA Job Manager - Alice Enterprise Platform
  * 
  * Gerencia ciclo de vida de jobs de treinamento LoRA para trading.
- * Em migração para Hetzner GPU GEX44 (RTX 4000 Ada 20GB).
+ * Execução real via GPU Manager Service + gpu-trainer (GPU única 20GB, prioridade baixa).
  * 
  * Funcionalidades:
  * - Criação e gerenciamento de jobs
  * - Preparação de datasets para treinamento
  * - Monitoramento de progresso
- * - Integração com GPU Manager Service (Hetzner GEX44) - em migração
+ * - Integração com GPU Manager Service (Hetzner GEX44)
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -16,6 +16,9 @@
 
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, eq, and, desc, sql, inArray } from '@alice/database';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { requestGpu, GpuServiceType, GpuRequestPriority } from '@alice/shared-utils';
 import type {
   TradingLoraJob,
   InsertTradingLoraJob,
@@ -25,6 +28,8 @@ import type {
 } from '@alice/shared';
 
 const logger = createLogger('lora-job-manager');
+
+const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
 
 // ============================================================================
 // CONFIGURAÇÃO
@@ -105,8 +110,8 @@ interface JobProgress {
 }
 
 interface PreparedDataset {
-  trainingData: string[];    // JSONL para treinamento
-  validationData: string[];  // JSONL para validação
+  trainingData: string[];    // Linhas JSONL ({text: string})
+  validationData: string[];  // Linhas JSONL ({text: string})
   datasetIds: string[];      // IDs dos datasets filtrados (para marcar como usados)
   stats: {
     total: number;
@@ -191,25 +196,14 @@ export async function prepareDataset(
   const training = shuffled.slice(0, splitIndex);
   const validation = shuffled.slice(splitIndex);
 
-  // Converter para formato JSONL (formato ChatML para Mixtral)
+  // Converter para formato JSONL (SFT): campo `text` obrigatório (gpu-trainer valida)
   const formatToJsonl = (dataset: TradingDataset): string => {
-    const example = {
-      messages: [
-        {
-          role: 'system',
-          content: 'Você é Alice, uma assistente especializada em trading de BTC Futures. Analise o contexto de mercado e forneça sinais de trading baseados em análise técnica e dados em tempo real.',
-        },
-        {
-          role: 'user',
-          content: dataset.prompt,
-        },
-        {
-          role: 'assistant',
-          content: dataset.response,
-        },
-      ],
-    };
-    return JSON.stringify(example);
+    const text = [
+      'system: Você é Alice, uma assistente especializada em trading de BTC Futures. Analise o contexto de mercado e forneça sinais de trading baseados em análise técnica e dados em tempo real.',
+      `user: ${dataset.prompt}`,
+      `assistant: ${dataset.response}`,
+    ].join('\n');
+    return JSON.stringify({ text });
   };
 
   const trainingData = training.map(formatToJsonl);
@@ -430,12 +424,15 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
     throw new Error(`Job já está ${job.status}, não pode ser cancelado`);
   }
 
-  // TODO: Cancelar job no Hetzner GPU GEX44 via GPU Manager Service
-  // Regra 6: Integração real enterprise (PROIBIDO deixar recursos órfãos)
-  if (job.status === 'preparing' || job.status === 'training') {
-    logger.warn({ jobId }, 'Cancelamento de job em migração - apenas cancelamento local');
-    // TODO: Implementar cancelamento via GPU Manager Service
-  }
+  // Cancelamento REAL no trainer (flag persistida em disco) - Regra 6
+  await requestGpu({
+    serviceType: GpuServiceType.TRAINING,
+    endpoint: '/train/lora/cancel',
+    method: 'POST',
+    priority: GpuRequestPriority.LOW,
+    timeout: 15000,
+    body: { jobId },
+  });
 
   const [updated] = await db
     .update(schema.tradingLoraJobs)
@@ -449,6 +446,112 @@ export async function cancelJob(jobId: string): Promise<TradingLoraJob | null> {
   logger.info({ jobId }, 'Job cancelado');
 
   return updated ?? null;
+}
+
+async function ensureDir(dirPath: string): Promise<void> {
+  await fs.mkdir(dirPath, { recursive: true });
+}
+
+async function writeJsonlFile(filePath: string, jsonlLines: string[]): Promise<void> {
+  const content = jsonlLines.join('\n') + '\n';
+  await fs.writeFile(filePath, content, { encoding: 'utf-8' });
+}
+
+async function getDirectorySizeBytes(dirPath: string): Promise<number> {
+  let total = 0;
+  const entries = await fs.readdir(dirPath, { withFileTypes: true });
+  for (const e of entries) {
+    const full = path.join(dirPath, e.name);
+    if (e.isDirectory()) {
+      total += await getDirectorySizeBytes(full);
+    } else if (e.isFile()) {
+      const st = await fs.stat(full);
+      total += st.size;
+    }
+  }
+  return total;
+}
+
+function computeTargetSteps(trainCount: number, hyper: TradingLoraHyperparams): number {
+  const stepsPerEpoch = Math.max(1, Math.ceil(trainCount / Math.max(1, hyper.batchSize)));
+  return Math.max(1, hyper.epochs * stepsPerEpoch);
+}
+
+/**
+ * Executa um job LoRA (trading) de forma preemptível (slices curtas) via gpu-trainer.
+ * Status e progresso são persistidos no PostgreSQL.
+ */
+export async function processTradingLoraJob(jobId: string): Promise<void> {
+  const db = getDatabase();
+  const job = await getJob(jobId);
+  if (!job) throw new Error('Job LoRA não encontrado');
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') return;
+
+  await updateJobProgress(jobId, { status: 'preparing', progress: 0, currentStep: 0, totalSteps: job.totalSteps ?? null, metrics: job.metrics as TradingLoraMetrics });
+
+  const tenantId = job.tenantId ?? 'default-tenant';
+  const prepared = await prepareDataset(tenantId, undefined);
+  const jobDir = path.join(TRAINING_STORAGE_DIR, 'trading-lora', tenantId, jobId);
+  await ensureDir(jobDir);
+
+  const trainPath = path.join(jobDir, 'train.jsonl');
+  const evalPath = path.join(jobDir, 'eval.jsonl');
+  const outputDir = path.join(jobDir, 'output');
+  await ensureDir(outputDir);
+
+  await writeJsonlFile(trainPath, prepared.trainingData);
+  await writeJsonlFile(evalPath, prepared.validationData);
+
+  const targetSteps = computeTargetSteps(prepared.stats.training, job.hyperparameters as TradingLoraHyperparams);
+  await updateJobProgress(jobId, { status: 'training', progress: 0, currentStep: 0, totalSteps: targetSteps, metrics: job.metrics as TradingLoraMetrics });
+
+  const sliceSteps = 5;
+  let stepsCompleted = 0;
+
+  while (stepsCompleted < targetSteps) {
+    const fresh = await getJob(jobId);
+    if (!fresh) throw new Error('Job LoRA desapareceu');
+    if (fresh.status === 'cancelled') return;
+
+    const gpu = await requestGpu({
+      serviceType: GpuServiceType.TRAINING,
+      endpoint: '/train/lora/slice',
+      method: 'POST',
+      priority: GpuRequestPriority.LOW,
+      timeout: 25000,
+      body: {
+        jobId,
+        baseModel: fresh.baseModel,
+        trainJsonlPath: trainPath,
+        evalJsonlPath: evalPath,
+        outputDir,
+        stepsThisSlice: Math.min(sliceSteps, targetSteps - stepsCompleted),
+        hyperparameters: {
+          epochs: (fresh.hyperparameters as TradingLoraHyperparams).epochs,
+          learningRate: (fresh.hyperparameters as TradingLoraHyperparams).learningRate,
+          batchSize: (fresh.hyperparameters as TradingLoraHyperparams).batchSize,
+        },
+      },
+    });
+
+    const data = gpu.data as { stepsCompleted?: number; adapterPath?: string } | undefined;
+    stepsCompleted = data?.stepsCompleted ?? (stepsCompleted + sliceSteps);
+    const pct = Math.min(99, Math.floor((stepsCompleted / targetSteps) * 100));
+    await updateJobProgress(jobId, { status: stepsCompleted >= targetSteps ? 'validating' : 'training', progress: pct, currentStep: stepsCompleted, totalSteps: targetSteps, metrics: fresh.metrics as TradingLoraMetrics });
+
+    if (data?.adapterPath) {
+      await db.update(schema.tradingLoraJobs)
+        .set({ resultAdapterPath: data.adapterPath })
+        .where(eq(schema.tradingLoraJobs.id, jobId));
+    }
+  }
+
+  const final = await getJob(jobId);
+  const adapterPath = final?.resultAdapterPath;
+  if (!adapterPath) throw new Error('AdapterPath não definido no job LoRA');
+  const adapterSize = await getDirectorySizeBytes(adapterPath);
+
+  await setJobResult(jobId, { adapterPath, adapterSize, metrics: (final?.metrics as TradingLoraMetrics) || {} });
 }
 
 /**

@@ -81,7 +81,7 @@ Alice employs a microservices architecture with 50 containerized services orches
 ### GPU Services (Hetzner GPU Server) - Atualizado 25/12/2025
 - **LLM Inference**: Mixtral 8x7B (MoE ~12B ativos, quantizado 4/5-bit via vLLM) - chat, trading, geração de texto
 - **Image Generation**: FLUX.1 Schnell - geração de imagens
-- **Fine-tuning**: Treinamento de modelos customizados, LoRA para trading BTC (ainda em migração)
+- **Fine-tuning**: Treinamento LoRA via GPU Trainer (prioridade 3) com dataset JSONL persistido e retomada automática
 - **Embeddings Texto**: Qwen3-Embedding-8B (4096 dim) → Qdrant - máxima qualidade
 - **Embeddings Imagem**: OpenCLIP ViT-H/14 (1024 dim) → pgvector - dimensão nativa
 - **ASR**: Canary-1B (NeMo) - transcrição de áudio
@@ -342,7 +342,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.28 - 26 de Dezembro de 2025*
+*Versão: 4.29 - 26 de Dezembro de 2025*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup) - Tor Proxy adicionado 23/12/2025*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*

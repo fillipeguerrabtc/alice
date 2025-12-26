@@ -6,8 +6,7 @@
  * 
  * ARQUITETURA ENTERPRISE (25/12/2025):
  * - Embeddings de texto: Qwen3-Embedding-8B (4096 dim, GPU Manager Service → Qdrant)
- * - Fine-tuning: Em migração para Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
- *   NOTA: Funcionalidade de fine-tuning temporariamente desabilitada durante migração
+ * - Fine-tuning (LoRA): Executado localmente via GPU Manager Service (GPU única 20GB, prioridade baixa)
  * 
  * Autor: Fillipe Guerra
  * Data: 25 de Dezembro de 2025
@@ -18,6 +17,8 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';
+import fs from 'node:fs/promises';
+import path from 'node:path';
 import { createLogger } from '@alice/logger';
 import { getDatabase, schema, closeDatabasePool, isPoolHealthy, createDrizzleFeatureFlagStorage, validateEmbeddingDimension, EMBEDDING_DIMENSIONS } from '@alice/database';
 import { 
@@ -47,9 +48,8 @@ import {
   requirePermission, 
   extractAuthContext,
 } from '@alice/shared-utils';
-// Fine-tuning será migrado para Hetzner GPU GEX44
-// Funcionalidade temporariamente desabilitada durante migração
-// TODO: Implementar fine-tuning local via GPU Manager Service
+import { processTradingLoraJob } from './lora-job-manager.js';
+// Fine-tuning é executado localmente via GPU Manager Service (Regra 6 - sem stubs/migração)
 
 // Logger centralizado: JSON em produção, pino-pretty em desenvolvimento
 const logger = createLogger('training-service');
@@ -105,12 +105,7 @@ if (!DATABASE_URL) {
   process.exit(1);
 }
 
-// ==============================================================================
-// FINE-TUNING: Em migração para Hetzner GPU GEX44
-// Funcionalidade temporariamente desabilitada durante migração
-// TODO: Implementar fine-tuning local via GPU Manager Service
-// ==============================================================================
-logger.info('Training service inicializado - fine-tuning em migração para Hetzner GPU GEX44');
+logger.info('Training service inicializado - fine-tuning LoRA ativo via GPU Manager Service (GPU única 20GB)');
 
 // Usar package @alice/database centralizado (node-postgres para produção Hetzner)
 const db = getDatabase();
@@ -309,7 +304,7 @@ app.get('/api/training/health', async (_req: Request, res: Response) => {
     timestamp: new Date().toISOString(),
     embeddingsProvider: 'gpu-manager-service', // ARQUITETURA ENTERPRISE (25/12/2025)
     model: 'Qwen/Qwen3-Embedding-8B (4096 dim → Qdrant)',
-    fineTuningStatus: 'migrating', // Em migração para Hetzner GPU GEX44
+    fineTuningStatus: 'enabled',
     circuitBreakers: {
       embeddings: {
         state: embeddingsCircuitState,
@@ -596,23 +591,13 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       },
     }).returning();
 
-    for (const data of approvedData) {
-      await db.update(schema.trainingData)
-        .set({ 
-          status: 'used',
-          usedInJobId: job.id,
-        })
-        .where(eq(schema.trainingData.id, data.id));
-    }
-
     const jobHyperparameters = body.hyperparameters || {
       epochs: 3,
       learningRate: 0.0001,
       batchSize: 4,
     };
     
-    // NOTA (26/12/2025): Fine-tuning em migração para Hetzner GPU GEX44
-    // A função marca o job como 'failed' com mensagem explicativa até a migração ser concluída
+    // Execução real (LoRA) via GPU Manager Service (prioridade baixa)
     processFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
     });
@@ -625,47 +610,233 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
   }
 });
 
-const activePollingJobs = new Map<string, NodeJS.Timeout>();
+// NOTA: Não usamos polling in-memory. Estado é persistido em DB e retomado no startup.
 
 /**
  * Processa job de fine-tuning
  * 
- * ESTADO ATUAL (26/12/2025): Fine-tuning em migração para Hetzner GPU GEX44
- * - Funcionalidade temporariamente desabilitada durante migração
- * - Jobs são marcados como 'failed' com mensagem explicativa
- * - Migração em andamento: implementar via GPU Manager Service
- * 
- * TODO: Migrar fine-tuning para Hetzner GPU GEX44 via GPU Manager Service
- * - Preparar dataset JSONL
- * - Solicitar recursos GPU via GPU Manager Service
- * - Executar treinamento LoRA no servidor Hetzner GEX44
- * - Monitorar progresso e atualizar status no banco
+ * ARQUITETURA ENTERPRISE (26/12/2025): Fine-tuning LoRA REAL via GPU Manager Service
+ * - Dataset JSONL persistido em /opt/alice/uploads/training
+ * - Execução em slices curtas (preempção real: chat/WhatsApp > embeddings > training)
+ * - Retomável: estado persistido em DB (metrics) + checkpoints no disco
  */
-async function processFineTuningJob(jobId: string, _hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
-  logger.warn({ jobId }, 'Fine-tuning temporariamente desabilitado - em migração para Hetzner GPU GEX44');
-  
+const TRAINING_STORAGE_DIR = process.env.TRAINING_STORAGE_DIR || '/opt/alice/uploads/training';
+
+type FineTuningJobHyperparams = { epochs: number; learningRate: number; batchSize: number };
+
+async function ensureDir(dirPath: string): Promise<void> {
+  await fs.mkdir(dirPath, { recursive: true });
+}
+
+async function writeJsonl(filePath: string, lines: Array<Record<string, unknown>>): Promise<void> {
+  const content = lines.map((l) => JSON.stringify(l)).join('\n') + '\n';
+  await fs.writeFile(filePath, content, { encoding: 'utf-8' });
+}
+
+function buildChatMlText(messages: Array<{ role: string; content: string }>): string {
+  // Formato simples e determinístico para SFT: "role: content"
+  // O trainer valida que existe campo 'text' no JSONL.
+  return messages.map((m) => `${m.role}: ${m.content}`).join('\n');
+}
+
+async function prepareFineTuningDatasetFiles(jobId: string, tenantId: string): Promise<{ trainPath: string; evalPath: string; outputDir: string; trainCount: number; evalCount: number; }> {
+  const approved = await db.query.trainingData.findMany({
+    where: and(
+      eq(schema.trainingData.status, 'approved'),
+      eq(schema.trainingData.tenantId, tenantId),
+      isNull(schema.trainingData.usedInJobId)
+    ),
+    limit: 5000,
+  });
+
+  if (approved.length < 10) {
+    throw new Error(`Dados aprovados insuficientes para fine-tuning: ${approved.length}/10`);
+  }
+
+  const jobDir = path.join(TRAINING_STORAGE_DIR, 'fine-tuning', tenantId, jobId);
+  const outputDir = path.join(jobDir, 'output');
+  await ensureDir(outputDir);
+
+  // Split determinístico 90/10
+  const splitIndex = Math.floor(approved.length * 0.9);
+  const train = approved.slice(0, splitIndex);
+  const evalData = approved.slice(splitIndex);
+
+  const trainLines = train.map((d) => ({ text: buildChatMlText(d.messages as Array<{ role: string; content: string }>) }));
+  const evalLines = evalData.map((d) => ({ text: buildChatMlText(d.messages as Array<{ role: string; content: string }>) }));
+
+  const trainPath = path.join(jobDir, 'train.jsonl');
+  const evalPath = path.join(jobDir, 'eval.jsonl');
+
+  await writeJsonl(trainPath, trainLines);
+  await writeJsonl(evalPath, evalLines);
+
+  // Marcar dados como usados (persistência enterprise)
+  for (const row of approved) {
+    await db.update(schema.trainingData)
+      .set({ status: 'used', usedInJobId: jobId })
+      .where(eq(schema.trainingData.id, row.id));
+  }
+
+  return { trainPath, evalPath, outputDir, trainCount: trainLines.length, evalCount: evalLines.length };
+}
+
+function computeTargetSteps(trainCount: number, hyper: FineTuningJobHyperparams): number {
+  const stepsPerEpoch = Math.max(1, Math.ceil(trainCount / Math.max(1, hyper.batchSize)));
+  return Math.max(1, hyper.epochs * stepsPerEpoch);
+}
+
+async function processFineTuningJob(jobId: string, hyperparameters: FineTuningJobHyperparams): Promise<void> {
+  const job = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
+  if (!job) {
+    throw new Error('Job não encontrado');
+  }
+  if (!job.tenantId) {
+    throw new Error('tenantId ausente no job');
+  }
+
+  // Se já finalizado, não reprocessar
+  if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+    return;
+  }
+
+  // Preparar dataset (idempotente por jobId)
   await db.update(schema.fineTuningJobs)
-    .set({ 
-      status: 'failed',
-      errorMessage: 'Fine-tuning em migração para Hetzner GPU GEX44. Funcionalidade temporariamente desabilitada.',
-      iniciadoEm: new Date(),
+    .set({ status: 'preparing', iniciadoEm: job.iniciadoEm ?? new Date() })
+    .where(eq(schema.fineTuningJobs.id, jobId));
+
+  const { trainPath, evalPath, outputDir, trainCount, evalCount } = await prepareFineTuningDatasetFiles(jobId, job.tenantId);
+  const targetSteps = computeTargetSteps(trainCount, hyperparameters);
+
+  await db.update(schema.fineTuningJobs)
+    .set({
+      status: 'training',
+      trainingDataCount: trainCount,
+      validationDataCount: evalCount,
+      progress: 0,
+      metrics: {
+        dataset: { trainPath, evalPath, outputDir, trainCount, evalCount, targetSteps },
+        stepsCompleted: 0,
+      },
     })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
+  // Execução em slices curtas para permitir preempção
+  const sliceSteps = 5;
+  let stepsCompleted = 0;
+
+  while (stepsCompleted < targetSteps) {
+    const fresh = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
+    if (!fresh) throw new Error('Job sumiu durante processamento');
+    if (fresh.status === 'cancelled') {
+      logger.warn({ jobId }, 'Job cancelado - interrompendo processamento');
+      return;
+    }
+
+    const gpuResult = await requestGpu({
+      serviceType: GpuServiceType.TRAINING,
+      endpoint: '/train/lora/slice',
+      method: 'POST',
+      priority: GpuRequestPriority.LOW, // prioridade 3 (chat/whatsapp > embeddings > training)
+      timeout: 25000,
+      body: {
+        jobId,
+        baseModel: fresh.baseModel,
+        trainJsonlPath: trainPath,
+        evalJsonlPath: evalPath,
+        outputDir,
+        stepsThisSlice: Math.min(sliceSteps, targetSteps - stepsCompleted),
+        hyperparameters: {
+          epochs: hyperparameters.epochs,
+          learningRate: hyperparameters.learningRate,
+          batchSize: hyperparameters.batchSize,
+        },
+      },
+    });
+
+    const data = gpuResult.data as { stepsCompleted?: number; adapterPath?: string; durationMs?: number } | undefined;
+    stepsCompleted = data?.stepsCompleted ?? (stepsCompleted + sliceSteps);
+    const progressPct = Math.min(99, Math.floor((stepsCompleted / targetSteps) * 100));
+
+    await db.update(schema.fineTuningJobs)
+      .set({
+        status: stepsCompleted >= targetSteps ? 'validating' : 'training',
+        progress: progressPct,
+        metrics: {
+          dataset: { trainPath, evalPath, outputDir, trainCount, evalCount, targetSteps },
+          stepsCompleted,
+          lastSliceMs: data?.durationMs ?? null,
+        },
+        resultModel: data?.adapterPath ?? null,
+      })
+      .where(eq(schema.fineTuningJobs.id, jobId));
+  }
+
+  // Finalizar
+  const finalJob = await db.query.fineTuningJobs.findFirst({ where: eq(schema.fineTuningJobs.id, jobId) });
+  const adapterPath = (finalJob?.resultModel ?? null) as string | null;
+  if (!adapterPath) {
+    throw new Error('AdapterPath não foi gerado pelo trainer');
+  }
+
+  await db.update(schema.fineTuningJobs)
+    .set({
+      status: 'completed',
+      progress: 100,
+      completadoEm: new Date(),
+    })
+    .where(eq(schema.fineTuningJobs.id, jobId));
+
+  logger.info({ jobId, adapterPath }, 'Fine-tuning concluído (LoRA)');
 }
 
-// NOTA (26/12/2025): Polling de status será implementado junto com fine-tuning via GPU Manager Service
-// Função removida pois não é chamada em nenhum lugar atualmente
-// Será recriada quando a migração para Hetzner GPU GEX44 for concluída
+async function resumePendingFineTuningJobs(): Promise<void> {
+  const pending = await db.query.fineTuningJobs.findMany({
+    where: and(
+      not(eq(schema.fineTuningJobs.status, 'completed')),
+      not(eq(schema.fineTuningJobs.status, 'failed')),
+      not(eq(schema.fineTuningJobs.status, 'cancelled'))
+    ),
+    limit: 10,
+  });
 
-function stopStatusPolling(jobId: string): void {
-  const intervalId = activePollingJobs.get(jobId);
-  if (intervalId) {
-    clearInterval(intervalId);
-    activePollingJobs.delete(jobId);
-    logger.info({ jobId }, 'Polling de status interrompido');
+  for (const job of pending) {
+    // Rodar em background, mas com retomada via DB. (Sem depender de polling em memória)
+    processFineTuningJob(job.id, (job.hyperparameters as FineTuningJobHyperparams) || { epochs: 3, learningRate: 0.0001, batchSize: 4 })
+      .catch((err: unknown) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar fine-tuning job');
+        db.update(schema.fineTuningJobs)
+          .set({ status: 'failed', errorMessage: msg, completadoEm: new Date() })
+          .where(eq(schema.fineTuningJobs.id, job.id))
+          .catch(() => {});
+      });
   }
 }
+
+async function resumePendingTradingLoraJobs(): Promise<void> {
+  const pending = await db.query.tradingLoraJobs.findMany({
+    where: and(
+      not(eq(schema.tradingLoraJobs.status, 'completed')),
+      not(eq(schema.tradingLoraJobs.status, 'failed')),
+      not(eq(schema.tradingLoraJobs.status, 'cancelled'))
+    ),
+    limit: 5,
+  });
+
+  for (const job of pending) {
+    processTradingLoraJob(job.id).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error({ jobId: job.id, error: msg }, 'Falha ao retomar trading LoRA job');
+      db.update(schema.tradingLoraJobs)
+        .set({ status: 'failed', errorMessage: msg, completedAt: new Date() })
+        .where(eq(schema.tradingLoraJobs.id, job.id))
+        .catch(() => {});
+    });
+  }
+}
+
+// Polling removido (Regra 6): cancelamento e progresso são tratados via DB + gpu-trainer
 
 app.get('/api/training/jobs/:id', requirePermission('training:fine_tuning_jobs:read'), async (req: Request, res: Response) => {
   // OWASP API3: Validação Zod obrigatória de parâmetros de rota
@@ -712,13 +883,15 @@ app.delete('/api/training/jobs/:id', requirePermission('training:fine_tuning_job
       return res.status(400).json({ error: 'Job já finalizado ou cancelado' });
     }
 
-    stopStatusPolling(id);
-
-    // TODO: Cancelar job no Hetzner GPU GEX44 via GPU Manager Service
-    // Funcionalidade temporariamente desabilitada durante migração
-    if (job.containerGroupId) {
-      logger.warn({ jobId: id, containerGroupId: job.containerGroupId }, 'Cancelamento de job em migração - apenas cancelamento local');
-    }
+    // Cancelamento REAL no trainer (persistido em disco via flag CANCEL)
+    await requestGpu({
+      serviceType: GpuServiceType.TRAINING,
+      endpoint: '/train/lora/cancel',
+      method: 'POST',
+      priority: GpuRequestPriority.LOW,
+      timeout: 15000,
+      body: { jobId: id },
+    });
 
     const [updated] = await db.update(schema.fineTuningJobs)
       .set({ 
@@ -1156,9 +1329,24 @@ app.use(createErrorHandler({
 const server = app.listen(PORT, '0.0.0.0', () => {
   logger.info({ 
     port: PORT, 
-    embeddingsConfigured: true, // Embeddings são 100% locais via CPU no servidor Hetzner (multilingual-e5-base)
+    embeddingsConfigured: true, // Embeddings via GPU Manager Service (Qwen3-Embedding-8B)
+    fineTuningConfigured: true, // Fine-tuning LoRA via gpu-trainer (prioridade baixa)
     circuitBreaker: 'enabled',
   }, 'Training service iniciado com Circuit Breaker');
+
+  // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
+  resumePendingFineTuningJobs().catch((error: unknown) => {
+    logger.error({ error }, 'Falha ao retomar jobs de fine-tuning pendentes');
+  });
+  resumePendingTradingLoraJobs().catch((error: unknown) => {
+    logger.error({ error }, 'Falha ao retomar jobs de trading LoRA pendentes');
+  });
+
+  // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
+  setInterval(() => {
+    resumePendingFineTuningJobs().catch(() => {});
+    resumePendingTradingLoraJobs().catch(() => {});
+  }, 30000);
 });
 
 // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)

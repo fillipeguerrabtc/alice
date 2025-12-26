@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 26 de Dezembro de 2025  
-> **Versão:** 1.5.0 - Arquitetura 2 Servidores (Deploy CX22 + Production GEX44 GPU)  
+> **Versão:** 1.6.0 - Fine-tuning LoRA Enterprise (gpu-trainer)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 

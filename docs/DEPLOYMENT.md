@@ -5,7 +5,7 @@
 
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
-A plataforma Alice é composta por **50 containers** organizados em 7 categorias (45 serviços + 4 GPU + 1 backup):
+A plataforma Alice é composta por **51 containers** organizados em 7 categorias (45 serviços + 5 GPU + 1 backup):
 
 ### Categoria 1: Infraestrutura Core (8 serviços)
 
@@ -553,6 +553,7 @@ O deploy é **100% automático** via GitHub Actions:
 | **Embeddings GPU** | Qwen3 + OpenCLIP (RAG) | RAG não funciona |
 | **FLUX.1 Schnell** | Geração de imagens | Imagens não funcionam |
 | **ASR Canary-1B** | Transcrição de áudio | Áudio não funciona |
+| **GPU Trainer** | Fine-tuning LoRA (prioridade 3) | Fine-tuning não funciona (chat/embeddings continuam) |
 
 **Health Check Completo:**
 - Verifica **6 serviços Hetzner**: Frontend, Auth, Chat, RAG, ERPNext, Grafana

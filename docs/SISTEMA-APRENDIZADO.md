@@ -1,7 +1,7 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.7 - Consolidação Documentação  
+**Versão:** 3.8 - Fine-tuning Enterprise LoRA  
 **Data:** 26 de Dezembro de 2025
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
@@ -27,7 +27,7 @@ A partir de 25/12/2025, a Alice utiliza **arquitetura 100% GPU local via Hetzner
 | **Transcrição de Áudio** | Canary-1B (NeMo) | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **LLM Inference** | **Mixtral 8x7B (vLLM AWQ)** | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Geração de Imagens** | FLUX.1 Schnell | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
-| **Fine-tuning** | LoRA Progressive | - | Hetzner GEX44 (em migração) |
+| **Fine-tuning** | LoRA Progressive (gpu-trainer) | - | GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB) |
 | **Trading BTC** | KuCoin Futures API | - | Hetzner (integrations-service) |
 
 ### GPU Dedicada 24/7 (Hetzner GEX44)
@@ -164,7 +164,7 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 │  • Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant            │
 │  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
 │  • Áudio: Canary-1B + Qwen3 (4096 dim) → Qdrant             │
-│  • Vídeo: Frames OpenCLIP + Transcrição Qwen3               │
+│  • (Nota: vídeo removido - suporte apenas texto/áudio/imagem) │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -185,8 +185,8 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 │              PROGRESSIVE LoRA (A cada 4 dias)               │
 │  • Coleta dados aprovados                                   │
 │  • Gera dataset JSONL                                       │
-│  • Inicia job no Hetzner GPU GEX44 (via GPU Manager)        │
-│  • GPU: RTX 3090/4090/A100                                  │
+│  • Inicia job em slices via GPU Manager (prioridade 3)      │
+│  • GPU: RTX 4000 Ada 20GB (gpu-trainer container)           │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐

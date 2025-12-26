@@ -182,24 +182,71 @@ jobs:
     
     strategy:
       matrix:
-        # NOTA: clip-inference-service removido - migrado 100% para Salad Cloud GPU (19/12/2025)
+        # NOTA: Serviços GPU são buildados aqui também (mesmo workflow) para consistência com docker-compose.prod.yml
         include:
+          # -------------------------------
+          # Microserviços (apps/)
+          # -------------------------------
           - service: api-gateway
             image: api-gateway
+            context: .
+            dockerfile: ./apps/api-gateway/Dockerfile
           - service: auth-service
             image: auth
+            context: .
+            dockerfile: ./apps/auth-service/Dockerfile
           - service: chat-service
             image: chat
+            context: .
+            dockerfile: ./apps/chat-service/Dockerfile
           - service: frontend-service
             image: frontend
+            context: .
+            dockerfile: ./apps/frontend-service/Dockerfile
           - service: integrations-service
             image: integrations
+            context: .
+            dockerfile: ./apps/integrations-service/Dockerfile
           - service: observability-service
             image: observability
+            context: .
+            dockerfile: ./apps/observability-service/Dockerfile
           - service: rag-service
             image: rag
+            context: .
+            dockerfile: ./apps/rag-service/Dockerfile
           - service: training-service
             image: training
+            context: .
+            dockerfile: ./apps/training-service/Dockerfile
+          - service: gpu-manager-service
+            image: gpu-manager
+            context: .
+            dockerfile: ./apps/gpu-manager-service/Dockerfile
+
+          # -------------------------------
+          # Serviços GPU (docker/gpu/)
+          # -------------------------------
+          - service: gpu-mixtral
+            image: mixtral-vllm
+            context: .
+            dockerfile: ./docker/gpu/mixtral-vllm/Dockerfile
+          - service: gpu-embeddings
+            image: embeddings-gpu
+            context: .
+            dockerfile: ./docker/gpu/embeddings-gpu/Dockerfile
+          - service: gpu-flux
+            image: flux-schnell
+            context: .
+            dockerfile: ./docker/gpu/flux-schnell/Dockerfile
+          - service: gpu-asr
+            image: asr-canary
+            context: .
+            dockerfile: ./docker/gpu/asr-canary/Dockerfile
+          - service: gpu-trainer
+            image: lora-trainer
+            context: .
+            dockerfile: ./docker/gpu/lora-trainer/Dockerfile
     
     steps:
       # IMPORTANTE: Checkout da TAG para garantir reprodutibilidade de releases
@@ -258,8 +305,8 @@ jobs:
       - name: Build e Push
         uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
         with:
-          context: .
-          file: ./apps/${{ matrix.service }}/Dockerfile
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: |
             ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ needs.create-release.outputs.version }}

@@ -982,6 +982,9 @@ services:
     read_only: true
     tmpfs:
       - /tmp:mode=1777,size=64M
+    volumes:
+      # Persistência de datasets/checkpoints/adapters de fine-tuning (Regra 6)
+      - /opt/alice/uploads:/opt/alice/uploads:rw
     # REGRA 6: env_file carrega CORS_ORIGINS do .env.prod (obrigatório em produção)
     # Docker Compose v2+ garante que variáveis do .env.prod estejam disponíveis
     # para expansão em environment: e uso no código Node.js
@@ -3217,6 +3220,53 @@ services:
         max-file: "3"
 
   # =============================================================================
+  # LoRA Trainer - Fine-tuning (GPU única 20GB, prioridade baixa)
+  # =============================================================================
+  gpu-trainer:
+    image: ${IMAGE_PREFIX}-lora-trainer:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: gpu-trainer
+    restart: unless-stopped
+    runtime: nvidia
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - DEVICE=cuda
+      - PORT=8000
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
+      # Diretório persistente para datasets/checkpoints/adapters
+      - STORAGE_DIR=/opt/alice/uploads/training
+    volumes:
+      - /opt/alice/uploads:/opt/alice/uploads:rw
+    ports:
+      - "127.0.0.1:8004:8000"  # Apenas localhost
+    networks:
+      - alice-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+        limits:
+          memory: 18G
+          cpus: '4.0'
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # =============================================================================
   # GPU Manager Service - Gerenciamento Centralizado de Requisições GPU
   # =============================================================================
   gpu-manager:
@@ -3232,6 +3282,7 @@ services:
       - MIXTRAL_GPU_URL=${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
       # GPU Manager Service gerencia embeddings localmente (Hetzner GEX44)
       # URL interna: http://gpu-embeddings:8000 (não precisa de secret)
+      - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
       - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - NODE_ENV=production
@@ -3249,6 +3300,8 @@ services:
       gpu-flux:
         condition: service_healthy
       gpu-asr:
+        condition: service_healthy
+      gpu-trainer:
         condition: service_healthy
     deploy:
       resources:

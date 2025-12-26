@@ -23,8 +23,8 @@ import { createServer } from 'http';
 import cors from 'cors';
 import compression from 'compression';
 import { 
-  createCircuitBreaker, 
   CIRCUIT_BREAKER_PRESETS,
+  createProtectedFetch,
   getRedisClient,
   isRedisAvailable,
   createAlicePrometheus,
@@ -43,6 +43,7 @@ import {
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { z } from 'zod';
+import { randomUUID } from 'crypto';
 
 const execAsync = promisify(exec);
 const logger = createLogger('gpu-manager');
@@ -95,7 +96,7 @@ export enum GpuRequestPriority {
   CRITICAL = 10,  // Chat em tempo real
   HIGH = 8,       // Trading (time-sensitive)
   MEDIUM = 5,     // Embeddings (RAG)
-  LOW = 2,        // Geração de imagens, ASR
+  LOW = 2,        // Geração de imagens, ASR, Treinamento (LoRA)
 }
 
 /** Tipos de serviços GPU */
@@ -104,6 +105,7 @@ export enum GpuServiceType {
   EMBEDDINGS = 'embeddings',     // Qwen3 + OpenCLIP
   FLUX = 'flux',                 // Geração de imagens
   ASR = 'asr',                   // Transcrição de áudio
+  TRAINING = 'training',         // Fine-tuning LoRA (GPU dedicada 20GB - prioridade baixa)
 }
 
 /** URLs dos serviços GPU (container names na rede Docker) */
@@ -113,6 +115,7 @@ const GPU_SERVICE_URLS = {
   [GpuServiceType.EMBEDDINGS]: process.env.EMBEDDINGS_GPU_URL || 'http://gpu-embeddings:8000',
   [GpuServiceType.FLUX]: process.env.FLUX_GPU_URL || 'http://gpu-flux:8000',
   [GpuServiceType.ASR]: process.env.ASR_GPU_URL || 'http://gpu-asr:8000',
+  [GpuServiceType.TRAINING]: process.env.TRAINING_GPU_URL || 'http://gpu-trainer:8000',
 };
 
 /** VRAM necessária por serviço (GB) */
@@ -122,6 +125,7 @@ const VRAM_REQUIREMENTS: Record<GpuServiceType, number> = {
   [GpuServiceType.EMBEDDINGS]: 16,   // ~14-16GB (reduzido de 18GB)
   [GpuServiceType.FLUX]: 12,         // ~10-12GB (reduzido de 14GB)
   [GpuServiceType.ASR]: 3,           // ~2-4GB (mantido)
+  [GpuServiceType.TRAINING]: 18,     // LoRA/QLoRA Mixtral: alto consumo - executar apenas quando houver VRAM
 };
 
 /** VRAM total disponível (20GB para RTX 4000 Ada - Hetzner GEX44) */
@@ -135,6 +139,18 @@ const VRAM_SAFETY_MARGIN_GB = 2;
 const REDIS_QUEUE_PREFIX = 'alice:gpu:queue';
 const REDIS_ACTIVE_PREFIX = 'alice:gpu:active';
 // BUG FIX 26/12/2025: REDIS_METRICS_PREFIX removido - métricas via Prometheus, não Redis
+
+/** Lock global para garantir execução serial em GPU única (VRAM compartilhada) */
+const REDIS_GPU_LOCK_KEY = 'alice:gpu:lock';
+
+/** Score composto: prioridade (dominante) + FIFO dentro da prioridade (mais antigo primeiro via -createdAt) */
+const PRIORITY_SCORE_MULTIPLIER = 10_000_000_000_000; // 1e13 (seguro dentro de Number.MAX_SAFE_INTEGER)
+
+type GpuLockValue = {
+  requestId: string;
+  serviceType: GpuServiceType;
+  acquiredAt: number;
+};
 
 // ============================================================================
 // TIPOS E INTERFACES
@@ -177,52 +193,79 @@ interface VramStatus {
 // CIRCUIT BREAKERS
 // ============================================================================
 
-const circuitBreakers = {
-  [GpuServiceType.MIXTRAL]: createCircuitBreaker(
-    async () => {
-      const url = GPU_SERVICE_URLS[GpuServiceType.MIXTRAL];
-      const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
-    },
-    {
-      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
-      name: 'gpu-mixtral',
-    }
-  ),
-  [GpuServiceType.EMBEDDINGS]: createCircuitBreaker(
-    async () => {
-      const url = GPU_SERVICE_URLS[GpuServiceType.EMBEDDINGS];
-      const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
-    },
-    {
-      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
-      name: 'gpu-embeddings',
-    }
-  ),
-  [GpuServiceType.FLUX]: createCircuitBreaker(
-    async () => {
-      const url = GPU_SERVICE_URLS[GpuServiceType.FLUX];
-      const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
-    },
-    {
-      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
-      name: 'gpu-flux',
-    }
-  ),
-  [GpuServiceType.ASR]: createCircuitBreaker(
-    async () => {
-      const url = GPU_SERVICE_URLS[GpuServiceType.ASR];
-      const response = await fetch(`${url}/health`, { signal: AbortSignal.timeout(5000) });
-      if (!response.ok) throw new Error(`Health check failed: ${response.status}`);
-    },
-    {
-      ...CIRCUIT_BREAKER_PRESETS.gpuManager,
-      name: 'gpu-asr',
-    }
-  ),
-};
+/**
+ * Circuit breakers DEVEM proteger as CHAMADAS REAIS aos serviços GPU (não apenas /health).
+ * Bug 1: remover breaker.fire() e usar fetch() direto elimina fail-fast/backpressure.
+ */
+const gpuServiceClients = {
+  [GpuServiceType.MIXTRAL]: createProtectedFetch({
+    name: 'gpu-mixtral',
+    ...CIRCUIT_BREAKER_PRESETS.mixtralLLM,
+  }),
+  [GpuServiceType.EMBEDDINGS]: createProtectedFetch({
+    name: 'gpu-embeddings',
+    ...CIRCUIT_BREAKER_PRESETS.embeddingsGPU,
+  }),
+  [GpuServiceType.FLUX]: createProtectedFetch({
+    name: 'gpu-flux',
+    ...CIRCUIT_BREAKER_PRESETS.fluxImageGen,
+  }),
+  [GpuServiceType.ASR]: createProtectedFetch({
+    name: 'gpu-asr',
+    ...CIRCUIT_BREAKER_PRESETS.asrCanary,
+  }),
+  [GpuServiceType.TRAINING]: createProtectedFetch({
+    name: 'gpu-trainer',
+    ...CIRCUIT_BREAKER_PRESETS.gpuManager, // timeout alto, mas slices devem ser curtas (preemptível)
+  }),
+} as const;
+
+const protectedFetchByServiceType = {
+  [GpuServiceType.MIXTRAL]: gpuServiceClients[GpuServiceType.MIXTRAL].fetch,
+  [GpuServiceType.EMBEDDINGS]: gpuServiceClients[GpuServiceType.EMBEDDINGS].fetch,
+  [GpuServiceType.FLUX]: gpuServiceClients[GpuServiceType.FLUX].fetch,
+  [GpuServiceType.ASR]: gpuServiceClients[GpuServiceType.ASR].fetch,
+  [GpuServiceType.TRAINING]: gpuServiceClients[GpuServiceType.TRAINING].fetch,
+} as const;
+
+async function tryAcquireGpuLock(serviceType: GpuServiceType, requestId: string, ttlMs: number): Promise<boolean> {
+  const redis = getRedisClient();
+  if (!redis) {
+    throw new Error('Redis não disponível - lock GPU é obrigatório');
+  }
+  const value: GpuLockValue = { requestId, serviceType, acquiredAt: Date.now() };
+  const result = await redis.set(REDIS_GPU_LOCK_KEY, JSON.stringify(value), { NX: true, PX: ttlMs });
+  return result === 'OK';
+}
+
+async function releaseGpuLockIfOwned(requestId: string): Promise<void> {
+  const redis = getRedisClient();
+  if (!redis) return;
+
+  // Segurança enterprise: remover lock apenas se o owner (requestId) bater.
+  const lua = `
+    local key = KEYS[1]
+    local reqId = ARGV[1]
+    local v = redis.call("GET", key)
+    if not v then
+      return 0
+    end
+    local ok, decoded = pcall(cjson.decode, v)
+    if not ok then
+      return 0
+    end
+    if decoded["requestId"] == reqId then
+      return redis.call("DEL", key)
+    end
+    return 0
+  `;
+
+  try {
+    await redis.eval(lua, { keys: [REDIS_GPU_LOCK_KEY], arguments: [requestId] });
+  } catch (error) {
+    logger.error({ error, requestId }, 'Erro ao liberar lock GPU');
+  }
+}
 
 // ============================================================================
 // MONITORAMENTO DE VRAM
@@ -308,9 +351,12 @@ async function enqueueRequest(request: GpuRequest): Promise<void> {
     JSON.stringify(request)
   );
   
-  // Adicionar à fila priorizada (sorted set: score = prioridade, value = requestId)
+  // Adicionar à fila priorizada (sorted set)
+  // - Prioridade domina (CRITICAL > HIGH > MEDIUM > LOW)
+  // - Dentro da mesma prioridade: FIFO (mais antigo primeiro)
+  // Nota: zPopMax retorna maior score, então usamos -createdAt para FIFO.
   await redis.zAdd(queueKey, {
-    score: request.priority,
+    score: (request.priority * PRIORITY_SCORE_MULTIPLIER) - request.createdAt,
     value: request.id,
   });
   
@@ -403,57 +449,38 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const startTime = Date.now();
   const serviceType = request.serviceType;
   const url = GPU_SERVICE_URLS[serviceType];
-  const circuitBreaker = circuitBreakers[serviceType];
+  const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
-    // BUG FIX 25/12/2025: Opossum usa .opened (boolean) não .state === 'OPEN'
-    // Verificar circuit breaker
-    if (circuitBreaker.opened) {
-      throw new Error(`Circuit breaker OPEN para ${serviceType}`);
+    const timeoutMs = request.timeout || 60000; // 60s padrão
+    const response = await protectedFetch(`${url}${request.endpoint}`, {
+      method: request.method,
+      headers: {
+        // Só setar JSON quando tiver body - evita bloquear endpoints que aceitam outros content-types
+        ...(request.method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
+        ...request.headers,
+      },
+      body: request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
+      timeoutMs,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`GPU service error: ${response.status} - ${errorText}`);
     }
-    
-    // Fazer requisição
-    const controller = new AbortController();
-    const timeout = request.timeout || 60000; // 60s padrão
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
-    try {
-      // BUG FIX 26/12/2025: Circuit breaker fire() não pode receber nova função
-      // O circuit breaker protege health check, não a chamada de API
-      // Fazer fetch direto com AbortController para timeout
-      const response = await fetch(`${url}${request.endpoint}`, {
-        method: request.method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...request.headers,
-        },
-        body: request.method !== 'GET' && request.body ? JSON.stringify(request.body) : undefined,
-        signal: controller.signal,
-      });
-      
-      clearTimeout(timeoutId);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`GPU service error: ${response.status} - ${errorText}`);
-      }
-      
-      const data = await response.json();
-      const latencyMs = Date.now() - startTime;
-      
-      // Obter VRAM atual
-      const vramStatus = await getVramStatus();
-      
-      return {
-        success: true,
-        data,
-        latencyMs,
-        vramUsedGB: vramStatus.usedGB,
-      };
-    } catch (error) {
-      clearTimeout(timeoutId);
-      throw error;
-    }
+
+    const data = await response.json();
+    const latencyMs = Date.now() - startTime;
+
+    // Obter VRAM atual
+    const vramStatus = await getVramStatus();
+
+    return {
+      success: true,
+      data,
+      latencyMs,
+      vramUsedGB: vramStatus.usedGB,
+    };
   } catch (error) {
     const latencyMs = Date.now() - startTime;
     logger.error({
@@ -503,70 +530,90 @@ async function startQueueWorker(): Promise<void> {
   isWorkerRunning = true;
   logger.info('Iniciando worker de fila GPU');
   
-  // BUG FIX 25/12/2025: Processar cada tipo de serviço de forma independente e paralela
-  // Evita head-of-line blocking onde requisições longas bloqueiam outros tipos de serviço
-  const processServiceType = async (serviceType: GpuServiceType): Promise<void> => {
+  // ARQUITETURA ENTERPRISE (26/12/2025):
+  // GPU única (VRAM compartilhada) => execução SERIAL com lock global + prioridade global:
+  // 1) MIXTRAL (chat/WhatsApp inferência)
+  // 2) EMBEDDINGS
+  // 3) Demais (ASR/FLUX)
+  const servicePriorityOrder: GpuServiceType[] = [
+    GpuServiceType.MIXTRAL,
+    GpuServiceType.EMBEDDINGS,
+    GpuServiceType.ASR,
+    GpuServiceType.FLUX,
+    GpuServiceType.TRAINING,
+  ];
+
+  const processNextRequest = async (): Promise<void> => {
     try {
-      // Verificar se há requisições na fila
-      const request = await dequeueRequest(serviceType);
-      if (!request) {
-        return;
+      // Se já existe lock GPU, não iniciar nova execução
+      const redis = getRedisClient();
+      if (!redis) {
+        throw new Error('Redis não disponível - worker GPU exige Redis');
       }
-      
-      // Verificar VRAM disponível
-      const vramStatus = await getVramStatus();
-      if (!hasEnoughVram(serviceType, vramStatus)) {
-        logger.warn({
-          serviceType,
-          requiredGB: VRAM_REQUIREMENTS[serviceType],
-          availableGB: vramStatus.freeGB,
-        }, 'VRAM insuficiente, reenfileirando requisição');
-        
-        // Reenfileirar com prioridade reduzida
-        request.priority = Math.max(1, request.priority - 1);
-        await enqueueRequest(request);
-        return;
-      }
-      
-      // Marcar serviço como ativo
-      await markServiceActive(serviceType, request.id);
-      
-      try {
-        // Processar requisição
-        const response = await processGpuRequest(request);
-        
-        // Armazenar resultado no Redis (para polling)
-        // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
-        const redis = getRedisClient();
-        if (redis) {
+      const lockExists = await redis.exists(REDIS_GPU_LOCK_KEY);
+      if (lockExists) return;
+
+      // Buscar a próxima requisição respeitando ordem global de prioridade
+      for (const serviceType of servicePriorityOrder) {
+        const request = await dequeueRequest(serviceType);
+        if (!request) continue;
+
+        // Tentar adquirir lock (TTL = timeout + margem)
+        const timeoutMs = request.timeout || 60000;
+        const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000); // max 5 min
+        const acquired = await tryAcquireGpuLock(serviceType, request.id, lockTtlMs);
+        if (!acquired) {
+          // Outra execução ganhou o lock; reenfileirar e sair
+          await enqueueRequest(request);
+          return;
+        }
+
+        try {
+          // Verificar VRAM disponível (evita iniciar serviço que não cabe no momento)
+          const vramStatus = await getVramStatus();
+          if (!hasEnoughVram(serviceType, vramStatus)) {
+            logger.warn({
+              requestId: request.id,
+              serviceType,
+              requiredGB: VRAM_REQUIREMENTS[serviceType],
+              availableGB: vramStatus.freeGB,
+            }, 'VRAM insuficiente, reenfileirando requisição');
+
+            // Reenfileirar sem degradar prioridade global do request original
+            await enqueueRequest(request);
+            return;
+          }
+
+          // Marcar serviço como ativo
+          await markServiceActive(serviceType, request.id);
+
+          // Processar requisição
+          const response = await processGpuRequest(request);
+
+          // Armazenar resultado no Redis (para polling)
           const resultKey = `${REDIS_QUEUE_PREFIX}:result:${request.id}`;
           await redis.setEx(resultKey, 300, JSON.stringify(response)); // 5 min TTL
-        } else {
-          logger.warn({ requestId: request.id }, 'Redis não disponível - resultado não foi armazenado para polling');
+
+          logger.info({
+            requestId: request.id,
+            serviceType,
+            success: response.success,
+            latencyMs: response.latencyMs,
+          }, 'Requisição GPU processada');
+          return;
+        } finally {
+          await markServiceInactive(serviceType);
+          await releaseGpuLockIfOwned(request.id);
         }
-        
-        logger.info({
-          requestId: request.id,
-          serviceType,
-          success: response.success,
-          latencyMs: response.latencyMs,
-        }, 'Requisição GPU processada');
-      } finally {
-        // Marcar serviço como inativo
-        await markServiceInactive(serviceType);
       }
     } catch (error) {
-      logger.error({ error, serviceType }, 'Erro ao processar requisição GPU para tipo de serviço');
+      logger.error({ error }, 'Erro ao processar próxima requisição GPU');
     }
   };
 
   const processQueue = async () => {
     try {
-      // BUG FIX 25/12/2025: Processar todos os tipos de serviço em paralelo
-      // Permite que MIXTRAL (30s) não bloqueie EMBEDDINGS, FLUX ou ASR
-      // Cada tipo de serviço é processado independentemente, permitindo paralelismo real
-      const serviceTypes = Object.values(GpuServiceType);
-      await Promise.all(serviceTypes.map(serviceType => processServiceType(serviceType)));
+      await processNextRequest();
     } catch (error) {
       logger.error({ error }, 'Erro no worker de fila GPU');
     }
@@ -656,7 +703,7 @@ app.post('/api/gpu/queue', requireInternalAuth, asyncHandler(async (req: Request
   });
   
   const body = schema.parse(req.body);
-  const requestId = `gpu-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  const requestId = `gpu-${randomUUID()}`;
   
   const request: GpuRequest = {
     id: requestId,
@@ -728,12 +775,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   }
   
   const url = GPU_SERVICE_URLS[serviceType];
-  const circuitBreaker = circuitBreakers[serviceType];
-  
-  // Verificar circuit breaker
-  if (circuitBreaker.opened) {
-    return res.status(503).json({ error: 'Circuit breaker OPEN' });
-  }
+  const protectedFetch = protectedFetchByServiceType[serviceType];
   
   // Verificar VRAM disponível
   const vramStatus = await getVramStatus();
@@ -746,76 +788,80 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   }
   
   try {
-    const controller = new AbortController();
-    const timeout = body.timeout || 60000;
-    const timeoutId = setTimeout(() => controller.abort(), timeout);
-    
-    // BUG FIX 26/12/2025: Fazer fetch direto (circuit breaker protege health check apenas)
-    const response = await fetch(`${url}${body.endpoint}`, {
-      method: body.method || 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...body.headers,
-      },
-      body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
-      signal: controller.signal,
-    });
-    
-    clearTimeout(timeoutId);
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      return res.status(response.status).json({ error: errorText });
+    const streamingRequestId = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+    const timeoutMs = body.timeout || 60000;
+
+    // Streaming também precisa de lock global (GPU única) para garantir prioridade e VRAM
+    const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000);
+    const acquired = await tryAcquireGpuLock(serviceType, streamingRequestId, lockTtlMs);
+    if (!acquired) {
+      return res.status(503).json({ error: 'GPU ocupada - tente novamente' });
     }
-    
-    if (!response.body) {
-      return res.status(500).json({ error: 'Resposta de streaming não contém body' });
-    }
-    
-    // ARQUITETURA DE STREAMING (25/12/2025):
-    // 1. GPU Manager Service faz fetch do gpu-mixtral e recebe Response com stream
-    // 2. GPU Manager Service faz proxy do stream para sua resposta HTTP (res.write)
-    // 3. Chat-service faz fetch do endpoint /api/gpu/stream e recebe Response com stream
-    // 4. Chat-service faz proxy do stream para sua resposta HTTP (res.write)
-    //
-    // Não há conflito porque são duas requisições HTTP diferentes:
-    // - GPU Manager Service consome body do Response do fetch do gpu-mixtral (linha 794)
-    // - Chat-service consome body do Response do fetch do endpoint /api/gpu/stream (linha 912 em chat-service)
-    // São Responses diferentes, então não há conflito de body consumido.
-    //
-    // O endpoint faz proxy do stream do gpu-mixtral para sua resposta HTTP.
-    // O chat-service faz fetch do endpoint e recebe o stream na resposta HTTP.
-    // Então o chat-service pode ler o body do Response do fetch e fazer proxy normalmente.
-    
-    // Proxy do stream diretamente para o cliente (chat-service fará fetch deste endpoint e fará proxy)
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders(); // BUG FIX 25/12/2025: Enviar headers imediatamente para garantir que sejam enviados
-    
-    // Pipe do stream (proxy direto)
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    
+
+    await markServiceActive(serviceType, streamingRequestId);
+
     try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        // BUG FIX 25/12/2025: Stream body é one-time-readable - pipe direto para res
-        res.write(decoder.decode(value, { stream: true }));
+      const response = await protectedFetch(`${url}${body.endpoint}`, {
+        method: body.method || 'POST',
+        headers: {
+          ...(body.method !== 'GET' ? { 'Content-Type': 'application/json' } : {}),
+          ...body.headers,
+        },
+        body: body.method !== 'GET' && body.body ? JSON.stringify(body.body) : undefined,
+        timeoutMs,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        res.status(response.status).json({ error: errorText });
+        return;
       }
-      
-      res.end();
-    } catch (error) {
-      logger.error({ error }, 'Erro ao fazer proxy de stream');
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Erro ao fazer proxy de stream' });
-      } else {
+
+      if (!response.body) {
+        res.status(500).json({ error: 'Resposta de streaming não contém body' });
+        return;
+      }
+
+      // ARQUITETURA DE STREAMING (25/12/2025):
+      // 1. GPU Manager Service faz fetch do gpu-mixtral e recebe Response com stream
+      // 2. GPU Manager Service faz proxy do stream para sua resposta HTTP (res.write)
+      // 3. Chat-service faz fetch do endpoint /api/gpu/stream e recebe Response com stream
+      // 4. Chat-service faz proxy do stream para sua resposta HTTP (res.write)
+      //
+      // São duas requisições HTTP diferentes => não há conflito de body consumido.
+
+      // Proxy do stream diretamente para o cliente (chat-service fará fetch deste endpoint e fará proxy)
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      // Pipe do stream (proxy direto)
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          res.write(decoder.decode(value, { stream: true }));
+        }
+
         res.end();
+      } catch (error) {
+        logger.error({ error }, 'Erro ao fazer proxy de stream');
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Erro ao fazer proxy de stream' });
+        } else {
+          res.end();
+        }
+      } finally {
+        reader.releaseLock();
       }
     } finally {
-      reader.releaseLock();
+      await markServiceInactive(serviceType);
+      await releaseGpuLockIfOwned(streamingRequestId);
     }
   } catch (error) {
     logger.error({ error }, 'Erro na requisição streaming');

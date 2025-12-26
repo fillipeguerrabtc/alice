@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 26 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.13 - Consolidação Documentação + Correção Erros TypeScript
+> **Versão:** 4.14 - Fine-tuning Enterprise LoRA Real (GPU Trainer)
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 50 (produção: 45 serviços + 4 GPU + 1 backup) |
+| **Total de Containers** | 51 (produção: 45 serviços + 5 GPU + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -96,7 +96,7 @@
 | 5 | Training | `apps/training-service` | alice-training | 3004 | Node.js, fine-tuning, SemHash |
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
-| 43-47 | GPU Services | `gpu-manager-service`, `gpu-mixtral`, `gpu-embeddings`, `gpu-flux`, `gpu-asr` | - | - | GPU Manager Service + 4 serviços GPU locais (Hetzner GEX44) - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B, LLM: Mixtral 8x7B |
+| 43-48 | GPU Services | `gpu-manager-service`, `gpu-mixtral`, `gpu-embeddings`, `gpu-flux`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 5 serviços GPU locais (Hetzner GEX44) - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B, LLM: Mixtral 8x7B, **Fine-tuning LoRA (prioridade 3)** |
 | 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
 
 > **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
