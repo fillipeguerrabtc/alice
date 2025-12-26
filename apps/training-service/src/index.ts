@@ -611,7 +611,9 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
       batchSize: 4,
     };
     
-    _startFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
+    // NOTA (26/12/2025): Fine-tuning em migração para Hetzner GPU GEX44
+    // A função marca o job como 'failed' com mensagem explicativa até a migração ser concluída
+    processFineTuningJob(job.id, jobHyperparameters).catch((err: unknown) => {
       logger.error({ error: err, jobId: job.id }, 'Job de fine-tuning falhou');
     });
 
@@ -625,10 +627,21 @@ app.post('/api/training/jobs', requirePermission('training:fine_tuning_jobs:star
 
 const activePollingJobs = new Map<string, NodeJS.Timeout>();
 
-// TODO: Migrar fine-tuning para Hetzner GPU GEX44 via GPU Manager Service
-// Funcionalidade temporariamente desabilitada durante migração
-// BUG FIX 26/12/2025: Prefixado com _ - função em migração para Hetzner GPU
-async function _startFineTuningJob(jobId: string, _hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
+/**
+ * Processa job de fine-tuning
+ * 
+ * ESTADO ATUAL (26/12/2025): Fine-tuning em migração para Hetzner GPU GEX44
+ * - Funcionalidade temporariamente desabilitada durante migração
+ * - Jobs são marcados como 'failed' com mensagem explicativa
+ * - Migração em andamento: implementar via GPU Manager Service
+ * 
+ * TODO: Migrar fine-tuning para Hetzner GPU GEX44 via GPU Manager Service
+ * - Preparar dataset JSONL
+ * - Solicitar recursos GPU via GPU Manager Service
+ * - Executar treinamento LoRA no servidor Hetzner GEX44
+ * - Monitorar progresso e atualizar status no banco
+ */
+async function processFineTuningJob(jobId: string, _hyperparameters: { epochs: number; learningRate: number; batchSize: number }): Promise<void> {
   logger.warn({ jobId }, 'Fine-tuning temporariamente desabilitado - em migração para Hetzner GPU GEX44');
   
   await db.update(schema.fineTuningJobs)
@@ -639,24 +652,11 @@ async function _startFineTuningJob(jobId: string, _hyperparameters: { epochs: nu
     })
     .where(eq(schema.fineTuningJobs.id, jobId));
 
-  // TODO: Implementar fine-tuning local via GPU Manager Service
-  // - Preparar dataset JSONL
-  // - Solicitar recursos GPU via GPU Manager Service
-  // - Executar treinamento LoRA no servidor Hetzner GEX44
-  // - Monitorar progresso e atualizar status no banco
 }
 
-// TODO: Migrar polling de status para Hetzner GPU GEX44
-// Funcionalidade temporariamente desabilitada durante migração
-// BUG FIX 26/12/2025: Prefixado com _ - função em migração para Hetzner GPU
-function _startStatusPolling(jobId: string, _containerGroupName: string): void {
-  logger.warn({ jobId }, 'Polling de status temporariamente desabilitado - em migração para Hetzner GPU GEX44');
-  
-  // TODO: Implementar polling de status para fine-tuning local
-  // - Verificar status do job via GPU Manager Service
-  // - Atualizar progresso no banco de dados
-  // - Parar polling quando job completar/falhar/cancelar
-}
+// NOTA (26/12/2025): Polling de status será implementado junto com fine-tuning via GPU Manager Service
+// Função removida pois não é chamada em nenhum lugar atualmente
+// Será recriada quando a migração para Hetzner GPU GEX44 for concluída
 
 function stopStatusPolling(jobId: string): void {
   const intervalId = activePollingJobs.get(jobId);

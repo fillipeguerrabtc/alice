@@ -858,9 +858,16 @@ app.get('/api/gpu/queue/status', requireInternalAuth, asyncHandler(async (req: R
 
 // Métricas Prometheus
 const prometheus = createAlicePrometheus({ serviceName: 'gpu-manager' });
-app.get('/metrics', async (req: Request, res: Response) => {
-  res.set('Content-Type', 'text/plain');
-  res.send(await prometheus.registry.metrics());
+// CORREÇÃO 26/12/2025: Usar contentType correto do registry (application/openmetrics-text)
+// Padrão consistente com packages/shared-utils/src/prometheus.ts linha 702
+app.get('/metrics', async (_req: Request, res: Response) => {
+  try {
+    res.set('Content-Type', prometheus.registry.contentType);
+    res.end(await prometheus.registry.metrics());
+  } catch (error) {
+    logger.error({ error }, 'Erro ao gerar métricas Prometheus');
+    res.status(500).end('Erro ao gerar métricas');
+  }
 });
 
 // Error handlers
