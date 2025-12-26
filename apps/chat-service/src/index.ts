@@ -3029,7 +3029,19 @@ wss.on('connection', (ws, req) => {
           fullResponse = await proxyStreamFromGpuManager(
             llmMessages,
             (content) => {
-              ws.send(JSON.stringify({ type: 'stream', data: content }));
+              // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
+              // Se WebSocket estiver fechado durante streaming, erro não deve interromper processamento do stream
+              try {
+                if (ws.readyState === ws.OPEN) {
+                  ws.send(JSON.stringify({ type: 'stream', data: content }));
+                } else {
+                  logger.debug({ conversationId, readyState: ws.readyState }, 'WebSocket fechado durante streaming - ignorando chunk');
+                }
+              } catch (sendError) {
+                // Cliente desconectado - logar mas não interromper processamento do stream
+                // onDone callback ainda será executado para salvar mensagem completa no banco
+                logger.warn({ error: sendError, conversationId }, 'Erro ao enviar chunk via WebSocket - cliente pode ter desconectado');
+              }
             },
             async (responseText: string) => {
               // BUG FIX 25/12/2025: Usar responseText do parâmetro ao invés de fullResponse do closure
@@ -3056,17 +3068,28 @@ wss.on('connection', (ws, req) => {
               
               const assistantMsg = inserted[0];
 
-              ws.send(JSON.stringify({ 
-                type: 'complete', 
-                data: assistantMsg,
-                metrics: {
-                  ragLatencyMs: ragLatency,
-                  llmLatencyMs: llmLatency,
-                  totalLatencyMs: totalLatency,
-                  usedRag: !!ragResult?.context,
-                  ragChunks: ragResult?.sources?.length || 0,
-                },
-              }));
+              // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
+              // Mesmo se cliente desconectou, mensagem já foi salva no banco (integridade de dados)
+              try {
+                if (ws.readyState === ws.OPEN) {
+                  ws.send(JSON.stringify({ 
+                    type: 'complete', 
+                    data: assistantMsg,
+                    metrics: {
+                      ragLatencyMs: ragLatency,
+                      llmLatencyMs: llmLatency,
+                      totalLatencyMs: totalLatency,
+                      usedRag: !!ragResult?.context,
+                      ragChunks: ragResult?.sources?.length || 0,
+                    },
+                  }));
+                } else {
+                  logger.debug({ conversationId, readyState: ws.readyState }, 'WebSocket fechado ao enviar mensagem completa - mensagem salva no banco');
+                }
+              } catch (sendError) {
+                // Cliente desconectado - mensagem já foi salva no banco, apenas logar
+                logger.warn({ error: sendError, conversationId, messageId: assistantMsg.id }, 'Erro ao enviar mensagem completa via WebSocket - mensagem salva no banco');
+              }
               
               logger.info({
                 conversationId,
@@ -3384,7 +3407,19 @@ wss.on('connection', (ws, req) => {
           fullResponse = await proxyStreamFromGpuManager(
             llmMessages,
             (content) => {
-              ws.send(JSON.stringify({ type: 'stream', data: content }));
+              // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
+              // Se WebSocket estiver fechado durante streaming, erro não deve interromper processamento do stream
+              try {
+                if (ws.readyState === ws.OPEN) {
+                  ws.send(JSON.stringify({ type: 'stream', data: content }));
+                } else {
+                  logger.debug({ conversationId: mediaMessage.conversationId, readyState: ws.readyState }, 'WebSocket fechado durante streaming (mídia) - ignorando chunk');
+                }
+              } catch (sendError) {
+                // Cliente desconectado - logar mas não interromper processamento do stream
+                // onDone callback ainda será executado para salvar mensagem completa no banco
+                logger.warn({ error: sendError, conversationId: mediaMessage.conversationId }, 'Erro ao enviar chunk via WebSocket (mídia) - cliente pode ter desconectado');
+              }
             },
             async (responseText: string) => {
               // BUG FIX 25/12/2025: Usar responseText do parâmetro ao invés de fullResponse do closure
@@ -3410,16 +3445,27 @@ wss.on('connection', (ws, req) => {
               
               const assistantMsg = inserted[0];
 
-              ws.send(JSON.stringify({ 
-                type: 'complete', 
-                data: assistantMsg,
-                metrics: {
-                  llmLatencyMs: llmLatency,
-                  mediaType: validatedMediaType,
-                  uploadId: uploadResult.uploadId,
-                  usedRag: !!ragResult?.context,
-                },
-              }));
+              // BUG FIX 25/12/2025: Envolver ws.send() em try-catch para tratamento gracioso de clientes desconectados
+              // Mesmo se cliente desconectou, mensagem já foi salva no banco (integridade de dados)
+              try {
+                if (ws.readyState === ws.OPEN) {
+                  ws.send(JSON.stringify({ 
+                    type: 'complete', 
+                    data: assistantMsg,
+                    metrics: {
+                      llmLatencyMs: llmLatency,
+                      mediaType: validatedMediaType,
+                      uploadId: uploadResult.uploadId,
+                      usedRag: !!ragResult?.context,
+                    },
+                  }));
+                } else {
+                  logger.debug({ conversationId: mediaMessage.conversationId, readyState: ws.readyState }, 'WebSocket fechado ao enviar mensagem completa (mídia) - mensagem salva no banco');
+                }
+              } catch (sendError) {
+                // Cliente desconectado - mensagem já foi salva no banco, apenas logar
+                logger.warn({ error: sendError, conversationId: mediaMessage.conversationId, messageId: assistantMsg.id }, 'Erro ao enviar mensagem completa via WebSocket (mídia) - mensagem salva no banco');
+              }
 
               logger.info({
                 conversationId: mediaMessage.conversationId,
