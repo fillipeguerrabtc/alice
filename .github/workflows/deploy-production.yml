@@ -3844,13 +3844,13 @@ jobs:
           echo "Aguardando 90s para todos os serviços iniciarem (incluindo GPU Manager Service)..."
           sleep 90
 
-      - name: Health Check - Todos os Serviços (50 containers)
-        id: health-all
+      - name: Health Check - Serviços Públicos (Frontend, Auth, Chat, RAG)
+        id: health-public
         run: |
           FAILED=0
           
           echo "=============================================="
-          echo "HEALTH CHECK - SERVIÇOS HETZNER GPU (50 containers)"
+          echo "HEALTH CHECK - SERVIÇOS PÚBLICOS (via Traefik)"
           echo "=============================================="
           
           echo "Verificando Frontend..."
@@ -3885,32 +3885,63 @@ jobs:
             echo "✅ RAG OK"
           fi
           
-          echo "Verificando GPU Manager Service..."
-          # BUG FIX 25/12/2025: GPU Manager Service é interno - não exposto via Traefik
-          # Em self-hosted runner (servidor Hetzner), verificar via docker ps + localhost
-          # Em github-hosted runner, não é possível verificar (serviço interno)
-          # BUG FIX 25/12/2025: Usar runner.name ao invés de runner.os (runner.os retorna "Linux"/"Windows"/"macOS")
-          # runner.name é "GitHub Actions" para GitHub-hosted, ou nome customizado para self-hosted
-          RUNNER_NAME="${{ runner.name }}"
-          if [ "$RUNNER_NAME" == "hetzner-deploy-runner" ] || [ "$RUNNER_NAME" == "hetzner-gpu-runner" ] || ([ "$RUNNER_NAME" != "GitHub Actions" ] && [ -n "$RUNNER_NAME" ]); then
-            # Self-hosted runner: verificar container diretamente
+          echo "PUBLIC_FAILED=$FAILED" >> $GITHUB_OUTPUT
+
+      - name: Health Check - GPU Manager Service (via SSH)
+        id: health-gpu-manager
+        # BUG FIX 25/12/2025: GPU Manager Service é interno ao servidor Hetzner
+        # Não é acessível externamente, então usamos SSH para verificar no servidor remoto
+        # Este step sempre executa porque health-check job sempre roda em ubuntu-latest (GitHub-hosted)
+        # continue-on-error: true permite que o step de consolidação capture o resultado
+        continue-on-error: true
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          script: |
+            echo "=============================================="
+            echo "HEALTH CHECK - GPU MANAGER SERVICE (interno)"
+            echo "=============================================="
+            
+            GPU_MANAGER_FAILED=0
+            
+            # Verificar se container está rodando
             if docker ps --filter "name=alice-gpu-manager" --filter "status=running" --format "{{.Names}}" | grep -q "alice-gpu-manager"; then
-              # Container está rodando, verificar health endpoint via localhost
+              echo "✅ Container alice-gpu-manager está rodando"
+              
+              # Verificar health endpoint via localhost (serviço interno)
               if curl -sf --max-time 10 http://localhost:3010/live > /dev/null 2>&1; then
                 echo "✅ GPU Manager Service OK (container rodando e health check passou)"
+                echo "GPU_MANAGER_STATUS=ok" >> $GITHUB_ENV
               else
-                echo "⚠️ GPU Manager Service container rodando mas health check falhou"
-                FAILED=$((FAILED + 1))
+                echo "❌ GPU Manager Service container rodando mas health check falhou"
+                GPU_MANAGER_FAILED=1
+                echo "GPU_MANAGER_STATUS=failed" >> $GITHUB_ENV
               fi
             else
               echo "❌ GPU Manager Service health check FALHOU (container não está rodando)"
-              FAILED=$((FAILED + 1))
+              GPU_MANAGER_FAILED=1
+              echo "GPU_MANAGER_STATUS=failed" >> $GITHUB_ENV
             fi
+            
+            echo "GPU_MANAGER_FAILED=$GPU_MANAGER_FAILED" >> $GITHUB_ENV
+            exit $GPU_MANAGER_FAILED
+
+      - name: Health Check - Serviços Restantes e Consolidação
+        id: health-all
+        run: |
+          FAILED=${{ steps.health-public.outputs.PUBLIC_FAILED || 0 }}
+          
+          # BUG FIX 25/12/2025: Verificar resultado do health check do GPU Manager Service via SSH
+          # O step health-gpu-manager usa exit code para indicar sucesso/falha
+          # Se o step anterior falhou (outcome != success), incrementar contador de falhas
+          GPU_MANAGER_OUTCOME="${{ steps.health-gpu-manager.outcome }}"
+          if [ "$GPU_MANAGER_OUTCOME" != "success" ]; then
+            echo "❌ GPU Manager Service health check FALHOU (verificado via SSH)"
+            FAILED=$((FAILED + 1))
           else
-            # GitHub-hosted runner: GPU Manager Service é interno, não acessível externamente
-            # Pular verificação (serviço interno não exposto publicamente)
-            echo "⚠️ GPU Manager Service: serviço interno - health check não disponível em GitHub-hosted runner"
-            echo "   (Serviço é acessível apenas internamente no servidor Hetzner)"
+            echo "✅ GPU Manager Service OK (verificado via SSH)"
           fi
           
           echo "Verificando ERPNext..."
