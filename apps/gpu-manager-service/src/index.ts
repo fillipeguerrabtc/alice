@@ -765,27 +765,26 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
       return res.status(500).json({ error: 'Resposta de streaming não contém body' });
     }
     
-    // BUG FIX 25/12/2025: NÃO fazer proxy aqui - retornar Response diretamente para chat-service
-    // O chat-service fará o proxy do stream. Se fizermos proxy aqui, o body será consumido
-    // e o chat-service não poderá ler o stream novamente.
+    // ARQUITETURA DE STREAMING (25/12/2025):
+    // 1. GPU Manager Service faz fetch do gpu-mixtral e recebe Response com stream
+    // 2. GPU Manager Service faz proxy do stream para sua resposta HTTP (res.write)
+    // 3. Chat-service faz fetch do endpoint /api/gpu/stream e recebe Response com stream
+    // 4. Chat-service faz proxy do stream para sua resposta HTTP (res.write)
     //
-    // SOLUÇÃO: O chat-service deve fazer proxy do stream diretamente do GPU Manager Service.
-    // O GPU Manager Service já está fazendo proxy do stream do gpu-mixtral para sua resposta HTTP.
-    // O chat-service deve fazer proxy do stream do GPU Manager Service para sua resposta HTTP.
+    // Não há conflito porque são duas requisições HTTP diferentes:
+    // - GPU Manager Service consome body do Response do fetch do gpu-mixtral (linha 794)
+    // - Chat-service consome body do Response do fetch do endpoint /api/gpu/stream (linha 912 em chat-service)
+    // São Responses diferentes, então não há conflito de body consumido.
     //
-    // Mas o problema é que o Response do fetch já teve seu body consumido pelo GPU Manager Service.
-    //
-    // SOLUÇÃO FINAL: O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy
-    // do stream diretamente para sua resposta HTTP, sem tentar ler o Response via streamResponse().
-    // Isso requer mudar o chat-service para fazer proxy diretamente, sem usar streamResponse().
-    //
-    // Por enquanto, vamos fazer o proxy aqui, mas o chat-service não deve tentar ler o Response.
-    // O chat-service deve fazer fetch do endpoint /api/gpu/stream e fazer proxy do stream diretamente.
+    // O endpoint faz proxy do stream do gpu-mixtral para sua resposta HTTP.
+    // O chat-service faz fetch do endpoint e recebe o stream na resposta HTTP.
+    // Então o chat-service pode ler o body do Response do fetch e fazer proxy normalmente.
     
-    // Proxy do stream diretamente para o cliente
+    // Proxy do stream diretamente para o cliente (chat-service fará fetch deste endpoint e fará proxy)
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders(); // BUG FIX 25/12/2025: Enviar headers imediatamente para garantir que sejam enviados
     
     // Pipe do stream (proxy direto)
     const reader = response.body.getReader();
