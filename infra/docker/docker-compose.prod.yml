@@ -3033,7 +3033,7 @@ services:
   # Mixtral 8x7B vLLM - LLM Principal
   # =============================================================================
   gpu-mixtral:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-mixtral-vllm:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-mixtral-vllm:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-mixtral
     restart: unless-stopped
@@ -3084,7 +3084,7 @@ services:
   # Embeddings GPU - Qwen3 + OpenCLIP
   # =============================================================================
   gpu-embeddings:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-embeddings-gpu:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-embeddings
     restart: unless-stopped
@@ -3132,7 +3132,7 @@ services:
   # FLUX.1 Schnell - Geração de Imagens
   # =============================================================================
   gpu-flux:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-flux-schnell:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-flux-schnell:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-flux
     restart: unless-stopped
@@ -3176,7 +3176,7 @@ services:
   # ASR Canary-1B - Transcrição de Áudio
   # =============================================================================
   gpu-asr:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-asr-canary:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: gpu-asr
     restart: unless-stopped
@@ -3220,7 +3220,7 @@ services:
   # GPU Manager Service - Gerenciamento Centralizado de Requisições GPU
   # =============================================================================
   gpu-manager:
-    image: ghcr.io/${DOCKERHUB_USERNAME:-fillipeguerrabtc}/alice-gpu-manager:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-gpu-manager
     restart: unless-stopped
