@@ -29,9 +29,14 @@ FROM nvcr.io/nvidia/vllm:25.12
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Mixtral 8x7B vLLM inference server (NVIDIA NGC)"
-LABEL version="3.0.0"
+LABEL version="3.0.1"
 
 ENV PIP_ROOT_USER_ACTION=ignore
+
+# SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
+# Consistente com outros serviços GPU (embeddings, flux, asr, lora-trainer)
+# Ref: CLAUDE.md "51 containers = 100% com security_opt: no-new-privileges"
+RUN useradd -m -u 1000 vllm
 
 WORKDIR /app
 
@@ -48,6 +53,10 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY healthcheck.py /app/healthcheck.py
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
+
+# Configurar permissões e mudar para usuário não-root
+RUN chown -R vllm:vllm /app
+USER vllm
 
 # Variáveis de configuração do modelo
 # Bug fix: Usar modelo AWQ pré-quantizado (base model não tem weights AWQ)
