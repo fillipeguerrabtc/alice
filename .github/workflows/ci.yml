@@ -44,7 +44,9 @@ jobs:
   # ===========================================================================
   detect-changes:
     name: Detect Changes
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 10
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
@@ -87,7 +89,9 @@ jobs:
   # ===========================================================================
   build-and-check:
     name: Build & Typecheck
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 20
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
@@ -297,7 +301,9 @@ jobs:
   # ===========================================================================
   build-services:
     name: Build ${{ matrix.service }}
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 15
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
@@ -489,7 +495,9 @@ jobs:
   # ===========================================================================
   build-frontend:
     name: Build Frontend
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 15
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
@@ -639,7 +647,9 @@ jobs:
   # ===========================================================================
   security-scan:
     name: Security Scan
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck (instala PyTorch, precisa de mais tempo)
     timeout-minutes: 25
     # GAP-GHACTIONS-003: Least privilege - permissões para upload de SARIF
@@ -893,7 +903,9 @@ jobs:
   # ===========================================================================
   compliance-checks:
     name: Enterprise Compliance
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 10
     # GAP-GHACTIONS-003: Least privilege - apenas permissões necessárias
@@ -1016,7 +1028,9 @@ jobs:
   # ===========================================================================
   trigger-release:
     name: Trigger Release
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
     permissions:
       contents: read

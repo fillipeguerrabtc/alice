@@ -3,6 +3,8 @@
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Dezembro de 2025
 
+> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
+
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
 A plataforma Alice é composta por **51 containers** organizados em 7 categorias (45 serviços + 5 GPU + 1 backup):
@@ -20,7 +22,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
-> Atualização 26/12/2025: Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy roda **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`) e executa deploy remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy. **Bug Fix:** Step `image-tag` adicionado ao job `build-docker` para garantir que a versão solicitada seja propagada corretamente (antes usava fallback `github.sha`).
+> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22). Todos os workflows (CI, Release, Deploy) executam no self-hosted runner (`runs-on: [self-hosted, linux, deploy]`) para controle total, custos previsíveis e compliance. Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy executa remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy. **Bug Fix:** Step `image-tag` adicionado ao job `build-docker` para garantir que a versão solicitada seja propagada corretamente (antes usava fallback `github.sha`).
 
 ### Categoria 2: Microsserviços Alice (7 serviços)
 

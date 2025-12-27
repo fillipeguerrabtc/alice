@@ -4,8 +4,9 @@
 # Descrição: CI/CD automatizado para deploy da Alice Enterprise Platform
 # Arquitetura: Docker Compose (100% containerizado)
 # Domínio: yesyoudeserve.duckdns.org
-# Deploy Server (Runner self-hosted): Hetzner CX22 (runner)
+# Deploy Server (Runner 100% self-hosted): Hetzner CX22 (runner)
 # Production Server (containers): Hetzner GEX44 (GPU)
+# ENTERPRISE-GRADE (27/12/2025): Pipeline 100% self-hosted para controle total e compliance
 # SEGURANÇA:
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-002: OIDC/GITHUB_TOKEN para GHCR (elimina PAT para registry)
@@ -73,7 +74,9 @@ jobs:
   # ===========================================================================
   validate-trigger:
     name: Validar Disparo
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 2
     permissions:
       contents: read
@@ -125,7 +128,9 @@ jobs:
   # ===========================================================================
   code-quality:
     name: Análise de Qualidade
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     needs: validate-trigger
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 20
@@ -287,7 +292,9 @@ jobs:
   # ===========================================================================
   security-scan:
     name: Security Scanning
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 15
     needs: code-quality
@@ -417,7 +424,10 @@ jobs:
   # ===========================================================================
   build-docker:
     name: Build Docker Images
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    # Builds Docker grandes se beneficiam de recursos dedicados do servidor CX22
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para builds Docker (podem ser lentos com cache miss)
     timeout-minutes: 45
     needs: [code-quality, security-scan]
@@ -1223,7 +1233,9 @@ jobs:
   # ===========================================================================
   image-security-scan:
     name: Container Image Security
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 20
     needs: build-docker
@@ -1528,10 +1540,10 @@ jobs:
   # ===========================================================================
   deploy:
     name: Deploy Hetzner Cloud
-    # ENTERPRISE-GRADE (25/12/2025): Runner no Deploy Server (separado de produção)
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
     # Runner no Deploy Server executa deploy remoto no Production Server via SSH
-    # Isolamento completo entre CI/CD e produção (best practice enterprise 2025/2026)
-    # Runner Hetzner (Deploy Server) - labels obrigatórios: self-hosted, linux, deploy
+    # Isolamento completo entre CI/CD e produção (best practice enterprise 2025)
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
     runs-on: [self-hosted, linux, deploy]
     # timeout para evitar jobs stuck em deploy
     timeout-minutes: 30
@@ -1697,7 +1709,9 @@ jobs:
       # =============================================================================
   health-check:
     name: Health Check
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em health checks
     timeout-minutes: 10
     needs: [deploy]
@@ -1913,7 +1927,9 @@ jobs:
   # ===========================================================================
   rollback:
     name: Rollback Automático
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em rollback
     timeout-minutes: 20
     needs: [deploy, health-check]
@@ -2627,7 +2643,9 @@ jobs:
   # ===========================================================================
   register-success:
     name: Registrar Sucesso
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck
     timeout-minutes: 5
     needs: [deploy, health-check]

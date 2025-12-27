@@ -46,7 +46,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> **Atualização 26/12/2025:** GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CX22) para GitHub Actions self-hosted runner + Production Server (GEX44) com GPU dedicada.
+> **Atualização 27/12/2025:** Pipeline 100% self-hosted (Hetzner CX22) - todos os workflows (CI, Release, Deploy) executam no runner próprio para controle total, custos previsíveis e compliance. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CX22) para GitHub Actions runner + Production Server (GEX44) com GPU dedicada.
 
 ---
 

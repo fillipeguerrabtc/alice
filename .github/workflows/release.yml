@@ -47,7 +47,9 @@ jobs:
   # ===========================================================================
   create-release:
     name: Criar Release
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 10
     outputs:
@@ -165,12 +167,17 @@ jobs:
   # ===========================================================================
   # Job 2: Build e Push Docker Images
   # ===========================================================================
-  # NOTA: Cada runner da matrix executa em VM isolada, então a limpeza de disco
-  # precisa estar em cada job. O cache do Docker é via Registry Cache (GHCR).
+  # ENTERPRISE-GRADE (27/12/2025): 100% self-hosted runner (Hetzner CX22)
+  # - Runner próprio garante controle total, custos previsíveis e compliance
+  # - Cache do Docker via Registry Cache (GHCR) funciona perfeitamente com self-hosted
+  # - Builds Docker grandes se beneficiam de recursos dedicados do servidor
   # ===========================================================================
   build-images:
     name: Build Docker Images
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    # Builds Docker grandes se beneficiam de recursos dedicados do servidor CX22
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck (builds Docker podem ser lentos)
     timeout-minutes: 30
     needs: create-release
@@ -327,7 +334,9 @@ jobs:
   # ===========================================================================
   trigger-deploy:
     name: Disparar Deploy Automático
-    runs-on: ubuntu-latest
+    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
+    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    runs-on: [self-hosted, linux, deploy]
     # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 5
     needs: [create-release, build-images]
