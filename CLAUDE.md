@@ -120,6 +120,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **SO**: Ubuntu 24.04.3 LTS
 - **Docker**: 29.1.3, Docker Compose v5.0.0
 - **Pipeline**: Push → CI (auto) → Release (auto) → Deploy (auto)
+- **Versionamento**: Semantic Versioning automático via Conventional Commits (BREAKING→MAJOR, feat→MINOR, fix→PATCH)
 
 ## URLs de Produção
 | Serviço | URL | Descrição |
@@ -342,7 +343,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.32 - 26 de Dezembro de 2025*
+*Versão: 4.33 - 27 de Dezembro de 2025*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup) - Tor Proxy adicionado 23/12/2025*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*

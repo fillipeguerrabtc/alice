@@ -458,18 +458,68 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Calcular proxima versao
+      # =======================================================================
+      # SEMANTIC VERSIONING AUTOMÁTICO (Best Practices 2025)
+      # Analisa Conventional Commits para determinar tipo de bump:
+      # - BREAKING CHANGE: ou feat!/fix! → MAJOR (v2.0.0)
+      # - feat: (sem !) → MINOR (v1.1.0)
+      # - fix:/outros → PATCH (v1.0.1)
+      # =======================================================================
+      - name: Calcular proxima versao (Semantic Versioning)
         id: version
         run: |
+          set -e
+          
+          # Obter última tag e versão atual
           LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
           VERSION=${LAST_TAG#v}
           MAJOR=$(echo $VERSION | cut -d. -f1 | grep -E '^[0-9]+$' || echo "0")
           MINOR=$(echo $VERSION | cut -d. -f2 | grep -E '^[0-9]+$' || echo "0")
           PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1 | grep -E '^[0-9]+$' || echo "0")
-          NEW_PATCH=$((10#$PATCH + 1))
-          NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+          
+          echo "📦 Versão atual: v${MAJOR}.${MINOR}.${PATCH}"
+          
+          # Analisar commits desde a última tag
+          if [ "$LAST_TAG" = "v0.0.0" ]; then
+            COMMITS=$(git log --pretty=format:"%s" --no-merges | head -100)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+          fi
+          
+          # Determinar tipo de bump baseado em Conventional Commits
+          BUMP_TYPE="patch"
+          
+          # Verificar BREAKING CHANGES (MAJOR bump)
+          if echo "$COMMITS" | grep -qE "^(feat|fix)(\(.+\))?!:|BREAKING CHANGE:"; then
+            BUMP_TYPE="major"
+            echo "⚠️ Breaking change detectado → MAJOR bump"
+          # Verificar features (MINOR bump)
+          elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+            BUMP_TYPE="minor"
+            echo "✨ Feature detectada → MINOR bump"
+          else
+            echo "🔧 Apenas fixes/outros → PATCH bump"
+          fi
+          
+          # Calcular nova versão
+          case $BUMP_TYPE in
+            major)
+              NEW_MAJOR=$((10#$MAJOR + 1))
+              NEW_VERSION="v${NEW_MAJOR}.0.0"
+              ;;
+            minor)
+              NEW_MINOR=$((10#$MINOR + 1))
+              NEW_VERSION="v${MAJOR}.${NEW_MINOR}.0"
+              ;;
+            patch)
+              NEW_PATCH=$((10#$PATCH + 1))
+              NEW_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+              ;;
+          esac
+          
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
-          echo "✅ Próxima versão: $NEW_VERSION"
+          echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
+          echo "✅ Nova versão: $NEW_VERSION ($BUMP_TYPE bump)"
 
       - name: Disparar Release Workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea

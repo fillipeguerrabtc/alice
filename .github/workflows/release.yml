@@ -210,8 +210,15 @@ jobs:
             echo "Building $IMAGE"
             echo "==========================================="
             
+            # OTIMIZAÇÃO CACHE (Best Practices 2025):
+            # --provenance=false: Desabilita attestations (reduz tempo de build)
+            # --sbom=false: Desabilita SBOM inline (reduz tamanho da imagem)
+            # --build-arg BUILDKIT_INLINE_CACHE=1: Habilita cache inline para layers
             docker buildx build \
               --push \
+              --provenance=false \
+              --sbom=false \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
               --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
@@ -253,8 +260,12 @@ jobs:
             echo "Building GPU: $IMAGE"
             echo "==========================================="
             
+            # OTIMIZAÇÃO CACHE (Best Practices 2025)
             docker buildx build \
               --push \
+              --provenance=false \
+              --sbom=false \
+              --build-arg BUILDKIT_INLINE_CACHE=1 \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
               --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \

@@ -2,9 +2,11 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Dezembro de 2025  
-**Versão:** 7.8 - Otimização CI Performance Enterprise
+**Versão:** 7.9 - Semantic Versioning Enterprise + Cache Otimizado
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
+
+> **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
 
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
