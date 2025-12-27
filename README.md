@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Dezembro de 2025  
-**Versão:** 4.15
+**Versão:** 4.37
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.15-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.37-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -47,7 +47,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> **Atualização 27/12/2025:** Pipeline 100% self-hosted (Hetzner CPX32 - 4 vCPU, 8GB RAM) - todos os workflows (CI, Release, Deploy) executam no runner próprio para controle total, custos previsíveis e compliance. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CPX32) para GitHub Actions runner + Production Server (GEX44) com GPU dedicada.
+> **Atualização 27/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
 
 ---
 
@@ -393,10 +393,11 @@ alice/
 | [CLAUDE.md](CLAUDE.md) | Contexto completo do projeto e 18 regras |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Guia de deploy para produção |
 | [docs/SECRETS.md](docs/SECRETS.md) | Guia de secrets e webhooks |
-| [docs/STATUS-REAL-ATUAL.md](docs/STATUS-REAL-ATUAL.md) | Estado atual da plataforma (multimodal incluso) |
+| [docs/STATUS-REAL-ATUAL.md](docs/STATUS-REAL-ATUAL.md) | Estado atual da plataforma |
+| [docs/ARQUITETURA.md](docs/ARQUITETURA.md) | Arquitetura completa (arc42 + C4 + ADRs) |
+| [docs/ARQUITETURA-GPU-MANAGER.md](docs/ARQUITETURA-GPU-MANAGER.md) | GPU Manager Service (gerenciamento centralizado) |
 | [docs/SISTEMA-APRENDIZADO.md](docs/SISTEMA-APRENDIZADO.md) | Sistema de auto-aprendizado |
-| [docs/FRAPPE-PATCHING.md](docs/FRAPPE-PATCHING.md) | Atualização de segurança ERPNext/Frappe |
-| [apps/observability-service/README.md](apps/observability-service/README.md) | Stack de observabilidade |
+| [docs/VERIFICAR-RUNNER.md](docs/VERIFICAR-RUNNER.md) | Verificação e hardening do runner self-hosted |
 
 ---
 
@@ -466,7 +467,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.15 - 27 de Dezembro de 2025*
+*Versão 4.37 - 27 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
@@ -480,5 +481,6 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
 *Pipeline Unificada: Hetzner GPU 100% automático - todos os 50 containers no servidor único*
 *Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
+*Runner Enterprise Hardening (27/12/2025): Kernel tuning, Docker daemon otimizado, limits, systemd override, cron cleanup diário 3h*
 
 </div>

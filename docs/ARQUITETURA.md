@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
-> **Versão:** 1.7.0 - Otimização CI Performance Enterprise  
+> **Versão:** 1.8.0 - Runner Enterprise Hardening + Pipeline Otimizada  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -509,7 +509,7 @@ flowchart LR
     end
 ```
 
-> **Pipeline Enterprise (25/12/2025):** Deploy Server (CX11) separado + Production Server (GEX44 GPU). Todos os serviços GPU rodam localmente no servidor único, eliminando latência de rede.
+> **Pipeline Enterprise (27/12/2025):** Deploy Server (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) com Runner Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd) + Production Server (GEX44 GPU). Todos os serviços GPU rodam localmente no servidor único, eliminando latência de rede.
 
 > **Otimização CI Performance (27/12/2025):** Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14 execuções → 1x). Versões Node.js/pnpm calculadas uma vez no job `detect-changes` e passadas via outputs. Jobs que não precisam de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10 minutos por run de CI.
 

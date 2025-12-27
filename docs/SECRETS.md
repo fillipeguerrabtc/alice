@@ -8,7 +8,7 @@
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
 **Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 25/12/2025)
-**Arquitetura:** Deploy Server (CX11) + Production Server (GEX44 GPU)
+**Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 50 em produção (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
@@ -64,7 +64,7 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado - fallback) | ⚠️ **Legado** |
 | `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Chave SSH legada (fallback se runner não disponível) | ⚠️ **Legado** |
 
-> **ENTERPRISE-GRADE (25/12/2025):** Arquitetura com Deploy Server separado (CX11) e Production Server (GEX44 GPU). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).
+> **ENTERPRISE-GRADE (27/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) e Production Server (GEX44 GPU). Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
@@ -576,7 +576,7 @@ openssl rand -base64 24
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
-*Arquitetura Deploy (25/12/2025): Deploy Server (CX11) separado + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
+*Arquitetura Deploy (27/12/2025): Deploy Server (CPX32 - 4 vCPU, 8GB RAM) com Runner Enterprise Hardening + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
 *ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
 *GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
 *Novos Secrets (25/12/2025): PRODUCTION_SERVER_HOST, PRODUCTION_SERVER_USER, PRODUCTION_SERVER_SSH_PRIVATE_KEY para Deploy Server*  
