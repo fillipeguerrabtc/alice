@@ -4,6 +4,11 @@
 # Descrição: Versionamento semântico da Alice Enterprise Platform
 # Best Practices 2025: Conventional Commits, SHA pinning, least privilege
 # Fluxo: Criar Release → Build Images → Disparar Deploy (workflow separado)
+#
+# OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
+# - Matrix de 14 jobs → 1 job único com loop
+# - Elimina ~4min de overhead (14 checkouts/setups → 1)
+# - Cache de registry mantido por imagem
 # =============================================================================
 
 name: Release & Tag
@@ -19,20 +24,11 @@ on:
         description: 'É uma pré-release (alpha/beta)?'
         type: boolean
         default: false
-      # NOTA: Deploy é disparado automaticamente após Release bem-sucedido
-      # O gate de segurança está no ambiente "production" do deploy-production.yml
 
-# =============================================================================
-# CONCURRENCY: Evitar múltiplos releases simultâneos
-# cancel-in-progress: true cancela runs anteriores automaticamente
-# =============================================================================
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: true
 
-# =============================================================================
-# SEGURANÇA: Permissões mínimas (Best Practices 2025)
-# =============================================================================
 permissions:
   contents: write
   packages: write
@@ -46,18 +42,14 @@ jobs:
   # Job 1: Validação e Criação da Release
   # ===========================================================================
   create-release:
-    name: Criar Release
-    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
-    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    name: Create Release
     runs-on: [self-hosted, linux, deploy]
-    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 10
     outputs:
       version: ${{ inputs.version }}
       changelog: ${{ steps.changelog.outputs.changes }}
     
     steps:
-      # SHA: actions/checkout@v4.2.2 (2024-10-23)
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -68,7 +60,6 @@ jobs:
           VERSION="${{ inputs.version }}"
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
             echo "❌ Formato de versão inválido: $VERSION"
-            echo "   Formato esperado: v1.0.0 ou v1.0.0-beta.1"
             exit 1
           fi
           echo "✅ Versão válida: $VERSION"
@@ -81,45 +72,26 @@ jobs:
           fi
           echo "✅ Tag ${{ inputs.version }} disponível"
 
-      - name: Gerar changelog (Conventional Commits)
+      - name: Gerar changelog
         id: changelog
         run: |
           PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           
           if [ -z "$PREVIOUS_TAG" ]; then
-            echo "📝 Primeira release - incluindo todos os commits"
             COMMITS=$(git log --pretty=format:"%s (%h)" --no-merges | head -50)
           else
-            echo "📝 Gerando changelog desde $PREVIOUS_TAG"
             COMMITS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"%s (%h)" --no-merges)
           fi
           
-          # Categorizar por Conventional Commits
           FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | sed 's/^/- /' || echo "")
           FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | sed 's/^/- /' || echo "")
-          BREAKING=$(echo "$COMMITS" | grep -E "^(feat|fix)(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
           OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?[!]?:" | sed 's/^/- /' || echo "")
           
-          # Construir changelog formatado
           CHANGELOG=""
+          [ -n "$FEATURES" ] && CHANGELOG="$CHANGELOG\n#### ✨ Features\n$FEATURES\n"
+          [ -n "$FIXES" ] && CHANGELOG="$CHANGELOG\n#### 🐛 Bug Fixes\n$FIXES\n"
+          [ -n "$OTHERS" ] && CHANGELOG="$CHANGELOG\n#### 📦 Other Changes\n$OTHERS\n"
           
-          if [ -n "$BREAKING" ]; then
-            CHANGELOG="$CHANGELOG\n#### ⚠️ Breaking Changes\n$BREAKING\n"
-          fi
-          
-          if [ -n "$FEATURES" ]; then
-            CHANGELOG="$CHANGELOG\n#### ✨ Features\n$FEATURES\n"
-          fi
-          
-          if [ -n "$FIXES" ]; then
-            CHANGELOG="$CHANGELOG\n#### 🐛 Bug Fixes\n$FIXES\n"
-          fi
-          
-          if [ -n "$OTHERS" ]; then
-            CHANGELOG="$CHANGELOG\n#### 📦 Other Changes\n$OTHERS\n"
-          fi
-          
-          # Salvar output
           echo "changes<<EOF" >> $GITHUB_OUTPUT
           echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
@@ -130,9 +102,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
           git push origin ${{ inputs.version }}
-          echo "✅ Tag ${{ inputs.version }} criada e enviada"
+          echo "✅ Tag ${{ inputs.version }} criada"
 
-      # SHA: softprops/action-gh-release@v2.2.1 (2024-11)
       - name: Criar GitHub Release
         uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
@@ -147,39 +118,27 @@ jobs:
             ${{ steps.changelog.outputs.changes }}
             
             ### 🐳 Docker Images
-            Todas as imagens estão disponíveis no GitHub Container Registry:
             ```
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
             ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
             ```
-            
-            > **NOTA:** clip-inference-service foi migrado 100% para Salad Cloud GPU (19/12/2025)
-            
-            ### 📋 Deploy
-            Para fazer deploy desta versão, execute o workflow "Deploy to Production" com `version: ${{ inputs.version }}`
 
   # ===========================================================================
-  # Job 2: Build e Push Docker Images
-  # ===========================================================================
-  # ENTERPRISE-GRADE (27/12/2025): 100% self-hosted runner (Hetzner CX22)
-  # - Runner próprio garante controle total, custos previsíveis e compliance
-  # - Cache do Docker via Registry Cache (GHCR) funciona perfeitamente com self-hosted
-  # - Builds Docker grandes se beneficiam de recursos dedicados do servidor
+  # Job 2: Build e Push Docker Images (CONSOLIDADO)
+  # OTIMIZAÇÃO: 1 job único ao invés de matrix de 14 jobs
+  # Elimina ~4min de overhead (14 setups → 1)
   # ===========================================================================
   build-images:
-    name: Build Docker Images
-    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
-    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
-    # Builds Docker grandes se beneficiam de recursos dedicados do servidor CX22
+    name: Build All Docker Images
     runs-on: [self-hosted, linux, deploy]
-    # CRÍTICO: timeout para evitar jobs stuck (builds Docker podem ser lentos)
-    timeout-minutes: 30
+    timeout-minutes: 45
     needs: create-release
     if: ${{ !inputs.prerelease }}
 
@@ -187,102 +146,17 @@ jobs:
       contents: read
       packages: write
     
-    strategy:
-      matrix:
-        # NOTA: Serviços GPU são buildados aqui também (mesmo workflow) para consistência com docker-compose.prod.yml
-        include:
-          # -------------------------------
-          # Microserviços (apps/)
-          # -------------------------------
-          - service: api-gateway
-            image: api-gateway
-            context: .
-            dockerfile: ./apps/api-gateway/Dockerfile
-          - service: auth-service
-            image: auth
-            context: .
-            dockerfile: ./apps/auth-service/Dockerfile
-          - service: chat-service
-            image: chat
-            context: .
-            dockerfile: ./apps/chat-service/Dockerfile
-          - service: frontend-service
-            image: frontend
-            context: .
-            dockerfile: ./apps/frontend-service/Dockerfile
-          - service: integrations-service
-            image: integrations
-            context: .
-            dockerfile: ./apps/integrations-service/Dockerfile
-          - service: observability-service
-            image: observability
-            context: .
-            dockerfile: ./apps/observability-service/Dockerfile
-          - service: rag-service
-            image: rag
-            context: .
-            dockerfile: ./apps/rag-service/Dockerfile
-          - service: training-service
-            image: training
-            context: .
-            dockerfile: ./apps/training-service/Dockerfile
-          - service: gpu-manager-service
-            image: gpu-manager
-            context: .
-            dockerfile: ./apps/gpu-manager-service/Dockerfile
-
-          # -------------------------------
-          # Serviços GPU (docker/gpu/)
-          # NOTA: context deve ser o diretório do Dockerfile para COPY funcionar
-          # Os Dockerfiles usam COPY app/ e COPY healthcheck.py relativos
-          # IMPORTANTE: Quando context é subdiretório, dockerfile deve ser relativo ao context (sem ./)
-          # -------------------------------
-          - service: gpu-mixtral
-            image: mixtral-vllm
-            context: ./docker/gpu/mixtral-vllm
-            dockerfile: Dockerfile
-          - service: gpu-embeddings
-            image: embeddings-gpu
-            context: ./docker/gpu/embeddings-gpu
-            dockerfile: Dockerfile
-          - service: gpu-flux
-            image: flux-schnell
-            context: ./docker/gpu/flux-schnell
-            dockerfile: Dockerfile
-          - service: gpu-asr
-            image: asr-canary
-            context: ./docker/gpu/asr-canary
-            dockerfile: Dockerfile
-          - service: gpu-trainer
-            image: lora-trainer
-            context: ./docker/gpu/lora-trainer
-            dockerfile: Dockerfile
-    
     steps:
-      # IMPORTANTE: Checkout da TAG para garantir reprodutibilidade de releases
-      # A tag aponta para o commit exato que representa esta versão
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ needs.create-release.outputs.version }}
 
-      # ENTERPRISE-GRADE (27/12/2025): Monitoramento de espaço em disco
-      # Self-hosted runners são persistentes - não limpar ferramentas ou caches automaticamente
-      # GitHub Actions já limpa workspace automaticamente entre jobs
-      # Docker Registry Cache (GHCR) é preservado e reutilizado entre builds
       - name: Monitor disk space
         run: |
-          echo "=== Monitoramento de Espaco em Disco ==="
+          echo "=== Espaço em Disco ==="
           df -h /
-          echo ""
-          echo "INFO: Espaco disponivel no runner self-hosted"
-          echo "INFO: Self-hosted runners sao persistentes - caches sao preservados para builds mais rapidos"
-          echo "INFO: Docker Registry Cache (GHCR) e preservado e reutilizado entre builds"
 
-      # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
-      # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
-      # Mais seguro que PAT: não requer secret manual, expira automaticamente, permissões mínimas
-      # SHA: docker/login-action@v3.3.0 (2024-07-31) - Supply Chain Security
       - name: Login no GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
@@ -290,70 +164,131 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # SHA: docker/setup-buildx-action@v3.7.1 (2024-10-22) - Supply Chain Security
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 
-      # ===========================================================================
-      # CACHE OTIMIZADO (Best Practices 2025):
-      # - Registry cache no GHCR: NÃO é branch-specific (compartilha entre tags/branches)
-      # - mode=max salva todas as layers intermediárias
-      # - Hash SHA256 invalida cache automaticamente quando arquivos mudam
-      # - pnpm-lock.yaml garante versões exatas
-      # - NOTA: cache-from é opcional - se cache não existe, build continua sem cache
-      #   (primeiro build sempre será sem cache, builds subsequentes usam cache)
-      # ===========================================================================
-      # SHA: docker/build-push-action@v6.9.0 (2024-10-22) - Supply Chain Security
-      - name: Build e Push
-        uses: docker/build-push-action@4f58ea79222b3b9dc2c8bbdd6debcef730109a75
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: |
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:${{ needs.create-release.outputs.version }}
-            ${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:latest
-          # cache-from é opcional: se não existir, build continua sem cache (comportamento normal)
-          cache-from: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache
-          cache-to: type=registry,ref=${{ env.IMAGE_PREFIX }}-${{ matrix.image }}:cache,mode=max
+      # Build de todos os microsserviços (apps/)
+      - name: Build Microservices
+        run: |
+          set -e
+          VERSION="${{ needs.create-release.outputs.version }}"
+          
+          echo "=============================================="
+          echo "Building all microservices for $VERSION"
+          echo "=============================================="
+          
+          # Lista de serviços: nome_imagem:caminho_dockerfile
+          SERVICES=(
+            "api-gateway:./apps/api-gateway/Dockerfile"
+            "auth:./apps/auth-service/Dockerfile"
+            "chat:./apps/chat-service/Dockerfile"
+            "frontend:./apps/frontend-service/Dockerfile"
+            "integrations:./apps/integrations-service/Dockerfile"
+            "observability:./apps/observability-service/Dockerfile"
+            "rag:./apps/rag-service/Dockerfile"
+            "training:./apps/training-service/Dockerfile"
+            "gpu-manager:./apps/gpu-manager-service/Dockerfile"
+          )
+          
+          for entry in "${SERVICES[@]}"; do
+            IMAGE="${entry%%:*}"
+            DOCKERFILE="${entry#*:}"
+            
+            echo ""
+            echo "==========================================="
+            echo "Building $IMAGE"
+            echo "==========================================="
+            
+            docker buildx build \
+              --push \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
+              --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
+              --cache-to "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache,mode=max" \
+              --file "$DOCKERFILE" \
+              .
+            
+            echo "✅ $IMAGE built and pushed"
+          done
+          
+          echo ""
+          echo "✅ All 9 microservices built!"
+
+      # Build de serviços GPU (docker/gpu/)
+      - name: Build GPU Services
+        run: |
+          set -e
+          VERSION="${{ needs.create-release.outputs.version }}"
+          
+          echo "=============================================="
+          echo "Building GPU services for $VERSION"
+          echo "=============================================="
+          
+          # Lista de serviços GPU: nome_imagem:diretório_contexto
+          GPU_SERVICES=(
+            "mixtral-vllm:./docker/gpu/mixtral-vllm"
+            "embeddings-gpu:./docker/gpu/embeddings-gpu"
+            "flux-schnell:./docker/gpu/flux-schnell"
+            "asr-canary:./docker/gpu/asr-canary"
+            "lora-trainer:./docker/gpu/lora-trainer"
+          )
+          
+          for entry in "${GPU_SERVICES[@]}"; do
+            IMAGE="${entry%%:*}"
+            CONTEXT="${entry#*:}"
+            
+            echo ""
+            echo "==========================================="
+            echo "Building GPU: $IMAGE"
+            echo "==========================================="
+            
+            docker buildx build \
+              --push \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
+              --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
+              --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
+              --cache-to "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache,mode=max" \
+              --file "${CONTEXT}/Dockerfile" \
+              "$CONTEXT"
+            
+            echo "✅ $IMAGE built and pushed"
+          done
+          
+          echo ""
+          echo "✅ All 5 GPU services built!"
+
+      - name: Build Summary
+        run: |
+          echo ""
+          echo "=============================================="
+          echo "✅ RELEASE BUILD COMPLETE"
+          echo "=============================================="
+          echo "Version: ${{ needs.create-release.outputs.version }}"
+          echo "Images: 9 microservices + 5 GPU services = 14 total"
+          echo "Registry: ${{ env.REGISTRY }}"
+          echo "=============================================="
 
   # ===========================================================================
-  # Job 3: Disparar Deploy Automaticamente (Workflow Separado)
-  # Pipeline 100% automático: CI → Release → Deploy (sem aprovação manual)
-  # Security scan em imagens é o gate de qualidade antes do deploy
-  # IMPORTANTE: Workflows separados para auditoria e versionamento independente
+  # Job 3: Disparar Deploy Automaticamente
   # ===========================================================================
   trigger-deploy:
-    name: Disparar Deploy Automático
-    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
-    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
+    name: Trigger Deploy
     runs-on: [self-hosted, linux, deploy]
-    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 5
     needs: [create-release, build-images]
-    # Dispara automaticamente se não for prerelease e builds passaram
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:
-      # SHA: actions/github-script@v7.0.1 (2024-11-18) - Supply Chain Security
       - name: Disparar workflow de deploy
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
-          # IMPORTANTE: GITHUB_TOKEN não pode disparar workflows
-          # Precisa de PAT com permissão 'workflow' (GH_PAT)
           github-token: ${{ secrets.GH_PAT }}
           script: |
             const version = '${{ needs.create-release.outputs.version }}';
             
-            console.log('🚀 Iniciando deploy automático após Release bem-sucedido');
+            console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
-            console.log('🏷️ Usando TAG para consistência de versionamento');
             
-            // Disparar workflow de deploy como execução SEPARADA
-            // IMPORTANTE: Usar a TAG (não main) para garantir que:
-            // - docker-compose.prod.yml seja da mesma versão das imagens
-            // - Scripts de deploy sejam consistentes com as imagens buildadas
-            // - Reprodutibilidade total: mesma tag = mesmo resultado
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -366,6 +301,4 @@ jobs:
               }
             });
             
-            console.log('✅ Deploy disparado automaticamente!');
-            console.log('🔗 Verifique a aba Actions para acompanhar o deploy');
-            console.log('⏳ O deploy aparecerá como uma execução separada na TAG: ' + version);
+            console.log('✅ Deploy disparado!');
