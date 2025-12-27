@@ -1,20 +1,22 @@
 # =============================================================================
-# Alice Enterprise Platform - ASR Canary-Qwen-2.5B
+# Alice Enterprise Platform - ASR Canary-1B
 # =============================================================================
-# Dockerfile para transcrição de áudio com Canary/Whisper em GPU RTX 4000 SFF Ada (20GB)
+# Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
 # Autor: Fillipe Guerra
-# Data: 16 de Dezembro de 2025
+# Data: 27 de Dezembro de 2025
 # =============================================================================
 
 FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="ASR Canary-Qwen speech-to-text server"
-LABEL version="1.0.0"
+LABEL description="ASR Canary-1B speech-to-text server"
+LABEL version="1.1.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+# Silenciar warning do pip (instalação como root é intencional durante build)
+ENV PIP_ROOT_USER_ACTION=ignore
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -30,20 +32,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 asr
 WORKDIR /app
 
-# Instalar dependências Python
+# Instalar dependências Python - Versões pinadas Dezembro 2025
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir \
-    torch>=2.1.0 \
-    torchaudio \
-    transformers>=4.40.0 \
-    accelerate \
-    nemo_toolkit[asr] \
-    fastapi \
-    uvicorn \
-    python-multipart \
-    pydub \
-    prometheus-client \
-    pybreaker
+    torch==2.5.1 \
+    torchaudio==2.5.1 \
+    transformers==4.47.1 \
+    accelerate==1.2.1 \
+    nemo_toolkit[asr]==2.1.0 \
+    fastapi==0.115.6 \
+    uvicorn==0.34.0 \
+    python-multipart==0.0.20 \
+    pydub==0.25.1 \
+    prometheus-client==0.21.1 \
+    pybreaker==1.2.0
 
 # Copiar código da aplicação
 COPY app/ /app/

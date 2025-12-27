@@ -12,18 +12,20 @@
 # Mantido apenas para referência histórica
 # 
 # Autor: Fillipe Guerra
-# Data: 25 de Dezembro de 2025
+# Data: 27 de Dezembro de 2025
 # =============================================================================
 
 FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
-LABEL version="2.0.0"
+LABEL version="2.1.0"
 LABEL architecture="unified"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+# Silenciar warning do pip (instalação como root é intencional durante build)
+ENV PIP_ROOT_USER_ACTION=ignore
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3.11 \
@@ -35,23 +37,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
-# Instalar dependências
+# Instalar dependências - Versões pinadas Dezembro 2025
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir \
-    torch>=2.1.0 \
-    torchvision \
-    transformers>=4.40.0 \
-    sentence-transformers>=3.0.0 \
-    open_clip_torch>=2.24.0 \
-    accelerate \
-    safetensors \
-    fastapi \
-    uvicorn \
-    python-multipart \
-    pillow \
-    numpy \
-    prometheus-client \
-    pybreaker
+    torch==2.5.1 \
+    torchvision==0.20.1 \
+    transformers==4.47.1 \
+    sentence-transformers==3.3.1 \
+    open_clip_torch==2.29.0 \
+    accelerate==1.2.1 \
+    safetensors==0.4.5 \
+    fastapi==0.115.6 \
+    uvicorn==0.34.0 \
+    python-multipart==0.0.20 \
+    pillow==11.0.0 \
+    numpy==2.2.1 \
+    prometheus-client==0.21.1 \
+    pybreaker==1.2.0
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

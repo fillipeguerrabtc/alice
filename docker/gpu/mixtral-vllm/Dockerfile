@@ -5,7 +5,7 @@
 # Modelo: Mixtral 8x7B Instruct (quantizado AWQ 4-bit)
 # 
 # Autor: Fillipe Guerra
-# Data: 16 de Dezembro de 2025
+# Data: 27 de Dezembro de 2025
 # =============================================================================
 
 FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
@@ -13,7 +13,7 @@ FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
 # Metadados
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Mixtral 8x7B vLLM inference server"
-LABEL version="1.0.0"
+LABEL version="1.1.0"
 
 # Variáveis de ambiente
 ENV DEBIAN_FRONTEND=noninteractive
@@ -21,6 +21,8 @@ ENV PYTHONUNBUFFERED=1
 ENV CUDA_HOME=/usr/local/cuda
 ENV PATH="${CUDA_HOME}/bin:${PATH}"
 ENV LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH}"
+# Silenciar warning do pip (instalação como root é intencional durante build)
+ENV PIP_ROOT_USER_ACTION=ignore
 
 # Instalar dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,18 +38,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN useradd -m -u 1000 vllm
 WORKDIR /app
 
-# Instalar vLLM e dependências
+# Instalar vLLM e dependências - Versões pinadas Dezembro 2025
+# NOTA: pip install como root durante build, container roda como user não-root
 RUN pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir \
-    vllm>=0.6.0 \
-    torch>=2.1.0 \
-    transformers>=4.40.0 \
-    accelerate \
-    safetensors \
-    huggingface_hub \
-    fastapi \
-    uvicorn \
-    prometheus-client
+    vllm==0.6.4.post1 \
+    torch==2.5.1 \
+    transformers==4.47.1 \
+    accelerate==1.2.1 \
+    safetensors==0.4.5 \
+    huggingface_hub==0.27.0 \
+    fastapi==0.115.6 \
+    uvicorn==0.34.0 \
+    prometheus-client==0.21.1
 
 # Copiar script de healthcheck
 COPY healthcheck.py /app/healthcheck.py
@@ -57,7 +60,7 @@ RUN chmod +x /app/entrypoint.sh
 # Configurar permissões
 RUN chown -R vllm:vllm /app
 
-# Mudar para usuário não-root
+# Mudar para usuário não-root (container roda como não-root)
 USER vllm
 
 # Variáveis de configuração do modelo
