@@ -164,14 +164,15 @@ jobs:
         run: pnpm run lint
 
   # ===========================================================================
-  # Job 3: Build de TODOS os microsserviços Node.js (CONSOLIDADO)
-  # OTIMIZAÇÃO CRÍTICA: Era matrix de 8 jobs → agora 1 job único
-  # Redução: 8 setups (~16min) → 1 setup (~2min)
+  # Job 3: Build de TODOS os serviços (CONSOLIDADO - runner único)
+  # OTIMIZAÇÃO CRÍTICA: Era matrix de 8+1 jobs → agora 1 job único
+  # Inclui: 8 microsserviços + Frontend (elimina overhead de setup duplo)
+  # Best Practice 2025: Com runner único, consolidar builds maximiza eficiência
   # ===========================================================================
-  build-all-services:
-    name: Build All Services
+  build-all:
+    name: Build All (Services + Frontend)
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
+    timeout-minutes: 20
     permissions:
       contents: read
     needs: [detect-changes, build-and-check]
@@ -199,8 +200,8 @@ jobs:
             test -f "packages/$pkg/dist/index.js" || (echo "ERRO: $pkg não baixado" && exit 1)
           done
 
-      # Build TODOS os serviços em sequência (mesmo job = sem overhead de setup)
-      - name: Build all services (consolidado)
+      # Build TODOS os microsserviços em sequência
+      - name: Build all microservices
         run: |
           set -e
           export NODE_OPTIONS="--max-old-space-size=8192"
@@ -223,40 +224,25 @@ jobs:
             echo "==========================================="
             pnpm --filter @alice/$service run build
             
-            # Verificar se bundle foi gerado (exceto api-gateway e observability-service que não geram bundle)
+            # Verificar se bundle foi gerado (exceto api-gateway e observability-service)
             if [ "$service" != "api-gateway" ] && [ "$service" != "observability-service" ]; then
               test -f "apps/$service/dist/bundle.js" || (echo "ERRO: bundle.js não gerado para $service" && exit 1)
             fi
-            echo "✅ $service buildado com sucesso!"
+            echo "✅ $service OK"
           done
           
           echo ""
-          echo "==========================================="
-          echo "✅ TODOS os 8 serviços buildados!"
-          echo "==========================================="
+          echo "✅ Todos os 8 microsserviços buildados!"
 
-  # ===========================================================================
-  # Job 4: Build Frontend
-  # ===========================================================================
-  build-frontend:
-    name: Build Frontend
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    needs: [detect-changes, build-and-check]
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Node.js e pnpm
-        uses: ./.github/actions/setup-node-pnpm
-        with:
-          node-version: ${{ needs.detect-changes.outputs.node-version }}
-          pnpm-version: ${{ needs.detect-changes.outputs.pnpm-version }}
-          install-dependencies: 'true'
-
+      # Build Frontend no mesmo job (elimina overhead de setup extra)
       - name: Build frontend
-        run: pnpm run build
+        run: |
+          echo ""
+          echo "==========================================="
+          echo "Building Frontend"
+          echo "==========================================="
+          pnpm run build
+          echo "✅ Frontend buildado!"
         env:
           VITE_API_URL: ""
 
@@ -269,6 +255,13 @@ jobs:
             apps/frontend-service/dist
           retention-days: 1
           if-no-files-found: warn
+      
+      - name: Build Summary
+        run: |
+          echo ""
+          echo "==========================================="
+          echo "✅ BUILD COMPLETO - 8 serviços + Frontend"
+          echo "==========================================="
 
   # ===========================================================================
   # Job 5: Security Scanning
@@ -469,8 +462,8 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [build-and-check, build-all-services, build-frontend, security-scan, compliance-checks]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-all-services.result == 'success' && needs.build-frontend.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
+    needs: [build-and-check, build-all, security-scan, compliance-checks]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-all.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
