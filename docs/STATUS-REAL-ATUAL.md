@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.22 - Docker Digests Fix + Mocks Removed
+> **Versão:** 4.23 - Vendor Image Mirroring Fully Automated
 
 ---
 
@@ -49,6 +49,8 @@
 > **Deploy Runner Enterprise 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). **HARDENING COMPLETO:** Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10, inotify=524288), Docker daemon otimizado (BuildKit, max-downloads=10, GC=20GB, live-restore), limits (nofile=1048576, nproc=65535), systemd override (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário 3h. Runner 2.330.0, Docker 29.1.3, Buildx 0.30.1, Ubuntu 24.04.3 LTS.
 
 > **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `traefik:v3.6.4`) são suficientemente determinísticas.
+
+> **Vendor Image Mirroring Automatizado 27/12/2025:** Fluxo 100% automatizado para supply chain security: (1) Workflow `sync-vendor-images.yml` copia 22 imagens para GHCR semanal + manual; (2) Job integrado ao release.yml sincroniza antes do deploy; (3) Arquivo `docker-compose.vendor-override.yml` mapeia 36 containers para GHCR; (4) deploy-production.yml detecta automaticamente se usar GHCR ou fallback Docker Hub. **BENEFÍCIOS:** Zero rate limits, digests imutáveis, zero dependência Docker Hub, zero passos manuais. Pipeline 100% autônoma.
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
 
