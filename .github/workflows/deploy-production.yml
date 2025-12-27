@@ -508,7 +508,7 @@ jobs:
             mkdir -p /opt/alice/uploads
             mkdir -p /opt/alice/backups/manifests
             mkdir -p /opt/alice/secrets/alertmanager
-            mkdir -p /opt/alice/secrets/langfuse_db_password
+            # NOTA: langfuse_db_password é um ARQUIVO, não diretório (criado na FASE 2.5)
             
             # Permissões específicas por serviço (UIDs dos containers)
             chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
@@ -519,6 +519,32 @@ jobs:
             chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext /opt/alice/uploads 2>/dev/null || true
             
             echo "✅ Estrutura de diretórios criada"
+            
+            # =================================================================
+            # FASE 2.5: Criar arquivos de secrets a partir do .env.prod
+            # =================================================================
+            # CORREÇÃO 27/12/2025: langfuse-db usa POSTGRES_PASSWORD_FILE que espera um ARQUIVO
+            # contendo a senha, não uma variável de ambiente. Extraímos do .env.prod.
+            echo "🔐 Criando arquivos de secrets..."
+            
+            # Extrair LANGFUSE_DB_PASSWORD do .env.prod e criar arquivo de secret
+            LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
+            if [ -n "$LANGFUSE_DB_PWD" ]; then
+              printf '%s' "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
+              chmod 600 /opt/alice/secrets/langfuse_db_password
+              chown 999:999 /opt/alice/secrets/langfuse_db_password 2>/dev/null || true
+              echo "✅ Secret langfuse_db_password criado"
+            else
+              echo "⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
+            fi
+            
+            # Extrair senha SMTP para Alertmanager (se existir)
+            SMTP_PWD=$(grep '^SMTP_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
+            if [ -n "$SMTP_PWD" ]; then
+              printf '%s' "$SMTP_PWD" > /opt/alice/secrets/alertmanager/smtp_password
+              chmod 600 /opt/alice/secrets/alertmanager/smtp_password
+              echo "✅ Secret alertmanager/smtp_password criado"
+            fi
             
             # =================================================================
             # FASE 3: Clonar/atualizar repositório
@@ -737,14 +763,13 @@ jobs:
               exit 1
             fi
             
-            # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios necessários
-            # (mesmo código do deploy para garantir consistência)
+            # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios e secrets necessários
             mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
             mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki}
             mkdir -p /opt/alice/logs/{erpnext,clickhouse}
             mkdir -p /opt/alice/{uploads,backups/manifests}
-            mkdir -p /opt/alice/secrets/{alertmanager,langfuse_db_password}
+            mkdir -p /opt/alice/secrets/alertmanager
             mkdir -p /opt/alice/app/infra/docker
             
             # Permissões específicas por serviço
@@ -754,6 +779,17 @@ jobs:
             chown -R 999:999 /opt/alice/data/postgres /opt/alice/data/langfuse-db 2>/dev/null || true
             chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
             chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext /opt/alice/uploads 2>/dev/null || true
+            
+            # Criar arquivos de secrets a partir do .env.prod existente
+            ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
+            if [ -f "$ENV_FILE" ]; then
+              LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
+              if [ -n "$LANGFUSE_DB_PWD" ]; then
+                printf '%s' "$LANGFUSE_DB_PWD" > /opt/alice/secrets/langfuse_db_password
+                chmod 600 /opt/alice/secrets/langfuse_db_password
+                chown 999:999 /opt/alice/secrets/langfuse_db_password 2>/dev/null || true
+              fi
+            fi
             
             # Restaurar versão anterior
             cd /opt/alice/app 2>/dev/null || exit 1
