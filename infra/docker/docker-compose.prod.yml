@@ -39,8 +39,8 @@
 # ERPNEXT: Arquitetura unificada v15 - imagem única frappe/erpnext com comandos por serviço
 #
 # Autor: Fillipe Guerra
-# Data: 21 de Dezembro de 2025
-# Atualização: Healthchecks corrigidos (/ready → /live) + start_period aumentado
+# Data: 27 de Dezembro de 2025
+# Atualização: Digests Traefik/Prometheus corrigidos via Docker Registry API + remoção de referências obsoletas a vídeo
 # =============================================================================
 
 # =============================================================================
@@ -385,7 +385,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.6.4, linux/amd64)
-    image: traefik:v3.6.4@sha256:10d11eab6d1254a3dc1a9015a33bd7deb3e779c852e89bbbf2cb69194f82ee90
+    image: traefik:v3.6.4@sha256:c5bd185c41ba3dbb42cf8a1b9fbdc368bdc96f90c8e598134879935f64e7a7f1
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -898,7 +898,7 @@ services:
     env_file:
       - .env.prod
     volumes:
-      # Volume Hetzner para uploads RAG (imagens, áudios, vídeos, documentos) - rw explícito necessário com read_only: true
+      # Volume Hetzner para uploads RAG (imagens, áudios, documentos) - rw explícito necessário com read_only: true
       - /opt/alice/uploads:/opt/alice/uploads:rw
     environment:
       NODE_ENV: production
@@ -952,7 +952,7 @@ services:
       - "traefik.http.routers.alice-rag.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
     healthcheck:
-      # RAG Service usa node:22-bookworm-slim (precisa FFmpeg para vídeos)
+    # RAG Service usa node:22-bookworm-slim (base consistente com dependências do serviço; suporte a vídeo foi removido)
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
       # /ready verifica dependências externas (GPU Manager Service, Qdrant) - pode falhar sem GPU pronta
       # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
@@ -1604,8 +1604,8 @@ services:
         # Ref: https://frappeframework.com/docs/user/en/bench/reference/new-site
         # --mariadb-user-host-login-scope='%' permite conexão de qualquer host (equivalente ao antigo --no-mariadb-socket)
         # CORREÇÃO 24/12/2025: Usar variáveis de ambiente do container ($${MYSQL_ROOT_PASSWORD}, $${ADMIN_PASSWORD})
-        # O Docker Compose interpola ${VAR} do .env.prod para criar environment do container
-        # Dentro do comando, usamos $${VAR} para escapar do Docker Compose e deixar o shell do container interpretar
+        # O Docker Compose interpola variáveis do .env.prod ao carregar o YAML.
+        # Dentro deste script, usamos $${NOME_VARIAVEL} para escapar do Docker Compose e deixar o shell do container interpretar.
         
         # CORREÇÃO CRÍTICA 24/12/2025: Executar criação de site E instalação em etapas separadas
         # Problema: --install-app erpnext pode falhar silenciosamente durante instalação
@@ -2517,7 +2517,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.0.1 -> v3.8.0 (Dec 2, 2025)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.8.0, linux/amd64)
-    image: prom/prometheus:v3.8.0@sha256:67abe619da66a6b14cc0e185205f93a29d5b03cedd1aaa06930745b21f95a374
+    image: prom/prometheus:v3.8.0@sha256:d936808bdea528155c0154a922cd42fd75716b8bb7ba302641350f9f3eaeba09
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped

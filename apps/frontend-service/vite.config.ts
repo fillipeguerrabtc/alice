@@ -6,6 +6,22 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+function requireEnv(name: string): string {
+  const value = process.env[name]?.trim();
+  if (!value) {
+    throw new Error(`Variável de ambiente ${name} é obrigatória para o Vite dev server (Regra 6 - fail-fast)`);
+  }
+  return value;
+}
+
+// REGRA 6: Sem hardcoded/fallback de URLs - dev usa integrações reais via env
+const AUTH_SERVICE_URL = requireEnv('AUTH_SERVICE_URL');
+const CHAT_SERVICE_URL = requireEnv('CHAT_SERVICE_URL');
+const RAG_SERVICE_URL = requireEnv('RAG_SERVICE_URL');
+const TRAINING_SERVICE_URL = requireEnv('TRAINING_SERVICE_URL');
+const INTEGRATIONS_SERVICE_URL = requireEnv('INTEGRATIONS_SERVICE_URL');
+const WS_URL = requireEnv('WS_URL');
+
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
@@ -25,27 +41,27 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api/auth': {
-        target: process.env.AUTH_SERVICE_URL || 'http://localhost:3001',
+        target: AUTH_SERVICE_URL,
         changeOrigin: true,
       },
       '/api/chat': {
-        target: process.env.CHAT_SERVICE_URL || 'http://localhost:3002',
+        target: CHAT_SERVICE_URL,
         changeOrigin: true,
       },
       '/api/rag': {
-        target: process.env.RAG_SERVICE_URL || 'http://localhost:3003',
+        target: RAG_SERVICE_URL,
         changeOrigin: true,
       },
       '/api/training': {
-        target: process.env.TRAINING_SERVICE_URL || 'http://localhost:3004',
+        target: TRAINING_SERVICE_URL,
         changeOrigin: true,
       },
       '/api/integrations': {
-        target: process.env.INTEGRATIONS_SERVICE_URL || 'http://localhost:3005',
+        target: INTEGRATIONS_SERVICE_URL,
         changeOrigin: true,
       },
       '/ws': {
-        target: process.env.WS_URL || 'ws://localhost:3002',
+        target: WS_URL,
         ws: true,
       },
     },

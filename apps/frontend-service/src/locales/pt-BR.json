@@ -988,11 +988,11 @@
     "multimodal": {
       "tabTitle": "Multimodal",
       "title": "Upload de Mídia Multimodal",
-      "subtitle": "Faça upload de imagens, áudios e vídeos para treinar a Alice. A mídia será processada via GPU para gerar embeddings e enriquecer a base de conhecimento.",
+      "subtitle": "Faça upload de imagens e áudios para treinar a Alice. A mídia será processada via GPU para gerar embeddings e enriquecer a base de conhecimento.",
       "descriptionLabel": "Descrição (opcional)",
       "descriptionPlaceholder": "Descreva o conteúdo das mídias para melhor contextualização",
       "dragDrop": "Arraste arquivos ou clique para selecionar",
-      "supportedTypes": "Imagens (JPEG, PNG, WebP, GIF), Áudios (MP3, WAV, WebM) e Vídeos (MP4, WebM, MOV)",
+      "supportedTypes": "Imagens (JPEG, PNG, WebP, GIF) e Áudios (MP3, WAV, WebM)",
       "queueTitle": "Fila de Upload",
       "clearCompleted": "Limpar Concluídos",
       "uploadAll": "Enviar Todos ({{count}})",

@@ -104,22 +104,20 @@ const CORS_ORIGINS = corsOriginsEnv
   : [];
 
 // URL do Integrations Service para comunicação cross-service (Regra 15 - Microsserviços)
-// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
+// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
 const INTEGRATIONS_SERVICE_URL = process.env.INTEGRATIONS_SERVICE_URL;
-if (!INTEGRATIONS_SERVICE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório em produção');
+if (!INTEGRATIONS_SERVICE_URL) {
+  throw new Error('INTEGRATIONS_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
-// Fallback apenas para desenvolvimento (server/index-dev.ts)
-const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL || 'http://localhost:3005';
+const INTEGRATIONS_SERVICE_URL_FINAL = INTEGRATIONS_SERVICE_URL;
 
 // URL do Training Service para coleta de dados de treinamento (Regra 15 - Microsserviços)
-// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
+// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
-if (!TRAINING_SERVICE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error('TRAINING_SERVICE_URL é obrigatório em produção');
+if (!TRAINING_SERVICE_URL) {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
-// Fallback apenas para desenvolvimento (server/index-dev.ts)
-const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL || 'http://localhost:3004';
+const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL;
 
 // SEGURANÇA: Usar req.tenantId populado pelo middleware requireAuth
 // Alinhado com Express.js 2025 + OWASP 2025 best practices

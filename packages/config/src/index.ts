@@ -107,14 +107,12 @@ export function loadConfig<T>(schema: z.ZodSchema<T>): T {
 }
 
 /**
- * Obter URL de serviço interno (Regra 6 - Sem fallbacks localhost em produção)
- * 
- * REGRA 6: Em produção, variáveis de ambiente DEVEM estar definidas.
- * Fallback para localhost apenas em desenvolvimento (server/index-dev.ts).
+ * Obter URL de serviço interno (Regra 6 - Fail-fast, sem hardcoded/fallback)
+ *
+ * REGRA 6: Variáveis de ambiente DEVEM estar definidas em QUALQUER ambiente.
+ * PROIBIDO: fallback para localhost, mocks ou "modo preview".
  */
 export function getServiceUrl(serviceName: string): string {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
   const serviceUrls: Record<string, string | undefined> = {
     auth: process.env.AUTH_SERVICE_URL,
     chat: process.env.CHAT_SERVICE_URL,
@@ -124,22 +122,12 @@ export function getServiceUrl(serviceName: string): string {
   };
   
   const url = serviceUrls[serviceName];
-  
-  // REGRA 6: Fail-fast em produção se variável não estiver definida
-  if (isProduction && !url) {
-    throw new Error(`Variável de ambiente ${serviceName.toUpperCase()}_SERVICE_URL é obrigatória em produção`);
+
+  if (!url) {
+    throw new Error(`Variável de ambiente ${serviceName.toUpperCase()}_SERVICE_URL é obrigatória (Regra 6 - fail-fast)`);
   }
-  
-  // Fallback apenas para desenvolvimento
-  const fallbacks: Record<string, string> = {
-    auth: 'http://localhost:3001',
-    chat: 'http://localhost:3002',
-    rag: 'http://localhost:3003',
-    training: 'http://localhost:3004',
-    integrations: 'http://localhost:3005',
-  };
-  
-  return url || fallbacks[serviceName] || 'http://localhost:3000';
+
+  return url;
 }
 
 // ============================================================================

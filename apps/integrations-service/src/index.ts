@@ -1858,32 +1858,30 @@ app.get('/api/integrations/wise/status', (_req: Request, res: Response) => {
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID;
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN;
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER;
-// REGRA 6: Sem fallbacks localhost em produção - variável DEVE estar definida
+// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
 const CHAT_SERVICE_URL = process.env.CHAT_SERVICE_URL;
-if (!CHAT_SERVICE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error('CHAT_SERVICE_URL é obrigatório em produção');
+if (!CHAT_SERVICE_URL) {
+  throw new Error('CHAT_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
-// Fallback apenas para desenvolvimento
-const CHAT_SERVICE_URL_FINAL = CHAT_SERVICE_URL || 'http://localhost:3002';
+const CHAT_SERVICE_URL_FINAL = CHAT_SERVICE_URL;
 
 // URL do Training Service para coleta de dados de treinamento
-// REGRA 6: Sem fallbacks para localhost em produção - variável DEVE estar definida
-// Alice MULTIMODAL: coleta dados de WhatsApp (texto, imagens, áudio, vídeo) para aprendizado
+// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
+// Alice MULTIMODAL: coleta dados de WhatsApp (texto, imagens, áudio) para aprendizado
 const TRAINING_SERVICE_URL = process.env.TRAINING_SERVICE_URL;
-if (!TRAINING_SERVICE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error('TRAINING_SERVICE_URL é obrigatório em produção');
+if (!TRAINING_SERVICE_URL) {
+  throw new Error('TRAINING_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
-// Fallback apenas para desenvolvimento
-const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL || 'http://localhost:3004';
+const TRAINING_SERVICE_URL_FINAL = TRAINING_SERVICE_URL;
 
 // URL do RAG Service para indexação de mídia multimodal do WhatsApp
-// REGRA 6: Sem fallbacks para localhost em produção
-// Permite indexar imagens/áudios/vídeos recebidos via WhatsApp no RAG
+// REGRA 6: Fail-fast em TODOS os ambientes - variável DEVE estar definida
+// Permite indexar imagens/áudios recebidos via WhatsApp no RAG
 const RAG_SERVICE_URL = process.env.RAG_SERVICE_URL;
-if (!RAG_SERVICE_URL && process.env.NODE_ENV === 'production') {
-  throw new Error('RAG_SERVICE_URL é obrigatório em produção');
+if (!RAG_SERVICE_URL) {
+  throw new Error('RAG_SERVICE_URL é obrigatório (Regra 6 - fail-fast)');
 }
-const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL || 'http://localhost:3003';
+const RAG_SERVICE_URL_FINAL = RAG_SERVICE_URL;
 
 /**
  * Valida assinatura do webhook Twilio

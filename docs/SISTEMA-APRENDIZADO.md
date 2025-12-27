@@ -84,7 +84,6 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 | **Texto** | Automático | Rating inferido (5 = sem escalação, 1 = escalou) |
 | **Imagens** | Automático | OpenCLIP ViT-H/14 embeddings (1024 dim → pgvector) |
 | **Áudios** | Automático | Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant) |
-| **Vídeos** | Automático | Frames + transcrição |
 
 **Integração Implementada (integrations-service/index.ts linha 2369):**
 ```typescript
@@ -164,7 +163,6 @@ const trainingResponse = await fetch(`${TRAINING_SERVICE_URL}/api/training/data`
 │  • Texto: Qwen3-Embedding-8B (4096 dim) → Qdrant            │
 │  • Imagem: OpenCLIP ViT-H/14 (1024 dim) → pgvector          │
 │  • Áudio: Canary-1B + Qwen3 (4096 dim) → Qdrant             │
-│  • (Nota: vídeo removido - suporte apenas texto/áudio/imagem) │
 └─────────────────────────────────────────────────────────────┘
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
@@ -418,9 +416,8 @@ Acessíveis em `/dashboard/analytics`:
 
 **Solução Implementada:**
 - Nova tab "Upload Multimodal" em `/training`
-- Drag & drop para imagens (JPEG, PNG, WebP, GIF até 100MB)
-- Drag & drop para áudios (MP3, WAV, OGG, WEBM até 100MB)
-- Drag & drop para vídeos (MP4, WebM, MOV até 100MB)
+- Drag & drop para imagens (JPEG, PNG, WebP, GIF até 10MB)
+- Drag & drop para áudios (MP3, WAV, OGG, WEBM até 25MB)
 - Fila de upload visual com status em tempo real
 - Processamento via GPU (Qwen3-Embedding-8B + OpenCLIP + Canary-1B ASR)
 - Internacionalização PT-BR e EN
@@ -449,7 +446,7 @@ Acessíveis em `/dashboard/analytics`:
 - Mídia do WhatsApp é baixada do Twilio e enviada para `/api/media/upload/json`
 - Imagens: OpenCLIP embeddings (1024 dim)
 - Áudios: Canary-1B transcrição + Qwen3-Embedding-8B embeddings (4096 dim → Qdrant)
-- Vídeos: Frames OpenCLIP (1024 dim → pgvector) + transcrição Qwen3-Embedding-8B (4096 dim → Qdrant)
+- Vídeo: **não suportado** (removido). Uploads `video/*` são rejeitados explicitamente.
 - Processamento fire-and-forget (não bloqueia resposta ao usuário)
 - `RAG_SERVICE_URL` adicionado ao docker-compose para integrations-service
 

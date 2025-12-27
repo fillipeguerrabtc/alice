@@ -11,7 +11,7 @@
  * - Status em tempo real durante operações
  * 
  * AMBIENTES:
- * - Desenvolvimento (Cursor IDE): Dados de preview via server/index-dev.ts
+ * - Desenvolvimento (local): API real via observability-service (stack Docker)
  * - Produção (Hetzner): API real via observability-service
  * 
  * Regra 8 - TypeScript strict

@@ -397,11 +397,6 @@ describe('RAG Service - Circuit Breakers', () => {
       failureThreshold: 3,
       resetTimeout: 30000,
     },
-    ffmpeg: {
-      name: 'ffmpeg-processing',
-      failureThreshold: 3,
-      resetTimeout: 60000,
-    },
   };
 
   it('deve ter circuit breaker para embeddings GPU', () => {
@@ -410,10 +405,5 @@ describe('RAG Service - Circuit Breakers', () => {
 
   it('deve ter circuit breaker para OpenCLIP GPU', () => {
     expect(breakers.imageEmbedding.name).toBe('openclip-gpu');
-  });
-
-  it('deve ter circuit breaker para FFmpeg', () => {
-    expect(breakers.ffmpeg.name).toBe('ffmpeg-processing');
-    expect(breakers.ffmpeg.resetTimeout).toBe(60000); // 1 minuto
   });
 });

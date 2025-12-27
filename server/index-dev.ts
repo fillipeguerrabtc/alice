@@ -1,8 +1,10 @@
 /**
  * Servidor de Desenvolvimento - Alice Enterprise Platform
  * 
- * APENAS PARA PREVIEW LOCAL (Regra 6 CLAUDE.md)
- * Dados de preview permitidos APENAS neste arquivo.
+ * DESENVOLVIMENTO REAL (Regra 6 CLAUDE.md)
+ * PROIBIDO: mocks/stubs/preview responses. Este servidor exige integrações reais:
+ * - PostgreSQL (persistência real)
+ * - GPU Manager Service (Mixtral via vLLM)
  * 
  * Produção: Hetzner Cloud via Docker Compose (Regra 12)
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
@@ -15,69 +17,6 @@ import { createLogger } from '@alice/shared-utils';
 
 // Logger singleton (Regra 8 CLAUDE.md - Pino obrigatório)
 const logger = createLogger('server-dev');
-
-// ============================================================================
-// PREVIEW DATA - APENAS DESENVOLVIMENTO (Regra 6 CLAUDE.md)
-// Este código NAO é deployado para produção
-// ============================================================================
-
-async function setupPreviewData() {
-  log('Modo desenvolvimento: configurando dados de preview');
-}
-
-// ============================================================================
-// PREVIEW CHAT ENDPOINT - APENAS DESENVOLVIMENTO
-// Permite testar a UI de chat sem GPU Manager Service
-// ============================================================================
-
-function setupPreviewChatEndpoint(app: express.Express) {
-  app.post('/api/chat/preview', async (req, res) => {
-    const { message } = req.body;
-    
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-
-    const response = generatePreviewResponse(message || '');
-    const words = response.split(' ');
-    
-    for (const word of words) {
-      res.write(`data: ${JSON.stringify({ content: word + ' ' })}\n\n`);
-      await new Promise(resolve => setTimeout(resolve, 50));
-    }
-    
-    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-    res.end();
-  });
-
-  app.get('/api/llm/status', (_req, res) => {
-    res.json({
-      available: true,
-      previewMode: true,
-      model: 'Mixtral-8x7B-preview',
-      provider: 'Preview (desenvolvimento)',
-      note: 'Em produção, conecta ao GPU Manager Service (Hetzner GEX44) com Mixtral 8x7B'
-    });
-  });
-}
-
-function generatePreviewResponse(userMessage: string): string {
-  const lowerMessage = userMessage.toLowerCase();
-  
-  if (lowerMessage.includes('ola') || lowerMessage.includes('oi') || lowerMessage.includes('hello')) {
-    return 'Olá! Sou Alice, sua assistente de IA enterprise. Este é o modo preview de desenvolvimento. Em produção, estarei conectada ao Mixtral 8x7B via GPU Manager Service (Hetzner GEX44). Como posso ajudar?';
-  }
-  
-  if (lowerMessage.includes('quem') && lowerMessage.includes('voce')) {
-    return 'Sou Alice, uma plataforma de IA autonoma enterprise. Minhas capacidades incluem: chat em tempo real com streaming, RAG para busca semantica em documentos, geracao de imagens com FLUX.1, e integracao SSO com Grafana e ERPNext. Este e o modo preview.';
-  }
-
-  if (lowerMessage.includes('ajud') || lowerMessage.includes('help')) {
-    return 'Posso ajudar com diversas tarefas: responder perguntas, analisar documentos, gerar insights de negocios, e muito mais. Em producao, terei acesso ao modelo Mixtral 8x7B.';
-  }
-
-  return `Recebi sua mensagem. Este é o modo preview de desenvolvimento. Em produção (Hetzner GEX44), estarei conectada ao Mixtral 8x7B via GPU Manager Service para respostas completas e inteligentes.`;
-}
 
 // ============================================================================
 // SERVIDOR DE DESENVOLVIMENTO
@@ -117,12 +56,6 @@ async function startDevServer() {
     next();
   });
 
-  // Endpoints de preview ANTES das rotas principais
-  setupPreviewChatEndpoint(app);
-  
-  // Dados de preview
-  await setupPreviewData();
-
   const server = await registerRoutes(app);
   
   app.use((err: Error & { status?: number; statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -138,7 +71,7 @@ async function startDevServer() {
   const port = 5000;
   server.listen(port, "0.0.0.0", () => {
     log(`Servidor rodando em http://0.0.0.0:${port}`);
-    log(`Modo: DESENVOLVIMENTO (preview habilitado)`);
+    log(`Modo: DESENVOLVIMENTO (integrações reais - sem preview/mocks)`);
   });
 }
 

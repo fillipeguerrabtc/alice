@@ -1,10 +1,10 @@
 # ==============================================================================
 # Alice Enterprise Platform - RAG Service
-# Dockerfile Enterprise com Node.js Bookworm Slim + FFmpeg
+# Dockerfile Enterprise com Node.js Bookworm Slim (sem Distroless)
 # 
 # NOTA: Este serviço usa node:22-bookworm-slim em vez de Distroless porque
-# precisa de FFmpeg para processamento de vídeos. A imagem bookworm-slim é
-# mantida pelo time oficial do Node.js e é segura para produção.
+# pode precisar de dependências de sistema (ex.: CA certificates). A imagem
+# bookworm-slim é mantida pelo time oficial do Node.js e é segura para produção.
 #
 # SEGURANÇA:
 # - Non-root container (usuário 'node')
@@ -97,7 +97,7 @@ RUN pnpm --filter @alice/rag-service deploy --prod --legacy /prod/rag-service
 #
 # NOTA: Este serviço usa node:22-bookworm-slim (não Distroless) para permitir
 # dependências de sistema quando necessário (ex.: CA certificates). Com vídeo
-# desabilitado na plataforma, FFmpeg NÃO é necessário no runtime.
+# desabilitado na plataforma, não há dependências extras obrigatórias no runtime.
 #
 # SEGURANÇA:
 # - Imagem oficial Node.js (mantida, patches de segurança regulares)

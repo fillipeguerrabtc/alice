@@ -41,10 +41,10 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
-| DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
+| DESENVOLVIMENTO | Cursor IDE | Desenvolvimento local com integrações reais | **PROIBIDO** mocks/stubs/preview responses (Regra 6) |
 | PRODUÇÃO | Hetzner Cloud GPU (servidor único - 51 containers) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
-**IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
+**IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. O `server/index-dev.ts` existe apenas para fluxo local, mas **sem preview/mocks** — ele exige integrações reais (PostgreSQL + GPU Manager Service).
 
 ## System Architecture
 Alice employs a microservices architecture with 50 containerized services orchestrated by Traefik API Gateway, emphasizing data privacy, scalability, and resilience. All services run on a single Hetzner GPU server GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) to eliminate network latency and simplify management.
@@ -521,7 +521,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Healthchecks /live Enterprise (21/12/2025): Todos healthchecks dos 6 serviços Alice alterados de /ready para /live - /ready verifica dependências externas (GPU Manager Service) e falha se não estiverem prontas. Docker healthcheck deve verificar se PROCESSO está vivo, não dependências. Corrige erro "container alice-rag is unhealthy" em primeiro deploy*
 *Healthchecks Dockerfiles Sync (21/12/2025): Dockerfiles de todos 6 serviços Alice atualizados com /live para consistência com docker-compose.prod.yml*
 *ClickHouse start_period (21/12/2025): Aumentado start_period de 60s para 120s e retries de 5 para 8 - primeira inicialização do ClickHouse pode demorar mais*
-*RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant, FFmpeg)*
+*RAG start_period (21/12/2025): Aumentado start_period de 60s para 90s - RAG tem mais dependências para inicializar (Qdrant)*
 *Bug Fix Qdrant Healthcheck pgrep (21/12/2025): Removido pgrep do healthcheck do Qdrant - imagem oficial qdrant/qdrant é minimalista e não tem pgrep instalado. Healthcheck agora usa apenas grep /proc/net/tcp para verificar porta*
 *Bug Fix ERPNext Volume Conflict (21/12/2025): Adicionada limpeza de volumes Docker órfãos e verificação de conflitos arquivo/diretório. Erro "mkdir: file exists" ocorre quando Docker encontra arquivo onde deveria haver diretório. Deploy agora limpa /var/lib/docker/volumes/ e usa safe_mkdir() para criar diretórios*
 *Rollback Enterprise Volumes (21/12/2025): FASE 4 do full_system_cleanup() agora remove resíduos de volumes em /var/lib/docker/volumes/ (erpnext-sites, erpnext-logs) e verifica conflitos arquivo/diretório*

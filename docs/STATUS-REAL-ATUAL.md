@@ -224,7 +224,7 @@
 >
 > **Bug Fix (17/12/2025):** Endpoint `/api/media/upload/json` corrigido para ficar consistente com endpoint FormData:
 > - **Áudio**: Embeddings de texto (4096 dim) agora vão para Qdrant (antes ia para PostgreSQL incompatível)
-> - **Vídeo**: Processamento completo agora (FFmpeg + transcrição + frames CLIP) - antes ficava apenas `pending`
+> - **Vídeo**: **não suportado** (removido em 23/12/2025 por custo/complexidade). Uploads `video/*` são **rejeitados** explicitamente com erro claro.
 > - **Documento**: Processamento completo agora (extração de texto + embeddings) - antes ficava apenas `pending`
 > - **Validação de dimensão**: Adicionada para todos os tipos de mídia (Enterprise-Grade - Regra 6)
 
@@ -655,7 +655,7 @@ Retenção Arquivo:   30 dias
 | 7 | alice-frontend | nginx:1.27-alpine | React/Nginx |
 | 8 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
 | 9 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
-| 10 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (precisa FFmpeg) |
+| 10 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (texto/imagem/áudio/documentos) |
 | 11 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
 | 12 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
 | 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
@@ -817,7 +817,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (27/12/2025):** Digests do Docker Hub podem ser rotacionados/removidos. `docker-compose.prod.yml` foi atualizado com digests **válidos** (linux/amd64) para **Prometheus v3.8.0** e **Traefik v3.6.4**, evitando falha `failed to resolve reference ... not found` durante `docker compose pull` no deploy.
+> **Bug Fix Deploy (27/12/2025):** Digests do Docker Hub podem ser rotacionados/removidos. `docker-compose.prod.yml` foi atualizado com digests **válidos** (linux/amd64) para **Prometheus v3.8.0** e **Traefik v3.6.4**, obtidos via **Docker Registry API v2** (header `Docker-Content-Digest`), evitando falha `failed to resolve reference ... not found` durante `docker compose pull` no deploy.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -1224,7 +1224,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
-*Upload Multimodal: Nova tab em /training para imagens/áudios/vídeos (15/12/2025)*
+*Upload Multimodal: Nova tab em /training para imagens/áudios (vídeo removido em 23/12/2025) (15/12/2025)*
 *WhatsApp → RAG: Mídia indexada automaticamente para busca semântica (15/12/2025)*
 *RBAC Trading (17/12/2025): Adicionadas permissões integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*

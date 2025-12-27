@@ -348,7 +348,7 @@ alice/
 │           └── use-websocket-chat.ts  # Hook WebSocket
 │
 └── server/
-    └── index-dev.ts                # Gateway de desenvolvimento
+    └── index-dev.ts                # Gateway de desenvolvimento (integrações reais - sem preview/mocks)
 ```
 
 ---
