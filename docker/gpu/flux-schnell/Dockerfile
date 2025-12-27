@@ -1,37 +1,38 @@
+# syntax=docker/dockerfile:1.4
 # =============================================================================
 # Alice Enterprise Platform - FLUX.1 Schnell
 # =============================================================================
 # Dockerfile para geração de imagens com FLUX.1 Schnell em GPU RTX 4000 SFF Ada (20GB)
 # 
+# OTIMIZAÇÃO BUILD (27/12/2025):
+# - Imagem base pytorch/pytorch já tem PyTorch instalado (~3GB economia)
+# - BuildKit cache mount para pip (--mount=type=cache)
+# 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+# OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="FLUX.1 Schnell image generation server"
-LABEL version="1.1.0"
+LABEL version="1.2.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-# Silenciar warning do pip (instalação como root é intencional durante build)
 ENV PIP_ROOT_USER_ACTION=ignore
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3-pip \
-    curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 flux
 WORKDIR /app
 
-# Instalar dependências - Versões pinadas Dezembro 2025
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir \
-    torch==2.5.1 \
+# Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install \
     diffusers==0.32.2 \
     transformers==4.47.1 \
     accelerate==1.2.1 \

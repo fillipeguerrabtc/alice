@@ -457,14 +457,15 @@ Acessíveis em `/dashboard/analytics`:
 - `apps/integrations-service/src/index.ts` - Nova função e chamada no webhook
 - `infra/docker/docker-compose.prod.yml` - RAG_SERVICE_URL e depends_on alice-rag
 
-### GAP 4: Imagens Docker GPU ⏳ AGUARDANDO BUILD MANUAL
-**Status:** Dockerfiles prontos, aguardando build manual
+### GAP 4: Imagens Docker GPU ✅ RESOLVIDO (27/12/2025)
+**Status:** Build automático via CI/CD
 
-**Próximos passos (manual):**
-1. Rodar workflow `build-media-images` manualmente no GitHub Actions
-2. Pegar digests SHA256 das imagens geradas
-3. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
-4. Deploy em produção
+**Ações realizadas:**
+1. Workflow `release.yml` builda automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer)
+2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
+3. 4/5 Dockerfiles migrados para imagem base `pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime` (PyTorch pré-instalado = ~12GB economia)
+4. BuildKit cache mount adicionado para cache persistente de pip
+5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 
 ### GAP 5: Arquivo clip-service-url.ts Obsoleto ✅ RESOLVIDO
 **Status:** Removido em 15/12/2025

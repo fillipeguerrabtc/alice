@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.4
 # =============================================================================
 # Alice Enterprise Platform - Embeddings GPU (Arquitetura Unificada)
 # =============================================================================
@@ -8,39 +9,40 @@
 # GPU: RTX 4000 Ada (20GB VRAM) - Hetzner GEX44
 # VRAM estimado: ~16GB para Qwen3 + ~2GB para OpenCLIP
 # 
-# NOTA: Este Dockerfile é legado - embeddings agora via GPU Manager Service
-# Mantido apenas para referência histórica
+# OTIMIZAÇÃO BUILD (27/12/2025):
+# - Imagem base pytorch/pytorch já tem PyTorch instalado (~3GB economia)
+# - BuildKit cache mount para pip (--mount=type=cache)
+# - Combina RUN commands para menos layers
 # 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
+# OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
+# Economia: ~3GB download + ~5min build time
+FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
-LABEL version="2.1.0"
+LABEL version="2.2.0"
 LABEL architecture="unified"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
-# Silenciar warning do pip (instalação como root é intencional durante build)
 ENV PIP_ROOT_USER_ACTION=ignore
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3.11 \
-    python3.11-venv \
-    python3-pip \
-    curl \
+# Instalar curl para healthcheck (imagem pytorch não tem)
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
-# Instalar dependências - Versões pinadas Dezembro 2025
-RUN pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir \
-    torch==2.5.1 \
+# Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
+# OTIMIZAÇÃO: --mount=type=cache para cache persistente do pip
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install \
     torchvision==0.20.1 \
     transformers==4.47.1 \
     sentence-transformers==3.3.1 \

@@ -826,7 +826,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | trigger-release | 2 min | API call |
 | **Release Workflow** | | |
 | create-release | 5 min | Tag + GitHub Release |
-| build-images | 30 min | 14 imagens Docker |
+| build-images | 90 min | 14 imagens Docker (9 microservices + 5 GPU pesadas) |
 | trigger-deploy | 2 min | API call |
 | **Deploy Workflow** | | |
 | validate-and-prepare | 5 min | Validação + GHCR check |
@@ -1246,6 +1246,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Integrações: Verificadas em 17/12/2025 - Auth→ERPNext/Grafana, Stripe→ERPNext, Wise→ERPNext, KuCoin Trading - todas funcionais*
 *Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts usava sql template literal com join() que parametrizava string inteira como único valor. Corrigido para usar inArray() do Drizzle ORM (3 ocorrências: processRagUpdate, processAutoIndexing, processEmbeddingGeneration)*
 *CI/CD Cleanup (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente. Adicionado @alice/logger às dependências do observability-service e autoprefixer ao frontend-service*
+*GPU Docker Build Timeout Fix (27/12/2025): Build de GPU Services travava após ~31min. Corrigido: (1) Timeout aumentado de 30min para 90min; (2) 4/5 Dockerfiles GPU migrados para imagem base pytorch/pytorch (PyTorch pré-instalado = ~12GB economia); (3) BuildKit cache mount adicionado (--mount=type=cache); (4) Progress plain e network host para melhor performance*
 *Performance Otimização (19/12/2025): Express 5.2.1 (breaking changes mitigados), Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6)*
 *HTTP/2 Enterprise (19/12/2025): Habilitado no Traefik via maxConcurrentStreams=250 para melhor multiplexing*
 *SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, deploy-production.yml*

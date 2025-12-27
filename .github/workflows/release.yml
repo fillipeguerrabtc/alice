@@ -169,12 +169,17 @@ jobs:
   # Job 2: Build e Push Docker Images (CONSOLIDADO)
   # OTIMIZAÇÃO: 1 job único ao invés de matrix de 14 jobs
   # Elimina ~4min de overhead (14 setups → 1)
-  # Timeout: 30min (14 imagens com cache GHCR - típico ~15-20min)
+  # Timeout: 90min (GPU images são muito pesadas - PyTorch ~3GB, CUDA ~5-8GB)
+  #
+  # NOTA IMPORTANTE (27/12/2025):
+  # - 9 microservices: ~15-20min total (Node.js leves)
+  # - 5 GPU services: ~60-80min total (PyTorch, vLLM, NeMo, diffusers)
+  # - Cache GHCR ajuda muito após primeiro build
   # ===========================================================================
   build-images:
     name: Build All Docker Images
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 30
+    timeout-minutes: 90
     needs: create-release
     if: ${{ !inputs.prerelease }}
 
@@ -258,6 +263,8 @@ jobs:
           echo "✅ All 9 microservices built!"
 
       # Build de serviços GPU (docker/gpu/)
+      # NOTA: GPU images são muito pesadas (~5-10GB cada com PyTorch/CUDA)
+      # Primeiro build pode demorar 60-80min, builds subsequentes usam cache
       - name: Build GPU Services
         run: |
           set -e
@@ -265,7 +272,14 @@ jobs:
           
           echo "=============================================="
           echo "Building GPU services for $VERSION"
+          echo "⚠️  GPU builds são pesados - PyTorch ~3GB, CUDA ~5-8GB"
+          echo "⚠️  Primeiro build: ~60-80min | Com cache: ~10-20min"
           echo "=============================================="
+          
+          # Limpar espaço em disco antes dos builds pesados
+          echo "🧹 Limpando cache Docker antigo..."
+          docker system prune -f --filter "until=24h" || true
+          df -h /
           
           # Lista de serviços GPU: nome_imagem:diretório_contexto
           GPU_SERVICES=(
@@ -276,20 +290,29 @@ jobs:
             "lora-trainer:./docker/gpu/lora-trainer"
           )
           
+          TOTAL=${#GPU_SERVICES[@]}
+          CURRENT=0
+          
           for entry in "${GPU_SERVICES[@]}"; do
             IMAGE="${entry%%:*}"
             CONTEXT="${entry#*:}"
+            CURRENT=$((CURRENT + 1))
             
             echo ""
             echo "==========================================="
-            echo "Building GPU: $IMAGE"
+            echo "[$CURRENT/$TOTAL] Building GPU: $IMAGE"
+            echo "Started at: $(date '+%Y-%m-%d %H:%M:%S')"
             echo "==========================================="
             
             # OTIMIZAÇÃO CACHE (Best Practices 2025)
+            # --progress=plain: Output detalhado para debugging
+            # --network=host: Melhor performance de download
             docker buildx build \
               --push \
+              --progress=plain \
               --provenance=false \
               --sbom=false \
+              --network=host \
               --build-arg BUILDKIT_INLINE_CACHE=1 \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:${VERSION}" \
               --tag "${{ env.IMAGE_PREFIX }}-${IMAGE}:latest" \
@@ -298,11 +321,17 @@ jobs:
               --file "${CONTEXT}/Dockerfile" \
               "$CONTEXT"
             
-            echo "✅ $IMAGE built and pushed"
+            echo "✅ [$CURRENT/$TOTAL] $IMAGE built and pushed at $(date '+%H:%M:%S')"
+            
+            # Mostrar espaço em disco após cada build
+            echo "📊 Disk usage: $(df -h / | tail -1 | awk '{print $5}')"
           done
           
           echo ""
+          echo "=============================================="
           echo "✅ All 5 GPU services built!"
+          echo "Completed at: $(date '+%Y-%m-%d %H:%M:%S')"
+          echo "=============================================="
 
       - name: Build Summary
         run: |
