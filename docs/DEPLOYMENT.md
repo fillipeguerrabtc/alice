@@ -472,6 +472,42 @@ systemctl start fail2ban
 fail2ban-client status sshd
 ```
 
+### 6.1. Configurar Self-Hosted Runner (Deploy Server)
+
+**⚠️ OBRIGATÓRIO para workflows funcionarem corretamente:**
+
+O runner self-hosted precisa de **passwordless sudo** configurado para executar comandos de limpeza de disco nos workflows.
+
+```bash
+# Conectar ao Deploy Server
+ssh alice-hetzner
+
+# Verificar usuário do runner
+cd /opt/actions-runner
+cat .runner  # Verificar usuário configurado (geralmente é o usuário que instalou o runner)
+
+# Configurar passwordless sudo (substituir USER pelo usuário do runner)
+# Exemplo: se o runner foi instalado como root, usar:
+echo "root ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/actions-runner
+chmod 0440 /etc/sudoers.d/actions-runner
+
+# Se o runner foi instalado como outro usuário (ex: runner):
+# echo "runner ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/actions-runner
+# sudo chmod 0440 /etc/sudoers.d/actions-runner
+
+# Testar passwordless sudo
+sudo -n whoami  # Deve retornar root sem pedir senha
+
+# Verificar se runner está rodando
+systemctl status actions.runner.fillipeguerrabtc-alice.*.service
+
+# Se não estiver rodando, iniciar:
+systemctl start actions.runner.fillipeguerrabtc-alice.*.service
+systemctl enable actions.runner.fillipeguerrabtc-alice.*.service
+```
+
+**Nota:** Os workflows já usam `sudo -n` (non-interactive), mas ainda requer passwordless sudo configurado. Se não estiver configurado, os comandos de limpeza de disco falharão silenciosamente (devido ao `|| true`), mas isso pode causar problemas de espaço em disco em builds grandes.
+
 ### 6. Primeiro Deploy
 
 O deploy é **100% automático** via GitHub Actions:

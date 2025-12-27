@@ -65,6 +65,29 @@ cd /opt/actions-runner
 ./run.sh --check  # Mostra status de conexão
 ```
 
+### 2.1. Configurar Passwordless Sudo (Obrigatório para Self-Hosted Runner)
+
+O runner self-hosted precisa de **passwordless sudo** configurado para executar comandos de limpeza de disco.
+
+**Opção 1: Configurar passwordless sudo para usuário do runner (Recomendado)**
+
+```bash
+# No Deploy Server, verificar usuário do runner
+cd /opt/actions-runner
+cat .runner  # Verificar usuário configurado
+
+# Configurar passwordless sudo (substituir USER pelo usuário do runner)
+echo "USER ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/actions-runner
+sudo chmod 0440 /etc/sudoers.d/actions-runner
+
+# Testar
+sudo -n whoami  # Deve retornar root sem pedir senha
+```
+
+**Opção 2: Usar sudo -n nos workflows (Já implementado)**
+
+Os workflows já usam `sudo -n` (non-interactive), mas ainda requer passwordless sudo configurado. Se não estiver configurado, os comandos falharão silenciosamente (devido ao `|| true`).
+
 ### 3. Verificar Labels do Runner
 
 O runner deve estar registrado com as labels: `self-hosted`, `linux`, `deploy`
