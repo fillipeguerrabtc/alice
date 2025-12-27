@@ -1059,9 +1059,13 @@ jobs:
       # - Registry cache no GHCR: NÃO é branch-specific (compartilha entre workflows)
       # - mode=max salva todas as layers intermediárias
       # - Imagens de cache são armazenadas no próprio GHCR com tag :cache
+      # - NOTA: cache-from é opcional - se cache não existe, build continua sem cache
+      #   (primeiro build sempre será sem cache, builds subsequentes usam cache)
+      #   Cache funciona com runners GitHub-hosted E self-hosted (armazenado no GHCR)
       #
       # BENEFÍCIOS:
       # - Cache compartilhado entre release.yml e deploy-production.yml
+      # - Cache funciona independente do tipo de runner (GitHub-hosted ou self-hosted)
       # - Rebuild sem mudanças: ~1-2 min (vs ~8 min sem cache)
       # - Mudança em 1 serviço: apenas esse serviço rebuilda
       # - Mudança em package.json: rebuilda a partir do pnpm install

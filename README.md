@@ -1,7 +1,7 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 26 de Dezembro de 2025
+**Data:** 27 de Dezembro de 2025
 
 <div align="center">
 

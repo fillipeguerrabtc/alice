@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 26 de Dezembro de 2025
+**Data:** 27 de Dezembro de 2025
 
 ## Visão Geral da Arquitetura - 50 Containers em Produção
 
@@ -636,11 +636,22 @@ O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
 - ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (main)
 - ✅ Sem limite de 10GB do GitHub Actions cache
 - ✅ Reprodutibilidade: releases usam a tag exata
+- ✅ Funciona com runners GitHub-hosted E self-hosted (cache armazenado no GHCR, não no runner)
+- ✅ Primeiro build: cria cache do zero (sem cache disponível) - build completo
+- ✅ Builds subsequentes: usam cache automaticamente - builds incrementais rápidos
+
+**Comportamento do Cache:**
+
+- **Primeiro build após mudança de runner**: Cache não existe, build completo (normal)
+- **Builds subsequentes**: Cache disponível no GHCR, build incremental rápido
+- **Cache opcional**: Se cache não existe, build continua sem erro (comportamento esperado do Docker Buildx)
+- **Invalidação automática**: Cache é invalidado por hash SHA256 quando arquivos mudam
 
 **Performance Esperada:**
 
 | Cenário | Sem Cache | Com Cache |
 |---------|-----------|-----------|
+| Primeiro build (cache vazio) | ~45 min | ~45 min |
 | Rebuild completo | ~45 min | ~45 min |
 | Mudança em 1 serviço | ~45 min | ~7 min |
 | Nenhuma mudança | ~45 min | ~3 min |
