@@ -452,100 +452,14 @@ jobs:
           echo "✅ All 15 images built (10 microservices + 5 GPU)"
 
   # ===========================================================================
-  # Job 3: Sync Vendor Images (Supply Chain Security)
-  # Timeout: 15min (copia ~22 imagens para GHCR)
-  # ===========================================================================
-  sync-vendor-images:
-    name: Sync Vendor Images
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
-    needs: [create-release, build-images]
-    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    
-    steps:
-      - name: Checkout código
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Login no GHCR
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login no Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' }}
-        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Instalar skopeo
-        run: |
-          if ! command -v skopeo &> /dev/null; then
-            sudo apt-get update && sudo apt-get install -y skopeo
-          fi
-          skopeo --version
-
-      - name: Sync Vendor Images para GHCR
-        env:
-          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VENDOR_PREFIX: ghcr.io/${{ github.repository_owner }}/alice-vendor
-        run: |
-          set -euo pipefail
-          
-          echo "=============================================="
-          echo "SYNC VENDOR IMAGES TO GHCR"
-          echo "=============================================="
-          
-          # Lista de imagens críticas (sincroniza apenas as essenciais para deploy rápido)
-          VENDOR_IMAGES=(
-            "traefik:v$(jq -r '.traefik' .github/component-versions.json)|traefik"
-            "prom/prometheus:v$(jq -r '.prometheus' .github/component-versions.json)|prometheus"
-            "grafana/grafana-oss:$(jq -r '.grafana' .github/component-versions.json)|grafana"
-            "redis:$(jq -r '.redis' .github/component-versions.json)|redis"
-            "qdrant/qdrant:v1.16.2|qdrant"
-            "pgvector/pgvector:$(jq -r '.pgvector' .github/component-versions.json)|pgvector"
-            "mariadb:$(jq -r '.mariadb' .github/component-versions.json)|mariadb"
-          )
-          
-          SYNCED=0
-          
-          for entry in "${VENDOR_IMAGES[@]}"; do
-            SOURCE="${entry%%|*}"
-            TARGET_NAME="${entry##*|}"
-            TARGET="${VENDOR_PREFIX}-${TARGET_NAME}:latest"
-            
-            echo "📦 Syncing: $SOURCE → $TARGET"
-            
-            # Verificar se já existe no GHCR
-            if skopeo inspect "docker://${TARGET}" > /dev/null 2>&1; then
-              echo "  ✅ Já existe no GHCR"
-              SYNCED=$((SYNCED + 1))
-              continue
-            fi
-            
-            # Copiar imagem
-            skopeo copy \
-              --dest-creds="${{ github.actor }}:${GHCR_TOKEN}" \
-              "docker://${SOURCE}" \
-              "docker://${TARGET}" || echo "  ⚠️ Falhou (não crítico)"
-            
-            SYNCED=$((SYNCED + 1))
-          done
-          
-          echo ""
-          echo "✅ ${SYNCED} vendor images sincronizadas"
-
-  # ===========================================================================
-  # Job 4: Disparar Deploy Automaticamente
+  # Job 3: Disparar Deploy Automaticamente
   # Timeout: 2min (apenas API call)
   # ===========================================================================
   trigger-deploy:
     name: Trigger Deploy
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 2
-    needs: [create-release, build-images, sync-vendor-images]
+    needs: [create-release, build-images]
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:

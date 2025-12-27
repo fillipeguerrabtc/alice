@@ -454,44 +454,20 @@ jobs:
               echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
             fi
             
-            # =================================================================
-            # VENDOR IMAGE SYNC (Supply Chain Security)
-            # Copia imagens de terceiros para GHCR se disponível
-            # =================================================================
-            VENDOR_OVERRIDE=""
-            VENDOR_PREFIX="ghcr.io/${GITHUB_ACTOR}/alice-vendor"
-            
-            # Verificar se temos imagens vendor no GHCR (testar uma imagem crítica)
-            if docker manifest inspect "${VENDOR_PREFIX}-traefik:v3.6.4" > /dev/null 2>&1; then
-              echo "✅ Vendor images disponíveis no GHCR"
-              echo "   Usando: ${VENDOR_PREFIX}-*"
-              VENDOR_OVERRIDE="-f docker-compose.vendor-override.yml"
-              export VENDOR_PREFIX="${VENDOR_PREFIX}"
-            else
-              echo "⚠️ Vendor images não encontradas no GHCR"
-              echo "   Usando imagens do Docker Hub (fallback)"
-              echo "   Execute 'gh workflow run sync-vendor-images.yml' para popular o GHCR"
-            fi
-            
             # Pull das imagens
             echo "📥 Baixando imagens Docker..."
-            docker compose -f docker-compose.prod.yml ${VENDOR_OVERRIDE} --env-file .env.prod pull --ignore-pull-failures
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
             
             # Deploy
             echo "🚀 Iniciando containers..."
-            docker compose -f docker-compose.prod.yml ${VENDOR_OVERRIDE} --env-file .env.prod up -d --remove-orphans
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
             
             # Verificar status
             sleep 10
-            RUNNING=$(docker compose -f docker-compose.prod.yml ${VENDOR_OVERRIDE} ps --format "{{.State}}" | grep -c "running" || echo "0")
+            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
             echo ""
             echo "=============================================="
             echo "✅ Deploy concluído: ${RUNNING} containers rodando"
-            if [ -n "${VENDOR_OVERRIDE}" ]; then
-              echo "📦 Usando vendor images do GHCR (supply chain secured)"
-            else
-              echo "⚠️ Usando vendor images do Docker Hub (execute sync-vendor-images)"
-            fi
             echo "=============================================="
 
   # ===========================================================================
