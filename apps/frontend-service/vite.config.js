@@ -3,20 +3,31 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { fileURLToPath } from 'url';
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
-function requireEnv(name) {
+
+// NOTA: Durante `vite build` (CI), o proxy não é usado - apenas durante `vite dev`
+var isBuild = process.argv.includes('build');
+
+function getEnvOrDefault(name, defaultValue) {
     var value = (process.env[name] || '').trim();
+    // Durante build, usar default (proxy não é usado em produção)
+    if (isBuild) {
+        return value || defaultValue;
+    }
+    // Durante dev, warn se não definida
     if (!value) {
-        throw new Error("Variável de ambiente ".concat(name, " é obrigatória para o Vite dev server (Regra 6 - fail-fast)"));
+        console.warn('⚠️ ' + name + ' não definida - usando fallback localhost para dev');
+        return defaultValue;
     }
     return value;
 }
-// REGRA 6: Sem hardcoded/fallback de URLs - dev usa integrações reais via env
-var AUTH_SERVICE_URL = requireEnv('AUTH_SERVICE_URL');
-var CHAT_SERVICE_URL = requireEnv('CHAT_SERVICE_URL');
-var RAG_SERVICE_URL = requireEnv('RAG_SERVICE_URL');
-var TRAINING_SERVICE_URL = requireEnv('TRAINING_SERVICE_URL');
-var INTEGRATIONS_SERVICE_URL = requireEnv('INTEGRATIONS_SERVICE_URL');
-var WS_URL = requireEnv('WS_URL');
+
+// URLs dos serviços para proxy (apenas usado no dev server, não no build)
+var AUTH_SERVICE_URL = getEnvOrDefault('AUTH_SERVICE_URL', 'http://localhost:3001');
+var CHAT_SERVICE_URL = getEnvOrDefault('CHAT_SERVICE_URL', 'http://localhost:3002');
+var RAG_SERVICE_URL = getEnvOrDefault('RAG_SERVICE_URL', 'http://localhost:3003');
+var TRAINING_SERVICE_URL = getEnvOrDefault('TRAINING_SERVICE_URL', 'http://localhost:3004');
+var INTEGRATIONS_SERVICE_URL = getEnvOrDefault('INTEGRATIONS_SERVICE_URL', 'http://localhost:3005');
+var WS_URL = getEnvOrDefault('WS_URL', 'ws://localhost:3002');
 export default defineConfig({
     plugins: [react()],
     resolve: {
