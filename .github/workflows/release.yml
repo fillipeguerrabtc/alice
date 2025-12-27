@@ -9,6 +9,11 @@
 # - Matrix de 14 jobs → 1 job único com loop
 # - Elimina ~4min de overhead (14 checkouts/setups → 1)
 # - Cache de registry mantido por imagem
+#
+# RECURSOS (27/12/2025): Runner Hetzner CPX32
+# - 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
+# - Docker builds: Paralelismo controlado pelo BuildKit (4 vCPU)
+# - Timeouts: Otimizados para runner dedicado
 # =============================================================================
 
 name: Release & Tag
@@ -40,11 +45,12 @@ env:
 jobs:
   # ===========================================================================
   # Job 1: Validação e Criação da Release
+  # Timeout: 5min (validação + tag + release)
   # ===========================================================================
   create-release:
     name: Create Release
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 10
+    timeout-minutes: 5
     outputs:
       version: ${{ inputs.version }}
       changelog: ${{ steps.changelog.outputs.changes }}
@@ -145,11 +151,12 @@ jobs:
   # Job 2: Build e Push Docker Images (CONSOLIDADO)
   # OTIMIZAÇÃO: 1 job único ao invés de matrix de 14 jobs
   # Elimina ~4min de overhead (14 setups → 1)
+  # Timeout: 30min (14 imagens com cache GHCR - típico ~15-20min)
   # ===========================================================================
   build-images:
     name: Build All Docker Images
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 45
+    timeout-minutes: 30
     needs: create-release
     if: ${{ !inputs.prerelease }}
 
@@ -292,11 +299,12 @@ jobs:
 
   # ===========================================================================
   # Job 3: Disparar Deploy Automaticamente
+  # Timeout: 2min (apenas API call)
   # ===========================================================================
   trigger-deploy:
     name: Trigger Deploy
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 2
     needs: [create-release, build-images]
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     

@@ -8,6 +8,11 @@
 # - ELIMINAÇÃO: 8 setups redundantes → 1 setup único
 # - RESULTADO: ~16min → ~4min (redução de 75%)
 #
+# OTIMIZAÇÃO RECURSOS (27/12/2025):
+# - Runner Hetzner CPX32: 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
+# - NODE_OPTIONS: max-old-space-size=6144 (6GB - deixa 2GB para SO/Docker)
+# - Timeouts: Otimizados para runner dedicado (sem fila de espera)
+#
 # REGRAS APLICADAS:
 # - REGRA 6: PROIBIDO continue-on-error em steps críticos
 # - REGRA 8: Qualidade obrigatória - TypeScript strict, zero any
@@ -34,11 +39,12 @@ concurrency:
 jobs:
   # ===========================================================================
   # Job 1: Detectar mudanças e calcular versões (SINGLE SOURCE OF TRUTH)
+  # Timeout: 2min (runner dedicado, sem fila)
   # ===========================================================================
   detect-changes:
     name: Detect Changes
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 2
     permissions:
       contents: read
     outputs:
@@ -74,11 +80,12 @@ jobs:
   # ===========================================================================
   # Job 2: Build, TypeCheck e Lint (CONSOLIDADO)
   # OTIMIZAÇÃO: Um único job faz tudo - elimina overhead de setup múltiplo
+  # Timeout: 10min (packages + typecheck + lint)
   # ===========================================================================
   build-and-check:
     name: Build & Typecheck
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: read
     needs: detect-changes
@@ -100,10 +107,11 @@ jobs:
           rm -f packages/*/*.tsbuildinfo apps/*/*.tsbuildinfo
 
       # Build packages na ordem correta de dependências
+      # CPX32: 8GB RAM → 6GB para Node.js (deixa 2GB para SO/Docker)
       - name: Build shared packages (ordem de dependências)
         run: |
           set -e
-          export NODE_OPTIONS="--max-old-space-size=8192"
+          export NODE_OPTIONS="--max-old-space-size=6144"
           
           PACKAGES=("shared" "shared-utils" "config" "logger" "database")
           for pkg in "${PACKAGES[@]}"; do
@@ -128,7 +136,7 @@ jobs:
           retention-days: 1
 
       - name: TypeScript Check
-        run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run typecheck
+        run: NODE_OPTIONS="--max-old-space-size=6144" pnpm run typecheck
 
       - name: ESLint
         run: pnpm run lint
@@ -137,12 +145,12 @@ jobs:
   # Job 3: Build de TODOS os serviços (CONSOLIDADO - runner único)
   # OTIMIZAÇÃO CRÍTICA: Era matrix de 8+1 jobs → agora 1 job único
   # Inclui: 8 microsserviços + Frontend (elimina overhead de setup duplo)
-  # Best Practice 2025: Com runner único, consolidar builds maximiza eficiência
+  # Timeout: 15min (8 serviços + frontend)
   # ===========================================================================
   build-all:
     name: Build All (Services + Frontend)
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 20
+    timeout-minutes: 15
     permissions:
       contents: read
     needs: [detect-changes, build-and-check]
@@ -171,10 +179,11 @@ jobs:
           done
 
       # Build TODOS os microsserviços em sequência
+      # CPX32: 8GB RAM → 6GB para Node.js (deixa 2GB para SO/Docker)
       - name: Build all microservices
         run: |
           set -e
-          export NODE_OPTIONS="--max-old-space-size=8192"
+          export NODE_OPTIONS="--max-old-space-size=6144"
           
           SERVICES=(
             "api-gateway"
@@ -236,11 +245,12 @@ jobs:
   # ===========================================================================
   # Job 4: Security Scanning (Código Fonte)
   # OTIMIZAÇÃO: Trivy é binário Go - NÃO precisa de Node.js/pnpm
+  # Timeout: 5min (scan filesystem é rápido)
   # ===========================================================================
   security-scan:
     name: Security Scan
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 10
+    timeout-minutes: 5
     permissions:
       contents: read
       security-events: write
@@ -413,11 +423,12 @@ jobs:
   # ===========================================================================
   # Job 6: Trigger Release Automático
   # OTIMIZAÇÃO: NÃO precisa de setup Node/pnpm - apenas usa git e GitHub API
+  # Timeout: 2min (apenas API call)
   # ===========================================================================
   trigger-release:
     name: Trigger Release
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 2
     permissions:
       contents: read
       actions: write

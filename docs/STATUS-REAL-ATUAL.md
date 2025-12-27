@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.16 - Semantic Versioning Enterprise + Cache Otimizado
+> **Versão:** 4.17 - Otimização Runner CPX32 (4vCPU, 8GB RAM)
 
 ---
 
@@ -46,7 +46,7 @@
 
 > **Padronização de Line Endings 26/12/2025:** Adicionados `.gitattributes` e `.editorconfig` para eliminar diffs ruidosos (LF/CRLF) e garantir consistência enterprise em Windows/Linux/macOS.
 
-> **Deploy Runner 26/12/2025:** `deploy-production.yml` simplificado para operar **exclusivamente** no self-hosted runner do Deploy Server (`runs-on: [self-hosted, linux, deploy]`), removendo o bloco gigante de fallback. O deploy é executado via `infra/scripts/deploy-remote.sh` (Deploy Server → Production Server via SSH), mantendo isolamento e previsibilidade enterprise.
+> **Deploy Runner 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). NODE_OPTIONS otimizado para 6GB (--max-old-space-size=6144). Deploy executado via `infra/scripts/deploy-remote.sh` (Deploy Server → Production Server via SSH), mantendo isolamento e previsibilidade enterprise.
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 

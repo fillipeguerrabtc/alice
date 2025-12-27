@@ -47,7 +47,7 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> **Atualização 27/12/2025:** Pipeline 100% self-hosted (Hetzner CX22) - todos os workflows (CI, Release, Deploy) executam no runner próprio para controle total, custos previsíveis e compliance. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CX22) para GitHub Actions runner + Production Server (GEX44) com GPU dedicada.
+> **Atualização 27/12/2025:** Pipeline 100% self-hosted (Hetzner CPX32 - 4 vCPU, 8GB RAM) - todos os workflows (CI, Release, Deploy) executam no runner próprio para controle total, custos previsíveis e compliance. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start. Arquitetura com 2 servidores: Deploy Server (CPX32) para GitHub Actions runner + Production Server (GEX44) com GPU dedicada.
 
 ---
 
@@ -260,14 +260,14 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
 
 | Servidor | Alias SSH | IP | Função |
 |----------|-----------|-----|--------|
-| **Deploy Server** | `alice-hetzner` | 5.78.77.83 | GitHub Actions Runner |
+| **Deploy Server** | `alice-hetzner` | 46.224.46.93 | GitHub Actions Runner (CPX32) |
 | **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU |
 
 **Configuração SSH** (`~/.ssh/config`):
 
 ```
 Host alice-hetzner
-    HostName 5.78.77.83
+    HostName 46.224.46.93
     User root
     IdentityFile ~/.ssh/alice-deploy
 

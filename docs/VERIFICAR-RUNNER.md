@@ -7,7 +7,7 @@
 
 ### Arquitetura 100% Self-Hosted (Enterprise 2025)
 
-O pipeline Alice usa **100% self-hosted runner** (Hetzner CX22) seguindo melhores práticas enterprise 2025:
+O pipeline Alice usa **100% self-hosted runner** (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025:
 
 | Tipo de Job | Runner | Motivo |
 |-------------|--------|--------|
@@ -52,7 +52,7 @@ Todos os outros jobs usam GitHub-hosted:
 
 ```bash
 # Conectar ao Deploy Server
-ssh alice-hetzner  # Ou: ssh -i ~/.ssh/alice-deploy root@5.78.77.83
+ssh alice-hetzner  # Ou: ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 
 # Verificar se o runner está rodando
 systemctl status actions.runner.fillipeguerrabtc-alice.*.service
@@ -170,7 +170,7 @@ jobs:
 
 ### Opção 2: 100% Self-Hosted (Atual - Implementada 27/12/2025) ✅
 
-- Todos os jobs rodam no runner próprio (Deploy Server CX22)
+- Todos os jobs rodam no runner próprio (Deploy Server CPX32 - 4 vCPU, 8GB RAM)
 
 **Vantagens (2025):**
 - ✅ **Controle total** sobre ambiente de execução
@@ -201,7 +201,7 @@ jobs:
 ## Implementação: 100% Self-Hosted (27/12/2025)
 
 ### Contexto da Alice
-- **Deploy Server**: Hetzner CX22 (servidor dedicado para runner)
+- **Deploy Server**: Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - €10.49/mês)
 - **Pipeline**: Builds Docker grandes (PyTorch, CUDA, ~50 imagens)
 - **Necessidade**: Controle total, custos previsíveis, compliance
 
@@ -209,19 +209,20 @@ jobs:
 
 **Justificativa da migração:**
 
-1. **Custos**: Servidor CX22 já estava pago, usar apenas para deploy era subutilização
-2. **Builds grandes**: Docker builds com PyTorch/CUDA se beneficiam de recursos dedicados
+1. **Custos**: Servidor CPX32 já estava pago, usar apenas para deploy era subutilização
+2. **Builds grandes**: Docker builds com PyTorch/CUDA se beneficiam de recursos dedicados (4 vCPU, 8GB RAM)
 3. **Cache**: Registry Cache GHCR funciona igualmente bem (não depende do tipo de runner)
 4. **Compliance**: Dados e builds ficam 100% na infraestrutura própria
-5. **Performance**: Recursos dedicados, sem rate limits do GitHub
+5. **Performance**: Recursos dedicados (4 vCPU paralelos), sem rate limits do GitHub
 6. **Melhores práticas 2025**: Tendência para self-hosted em projetos enterprise
 
 **Mudanças implementadas:**
 
 1. ✅ Todos os workflows atualizados para usar `runs-on: [self-hosted, linux, deploy]`
-2. ✅ Runner CX22 configurado com labels corretas
-3. ✅ Registry Cache GHCR mantido (já configurado) para otimizar builds
-4. ✅ Documentação atualizada
+2. ✅ Runner CPX32 configurado com labels corretas
+3. ✅ NODE_OPTIONS otimizado: `--max-old-space-size=6144` (6GB de 8GB disponíveis)
+4. ✅ Registry Cache GHCR mantido (já configurado) para otimizar builds
+5. ✅ Documentação atualizada
 
 ### Workflows Migrados
 

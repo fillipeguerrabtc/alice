@@ -115,7 +115,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Volume Adicional**: Não necessário - servidor GEX44 possui 1.92TB de storage interno (substitui volume externo de 100GB)
 - **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
 - **IP Production**: 178.63.41.108 (GEX44 GPU)
-- **IP Deploy Server**: 5.78.77.83 (CX22 Runner)
+- **IP Deploy Server**: 46.224.46.93 (CPX32 Runner - 4 vCPU, 8GB RAM)
 - **Domínio**: yesyoudeserve.duckdns.org
 - **SO**: Ubuntu 24.04.3 LTS
 - **Docker**: 29.1.3, Docker Compose v5.0.0
@@ -145,7 +145,7 @@ ssh alice-hetzner
 ssh -i ~/.ssh/alice-deploy root@178.63.41.108
 
 # Conexão direta Deploy Server
-ssh -i ~/.ssh/alice-deploy root@5.78.77.83
+ssh -i ~/.ssh/alice-deploy root@46.224.46.93
 ```
 
 ## Estrutura do Projeto
@@ -343,7 +343,7 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.33 - 27 de Dezembro de 2025*
+*Versão: 4.34 - 27 de Dezembro de 2025*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup) - Tor Proxy adicionado 23/12/2025*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*

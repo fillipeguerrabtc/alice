@@ -2,9 +2,9 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Dezembro de 2025  
-**Versão:** 7.9 - Semantic Versioning Enterprise + Cache Otimizado
+**Versão:** 7.10 - CPX32 Runner Otimizado + NODE_OPTIONS 6GB
 
-> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
+> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
 > **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
 
@@ -25,7 +25,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
 
-> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22). Todos os workflows (CI, Release, Deploy) executam no self-hosted runner (`runs-on: [self-hosted, linux, deploy]`) para controle total, custos previsíveis e compliance. Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy executa remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy. **Bug Fix:** Step `image-tag` adicionado ao job `build-docker` para garantir que a versão solicitada seja propagada corretamente (antes usava fallback `github.sha`).
+> **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM). Todos os workflows (CI, Release, Deploy) executam no self-hosted runner (`runs-on: [self-hosted, linux, deploy]`) para controle total, custos previsíveis e compliance. Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy executa remoto no Production Server via `infra/scripts/deploy-remote.sh` (SSH). Pipeline 100% sequencial: Push → CI → Release → Deploy. **Bug Fix:** Step `image-tag` adicionado ao job `build-docker` para garantir que a versão solicitada seja propagada corretamente (antes usava fallback `github.sha`).
 
 ### Categoria 2: Microsserviços Alice (7 serviços)
 
@@ -337,14 +337,14 @@ GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 
 | Servidor | Alias SSH | IP | Função |
 |----------|-----------|-----|--------|
-| **Deploy Server** | `alice-hetzner` | 5.78.77.83 | GitHub Actions Runner, CI/CD |
+| **Deploy Server** | `alice-hetzner` | 46.224.46.93 | GitHub Actions Runner, CI/CD (CPX32 - 4 vCPU, 8GB RAM) |
 | **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (50 containers) |
 
 **Configuração SSH** (`~/.ssh/config`):
 
 ```text
 Host alice-hetzner
-    HostName 5.78.77.83
+    HostName 46.224.46.93
     User root
     IdentityFile ~/.ssh/alice-deploy
 
@@ -1203,7 +1203,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (26/12/2025): Deploy Server (CX22 - IP 5.78.77.83) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

@@ -9,7 +9,11 @@
 # - SIMPLIFICADO: Usa imagens JÁ BUILDADAS pelo Release workflow
 # - RESULTADO: ~45min → ~10min (redução de 78%)
 #
-# Fluxo otimizado: CI valida → Release constrói imagens → Deploy usa imagens prontas
+# RECURSOS (27/12/2025): Runner Hetzner CPX32
+# - 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
+# - Timeouts: Otimizados para runner dedicado (sem fila)
+#
+# Fluxo: CI valida → Release constrói imagens → Deploy usa imagens prontas
 #
 # SEGURANÇA:
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
@@ -188,11 +192,12 @@ jobs:
   # ===========================================================================
   # Job 2: Security Scan das Imagens Docker (OPCIONAL - apenas imagens)
   # OTIMIZADO: Scan rápido apenas das imagens já buildadas
+  # Timeout: 10min (apenas 3 imagens críticas)
   # ===========================================================================
   image-security-scan:
     name: Image Security Scan
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
+    timeout-minutes: 10
     needs: validate-and-prepare
     if: needs.validate-and-prepare.outputs.images_exist == 'true'
     
@@ -248,11 +253,12 @@ jobs:
   # ===========================================================================
   # Job 3: Deploy para Hetzner Cloud
   # OTIMIZADO: Usa imagens JÁ BUILDADAS pelo Release
+  # Timeout: 15min (pull + up de ~50 containers)
   # ===========================================================================
   deploy:
     name: Deploy Hetzner
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 20
+    timeout-minutes: 15
     needs: [validate-and-prepare, image-security-scan]
     if: always() && needs.validate-and-prepare.result == 'success' && (needs.image-security-scan.result == 'success' || needs.image-security-scan.result == 'skipped')
     
@@ -365,11 +371,12 @@ jobs:
 
   # ===========================================================================
   # Job 4: Health Check
+  # Timeout: 5min (90s espera + checks rápidos)
   # ===========================================================================
   health-check:
     name: Health Check
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 10
+    timeout-minutes: 5
     needs: deploy
     if: needs.deploy.result == 'success'
     
@@ -467,11 +474,12 @@ jobs:
 
   # ===========================================================================
   # Job 5: Rollback Automático
+  # Timeout: 10min (rollback é crítico, precisa margem)
   # ===========================================================================
   rollback:
     name: Rollback
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
+    timeout-minutes: 10
     needs: [deploy, health-check]
     if: |
       always() && (
@@ -554,11 +562,12 @@ jobs:
 
   # ===========================================================================
   # Job 6: Registrar Sucesso
+  # Timeout: 2min (apenas SSH + escrita arquivo)
   # ===========================================================================
   register-success:
     name: Register Success
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 2
     needs: [deploy, health-check]
     if: |
       needs.deploy.result == 'success' &&
