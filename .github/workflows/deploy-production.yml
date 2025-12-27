@@ -572,7 +572,61 @@ jobs:
             cd /opt/alice/app/infra/docker
             
             # =================================================================
-            # FASE 4: Login nos registries
+            # FASE 4: Configurar NVIDIA Container Toolkit (GPU)
+            # =================================================================
+            # CORREÇÃO 27/12/2025: Servidor GEX44 tem GPU RTX 4000 Ada 20GB
+            # Docker precisa do NVIDIA Container Toolkit para usar runtime: nvidia
+            echo "🎮 Verificando configuração GPU..."
+            
+            # Verificar se nvidia-smi funciona (driver instalado)
+            if ! command -v nvidia-smi &> /dev/null; then
+              echo "❌ ERRO: nvidia-smi não encontrado - NVIDIA driver não instalado"
+              echo "   Execute: apt install nvidia-driver-550-server"
+              exit 1
+            fi
+            
+            # Mostrar informações da GPU
+            nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+            
+            # Verificar se NVIDIA Container Toolkit está instalado
+            if ! docker info 2>/dev/null | grep -q "nvidia"; then
+              echo "⚠️ NVIDIA Container Toolkit não configurado no Docker"
+              echo "📦 Instalando NVIDIA Container Toolkit..."
+              
+              # Instalar NVIDIA Container Toolkit (Ubuntu 24.04)
+              curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+              curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+                tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+              
+              apt-get update
+              apt-get install -y nvidia-container-toolkit
+              
+              # Configurar Docker para usar nvidia runtime
+              nvidia-ctk runtime configure --runtime=docker
+              
+              # Reiniciar Docker
+              systemctl restart docker
+              
+              echo "✅ NVIDIA Container Toolkit instalado e configurado"
+            else
+              echo "✅ NVIDIA Container Toolkit já configurado"
+            fi
+            
+            # Verificar se GPU está acessível via Docker
+            # ENTERPRISE 27/12/2025: Usar CUDA 13.0 (versão mais recente - compatível com driver 580)
+            if ! docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+              echo "⚠️ Testando acesso GPU via Docker..."
+              docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi || {
+                echo "❌ ERRO: Docker não consegue acessar GPU"
+                echo "   Verifique: nvidia-ctk runtime configure --runtime=docker"
+                exit 1
+              }
+            fi
+            echo "✅ GPU acessível via Docker"
+            
+            # =================================================================
+            # FASE 5: Login nos registries
             # =================================================================
             echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
@@ -580,27 +634,62 @@ jobs:
             fi
             
             # =================================================================
-            # FASE 5: Criar networks Docker
+            # FASE 6: Criar networks Docker
             # =================================================================
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
             
             # =================================================================
-            # FASE 6: Pull e Deploy
+            # FASE 7: Pull e Deploy (CORE SERVICES)
             # =================================================================
-            echo "📥 Baixando imagens Docker..."
+            # ENTERPRISE (27/12/2025): Deploy em duas etapas
+            # 1. Serviços CORE (sem GPU) - sempre iniciados
+            # 2. Serviços GPU (com profile) - iniciados separadamente
+            #
+            # Containers GPU usam PROFILES porque GPU única de 20GB não suporta
+            # múltiplos modelos grandes simultaneamente.
+            
+            echo "📥 Baixando imagens Docker (serviços core)..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
             
-            echo "🚀 Iniciando containers..."
+            echo "🚀 Iniciando containers CORE (sem GPU)..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
             
-            # Verificar status
-            sleep 10
+            # Verificar status dos serviços core
+            sleep 15
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
             echo ""
             echo "=============================================="
-            echo "✅ Deploy concluído: ${RUNNING} containers rodando"
+            echo "✅ Deploy CORE concluído: ${RUNNING} containers rodando"
+            echo "=============================================="
+            
+            # =================================================================
+            # FASE 8: Iniciar serviço GPU (Mixtral LLM por padrão)
+            # =================================================================
+            # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
+            # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
+            # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
+            
+            GPU_PROFILE="${GPU_PROFILE:-gpu-llm}"
+            echo ""
+            echo "🎮 Iniciando serviço GPU com profile: ${GPU_PROFILE}..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull --ignore-pull-failures || true
+            docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" up -d || {
+              echo "⚠️ Serviço GPU não iniciou (pode ser problema de driver/toolkit)"
+              echo "   Execute manualmente: docker compose --profile ${GPU_PROFILE} up -d"
+            }
+            
+            # Status final
+            sleep 10
+            TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
+            GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" || echo "0")
+            echo ""
+            echo "=============================================="
+            echo "✅ Deploy COMPLETO:"
+            echo "   - Total containers: ${TOTAL_RUNNING}"
+            echo "   - Containers GPU: ${GPU_RUNNING}"
+            echo "   - Profile GPU ativo: ${GPU_PROFILE}"
             echo "=============================================="
 
   # ===========================================================================
@@ -753,14 +842,43 @@ jobs:
               echo "Versão anterior: $PREVIOUS_SHA"
             fi
             
-            # Parar containers problemáticos
-            docker ps -aq --filter "name=alice-" | xargs -r docker stop 2>/dev/null || true
-            docker ps -aq --filter "name=alice-" | xargs -r docker rm -f 2>/dev/null || true
+            # =================================================================
+            # LIMPEZA COMPLETA - Parar TODOS os containers do projeto
+            # =================================================================
+            # CORREÇÃO 27/12/2025: Limpar TODOS os containers relacionados
+            # Antes só parava alice-*, deixando gpu-*, erpnext-*, observability órfãos
+            echo "🧹 Parando e removendo TODOS os containers do projeto..."
+            
+            # Lista de prefixos de containers do projeto Alice
+            for prefix in "alice-" "gpu-" "erpnext-" "langfuse" "clickhouse" "loki" "grafana" "prometheus" "jaeger" "promtail" "alertmanager" "vector" "otel" "node-exporter" "cadvisor"; do
+              docker ps -aq --filter "name=${prefix}" | xargs -r docker stop 2>/dev/null || true
+              docker ps -aq --filter "name=${prefix}" | xargs -r docker rm -f 2>/dev/null || true
+            done
             
             if [ -z "$PREVIOUS_SHA" ]; then
-              echo "⚠️ Nenhuma versão anterior - limpando ambiente"
+              echo "⚠️ Nenhuma versão anterior encontrada"
+              echo "🧹 Limpando ambiente COMPLETO (sem dados de produção)..."
+              
+              # Remover TODOS os containers restantes que possam ter ficado
+              docker ps -aq | xargs -r docker stop 2>/dev/null || true
+              docker ps -aq | xargs -r docker rm -f 2>/dev/null || true
+              
+              # Remover networks do projeto
+              docker network rm alice-network 2>/dev/null || true
+              docker network rm erpnext-network 2>/dev/null || true
+              
+              # Remover volumes órfãos (CUIDADO: não remove volumes nomeados com dados)
+              docker volume prune -f 2>/dev/null || true
+              
+              # Limpar imagens não utilizadas
+              docker image prune -f 2>/dev/null || true
+              
+              # Limpar sistema
               docker system prune -f 2>/dev/null || true
-              exit 1
+              
+              echo "✅ Ambiente limpo - pronto para novo deploy"
+              echo "ℹ️ Execute novo deploy para provisionar o sistema"
+              exit 0
             fi
             
             # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios e secrets necessários

@@ -19,8 +19,10 @@
 # =============================================================================
 
 # OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
-# Economia: ~3GB download + ~5min build time
-FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+# ENTERPRISE 27/12/2025: PyTorch 2.9.1 + CUDA 13.0 (versões mais recentes disponíveis)
+# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
+# Ref: https://pytorch.org/blog/pytorch-2-9/ (suporte oficial CUDA 13)
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
@@ -39,21 +41,21 @@ RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
 # Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
-# OTIMIZAÇÃO: --mount=type=cache para cache persistente do pip
+# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    torchvision==0.20.1 \
-    transformers==4.47.1 \
-    sentence-transformers==3.3.1 \
-    open_clip_torch==2.29.0 \
-    accelerate==1.2.1 \
-    safetensors==0.4.5 \
+    torchvision==0.22.1 \
+    transformers==4.48.0 \
+    sentence-transformers==3.4.1 \
+    open_clip_torch==2.30.0 \
+    accelerate==1.3.0 \
+    safetensors==0.5.2 \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
     python-multipart==0.0.20 \
-    pillow==11.0.0 \
-    numpy==2.2.1 \
+    pillow==11.1.0 \
+    numpy==2.2.2 \
     prometheus-client==0.21.1 \
     pybreaker==1.2.0
 

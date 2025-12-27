@@ -16,11 +16,13 @@
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-FROM nvidia/cuda:12.1.1-devel-ubuntu22.04
+# ENTERPRISE 27/12/2025: CUDA 13.0 (versão mais recente disponível)
+# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
+FROM nvidia/cuda:13.0.0-devel-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Mixtral 8x7B vLLM inference server"
-LABEL version="1.2.0"
+LABEL version="2.0.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -44,18 +46,20 @@ WORKDIR /app
 
 # Instalar vLLM e dependências - BuildKit cache para pip
 # vLLM é MUITO pesado (~2GB), instalado primeiro para melhor cache
+# ENTERPRISE 27/12/2025: vLLM 0.11.1 com suporte CUDA 13 (versão mais recente)
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --upgrade pip && \
-    pip3 install vllm==0.6.4.post1
+    pip3 install vllm==0.11.1
 
 # Dependências adicionais em layer separado
+# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install \
-    torch==2.5.1 \
-    transformers==4.47.1 \
-    accelerate==1.2.1 \
-    safetensors==0.4.5 \
-    huggingface_hub==0.27.0 \
+    torch==2.9.1 \
+    transformers==4.48.0 \
+    accelerate==1.3.0 \
+    safetensors==0.5.2 \
+    huggingface_hub==0.28.1 \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
     prometheus-client==0.21.1

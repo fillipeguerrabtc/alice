@@ -14,7 +14,9 @@
 # =============================================================================
 
 # OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
-FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+# ENTERPRISE 27/12/2025: PyTorch 2.9.1 + CUDA 13.0 (versões mais recentes disponíveis)
+# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="ASR Canary-1B speech-to-text server"
@@ -35,13 +37,13 @@ RUN useradd -m -u 1000 asr
 WORKDIR /app
 
 # Instalar dependências Python - PyTorch JÁ INSTALADO na imagem base!
-# NeMo é pacote pesado, instalado separadamente para melhor cache
+# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    torchaudio==2.5.1 \
-    transformers==4.47.1 \
-    accelerate==1.2.1 \
+    torchaudio==2.9.1 \
+    transformers==4.48.0 \
+    accelerate==1.3.0 \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
     python-multipart==0.0.20 \
@@ -50,8 +52,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pybreaker==1.2.0
 
 # NeMo em layer separado (muito pesado, melhor cache isolado)
+# ENTERPRISE 27/12/2025: NeMo 2.3 com suporte PyTorch 2.9
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install nemo_toolkit[asr]==2.1.0
+    pip install nemo_toolkit[asr]==2.3.0
 
 # Copiar código da aplicação
 COPY app/ /app/

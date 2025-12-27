@@ -15,7 +15,9 @@
 # =============================================================================
 
 # OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
-FROM pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime
+# ENTERPRISE 27/12/2025: PyTorch 2.9.1 + CUDA 13.0 (versões mais recentes disponíveis)
+# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="LoRA Trainer GPU (Fine-tuning enterprise) - Alice Platform"
@@ -32,20 +34,21 @@ RUN useradd -m -u 1000 trainer
 WORKDIR /app
 
 # Dependências de ML - PyTorch JÁ INSTALADO na imagem base!
+# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    transformers==4.47.1 \
-    accelerate==1.2.1 \
-    datasets==3.2.0 \
-    peft==0.14.0 \
-    bitsandbytes==0.45.0 \
-    safetensors==0.4.5 \
-    huggingface_hub==0.27.0 \
+    transformers==4.48.0 \
+    accelerate==1.3.0 \
+    datasets==3.3.0 \
+    peft==0.15.0 \
+    bitsandbytes==0.46.0 \
+    safetensors==0.5.2 \
+    huggingface_hub==0.28.1 \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
-    pydantic==2.10.4 \
-    numpy==2.2.1 \
+    pydantic==2.10.5 \
+    numpy==2.2.2 \
     prometheus-client==0.21.1
 
 COPY app/ /app/

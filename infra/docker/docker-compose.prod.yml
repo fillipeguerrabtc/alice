@@ -3029,14 +3029,34 @@ services:
           cpus: '0.1'
 
 # =============================================================================
-# GPU SERVICES (4 containers) - Servidor Único com GPU
+# GPU SERVICES - RTX 4000 Ada 20GB (Hetzner GEX44)
 # =============================================================================
-# NOTA: Estes serviços GPU rodam no mesmo servidor que os outros containers (Total: 51)
-# URLs: localhost:8000 (mixtral), localhost:8001 (embeddings), localhost:8002 (flux), localhost:8003 (asr)
+# ARQUITETURA GPU TIME-SHARING ENTERPRISE (27/12/2025):
+#
+# PROBLEMA: GPU única de 20GB não suporta múltiplos modelos grandes simultaneamente
+# - Mixtral 8x7B AWQ: ~16-18GB VRAM
+# - Qwen3-Embedding-8B: ~15-16GB VRAM
+# - FLUX.1 Schnell: ~10-12GB VRAM
+# - Canary-1B: ~2-4GB VRAM
+#
+# SOLUÇÃO: Docker Compose PROFILES para controle granular (Best Practice 2025)
+# - Profile "gpu-llm": Apenas Mixtral (LLM principal para chat)
+# - Profile "gpu-embeddings": Apenas embeddings (indexação RAG)
+# - Profile "gpu-flux": Apenas FLUX (geração de imagens)
+# - Profile "gpu-asr": Apenas ASR (transcrição de áudio)
+# - Profile "gpu-training": Apenas trainer (fine-tuning LoRA)
+#
+# USO:
+#   docker compose --profile gpu-llm up -d           # Iniciar Mixtral
+#   docker compose --profile gpu-embeddings up -d   # Iniciar Embeddings
+#   docker compose --profile gpu-llm down           # Parar Mixtral antes de trocar
+#
+# NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única)!
+# GPU Manager detecta serviços indisponíveis e retorna 503 apropriado.
 # =============================================================================
 
   # =============================================================================
-  # Mixtral 8x7B vLLM - LLM Principal
+  # Mixtral 8x7B vLLM - LLM Principal (PROFILE: gpu-llm)
   # =============================================================================
   gpu-mixtral:
     image: ${IMAGE_PREFIX}-mixtral-vllm:${IMAGE_TAG:-latest}
@@ -3044,6 +3064,8 @@ services:
     container_name: gpu-mixtral
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-llm
     security_opt:
       - no-new-privileges:true
     environment:
@@ -3087,7 +3109,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # Embeddings GPU - Qwen3 + OpenCLIP
+  # Embeddings GPU - Qwen3 + OpenCLIP (PROFILE: gpu-embeddings)
   # =============================================================================
   gpu-embeddings:
     image: ${IMAGE_PREFIX}-embeddings-gpu:${IMAGE_TAG:-latest}
@@ -3095,6 +3117,8 @@ services:
     container_name: gpu-embeddings
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-embeddings
     security_opt:
       - no-new-privileges:true
     environment:
@@ -3135,7 +3159,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # FLUX.1 Schnell - Geração de Imagens
+  # FLUX.1 Schnell - Geração de Imagens (PROFILE: gpu-flux)
   # =============================================================================
   gpu-flux:
     image: ${IMAGE_PREFIX}-flux-schnell:${IMAGE_TAG:-latest}
@@ -3143,6 +3167,8 @@ services:
     container_name: gpu-flux
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-flux
     security_opt:
       - no-new-privileges:true
     environment:
@@ -3179,7 +3205,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # ASR Canary-1B - Transcrição de Áudio
+  # ASR Canary-1B - Transcrição de Áudio (PROFILE: gpu-asr)
   # =============================================================================
   gpu-asr:
     image: ${IMAGE_PREFIX}-asr-canary:${IMAGE_TAG:-latest}
@@ -3187,6 +3213,8 @@ services:
     container_name: gpu-asr
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-asr
     security_opt:
       - no-new-privileges:true
     environment:
@@ -3223,7 +3251,7 @@ services:
         max-file: "3"
 
   # =============================================================================
-  # LoRA Trainer - Fine-tuning (GPU única 20GB, prioridade baixa)
+  # LoRA Trainer - Fine-tuning (PROFILE: gpu-training)
   # =============================================================================
   gpu-trainer:
     image: ${IMAGE_PREFIX}-lora-trainer:${IMAGE_TAG:-latest}
@@ -3231,6 +3259,8 @@ services:
     container_name: gpu-trainer
     restart: unless-stopped
     runtime: nvidia
+    profiles:
+      - gpu-training
     security_opt:
       - no-new-privileges:true
     environment:
@@ -3272,6 +3302,11 @@ services:
   # =============================================================================
   # GPU Manager Service - Gerenciamento Centralizado de Requisições GPU
   # =============================================================================
+  # ENTERPRISE (27/12/2025): gpu-manager NÃO depende dos containers GPU
+  # - Containers GPU são opcionais via PROFILES (apenas um ativo por vez)
+  # - gpu-manager detecta dinamicamente quais serviços estão disponíveis
+  # - Retorna 503 Service Unavailable para serviços não disponíveis
+  # - Permite deploy inicial sem GPU (serviços core funcionam normalmente)
   gpu-manager:
     image: ${IMAGE_PREFIX}-gpu-manager:${IMAGE_TAG:-latest}
     platform: linux/amd64
@@ -3282,13 +3317,15 @@ services:
     environment:
       - PORT=3010
       - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD}@alice-redis:6379/0}
+      # URLs dos serviços GPU (verificados dinamicamente via healthcheck)
       - MIXTRAL_GPU_URL=${MIXTRAL_GPU_URL:-http://gpu-mixtral:8000}
-      # GPU Manager Service gerencia embeddings localmente (Hetzner GEX44)
-      # URL interna: http://gpu-embeddings:8000 (não precisa de secret)
+      - EMBEDDINGS_GPU_URL=${EMBEDDINGS_GPU_URL:-http://gpu-embeddings:8000}
       - TRAINING_GPU_URL=${TRAINING_GPU_URL:-http://gpu-trainer:8000}
       - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - NODE_ENV=production
+      # Timeout para healthcheck dos serviços GPU (ms)
+      - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-5000}
     ports:
       - "127.0.0.1:3010:3010"  # Apenas localhost
     networks:
@@ -3296,16 +3333,7 @@ services:
     depends_on:
       alice-redis:
         condition: service_healthy
-      gpu-mixtral:
-        condition: service_healthy
-      gpu-embeddings:
-        condition: service_healthy
-      gpu-flux:
-        condition: service_healthy
-      gpu-asr:
-        condition: service_healthy
-      gpu-trainer:
-        condition: service_healthy
+      # REMOVIDO: Dependências de containers GPU (agora são opcionais via profiles)
     deploy:
       resources:
         limits:
