@@ -230,9 +230,10 @@ jobs:
             IMAGE="${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
             
             # exit-code 1 = BLOQUEIA em vulnerabilidades CRITICAL
+            # Versão fixa para supply chain security (Best Practice 2025)
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
-              aquasec/trivy:latest image \
+              aquasec/trivy:0.58.2 image \
               --severity CRITICAL \
               --exit-code 1 \
               --quiet \

@@ -31,9 +31,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  NODE_OPTIONS: '--max-old-space-size=8192'
-
 jobs:
   # ===========================================================================
   # Job 1: Detectar mudanças e calcular versões (SINGLE SOURCE OF TRUTH)
@@ -45,37 +42,10 @@ jobs:
     permissions:
       contents: read
     outputs:
-      packages: ${{ steps.filter.outputs.packages }}
-      services: ${{ steps.filter.outputs.services }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      infra: ${{ steps.filter.outputs.infra }}
       node-version: ${{ steps.versions.outputs.node-version }}
       pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - uses: dorny/paths-filter@de90cc6fb38fc0963ad72b210f1f284cd68cea36
-        id: filter
-        with:
-          filters: |
-            packages:
-              - 'packages/**'
-            services:
-              - 'apps/api-gateway/**'
-              - 'apps/auth-service/**'
-              - 'apps/chat-service/**'
-              - 'apps/gpu-manager-service/**'
-              - 'apps/integrations-service/**'
-              - 'apps/observability-service/**'
-              - 'apps/rag-service/**'
-              - 'apps/training-service/**'
-            frontend:
-              - 'apps/frontend-service/**'
-              - 'client/**'
-              - 'server/**'
-            infra:
-              - 'infra/**'
-              - '.github/workflows/**'
 
       - name: Calcular versões Node.js e pnpm
         id: versions
@@ -347,7 +317,7 @@ jobs:
           retention-days: 30
 
   # ===========================================================================
-  # Job 6: Enterprise Compliance Checks
+  # Job 5: Enterprise Compliance Checks
   # OTIMIZAÇÃO: NÃO precisa de pnpm install - apenas verifica arquivos
   # ===========================================================================
   compliance-checks:
@@ -441,7 +411,7 @@ jobs:
           echo "✅ Server timeouts verificados"
 
   # ===========================================================================
-  # Job 7: Trigger Release Automático
+  # Job 6: Trigger Release Automático
   # OTIMIZAÇÃO: NÃO precisa de setup Node/pnpm - apenas usa git e GitHub API
   # ===========================================================================
   trigger-release:
