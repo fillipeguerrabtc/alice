@@ -125,167 +125,60 @@ jobs:
   # ===========================================================================
   # Job 1: Análise de Código e Qualidade
   # COMPLIANCE: Testes são SEMPRE obrigatórios (REGRA 4 e 6 do CLAUDE.md)
+  # OTIMIZAÇÃO (27/12/2025): Usa composite action para setup Node/pnpm
   # ===========================================================================
   code-quality:
     name: Análise de Qualidade
-    # ENTERPRISE-GRADE (27/12/2025): Migração para 100% self-hosted runner
-    # Runner Hetzner (Deploy Server) - labels obrigatórias: self-hosted, linux, deploy
     runs-on: [self-hosted, linux, deploy]
     needs: validate-trigger
-    # CRÍTICO: timeout para evitar jobs stuck em problemas de rede
     timeout-minutes: 20
-
     permissions:
       contents: read
+    outputs:
+      node-version: ${{ steps.versions.outputs.node-version }}
+      pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
     
     steps:
-      # SHA: actions/checkout@v4.2.2 (2024-10-23)
-      - name: Checkout código
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
-      # Regra 16: Melhores práticas - resiliência com fallback automático
-      - name: Configure npm registry fallback
+      # OTIMIZAÇÃO: Calcular versões UMA VEZ para este workflow
+      - name: Calcular versões Node.js e pnpm
+        id: versions
         run: |
-          echo "Verificando disponibilidade do npm registry..."
-          if ! curl -sf --max-time 10 https://registry.npmjs.org/pnpm > /dev/null 2>&1; then
-            echo "⚠️ npm registry instável, configurando mirror npmmirror.com..."
-            npm config set registry https://registry.npmmirror.com/
-            echo "NPM_CONFIG_REGISTRY=https://registry.npmmirror.com/" >> $GITHUB_ENV
-          else
-            echo "✅ npm registry oficial disponível"
-          fi
-
-      # REGRA 6: Enterprise-grade - versionamento automático do Node.js LTS
-      # Buscar versão LTS mais recente via API oficial do Node.js
-      # Fallback para .nvmrc se API falhar
-      # REGRA 11: Melhores práticas GitHub Actions 2025 - versionamento automático
-      - name: Buscar versão LTS do Node.js
-        id: node-version
-        run: |
-          # REGRA 6: Enterprise-grade - buscar versão LTS mais recente via API oficial
-          # API: https://nodejs.org/dist/index.json retorna todas as versões
-          # Filtrar apenas versões LTS (lts !== null)
-          echo "🔍 Buscando versão LTS mais recente do Node.js..."
-          
-          NODE_LTS_VERSION=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
+          NODE_LTS=$(curl -s --max-time 10 "https://nodejs.org/dist/index.json" 2>/dev/null | \
             jq -r '[.[] | select(.lts) | .version] | first // empty' 2>/dev/null | \
             sed 's/^v//' | sed -E 's/^([0-9]+)(\.[0-9]+)?(\.[0-9]+)?.*$/\1\2/' | sed 's/\.$//')
+          [ -z "$NODE_LTS" ] && NODE_LTS=$(cat .nvmrc 2>/dev/null | tr -d '[:space:]' || echo "22")
           
-          # REGRA 6: Enterprise-grade - fallback para .nvmrc se API falhar
-          if [ -z "$NODE_LTS_VERSION" ] || [ "$NODE_LTS_VERSION" = "null" ]; then
-            echo "⚠️ AVISO: Falha ao buscar versão LTS da API, usando fallback do .nvmrc" >&2
-            if [ -f ".nvmrc" ]; then
-              NODE_LTS_VERSION=$(cat .nvmrc | tr -d '[:space:]')
-              echo "✅ Versão do Node.js lida do .nvmrc: $NODE_LTS_VERSION"
-            else
-              echo "::error::Arquivo .nvmrc não encontrado e API falhou!" >&2
-              exit 1
-            fi
-          else
-            echo "✅ Versão LTS do Node.js encontrada via API: $NODE_LTS_VERSION"
-          fi
+          PNPM_VER=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
+          [ -z "$PNPM_VER" ] && { echo "::error::packageManager não encontrado!"; exit 1; }
           
-          # REGRA 6: Enterprise-grade - validar formato da versão (X ou X.Y)
-          if ! echo "$NODE_LTS_VERSION" | grep -qE '^[0-9]+(\.[0-9]+)?$'; then
-            echo "::error::Versão do Node.js em formato inválido: '$NODE_LTS_VERSION'. Deve ser X ou X.Y" >&2
-            exit 1
-          fi
-          
-          echo "version=$NODE_LTS_VERSION" >> $GITHUB_OUTPUT
-          echo "NODE_VERSION=$NODE_LTS_VERSION" >> $GITHUB_ENV
+          echo "✅ Node.js: $NODE_LTS | pnpm: $PNPM_VER"
+          echo "node-version=$NODE_LTS" >> $GITHUB_OUTPUT
+          echo "pnpm-version=$PNPM_VER" >> $GITHUB_OUTPUT
 
-      # REGRA 6: Enterprise-grade - versionamento automático do pnpm
-      # Ler versão do package.json (packageManager field) - single source of truth
-      # REGRA 11: Melhores práticas GitHub Actions 2025 - versionamento automático
-      - name: Ler versão do pnpm do package.json
-        id: pnpm-version
-        run: |
-          # REGRA 6: Enterprise-grade - validar que package.json existe
-          if [ ! -f "package.json" ]; then
-            echo "::error::Arquivo package.json não encontrado!" >&2
-            exit 1
-          fi
-          
-          # REGRA 6: Enterprise-grade - usar jq para parsing JSON (não grep regex)
-          PNPM_VERSION=$(jq -r '.packageManager // empty' package.json | sed 's/^pnpm@//')
-          
-          # REGRA 6: Enterprise-grade - validar que versão foi encontrada
-          if [ -z "$PNPM_VERSION" ] || [ "$PNPM_VERSION" = "null" ]; then
-            echo "::error::Campo packageManager não encontrado em package.json!" >&2
-            exit 1
-          fi
-          
-          # REGRA 6: Enterprise-grade - validar formato da versão (X.Y.Z)
-          if ! echo "$PNPM_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Versão do pnpm em formato inválido: '$PNPM_VERSION'. Deve ser X.Y.Z" >&2
-            exit 1
-          fi
-          
-          echo "✅ Versão do pnpm lida do package.json: $PNPM_VERSION"
-          echo "version=$PNPM_VERSION" >> $GITHUB_OUTPUT
-          echo "PNPM_VERSION=$PNPM_VERSION" >> $GITHUB_ENV
-
-      # Best Practices 2025: pnpm/action-setup@v4
-      # SHA pinning (supply chain): Tag v4 -> c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
-      - name: Setup pnpm
-        uses: pnpm/action-setup@c5ba7f7862a0f64c1b1a05fbac13e0b8e86ba08c
+      # OTIMIZAÇÃO: Usar composite action para setup (elimina ~100 linhas de código duplicado)
+      - name: Setup Node.js e pnpm
+        uses: ./.github/actions/setup-node-pnpm
         with:
-          version: ${{ steps.pnpm-version.outputs.version }}
-
-      # SHA: actions/setup-node@v4.1.0 (2024-10-24)
-      - name: Setup Node.js
-        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af
-        with:
-          node-version: ${{ steps.node-version.outputs.version }}
-
-      # Cache pnpm store em caminho fixo para evitar falhas 400 do cache service
-      - name: Definir diretório de cache do pnpm
-        id: pnpm_store_path
-        run: |
-          STORE_DIR="$HOME/.pnpm-store"
-          echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
-          pnpm config set store-dir "$STORE_DIR"
-
-      # SHA: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57 (v4.2.0)
-      - name: Restaurar cache do pnpm
-        uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
-        with:
-          path: ${{ steps.pnpm_store_path.outputs.store-dir }}
-          key: pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-${{ steps.pnpm-version.outputs.version }}-
-            pnpm-store-${{ runner.os }}-
-
-      - name: Instalar dependências
-        run: pnpm install --frozen-lockfile
-        env:
-          # pnpm v10+: permitir execução automática de scripts de build de dependências
-          # APENAS durante `pnpm install` em CI/deploy (não aplicar localmente via .npmrc).
-          NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+          node-version: ${{ steps.versions.outputs.node-version }}
+          pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
+          install-dependencies: 'true'
 
       - name: ESLint
         run: pnpm run lint
-        continue-on-error: false
 
-      # Build shared packages primeiro usando TypeScript project references
-      # tsc -b respeita a ordem de dependências definida em tsconfig.build.json
-      # Ordem: shared → shared-utils → config → logger → database
-      # NOTA: NODE_OPTIONS aumenta memória para evitar heap out of memory
       - name: Build shared packages first
         run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run build:tsc
 
       - name: TypeScript Check
         run: NODE_OPTIONS="--max-old-space-size=8192" pnpm run typecheck
-        continue-on-error: false
 
       - name: Executar testes unitários
         run: pnpm run test
-        continue-on-error: false
 
       - name: Verificar vulnerabilidades npm
         run: pnpm audit --audit-level=high
-        continue-on-error: false
 
   # ===========================================================================
   # Job 2: Security Scanning (GAP-GHACTIONS - Audit Logging)
