@@ -106,18 +106,37 @@ log_info "SSH Key: [CONFIGURADA - ${#PRODUCTION_SERVER_SSH_PRIVATE_KEY} chars]"
 
 # Configurar chave SSH privada
 mkdir -p ~/.ssh
-echo "${PRODUCTION_SERVER_SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa_prod
+chmod 700 ~/.ssh
+
+# CORREÇÃO (27/12/2025): Tratar possíveis formatos da chave SSH
+# GitHub Secrets pode ter \n literal ou newlines reais
+# printf %b interpreta \n como newlines
+printf '%b' "${PRODUCTION_SERVER_SSH_PRIVATE_KEY}" > ~/.ssh/id_rsa_prod
 chmod 600 ~/.ssh/id_rsa_prod
+
+# Validar formato da chave
+if ! head -1 ~/.ssh/id_rsa_prod | grep -q "BEGIN"; then
+    log_error "Chave SSH inválida - não começa com BEGIN. Verifique o secret HETZNER_SSH_PRIVATE_KEY"
+fi
+
+# Debug: mostrar primeira e última linha da chave (sem expor dados)
+log_info "SSH Key primeira linha: $(head -1 ~/.ssh/id_rsa_prod)"
+log_info "SSH Key última linha: $(tail -1 ~/.ssh/id_rsa_prod)"
+log_info "SSH Key total linhas: $(wc -l < ~/.ssh/id_rsa_prod)"
+
+# Adicionar host ao known_hosts
 ssh-keyscan -H "${PRODUCTION_SERVER_HOST}" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-# Comando SSH com chave privada
-SSH_CMD="ssh -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no ${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST}"
+# Comando SSH com chave privada e verbose para debug
+SSH_CMD="ssh -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 ${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST}"
 SCP_CMD="scp -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no"
 
-# Testar conexão SSH
+# Testar conexão SSH com verbose em caso de falha
 log_info "Testando conexão SSH ao Production Server..."
-if ! $SSH_CMD "echo 'SSH OK'" &>/dev/null; then
-    log_error "Falha ao conectar ao Production Server via SSH"
+if ! $SSH_CMD "echo 'SSH OK'" 2>&1; then
+    log_warn "Tentando com verbose para diagnóstico..."
+    ssh -vvv -i ~/.ssh/id_rsa_prod -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=30 ${PRODUCTION_SERVER_USER}@${PRODUCTION_SERVER_HOST} "echo 'SSH OK'" 2>&1 || true
+    log_error "Falha ao conectar ao Production Server via SSH. Verifique: 1) IP correto, 2) Usuário correto, 3) Chave SSH autorizada no servidor"
 fi
 
 log_info "Conexão SSH validada"

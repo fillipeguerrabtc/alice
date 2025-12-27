@@ -54,15 +54,17 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 
 Estes são necessários para o deploy funcionar:
 
-| Secret | Valor | Descrição |
-|--------|-------|-----------|
-| `PRODUCTION_SERVER_HOST` | `178.63.41.108` | IP do Production Server (GPU Server GEX44) | ✅ **OBRIGATÓRIO** |
-| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH dedicado no Production Server | ✅ **OBRIGATÓRIO** |
-| `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH para Deploy Server acessar Production Server (incluir `-----BEGIN...-----END`) | ✅ **OBRIGATÓRIO** |
-| `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` (ou permissão total) | ✅ **OBRIGATÓRIO** |
-| `HETZNER_VM_HOST` | `178.63.41.108` | IP do Production Server (legado - fallback) | ⚠️ **Legado** |
-| `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server (legado - fallback) | ⚠️ **Legado** |
-| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH completa | Chave SSH legada (fallback se runner não disponível) | ⚠️ **Legado** |
+| Secret | Valor | Descrição | Status |
+|--------|-------|-----------|--------|
+| `HETZNER_VM_HOST` | `178.63.41.108` | IP do Production Server (GPU Server GEX44) | ✅ **OBRIGATÓRIO** |
+| `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server | ✅ **OBRIGATÓRIO** |
+| `HETZNER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH (incluir `-----BEGIN...-----END` com newlines reais) | ✅ **OBRIGATÓRIO** |
+| `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` | ✅ **OBRIGATÓRIO** |
+| `PRODUCTION_SERVER_HOST` | `178.63.41.108` | IP (futuro - Deploy Server separado) | ⏳ Opcional |
+| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH (futuro) | ⏳ Opcional |
+| `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH | Chave SSH (futuro) | ⏳ Opcional |
+
+> **IMPORTANTE (27/12/2025):** A chave SSH no GitHub Secrets DEVE ter **newlines reais**, não literais `\n`. Ao colar no GitHub Secrets, a chave deve aparecer com múltiplas linhas visíveis, não uma linha só. Se a chave tem ~400 chars e aparece em 1 linha, está errada.
 
 > **ENTERPRISE-GRADE (27/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) e Production Server (GEX44 GPU). Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
