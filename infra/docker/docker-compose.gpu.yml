@@ -171,7 +171,7 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
-      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b}
+      - MODEL_NAME=${ASR_MODEL_NAME:-nvidia/canary-1b-v2}
       - DEVICE=cuda
       - PORT=8000
       - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
