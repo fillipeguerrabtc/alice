@@ -1106,6 +1106,49 @@ docker exec erpnext-create-site ls -la /home/frappe/frappe-bench/sites/
 
 ---
 
+## Vendor Image Mirroring (Supply Chain Security)
+
+### Problema: Digests Rotacionados
+
+O Docker Hub **rotaciona digests** quando republica a mesma tag. Isso causa erros:
+
+```
+Error: failed to resolve reference "traefik:v3.6.4@sha256:c5bd185...": not found
+```
+
+### Solução Enterprise (27/12/2025)
+
+Workflow `.github/workflows/sync-vendor-images.yml` copia imagens de terceiros para o GHCR da Alice:
+
+| Benefício | Descrição |
+|-----------|-----------|
+| **Digests Imutáveis** | Sob controle da organização, nunca expiram |
+| **Sem Rate Limits** | GHCR tem limites muito maiores que Docker Hub |
+| **Zero Dependência** | Deploy não depende de Docker Hub estar disponível |
+| **Auditoria** | Imagens revisadas antes de entrar no GHCR |
+
+### Como Usar
+
+```bash
+# Executar manualmente (também roda semanalmente via cron)
+gh workflow run sync-vendor-images.yml
+
+# Ver status
+gh run list --workflow=sync-vendor-images.yml
+```
+
+### Registry de Vendor Images
+
+Imagens sincronizadas ficam em: `ghcr.io/<owner>/alice-vendor-<nome>`
+
+Exemplo:
+- `ghcr.io/fillipeguerrabtc/alice-vendor-traefik:v3.6.4`
+- `ghcr.io/fillipeguerrabtc/alice-vendor-prometheus:v3.8.0`
+
+> **NOTA:** O workflow cria uma Issue automaticamente quando há atualizações, listando as imagens sincronizadas e seus novos digests.
+
+---
+
 ## Scripts Disponíveis
 
 | Script | Descrição |
