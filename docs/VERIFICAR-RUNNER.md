@@ -18,21 +18,21 @@ O pipeline Alice usa **100% self-hosted runner** (Hetzner CPX32 - 4 vCPU, 8GB RA
 
 ### Todos os Workflows
 
-**Todos os jobs** em todos os workflows usam runner próprio:
+**Todos os jobs** em todos os 3 workflows usam runner próprio (self-hosted):
 
 ```yaml
-deploy:
-  name: Deploy Hetzner Cloud
-  runs-on: [self-hosted, linux, deploy]  # ← Runner próprio
+runs-on: [self-hosted, linux, deploy]  # ← Runner próprio Hetzner CPX32
 ```
 
-Todos os outros jobs usam GitHub-hosted:
-- `validate-trigger`: `ubuntu-latest`
-- `code-quality`: `ubuntu-latest`
-- `security-scan`: `ubuntu-latest`
-- `build-docker`: `ubuntu-latest` (builds Docker)
-- `image-security-scan`: `ubuntu-latest`
-- `health-check`: `ubuntu-latest`
+**Pipeline Enterprise - Jobs por Workflow:**
+
+| Workflow | Jobs (todos self-hosted) |
+|----------|--------------------------|
+| **CI** | detect-changes, build-and-check, security-and-compliance, trigger-release |
+| **Release** | create-release, build-images, trigger-deploy |
+| **Deploy** | validate-and-prepare, image-security-scan, deploy, health-check, rollback, register-success |
+
+> **Otimização (27/12/2025):** Todos os jobs foram migrados para self-hosted runner. Anteriormente alguns usavam `ubuntu-latest`.
 
 ## Como Verificar se o Runner Próprio Está Sendo Usado
 

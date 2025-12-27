@@ -803,25 +803,36 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | `appleboy/ssh-action` | `029f5b4aeeeb58fdfe1410a5d17f967dacf36262` | v1.2.0 |
 | `github/codeql-action` | `4f3212b61783c3c68e8309a0f18a699764811cda` | v3.28.3 |
 
-**2. Consolidação de Jobs - Otimização CPX32 ✅**
+**2. Consolidação de Jobs - Otimização ULTRA CPX32 ✅**
 
 | Aspecto | Antes | Depois | Economia |
 |---------|-------|--------|----------|
-| Build Services | Matrix 8 jobs | 1 job `build-all` | ~75% tempo |
+| CI Jobs | 6 jobs | 4 jobs | ~60% tempo |
+| Build Services | Em CI (redundante) | REMOVIDO (Release builda) | 15min eliminados |
+| Security + Compliance | 2 jobs separados | 1 job consolidado | ~5min |
 | Docker Images | Matrix 14 jobs | 1 job `build-images` | ~4min overhead |
 | Node.js Setup | Repetido 14x | Composite action 1x | ~6-10min |
+
+> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow já builda todas as imagens via Docker. Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release builda (14 imagens), Deploy deploya.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
 | Job | Timeout | Justificativa |
 |-----|---------|---------------|
+| **CI Workflow** | | |
 | detect-changes | 2 min | Git + curl API |
 | build-and-check | 10 min | Packages + TypeCheck + ESLint |
-| build-all | 15 min | 9 serviços compilados |
-| security-scan | 5 min | Trivy filesystem |
-| compliance-checks | 5 min | grep apenas |
+| security-and-compliance | 8 min | Trivy + verificações |
+| trigger-release | 2 min | API call |
+| **Release Workflow** | | |
+| create-release | 5 min | Tag + GitHub Release |
 | build-images | 30 min | 14 imagens Docker |
+| trigger-deploy | 2 min | API call |
+| **Deploy Workflow** | | |
+| validate-and-prepare | 5 min | Validação + GHCR check |
+| image-security-scan | 10 min | Trivy em 3 imagens |
 | deploy | 15 min | Deploy em fases |
+| health-check | 5 min | Verificação serviços |
 
 **4. Versões de Componentes Externos - Dezembro 2025 ✅**
 
@@ -884,10 +895,18 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 >
 > **NOTA (12/12/2025):** `deploy-production.yml`: corrigido ID do step do cache do pnpm para usar underscore (`pnpm_store_path`) e evitar quebra do parser do GitHub Actions ao referenciar `steps.{id}.outputs`.
 
-### Arquitetura do CI (trigger-release)
+### Arquitetura do CI (Pipeline Enterprise 3 Workflows)
+
+Pipeline separada por responsabilidade (Best Practices 2025):
+
+| Workflow | Responsabilidade | Jobs |
+|----------|------------------|------|
+| **CI** | Validar código | detect-changes → build-and-check → security-and-compliance → trigger-release |
+| **Release** | Buildar imagens | create-release → build-images → trigger-deploy |
+| **Deploy** | Deployar para Hetzner | validate-and-prepare → image-security-scan → deploy → health-check → rollback/register-success |
 
 O workflow CI usa dependência direta do GitHub Actions com validação explícita:
-- **trigger-release** depende de: `build-and-check`, `build-services`, `build-frontend`, `security-scan`, `compliance-checks`
+- **trigger-release** depende de: `build-and-check`, `security-and-compliance`
 - **CRÍTICO**: `needs` apenas cria ordem de execução, mas **não impede execução** se jobs upstream falharem
 - A condição `if` **verifica explicitamente** que todos os jobs upstream tiveram `result == 'success'`
 - Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `deploy-production.yml`)

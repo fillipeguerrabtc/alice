@@ -3,6 +3,19 @@
 # =============================================================================
 # Descrição: Deploy da Alice Enterprise Platform para Hetzner GPU Server
 #
+# PIPELINE ENTERPRISE (3 workflows separados por responsabilidade):
+#   CI → Valida código (typecheck, lint, security, compliance)
+#   Release → Builda imagens Docker + Cria GitHub Release
+#   Deploy → Deploya para Hetzner + Health Check + Rollback  ← ESTE ARQUIVO
+#
+# RESPONSABILIDADES DESTE WORKFLOW:
+#   1. Validar versão e verificar imagens no GHCR
+#   2. Security scan das imagens Docker (Trivy)
+#   3. Deploy via SSH para servidor Hetzner
+#   4. Health check de todos os serviços
+#   5. Rollback automático em caso de falha
+#   6. Registrar deploy bem-sucedido
+#
 # OTIMIZAÇÃO CRÍTICA (27/12/2025):
 # - REMOVIDO: code-quality (CI já validou código)
 # - REMOVIDO: security-scan no código (CI já escaneou)
@@ -13,13 +26,14 @@
 # - 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
 # - Timeouts: Otimizados para runner dedicado (sem fila)
 #
-# Fluxo: CI valida → Release constrói imagens → Deploy usa imagens prontas
-#
-# SEGURANÇA:
+# SEGURANÇA (Best Practices 2025):
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-002: OIDC/GITHUB_TOKEN para GHCR (elimina PAT para registry)
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #   - SSH keys para Hetzner (padrão da indústria - OIDC não suportado por VPS)
+#
+# Author: Fillipe Guerra
+# Data: 27/12/2025
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)

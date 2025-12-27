@@ -710,21 +710,26 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 
 ### Otimização CI Performance (27/12/2025)
 
-**Problema:** CI estava levando ~8-15min extras devido a repetição massiva de setup:
-- Mesmo setup Node.js/pnpm era executado 14 vezes (1x por job)
-- Cada job fazia curl para API do Node.js para obter versão LTS
-- Jobs que não precisavam de Node.js (compliance-checks, trigger-release) faziam setup completo
+**Pipeline Enterprise - 3 Workflows por Responsabilidade:**
 
-**Solução Enterprise:**
-1. **Composite Action Reutilizável:** `.github/actions/setup-node-pnpm/action.yml`
-2. **Versões via Outputs:** Job `detect-changes` calcula versões 1x e passa via outputs
-3. **Jobs Simplificados:** compliance-checks e trigger-release não fazem setup (apenas git/grep)
-4. **Matrix Otimizada:** 8 serviços usam composite action ao invés de repetir setup
-5. **Cache Restore/Save Separados:** Usa `actions/cache/restore` + `actions/cache/save` (best practice 2025)
+| Workflow | Responsabilidade | Jobs |
+|----------|------------------|------|
+| **CI** | Validar código (typecheck/lint/security) | 4 jobs |
+| **Release** | Buildar imagens Docker + GitHub Release | 3 jobs |
+| **Deploy** | Deployar para Hetzner + Health Check | 6 jobs |
+
+**Otimizações Aplicadas:**
+
+1. **REMOVIDO `build-all` do CI:** Redundante - Release já builda via Docker
+2. **CONSOLIDADO `security-scan` + `compliance-checks`:** Agora 1 job único `security-and-compliance`
+3. **Composite Action Reutilizável:** `.github/actions/setup-node-pnpm/action.yml`
+4. **Versões via Outputs:** Job `detect-changes` calcula versões 1x e passa via outputs
+5. **Jobs Simplificados:** `security-and-compliance` e `trigger-release` não fazem setup Node.js
+6. **Cache Restore/Save Separados:** Usa `actions/cache/restore` + `actions/cache/save` (best practice 2025)
 
 **Fix Cache Persistence (27/12/2025):** `actions/cache` não executa post-step de save corretamente em composite actions. Corrigido para usar restore/save separados, garantindo cache persistido entre jobs.
 
-**Economia Estimada:** ~6-10 minutos por run de CI
+**Economia Total:** CI de ~20min → ~8min (redução de 60%)
 
 **⚠️ REGRA CRÍTICA:** NUNCA limpar caches do GitHub Actions nos workflows:
 

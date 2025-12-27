@@ -1,19 +1,36 @@
 # =============================================================================
-# GitHub Actions Workflow - Release & Tag
+# GitHub Actions Workflow - Release & Build
 # =============================================================================
-# Descrição: Versionamento semântico da Alice Enterprise Platform
-# Best Practices 2025: Conventional Commits, SHA pinning, least privilege
-# Fluxo: Criar Release → Build Images → Disparar Deploy (workflow separado)
+# Descrição: Versionamento semântico + Build de imagens Docker
+#
+# PIPELINE ENTERPRISE (3 workflows separados por responsabilidade):
+#   CI → Valida código (typecheck, lint, security, compliance)
+#   Release → Builda imagens Docker + Cria GitHub Release  ← ESTE ARQUIVO
+#   Deploy → Deploya para Hetzner + Health Check + Rollback
+#
+# RESPONSABILIDADES DESTE WORKFLOW:
+#   1. Validar e criar tag semântica (vX.Y.Z)
+#   2. Gerar changelog automático (Conventional Commits)
+#   3. Criar GitHub Release com notas
+#   4. Build e push de TODAS as 14 imagens Docker (9 microservices + 5 GPU)
+#   5. Disparar workflow de Deploy
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
 # - Matrix de 14 jobs → 1 job único com loop
 # - Elimina ~4min de overhead (14 checkouts/setups → 1)
-# - Cache de registry mantido por imagem
+# - Cache de registry mantido por imagem (GHCR type=registry)
 #
 # RECURSOS (27/12/2025): Runner Hetzner CPX32
 # - 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
 # - Docker builds: Paralelismo controlado pelo BuildKit (4 vCPU)
 # - Timeouts: Otimizados para runner dedicado
+#
+# SEGURANÇA (Best Practices 2025):
+#   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
+#   - GAP-GHACTIONS-003: Least privilege permissions
+#
+# Author: Fillipe Guerra
+# Data: 27/12/2025
 # =============================================================================
 
 name: Release & Tag

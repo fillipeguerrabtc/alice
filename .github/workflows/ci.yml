@@ -1,12 +1,18 @@
 # =============================================================================
-# GitHub Actions Workflow - CI Build & Test (OTIMIZADO)
+# GitHub Actions Workflow - CI Validation (ULTRA-OTIMIZADO)
 # =============================================================================
 # Descrição: Pipeline de integração contínua para Alice Enterprise Platform
 #
+# PIPELINE ENTERPRISE (3 workflows separados por responsabilidade):
+#   CI → Valida código (typecheck, lint, security, compliance)
+#   Release → Builda imagens Docker + Cria GitHub Release
+#   Deploy → Deploya para Hetzner + Health Check + Rollback
+#
 # OTIMIZAÇÃO CRÍTICA (27/12/2025):
-# - CONSOLIDAÇÃO: Builds de 8 serviços em 1 único job (era matrix → sequencial no runner único)
-# - ELIMINAÇÃO: 8 setups redundantes → 1 setup único
-# - RESULTADO: ~16min → ~4min (redução de 75%)
+# - REMOVIDO: build-all (redundante - Release já builda via Docker)
+# - REMOVIDO: upload de artefatos packages-dist (não mais necessário)
+# - CONSOLIDADO: security-scan + compliance-checks → 1 job único
+# - RESULTADO: CI de ~20min → ~8min (redução de 60%)
 #
 # OTIMIZAÇÃO RECURSOS (27/12/2025):
 # - Runner Hetzner CPX32: 4 vCPU AMD EPYC, 8GB RAM, 160GB SSD
@@ -26,7 +32,7 @@
 # Data: 27/12/2025
 # =============================================================================
 
-name: CI - Build & Test
+name: CI - Validation
 
 on:
   push:
@@ -123,18 +129,6 @@ jobs:
           done
           echo "✅ Todos os packages buildados!"
 
-      - name: Upload packages dist
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
-        with:
-          name: packages-dist
-          path: |
-            packages/shared/dist
-            packages/shared-utils/dist
-            packages/config/dist
-            packages/logger/dist
-            packages/database/dist
-          retention-days: 1
-
       - name: TypeScript Check
         run: NODE_OPTIONS="--max-old-space-size=6144" pnpm run typecheck
 
@@ -142,115 +136,14 @@ jobs:
         run: pnpm run lint
 
   # ===========================================================================
-  # Job 3: Build de TODOS os serviços (CONSOLIDADO - runner único)
-  # OTIMIZAÇÃO CRÍTICA: Era matrix de 8+1 jobs → agora 1 job único
-  # Inclui: 8 microsserviços + Frontend (elimina overhead de setup duplo)
-  # Timeout: 15min (8 serviços + frontend)
+  # Job 3: Security & Compliance (CONSOLIDADO)
+  # OTIMIZAÇÃO: Trivy + Compliance em 1 único job (ambos não precisam de Node.js)
+  # Timeout: 8min (scan + verificações)
   # ===========================================================================
-  build-all:
-    name: Build All (Services + Frontend)
+  security-and-compliance:
+    name: Security & Compliance
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    needs: [detect-changes, build-and-check]
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Setup Node.js e pnpm
-        uses: ./.github/actions/setup-node-pnpm
-        with:
-          node-version: ${{ needs.detect-changes.outputs.node-version }}
-          pnpm-version: ${{ needs.detect-changes.outputs.pnpm-version }}
-          install-dependencies: 'true'
-
-      - name: Download packages dist
-        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
-        with:
-          name: packages-dist
-          path: packages
-
-      - name: Verify packages downloaded
-        run: |
-          set -e
-          PACKAGES=("shared" "shared-utils" "config" "logger" "database")
-          for pkg in "${PACKAGES[@]}"; do
-            test -f "packages/$pkg/dist/index.js" || (echo "ERRO: $pkg não baixado" && exit 1)
-          done
-
-      # Build TODOS os microsserviços em sequência
-      # CPX32: 8GB RAM → 6GB para Node.js (deixa 2GB para SO/Docker)
-      - name: Build all microservices
-        run: |
-          set -e
-          export NODE_OPTIONS="--max-old-space-size=6144"
-          
-          SERVICES=(
-            "api-gateway"
-            "auth-service"
-            "chat-service"
-            "gpu-manager-service"
-            "integrations-service"
-            "observability-service"
-            "rag-service"
-            "training-service"
-          )
-          
-          for service in "${SERVICES[@]}"; do
-            echo ""
-            echo "==========================================="
-            echo "Building @alice/$service"
-            echo "==========================================="
-            pnpm --filter @alice/$service run build
-            
-            # Verificar se bundle foi gerado (exceto api-gateway e observability-service)
-            if [ "$service" != "api-gateway" ] && [ "$service" != "observability-service" ]; then
-              test -f "apps/$service/dist/bundle.js" || (echo "ERRO: bundle.js não gerado para $service" && exit 1)
-            fi
-            echo "✅ $service OK"
-          done
-          
-          echo ""
-          echo "✅ Todos os 8 microsserviços buildados!"
-
-      # Build Frontend no mesmo job (elimina overhead de setup extra)
-      - name: Build frontend
-        run: |
-          echo ""
-          echo "==========================================="
-          echo "Building Frontend"
-          echo "==========================================="
-          pnpm run build
-          echo "✅ Frontend buildado!"
-        env:
-          VITE_API_URL: ""
-
-      - name: Upload frontend artifacts
-        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08
-        with:
-          name: frontend-dist
-          path: |
-            dist
-            apps/frontend-service/dist
-          retention-days: 1
-          if-no-files-found: warn
-      
-      - name: Build Summary
-        run: |
-          echo ""
-          echo "==========================================="
-          echo "✅ BUILD COMPLETO - 8 serviços + Frontend"
-          echo "==========================================="
-
-  # ===========================================================================
-  # Job 4: Security Scanning (Código Fonte)
-  # OTIMIZAÇÃO: Trivy é binário Go - NÃO precisa de Node.js/pnpm
-  # Timeout: 5min (scan filesystem é rápido)
-  # ===========================================================================
-  security-scan:
-    name: Security Scan
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
+    timeout-minutes: 8
     permissions:
       contents: read
       security-events: write
@@ -258,6 +151,9 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
+      # -------------------------------------------------------------------------
+      # SECURITY SCAN (Trivy - Código Fonte)
+      # -------------------------------------------------------------------------
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
         with:
@@ -326,20 +222,9 @@ jobs:
           path: trivy-results.sarif
           retention-days: 30
 
-  # ===========================================================================
-  # Job 5: Enterprise Compliance Checks
-  # OTIMIZAÇÃO: NÃO precisa de pnpm install - apenas verifica arquivos
-  # ===========================================================================
-  compliance-checks:
-    name: Enterprise Compliance
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 5
-    permissions:
-      contents: read
-    needs: detect-changes
-    steps:
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
+      # -------------------------------------------------------------------------
+      # COMPLIANCE CHECKS (Enterprise)
+      # -------------------------------------------------------------------------
       - name: Check for hardcoded secrets
         run: |
           set -e
@@ -419,9 +304,22 @@ jobs:
             fi
           done
           echo "✅ Server timeouts verificados"
+      
+      - name: Compliance Summary
+        run: |
+          echo ""
+          echo "==========================================="
+          echo "✅ SECURITY & COMPLIANCE - PASSED"
+          echo "==========================================="
+          echo "• Trivy vulnerability scan: OK"
+          echo "• Hardcoded secrets check: OK"
+          echo "• RLS migrations: OK"
+          echo "• Express hardening: OK"
+          echo "• Server timeouts: OK"
+          echo "==========================================="
 
   # ===========================================================================
-  # Job 6: Trigger Release Automático
+  # Job 4: Trigger Release Automático
   # OTIMIZAÇÃO: NÃO precisa de setup Node/pnpm - apenas usa git e GitHub API
   # Timeout: 2min (apenas API call)
   # ===========================================================================
@@ -432,8 +330,8 @@ jobs:
     permissions:
       contents: read
       actions: write
-    needs: [build-and-check, build-all, security-scan, compliance-checks]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.build-all.result == 'success' && needs.security-scan.result == 'success' && needs.compliance-checks.result == 'success'
+    needs: [build-and-check, security-and-compliance]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
