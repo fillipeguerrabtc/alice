@@ -1012,31 +1012,18 @@ jobs:
           echo "   - MariaDB: ${MARIADB_DIGEST:-não encontrado}"
           echo "   - pgvector: ${PGVECTOR_DIGEST:-não encontrado}"
 
-      # Limpeza de disco para builds grandes
-      # ENTERPRISE-GRADE (27/12/2025): Self-hosted runner requer sudo -n (non-interactive)
-      # ou passwordless sudo configurado no servidor
-      # Mantida para garantir espaço para múltiplos builds Docker simultâneos
-      - name: Liberar espaço em disco
+      # ENTERPRISE-GRADE (27/12/2025): Monitoramento de espaço em disco
+      # Self-hosted runners são persistentes - não limpar ferramentas ou caches automaticamente
+      # GitHub Actions já limpa workspace automaticamente entre jobs
+      # Docker Registry Cache (GHCR) é preservado e reutilizado entre builds
+      - name: Monitor disk space
         run: |
-          echo "📊 Espaço antes da limpeza:"
+          echo "=== Monitoramento de Espaço em Disco ==="
           df -h /
-          
-          # Remover ferramentas pré-instaladas que não usamos (~10GB)
-          # sudo -n: non-interactive (não requer senha se passwordless sudo configurado)
-          # || true: não falha se comando não executar (runner pode não ter essas ferramentas)
-          sudo -n rm -rf /usr/share/dotnet || true
-          sudo -n rm -rf /usr/local/lib/android || true
-          sudo -n rm -rf /opt/ghc || true
-          sudo -n rm -rf /opt/hostedtoolcache/CodeQL || true
-          sudo -n rm -rf /usr/local/share/boost || true
-          sudo -n rm -rf /usr/share/swift || true
-          
-          # Limpar caches do sistema (NÃO limpar pip/pnpm - runners são efêmeros)
-          sudo -n apt-get clean || true
-          sudo -n rm -rf /var/lib/apt/lists/* || true
-          
-          echo "📊 Espaço após limpeza:"
-          df -h /
+          echo ""
+          echo "📊 Espaço disponível no runner self-hosted"
+          echo "ℹ️ Self-hosted runners são persistentes - caches são preservados para builds mais rápidos"
+          echo "ℹ️ Docker Registry Cache (GHCR) é preservado e reutilizado entre builds"
 
       # BUG FIX 26/12/2025: Step image-tag duplicado removido
       # O step image-tag já existe no início do job (linha ~476)
@@ -1075,14 +1062,15 @@ jobs:
       # - Imagens de cache são armazenadas no próprio GHCR com tag :cache
       # - NOTA: cache-from é opcional - se cache não existe, build continua sem cache
       #   (primeiro build sempre será sem cache, builds subsequentes usam cache)
-      #   Cache funciona com runners GitHub-hosted E self-hosted (armazenado no GHCR)
+      #   Cache funciona perfeitamente com self-hosted runners (armazenado no GHCR)
       #
       # BENEFÍCIOS:
       # - Cache compartilhado entre release.yml e deploy-production.yml
-      # - Cache funciona independente do tipo de runner (GitHub-hosted ou self-hosted)
+      # - Cache funciona independente do runner (armazenado remotamente no GHCR)
       # - Rebuild sem mudanças: ~1-2 min (vs ~8 min sem cache)
       # - Mudança em 1 serviço: apenas esse serviço rebuilda
       # - Mudança em package.json: rebuilda a partir do pnpm install
+      # - Cache é preservado entre builds e runners
       # - Mudança em código: rebuilda apenas layers afetadas
       #
       # SEGURANÇA:
@@ -1785,9 +1773,9 @@ jobs:
 
       - name: Health Check - GPU Manager Service (via SSH)
         id: health-gpu-manager
-        # BUG FIX 25/12/2025: GPU Manager Service é interno ao servidor Hetzner
+        # ENTERPRISE-GRADE (27/12/2025): GPU Manager Service é interno ao servidor Hetzner
         # Não é acessível externamente, então usamos SSH para verificar no servidor remoto
-        # Este step sempre executa porque health-check job sempre roda em ubuntu-latest (GitHub-hosted)
+        # Health-check job roda no self-hosted runner (mesmo que executa deploy)
         # BUG FIX 25/12/2025: continue-on-error: true necessário para evitar que job falhe imediatamente
         # Sem continue-on-error, GitHub Actions para de executar o job quando step falha, mesmo com if: always() no próximo step
         # Usar outcome ao invés de conclusion para detectar falhas corretamente (outcome funciona mesmo com continue-on-error)

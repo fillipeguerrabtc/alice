@@ -265,31 +265,18 @@ jobs:
         with:
           ref: ${{ needs.create-release.outputs.version }}
 
-      # Limpeza de disco para builds grandes (PyTorch ~2GB, CUDA ~5GB)
-      # ENTERPRISE-GRADE (27/12/2025): Self-hosted runner requer sudo -n (non-interactive)
-      # ou passwordless sudo configurado no servidor
-      # NOTA: NÃO limpar cache do Docker - usamos Registry Cache (remoto) que é preservado
-      - name: Liberar espaço em disco
+      # ENTERPRISE-GRADE (27/12/2025): Monitoramento de espaço em disco
+      # Self-hosted runners são persistentes - não limpar ferramentas ou caches automaticamente
+      # GitHub Actions já limpa workspace automaticamente entre jobs
+      # Docker Registry Cache (GHCR) é preservado e reutilizado entre builds
+      - name: Monitor disk space
         run: |
-          echo "📊 Espaço antes da limpeza:"
+          echo "=== Monitoramento de Espaço em Disco ==="
           df -h /
-          
-          # Remover ferramentas pré-instaladas que não usamos (~10GB)
-          # sudo -n: non-interactive (não requer senha se passwordless sudo configurado)
-          # || true: não falha se comando não executar (runner pode não ter essas ferramentas)
-          sudo -n rm -rf /usr/share/dotnet || true
-          sudo -n rm -rf /usr/local/lib/android || true
-          sudo -n rm -rf /opt/ghc || true
-          sudo -n rm -rf /opt/hostedtoolcache/CodeQL || true
-          sudo -n rm -rf /usr/local/share/boost || true
-          sudo -n rm -rf /usr/share/swift || true
-          
-          # Limpar caches do sistema (NÃO limpar pip/pnpm - runners são efêmeros)
-          sudo -n apt-get clean || true
-          sudo -n rm -rf /var/lib/apt/lists/* || true
-          
-          echo "📊 Espaço após limpeza:"
-          df -h /
+          echo ""
+          echo "📊 Espaço disponível no runner self-hosted"
+          echo "ℹ️ Self-hosted runners são persistentes - caches são preservados para builds mais rápidos"
+          echo "ℹ️ Docker Registry Cache (GHCR) é preservado e reutilizado entre builds"
 
       # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
       # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
