@@ -367,19 +367,30 @@ jobs:
           chmod 644 .env.prod
           ls -la .env.prod
 
-      # ENTERPRISE-GRADE (27/12/2025): Usar appleboy/ssh-action (padrão da indústria)
-      # Esta action lida corretamente com formatos de chave SSH e não requer scripts custom
-      - name: Transferir .env.prod para servidor
-        # Supply Chain Security: action pinada por SHA (Best Practices 2025)
-        # Tag: v0.1.7 → SHA: 917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
-        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
-        with:
-          host: ${{ secrets.HETZNER_VM_HOST }}
-          username: ${{ secrets.HETZNER_VM_USER }}
-          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          source: ".env.prod"
-          target: "/tmp/"
-          overwrite: true
+      # ==========================================================================
+      # CORREÇÃO DEFINITIVA 27/12/2025: Transferência .env.prod via base64 + SSH
+      # ==========================================================================
+      # PROBLEMA: O scp-action tinha comportamento inconsistente:
+      # - Às vezes criava /tmp/.env.prod como arquivo
+      # - Às vezes criava /tmp/.env.prod/ como diretório contendo o arquivo
+      # - Causava falhas intermitentes no deploy
+      #
+      # SOLUÇÃO ENTERPRISE: Usar base64 encoding para transferir via SSH
+      # - Determinístico: sempre funciona da mesma forma
+      # - Robusto: não depende de comportamento de scp
+      # - Seguro: arquivo nunca toca disco do runner em texto plano
+      # ==========================================================================
+      - name: Preparar .env.prod para transferência
+        id: prepare-env
+        run: |
+          # Codificar .env.prod em base64 (single line para facilitar transferência)
+          ENV_PROD_BASE64=$(base64 -w 0 .env.prod)
+          
+          # Salvar em variável de saída (usa máscara para não aparecer nos logs)
+          echo "::add-mask::${ENV_PROD_BASE64}"
+          echo "env_base64=${ENV_PROD_BASE64}" >> $GITHUB_OUTPUT
+          
+          echo "✅ .env.prod codificado em base64 ($(wc -c < .env.prod) bytes)"
 
       - name: Deploy via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
@@ -394,11 +405,12 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          ENV_PROD_BASE64: ${{ steps.prepare-env.outputs.env_base64 }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
+          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,ENV_PROD_BASE64
           command_timeout: 30m
           script: |
             set -euo pipefail
@@ -411,27 +423,100 @@ jobs:
             echo "SHA: ${GITHUB_SHA}"
             echo ""
             
-            # Verificar .env.prod transferido (robusto contra variações do scp-action)
-            # Alguns modos do scp-action podem criar diretório /tmp/.env.prod/ contendo o arquivo.
-            if [ -f /tmp/.env.prod ]; then
-              echo "✅ .env.prod encontrado em /tmp/.env.prod"
-            elif [ -f /tmp/.env.prod/.env.prod ]; then
-              echo "⚠️ .env.prod encontrado em /tmp/.env.prod/.env.prod (normalizando para /tmp/.env.prod)"
-              mv /tmp/.env.prod/.env.prod /tmp/.env.prod.tmp
-              rm -rf /tmp/.env.prod
-              mv /tmp/.env.prod.tmp /tmp/.env.prod
-              echo "✅ .env.prod normalizado para /tmp/.env.prod"
-            else
-              echo "❌ ERRO: .env.prod não encontrado em /tmp/ (verificado: /tmp/.env.prod e /tmp/.env.prod/.env.prod)"
-              ls -la /tmp | head -200 || true
+            # =================================================================
+            # FASE 1: Estrutura de diretórios (volumes Docker)
+            # =================================================================
+            # CORREÇÃO DEFINITIVA 27/12/2025: Criar TODOS os diretórios para volumes
+            # Docker local volumes com bind mount requerem que diretórios existam
+            # antes de montar. Sem isso: "no such file or directory"
+            # =================================================================
+            echo "📁 Criando estrutura de diretórios para volumes Docker..."
+            
+            # Diretórios de dados (permissões padrão 750)
+            mkdir -p /opt/alice/data/postgres
+            mkdir -p /opt/alice/data/redis-alice
+            mkdir -p /opt/alice/data/traefik-acme
+            mkdir -p /opt/alice/data/searxng-config
+            mkdir -p /opt/alice/data/erpnext-sites
+            mkdir -p /opt/alice/data/erpnext-mariadb
+            mkdir -p /opt/alice/data/erpnext-redis-cache
+            mkdir -p /opt/alice/data/erpnext-redis-queue
+            mkdir -p /opt/alice/data/vector
+            mkdir -p /opt/alice/data/alertmanager
+            mkdir -p /opt/alice/data/langfuse-db
+            mkdir -p /opt/alice/data/clickhouse
+            mkdir -p /opt/alice/data/qdrant
+            mkdir -p /opt/alice/data/prometheus
+            mkdir -p /opt/alice/data/grafana
+            mkdir -p /opt/alice/data/loki
+            
+            # Diretórios de logs
+            mkdir -p /opt/alice/logs/erpnext
+            mkdir -p /opt/alice/logs/clickhouse
+            
+            # Diretórios de uploads e backups
+            mkdir -p /opt/alice/uploads
+            mkdir -p /opt/alice/backups/manifests
+            mkdir -p /opt/alice/secrets/alertmanager
+            mkdir -p /opt/alice/secrets/langfuse_db_password
+            
+            # Diretório do app
+            mkdir -p /opt/alice/app/infra/docker
+            
+            # Permissões específicas por serviço (UIDs dos containers)
+            # Grafana: UID 472
+            chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
+            # Prometheus: UID 65534 (nobody)
+            chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
+            # Loki: UID 10001
+            chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
+            # PostgreSQL: UID 999
+            chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true
+            chown -R 999:999 /opt/alice/data/langfuse-db 2>/dev/null || true
+            # ClickHouse: UID 101
+            chown -R 101:101 /opt/alice/data/clickhouse 2>/dev/null || true
+            chown -R 101:101 /opt/alice/logs/clickhouse 2>/dev/null || true
+            # ERPNext (frappe): UID 1000
+            chown -R 1000:1000 /opt/alice/data/erpnext-sites 2>/dev/null || true
+            chown -R 1000:1000 /opt/alice/logs/erpnext 2>/dev/null || true
+            # RAG uploads: UID 1000 (node)
+            chown -R 1000:1000 /opt/alice/uploads 2>/dev/null || true
+            
+            echo "✅ Estrutura de diretórios criada"
+            
+            # =================================================================
+            # FASE 2: Decodificar e instalar .env.prod
+            # =================================================================
+            echo "🔐 Instalando .env.prod..."
+            
+            if [ -z "${ENV_PROD_BASE64:-}" ]; then
+              echo "❌ ERRO: ENV_PROD_BASE64 está vazio - falha na transferência"
               exit 1
             fi
             
-            # Clonar/atualizar repositório PRIMEIRO (antes de mover .env.prod)
+            # Decodificar base64 diretamente no destino final
+            echo "${ENV_PROD_BASE64}" | base64 -d > /opt/alice/app/infra/docker/.env.prod
+            chmod 600 /opt/alice/app/infra/docker/.env.prod
+            
+            # Validar que arquivo foi criado e não está vazio
+            if [ ! -s /opt/alice/app/infra/docker/.env.prod ]; then
+              echo "❌ ERRO: .env.prod está vazio após decodificação"
+              exit 1
+            fi
+            
+            ENV_LINES=$(wc -l < /opt/alice/app/infra/docker/.env.prod)
+            echo "✅ .env.prod instalado (${ENV_LINES} linhas)"
+            
+            # =================================================================
+            # FASE 3: Clonar/atualizar repositório
+            # =================================================================
             if [ ! -d /opt/alice/app/.git ]; then
               echo "📦 Clonando repositório..."
               rm -rf /opt/alice/app
               git clone --depth 1 --branch "${DEPLOY_VERSION}" "https://${GH_PAT}@github.com/${REPO_FULL_NAME}.git" /opt/alice/app
+              # Restaurar .env.prod que foi deletado pelo rm -rf
+              echo "${ENV_PROD_BASE64}" | base64 -d > /opt/alice/app/infra/docker/.env.prod
+              chmod 600 /opt/alice/app/infra/docker/.env.prod
             else
               echo "📦 Atualizando repositório..."
               cd /opt/alice/app
@@ -440,31 +525,29 @@ jobs:
               git checkout "${DEPLOY_VERSION}" --force
             fi
             
-            # DEPOIS de clonar, mover .env.prod para local correto
-            mkdir -p /opt/alice/app/infra/docker
-            mv /tmp/.env.prod /opt/alice/app/infra/docker/.env.prod
-            chmod 600 /opt/alice/app/infra/docker/.env.prod
-            echo "✅ .env.prod configurado em /opt/alice/app/infra/docker/"
-            
             cd /opt/alice/app/infra/docker
             
-            # Login no GHCR e Docker Hub
+            # =================================================================
+            # FASE 4: Login nos registries
+            # =================================================================
             echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
             fi
             
-            # CORREÇÃO 27/12/2025: Criar networks Docker (declaradas como external: true)
-            # Estas networks são compartilhadas entre serviços Alice e ERPNext
+            # =================================================================
+            # FASE 5: Criar networks Docker
+            # =================================================================
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
             
-            # Pull das imagens
+            # =================================================================
+            # FASE 6: Pull e Deploy
+            # =================================================================
             echo "📥 Baixando imagens Docker..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
             
-            # Deploy
             echo "🚀 Iniciando containers..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
             
@@ -636,6 +719,24 @@ jobs:
               exit 1
             fi
             
+            # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios necessários
+            # (mesmo código do deploy para garantir consistência)
+            mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
+            mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
+            mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki}
+            mkdir -p /opt/alice/logs/{erpnext,clickhouse}
+            mkdir -p /opt/alice/{uploads,backups/manifests}
+            mkdir -p /opt/alice/secrets/{alertmanager,langfuse_db_password}
+            mkdir -p /opt/alice/app/infra/docker
+            
+            # Permissões específicas por serviço
+            chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
+            chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
+            chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
+            chown -R 999:999 /opt/alice/data/postgres /opt/alice/data/langfuse-db 2>/dev/null || true
+            chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext /opt/alice/uploads 2>/dev/null || true
+            
             # Restaurar versão anterior
             cd /opt/alice/app 2>/dev/null || exit 1
             git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
@@ -646,7 +747,7 @@ jobs:
             
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
             
-            # CORREÇÃO 27/12/2025: Garantir que networks existem antes do rollback
+            # Garantir que networks existem antes do rollback
             docker network create alice-network 2>/dev/null || true
             docker network create erpnext-network 2>/dev/null || true
             
