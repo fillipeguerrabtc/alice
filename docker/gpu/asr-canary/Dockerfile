@@ -4,46 +4,45 @@
 # =============================================================================
 # Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
-# OTIMIZAÇÃO BUILD (27/12/2025):
-# - Imagem base pytorch/pytorch já tem PyTorch instalado (~3GB economia)
-# - BuildKit cache mount para pip (--mount=type=cache)
-# - NeMo instalado separadamente (pacote pesado)
+# BEST PRACTICE 2025: Usar container oficial NVIDIA NGC
+# - Container pré-compilado e otimizado pela NVIDIA
+# - Inclui NeMo, PyTorch, CUDA com compatibilidade garantida
+# - Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.12/installation.html
+# 
+# Release 25.12 (Dezembro 2025):
+# - NeMo Framework: 2.5.3+ (com correção CVE-2025-33212)
+# - PyTorch: 2.6.0a0+ (versão interna NVIDIA otimizada)
+# - CUDA: 13.x (compatível com driver 580+)
+# - Canary-1B-v2: Suporte multilíngue (25 idiomas)
 # 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-# OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
-# ENTERPRISE 27/12/2025: PyTorch 2.9.1 + CUDA 13.0 (versões mais recentes disponíveis)
-# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
-FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
+# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC (Best Practice 2025)
+# - Todas as dependências pré-compiladas e otimizadas pela NVIDIA
+# - Compatibilidade garantida entre NeMo, PyTorch e CUDA
+# - Inclui Canary-1B-v2 pré-configurado para ASR/AST multilíngue
+FROM nvcr.io/nvidia/nemo:25.12
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="ASR Canary-1B speech-to-text server"
-LABEL version="1.2.0"
+LABEL description="ASR Canary-1B speech-to-text server (NVIDIA NGC)"
+LABEL version="2.0.0"
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# Instalar dependências do sistema (ffmpeg para processamento de áudio)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    libsndfile1 \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
+# SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
+# Consistente com outros serviços GPU (embeddings, flux, mixtral, lora-trainer)
+# Ref: CLAUDE.md "51 containers = 100% com security_opt: no-new-privileges"
 RUN useradd -m -u 1000 asr
+
 WORKDIR /app
 
-# Instalar dependências Python - PyTorch JÁ INSTALADO na imagem base!
-# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
+# Instalar apenas dependências adicionais para API e métricas
+# NeMo, PyTorch, torchaudio já estão instalados no container NVIDIA
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    torchaudio==2.9.1 \
-    transformers==4.48.0 \
-    accelerate==1.3.0 \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
     python-multipart==0.0.20 \
@@ -51,22 +50,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     prometheus-client==0.21.1 \
     pybreaker==1.2.0
 
-# NeMo em layer separado (muito pesado, melhor cache isolado)
-# ENTERPRISE 27/12/2025: NeMo 2.3 com suporte PyTorch 2.9
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install nemo_toolkit[asr]==2.3.0
-
 # Copiar código da aplicação
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py
 
-# Configurar permissões
+# Configurar permissões e mudar para usuário não-root
 RUN chown -R asr:asr /app
-
 USER asr
 
 # Variáveis de ambiente
-ENV MODEL_NAME="nvidia/canary-1b"
+# ENTERPRISE 27/12/2025: Canary-1B-v2 (multilíngue, 25 idiomas, 10x mais rápido)
+ENV MODEL_NAME="nvidia/canary-1b-v2"
 ENV DEVICE="cuda"
 ENV PORT="8000"
 ENV HOST="0.0.0.0"

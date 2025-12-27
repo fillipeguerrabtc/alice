@@ -462,7 +462,8 @@ Acessíveis em `/dashboard/analytics`:
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
 3. **ATUALIZAÇÃO 27/12/2025**: Todos os 5 Dockerfiles GPU migrados para versões mais recentes (Best Practice 2025):
    - `nvcr.io/nvidia/vllm:25.12` (mixtral-vllm - container oficial NVIDIA NGC com vLLM 0.11.1, PyTorch 2.10, CUDA 13.1)
-   - `pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime` (embeddings, flux, asr, lora-trainer)
+   - `nvcr.io/nvidia/nemo:25.12` (asr-canary - container oficial NVIDIA NGC com NeMo 2.5.3+, Canary-1B-v2 multilíngue)
+   - `pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime` (embeddings, flux, lora-trainer)
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 6. Docker Compose PROFILES para controle granular (gpu-llm, gpu-embeddings, gpu-flux, gpu-asr, gpu-training) - apenas UM profile GPU ativo por vez
