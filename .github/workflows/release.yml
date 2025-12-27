@@ -229,6 +229,7 @@ jobs:
             "rag:./apps/rag-service/Dockerfile"
             "training:./apps/training-service/Dockerfile"
             "gpu-manager:./apps/gpu-manager-service/Dockerfile"
+            "pgbackrest:./infra/backup/Dockerfile.pgbackrest"
           )
           
           for entry in "${SERVICES[@]}"; do
@@ -260,7 +261,7 @@ jobs:
           done
           
           echo ""
-          echo "✅ All 9 microservices built!"
+          echo "✅ All 10 microservices built!"
 
       # Build de serviços GPU (docker/gpu/)
       # NOTA: GPU images são muito pesadas (~5-10GB cada com PyTorch/CUDA)
@@ -340,7 +341,7 @@ jobs:
           echo "✅ RELEASE BUILD COMPLETE"
           echo "=============================================="
           echo "Version: ${{ needs.create-release.outputs.version }}"
-          echo "Images: 9 microservices + 5 GPU services = 14 total"
+          echo "Images: 10 microservices + 5 GPU services = 15 total"
           echo "Registry: ${{ env.REGISTRY }}"
           echo "=============================================="
 

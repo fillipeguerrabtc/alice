@@ -1663,7 +1663,7 @@ services:
           echo ""
           echo "=== LOG COMPLETO DA INSTALAÇÃO (ETAPA 2) ==="
           # Mostrar apenas a parte da ETAPA 2 (após "Instalando ERPNext")
-          sed -n '/📦 ETAPA 2:/,$p' /tmp/bench-new-site.log 2>/dev/null || cat /tmp/bench-new-site.log
+          sed -n '/📦 ETAPA 2:/,$$p' /tmp/bench-new-site.log 2>/dev/null || cat /tmp/bench-new-site.log
           echo ""
           # Continuar para o tratamento de erros completo abaixo
         fi
@@ -2760,14 +2760,13 @@ services:
       # Suprimir output do apk para não logar informações desnecessárias
       apk add --no-cache gettext > /dev/null 2>&1 || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
       # REGRA 6: Validação explícita de variáveis obrigatórias (fail-fast)
-      # CORREÇÃO 24/12/2025: Corrigir interpolação de variáveis para evitar warning "VAR not set"
-      # Problema: eval "value=\$${$$VAR}" fazia Docker Compose tentar interpolar ${VAR} literal
-      # Solução: Usar apenas uma camada de expansão \$$VAR (não \$${$$VAR})
+      # CORREÇÃO 27/12/2025: Usar $$ para escapar $ no Docker Compose
+      # Docker Compose interpreta $VAR como variável, então usamos $$VAR para literal $VAR
       REQUIRED_VARS="SMTP_HOST SMTP_PORT SMTP_FROM SMTP_USERNAME ALERT_EMAIL CRITICAL_EMAIL ONCALL_EMAIL"
-      for VAR in $$REQUIRED_VARS; do
-        eval "value=\$$VAR"
+      for VARNAME in $$REQUIRED_VARS; do
+        eval "value=\$$$VARNAME"
         if [ -z "$$value" ]; then
-          echo "ERRO: Variável obrigatória $$VAR não definida" >&2
+          echo "ERRO: Variável obrigatória $$VARNAME não definida" >&2
           exit 1
         fi
       done
