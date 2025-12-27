@@ -1,7 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025
+**Data:** 27 de Dezembro de 2025  
+**Versão:** 7.8 - Otimização CI Performance Enterprise
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CX22) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -700,9 +701,25 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 
 | Componente | Estratégia | Economia |
 |------------|------------|----------|
-| **pnpm (Node.js)** | `actions/setup-node` com `cache: 'pnpm'` | ~2 min/job |
+| **pnpm (Node.js)** | Composite action `.github/actions/setup-node-pnpm` | ~6-10 min/run |
 | **pip (Python/PyTorch)** | `actions/setup-python` com `cache: 'pip'` | ~900MB/build |
 | **Artifacts** | `packages/*/dist` compartilhado entre jobs | Build incremental |
+| **Versões Node/pnpm** | Calculadas 1x via outputs (detect-changes) | Elimina ~14 curls API |
+
+### Otimização CI Performance (27/12/2025)
+
+**Problema:** CI estava levando ~8-15min extras devido a repetição massiva de setup:
+- Mesmo setup Node.js/pnpm era executado 14 vezes (1x por job)
+- Cada job fazia curl para API do Node.js para obter versão LTS
+- Jobs que não precisavam de Node.js (compliance-checks, trigger-release) faziam setup completo
+
+**Solução Enterprise:**
+1. **Composite Action Reutilizável:** `.github/actions/setup-node-pnpm/action.yml`
+2. **Versões via Outputs:** Job `detect-changes` calcula versões 1x e passa via outputs
+3. **Jobs Simplificados:** compliance-checks e trigger-release não fazem setup (apenas git/grep)
+4. **Matrix Otimizada:** 8 serviços usam composite action ao invés de repetir setup
+
+**Economia Estimada:** ~6-10 minutos por run de CI
 
 **⚠️ REGRA CRÍTICA:** NUNCA limpar caches do GitHub Actions nos workflows:
 
@@ -1172,9 +1189,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 26 de Dezembro de 2025*
-*Versão: 7.7 - Arquitetura 2 Servidores (Deploy + Production)*
-*Data: 26 de Dezembro de 2025*
+*Documento atualizado em: 27 de Dezembro de 2025*
+*Versão: 7.8 - Otimização CI Performance Enterprise*
+*Data: 27 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
 *Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
@@ -1182,6 +1199,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
 *Pipeline Enterprise (26/12/2025): Deploy Server (CX22 - IP 5.78.77.83) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run.*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

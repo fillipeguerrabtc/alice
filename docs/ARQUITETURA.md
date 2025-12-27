@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 26 de Dezembro de 2025  
-> **Versão:** 1.6.0 - Fine-tuning LoRA Enterprise (gpu-trainer)  
+> **Data:** 27 de Dezembro de 2025  
+> **Versão:** 1.7.0 - Otimização CI Performance Enterprise  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -479,7 +479,7 @@ C4Deployment
 └── logs/                           # Logs de serviços
 ```
 
-### 7.3 Pipeline CI/CD Unificada (17/12/2025)
+### 7.3 Pipeline CI/CD Unificada (27/12/2025)
 
 ```mermaid
 flowchart LR
@@ -510,6 +510,8 @@ flowchart LR
 ```
 
 > **Pipeline Enterprise (25/12/2025):** Deploy Server (CX11) separado + Production Server (GEX44 GPU). Todos os serviços GPU rodam localmente no servidor único, eliminando latência de rede.
+
+> **Otimização CI Performance (27/12/2025):** Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14 execuções → 1x). Versões Node.js/pnpm calculadas uma vez no job `detect-changes` e passadas via outputs. Jobs que não precisam de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10 minutos por run de CI.
 
 ---
 
@@ -897,8 +899,8 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 23 de Dezembro de 2025*
-*Versão: 1.5.0 - Verificação Completa SearXNG*
+*Data: 27 de Dezembro de 2025*
+*Versão: 1.7.0 - Otimização CI Performance Enterprise*
 *Total de Containers: 45*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
@@ -906,3 +908,4 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*  
 *Framework: arc42 + C4 Model + ADRs*  
 *Compliance: 18 Regras CLAUDE.md ✅ | 12-Factor App ✅*
+*Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*

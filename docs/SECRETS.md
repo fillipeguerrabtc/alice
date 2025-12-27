@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 26 de Dezembro de 2025
+**Data:** 27 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -569,8 +569,8 @@ openssl rand -base64 24
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 25 de Dezembro de 2025*
-*Versão: 8.0 - Migração Completa para Hetzner GPU GEX44 + Deploy Server*
+*Documento atualizado em: 27 de Dezembro de 2025*
+*Versão: 8.1 - Otimização CI Performance Enterprise*
 *Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*  
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  

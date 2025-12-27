@@ -1,12 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025
+**Data:** 27 de Dezembro de 2025  
+**Versão:** 4.15
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.10-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.15-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -329,11 +330,14 @@ alice/
 │   ├── SECRETS.md                  # Guia de secrets
 │   └── SISTEMA-APRENDIZADO.md      # Sistema de auto-aprendizado
 │
-├── .github/workflows/              # CI/CD (4 workflows)
-│   ├── ci.yml                      # Build & Test
-│   ├── release.yml                 # Versionamento semântico
-│   ├── deploy-production.yml       # Deploy Hetzner GPU (100% automático)
-│   └── update-system-packages.yml  # Manutenção semanal
+├── .github/
+│   ├── actions/                    # Composite actions reutilizáveis
+│   │   └── setup-node-pnpm/        # Setup Node.js + pnpm (elimina duplicação)
+│   └── workflows/                  # CI/CD (4 workflows)
+│       ├── ci.yml                  # Build & Test (otimizado 27/12/2025)
+│       ├── release.yml             # Versionamento semântico
+│       ├── deploy-production.yml   # Deploy Hetzner GPU (100% automático)
+│       └── update-system-packages.yml # Manutenção semanal
 │
 ├── client/                         # Frontend React
 │   └── src/
@@ -369,7 +373,7 @@ alice/
 - Docker, Traefik v3.6.4 (HTTP/2 habilitado)
 - **Google Distroless** (6 serviços Node.js)
 - nginx:1.27-alpine (frontend)
-- GitHub Actions CI/CD (95%+ SHA pinning)
+- GitHub Actions CI/CD (95%+ SHA pinning, composite actions reutilizáveis)
 - Hetzner Cloud (Nuremberg)
 
 ### Observabilidade
@@ -462,7 +466,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.14 - 26 de Dezembro de 2025*
+*Versão 4.15 - 27 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
@@ -475,5 +479,6 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
 *GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
 *Pipeline Unificada: Hetzner GPU 100% automático - todos os 50 containers no servidor único*
+*Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
 
 </div>

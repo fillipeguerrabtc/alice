@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.8 - Fine-tuning Enterprise LoRA  
-**Data:** 26 de Dezembro de 2025
+**Versão:** 3.9 - Otimização CI Performance Enterprise  
+**Data:** 27 de Dezembro de 2025
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 
@@ -497,7 +497,7 @@ Acessíveis em `/dashboard/analytics`:
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 3.5 - 19 de Dezembro de 2025*
+*Versão 3.9 - 27 de Dezembro de 2025*
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
 *ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
 *ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
