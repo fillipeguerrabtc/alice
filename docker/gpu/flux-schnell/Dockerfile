@@ -7,7 +7,7 @@
 # Data: 16 de Dezembro de 2025
 # =============================================================================
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="FLUX.1 Schnell image generation server"

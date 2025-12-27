@@ -15,7 +15,7 @@
 # Data: 25 de Dezembro de 2025
 # =============================================================================
 
-FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.1-runtime-ubuntu22.04
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
