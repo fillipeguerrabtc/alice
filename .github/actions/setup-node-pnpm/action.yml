@@ -8,9 +8,14 @@
 #
 # OTIMIZAÇÃO DE PERFORMANCE:
 # - Versões passadas via inputs (calculadas uma vez no job principal)
-# - Cache pnpm store com fallback keys
+# - Cache pnpm store com restore + save separados (best practice 2025)
 # - Fallback automático para mirror npm se registry instável
 # - Setup único reutilizado por múltiplos jobs
+#
+# FIX (27/12/2025): Corrigido bug de cache não persistindo
+# - Problema: actions/cache não persiste corretamente em composite actions
+# - Solução: Usar actions/cache/restore para restaurar + actions/cache/save para salvar
+# - Referência: https://github.com/actions/cache#using-a-combination-of-restore-and-save-caching-steps
 #
 # REGRAS APLICADAS:
 # - REGRA 6: Enterprise-grade - versionamento automático
@@ -32,6 +37,10 @@ inputs:
     description: 'Executar pnpm install após setup (true/false)'
     required: false
     default: 'true'
+  save-cache:
+    description: 'Salvar cache após install (true/false). Defina como false se outro job já salvou.'
+    required: false
+    default: 'true'
 
 outputs:
   pnpm-store-path:
@@ -39,7 +48,10 @@ outputs:
     value: ${{ steps.pnpm_store_path.outputs.store-dir }}
   cache-hit:
     description: 'Se o cache foi restaurado'
-    value: ${{ steps.cache.outputs.cache-hit }}
+    value: ${{ steps.cache_restore.outputs.cache-hit }}
+  cache-key:
+    description: 'Chave do cache para uso em save steps externos'
+    value: ${{ steps.cache_key.outputs.key }}
 
 runs:
   using: 'composite'
@@ -75,13 +87,24 @@ runs:
         echo "store-dir=$STORE_DIR" >> "$GITHUB_OUTPUT"
         pnpm config set store-dir "$STORE_DIR"
 
+    # Gerar chave de cache para reutilização
+    - name: Gerar chave de cache
+      id: cache_key
+      shell: bash
+      run: |
+        CACHE_KEY="pnpm-store-${{ runner.os }}-${{ inputs.pnpm-version }}-${{ hashFiles('pnpm-lock.yaml') }}"
+        echo "key=$CACHE_KEY" >> "$GITHUB_OUTPUT"
+        echo "📦 Cache key: $CACHE_KEY"
+
+    # FIX: Usar actions/cache/restore em vez de actions/cache
+    # actions/cache em composite actions não executa o post-step de save corretamente
     # SHA: actions/cache@v4.2.0 (1bd1e32a3bdc45362d1e726936510720a7c30a57)
     - name: Restaurar cache do pnpm
-      id: cache
-      uses: actions/cache@1bd1e32a3bdc45362d1e726936510720a7c30a57
+      id: cache_restore
+      uses: actions/cache/restore@1bd1e32a3bdc45362d1e726936510720a7c30a57
       with:
         path: ${{ steps.pnpm_store_path.outputs.store-dir }}
-        key: pnpm-store-${{ runner.os }}-${{ inputs.pnpm-version }}-${{ hashFiles('pnpm-lock.yaml') }}
+        key: ${{ steps.cache_key.outputs.key }}
         restore-keys: |
           pnpm-store-${{ runner.os }}-${{ inputs.pnpm-version }}-
           pnpm-store-${{ runner.os }}-
@@ -92,3 +115,16 @@ runs:
       run: pnpm install --frozen-lockfile
       env:
         NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS: 'true'
+
+    # FIX: Salvar cache explicitamente após install
+    # Só salva se:
+    # 1. save-cache está habilitado
+    # 2. install-dependencies foi executado
+    # 3. Cache não foi restaurado completamente (evita re-save desnecessário)
+    # SHA: actions/cache/save@v4.2.0 (1bd1e32a3bdc45362d1e726936510720a7c30a57)
+    - name: Salvar cache do pnpm
+      if: ${{ inputs.save-cache == 'true' && inputs.install-dependencies == 'true' && steps.cache_restore.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57
+      with:
+        path: ${{ steps.pnpm_store_path.outputs.store-dir }}
+        key: ${{ steps.cache_key.outputs.key }}

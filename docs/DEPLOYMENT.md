@@ -718,6 +718,9 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 2. **Versões via Outputs:** Job `detect-changes` calcula versões 1x e passa via outputs
 3. **Jobs Simplificados:** compliance-checks e trigger-release não fazem setup (apenas git/grep)
 4. **Matrix Otimizada:** 8 serviços usam composite action ao invés de repetir setup
+5. **Cache Restore/Save Separados:** Usa `actions/cache/restore` + `actions/cache/save` (best practice 2025)
+
+**Fix Cache Persistence (27/12/2025):** `actions/cache` não executa post-step de save corretamente em composite actions. Corrigido para usar restore/save separados, garantindo cache persistido entre jobs.
 
 **Economia Estimada:** ~6-10 minutos por run de CI
 
@@ -1199,7 +1202,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
 *Pipeline Enterprise (26/12/2025): Deploy Server (CX22 - IP 5.78.77.83) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
-*Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run.*
+*Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

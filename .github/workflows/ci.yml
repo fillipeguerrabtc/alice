@@ -8,6 +8,11 @@
 # - Jobs que não precisam de setup não fazem setup (compliance, trigger-release)
 # - Redução de ~8-15min de overhead para ~1-2min
 #
+# FIX CACHE (27/12/2025): Corrigido bug de cache não persistindo
+# - Problema: actions/cache não persiste corretamente em composite actions
+# - Solução: Composite action agora usa actions/cache/restore + actions/cache/save
+# - Cache é salvo automaticamente quando cache-hit != true
+#
 # REGRAS APLICADAS:
 # - REGRA 6: PROIBIDO continue-on-error em steps críticos
 # - REGRA 8: Qualidade obrigatória - TypeScript strict, zero any
@@ -165,13 +170,8 @@ jobs:
       - name: ESLint
         run: pnpm run lint
 
-      # NOVO: Salvar cache do pnpm após install para os próximos jobs usarem
-      - name: Post Restaurar cache do pnpm
-        uses: actions/cache/save@1bd1e32a3bdc45362d1e726936510720a7c30a57
-        if: always()
-        with:
-          path: ~/.pnpm-store
-          key: pnpm-store-${{ runner.os }}-${{ needs.detect-changes.outputs.pnpm-version }}-${{ hashFiles('pnpm-lock.yaml') }}
+      # NOTE: Cache do pnpm é salvo automaticamente pelo composite action setup-node-pnpm
+      # quando save-cache=true (default) e cache-hit!=true
 
   # ===========================================================================
   # Job 3: Build de microsserviços Node.js (MATRIX)
