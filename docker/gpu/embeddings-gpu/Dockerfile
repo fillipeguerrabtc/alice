@@ -41,11 +41,12 @@ RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
 # Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
-# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
+# ENTERPRISE 27/12/2025: Versões compatíveis com PyTorch 2.9.1
+# Ref: https://github.com/pytorch/pytorch/wiki/PyTorch-Versions
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    torchvision==0.22.1 \
+    torchvision==0.24.0 \
     transformers==4.48.0 \
     sentence-transformers==3.4.1 \
     open_clip_torch==2.30.0 \
