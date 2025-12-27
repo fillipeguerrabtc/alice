@@ -454,6 +454,12 @@ jobs:
               echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
             fi
             
+            # CORREÇÃO 27/12/2025: Criar networks Docker (declaradas como external: true)
+            # Estas networks são compartilhadas entre serviços Alice e ERPNext
+            echo "🌐 Criando networks Docker..."
+            docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
+            docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
+            
             # Pull das imagens
             echo "📥 Baixando imagens Docker..."
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
@@ -639,6 +645,11 @@ jobs:
             export IMAGE_TAG="$PREVIOUS_SHA"
             
             echo "${GH_PAT}" | docker login ghcr.io -u ${GITHUB_ACTOR} --password-stdin
+            
+            # CORREÇÃO 27/12/2025: Garantir que networks existem antes do rollback
+            docker network create alice-network 2>/dev/null || true
+            docker network create erpnext-network 2>/dev/null || true
+            
             docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
             docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --no-build
             
