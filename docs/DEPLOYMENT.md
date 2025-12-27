@@ -576,7 +576,7 @@ O deploy é **100% automático** via GitHub Actions:
 │  ┌─────────────────────┐                                        │
 │  │ Release & Tag       │ ← AUTOMÁTICO (v1.0.X incremental)      │
 │  │ • Cria Git tag      │                                        │
-│  │ • Build Docker imgs │                                        │
+│  │ • Publica Docker imgs│ (rebuild só do que mudou; retag GHCR)  │
 │  │ • Push para GHCR    │                                        │
 │  │ • Cria GitHub Rel.  │                                        │
 │  └─────────────────────┘                                        │

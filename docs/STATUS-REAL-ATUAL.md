@@ -813,9 +813,9 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Docker Images | Matrix 15 jobs | 1 job `build-images` | ~4min overhead |
 | Node.js Setup | Repetido 15x | Composite action 1x | ~6-10min |
 
-> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow já builda todas as imagens via Docker. Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release builda (15 imagens), Deploy deploya.
+> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow é o responsável por garantir que **todas as 15 imagens** existam para a TAG do release (GHCR). Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release publica imagens (15 tags), Deploy deploya.
 
-> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). Scripts simplificados removendo logs verbosos.
+> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -828,7 +828,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | trigger-release | 2 min | API call |
 | **Release Workflow** | | |
 | create-release | 5 min | Tag + GitHub Release |
-| build-images | 90 min | 15 imagens Docker (10 microservices + 5 GPU pesadas) |
+| build-images | 90 min | 15 imagens Docker (10 microservices + 5 GPU) - rebuild apenas do que mudou; retag do restante |
 | trigger-deploy | 2 min | API call |
 | **Deploy Workflow** | | |
 | validate-and-prepare | 5 min | Validação + GHCR check |

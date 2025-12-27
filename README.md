@@ -237,7 +237,7 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Security scan (Trivy)
 3. Release & Tag (automático se CI passar):
    ├── Cria tag v1.0.X (incremental)
-   ├── Build imagens Docker
+   ├── Publica imagens Docker no GHCR (rebuild apenas do que mudou; retag do restante)
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release

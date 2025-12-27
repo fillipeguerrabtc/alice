@@ -461,7 +461,7 @@ Acessíveis em `/dashboard/analytics`:
 **Status:** Build automático via CI/CD
 
 **Ações realizadas:**
-1. Workflow `release.yml` builda automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer)
+1. Workflow `release.yml` garante automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
 3. 4/5 Dockerfiles migrados para imagem base `pytorch/pytorch:2.5.1-cuda12.1-cudnn9-runtime` (PyTorch pré-instalado = ~12GB economia)
 4. BuildKit cache mount adicionado para cache persistente de pip
