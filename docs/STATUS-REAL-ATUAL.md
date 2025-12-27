@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.19 - Fix Conventional Commits Breaking Change Detection
+> **Versão:** 4.20 - Runner Enterprise Hardening
 
 ---
 
@@ -46,7 +46,7 @@
 
 > **Padronização de Line Endings 26/12/2025:** Adicionados `.gitattributes` e `.editorconfig` para eliminar diffs ruidosos (LF/CRLF) e garantir consistência enterprise em Windows/Linux/macOS.
 
-> **Deploy Runner 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). NODE_OPTIONS otimizado para 6GB (--max-old-space-size=6144). Deploy executado via `infra/scripts/deploy-remote.sh` (Deploy Server → Production Server via SSH), mantendo isolamento e previsibilidade enterprise.
+> **Deploy Runner Enterprise 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). **HARDENING COMPLETO:** Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10, inotify=524288), Docker daemon otimizado (BuildKit, max-downloads=10, GC=20GB, live-restore), limits (nofile=1048576, nproc=65535), systemd override (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário 3h. Runner 2.330.0, Docker 29.1.3, Buildx 0.30.1, Ubuntu 24.04.3 LTS.
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
@@ -1210,7 +1210,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 27/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.15 - Otimização CI Performance Enterprise*
+*Versão: 4.20 - Runner Enterprise Hardening*
 *Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*

@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 27 de Dezembro de 2025  
-**Versão:** 7.10 - CPX32 Runner Otimizado + NODE_OPTIONS 6GB
+**Versão:** 7.11 - CPX32 Runner Enterprise Hardening
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -479,37 +479,58 @@ fail2ban-client status sshd
 
 **⚠️ OBRIGATÓRIO para workflows funcionarem corretamente:**
 
-O runner self-hosted precisa de **passwordless sudo** configurado para executar comandos de limpeza de disco nos workflows.
+O runner self-hosted Hetzner CPX32 está configurado com **otimizações enterprise** (27/12/2025):
+
+#### Otimizações Aplicadas
+
+| Categoria | Configuração | Valor | Benefício |
+|-----------|--------------|-------|-----------|
+| **Kernel** | net.core.rmem_max | 16MB | Downloads rápidos de imagens Docker |
+| **Kernel** | vm.swappiness | 10 | Preferir RAM sobre swap |
+| **Kernel** | fs.inotify.max_user_watches | 524288 | Suporte a muitos arquivos |
+| **Docker** | max-concurrent-downloads | 10 | Builds paralelos |
+| **Docker** | BuildKit | enabled | Cache de camadas otimizado |
+| **Docker** | GC | 20GB | Limpeza automática de cache |
+| **Limits** | nofile | 1048576 | Muitos arquivos abertos |
+| **Systemd** | NODE_OPTIONS | --max-old-space-size=6144 | 6GB RAM para Node.js |
+| **Systemd** | Nice | -5 | Alta prioridade CPU |
+| **Cron** | Cleanup | 3h diário | Limpeza automática de disco |
+
+#### Arquivos de Configuração
 
 ```bash
 # Conectar ao Deploy Server
 ssh alice-hetzner
 
-# Verificar usuário do runner
-cd /opt/actions-runner
-cat .runner  # Verificar usuário configurado (geralmente é o usuário que instalou o runner)
+# Arquivos de configuração enterprise criados:
+/etc/sysctl.d/99-github-runner.conf        # Kernel tuning (rede, memória, inotify)
+/etc/docker/daemon.json                     # Docker daemon otimizado
+/etc/security/limits.d/99-runner.conf       # Limits de recursos (nofile, nproc)
+/etc/systemd/system/actions.runner.*.d/override.conf  # Service override (NODE_OPTIONS, Nice)
+/opt/cleanup-runner.sh                      # Script de limpeza automática
+/etc/cron.d/runner-cleanup                  # Cron para limpeza diária 3h
 
+# Verificar otimizações aplicadas
+sysctl net.core.rmem_max vm.swappiness fs.inotify.max_user_watches
+cat /etc/docker/daemon.json | jq
+systemctl show actions.runner.*.service | grep -E 'Environment|LimitNOFILE|Nice'
+
+# Verificar status do runner
+systemctl status actions.runner.fillipeguerrabtc-alice.hetzner-deploy-runner.service
+```
+
+#### Configurar Passwordless Sudo (se necessário)
+
+```bash
 # Configurar passwordless sudo (substituir USER pelo usuário do runner)
-# Exemplo: se o runner foi instalado como root, usar:
 echo "root ALL=(ALL) NOPASSWD: ALL" | tee /etc/sudoers.d/actions-runner
 chmod 0440 /etc/sudoers.d/actions-runner
 
-# Se o runner foi instalado como outro usuário (ex: runner):
-# echo "runner ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/actions-runner
-# sudo chmod 0440 /etc/sudoers.d/actions-runner
-
 # Testar passwordless sudo
 sudo -n whoami  # Deve retornar root sem pedir senha
-
-# Verificar se runner está rodando
-systemctl status actions.runner.fillipeguerrabtc-alice.*.service
-
-# Se não estiver rodando, iniciar:
-systemctl start actions.runner.fillipeguerrabtc-alice.*.service
-systemctl enable actions.runner.fillipeguerrabtc-alice.*.service
 ```
 
-**Nota:** Os workflows já usam `sudo -n` (non-interactive), mas ainda requer passwordless sudo configurado. Se não estiver configurado, os comandos de limpeza de disco falharão silenciosamente (devido ao `|| true`), mas isso pode causar problemas de espaço em disco em builds grandes.
+**Nota:** Os workflows usam `sudo -n` (non-interactive). Se não configurado, comandos de limpeza falharão silenciosamente.
 
 ### 6. Primeiro Deploy
 
@@ -1200,7 +1221,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 27 de Dezembro de 2025*
-*Versão: 7.8 - Otimização CI Performance Enterprise*
+*Versão: 7.11 - CPX32 Runner Enterprise Hardening*
 *Data: 27 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*

@@ -205,6 +205,34 @@ jobs:
 - **Pipeline**: Builds Docker grandes (PyTorch, CUDA, ~50 imagens)
 - **Necessidade**: Controle total, custos previsíveis, compliance
 
+### Enterprise Hardening Aplicado (27/12/2025) ✅
+
+**Otimizações de Kernel (`/etc/sysctl.d/99-github-runner.conf`):**
+- `net.core.rmem_max = 16MB` - Buffers de rede para downloads rápidos
+- `vm.swappiness = 10` - Preferir RAM sobre swap
+- `fs.inotify.max_user_watches = 524288` - Suporte a muitos arquivos
+- `fs.file-max = 2097152` - Limite de arquivos abertos do sistema
+
+**Docker Daemon (`/etc/docker/daemon.json`):**
+- BuildKit habilitado por padrão
+- `max-concurrent-downloads: 10` - Builds paralelos
+- `builder.gc.defaultKeepStorage: 20GB` - Limpeza automática de cache
+- `live-restore: true` - Containers sobrevivem restart do Docker
+
+**Limites de Recursos (`/etc/security/limits.d/99-runner.conf`):**
+- `nofile: 1048576` - Arquivos abertos
+- `nproc: 65535` - Processos
+- `memlock: unlimited` - Memória bloqueada
+
+**Service Systemd (Override):**
+- `NODE_OPTIONS=--max-old-space-size=6144` - 6GB RAM para Node.js
+- `Nice=-5` - Alta prioridade CPU
+- `IOSchedulingClass=best-effort` - I/O otimizado
+
+**Manutenção Automática:**
+- Cron diário 3h: Limpeza de Docker cache, workspaces antigos, logs
+- Docker GC: Mantém 20GB de cache build
+
 ### Migração Implementada ✅
 
 **Justificativa da migração:**
@@ -223,6 +251,7 @@ jobs:
 3. ✅ NODE_OPTIONS otimizado: `--max-old-space-size=6144` (6GB de 8GB disponíveis)
 4. ✅ Registry Cache GHCR mantido (já configurado) para otimizar builds
 5. ✅ Documentação atualizada
+6. ✅ **Enterprise Hardening**: Kernel tuning, Docker daemon, limits, systemd override, cron cleanup
 
 ### Workflows Migrados
 
