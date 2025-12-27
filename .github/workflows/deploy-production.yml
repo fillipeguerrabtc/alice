@@ -368,30 +368,51 @@ jobs:
           ls -la .env.prod
 
       # ==========================================================================
-      # CORREÇÃO DEFINITIVA 27/12/2025: Transferência .env.prod via base64 + SSH
+      # CORREÇÃO DEFINITIVA 27/12/2025: Transferência .env.prod via SCP em 3 etapas
       # ==========================================================================
-      # PROBLEMA: O scp-action tinha comportamento inconsistente:
-      # - Às vezes criava /tmp/.env.prod como arquivo
-      # - Às vezes criava /tmp/.env.prod/ como diretório contendo o arquivo
-      # - Causava falhas intermitentes no deploy
+      # PROBLEMA ANTERIOR (base64 via SSH):
+      # - ssh-action tem limite de 48KB para variáveis de ambiente
+      # - .env.prod codificado em base64 excede esse limite
+      # - Variável chegava vazia no servidor
       #
-      # SOLUÇÃO ENTERPRISE: Usar base64 encoding para transferir via SSH
-      # - Determinístico: sempre funciona da mesma forma
-      # - Robusto: não depende de comportamento de scp
-      # - Seguro: arquivo nunca toca disco do runner em texto plano
+      # PROBLEMA ANTERIOR (scp-action):
+      # - scp-action criava diretório /tmp/.env.prod/ ao invés de arquivo
+      # - Comportamento inconsistente dependendo da versão
+      #
+      # SOLUÇÃO ENTERPRISE (3 etapas):
+      # 1. SSH: Limpar target e criar diretório destino
+      # 2. SCP: Transferir arquivo (target é diretório, não arquivo)
+      # 3. SSH: Executar deploy completo
+      #
+      # Referência: https://github.com/appleboy/scp-action (Best Practices 2025)
       # ==========================================================================
-      - name: Preparar .env.prod para transferência
-        id: prepare-env
-        run: |
-          # Codificar .env.prod em base64 (single line para facilitar transferência)
-          ENV_PROD_BASE64=$(base64 -w 0 .env.prod)
-          
-          # Salvar em variável de saída (usa máscara para não aparecer nos logs)
-          echo "::add-mask::${ENV_PROD_BASE64}"
-          echo "env_base64=${ENV_PROD_BASE64}" >> $GITHUB_OUTPUT
-          
-          echo "✅ .env.prod codificado em base64 ($(wc -c < .env.prod) bytes)"
+      
+      # ETAPA 1: Preparar servidor para receber arquivo
+      - name: Preparar servidor para transferência
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          script: |
+            # Limpar qualquer arquivo/diretório anterior (comportamento inconsistente do scp)
+            rm -rf /tmp/.env.prod /tmp/.env.prod.tmp
+            # Criar diretório destino para garantir estrutura
+            mkdir -p /opt/alice/app/infra/docker
+            echo "✅ Servidor preparado para receber .env.prod"
 
+      # ETAPA 2: Transferir arquivo via SCP
+      - name: Transferir .env.prod via SCP
+        uses: appleboy/scp-action@917f8b81dfc1ccd331fef9e2d61bdc6c8be94634
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          source: ".env.prod"
+          target: "/opt/alice/app/infra/docker"
+          overwrite: true
+
+      # ETAPA 3: Deploy completo
       - name: Deploy via SSH
         uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
@@ -405,12 +426,11 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          ENV_PROD_BASE64: ${{ steps.prepare-env.outputs.env_base64 }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,ENV_PROD_BASE64
+          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           command_timeout: 30m
           script: |
             set -euo pipefail
@@ -424,15 +444,45 @@ jobs:
             echo ""
             
             # =================================================================
-            # FASE 1: Estrutura de diretórios (volumes Docker)
+            # FASE 1: Validar .env.prod transferido
             # =================================================================
-            # CORREÇÃO DEFINITIVA 27/12/2025: Criar TODOS os diretórios para volumes
-            # Docker local volumes com bind mount requerem que diretórios existam
-            # antes de montar. Sem isso: "no such file or directory"
+            echo "🔐 Validando .env.prod..."
+            
+            # scp-action pode criar estrutura: /opt/alice/app/infra/docker/.env.prod
+            # ou pode criar: /opt/alice/app/infra/docker/.env.prod/.env.prod
+            ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
+            
+            if [ -f "$ENV_FILE" ]; then
+              echo "✅ .env.prod encontrado como arquivo"
+            elif [ -d "$ENV_FILE" ] && [ -f "$ENV_FILE/.env.prod" ]; then
+              echo "⚠️ .env.prod encontrado como diretório (normalizando...)"
+              mv "$ENV_FILE/.env.prod" "/tmp/.env.prod.tmp"
+              rm -rf "$ENV_FILE"
+              mv "/tmp/.env.prod.tmp" "$ENV_FILE"
+              echo "✅ .env.prod normalizado"
+            else
+              echo "❌ ERRO: .env.prod não encontrado após transferência SCP"
+              echo "Conteúdo de /opt/alice/app/infra/docker/:"
+              ls -la /opt/alice/app/infra/docker/ || true
+              exit 1
+            fi
+            
+            # Validar que não está vazio
+            if [ ! -s "$ENV_FILE" ]; then
+              echo "❌ ERRO: .env.prod está vazio"
+              exit 1
+            fi
+            
+            chmod 600 "$ENV_FILE"
+            ENV_LINES=$(wc -l < "$ENV_FILE")
+            echo "✅ .env.prod validado (${ENV_LINES} linhas)"
+            
+            # =================================================================
+            # FASE 2: Estrutura de diretórios (volumes Docker)
             # =================================================================
             echo "📁 Criando estrutura de diretórios para volumes Docker..."
             
-            # Diretórios de dados (permissões padrão 750)
+            # Diretórios de dados
             mkdir -p /opt/alice/data/postgres
             mkdir -p /opt/alice/data/redis-alice
             mkdir -p /opt/alice/data/traefik-acme
@@ -454,69 +504,32 @@ jobs:
             mkdir -p /opt/alice/logs/erpnext
             mkdir -p /opt/alice/logs/clickhouse
             
-            # Diretórios de uploads e backups
+            # Diretórios de uploads, backups e secrets
             mkdir -p /opt/alice/uploads
             mkdir -p /opt/alice/backups/manifests
             mkdir -p /opt/alice/secrets/alertmanager
             mkdir -p /opt/alice/secrets/langfuse_db_password
             
-            # Diretório do app
-            mkdir -p /opt/alice/app/infra/docker
-            
             # Permissões específicas por serviço (UIDs dos containers)
-            # Grafana: UID 472
             chown -R 472:472 /opt/alice/data/grafana 2>/dev/null || true
-            # Prometheus: UID 65534 (nobody)
             chown -R 65534:65534 /opt/alice/data/prometheus 2>/dev/null || true
-            # Loki: UID 10001
             chown -R 10001:10001 /opt/alice/data/loki 2>/dev/null || true
-            # PostgreSQL: UID 999
-            chown -R 999:999 /opt/alice/data/postgres 2>/dev/null || true
-            chown -R 999:999 /opt/alice/data/langfuse-db 2>/dev/null || true
-            # ClickHouse: UID 101
-            chown -R 101:101 /opt/alice/data/clickhouse 2>/dev/null || true
-            chown -R 101:101 /opt/alice/logs/clickhouse 2>/dev/null || true
-            # ERPNext (frappe): UID 1000
-            chown -R 1000:1000 /opt/alice/data/erpnext-sites 2>/dev/null || true
-            chown -R 1000:1000 /opt/alice/logs/erpnext 2>/dev/null || true
-            # RAG uploads: UID 1000 (node)
-            chown -R 1000:1000 /opt/alice/uploads 2>/dev/null || true
+            chown -R 999:999 /opt/alice/data/postgres /opt/alice/data/langfuse-db 2>/dev/null || true
+            chown -R 101:101 /opt/alice/data/clickhouse /opt/alice/logs/clickhouse 2>/dev/null || true
+            chown -R 1000:1000 /opt/alice/data/erpnext-sites /opt/alice/logs/erpnext /opt/alice/uploads 2>/dev/null || true
             
             echo "✅ Estrutura de diretórios criada"
             
             # =================================================================
-            # FASE 2: Decodificar e instalar .env.prod
-            # =================================================================
-            echo "🔐 Instalando .env.prod..."
-            
-            if [ -z "${ENV_PROD_BASE64:-}" ]; then
-              echo "❌ ERRO: ENV_PROD_BASE64 está vazio - falha na transferência"
-              exit 1
-            fi
-            
-            # Decodificar base64 diretamente no destino final
-            echo "${ENV_PROD_BASE64}" | base64 -d > /opt/alice/app/infra/docker/.env.prod
-            chmod 600 /opt/alice/app/infra/docker/.env.prod
-            
-            # Validar que arquivo foi criado e não está vazio
-            if [ ! -s /opt/alice/app/infra/docker/.env.prod ]; then
-              echo "❌ ERRO: .env.prod está vazio após decodificação"
-              exit 1
-            fi
-            
-            ENV_LINES=$(wc -l < /opt/alice/app/infra/docker/.env.prod)
-            echo "✅ .env.prod instalado (${ENV_LINES} linhas)"
-            
-            # =================================================================
             # FASE 3: Clonar/atualizar repositório
             # =================================================================
+            # Salvar .env.prod antes de modificar o diretório
+            cp "$ENV_FILE" /tmp/.env.prod.backup
+            
             if [ ! -d /opt/alice/app/.git ]; then
               echo "📦 Clonando repositório..."
               rm -rf /opt/alice/app
               git clone --depth 1 --branch "${DEPLOY_VERSION}" "https://${GH_PAT}@github.com/${REPO_FULL_NAME}.git" /opt/alice/app
-              # Restaurar .env.prod que foi deletado pelo rm -rf
-              echo "${ENV_PROD_BASE64}" | base64 -d > /opt/alice/app/infra/docker/.env.prod
-              chmod 600 /opt/alice/app/infra/docker/.env.prod
             else
               echo "📦 Atualizando repositório..."
               cd /opt/alice/app
@@ -524,6 +537,11 @@ jobs:
               git fetch --all --tags
               git checkout "${DEPLOY_VERSION}" --force
             fi
+            
+            # Restaurar .env.prod após clone/update
+            mkdir -p /opt/alice/app/infra/docker
+            mv /tmp/.env.prod.backup /opt/alice/app/infra/docker/.env.prod
+            chmod 600 /opt/alice/app/infra/docker/.env.prod
             
             cd /opt/alice/app/infra/docker
             
