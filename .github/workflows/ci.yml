@@ -667,11 +667,11 @@ jobs:
       # Manter caches e ferramentas para builds mais rápidos e previsíveis
       - name: Monitor disk space
         run: |
-          echo "=== Monitoramento de Espaço em Disco ==="
+          echo "=== Monitoramento de Espaco em Disco ==="
           df -h /
           echo ""
-          echo "📊 Espaço disponível no runner self-hosted"
-          echo "ℹ️ Self-hosted runners são persistentes - caches são preservados para builds mais rápidos"
+          echo "INFO: Espaco disponivel no runner self-hosted"
+          echo "INFO: Self-hosted runners sao persistentes - caches sao preservados para builds mais rapidos"
 
       # Enterprise: Fallback automático para mirror se npm registry estiver instável (500/503)
       - name: Configure npm registry fallback

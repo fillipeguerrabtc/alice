@@ -271,12 +271,12 @@ jobs:
       # Docker Registry Cache (GHCR) é preservado e reutilizado entre builds
       - name: Monitor disk space
         run: |
-          echo "=== Monitoramento de Espaço em Disco ==="
+          echo "=== Monitoramento de Espaco em Disco ==="
           df -h /
           echo ""
-          echo "📊 Espaço disponível no runner self-hosted"
-          echo "ℹ️ Self-hosted runners são persistentes - caches são preservados para builds mais rápidos"
-          echo "ℹ️ Docker Registry Cache (GHCR) é preservado e reutilizado entre builds"
+          echo "INFO: Espaco disponivel no runner self-hosted"
+          echo "INFO: Self-hosted runners sao persistentes - caches sao preservados para builds mais rapidos"
+          echo "INFO: Docker Registry Cache (GHCR) e preservado e reutilizado entre builds"
 
       # GAP-GHACTIONS-002: Usando github.token (OIDC nativo) em vez de PAT para GHCR
       # github.token é automaticamente provisionado pelo GitHub Actions com escopo limitado
