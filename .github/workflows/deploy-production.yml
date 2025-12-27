@@ -366,8 +366,11 @@ jobs:
 
       - name: Deploy via SSH
         env:
+          # CORREÇÃO (27/12/2025): Usar HETZNER_VM_* como fallback correto
+          # PRODUCTION_SERVER_* é para arquitetura com Deploy Server separado (futuro)
+          # Por enquanto, usamos HETZNER_VM_* que está configurado no GitHub Secrets
           PRODUCTION_SERVER_HOST: ${{ secrets.PRODUCTION_SERVER_HOST || secrets.HETZNER_VM_HOST }}
-          PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || 'alice-deploy' }}
+          PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || secrets.HETZNER_VM_USER }}
           PRODUCTION_SERVER_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SERVER_SSH_PRIVATE_KEY || secrets.HETZNER_SSH_PRIVATE_KEY }}
           GH_PAT: ${{ secrets.GH_PAT }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice

@@ -85,8 +85,24 @@ log_info "Todas as variáveis obrigatórias estão definidas"
 
 log_header "CONFIGURANDO ACESSO SSH AO PRODUCTION SERVER"
 
-PRODUCTION_SERVER_HOST="${PRODUCTION_SERVER_HOST:-production-server}"
-PRODUCTION_SERVER_USER="${PRODUCTION_SERVER_USER:-alice-deploy}"
+# CORREÇÃO (27/12/2025): Defaults mais informativos para debug
+# Se as variáveis estiverem vazias, o script deve falhar com mensagem clara
+if [ -z "${PRODUCTION_SERVER_HOST:-}" ]; then
+    log_error "PRODUCTION_SERVER_HOST não definido! Configure PRODUCTION_SERVER_HOST ou HETZNER_VM_HOST no GitHub Secrets"
+fi
+
+if [ -z "${PRODUCTION_SERVER_USER:-}" ]; then
+    log_error "PRODUCTION_SERVER_USER não definido! Configure PRODUCTION_SERVER_USER ou HETZNER_VM_USER no GitHub Secrets"
+fi
+
+if [ -z "${PRODUCTION_SERVER_SSH_PRIVATE_KEY:-}" ]; then
+    log_error "PRODUCTION_SERVER_SSH_PRIVATE_KEY não definido! Configure PRODUCTION_SERVER_SSH_PRIVATE_KEY ou HETZNER_SSH_PRIVATE_KEY no GitHub Secrets"
+fi
+
+# Mostrar configuração (sem expor dados sensíveis)
+log_info "Host: ${PRODUCTION_SERVER_HOST}"
+log_info "User: ${PRODUCTION_SERVER_USER}"
+log_info "SSH Key: [CONFIGURADA - ${#PRODUCTION_SERVER_SSH_PRIVATE_KEY} chars]"
 
 # Configurar chave SSH privada
 mkdir -p ~/.ssh
