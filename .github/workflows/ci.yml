@@ -471,7 +471,9 @@ jobs:
           BUMP_TYPE="patch"
           
           # Verificar BREAKING CHANGES (MAJOR bump)
-          if echo "$COMMITS" | grep -qE "^(feat|fix)(\(.+\))?!:|BREAKING CHANGE:"; then
+          # Conventional Commits 1.0.0: QUALQUER tipo pode usar ! para breaking change
+          # Exemplos válidos: feat!:, fix!:, chore!:, refactor!:, docs!:, perf!:, etc.
+          if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:"; then
             BUMP_TYPE="major"
             echo "⚠️ Breaking change detectado → MAJOR bump"
           # Verificar features (MINOR bump)

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.18 - Pente Fino Pipeline CI/CD Enterprise Completo
+> **Versão:** 4.19 - Fix Conventional Commits Breaking Change Detection
 
 ---
 
@@ -862,6 +862,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Fallback | npm mirror (npmmirror.com) |
 
 **CONCLUSÃO:** Pipeline 100% enterprise-grade, pronta para primeiro deploy em produção. Todos os 887 testes passando, TypeCheck ZERO erros, ESLint ZERO warnings.
+
+> **Bug Fix Conventional Commits (27/12/2025):** Regex de detecção de breaking changes corrigido de `^(feat|fix)(\(.+\))?!:` para `^[a-z]+(\(.+\))?!:`. Segundo Conventional Commits 1.0.0, QUALQUER tipo pode usar `!` para breaking change (`chore!:`, `refactor!:`, `docs!:`, etc.). Changelog também corrigido para excluir commits com `!` da seção "Other Changes".
 
 ### Atualização Periódica (Dependências e Pacotes do Sistema)
 

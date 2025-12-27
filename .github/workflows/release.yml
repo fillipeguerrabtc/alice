@@ -89,9 +89,10 @@ jobs:
             COMMITS=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"%s (%h)" --no-merges)
           fi
           
-          # BREAKING: Captura commits com ! (feat!, fix(scope)!) e BREAKING CHANGE:
+          # BREAKING: Captura commits com ! (QUALQUER tipo!) e BREAKING CHANGE:
+          # Conventional Commits 1.0.0: feat!, fix!, chore!, refactor!, docs!, etc.
           # CRÍTICO: Deve vir ANTES de FEATURES/FIXES para não duplicar
-          BREAKING=$(echo "$COMMITS" | grep -E "^(feat|fix)(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
+          BREAKING=$(echo "$COMMITS" | grep -E "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:" | sed 's/^/- /' || echo "")
           
           # FEATURES: feat sem ! (com ! vai para BREAKING)
           FEATURES=$(echo "$COMMITS" | grep -E "^feat(\(.+\))?:" | grep -v "^feat(\(.+\))?!:" | sed 's/^/- /' || echo "")
@@ -99,8 +100,8 @@ jobs:
           # FIXES: fix sem ! (com ! vai para BREAKING)
           FIXES=$(echo "$COMMITS" | grep -E "^fix(\(.+\))?:" | grep -v "^fix(\(.+\))?!:" | sed 's/^/- /' || echo "")
           
-          # OTHERS: tudo que não é feat/fix (com ou sem !)
-          OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?[!]?:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || echo "")
+          # OTHERS: tudo que não é feat/fix E não tem ! (breaking)
+          OTHERS=$(echo "$COMMITS" | grep -v -E "^(feat|fix)(\(.+\))?:" | grep -v -E "^[a-z]+(\(.+\))?!:" | grep -v "BREAKING CHANGE:" | sed 's/^/- /' || echo "")
           
           # Construir changelog com BREAKING primeiro (destaque máximo)
           CHANGELOG=""
