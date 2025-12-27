@@ -815,61 +815,30 @@ jobs:
         if: always()
         run: |
           if [ ! -f "trivy-results.sarif" ]; then
-            echo "⚠️ Trivy não gerou arquivo SARIF, criando SARIF mínimo válido..."
+            echo "Trivy não gerou arquivo SARIF, criando SARIF mínimo válido..."
             # SARIF mínimo válido para evitar erros de parsing no upload
-            cat > trivy-results.sarif << 'EOF'
-{
-  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-  "version": "2.1.0",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "Trivy",
-          "version": "0.0.0"
-        }
-      },
-      "results": []
-    }
-  ]
-}
-EOF
-            echo "✅ SARIF mínimo criado"
+            # Usar printf para evitar problemas de parsing YAML com heredoc
+            printf '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.0.0"}},"results":[]}]}' > trivy-results.sarif
+            echo "SARIF mínimo criado"
           else
-            echo "✅ SARIF gerado pelo Trivy encontrado"
+            echo "SARIF gerado pelo Trivy encontrado"
           fi
           
           # Validar que arquivo existe e tem conteúdo válido
           if [ ! -s "trivy-results.sarif" ]; then
-            echo "⚠️ Arquivo SARIF está vazio, recriando..."
-            cat > trivy-results.sarif << 'EOF'
-{
-  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
-  "version": "2.1.0",
-  "runs": [
-    {
-      "tool": {
-        "driver": {
-          "name": "Trivy",
-          "version": "0.0.0"
-        }
-      },
-      "results": []
-    }
-  ]
-}
-EOF
+            echo "Arquivo SARIF está vazio, recriando..."
+            printf '{"$schema":"https://json.schemastore.org/sarif-2.1.0.json","version":"2.1.0","runs":[{"tool":{"driver":{"name":"Trivy","version":"0.0.0"}},"results":[]}]}' > trivy-results.sarif
           fi
           
           # Validar JSON básico
           if ! jq empty trivy-results.sarif 2>/dev/null; then
-            echo "❌ ERRO: Arquivo SARIF não é JSON válido!"
+            echo "ERRO: Arquivo SARIF não é JSON válido!"
             exit 1
           fi
           
-          echo "✅ SARIF file ready:"
+          echo "SARIF file ready:"
           ls -lh trivy-results.sarif
-          echo "📄 Primeiras linhas do SARIF:"
+          echo "Primeiras linhas do SARIF:"
           head -5 trivy-results.sarif || true
           echo "sarif_exists=true" >> $GITHUB_OUTPUT
 
