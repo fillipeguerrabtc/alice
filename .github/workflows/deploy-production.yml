@@ -363,6 +363,9 @@ jobs:
         run: |
           chmod +x infra/scripts/generate-env-prod.sh
           ./infra/scripts/generate-env-prod.sh
+          # Garantir permissões de leitura para scp-action
+          chmod 644 .env.prod
+          ls -la .env.prod
 
       # ENTERPRISE-GRADE (27/12/2025): Usar appleboy/ssh-action (padrão da indústria)
       # Esta action lida corretamente com formatos de chave SSH e não requer scripts custom
