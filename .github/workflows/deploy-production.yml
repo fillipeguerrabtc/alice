@@ -409,18 +409,14 @@ jobs:
             echo "SHA: ${GITHUB_SHA}"
             echo ""
             
-            # Mover .env.prod para local correto
-            if [ -f /tmp/.env.prod ]; then
-              mkdir -p /opt/alice/app/infra/docker
-              mv /tmp/.env.prod /opt/alice/app/infra/docker/.env.prod
-              chmod 600 /opt/alice/app/infra/docker/.env.prod
-              echo "✅ .env.prod configurado"
-            else
-              echo "❌ ERRO: .env.prod não encontrado"
+            # Verificar .env.prod transferido
+            if [ ! -f /tmp/.env.prod ]; then
+              echo "❌ ERRO: .env.prod não encontrado em /tmp/"
               exit 1
             fi
+            echo "✅ .env.prod encontrado em /tmp/"
             
-            # Clonar/atualizar repositório
+            # Clonar/atualizar repositório PRIMEIRO (antes de mover .env.prod)
             if [ ! -d /opt/alice/app/.git ]; then
               echo "📦 Clonando repositório..."
               rm -rf /opt/alice/app
@@ -432,6 +428,12 @@ jobs:
               git fetch --all --tags
               git checkout "${DEPLOY_VERSION}" --force
             fi
+            
+            # DEPOIS de clonar, mover .env.prod para local correto
+            mkdir -p /opt/alice/app/infra/docker
+            mv /tmp/.env.prod /opt/alice/app/infra/docker/.env.prod
+            chmod 600 /opt/alice/app/infra/docker/.env.prod
+            echo "✅ .env.prod configurado em /opt/alice/app/infra/docker/"
             
             cd /opt/alice/app/infra/docker
             
