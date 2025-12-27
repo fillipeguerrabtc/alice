@@ -817,6 +817,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
+> **Bug Fix Deploy (27/12/2025):** Digests do Docker Hub podem ser rotacionados/removidos. `docker-compose.prod.yml` foi atualizado com digests **válidos** (linux/amd64) para **Prometheus v3.8.0** e **Traefik v3.6.4**, evitando falha `failed to resolve reference ... not found` durante `docker compose pull` no deploy.
+
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
 | Job | Timeout | Justificativa |

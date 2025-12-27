@@ -383,7 +383,9 @@ services:
   # ===========================================================================
   traefik:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
-    image: traefik:v3.6.4@sha256:c5bd185c4ea4b753e4f5189fd7bbdf3e05990da7f00f5140c82c0a8a14c4f85c
+    # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
+    # Fonte de verdade: Docker Hub API (tag v3.6.4, linux/amd64)
+    image: traefik:v3.6.4@sha256:10d11eab6d1254a3dc1a9015a33bd7deb3e779c852e89bbbf2cb69194f82ee90
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -2513,7 +2515,9 @@ services:
 
   prometheus:
     # ATUALIZADO 14/12/2025: v3.0.1 -> v3.8.0 (Dec 2, 2025)
-    image: prom/prometheus:v3.8.0@sha256:2c785d4e9af2224941598d142337931a5f8333065916938c6444294020b45f50
+    # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
+    # Fonte de verdade: Docker Hub API (tag v3.8.0, linux/amd64)
+    image: prom/prometheus:v3.8.0@sha256:67abe619da66a6b14cc0e185205f93a29d5b03cedd1aaa06930745b21f95a374
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
