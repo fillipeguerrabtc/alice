@@ -40,4 +40,5 @@ Sempre atualize aqui primeiro e depois copie para os destinos.
 ---
 
 *Autor: Fillipe Guerra*
-*Atualizado: 05 de Dezembro de 2025*
+*Atualizado: 27 de Dezembro de 2025*
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

@@ -29,7 +29,7 @@
 | Item | Status | Cobertura |
 |------|--------|-----------|
 | `security_opt: no-new-privileges` | ✅ | 51/51 containers (100%) |
-| `read_only: true` | ✅ | 25/45 (aplicável apenas onde não há escrita) |
+| `read_only: true` | ✅ | 25/51 (aplicável apenas onde não há escrita) |
 | Resource limits | ✅ | 51/51 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |

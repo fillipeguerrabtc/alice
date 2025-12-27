@@ -241,12 +241,12 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner GPU (51 containers - 44 serviços + 6 GPU + 1 backup)
+   ├── Deploy Hetzner GPU (51 containers: 8 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
-**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 51 containers (44 serviços + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
+**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 51 containers (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
 
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
