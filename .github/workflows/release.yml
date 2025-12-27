@@ -235,27 +235,28 @@ jobs:
           # Serviços GPU (docker/gpu/)
           # NOTA: context deve ser o diretório do Dockerfile para COPY funcionar
           # Os Dockerfiles usam COPY app/ e COPY healthcheck.py relativos
+          # IMPORTANTE: Quando context é subdiretório, dockerfile deve ser relativo ao context (sem ./)
           # -------------------------------
           - service: gpu-mixtral
             image: mixtral-vllm
             context: ./docker/gpu/mixtral-vllm
-            dockerfile: ./Dockerfile
+            dockerfile: Dockerfile
           - service: gpu-embeddings
             image: embeddings-gpu
             context: ./docker/gpu/embeddings-gpu
-            dockerfile: ./Dockerfile
+            dockerfile: Dockerfile
           - service: gpu-flux
             image: flux-schnell
             context: ./docker/gpu/flux-schnell
-            dockerfile: ./Dockerfile
+            dockerfile: Dockerfile
           - service: gpu-asr
             image: asr-canary
             context: ./docker/gpu/asr-canary
-            dockerfile: ./Dockerfile
+            dockerfile: Dockerfile
           - service: gpu-trainer
             image: lora-trainer
             context: ./docker/gpu/lora-trainer
-            dockerfile: ./Dockerfile
+            dockerfile: Dockerfile
     
     steps:
       # IMPORTANTE: Checkout da TAG para garantir reprodutibilidade de releases
