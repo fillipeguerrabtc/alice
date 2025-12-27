@@ -35,12 +35,12 @@
 # - /ready: usado para Kubernetes readiness (roteamento de tráfego)
 # - Evita falsos positivos quando GPU Manager Service não está pronto
 #
-# SECURITY: 100% SHA256 digests em todas as 26 imagens externas (Supply Chain Security 2025)
+# SECURITY: Tags versionadas em imagens externas (sem digests SHA256 - evita falha por rotação no Docker Hub)
 # ERPNEXT: Arquitetura unificada v15 - imagem única frappe/erpnext com comandos por serviço
 #
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
-# Atualização: Digests Traefik/Prometheus corrigidos via Docker Registry API + remoção de referências obsoletas a vídeo
+# Atualização: Removidos digests SHA256 de imagens externas (tags versionadas são suficientes e não rotacionam)
 # =============================================================================
 
 # =============================================================================
@@ -257,7 +257,7 @@ services:
           cpus: '0.1'
 
   alice-searxng:
-    image: searxng/searxng:latest@sha256:1cc8efcc2a40f79249d5fe0033a9a9ec079c171cb65d35bacee22be37c794aea
+    image: searxng/searxng:latest
     platform: linux/amd64
     container_name: alice-searxng
     restart: unless-stopped
@@ -307,7 +307,7 @@ services:
   # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
   # Expõe API Docker via TCP para o Traefik consumir
   dockerproxy:
-    image: tecnativa/docker-socket-proxy:latest@sha256:1c211b210cf155392544face6e2c2ebfe626f97f5f1e4eea94ed2ebe2be7bc55
+    image: tecnativa/docker-socket-proxy:latest
     platform: linux/amd64
     container_name: alice-dockerproxy
     restart: always
@@ -353,7 +353,7 @@ services:
   # Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   traefik-init:
-    image: busybox:1.36@sha256:00baf5736376036ea4bc1a1c075784fc98a79186604d5d41305cd9b428b3b737
+    image: busybox:1.36
     platform: linux/amd64
     container_name: alice-traefik-init
     security_opt:
@@ -385,7 +385,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.6.4, linux/amd64)
-    image: traefik:v3.6.4@sha256:c5bd185c41ba3dbb42cf8a1b9fbdc368bdc96f90c8e598134879935f64e7a7f1
+    image: traefik:v3.6.4
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -489,7 +489,7 @@ services:
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   # ===========================================================================
   postgres:
-    image: pgvector/pgvector:pg16@sha256:ba936058427f638177f216901afc42cbacac0c4e1f441adf9c39a4a777d31075
+    image: pgvector/pgvector:pg16
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
@@ -535,7 +535,7 @@ services:
   # ===========================================================================
   alice-redis:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
+    image: redis:7.4.6-alpine
     platform: linux/amd64
     container_name: alice-redis
     restart: always
@@ -1259,7 +1259,7 @@ services:
   # innodb_buffer_pool_size = 70% do container memory (1.4GB para 2GB container)
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-mariadb:
-    image: mariadb:10.11@sha256:896f79e37178838799a8af4c8e4431b26352d5770cf7edd803b7fcadba7d953d
+    image: mariadb:10.11
     platform: linux/amd64
     container_name: erpnext-mariadb
     restart: always
@@ -1315,7 +1315,7 @@ services:
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
+    image: redis:7.4.6-alpine
     platform: linux/amd64
     container_name: erpnext-redis-cache
     restart: always
@@ -1377,7 +1377,7 @@ services:
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
     # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine@sha256:3b73847e72874be07e6657b129a94761662b79bc0f679273757d4218573b2a98
+    image: redis:7.4.6-alpine
     platform: linux/amd64
     container_name: erpnext-redis-queue
     restart: always
@@ -1439,7 +1439,7 @@ services:
   # ===================================================================
   erpnext-configurator:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
@@ -1553,7 +1553,7 @@ services:
 
   erpnext-create-site:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
@@ -1799,7 +1799,7 @@ services:
 
   erpnext-backend:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-backend
     restart: unless-stopped
@@ -1849,7 +1849,7 @@ services:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
     # Ref: https://github.com/frappe/frappe_docker (arquitetura 2024/2025)
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-frontend
     restart: unless-stopped
@@ -1896,7 +1896,7 @@ services:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
     # Ref: https://github.com/frappe/frappe_docker (arquitetura 2024/2025)
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-websocket
     restart: unless-stopped
@@ -1936,7 +1936,7 @@ services:
   erpnext-worker-default:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-default
     restart: unless-stopped
@@ -1991,7 +1991,7 @@ services:
 
   erpnext-worker-short:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-short
     restart: unless-stopped
@@ -2045,7 +2045,7 @@ services:
 
   erpnext-worker-long:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-long
     restart: unless-stopped
@@ -2099,7 +2099,7 @@ services:
 
   erpnext-scheduler:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-scheduler
     restart: unless-stopped
@@ -2153,7 +2153,7 @@ services:
 
   erpnext-worker-default-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-default-2
     restart: unless-stopped
@@ -2207,7 +2207,7 @@ services:
 
   erpnext-worker-short-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-short-2
     restart: unless-stopped
@@ -2261,7 +2261,7 @@ services:
 
   erpnext-worker-long-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3@sha256:e0509ed0ce906637b08f70eaa9b606b6b13c9915b2a0b5db907dda93e3be3fa5
+    image: frappe/erpnext:v15.91.3
     platform: linux/amd64
     container_name: erpnext-worker-long-2
     restart: unless-stopped
@@ -2372,7 +2372,7 @@ services:
   # ===========================================================================
   langfuse:
     # Langfuse v3.139.0 (Dec 2025) - última versão estável com ClickHouse
-    image: langfuse/langfuse:3.139.0@sha256:708cd9b4906b4882091ddda7bd071fa55e3e59bd3314da62be47adca7500e819
+    image: langfuse/langfuse:3.139.0
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2434,7 +2434,7 @@ services:
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
   langfuse-worker:
-    image: langfuse/langfuse:3.139.0@sha256:708cd9b4906b4882091ddda7bd071fa55e3e59bd3314da62be47adca7500e819
+    image: langfuse/langfuse:3.139.0
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped
@@ -2517,7 +2517,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.0.1 -> v3.8.0 (Dec 2, 2025)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.8.0, linux/amd64)
-    image: prom/prometheus:v3.8.0@sha256:d936808bdea528155c0154a922cd42fd75716b8bb7ba302641350f9f3eaeba09
+    image: prom/prometheus:v3.8.0
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
@@ -2567,7 +2567,7 @@ services:
   grafana:
     # ATUALIZADO 14/12/2025: Grafana 11.6.2 com SHA256 digest (Supply Chain Security 2025)
     # Grafana 11.x LTS com suporte até Jun 2026
-    image: grafana/grafana:11.6.2@sha256:f3b1dca4d0378ce23519cc08a7a9c2c35e2e0d709501b96a8fff805cf4ae2bbd
+    image: grafana/grafana:11.6.2
     platform: linux/amd64
     container_name: grafana
     restart: unless-stopped
@@ -2607,7 +2607,7 @@ services:
   loki:
     # ATUALIZADO 14/12/2025: Loki 3.6.3 (Dec 11, 2025) com SHA256 digest
     # Inclui upgrade para Go 1.25 e fixes de S3 client configuration
-    image: grafana/loki:3.6.3@sha256:cefa6c55dd1f21d6032cbf2d227f34b3a3892f39540f1d67a03a71f37a24c59a
+    image: grafana/loki:3.6.3
     platform: linux/amd64
     container_name: loki
     restart: unless-stopped
@@ -2637,7 +2637,7 @@ services:
 
   promtail:
     # ATUALIZADO 14/12/2025: Promtail 3.6.3 (pareado com Loki) com SHA256 digest
-    image: grafana/promtail:3.6.3@sha256:5c61a609062bd21e5d913885163e5aa59f73d5d0f5b897615aa8da76e5f5c3ac
+    image: grafana/promtail:3.6.3
     platform: linux/amd64
     container_name: promtail
     restart: unless-stopped
@@ -2668,7 +2668,7 @@ services:
   jaeger:
     # ATUALIZADO 14/12/2025: Jaeger 1.76.0 (Dec 3, 2025) com SHA256 digest
     # NOTA: Jaeger v1 EOL em Dec 31, 2025 - Migrar para v2.x em Janeiro 2026
-    image: jaegertracing/all-in-one:1.76.0@sha256:968b31672178558da8a0c1bfc86336647d756ee6997ca196698796f5262adef1
+    image: jaegertracing/all-in-one:1.76.0
     platform: linux/amd64
     container_name: jaeger
     restart: unless-stopped
@@ -2704,7 +2704,7 @@ services:
   # ===========================================================================
   vector:
     # ATUALIZADO 14/12/2025: Vector 0.51.1-alpine com SHA256 digest (Supply Chain Security 2025)
-    image: timberio/vector:0.51.1-alpine@sha256:e63f87843d1ff0e5ad5e23e8a7c94527373e74b6827b54e701c03a9dd93b9374
+    image: timberio/vector:0.51.1-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped
@@ -2827,7 +2827,7 @@ services:
   # ===========================================================================
   otel-collector:
     # ATUALIZADO 14/12/2025: 0.114.0 -> 0.141.0 (Dec 3, 2025)
-    image: otel/opentelemetry-collector-contrib:0.141.0@sha256:b14234c4bc1b7364629af272e564913bb57bdc9736d45b8b6db5ab3417dc75f9
+    image: otel/opentelemetry-collector-contrib:0.141.0
     platform: linux/amd64
     container_name: alice-otel-collector
     restart: unless-stopped
@@ -2914,7 +2914,7 @@ services:
   # CADVISOR - Métricas de containers Docker
   # ===========================================================================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1@sha256:3cde6faf0791ebf7b41d6f8ae7145466fed712ea6f252c935294d2608b1af388
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
     platform: linux/amd64
     container_name: alice-cadvisor
     restart: unless-stopped

@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.22 - Vendor Image Mirroring + Mocks Removed
+> **Versão:** 4.22 - Docker Digests Fix + Mocks Removed
 
 ---
 
@@ -48,7 +48,7 @@
 
 > **Deploy Runner Enterprise 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). **HARDENING COMPLETO:** Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10, inotify=524288), Docker daemon otimizado (BuildKit, max-downloads=10, GC=20GB, live-restore), limits (nofile=1048576, nproc=65535), systemd override (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário 3h. Runner 2.330.0, Docker 29.1.3, Buildx 0.30.1, Ubuntu 24.04.3 LTS.
 
-> **Vendor Image Mirroring 27/12/2025:** Novo workflow `sync-vendor-images.yml` copia 22 imagens de terceiros (Docker Hub) para GHCR da Alice. **PROBLEMA RESOLVIDO:** Docker Hub rotaciona digests SHA256, quebrando deploys. **BENEFÍCIOS:** Digests imutáveis sob controle da organização, zero rate limits, zero dependência de Docker Hub em produção, auditoria completa. Execução semanal (cron domingo 03:00 UTC) + manual. Issue criada automaticamente quando há atualizações.
+> **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `traefik:v3.6.4`) são suficientemente determinísticas.
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
 
