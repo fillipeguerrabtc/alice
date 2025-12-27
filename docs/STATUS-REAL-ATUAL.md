@@ -815,7 +815,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow já builda todas as imagens via Docker. Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release builda (15 imagens), Deploy deploya.
 
-> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Microservices builds agora usam `--network=host` (mesma otimização dos GPU builds) para downloads mais rápidos. Adicionadas métricas de tempo por build para debugging de performance. pgBackRest adicionado à lista de builds (10 microservices + 5 GPU = 15 total). Limpeza de cache mantida apenas antes dos GPU builds (desnecessária para microservices com 160GB SSD).
+> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). Scripts simplificados removendo logs verbosos.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
