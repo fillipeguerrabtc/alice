@@ -574,9 +574,9 @@ CREATE POLICY "tenant_isolation" ON conversations
 
 | Medida | Cobertura | Status |
 |--------|-----------|--------|
-| `no-new-privileges` | 45/45 containers | ✅ 100% |
-| `read_only: true` | 25/45 containers | ✅ Onde aplicável |
-| Resource limits | 45/45 containers | ✅ 100% |
+| `no-new-privileges` | 51/51 containers | ✅ 100% |
+| `read_only: true` | 25/51 containers | ✅ Onde aplicável |
+| Resource limits | 51/51 containers | ✅ 100% |
 | SHA256 digests | 26 imagens | ✅ 100% |
 | Healthchecks | 38/38 containers | ✅ 100% |
 
@@ -901,7 +901,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Autor: Fillipe Guerra*  
 *Data: 27 de Dezembro de 2025*
 *Versão: 1.7.0 - Otimização CI Performance Enterprise*
-*Total de Containers: 45*  
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  

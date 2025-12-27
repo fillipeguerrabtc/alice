@@ -94,7 +94,7 @@
 
 ### Arquitetura de Microsserviços - 50 Containers em Produção
 
-A plataforma Alice é composta por **50 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
+A plataforma Alice é composta por **51 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
 
 #### Categoria 1: Infraestrutura Core (7 serviços)
 
@@ -241,12 +241,12 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner GPU (50 containers - 45 serviços + 4 GPU + 1 backup)
+   ├── Deploy Hetzner GPU (51 containers - 44 serviços + 6 GPU + 1 backup)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
-**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (45 serviços + 4 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
+**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 51 containers (44 serviços + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
 
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
@@ -433,9 +433,9 @@ Proprietário - Todos os direitos reservados.
 
 | Métrica | Contagem | Cobertura |
 |---------|----------|-----------|
-| **Resource Limits** | 50/50 containers | 100% |
-| **read_only: true** | 24/50 containers | 100% aplicável (somente onde não há escrita) |
-| **security_opt: no-new-privileges** | 50/50 containers | 100% |
+| **Resource Limits** | 51/51 containers | 100% |
+| **read_only: true** | 25/51 containers | 100% aplicável (somente onde não há escrita) |
+| **security_opt: no-new-privileges** | 51/51 containers | 100% |
 | **Healthchecks** | 38/38 containers | 100% (3 init usam service_completed_successfully) |
 | **SHA256 Digests** | 26 imagens externas únicas | 100% |
 | **TypeScript strict** | Zero erros | 100% |
@@ -456,7 +456,7 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 50 containers têm security hardening completo aplicado. Containers que não precisam escrever (24 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (26 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager, serviços GPU) mantêm `security_opt: no-new-privileges:true` e resource limits.
+Todos os 51 containers têm security hardening completo aplicado. Containers que não precisam escrever (25 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (26 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager, serviços GPU) mantêm `security_opt: no-new-privileges:true` e resource limits.
 
 - Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 
@@ -469,7 +469,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Autor: Fillipe Guerra*
 *Versão 4.37 - 27 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
 *PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
@@ -479,7 +479,7 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 *Trading Analysis (21/12/2025): RSI, MACD, EMA, SMA, Bollinger, ATR, Stochastic, ADX, Pivot Points + Aprovação de Sinais*
 *LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU Server GEX44 (RTX 4000 Ada 20GB)*
 *GPU Services (Hetzner): LLM (Mixtral vLLM), FLUX.1 Schnell, Qwen3-Embedding-8B, OpenCLIP, Canary-1B (ASR) - gerenciados pelo GPU Manager Service*
-*Pipeline Unificada: Hetzner GPU 100% automático - todos os 50 containers no servidor único*
+*Pipeline Unificada: Hetzner GPU 100% automático - todos os 51 containers no servidor único*
 *Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
 *Runner Enterprise Hardening (27/12/2025): Kernel tuning, Docker daemon otimizado, limits, systemd override, cron cleanup diário 3h*
 

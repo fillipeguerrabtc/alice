@@ -338,7 +338,7 @@ GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 | Servidor | Alias SSH | IP | Função |
 |----------|-----------|-----|--------|
 | **Deploy Server** | `alice-hetzner` | 46.224.46.93 | GitHub Actions Runner, CI/CD (CPX32 - 4 vCPU, 8GB RAM) |
-| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (50 containers) |
+| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (51 containers) |
 
 **Configuração SSH** (`~/.ssh/config`):
 
@@ -584,7 +584,7 @@ O deploy é **100% automático** via GitHub Actions:
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │   45 containers                        │
+│  │ • SSH para Hetzner  │   51 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
 │  │ • Health checks     │   RTX 4000 Ada 20GB (Mixtral, FLUX, ASR, Emb.)  │
@@ -600,7 +600,7 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Hetzner** | Release passa | 45 containers via Docker Compose |
+| **Deploy Hetzner** | Release passa | 51 containers via Docker Compose |
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
@@ -627,7 +627,7 @@ O deploy é **100% automático** via GitHub Actions:
 - Reverte containers para última versão estável
 - GPU services são parte do deploy único (não separado)
 
-Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 50 containers no servidor único).
+Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 51 containers no servidor único).
 
 ### Versionamento Automático
 
@@ -1171,9 +1171,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 45/45 containers (100%) |
-| **resource limits** | ✅ | 45/45 containers (100%) |
-| **read_only: true** | ✅ | 25/45 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 51/51 containers (100%) |
+| **resource limits** | ✅ | 51/51 containers (100%) |
+| **read_only: true** | ✅ | 25/51 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -1224,12 +1224,12 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Versão: 7.11 - CPX32 Runner Enterprise Hardening*
 *Data: 27 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
-*Security Hardening: 100% completo - 45/45 containers com no-new-privileges, 45/45 com resource limits, 25/45 com read_only*
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Security Hardening: 100% completo - 51/51 containers com no-new-privileges, 51/51 com resource limits, 25/51 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 51 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*

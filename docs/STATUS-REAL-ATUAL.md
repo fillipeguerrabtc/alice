@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 51 (produção: 45 serviços + 5 GPU + 1 backup) |
+| **Total de Containers** | 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -28,9 +28,9 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 45/45 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 51/51 containers (100%) |
 | `read_only: true` | ✅ | 25/45 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 45/45 containers (100%) |
+| Resource limits | ✅ | 51/51 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
@@ -633,7 +633,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (45 containers)
+## 🐳 INFRAESTRUTURA DOCKER (51 containers)
 
 ### Core Infra (8)
 
@@ -701,10 +701,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 45/45 containers (100% COMPLETO) |
-| read_only: true | ✅ | 25/45 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 45/45 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 45/45 containers |
+| no-new-privileges | ✅ | 51/51 containers (100% COMPLETO) |
+| read_only: true | ✅ | 25/51 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 51/51 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 51/51 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
@@ -1215,7 +1215,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup)*
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

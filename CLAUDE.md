@@ -19,7 +19,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | 9 | **VALIDAÇÃO CONTÍNUA** | Testar após cada micro-passo |
 | 10 | **DOCUMENTAÇÃO PT-BR** | TODA documentação em português |
 | 11 | **SEGUIR DOCS OFICIAIS** | Melhores práticas 2025 |
-| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 50 containers (45 serviços + 4 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
+| 12 | **PRODUÇÃO HETZNER GPU** | Deploy Hetzner via GitHub Actions (100% automático). Servidor único Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1) hospeda todos os 51 containers (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup). GPU Manager Service gerencia requisições GPU com fila priorizada, monitoramento VRAM e circuit breakers. |
 | 13 | **INTERNACIONALIZAÇÃO** | PT-BR primário, EN secundário |
 | 14 | **VERIFICAR SECRETS** | Checar variáveis existentes |
 | 15 | **MICROSSERVIÇOS** | Código em apps/, compartilhado em packages/ |
@@ -42,7 +42,7 @@ Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE
 | Ambiente | Local | Propósito | Regras |
 |----------|-------|-----------|--------|
 | DESENVOLVIMENTO | Cursor IDE | IDE e preview de UI | Dados de preview permitidos APENAS em `server/index-dev.ts` |
-| PRODUÇÃO | Hetzner Cloud GPU (servidor único - 50 containers) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
+| PRODUÇÃO | Hetzner Cloud GPU (servidor único - 51 containers) | Sistema enterprise real | **PROIBIDO** mocks/hardcoded (Regra 6) |
 
 **IMPORTANTE**: Código em `apps/` (microsserviços) vai para produção via GitHub Actions. `server/index-dev.ts` é APENAS para preview no Cursor IDE e NÃO é deployado para produção.
 
@@ -100,7 +100,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **Qdrant para Texto**: Suporta HNSW com 4096+ dim (pgvector limita em 4000 para halfvec)
 - **GPU Dedicada 24/7**: Servidor Hetzner GEX44 com containers Docker rodando continuamente - sem cold start
 - **Texto unificado**: Trading e RAG usam mesmo modelo (Qwen3-Embedding-8B)
-- **Arquitetura Single Server**: Todos os 50 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
+- **Arquitetura Single Server**: Todos os 51 containers rodam no mesmo servidor Hetzner GPU, eliminando latência de rede entre serviços
 - **Payments**: Stripe, Wise.
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
@@ -113,7 +113,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 ## Deploy Information
 - **Servidor**: Hetzner GPU GEX44 (RTX 4000 Ada 20GB, Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1 = 1.92TB utilizável)
 - **Volume Adicional**: Não necessário - servidor GEX44 possui 1.92TB de storage interno (substitui volume externo de 100GB)
-- **GPUs**: Servidor único Hetzner (todos os 50 containers no mesmo servidor, latência zero)
+- **GPUs**: Servidor único Hetzner (todos os 51 containers no mesmo servidor, latência zero)
 - **IP Production**: 178.63.41.108 (GEX44 GPU)
 - **IP Deploy Server**: 46.224.46.93 (CPX32 Runner - 4 vCPU, 8GB RAM)
 - **Domínio**: yesyoudeserve.duckdns.org
@@ -214,9 +214,9 @@ Permissões Enterprise (13/12/2025):
 - Provisionamento: `.github/workflows/deploy-production.yml` falha se `ADMIN_USER`/`ADMIN_PWD` ausentes; secrets de Grafana/ERPNext recebem fallback seguro.
 
 ## Security Hardening (19 de Dezembro de 2025)
-- **45 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
+- **51 containers** = 100% com `security_opt: no-new-privileges` ✅ COMPLETO
 - **25 containers** = 100% com `read_only: true` + tmpfs (apenas onde não há escrita necessária)
-- **45 containers** = 100% com resource limits ✅ COMPLETO
+- **51 containers** = 100% com resource limits ✅ COMPLETO
 - **26 imagens externas** = 100% com SHA256 digests
 - **healthchecks** = ✅ 38/38 containers (3 init containers não precisam - usam service_completed_successfully)
 - **Google Distroless** = 6 serviços Node.js (0 CVEs)
@@ -344,7 +344,7 @@ git commit -a -m "test: adiciona testes unitários"
 ---
 *Autor: Fillipe Guerra*
 *Versão: 4.37 - 27 de Dezembro de 2025*
-*Total de Containers: 45 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 1 backup) - Tor Proxy adicionado 23/12/2025*
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
@@ -393,11 +393,11 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix messageContent Inconsistente (17/12/2025): buscarContextoRAG e callLlamaAPI agora usam messageContent (com fallback) ao invés de message.content*
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
 *Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
-*Pipeline Unificada (17/12/2025): Deploy 100% automático no servidor Hetzner GPU único - todos os 50 containers (45 serviços + 4 GPU + 1 backup)*
+*Pipeline Unificada (17/12/2025): Deploy 100% automático no servidor Hetzner GPU único - todos os 51 containers (44 serviços + 6 GPU + 1 backup)*
 *Auditoria KuCoin Completa (17/12/2025): 3 bugs corrigidos - DEFAULT_SYMBOL não definido, riskConfig.enabled→tradingEnabled, stop orders não exportadas*
 *Backup Enterprise Completo (17/12/2025): Qdrant backup/restore implementado - snapshot por coleção, upload via API REST, frontend atualizado*
-*Health Check Completo (17/12/2025): Health check verifica todos os 50 containers no servidor Hetzner GPU único - tolerância zero para falhas*
-*Rollback Enterprise Unificado (17/12/2025): Rollback completo de todos os 50 containers no servidor Hetzner GPU*
+*Health Check Completo (17/12/2025): Health check verifica todos os 51 containers no servidor Hetzner GPU único - tolerância zero para falhas*
+*Rollback Enterprise Unificado (17/12/2025): Rollback completo de todos os 51 containers no servidor Hetzner GPU*
 *Learning Worker Enterprise (17/12/2025): learning-worker.ts corrigido - lógica real para rag_update, auto_indexing, incremental/complete fine-tuning, embedding_generation*
 *Trading Commands Integration (17/12/2025): chat-service integrado com integrations-service via HTTP para execução real de comandos de trading*
 *LoRA Job Cancel GPU (17/12/2025): lora-job-manager.ts gerencia cancelamento de jobs de fine-tuning (ainda em migração para Hetzner GPU)*
@@ -539,7 +539,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Paths Workflow (21/12/2025): Corrigidos TODOS os paths no deploy-production.yml. Repositório é clonado em /opt/alice/app, então todos os paths devem usar /opt/alice/app/infra/docker (não /opt/alice/infra/docker). Adicionado cd /opt/alice/app após o clone. Corrigidos paths de validação, .env.prod, cleanup, rollback e URLs GPU.*
 *Bug Fix REDIS_URL Faltando (21/12/2025): REDIS_URL estava FALTANDO em 5 dos 6 serviços Alice no docker-compose.prod.yml! Erro: "REDIS_URL não configurado em produção. Rate limiting distribuído é obrigatório (Regra 6)". Corrigido adicionando REDIS_URL para: alice-auth, alice-rag, alice-training, alice-integrations, alice-observability. Apenas alice-chat já tinha. Também adicionada dependência alice-redis em todos os serviços.*
 *Bug Fix ERPNext Configurator PRE-DEPLOY (21/12/2025): erpnext-configurator falhava porque volume montado sobrescreve arquivos originais do container. Solução: apps.txt e common_site_config.json agora são criados no PRÉ-DEPLOY (workflow) em /opt/alice/data/erpnext-sites/ com UID 1000 (frappe). Erros corrigidos: "OSError: b'./apps.txt' Not Found", "JSONDecodeError", "PermissionError".*
-*Pipeline 100% Automática (21/12/2025): Deploy no servidor Hetzner GPU único é 100% automático - todos os 50 containers gerenciados via Docker Compose*
+*Pipeline 100% Automática (21/12/2025): Deploy no servidor Hetzner GPU único é 100% automático - todos os 51 containers gerenciados via Docker Compose*
 *Bug Fix ClickHouse override.xml (22/12/2025): REMOVIDO mount de override.xml que causava falha na inicialização do ClickHouse. A imagem oficial já tem docker_related_config.xml com listen_host correto (0.0.0.0 e ::) e listen_try=1 para ignorar falhas de IPv6. O override.xml sobrescrevia essas configurações e fazia ClickHouse escutar apenas em 127.0.0.1:9009, sem abrir portas 8123 (HTTP) e 9000 (TCP).*
 *Bug Fix ClickHouse CLICKHOUSE_LISTEN_HOST (22/12/2025): Adicionada variável de ambiente CLICKHOUSE_LISTEN_HOST="0.0.0.0". O entrypoint da imagem oficial passa --listen_host=127.0.0.1 por padrão durante inicialização. Sem esta variável, Langfuse não conseguia conectar ao ClickHouse.*
 *Bug Fix Redis SHA256 Digest (22/12/2025): Atualizado digest do Redis de sha256:4e053b71... para sha256:3b73847e... - digest anterior estava obsoleto e causava erro "manifest unknown" no docker pull.*

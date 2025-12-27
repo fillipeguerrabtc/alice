@@ -10,7 +10,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 25/12/2025)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 50 em produção (8 infra + 8 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)
+**Total de Containers:** 51 em produção (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via GPU Manager Service (Hetzner GPU)
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
@@ -572,7 +572,7 @@ openssl rand -base64 24
 *Documento atualizado em: 27 de Dezembro de 2025*
 *Versão: 8.1 - Otimização CI Performance Enterprise*
 *Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 4 GPU + 1 backup)*  
+*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  

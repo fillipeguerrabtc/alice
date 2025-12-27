@@ -6,7 +6,7 @@
 #            com arquitetura 100% GPU local (Hetzner GPU GEX44)
 #
 # ARQUITETURA ENTERPRISE (25/12/2025):
-# - 50 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 5 GPU + 1 backup)
+# - 51 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
 # - LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)
 # - Vector DB: Qdrant (texto) + PostgreSQL pgvector (imagem)
