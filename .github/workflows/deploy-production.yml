@@ -364,14 +364,21 @@ jobs:
           chmod +x infra/scripts/generate-env-prod.sh
           ./infra/scripts/generate-env-prod.sh
 
+      # ENTERPRISE-GRADE (27/12/2025): Usar appleboy/ssh-action (padrão da indústria)
+      # Esta action lida corretamente com formatos de chave SSH e não requer scripts custom
+      - name: Transferir .env.prod para servidor
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          source: ".env.prod"
+          target: "/tmp/"
+          overwrite: true
+
       - name: Deploy via SSH
+        uses: appleboy/ssh-action@029f5b4aeeeb58fdfe1410a5d17f967dacf36262
         env:
-          # CORREÇÃO (27/12/2025): Usar HETZNER_VM_* como fallback correto
-          # PRODUCTION_SERVER_* é para arquitetura com Deploy Server separado (futuro)
-          # Por enquanto, usamos HETZNER_VM_* que está configurado no GitHub Secrets
-          PRODUCTION_SERVER_HOST: ${{ secrets.PRODUCTION_SERVER_HOST || secrets.HETZNER_VM_HOST }}
-          PRODUCTION_SERVER_USER: ${{ secrets.PRODUCTION_SERVER_USER || secrets.HETZNER_VM_USER }}
-          PRODUCTION_SERVER_SSH_PRIVATE_KEY: ${{ secrets.PRODUCTION_SERVER_SSH_PRIVATE_KEY || secrets.HETZNER_SSH_PRIVATE_KEY }}
           GH_PAT: ${{ secrets.GH_PAT }}
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
@@ -382,9 +389,70 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-        run: |
-          chmod +x infra/scripts/deploy-remote.sh
-          bash infra/scripts/deploy-remote.sh
+        with:
+          host: ${{ secrets.HETZNER_VM_HOST }}
+          username: ${{ secrets.HETZNER_VM_USER }}
+          key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
+          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
+          command_timeout: 30m
+          script: |
+            set -euo pipefail
+            
+            echo "=============================================="
+            echo "DEPLOY ALICE ENTERPRISE PLATFORM"
+            echo "=============================================="
+            echo "Versão: ${DEPLOY_VERSION}"
+            echo "Serviços: ${DEPLOY_SERVICES}"
+            echo "SHA: ${GITHUB_SHA}"
+            echo ""
+            
+            # Mover .env.prod para local correto
+            if [ -f /tmp/.env.prod ]; then
+              mkdir -p /opt/alice/app/infra/docker
+              mv /tmp/.env.prod /opt/alice/app/infra/docker/.env.prod
+              chmod 600 /opt/alice/app/infra/docker/.env.prod
+              echo "✅ .env.prod configurado"
+            else
+              echo "❌ ERRO: .env.prod não encontrado"
+              exit 1
+            fi
+            
+            # Clonar/atualizar repositório
+            if [ ! -d /opt/alice/app/.git ]; then
+              echo "📦 Clonando repositório..."
+              rm -rf /opt/alice/app
+              git clone --depth 1 --branch "${DEPLOY_VERSION}" "https://${GH_PAT}@github.com/${REPO_FULL_NAME}.git" /opt/alice/app
+            else
+              echo "📦 Atualizando repositório..."
+              cd /opt/alice/app
+              git config --global url."https://${GH_PAT}@github.com/".insteadOf "https://github.com/"
+              git fetch --all --tags
+              git checkout "${DEPLOY_VERSION}" --force
+            fi
+            
+            cd /opt/alice/app/infra/docker
+            
+            # Login no GHCR e Docker Hub
+            echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
+              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+            fi
+            
+            # Pull das imagens
+            echo "📥 Baixando imagens Docker..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
+            
+            # Deploy
+            echo "🚀 Iniciando containers..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
+            
+            # Verificar status
+            sleep 10
+            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
+            echo ""
+            echo "=============================================="
+            echo "✅ Deploy concluído: ${RUNNING} containers rodando"
+            echo "=============================================="
 
   # ===========================================================================
   # Job 4: Health Check
