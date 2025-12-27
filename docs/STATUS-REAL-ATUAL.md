@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.20 - Runner Enterprise Hardening
+> **Versão:** 4.21 - Docker Build Optimization
 
 ---
 
@@ -810,10 +810,12 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | CI Jobs | 6 jobs | 4 jobs | ~60% tempo |
 | Build Services | Em CI (redundante) | REMOVIDO (Release builda) | 15min eliminados |
 | Security + Compliance | 2 jobs separados | 1 job consolidado | ~5min |
-| Docker Images | Matrix 14 jobs | 1 job `build-images` | ~4min overhead |
-| Node.js Setup | Repetido 14x | Composite action 1x | ~6-10min |
+| Docker Images | Matrix 15 jobs | 1 job `build-images` | ~4min overhead |
+| Node.js Setup | Repetido 15x | Composite action 1x | ~6-10min |
 
-> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow já builda todas as imagens via Docker. Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release builda (14 imagens), Deploy deploya.
+> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow já builda todas as imagens via Docker. Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release builda (15 imagens), Deploy deploya.
+
+> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Microservices builds agora usam `--network=host` (mesma otimização dos GPU builds) para downloads mais rápidos. Adicionadas métricas de tempo por build para debugging de performance. pgBackRest adicionado à lista de builds (10 microservices + 5 GPU = 15 total). Limpeza de cache mantida apenas antes dos GPU builds (desnecessária para microservices com 160GB SSD).
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -826,7 +828,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | trigger-release | 2 min | API call |
 | **Release Workflow** | | |
 | create-release | 5 min | Tag + GitHub Release |
-| build-images | 90 min | 14 imagens Docker (9 microservices + 5 GPU pesadas) |
+| build-images | 90 min | 15 imagens Docker (10 microservices + 5 GPU pesadas) |
 | trigger-deploy | 2 min | API call |
 | **Deploy Workflow** | | |
 | validate-and-prepare | 5 min | Validação + GHCR check |
