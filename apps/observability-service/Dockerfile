@@ -64,8 +64,8 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 COPY packages/ ./packages/
 COPY apps/observability-service/ ./apps/observability-service/
 
-# Copiar tsconfig base para compilação
-COPY packages/tsconfig.base.json ./packages/
+# Copiar script de build
+COPY scripts/build-service.mjs ./scripts/
 
 # Compilar pacotes internos primeiro (ordem de dependências)
 RUN pnpm run build:packages
