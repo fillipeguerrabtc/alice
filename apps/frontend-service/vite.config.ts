@@ -6,22 +6,12 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// NOTA: Durante `vite build` (CI), o proxy não é usado - apenas durante `vite dev`
-// As variáveis de ambiente são obrigatórias apenas para desenvolvimento local
-const isBuild = process.argv.includes('build');
-
+// Helper para obter variáveis de ambiente com fallback (proxy só usado em dev)
 function getEnvOrDefault(name: string, defaultValue: string): string {
   const value = process.env[name]?.trim();
-  // Durante build, usar default (proxy não é usado em produção)
-  if (isBuild) {
-    return value || defaultValue;
-  }
-  // Durante dev, exigir variável (fail-fast)
-  if (!value) {
-    console.warn(`⚠️ ${name} não definida - usando fallback localhost para dev`);
-    return defaultValue;
-  }
-  return value;
+  // Durante build, usar default (proxy não é usado em produção - SPA estático)
+  // Durante dev, usar fallback para localhost se não configurado
+  return value || defaultValue;
 }
 
 // URLs dos serviços para proxy (apenas usado no dev server, não no build)

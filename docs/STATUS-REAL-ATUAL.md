@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 27 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.22 - Docker Digests Fix + Mocks Removed
+> **Versão:** 4.23 - Release Performance Fix (fetch-depth)
 
 ---
 
@@ -51,6 +51,8 @@
 > **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `traefik:v3.6.4`) são suficientemente determinísticas. Solução simples - KISS.
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
+
+> **Release Performance Fix 27/12/2025:** Corrigido bug no `release.yml` que causava rebuild de TODAS as imagens (16+ minutos) ao invés de retag seletivo (~2 minutos). O job `build-images` fazia checkout shallow (sem `fetch-depth: 0`), quebrando o `git diff` entre tags. Com `CHANGED_FILES` vazio, o workflow assumia que todas as imagens precisavam de rebuild. Solução: adicionado `fetch-depth: 0` ao checkout do job `build-images` para permitir que `git diff` funcione entre tags.
 
 > **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
 
