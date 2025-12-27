@@ -214,30 +214,35 @@ jobs:
       - name: Scan imagens críticas
         id: scan
         run: |
+          set -e
           VERSION="${{ needs.validate-and-prepare.outputs.image_tag }}"
+          
+          echo "=============================================="
+          echo "SECURITY SCAN - IMAGENS DOCKER"
+          echo "=============================================="
           
           # Scan apenas imagens críticas (performance)
           SERVICES=("auth" "chat" "frontend")
-          FAILED=0
           
           for svc in "${SERVICES[@]}"; do
+            echo ""
             echo "🔍 Scanning $svc..."
             IMAGE="${{ env.IMAGE_PREFIX }}-${svc}:${VERSION}"
             
+            # exit-code 1 = BLOQUEIA em vulnerabilidades CRITICAL
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               aquasec/trivy:latest image \
               --severity CRITICAL \
-              --exit-code 0 \
+              --exit-code 1 \
               --quiet \
-              "$IMAGE" || FAILED=$((FAILED + 1))
+              "$IMAGE"
+            
+            echo "✅ $svc: OK"
           done
           
-          if [ $FAILED -gt 0 ]; then
-            echo "⚠️ $FAILED imagem(s) com vulnerabilidades CRITICAL"
-          else
-            echo "✅ Nenhuma vulnerabilidade CRITICAL encontrada"
-          fi
+          echo ""
+          echo "✅ Todas as imagens passaram no security scan"
 
   # ===========================================================================
   # Job 3: Deploy para Hetzner Cloud

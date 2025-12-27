@@ -264,30 +264,19 @@ jobs:
           echo "==========================================="
 
   # ===========================================================================
-  # Job 5: Security Scanning
+  # Job 4: Security Scanning (Código Fonte)
+  # OTIMIZAÇÃO: Trivy é binário Go - NÃO precisa de Node.js/pnpm
   # ===========================================================================
   security-scan:
     name: Security Scan
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 15
+    timeout-minutes: 10
     permissions:
       contents: read
       security-events: write
-    needs: [detect-changes, build-and-check]
+    needs: detect-changes
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-
-      - name: Monitor disk space
-        run: |
-          echo "=== Monitoramento de Espaco em Disco ==="
-          df -h /
-
-      - name: Setup Node.js e pnpm
-        uses: ./.github/actions/setup-node-pnpm
-        with:
-          node-version: ${{ needs.detect-changes.outputs.node-version }}
-          pnpm-version: ${{ needs.detect-changes.outputs.pnpm-version }}
-          install-dependencies: 'true'
 
       - name: Run Trivy vulnerability scanner
         uses: aquasecurity/trivy-action@18f2510ee396bbf400402947b394f2dd8c87dbb0
