@@ -877,6 +877,9 @@ importers:
       '@types/node':
         specifier: 22.15.29
         version: 22.15.29
+      esbuild:
+        specifier: '>=0.27.2'
+        version: 0.27.2
       tsx:
         specifier: 4.20.3
         version: 4.20.3
