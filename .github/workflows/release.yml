@@ -204,6 +204,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ needs.create-release.outputs.version }}
+          fetch-depth: 0  # CRÍTICO: necessário para git diff funcionar entre tags
 
       - name: Monitor disk space
         run: |
