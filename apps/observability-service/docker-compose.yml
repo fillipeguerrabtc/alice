@@ -143,7 +143,7 @@ services:
       - "16686:16686"   # UI
       - "4317:4317"     # OTLP gRPC (habilitado por padrão em v2)
       - "4318:4318"     # OTLP HTTP (habilitado por padrão em v2)
-      - "8888:8888"     # Métricas Prometheus (v2)
+      - "8890:8888"     # Métricas Prometheus (v2) - porta 8888 usada pelo otel-collector
     volumes:
       # Configuração YAML obrigatória para Badger storage em v2
       - ./config/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
