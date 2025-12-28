@@ -32,10 +32,10 @@ LABEL version="4.0.0"
 
 ENV PIP_ROOT_USER_ACTION=ignore
 
-# SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
-# Consistente com outros serviços GPU
-# Ref: CLAUDE.md "51 containers = 100% com security_opt: no-new-privileges"
-RUN useradd -m -u 1000 vllm
+# NOTA: A imagem vllm/vllm-openai é projetada para rodar como root
+# Ela armazena bibliotecas críticas em /root/.config/vllm/ que são necessárias em runtime
+# Ref: https://docs.vllm.ai/deployment/docker.html
+# Segurança mantida via: security_opt: no-new-privileges no docker-compose
 
 WORKDIR /app
 
@@ -49,10 +49,6 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY healthcheck.py /app/healthcheck.py
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
-
-# Configurar permissões e mudar para usuário não-root
-RUN chown -R vllm:vllm /app
-USER vllm
 
 # Variáveis de configuração do modelo
 # Bug fix: Usar modelo AWQ pré-quantizado (base model não tem weights AWQ)
