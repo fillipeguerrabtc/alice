@@ -6,12 +6,12 @@
 # Modelo: Mixtral 8x7B Instruct (quantizado AWQ 4-bit)
 # 
 # ARQUITETURA ENTERPRISE (27/12/2025):
-# - Base: pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime (PyTorch + CUDA 13.0)
-# - vLLM: 0.13.0 com binários CUDA 13.0 (via GitHub releases)
-# - Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 (suporta CUDA 13.0)
+# - Base: pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime (PyTorch + CUDA 12.8)
+# - vLLM: 0.13.0 via pip (binários padrão são CUDA 12.8)
+# - Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 (backward compatible)
 # 
-# NOTA: NVIDIA NGC (nvcr.io/nvidia/vllm) requer autenticação NGC_API_KEY
-# Solução: Usar imagem base PyTorch pública + vLLM wheel CUDA 13.0 do GitHub
+# NOTA: vLLM só publica wheels para CUDA 12.8 e 12.6 (não 13.0)
+# Driver NVIDIA 580+ é backward compatible com CUDA 12.8
 # 
 # Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
 # 
@@ -19,23 +19,18 @@
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Imagem base PyTorch oficial com CUDA 13.0 (pública)
-# Consistente com outros serviços GPU (embeddings, flux, lora-trainer)
-FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
+# ENTERPRISE 27/12/2025: Imagem base PyTorch oficial com CUDA 12.8 (pública)
+# vLLM publica binários apenas para CUDA 12.8/12.6 - não existe cu130
+# Driver NVIDIA 580 é backward compatible com CUDA 12.8
+FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Mixtral 8x7B vLLM inference server"
-LABEL version="3.2.0"
+LABEL version="3.3.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
-
-# Instalar dependências do sistema (curl e jq para download do vLLM)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    jq \
-    && rm -rf /var/lib/apt/lists/*
 
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
 # Consistente com outros serviços GPU (embeddings, flux, asr, lora-trainer)
@@ -44,17 +39,11 @@ RUN useradd -m -u 1000 vllm
 
 WORKDIR /app
 
-# Instalar vLLM 0.13.0 com binários CUDA 13.0 do GitHub releases
-# NOTA: vLLM compila kernels CUDA específicos - usar versão correta é crítico
+# Instalar vLLM 0.13.0 via pip (binários padrão são CUDA 12.8)
 # Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
-ENV VLLM_VERSION=0.13.0
-ENV CUDA_VERSION=130
-
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install \
-    https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu${CUDA_VERSION}-cp38-abi3-manylinux_2_31_x86_64.whl \
-    --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VERSION}
+    pip install vllm==0.13.0 --extra-index-url https://download.pytorch.org/whl/cu128
 
 # Dependências adicionais para API e métricas
 RUN --mount=type=cache,target=/root/.cache/pip \
