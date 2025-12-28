@@ -930,10 +930,13 @@ if [ "$DEPLOY_ALICE" = "true" ]; then
         log_info "Gateway healthy"
         
         # FASE 4: Serviços Alice
-        log_info "FASE 4: Serviços Alice (auth, chat, rag, training, integrations, observability, frontend) [timeout: ${PHASE4_TIMEOUT}s]..."
+        # BUG FIX 28/12/2025: gpu-manager DEVE ser iniciado ANTES dos serviços que dependem dele
+        # alice-chat, alice-rag, alice-training têm depends_on: gpu-manager: condition: service_healthy
+        # Sem gpu-manager na lista, Docker Compose falhava com "dependency failed to start: container alice-gpu-manager is unhealthy"
+        log_info "FASE 4: Serviços Alice (gpu-manager, auth, chat, rag, training, integrations, observability, frontend) [timeout: ${PHASE4_TIMEOUT}s]..."
         docker compose -f docker-compose.prod.yml --env-file .env.prod \
             up -d --no-build --wait --wait-timeout $PHASE4_TIMEOUT \
-            alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; log_error "FASE 4 falhou"; }
+            gpu-manager alice-auth alice-chat alice-rag alice-training alice-integrations alice-observability alice-frontend || { DEPLOY_EXIT_CODE=$?; log_error "FASE 4 falhou"; }
     fi
     
     if [ "$DEPLOY_EXIT_CODE" -eq 0 ]; then

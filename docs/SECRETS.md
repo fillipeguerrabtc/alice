@@ -64,6 +64,24 @@ Estes são necessários para o deploy funcionar:
 | `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH (futuro) | ⏳ Opcional |
 | `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH | Chave SSH (futuro) | ⏳ Opcional |
 
+> **🚨 CRÍTICO - DISTINÇÃO ENTRE SERVIDORES (28/12/2025):**
+>
+> | Servidor | IP | Função | GPU |
+> |----------|-----|--------|-----|
+> | **Production Server (GEX44)** | `178.63.41.108` | Hospeda containers de produção | ✅ RTX 4000 Ada 20GB |
+> | **Deploy Server (CPX32)** | `46.224.46.93` | Runner para CI/CD GitHub Actions | ❌ Sem GPU |
+>
+> **O secret `HETZNER_VM_HOST` DEVE ser `178.63.41.108` (Production Server com GPU)!**
+>
+> Se configurado com `46.224.46.93` (Deploy Server), o deploy falhará porque:
+> - `nvidia-smi` não existe no Deploy Server
+> - Containers GPU não podem iniciar sem NVIDIA runtime
+> - Erro típico: "nvidia-smi não encontrado" ou "container alice-gpu-manager is unhealthy"
+>
+> Para verificar qual servidor está sendo usado, observe os logs do deploy:
+> - Se mostra GPU info (ex: "RTX 4000 Ada") → servidor correto (Production)
+> - Se mostra "nvidia-smi não encontrado" → servidor errado (Deploy)
+
 > **IMPORTANTE (27/12/2025):** A chave SSH no GitHub Secrets DEVE ter **newlines reais**, não literais `\n`. Ao colar no GitHub Secrets, a chave deve aparecer com múltiplas linhas visíveis, não uma linha só. Se a chave tem ~400 chars e aparece em 1 linha, está errada.
 
 > **ENTERPRISE-GRADE (27/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) e Production Server (GEX44 GPU). Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).

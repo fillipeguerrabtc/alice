@@ -591,58 +591,72 @@ jobs:
             cd /opt/alice/app/infra/docker
             
             # =================================================================
-            # FASE 4: Configurar NVIDIA Container Toolkit (GPU)
+            # FASE 4: Verificar GPU (OPCIONAL - não bloqueia deploy)
             # =================================================================
-            # CORREÇÃO 27/12/2025: Servidor GEX44 tem GPU RTX 4000 Ada 20GB
-            # Docker precisa do NVIDIA Container Toolkit para usar runtime: nvidia
-            echo "🎮 Verificando configuração GPU..."
+            # CORREÇÃO 28/12/2025: GPU é OPCIONAL para serviços core
+            # - Serviços CORE (auth, chat, rag, etc.) funcionam SEM GPU
+            # - gpu-manager detecta dinamicamente se serviços GPU estão disponíveis
+            # - Containers GPU usam PROFILES e são iniciados separadamente
+            # 
+            # IMPORTANTE: Verificar se conectou ao servidor CORRETO:
+            # - Production Server (GEX44 GPU): 178.63.41.108 - TEM nvidia-smi
+            # - Deploy Server (CPX32 Runner): 46.224.46.93 - NÃO tem nvidia-smi
+            # Se nvidia-smi não existe, pode ser que HETZNER_VM_HOST está errado!
+            echo "🎮 Verificando configuração GPU (opcional para serviços core)..."
+            
+            GPU_AVAILABLE=false
             
             # Verificar se nvidia-smi funciona (driver instalado)
             if ! command -v nvidia-smi &> /dev/null; then
-              echo "❌ ERRO: nvidia-smi não encontrado - NVIDIA driver não instalado"
-              echo "   Execute: apt install nvidia-driver-550-server"
-              exit 1
-            fi
-            
-            # Mostrar informações da GPU
-            nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-            
-            # Verificar se NVIDIA Container Toolkit está instalado
-            if ! docker info 2>/dev/null | grep -q "nvidia"; then
-              echo "⚠️ NVIDIA Container Toolkit não configurado no Docker"
-              echo "📦 Instalando NVIDIA Container Toolkit..."
-              
-              # Instalar NVIDIA Container Toolkit (Ubuntu 24.04)
-              curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-              curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-                sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-                tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-              
-              apt-get update
-              apt-get install -y nvidia-container-toolkit
-              
-              # Configurar Docker para usar nvidia runtime
-              nvidia-ctk runtime configure --runtime=docker
-              
-              # Reiniciar Docker
-              systemctl restart docker
-              
-              echo "✅ NVIDIA Container Toolkit instalado e configurado"
+              echo "⚠️ nvidia-smi não encontrado - servidor SEM GPU"
+              echo "   Se esperava GPU, verifique o secret HETZNER_VM_HOST"
+              echo "   Production Server (GPU): 178.63.41.108"
+              echo "   Deploy Server (sem GPU): 46.224.46.93"
             else
-              echo "✅ NVIDIA Container Toolkit já configurado"
+              # Mostrar informações da GPU
+              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
+              
+              # Verificar se NVIDIA Container Toolkit está instalado
+              if ! docker info 2>/dev/null | grep -q "nvidia"; then
+                echo "⚠️ NVIDIA Container Toolkit não configurado no Docker"
+                echo "📦 Instalando NVIDIA Container Toolkit..."
+                
+                # Instalar NVIDIA Container Toolkit (Ubuntu 24.04)
+                curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+                curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
+                  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
+                  tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+                
+                apt-get update
+                apt-get install -y nvidia-container-toolkit
+                
+                # Configurar Docker para usar nvidia runtime
+                nvidia-ctk runtime configure --runtime=docker
+                
+                # Reiniciar Docker
+                systemctl restart docker
+                
+                echo "✅ NVIDIA Container Toolkit instalado e configurado"
+              else
+                echo "✅ NVIDIA Container Toolkit já configurado"
+              fi
+              
+              # Verificar se GPU está acessível via Docker
+              if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
+                GPU_AVAILABLE=true
+                echo "✅ GPU acessível via Docker"
+              else
+                echo "⚠️ Docker não consegue acessar GPU (NVIDIA runtime pode precisar de restart)"
+              fi
             fi
             
-            # Verificar se GPU está acessível via Docker
-            # ENTERPRISE 27/12/2025: Usar CUDA 13.0 (versão mais recente - compatível com driver 580)
-            if ! docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-              echo "⚠️ Testando acesso GPU via Docker..."
-              docker run --rm --gpus all nvidia/cuda:13.0.0-base-ubuntu22.04 nvidia-smi || {
-                echo "❌ ERRO: Docker não consegue acessar GPU"
-                echo "   Verifique: nvidia-ctk runtime configure --runtime=docker"
-                exit 1
-              }
+            # Resumo do status GPU
+            if [ "$GPU_AVAILABLE" = "true" ]; then
+              echo "✅ GPU disponível - serviços GPU podem ser iniciados via profiles"
+            else
+              echo "⚠️ GPU NÃO disponível - serviços core funcionarão normalmente"
+              echo "   Serviços GPU (Mixtral, Embeddings, etc.) ficarão offline"
             fi
-            echo "✅ GPU acessível via Docker"
             
             # =================================================================
             # FASE 5: Login nos registries
@@ -685,32 +699,45 @@ jobs:
             echo "=============================================="
             
             # =================================================================
-            # FASE 8: Iniciar serviço GPU (Mixtral LLM por padrão)
+            # FASE 8: Iniciar serviço GPU (apenas se GPU disponível)
             # =================================================================
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
+            # CORREÇÃO 28/12/2025: Só iniciar GPU se disponível (evita falha em servidor sem GPU)
             
             GPU_PROFILE="${GPU_PROFILE:-gpu-llm}"
-            echo ""
-            echo "🎮 Iniciando serviço GPU com profile: ${GPU_PROFILE}..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull --ignore-pull-failures || true
-            docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" up -d || {
-              echo "⚠️ Serviço GPU não iniciou (pode ser problema de driver/toolkit)"
-              echo "   Execute manualmente: docker compose --profile ${GPU_PROFILE} up -d"
-            }
+            GPU_RUNNING=0
+            
+            if [ "$GPU_AVAILABLE" = "true" ]; then
+              echo ""
+              echo "🎮 Iniciando serviço GPU com profile: ${GPU_PROFILE}..."
+              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull --ignore-pull-failures || true
+              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" up -d || {
+                echo "⚠️ Serviço GPU não iniciou (pode ser problema de driver/toolkit)"
+                echo "   Execute manualmente: docker compose --profile ${GPU_PROFILE} up -d"
+              }
+              sleep 10
+              # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+              GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
+            else
+              echo ""
+              echo "⚠️ GPU não disponível - pulando inicialização de serviços GPU"
+              echo "   Serviços core funcionam normalmente sem GPU"
+              echo "   Para habilitar GPU, configure NVIDIA drivers no servidor e redeploy"
+            fi
             
             # Status final
-            sleep 10
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
-            # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
-            GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
             echo ""
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
             echo "   - Containers GPU: ${GPU_RUNNING}"
-            echo "   - Profile GPU ativo: ${GPU_PROFILE}"
+            echo "   - GPU disponível: ${GPU_AVAILABLE}"
+            if [ "$GPU_AVAILABLE" = "true" ]; then
+              echo "   - Profile GPU ativo: ${GPU_PROFILE}"
+            fi
             echo "=============================================="
 
   # ===========================================================================
