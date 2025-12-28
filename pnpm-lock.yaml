@@ -882,6 +882,9 @@ importers:
       redis:
         specifier: ^5.10.0
         version: 5.10.0
+      swagger-ui-express:
+        specifier: ^5.0.0
+        version: 5.0.1(express@5.2.1)
       zod:
         specifier: 3.25.42
         version: 3.25.42

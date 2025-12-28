@@ -527,6 +527,11 @@ jobs:
 
             echo "=============================================="
             echo ""
+            echo "🔧 Ajustando kernel vm.overcommit_memory=1 (recomendação Redis)..."
+            sysctl -w vm.overcommit_memory=1 || true
+            echo "vm.overcommit_memory=1 aplicado (não persistente)."
+            echo "=============================================="
+            echo ""
             
             # =================================================================
             # FASE 1: Validar .env.prod transferido
