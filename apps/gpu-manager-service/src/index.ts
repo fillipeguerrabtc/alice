@@ -60,6 +60,21 @@ if (!INTERNAL_API_SECRET && process.env.NODE_ENV === 'production') {
 }
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
+/**
+ * GPU_SERVICE_TIMEOUT: Timeout padrão para requisições GPU (ms)
+ * Configurável via variável de ambiente para permitir ajustes sem rebuild
+ * Default: 60000ms (60s) - suficiente para a maioria das requisições
+ * 
+ * ENTERPRISE (27/12/2025): Variável lida do docker-compose.prod.yml
+ * para permitir configuração dinâmica de timeouts em produção.
+ */
+const GPU_SERVICE_TIMEOUT = parseInt(process.env.GPU_SERVICE_TIMEOUT || '60000', 10);
+if (isNaN(GPU_SERVICE_TIMEOUT) || GPU_SERVICE_TIMEOUT < 1000) {
+  logger.error('GPU_SERVICE_TIMEOUT deve ser um número válido >= 1000ms');
+  process.exit(1);
+}
+logger.info({ gpuServiceTimeout: GPU_SERVICE_TIMEOUT }, 'Timeout GPU configurado');
+
 // Middleware de autenticação interna (service-to-service)
 // BUG FIX 25/12/2025: GPU Manager Service endpoints devem aceitar X-Internal-Api-Secret, não requireAuth (OAuth/JWT)
 // gpu-client.ts envia X-Internal-Api-Secret header para autenticação service-to-service
@@ -453,7 +468,7 @@ async function processGpuRequest(request: GpuRequest): Promise<GpuResponse> {
   const protectedFetch = protectedFetchByServiceType[serviceType];
   
   try {
-    const timeoutMs = request.timeout || 60000; // 60s padrão
+    const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
     const response = await protectedFetch(`${url}${request.endpoint}`, {
       method: request.method,
       headers: {
@@ -560,7 +575,7 @@ async function startQueueWorker(): Promise<void> {
         if (!request) continue;
 
         // Tentar adquirir lock (TTL = timeout + margem)
-        const timeoutMs = request.timeout || 60000;
+        const timeoutMs = request.timeout || GPU_SERVICE_TIMEOUT;
         const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000); // max 5 min
         const acquired = await tryAcquireGpuLock(serviceType, request.id, lockTtlMs);
         if (!acquired) {
@@ -791,7 +806,7 @@ app.post('/api/gpu/stream', requireInternalAuth, asyncHandler(async (req: Reques
   
   try {
     const streamingRequestId = `stream-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const timeoutMs = body.timeout || 60000;
+    const timeoutMs = body.timeout || GPU_SERVICE_TIMEOUT;
 
     // Streaming também precisa de lock global (GPU única) para garantir prioridade e VRAM
     const lockTtlMs = Math.min(timeoutMs + 30000, 5 * 60 * 1000);

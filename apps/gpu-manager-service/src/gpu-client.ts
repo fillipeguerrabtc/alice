@@ -14,7 +14,13 @@ import { GpuServiceType, GpuRequestPriority } from './index.js';
 const logger = createLogger('gpu-client');
 
 const GPU_MANAGER_URL = process.env.GPU_MANAGER_URL || 'http://localhost:3010';
-const DEFAULT_TIMEOUT = 60000; // 60s
+
+/**
+ * DEFAULT_TIMEOUT: Timeout padrão para requisições GPU (ms)
+ * Lê GPU_SERVICE_TIMEOUT do ambiente para consistência com gpu-manager-service
+ * Default: 60000ms (60s)
+ */
+const DEFAULT_TIMEOUT = parseInt(process.env.GPU_SERVICE_TIMEOUT || '60000', 10);
 
 // BUG FIX 25/12/2025: INTERNAL_API_SECRET é obrigatório para autenticação service-to-service
 // Este arquivo é usado pelo GPU Manager Service para fazer requisições internas a si mesmo
