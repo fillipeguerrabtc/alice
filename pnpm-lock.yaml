@@ -846,9 +846,6 @@ importers:
 
   apps/gpu-manager-service:
     dependencies:
-      '@alice/database':
-        specifier: workspace:*
-        version: link:../../packages/database
       '@alice/logger':
         specifier: workspace:*
         version: link:../../packages/logger
@@ -864,6 +861,24 @@ importers:
       express:
         specifier: 5.2.1
         version: 5.2.1
+      helmet:
+        specifier: 8.1.0
+        version: 8.1.0
+      opossum:
+        specifier: ^9.0.0
+        version: 9.0.0
+      pino:
+        specifier: 10.1.0
+        version: 10.1.0
+      pino-pretty:
+        specifier: 13.1.3
+        version: 13.1.3
+      prom-client:
+        specifier: ^15.1.3
+        version: 15.1.3
+      redis:
+        specifier: ^5.10.0
+        version: 5.10.0
       zod:
         specifier: 3.25.42
         version: 3.25.42
