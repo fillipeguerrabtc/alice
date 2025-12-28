@@ -451,6 +451,45 @@ jobs:
             echo ""
             
             # =================================================================
+            # DIAGNÓSTICO CRÍTICO: Verificar QUAL servidor estamos usando
+            # =================================================================
+            # CORREÇÃO 28/12/2025: Mostrar informações do servidor para debug
+            # Se este output mostrar o servidor ERRADO, o secret HETZNER_VM_HOST está errado
+            echo "🔍 DIAGNÓSTICO DO SERVIDOR:"
+            echo "   Hostname: $(hostname)"
+            echo "   IP(s): $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | tr '\n' ' ')"
+            echo "   Usuário: $(whoami)"
+            echo "   Kernel: $(uname -r)"
+            echo ""
+            echo "   ESPERADO para Production Server (GEX44 GPU):"
+            echo "   - IP deve conter: 178.63.41.108"
+            echo "   - nvidia-smi deve existir"
+            echo ""
+            echo "   Se IP for 46.224.46.93, está no Deploy Server ERRADO!"
+            echo "   Nesse caso, corrija o secret HETZNER_VM_HOST no GitHub."
+            echo ""
+            
+            # Verificar nvidia-smi imediatamente
+            echo "🎮 Verificando nvidia-smi:"
+            if command -v nvidia-smi &> /dev/null; then
+              echo "   ✅ nvidia-smi ENCONTRADO"
+              nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null || true
+            else
+              echo "   ❌ nvidia-smi NÃO ENCONTRADO"
+              echo ""
+              echo "   POSSÍVEIS CAUSAS:"
+              echo "   1. Conectou ao servidor ERRADO (Deploy Server sem GPU)"
+              echo "   2. Drivers NVIDIA não estão instalados no Production Server"
+              echo "   3. PATH não inclui nvidia-smi"
+              echo ""
+              echo "   Verificando se nvidia existe em outros paths:"
+              ls -la /usr/bin/nvidia* 2>/dev/null || echo "   Nenhum binário nvidia em /usr/bin/"
+              ls -la /usr/local/bin/nvidia* 2>/dev/null || echo "   Nenhum binário nvidia em /usr/local/bin/"
+            fi
+            echo "=============================================="
+            echo ""
+            
+            # =================================================================
             # FASE 1: Validar .env.prod transferido
             # =================================================================
             echo "🔐 Validando .env.prod..."
