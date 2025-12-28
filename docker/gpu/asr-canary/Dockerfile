@@ -4,32 +4,38 @@
 # =============================================================================
 # Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
-# BEST PRACTICE 2025: Usar container oficial NVIDIA NGC
-# - Container pré-compilado e otimizado pela NVIDIA
-# - Inclui NeMo, PyTorch, CUDA com compatibilidade garantida
-# - Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.12/installation.html
+# ARQUITETURA ENTERPRISE (27/12/2025):
+# - Base: pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime (PyTorch + CUDA 13.0)
+# - NeMo: 2.5.0 via pip (compatível com PyTorch 2.9)
+# - Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 (suporta CUDA 13.0)
 # 
-# Release 25.12 (Dezembro 2025):
-# - NeMo Framework: 2.5.3+ (com correção CVE-2025-33212)
-# - PyTorch: 2.6.0a0+ (versão interna NVIDIA otimizada)
-# - CUDA: 13.x (compatível com driver 580+)
-# - Canary-1B-v2: Suporte multilíngue (25 idiomas)
+# NOTA: NVIDIA NGC (nvcr.io/nvidia/nemo) requer autenticação NGC_API_KEY
+# Solução: Usar imagem base PyTorch pública + NeMo via pip
+# 
+# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.11/installation.html
 # 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC (Best Practice 2025)
-# - Todas as dependências pré-compiladas e otimizadas pela NVIDIA
-# - Compatibilidade garantida entre NeMo, PyTorch e CUDA
-# - Inclui Canary-1B-v2 pré-configurado para ASR/AST multilíngue
-FROM nvcr.io/nvidia/nemo:25.12
+# ENTERPRISE 27/12/2025: Imagem base PyTorch oficial com CUDA 13.0 (pública)
+# Consistente com outros serviços GPU (mixtral, embeddings, flux, lora-trainer)
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="ASR Canary-1B speech-to-text server (NVIDIA NGC)"
-LABEL version="2.0.0"
+LABEL description="ASR Canary-1B speech-to-text server"
+LABEL version="2.1.0"
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
+
+# Instalar dependências do sistema para NeMo ASR
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    ffmpeg \
+    sox \
+    && rm -rf /var/lib/apt/lists/*
 
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
 # Consistente com outros serviços GPU (embeddings, flux, mixtral, lora-trainer)
@@ -38,10 +44,18 @@ RUN useradd -m -u 1000 asr
 
 WORKDIR /app
 
-# Instalar apenas dependências adicionais para API e métricas
-# NeMo, PyTorch, torchaudio já estão instalados no container NVIDIA
+# Instalar NeMo ASR e dependências
+# NOTA: NeMo 2.5.0 é compatível com PyTorch 2.9 (verificado em documentação oficial)
+# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.11/installation.html
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
+    pip install Cython packaging && \
+    pip install \
+    "nemo_toolkit[asr]==2.5.0" \
+    "numpy<2.0"
+
+# Dependências adicionais para API e métricas
+RUN --mount=type=cache,target=/root/.cache/pip \
     pip install \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
@@ -67,7 +81,7 @@ ENV HOST="0.0.0.0"
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=3 \
     CMD python3 /app/healthcheck.py || exit 1
 
 CMD ["python3", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

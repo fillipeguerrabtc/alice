@@ -5,33 +5,37 @@
 # Dockerfile para LLM inference com vLLM em GPU RTX 4000 SFF Ada (20GB)
 # Modelo: Mixtral 8x7B Instruct (quantizado AWQ 4-bit)
 # 
-# BEST PRACTICE 2025: Usar container oficial NVIDIA NGC
-# - Container pré-compilado e otimizado pela NVIDIA
-# - Inclui vLLM, PyTorch, CUDA com compatibilidade garantida
-# - Ref: https://docs.nvidia.com/deeplearning/frameworks/vllm-release-notes/
+# ARQUITETURA ENTERPRISE (27/12/2025):
+# - Base: pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime (PyTorch + CUDA 13.0)
+# - vLLM: 0.13.0 com binários CUDA 13.0 (via GitHub releases)
+# - Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 (suporta CUDA 13.0)
 # 
-# Release 25.12 (Dezembro 2025):
-# - vLLM: 0.11.1
-# - CUDA: 13.1.0.36
-# - PyTorch: 2.10.0a0+b4e4ee81d3
-# - transformers: 4.57.1
-# - flash-attention: 2.7.4.post1
+# NOTA: NVIDIA NGC (nvcr.io/nvidia/vllm) requer autenticação NGC_API_KEY
+# Solução: Usar imagem base PyTorch pública + vLLM wheel CUDA 13.0 do GitHub
+# 
+# Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
 # 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC (Best Practice 2025)
-# - Todas as dependências pré-compiladas e otimizadas pela NVIDIA
-# - Compatibilidade garantida entre vLLM, PyTorch e CUDA
-# - Inclui otimizações específicas para GPUs NVIDIA (TensorRT, FlashAttention)
-FROM nvcr.io/nvidia/vllm:25.12
+# ENTERPRISE 27/12/2025: Imagem base PyTorch oficial com CUDA 13.0 (pública)
+# Consistente com outros serviços GPU (embeddings, flux, lora-trainer)
+FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Mixtral 8x7B vLLM inference server (NVIDIA NGC)"
-LABEL version="3.0.1"
+LABEL description="Mixtral 8x7B vLLM inference server"
+LABEL version="3.2.0"
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
+
+# Instalar dependências do sistema (curl e jq para download do vLLM)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
 
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
 # Consistente com outros serviços GPU (embeddings, flux, asr, lora-trainer)
@@ -40,10 +44,20 @@ RUN useradd -m -u 1000 vllm
 
 WORKDIR /app
 
-# Instalar apenas dependências adicionais para API e métricas
-# vLLM, PyTorch, transformers já estão instalados no container NVIDIA
+# Instalar vLLM 0.13.0 com binários CUDA 13.0 do GitHub releases
+# NOTA: vLLM compila kernels CUDA específicos - usar versão correta é crítico
+# Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
+ENV VLLM_VERSION=0.13.0
+ENV CUDA_VERSION=130
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
+    pip install \
+    https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu${CUDA_VERSION}-cp38-abi3-manylinux_2_31_x86_64.whl \
+    --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VERSION}
+
+# Dependências adicionais para API e métricas
+RUN --mount=type=cache,target=/root/.cache/pip \
     pip install \
     fastapi==0.115.6 \
     uvicorn==0.34.0 \
