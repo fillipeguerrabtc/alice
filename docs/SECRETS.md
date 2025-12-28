@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025
+**Data:** 28 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -107,24 +107,26 @@ Estes são necessários para o deploy funcionar:
 
 ### FASE 3: GPU Manager Service (Gerenciamento Centralizado de Requisições GPU)
 
-**ARQUITETURA ENTERPRISE NGC (27/12/2025):** Migração completa para containers oficiais NVIDIA NGC (Best Practice 2025, +10-15% performance).
+**ARQUITETURA HÍBRIDA NGC + DOCKER HUB (28/12/2025):** Containers otimizados com máxima compatibilidade.
 
 | Secret | Onde Obter | Descrição | Obrigatório? |
 |--------|------------|-----------|--------------|
-| `NGC_API_KEY` | [ngc.nvidia.com/setup/api-keys](https://org.ngc.nvidia.com/setup/api-keys) → Generate Personal Key | API Key NVIDIA NGC para containers privados (vLLM, NeMo). Performance +10-15% vs públicos. | ✅ **SIM** |
+| `NGC_API_KEY` | [ngc.nvidia.com/setup/api-keys](https://org.ngc.nvidia.com/setup/api-keys) → Generate Personal Key | API Key NVIDIA NGC para containers NeMo e PyTorch (conta gratuita funciona). | ✅ **SIM** |
 | `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) | ✅ **SIM** |
 | `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
-**Containers NVIDIA NGC (28/12/2025):**
+**Containers GPU (28/12/2025):**
 
-| Container | Imagem NGC | Tipo | Performance |
-|-----------|------------|------|-------------|
-| **mixtral-vllm** | `nvcr.io/nvidia/vllm:25.12` | 🔒 Privado (NGC_API_KEY) | vLLM 0.11.1, PyTorch 2.10, CUDA 13.1, FlashAttention 2.7.4 |
-| **asr-canary** | `nvcr.io/nvidia/nemo:25.07` | 🔒 Privado (NGC_API_KEY) | NeMo Framework 25.07, Canary-1B-v2 multilíngue |
-| **embeddings-gpu** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
-| **flux-schnell** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
-| **lora-trainer** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
+| Container | Imagem | Origem | Autenticação |
+|-----------|--------|--------|--------------|
+| **mixtral-vllm** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa (100% público) |
+| **asr-canary** | `nvcr.io/nvidia/nemo:25.04.03` | NGC | ✅ NGC_API_KEY (conta gratuita) |
+| **embeddings-gpu** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
+| **flux-schnell** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
+| **lora-trainer** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
+
+**NOTA:** O container vLLM do NGC (`nvcr.io/nvidia/vllm`) requer licença NVIDIA AI Enterprise ($4,500/ano). Usamos a imagem oficial vLLM do Docker Hub que é 100% pública e gratuita.
 
 **Como criar NGC_API_KEY:**
 1. Acesse [ngc.nvidia.com/signup](https://ngc.nvidia.com/signup) (gratuito)
@@ -589,8 +591,8 @@ openssl rand -base64 24
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 27 de Dezembro de 2025*
-*Versão: 8.1 - Otimização CI Performance Enterprise*
+*Documento atualizado em: 28 de Dezembro de 2025*
+*Versão: 8.2 - Arquitetura Híbrida NGC + Docker Hub*
 *Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  

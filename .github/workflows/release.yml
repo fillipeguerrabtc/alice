@@ -218,11 +218,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # NOTA 28/12/2025: Containers NGC públicos (vLLM, NeMo Framework) não requerem autenticação
-      # Os containers nvcr.io/nvidia/vllm e nvcr.io/nvidia/nemo são públicos e gratuitos
-      # Apenas NeMo Operator/Microservices Enterprise requerem licença AI Enterprise
-      # Ref: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm
-      # Ref: https://docs.nvidia.com/nemo-framework/user-guide/latest/installation.html
+      # ENTERPRISE 28/12/2025: Login NVIDIA NGC para containers públicos (NeMo, PyTorch)
+      # - nvcr.io/nvidia/nemo: Disponível para conta NGC gratuita ✅
+      # - nvcr.io/nvidia/pytorch: Disponível para conta NGC gratuita ✅
+      # - nvcr.io/nvidia/vllm: Requer Enterprise (usamos vllm/vllm-openai do Docker Hub)
+      # Ref: https://docs.nvidia.com/ngc/ngc-private-registry-user-guide/index.html
+      - name: Login no NVIDIA NGC
+        if: ${{ secrets.NGC_API_KEY != '' }}
+        run: |
+          echo "${{ secrets.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "✅ NVIDIA NGC login successful (conta gratuita)"
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349

@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Versão:** 3.9 - Otimização CI Performance Enterprise  
-**Data:** 27 de Dezembro de 2025
+**Data:** 28 de Dezembro de 2025
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 
@@ -460,10 +460,11 @@ Acessíveis em `/dashboard/analytics`:
 **Ações realizadas:**
 1. Workflow `release.yml` garante automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
-3. **ATUALIZAÇÃO 28/12/2025**: Migração para NVIDIA NGC (Best Practice 2025) + Dependências Atualizadas:
-   - `nvcr.io/nvidia/vllm:25.12` (mixtral-vllm - container PRIVADO, requer NGC_API_KEY, +10-15% performance)
-   - `nvcr.io/nvidia/nemo:25.07` (asr-canary - container PRIVADO, requer NGC_API_KEY, +10-15% performance)
-   - `nvcr.io/nvidia/pytorch:25.12-py3` (embeddings, flux, lora-trainer - container PÚBLICO, otimizado NVIDIA)
+3. **ATUALIZAÇÃO 28/12/2025**: Arquitetura Híbrida NGC + Docker Hub (Best Practice 2025) + Dependências Atualizadas:
+   - `vllm/vllm-openai:v0.12.0` (mixtral-vllm - Docker Hub, 100% PÚBLICO, sem autenticação)
+   - `nvcr.io/nvidia/nemo:25.04.03` (asr-canary - NGC, conta gratuita funciona)
+   - `nvcr.io/nvidia/pytorch:25.12-py3` (embeddings, flux, lora-trainer - NGC, conta gratuita funciona)
+   - **NOTA**: Container vLLM do NGC (`nvcr.io/nvidia/vllm`) requer licença NVIDIA AI Enterprise ($4,500/ano). Usamos Docker Hub.
    - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 1.2.3, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)

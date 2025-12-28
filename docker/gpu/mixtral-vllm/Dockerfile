@@ -5,32 +5,29 @@
 # Dockerfile para LLM inference com vLLM em GPU RTX 4000 SFF Ada (20GB)
 # Modelo: Mixtral 8x7B Instruct (quantizado AWQ 4-bit)
 # 
-# ARQUITETURA ENTERPRISE NGC (27/12/2025):
-# - Base: nvcr.io/nvidia/vllm:25.12 (container oficial NVIDIA - PRIVADO)
-# - vLLM: 0.11.1 pré-instalado e otimizado pela NVIDIA
-# - CUDA: 13.1.0.36 com kernels otimizados
-# - PyTorch: 2.10.0a0 (versão interna NVIDIA)
-# - FlashAttention: 2.7.4.post1 (pré-otimizado)
-# - FlashInfer: 0.5.2 (aceleração de inferência)
+# ARQUITETURA DOCKER HUB (28/12/2025):
+# - Base: vllm/vllm-openai:v0.12.0 (imagem oficial vLLM - PÚBLICA)
+# - vLLM: 0.12.0 com suporte a Mixtral, Llama, Qwen, DeepSeek
+# - CUDA: 12.x com FlashAttention 2 e PagedAttention
+# - PyTorch: 2.x otimizado para inferência
+# - 100% público, sem autenticação necessária
 # 
-# REQUER: NGC_API_KEY para pull da imagem (container privado)
-# Performance: +10-15% vs imagens públicas
-# 
-# Ref: https://docs.nvidia.com/deeplearning/frameworks/vllm-release-notes/rel-25-12.html
+# Ref: https://docs.vllm.ai/deployment/docker.html
+# Ref: https://hub.docker.com/r/vllm/vllm-openai
 # 
 # Autor: Fillipe Guerra
-# Data: 27 de Dezembro de 2025
+# Data: 28 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC vLLM (Best Practice 2025)
-# - vLLM, PyTorch, CUDA, FlashAttention pré-instalados e otimizados
-# - Kernels CUDA compilados e otimizados pela NVIDIA
-# - Performance superior (+10-15%) vs instalação manual
-# REQUER: NGC_API_KEY no GitHub Secrets
-FROM nvcr.io/nvidia/vllm:25.12
+# ENTERPRISE 28/12/2025: Container oficial vLLM do Docker Hub (Best Practice 2025)
+# - vLLM, PyTorch, CUDA, FlashAttention pré-instalados
+# - Imagem pública oficial mantida pela equipe vLLM
+# - Sem necessidade de autenticação NGC
+# - OpenAI-compatible API server incluído
+FROM vllm/vllm-openai:v0.12.0
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="Mixtral 8x7B vLLM inference server (NVIDIA NGC)"
+LABEL description="Mixtral 8x7B vLLM inference server (Docker Hub)"
 LABEL version="4.0.0"
 
 ENV PIP_ROOT_USER_ACTION=ignore

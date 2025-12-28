@@ -4,18 +4,16 @@
 # =============================================================================
 # Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
-# ARQUITETURA ENTERPRISE NGC (28/12/2025):
-# - Base: nvcr.io/nvidia/nemo:25.07 (container oficial NVIDIA - PRIVADO)
-# - NeMo Framework: 25.07 com suporte completo ASR
-# - PyTorch: 2.7+ (versão interna NVIDIA)
+# ARQUITETURA NGC (28/12/2025):
+# - Base: nvcr.io/nvidia/nemo:25.04.03 (container oficial NVIDIA - conta gratuita)
+# - NeMo Framework: 25.04.03 com suporte completo ASR
+# - PyTorch: 2.x otimizado pela NVIDIA
 # - CUDA: 12.x com kernels otimizados
 # - Canary-1B-v2: Suporte multilíngue (25 idiomas, 10x mais rápido)
 # 
-# REQUER: NGC_API_KEY para pull da imagem (container privado)
-# Performance: +10-15% vs imagens públicas
-# 
-# NOTA: A partir de 25.07, TensorRT-LLM e vLLM não estão pré-instalados
-# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.07/changelog.html
+# REQUER: NGC_API_KEY (conta gratuita funciona)
+# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.04/changelog.html
+# Ref: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo
 # 
 # Autor: Fillipe Guerra
 # Data: 28 de Dezembro de 2025
@@ -24,9 +22,9 @@
 # ENTERPRISE 28/12/2025: Container oficial NVIDIA NGC NeMo (Best Practice 2025)
 # - NeMo Framework, PyTorch, CUDA pré-instalados e otimizados
 # - Canary-1B-v2 pronto para uso (multilíngue, 25 idiomas)
-# - Performance superior (+10-15%) vs instalação manual
-# REQUER: NGC_API_KEY no GitHub Secrets
-FROM nvcr.io/nvidia/nemo:25.07
+# - Disponível para conta NGC gratuita (não requer Enterprise)
+# REQUER: NGC_API_KEY no GitHub Secrets (conta individual funciona)
+FROM nvcr.io/nvidia/nemo:25.04.03
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="ASR Canary-1B speech-to-text server (NVIDIA NGC)"
