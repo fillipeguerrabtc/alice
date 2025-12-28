@@ -287,20 +287,41 @@ async function releaseGpuLockIfOwned(requestId: string): Promise<void> {
 // ============================================================================
 
 /**
+ * Flag para evitar spam de logs quando nvidia-smi não está disponível
+ * CORREÇÃO 28/12/2025: Em containers Distroless não há shell nem nvidia-smi
+ * Logar apenas uma vez e usar fallback silenciosamente após isso
+ */
+let nvidiaSmiAvailable: boolean | null = null;
+
+/**
  * Obtém status de VRAM via nvidia-smi
+ * CORREÇÃO 28/12/2025: Graceful degradation em ambientes sem nvidia-smi
+ * - Containers Distroless não têm shell (/bin/sh) para exec()
+ * - GPU Manager pode rodar sem monitoramento de VRAM real
+ * - Lock global Redis garante execução serial (evita OOM)
  */
 async function getVramStatus(): Promise<VramStatus> {
+  // Se já sabemos que nvidia-smi não está disponível, usar fallback silenciosamente
+  if (nvidiaSmiAvailable === false) {
+    return getVramFallback();
+  }
+
   try {
     const { stdout } = await execAsync('nvidia-smi --query-gpu=memory.total,memory.used,memory.free --format=csv,noheader,nounits');
     const [total, used, free] = stdout.trim().split(',').map(s => parseInt(s.trim(), 10));
     
+    // Marcar como disponível após primeira execução bem-sucedida
+    if (nvidiaSmiAvailable === null) {
+      nvidiaSmiAvailable = true;
+      logger.info('nvidia-smi disponível - monitoramento de VRAM ativo');
+    }
+
     const totalGB = Math.round(total / 1024);
     const usedGB = Math.round(used / 1024);
     const freeGB = Math.round(free / 1024);
     const utilizationPercent = Math.round((used / total) * 100);
 
     // Obter serviços ativos do Redis
-    // BUG FIX 25/12/2025: Adicionar verificação de null para evitar crash se Redis ficar indisponível
     const redis = getRedisClient();
     const activeServices: GpuServiceType[] = [];
     if (redis) {
@@ -321,16 +342,48 @@ async function getVramStatus(): Promise<VramStatus> {
       activeServices,
     };
   } catch (error) {
-    logger.error({ error }, 'Erro ao obter status de VRAM');
-    // Fallback: assumir valores padrão
-    return {
-      totalGB: TOTAL_VRAM_GB,
-      usedGB: 0,
-      freeGB: TOTAL_VRAM_GB,
-      utilizationPercent: 0,
-      activeServices: [],
-    };
+    // Logar erro apenas na primeira tentativa
+    if (nvidiaSmiAvailable === null) {
+      nvidiaSmiAvailable = false;
+      logger.warn(
+        { error: error instanceof Error ? error.message : String(error) },
+        'nvidia-smi não disponível (esperado em Distroless) - usando valores de VRAM estimados'
+      );
+    }
+    return getVramFallback();
   }
+}
+
+/**
+ * Retorna valores de VRAM estimados quando nvidia-smi não está disponível
+ */
+async function getVramFallback(): Promise<VramStatus> {
+  // Obter serviços ativos do Redis (ainda funciona sem nvidia-smi)
+  const redis = getRedisClient();
+  const activeServices: GpuServiceType[] = [];
+  if (redis) {
+    for (const serviceType of Object.values(GpuServiceType)) {
+      const key = `${REDIS_ACTIVE_PREFIX}:${serviceType}`;
+      const exists = await redis.exists(key);
+      if (exists) {
+        activeServices.push(serviceType);
+      }
+    }
+  }
+
+  // Estimar VRAM usada baseado em serviços ativos
+  let estimatedUsedGB = 0;
+  for (const service of activeServices) {
+    estimatedUsedGB += VRAM_REQUIREMENTS[service];
+  }
+
+  return {
+    totalGB: TOTAL_VRAM_GB,
+    usedGB: estimatedUsedGB,
+    freeGB: TOTAL_VRAM_GB - estimatedUsedGB,
+    utilizationPercent: Math.round((estimatedUsedGB / TOTAL_VRAM_GB) * 100),
+    activeServices,
+  };
 }
 
 /**

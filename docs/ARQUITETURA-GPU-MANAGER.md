@@ -1,8 +1,8 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025  
-**Versão:** 1.3.0
+**Data:** 28 de Dezembro de 2025  
+**Versão:** 1.4.0
 
 ---
 
@@ -111,9 +111,16 @@ O **GPU Manager Service** é um serviço centralizado que gerencia todas as requ
 
 **Fonte:** `nvidia-smi --query-gpu=memory.total,memory.used,memory.free`
 
+**CORREÇÃO 28/12/2025 - Graceful Degradation:**
+- Containers Distroless **não têm shell** (`/bin/sh`) para `exec()`
+- GPU Manager detecta automaticamente se `nvidia-smi` está disponível
+- Se indisponível, usa **estimativa baseada em serviços ativos** via Redis
+- Lock global Redis garante execução serial (evita OOM mesmo sem monitoramento real)
+- Log de aviso apenas na primeira tentativa (sem spam)
+
 **Métricas:**
 - Total VRAM (GB)
-- VRAM Usado (GB)
+- VRAM Usado (GB) - real via nvidia-smi ou estimado via Redis
 - VRAM Livre (GB)
 - Utilização (%)
 - Serviços Ativos
@@ -349,14 +356,18 @@ Readiness probe (pronto para receber requisições).
 
 ### Variáveis de Ambiente
 
-| Variável | Descrição | Padrão |
-|----------|-----------|--------|
-| `PORT` | Porta do serviço | `3010` |
-| `REDIS_URL` | URL do Redis | `redis://localhost:6379` |
-| `MIXTRAL_GPU_URL` | URL do serviço Mixtral | `http://localhost:8000` |
-| `EMBEDDINGS_GPU_URL` | URL do serviço Embeddings | `http://localhost:8001` |
-| `FLUX_GPU_URL` | URL do serviço FLUX | `http://localhost:8002` |
-| `ASR_GPU_URL` | URL do serviço ASR | `http://localhost:8003` |
+| Variável | Descrição | Padrão | Obrigatório |
+|----------|-----------|--------|-------------|
+| `PORT` | Porta do serviço | `3010` | Não |
+| `REDIS_URL` | URL do Redis | `redis://localhost:6379` | Sim |
+| `INTERNAL_API_SECRET` | Secret para autenticação service-to-service | - | **Sim (produção)** |
+| `MIXTRAL_GPU_URL` | URL do serviço Mixtral | `http://gpu-mixtral:8000` | Não |
+| `EMBEDDINGS_GPU_URL` | URL do serviço Embeddings | `http://gpu-embeddings:8000` | Não |
+| `FLUX_GPU_URL` | URL do serviço FLUX | `http://gpu-flux:8000` | Não |
+| `ASR_GPU_URL` | URL do serviço ASR | `http://gpu-asr:8000` | Não |
+| `GPU_SERVICE_TIMEOUT` | Timeout para requisições GPU (ms) | `60000` | Não |
+
+> **CORREÇÃO 28/12/2025:** `INTERNAL_API_SECRET` é **obrigatório** em produção (Regra 6 - fail-fast). O container crashará imediatamente se não estiver configurado.
 
 ---
 
@@ -372,6 +383,8 @@ gpu-manager:
   environment:
     - PORT=3010
     - REDIS_URL=redis://:password@alice-redis:6379/0
+    # CORREÇÃO 28/12/2025: INTERNAL_API_SECRET obrigatório em produção (Regra 6)
+    - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}
     - MIXTRAL_GPU_URL=http://gpu-mixtral:8000
     - EMBEDDINGS_GPU_URL=http://gpu-embeddings:8000
     - FLUX_GPU_URL=http://gpu-flux:8000
@@ -381,10 +394,18 @@ gpu-manager:
   networks:
     - alice-network
   depends_on:
-    - alice-redis
-    - gpu-mixtral
-    - gpu-embeddings
+    alice-redis:
+      condition: service_healthy
+  # CORREÇÃO 28/12/2025: Distroless NÃO tem curl/wget - usar Node.js
+  healthcheck:
+    test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+    interval: 30s
+    timeout: 10s
+    start_period: 30s
+    retries: 3
 ```
+
+> **NOTA (28/12/2025):** O healthcheck usa Node.js diretamente porque a imagem Distroless **não tem curl/wget**. O endpoint `/live` verifica se o processo está vivo (liveness probe).
 
 ---
 
@@ -428,5 +449,5 @@ gpu-manager:
 ---
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025
+**Data:** 28 de Dezembro de 2025
 
