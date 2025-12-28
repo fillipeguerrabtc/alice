@@ -7,11 +7,11 @@
 # 
 # ARQUITETURA ENTERPRISE (27/12/2025):
 # - Base: pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime (PyTorch + CUDA 12.8)
-# - vLLM: 0.13.0 via pip (binários padrão são CUDA 12.8)
+# - vLLM: 0.13.0 wheel CUDA 12.8 (binários padrão são CUDA 12.9!)
 # - Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 (backward compatible)
 # 
-# NOTA: vLLM só publica wheels para CUDA 12.8 e 12.6 (não 13.0)
-# Driver NVIDIA 580+ é backward compatible com CUDA 12.8
+# NOTA: vLLM 0.13.0 padrão usa CUDA 12.9, mas publica wheels para 12.8/12.6
+# Usamos wheel específica cu128 para match com imagem base CUDA 12.8
 # 
 # Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
 # 
@@ -26,7 +26,7 @@ FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Mixtral 8x7B vLLM inference server"
-LABEL version="3.3.0"
+LABEL version="3.4.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -39,11 +39,18 @@ RUN useradd -m -u 1000 vllm
 
 WORKDIR /app
 
-# Instalar vLLM 0.13.0 via pip (binários padrão são CUDA 12.8)
+# Instalar vLLM 0.13.0 com wheel específica CUDA 12.8
+# IMPORTANTE: pip install vllm==0.13.0 instala CUDA 12.9 (padrão)
+# Usamos wheel cu128 explícita para match com imagem base CUDA 12.8
 # Ref: https://docs.vllm.ai/en/stable/getting_started/installation/gpu/
+ENV VLLM_VERSION=0.13.0
+ENV CUDA_VERSION=128
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
-    pip install vllm==0.13.0 --extra-index-url https://download.pytorch.org/whl/cu128
+    pip install \
+    https://github.com/vllm-project/vllm/releases/download/v${VLLM_VERSION}/vllm-${VLLM_VERSION}+cu${CUDA_VERSION}-cp38-abi3-manylinux_2_31_x86_64.whl \
+    --extra-index-url https://download.pytorch.org/whl/cu${CUDA_VERSION}
 
 # Dependências adicionais para API e métricas
 RUN --mount=type=cache,target=/root/.cache/pip \
