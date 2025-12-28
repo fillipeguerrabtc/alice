@@ -31,7 +31,10 @@ service:
   telemetry:
     metrics:
       level: detailed
-      address: 0.0.0.0:8888
+      readers:
+        - prometheus:
+            host: 0.0.0.0
+            port: 8888
 
 # ===========================================================================
 # EXTENSIONS - Storage e Query
@@ -54,23 +57,14 @@ extensions:
             keys: /badger/key
             values: /badger/data
           ephemeral: false
-          # Manutenção automática para evitar crescimento indefinido
-          maintenance_interval: 5m
-          # TTL para dados - 90 dias (enterprise retention)
-          span_store_ttl: 2160h
-          # Configurações de performance
+          # Retenção é gerenciada externamente; Badger não suporta TTL inline em v2
           read_only: false
-          # Limite de memória para índice (otimizado para 512MB container)
-          index_cache_size: 100000000
 
   # Jaeger Query - UI e API de consulta
   jaeger_query:
     storage:
       traces: badger_main
       traces_archive: ""
-    ui:
-      config_file: ""
-      base_path: /
 
 # ===========================================================================
 # RECEIVERS - Entrada de dados (OTLP habilitado por padrão em v2)

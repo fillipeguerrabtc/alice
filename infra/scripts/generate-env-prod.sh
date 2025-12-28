@@ -15,6 +15,20 @@
 
 set -euo pipefail
 
+# urlencode() RFC 3986 - suporta qualquer caractere (ASCII seguro)
+urlencode() {
+  local str="$1"
+  local length="${#str}"
+  local i c ascii hex
+  for (( i=0; i<length; i++ )); do
+    c="${str:i:1}"
+    case "$c" in
+      [_.~a-zA-Z0-9-]) printf '%s' "$c" ;;
+      *) printf -v ascii '%d' "'$c"; printf -v hex '%%%02X' "$ascii"; printf '%s' "$hex" ;;
+    esac
+  done
+}
+
 echo "=============================================="
 echo "GERANDO .env.prod PARA PRODUÇÃO"
 echo "=============================================="
@@ -464,9 +478,15 @@ printf 'PGBACKREST_STANZA=alice_prod\n'
   printf '\n'
   printf '# ClickHouse\n'
   CLICKHOUSE_USER_VALUE="${CLICKHOUSE_USER_SECRET_VAL:-langfuse}"
+  CLICKHOUSE_DB_VALUE="${CLICKHOUSE_DB:-langfuse}"
+  CLICKHOUSE_USER_ENC=$(urlencode "${CLICKHOUSE_USER_VALUE}")
+  CLICKHOUSE_PASSWORD_ENC=$(urlencode "${CLICKHOUSE_PASSWORD}")
+  CLICKHOUSE_MIGRATION_URL_VALUE="clickhouse://${CLICKHOUSE_USER_ENC}:${CLICKHOUSE_PASSWORD_ENC}@clickhouse:9000/${CLICKHOUSE_DB_VALUE}"
   printf 'CLICKHOUSE_USER=%s\n' "${CLICKHOUSE_USER_VALUE}"
   printf 'CLICKHOUSE_PASSWORD=%s\n' "${CLICKHOUSE_PASSWORD}"
-  printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB:-langfuse}"
+  printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB_VALUE}"
+  printf 'CLICKHOUSE_MIGRATION_URL=%s\n' "${CLICKHOUSE_MIGRATION_URL_VALUE}"
+  printf 'CLICKHOUSE_HTTP_URL=%s\n' "http://clickhouse:8123"
   printf '\n'
   printf '# SearXNG\n'
   printf 'SEARXNG_SECRET_KEY=%s\n' "${SEARXNG_SECRET_KEY}"
