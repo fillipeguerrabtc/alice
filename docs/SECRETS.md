@@ -60,9 +60,6 @@ Estes são necessários para o deploy funcionar:
 | `HETZNER_VM_USER` | `root` | Usuário SSH do Production Server | ✅ **OBRIGATÓRIO** |
 | `HETZNER_SSH_PRIVATE_KEY` | Chave SSH privada completa | Chave SSH (incluir `-----BEGIN...-----END` com newlines reais) | ✅ **OBRIGATÓRIO** |
 | `GH_PAT` | Token GitHub | Personal Access Token com `repo`, `write:packages`, `workflow` | ✅ **OBRIGATÓRIO** |
-| `PRODUCTION_SERVER_HOST` | `178.63.41.108` | IP (futuro - Deploy Server separado) | ⏳ Opcional |
-| `PRODUCTION_SERVER_USER` | `alice-deploy` | Usuário SSH (futuro) | ⏳ Opcional |
-| `PRODUCTION_SERVER_SSH_PRIVATE_KEY` | Chave SSH | Chave SSH (futuro) | ⏳ Opcional |
 
 > **🚨 CRÍTICO - DISTINÇÃO ENTRE SERVIDORES (28/12/2025):**
 >
@@ -84,7 +81,7 @@ Estes são necessários para o deploy funcionar:
 
 > **IMPORTANTE (27/12/2025):** A chave SSH no GitHub Secrets DEVE ter **newlines reais**, não literais `\n`. Ao colar no GitHub Secrets, a chave deve aparecer com múltiplas linhas visíveis, não uma linha só. Se a chave tem ~400 chars e aparece em 1 linha, está errada.
 
-> **ENTERPRISE-GRADE (27/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) e Production Server (GEX44 GPU). Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Use `PRODUCTION_SERVER_HOST`, `PRODUCTION_SERVER_USER` e `PRODUCTION_SERVER_SSH_PRIVATE_KEY` para deploy via Deploy Server. `HETZNER_VM_*` são mantidos apenas para compatibilidade (fallback SSH direto).
+> **ENTERPRISE-GRADE (28/12/2025):** Arquitetura com Deploy Server separado (CPX32 - 4 vCPU AMD EPYC, 8GB RAM) como Runner e Production Server (GEX44 GPU) para containers. Runner com Enterprise Hardening (kernel tuning, Docker daemon, limits, systemd). Deploy usa `HETZNER_VM_HOST`, `HETZNER_VM_USER` e `HETZNER_SSH_PRIVATE_KEY` para SSH direto ao Production Server. Scripts `deploy-remote.sh` e `deploy-local.sh` foram REMOVIDOS (28/12/2025) - workflow usa script inline no SSH action (mais auditável).
 | `POSTGRES_PASSWORD` | Senha forte 32+ chars | `openssl rand -hex 32` |
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
@@ -611,6 +608,6 @@ openssl rand -base64 24
 *Arquitetura Deploy (27/12/2025): Deploy Server (CPX32 - 4 vCPU, 8GB RAM) com Runner Enterprise Hardening + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
 *ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
 *GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
-*Novos Secrets (25/12/2025): PRODUCTION_SERVER_HOST, PRODUCTION_SERVER_USER, PRODUCTION_SERVER_SSH_PRIVATE_KEY para Deploy Server*  
+*Secrets PRODUCTION_SERVER_* removidos (28/12/2025): Scripts deploy-remote.sh e deploy-local.sh foram removidos. Workflow usa HETZNER_VM_* diretamente via appleboy/ssh-action.*  
 *LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
 *Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*
