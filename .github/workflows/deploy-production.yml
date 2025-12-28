@@ -312,7 +312,6 @@ jobs:
           LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
           CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
           CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           # Secrets opcionais
           GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
