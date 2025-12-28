@@ -96,6 +96,18 @@ log_info "Diretórios de secrets criados"
 
 log_header "ETAPA 2: PREPARANDO SECRETS"
 
+# CORREÇÃO 28/12/2025: Verificar e remover diretórios conflitantes
+# Se um diretório existe onde deveria haver um arquivo, removê-lo primeiro
+if [ -d /opt/alice/secrets/langfuse_db_password ]; then
+    log_warn "Encontrado diretório conflitante: /opt/alice/secrets/langfuse_db_password (removendo)"
+    rm -rf /opt/alice/secrets/langfuse_db_password
+fi
+
+if [ -d /opt/alice/secrets/alertmanager/smtp_password ]; then
+    log_warn "Encontrado diretório conflitante: /opt/alice/secrets/alertmanager/smtp_password (removendo)"
+    rm -rf /opt/alice/secrets/alertmanager/smtp_password
+fi
+
 if [ -f /tmp/langfuse_db_password ]; then
     mv /tmp/langfuse_db_password /opt/alice/secrets/langfuse_db_password
     chmod 600 /opt/alice/secrets/langfuse_db_password
