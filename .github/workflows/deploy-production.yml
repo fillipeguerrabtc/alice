@@ -528,7 +528,18 @@ jobs:
             # =================================================================
             # CORREÇÃO 27/12/2025: langfuse-db usa POSTGRES_PASSWORD_FILE que espera um ARQUIVO
             # contendo a senha, não uma variável de ambiente. Extraímos do .env.prod.
+            # CORREÇÃO 28/12/2025: Verificar e remover diretórios conflitantes antes de criar arquivos
             echo "🔐 Criando arquivos de secrets..."
+            
+            # CORREÇÃO 28/12/2025: Remover diretórios conflitantes (bug onde mkdir -p criou diretório ao invés de arquivo)
+            if [ -d /opt/alice/secrets/langfuse_db_password ]; then
+              echo "⚠️ Removendo diretório conflitante: /opt/alice/secrets/langfuse_db_password"
+              rm -rf /opt/alice/secrets/langfuse_db_password
+            fi
+            if [ -d /opt/alice/secrets/alertmanager/smtp_password ]; then
+              echo "⚠️ Removendo diretório conflitante: /opt/alice/secrets/alertmanager/smtp_password"
+              rm -rf /opt/alice/secrets/alertmanager/smtp_password
+            fi
             
             # Extrair LANGFUSE_DB_PASSWORD do .env.prod e criar arquivo de secret
             LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
@@ -922,6 +933,10 @@ jobs:
             chown -R 10001:10001 /opt/alice/data/jaeger 2>/dev/null || true
             
             # Criar arquivos de secrets a partir do .env.prod existente
+            # CORREÇÃO 28/12/2025: Remover diretórios conflitantes antes de criar arquivos
+            if [ -d /opt/alice/secrets/langfuse_db_password ]; then
+              rm -rf /opt/alice/secrets/langfuse_db_password
+            fi
             ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
             if [ -f "$ENV_FILE" ]; then
               LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
