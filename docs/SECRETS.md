@@ -308,11 +308,11 @@ Estes são necessários para o deploy funcionar:
 | `SMTP_PASSWORD` (arquivo) | **API Key do Resend** para relay SMTP do Alertmanager | O workflow escreve a `RESEND_API_KEY` em `/opt/alice/secrets/alertmanager/smtp_password` |
 
 **⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
-- Langfuse foi atualizado para v3.139.0 que requer novas variáveis obrigatórias:
+- Langfuse foi atualizado para v3.140.0 que requer novas variáveis obrigatórias:
   - `LANGFUSE_SALT`: String aleatória para hashing (gerar com `openssl rand -base64 16`)
   - `LANGFUSE_ENCRYPTION_KEY`: Chave 256-bit hex (gerar com `openssl rand -hex 32`)
 - Nova arquitetura v3 inclui container `langfuse-worker` para processamento assíncrono
-- **ClickHouse 24.8** é backend OLAP obrigatório para Langfuse v3:
+- **ClickHouse 25.12** é backend OLAP obrigatório para Langfuse v3:
   - `CLICKHOUSE_USER`: Usuário do ClickHouse (ex: `langfuse`)
   - `CLICKHOUSE_PASSWORD`: Senha segura (gerar com `openssl rand -base64 32`)
 

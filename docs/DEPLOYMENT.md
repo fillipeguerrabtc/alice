@@ -8,7 +8,7 @@
 
 > **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
 
-## Visão Geral da Arquitetura - 50 Containers em Produção
+## Visão Geral da Arquitetura - 51 Containers em Produção
 
 A plataforma Alice é composta por **51 containers** organizados em 7 categorias (45 serviços + 5 GPU + 1 backup):
 
@@ -67,26 +67,26 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.139.0 |
-| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.139.0 |
+| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.140.0 |
+| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.140.0 |
 | 32 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
-| 33 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 24.8-alpine |
-| 34 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.0 |
-| 35 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 11.6.2 |
+| 33 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 25.12-alpine |
+| 34 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.1 |
+| 35 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 12.3.1 |
 | 36 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
 | 37 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
-| 38 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 1.76.0 |
+| 38 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 2.13.0 |
 | 39 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
 | 40 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
-| 41 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.141.0 |
-| 42 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.8.2 |
-| 43 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.49.1 |
+| 41 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.142.0 |
+| 42 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.9.1 |
+| 43 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.52.1 |
 
 ### Categoria 5: Backup (1 serviço)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 44 | **pgBackRest** | `alice-pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving, criptografia AES-256. | pgBackRest 2.56.0 |
+| 44 | **pgBackRest** | `alice-pgbackrest` | Backup enterprise do PostgreSQL: full, incremental, PITR (Point-in-Time Recovery), WAL archiving, criptografia AES-256. | pgBackRest 2.57.0 |
 
 ### Diagrama de Arquitetura
 
@@ -1182,8 +1182,8 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 - Prometheus 3.8.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes.
 - Grafana 12.3.1: atualização maior; dashboards e datasources preservados.
 - Loki/Promtail 3.6.3: versão alinhada; labels e pipeline existentes compatíveis.
-- Jaeger 1.76.0: estável; OTLP habilitado.
-- OTel Collector 0.141.0: configurações atuais (receivers/exporters) compatíveis.
+- Jaeger 2.13.0: estável; OTLP habilitado por padrão. v1 EOL em 31/12/2025.
+- OTel Collector 0.142.0: configurações atuais (receivers/exporters) compatíveis.
 
 ### Permissões Enterprise por Serviço (19/12/2025)
 

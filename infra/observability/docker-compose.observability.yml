@@ -25,7 +25,7 @@ services:
 
   # Optional: Local Prometheus for metrics aggregation
   prometheus:
-    image: prom/prometheus:v3.8.0
+    image: prom/prometheus:v3.8.1
     container_name: alice-prometheus
     restart: unless-stopped
     networks:

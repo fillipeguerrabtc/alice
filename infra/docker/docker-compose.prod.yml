@@ -2320,7 +2320,7 @@ services:
   # ===========================================================================
   clickhouse:
     # ATUALIZADO 20/12/2025: ClickHouse 24.8 LTS - tag versionada (digest removido - incompatível com amd64)
-    image: clickhouse/clickhouse-server:24.8-alpine
+    image: clickhouse/clickhouse-server:25.12-alpine
     platform: linux/amd64
     container_name: alice-clickhouse
     restart: unless-stopped
@@ -2372,7 +2372,7 @@ services:
   # ===========================================================================
   langfuse:
     # Langfuse v3.139.0 (Dec 2025) - última versão estável com ClickHouse
-    image: langfuse/langfuse:3.139.0
+    image: langfuse/langfuse:3.140.0
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2434,7 +2434,7 @@ services:
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
   langfuse-worker:
-    image: langfuse/langfuse:3.139.0
+    image: langfuse/langfuse:3.140.0
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped
@@ -2517,7 +2517,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.0.1 -> v3.8.0 (Dec 2, 2025)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.8.0, linux/amd64)
-    image: prom/prometheus:v3.8.0
+    image: prom/prometheus:v3.8.1
     platform: linux/amd64
     container_name: prometheus
     restart: unless-stopped
@@ -2567,7 +2567,9 @@ services:
   grafana:
     # ATUALIZADO 14/12/2025: Grafana 11.6.2 com SHA256 digest (Supply Chain Security 2025)
     # Grafana 11.x LTS com suporte até Jun 2026
-    image: grafana/grafana:11.6.2
+    # ATUALIZADO 28/12/2025: Grafana 12.3.1 (major upgrade - não usamos plugins AngularJS)
+    # Ref: https://grafana.com/docs/grafana/latest/whatsnew/
+    image: grafana/grafana:12.3.1
     platform: linux/amd64
     container_name: grafana
     restart: unless-stopped
@@ -2666,16 +2668,16 @@ services:
           cpus: '0.1'
 
   jaeger:
-    # ATUALIZADO 14/12/2025: Jaeger 1.76.0 (Dec 3, 2025) com SHA256 digest
-    # NOTA: Jaeger v1 EOL em Dec 31, 2025 - Migrar para v2.x em Janeiro 2026
-    image: jaegertracing/all-in-one:1.76.0
+    # ATUALIZADO 28/12/2025: Jaeger v2.13.0 (migração URGENTE - v1 EOL em 31/12/2025)
+    # MUDANÇAS v1→v2: Imagem unificada 'jaeger' (não mais 'all-in-one'), healthcheck porta 13133
+    # Ref: https://www.jaegertracing.io/docs/2.13/getting-started/
+    image: jaegertracing/jaeger:2.13.0
     platform: linux/amd64
     container_name: jaeger
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
+    # NOTA: OTLP habilitado por padrão em v2 - environment simplificado
     networks:
       - alice-network
     labels:
@@ -2685,7 +2687,8 @@ services:
       - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
       - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
+      # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2751,7 +2754,7 @@ services:
   # ===========================================================================
   alertmanager:
     # ATUALIZADO 20/12/2025: Alertmanager v0.27.0 - tag versionada (digest removido - incompatível com amd64)
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.29.0
     platform: linux/amd64
     container_name: alice-alertmanager
     restart: unless-stopped
@@ -2872,7 +2875,7 @@ services:
   # ===========================================================================
   node-exporter:
     # ATUALIZADO 20/12/2025: Node Exporter v1.8.2 - tag versionada (digest removido - incompatível com amd64)
-    image: prom/node-exporter:v1.8.2
+    image: prom/node-exporter:v1.9.1
     platform: linux/amd64
     container_name: alice-node-exporter
     restart: unless-stopped
@@ -2914,7 +2917,7 @@ services:
   # CADVISOR - Métricas de containers Docker
   # ===========================================================================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
     platform: linux/amd64
     container_name: alice-cadvisor
     restart: unless-stopped

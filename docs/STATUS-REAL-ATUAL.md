@@ -78,11 +78,11 @@
 | `trading_market_data` | ❌ | Dados públicos de mercado (sem tenant) |
 
 **Compatibilidade Observabilidade (pins atuais)**  
-- Prometheus 3.8.0 / Alertmanager 0.27.0  
-- Grafana 11.6.2  
+- Prometheus 3.8.1 / Alertmanager 0.29.0  
+- Grafana 12.3.1  
 - Loki/Promtail 3.6.3 (pareados)  
-- Jaeger 1.76.0 (OTLP habilitado)  
-- OTel Collector 0.141.0  
+- Jaeger 2.13.0 (OTLP habilitado por padrão)  
+- OTel Collector 0.142.0  
 - Vector 0.51.1  
 - Alertmanager SMTP: senha via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
 - Vector: métricas expostas em 8686 para Prometheus; escrita em `/var/lib/vector` (sem read_only).
@@ -823,7 +823,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (27/12/2025):** Digests do Docker Hub podem ser rotacionados/removidos. `docker-compose.prod.yml` foi atualizado com digests **válidos** (linux/amd64) para **Prometheus v3.8.0** e **Traefik v3.6.4**, obtidos via **Docker Registry API v2** (header `Docker-Content-Digest`), evitando falha `failed to resolve reference ... not found` durante `docker compose pull` no deploy.
+> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -850,13 +850,13 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 |------------|--------|--------|
 | PostgreSQL | 16 + pgvector | ✅ Atual |
 | Traefik | 3.6.4 | ✅ Atual |
-| Prometheus | 3.8.0 | ✅ Atual |
-| Grafana | 11.3.0 | ✅ Atual |
+| Prometheus | 3.8.1 | ✅ Atual |
+| Grafana | 12.3.1 | ✅ Atual |
 | Loki/Promtail | 3.6.2 | ✅ Atual |
-| Jaeger | 1.76.0 | ✅ Atual |
-| Langfuse | 3.139.0 | ✅ Atual |
+| Jaeger | 2.13.0 | ✅ Atual |
+| Langfuse | 3.140.0 | ✅ Atual |
 | ERPNext | 91.0 | ✅ Atual |
-| pgBackRest | 2.56.0 | ✅ Atual |
+| pgBackRest | 2.57.0 | ✅ Atual |
 
 **5. Dependências NPM/PNPM - Dezembro 2025 ✅**
 
@@ -1018,19 +1018,19 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 | Serviço | Função | URL Externa |
 |---------|--------|-------------|
-| Prometheus 3.8.0 | Métricas | metrics.yesyoudeserve.duckdns.org |
-| Grafana OSS 11.6.2 | Dashboards | observability.yesyoudeserve.duckdns.org |
-| Jaeger 1.76.0 | Tracing | traces.yesyoudeserve.duckdns.org |
-| Langfuse 3.139.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
+| Prometheus 3.8.1 | Métricas | metrics.yesyoudeserve.duckdns.org |
+| Grafana OSS 12.3.1 | Dashboards | observability.yesyoudeserve.duckdns.org |
+| Jaeger 2.13.0 | Tracing | traces.yesyoudeserve.duckdns.org |
+| Langfuse 3.140.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | Langfuse Worker | Processamento Assíncrono | (interno) |
-| **ClickHouse 24.8** | **OLAP Backend Langfuse v3** | (interno) |
-| Alertmanager 0.27.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
-| OTel Collector 0.141.0 | Instrumentação | (interno) |
+| **ClickHouse 25.12** | **OLAP Backend Langfuse v3** | (interno) |
+| Alertmanager 0.29.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
+| OTel Collector 0.142.0 | Instrumentação | (interno) |
 | Vector 0.51.1 | Log Aggregation | (interno) |
 
 > **NOTA IMPORTANTE:** Stack separada da Alice para continuar monitorando mesmo se Alice tiver problemas. Isso é **best practice**, não um problema.
 
-> **NOTA Langfuse v3 (14/12/2025):** Langfuse atualizado para v3.139.0 com arquitetura que inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
+> **NOTA Langfuse v3 (28/12/2025):** Langfuse atualizado para v3.140.0 com arquitetura que inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
 
 ### Dashboards Grafana Enterprise (9 dashboards, 100% completos)
 
@@ -1271,8 +1271,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 ### Problemas Identificados e Corrigidos:
 
 **1. Digests SHA256 Inválidos no docker-compose.prod.yml**
-- `prom/node-exporter:v1.8.2` - digest incorreto causava "not found" no pull
-- `prom/alertmanager:v0.27.0` - digest incorreto causava "not found" no pull
+- `prom/node-exporter:v1.9.1` - atualizado para última versão (28/12/2025)
+- `prom/alertmanager:v0.29.0` - atualizado para última versão (28/12/2025)
 - `postgres:16-alpine` (Langfuse DB) - digest incorreto causava "not found" no pull
 
 **Solução:** Removidos digests inválidos. Tags versionadas são suficientes para segurança enquanto imagens não são incluídas no versionamento automático.

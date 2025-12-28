@@ -11,12 +11,12 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 
 | Componente | Porta | Tecnologia | Licença | Função |
 |------------|-------|------------|---------|--------|
-| Prometheus | 9090 | Prometheus 3.8.0 | Apache 2.0 | Coleta de métricas |
-| Grafana | 3000 | Grafana OSS 11.6.2 | AGPL 3.0 | Dashboards e alertas |
-| Jaeger | 16686 | Jaeger 1.76.0 | Apache 2.0 | Distributed tracing |
-| OTel Collector | 4317/4318 | OpenTelemetry Collector 0.141.0 | Apache 2.0 | Instrumentação |
-| Langfuse Web | 3006 | Langfuse 3.139.0 | MIT | Métricas LLM (UI) |
-| Langfuse Worker | interno | Langfuse 3.139.0 | MIT | Processamento assíncrono/migrations |
+| Prometheus | 9090 | Prometheus 3.8.1 | Apache 2.0 | Coleta de métricas |
+| Grafana | 3000 | Grafana OSS 12.3.1 | AGPL 3.0 | Dashboards e alertas |
+| Jaeger | 16686 | Jaeger 2.13.0 | Apache 2.0 | Distributed tracing |
+| OTel Collector | 4317/4318 | OpenTelemetry Collector 0.142.0 | Apache 2.0 | Instrumentação |
+| Langfuse Web | 3006 | Langfuse 3.140.0 | MIT | Métricas LLM (UI) |
+| Langfuse Worker | interno | Langfuse 3.140.0 | MIT | Processamento assíncrono/migrations |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
 | Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |

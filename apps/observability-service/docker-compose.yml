@@ -52,7 +52,7 @@ services:
   # URL única: https://observabilidade.yesyoudeserve.duckdns.org
   # ============================================================================
   grafana:
-    image: grafana/grafana-oss:11.3.0
+    image: grafana/grafana-oss:12.3.1
     container_name: alice-grafana
     restart: unless-stopped
     ports:
@@ -89,7 +89,7 @@ services:
   # ALERTMANAGER - Notificações de alertas
   # ============================================================================
   alertmanager:
-    image: prom/alertmanager:v0.27.0
+    image: prom/alertmanager:v0.29.0
     container_name: alice-alertmanager
     restart: unless-stopped
     ports:
@@ -234,7 +234,7 @@ services:
   # Host networking para Hetzner Cloud - coleta métricas reais do host
   # ============================================================================
   node-exporter:
-    image: prom/node-exporter:v1.8.2
+    image: prom/node-exporter:v1.9.1
     container_name: alice-node-exporter
     restart: unless-stopped
     network_mode: host
@@ -263,7 +263,7 @@ services:
   # CADVISOR - Métricas de containers Docker
   # ============================================================================
   cadvisor:
-    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
     container_name: alice-cadvisor
     restart: unless-stopped
     ports:

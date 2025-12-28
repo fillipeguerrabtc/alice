@@ -46,7 +46,7 @@ WORKDIR /app
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    prometheus-client==0.21.1
+    prometheus-client==0.23.1
 
 # Copiar scripts customizados
 COPY healthcheck.py /app/healthcheck.py

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 27 de Dezembro de 2025  
-> **Versão:** 1.8.0 - Runner Enterprise Hardening + Pipeline Otimizada  
+> **Data:** 28 de Dezembro de 2025  
+> **Versão:** 1.10.0 - Pente Fino Versões Enterprise (pgbackrest, alertmanager, cAdvisor, node-exporter, langfuse, clickhouse)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -206,7 +206,7 @@ C4Container
 |---|-----------|------------|-------|------------------|
 | 1 | `dockerproxy` | Docker Socket Proxy | - | Acesso seguro à API Docker |
 | 2 | `traefik-init` | Alpine | - | Inicialização SSL |
-| 3 | `traefik` | Traefik v3.6.4 | 80,443 | API Gateway, SSL automático |
+| 3 | `traefik` | Traefik v3.6.5 | 80,443 | API Gateway, SSL automático |
 | 4 | `postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
 | 5 | `alice-redis` | Redis 7.4 | 6379 | Cache distribuído |
 | 6 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |

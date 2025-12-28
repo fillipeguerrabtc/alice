@@ -5,7 +5,7 @@
 
 ## Visão Geral
 
-O Grafana OSS 11.6.2 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
+O Grafana OSS 12.3.1 está configurado para usar **Alice Enterprise Platform** como Identity Provider (IdP) único via OAuth 2.0/OIDC.
 
 ## Arquitetura
 
@@ -13,7 +13,7 @@ O Grafana OSS 11.6.2 está configurado para usar **Alice Enterprise Platform** c
 ┌─────────────────┐       OAuth 2.0        ┌─────────────────┐
 │                 │ ◄────────────────────► │                 │
 │   Grafana OSS   │   Authorization Code   │   Alice IdP     │
-│     11.6.2      │         + PKCE         │  (auth-service) │
+│     12.3.1      │         + PKCE         │  (auth-service) │
 │                 │                        │                 │
 └─────────────────┘                        └─────────────────┘
          │                                          │

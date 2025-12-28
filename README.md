@@ -92,7 +92,7 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 50 Containers em Produção
+### Arquitetura de Microsserviços - 51 Containers em Produção
 
 A plataforma Alice é composta por **51 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
 
@@ -377,12 +377,12 @@ alice/
 - Hetzner Cloud (Nuremberg)
 
 ### Observabilidade
-- Prometheus 3.8.0 (métricas)
-- Grafana OSS 11.6.2 (dashboards)
-- Jaeger 1.76.0 (tracing distribuído)
+- Prometheus 3.8.1 (métricas)
+- Grafana OSS 12.3.1 (dashboards)
+- Jaeger 2.13.0 (tracing distribuído)
 - Loki 3.6.3, Promtail 3.6.3 (logs)
-- OpenTelemetry Collector 0.141.0 (instrumentação)
-- Langfuse 3.139.0 (métricas LLM)
+- OpenTelemetry Collector 0.142.0 (instrumentação)
+- Langfuse 3.140.0 (métricas LLM)
 
 ---
 
@@ -450,7 +450,7 @@ Proprietário - Todos os direitos reservados.
 | Redis | 7.4.6-alpine | Pinned |
 | ERPNext | v15.91.3 | Pinned |
 | Vector | 0.51.1-alpine | Pinned |
-| pgBackRest | 2.56.0 | Pinned |
+| pgBackRest | 2.57.0 | Pinned |
 | Docker Socket Proxy | latest | Pinned |
 | BusyBox | 1.37 | Pinned |
 
