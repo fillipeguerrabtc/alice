@@ -198,6 +198,11 @@ jobs:
     permissions:
       contents: read
       packages: write
+
+    # ENTERPRISE 28/12/2025: NGC_API_KEY definida no nível do job
+    # Necessário porque 'if' é avaliado ANTES do 'env' do step ser aplicado
+    env:
+      NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
     
     steps:
       - name: Checkout código
@@ -218,15 +223,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # ENTERPRISE 27/12/2025: Login NVIDIA NGC para containers privados (vLLM, NeMo)
+      # ENTERPRISE 28/12/2025: Login NVIDIA NGC para containers privados (vLLM, NeMo)
       # Containers privados oferecem +10-15% performance vs públicos
+      # NGC_API_KEY definida no nível do job (if é avaliado ANTES do env do step)
       # Ref: https://ngc.nvidia.com/signin
       - name: Login no NVIDIA NGC
         if: env.NGC_API_KEY != ''
-        env:
-          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
         run: |
-          echo "$NGC_API_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "${{ env.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
           echo "✅ NVIDIA NGC login successful"
 
       - name: Setup Docker Buildx
