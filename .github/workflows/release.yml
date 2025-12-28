@@ -199,11 +199,6 @@ jobs:
       contents: read
       packages: write
 
-    # ENTERPRISE 28/12/2025: NGC_API_KEY definida no nível do job
-    # Necessário porque 'if' é avaliado ANTES do 'env' do step ser aplicado
-    env:
-      NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
-    
     steps:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -223,50 +218,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # ENTERPRISE 28/12/2025: Login NVIDIA NGC para containers privados (vLLM, NeMo)
-      # Containers privados oferecem +10-15% performance vs públicos
-      # NGC_API_KEY definida no nível do job (if é avaliado ANTES do env do step)
-      # Ref: https://docs.nvidia.com/ngc/ngc-private-registry-user-guide/index.html
-      # NOTA: Username '$oauthtoken' é LITERAL (não é variável shell)
-      - name: Login no NVIDIA NGC
-        if: env.NGC_API_KEY != ''
-        run: |
-          # Remover espaços/newlines que podem ter sido adicionados ao copiar o token
-          NGC_TOKEN=$(printf '%s' "${{ env.NGC_API_KEY }}" | tr -d '[:space:]')
-          
-          # Validar que o token não está vazio após limpeza
-          if [ -z "$NGC_TOKEN" ]; then
-            echo "❌ NGC_API_KEY está vazia após limpeza de espaços"
-            exit 1
-          fi
-          
-          # Debug: mostrar tamanho do token (sem expor o valor)
-          TOKEN_LENGTH=${#NGC_TOKEN}
-          echo "📊 NGC API Key length: $TOKEN_LENGTH characters"
-          
-          # Validar formato básico do token (NGC API keys têm ~93 caracteres)
-          if [ "$TOKEN_LENGTH" -lt 20 ]; then
-            echo "⚠️ AVISO: Token muito curto ($TOKEN_LENGTH chars). NGC API keys típicas têm ~93 caracteres."
-            echo "💡 Verifique se copiou o token completo em Settings > Secrets > NGC_API_KEY"
-          fi
-          
-          # Login conforme documentação oficial NVIDIA NGC
-          # Método: docker login nvcr.io -u '$oauthtoken' -p '<api_key>'
-          # O '$oauthtoken' é username LITERAL (não variável), API key é a senha
-          if docker login nvcr.io -u '$oauthtoken' -p "$NGC_TOKEN" 2>&1; then
-            echo "✅ NVIDIA NGC login successful"
-          else
-            echo "❌ NVIDIA NGC login failed"
-            echo ""
-            echo "🔧 Troubleshooting:"
-            echo "   1. Verifique se o API key está correto em: https://org.ngc.nvidia.com/setup"
-            echo "   2. Gere um novo Personal API Key se necessário"
-            echo "   3. Certifique-se de copiar o token COMPLETO (sem espaços extras)"
-            echo "   4. NGC API keys expiram - regenere se antiga"
-            echo ""
-            echo "📖 Docs: https://docs.nvidia.com/ngc/ngc-private-registry-user-guide/index.html"
-            exit 1
-          fi
+      # NOTA 28/12/2025: Containers NGC públicos (vLLM, NeMo Framework) não requerem autenticação
+      # Os containers nvcr.io/nvidia/vllm e nvcr.io/nvidia/nemo são públicos e gratuitos
+      # Apenas NeMo Operator/Microservices Enterprise requerem licença AI Enterprise
+      # Ref: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/vllm
+      # Ref: https://docs.nvidia.com/nemo-framework/user-guide/latest/installation.html
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
