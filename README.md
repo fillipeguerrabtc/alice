@@ -335,11 +335,10 @@ alice/
 ├── .github/
 │   ├── actions/                    # Composite actions reutilizáveis
 │   │   └── setup-node-pnpm/        # Setup Node.js + pnpm (elimina duplicação)
-│   └── workflows/                  # CI/CD (4 workflows)
+│   └── workflows/                  # CI/CD (3 workflows)
 │       ├── ci.yml                  # Build & Test (otimizado 27/12/2025)
 │       ├── release.yml             # Versionamento semântico
-│       ├── deploy-production.yml   # Deploy Hetzner GPU (100% automático)
-│       └── update-system-packages.yml # Manutenção semanal
+│       └── deploy-production.yml   # Deploy Hetzner GPU (100% automático)
 │
 ├── client/                         # Frontend React
 │   └── src/

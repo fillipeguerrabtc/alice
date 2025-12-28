@@ -503,7 +503,7 @@ flowchart LR
     end
     
     subgraph Production
-        K --> L[50 Containers Hetzner GEX44]
+        K --> L[51 Containers Hetzner GEX44]
         L --> M[GPU Manager Service + 4 GPU Services (local)]
         M --> N[Prometheus Monitoring]
     end

@@ -892,8 +892,8 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 ### Atualização Periódica (Dependências e Pacotes do Sistema)
 
-- **`update-dependencies.yml`**: atualiza dependências Node.js (pnpm) de forma **automatizada**, criando **branch + PR** (não faz deploy).
-- **`update-system-packages.yml`**: atualiza pacotes do sistema/infra (Hetzner) via fluxo automatizado e controlado.
+- **Dependências Node.js**: Dependabot configurado para atualizações automáticas via PR.
+- **Pacotes do Sistema (Hetzner)**: **unattended-upgrades** nativo do Ubuntu (best practice 2025). Configurado diretamente no servidor com `APT::Periodic::Update-Package-Lists "1"` e `APT::Periodic::Unattended-Upgrade "1"`. Mais confiável que workflow externo - não depende de conexão SSH.
 
 > **NOTA (12/12/2025):** Corrigido erro que invalidava o workflow `update-dependencies.yml`. A causa raiz foi o uso de IDs com hífen (ex.: `check-updates`) referenciados em expressões (`steps.check-updates...` / `needs.check-updates...`), o que quebra o parser de expressões do GitHub Actions. O padrão adotado é usar IDs com underscore (ex.: `check_updates`) para garantir compatibilidade.
 
@@ -1395,9 +1395,10 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | CI Build & Test | `ci.yml` | ✅ | 1146 |
 | Deploy Production | `deploy-production.yml` | ✅ | 3211 |
 | Release & Tag | `release.yml` | ✅ | 309 |
-| Update System Packages | `update-system-packages.yml` | ✅ | 421 |
 
-**Resultado:** Todos os 4 workflows auditados (~5087 linhas), 0 bugs encontrados. Versionamento automático, SHA pinning, least privilege.
+**Resultado:** Todos os 3 workflows auditados (~4666 linhas), 0 bugs encontrados. Versionamento automático, SHA pinning, least privilege.
+
+> **NOTA (28/12/2025):** Workflow `update-system-packages.yml` REMOVIDO - era redundante. Servidor Hetzner usa `unattended-upgrades` nativo (best practice 2025).
 
 ### Bug Crítico Corrigido - command.side para Stop Orders
 

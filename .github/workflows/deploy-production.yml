@@ -661,7 +661,8 @@ jobs:
             
             # Verificar status dos serviços core
             sleep 15
-            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" || echo "0")
+            # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+            RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""
             echo "=============================================="
             echo "✅ Deploy CORE concluído: ${RUNNING} containers rodando"
@@ -686,7 +687,8 @@ jobs:
             # Status final
             sleep 10
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
-            GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" || echo "0")
+            # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+            GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
             echo ""
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
@@ -949,7 +951,8 @@ jobs:
             
             sleep 30
             
-            RUNNING=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.State}}" | grep -c "running" || echo "0")
+            # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+            RUNNING=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             
             if [ "$RUNNING" -lt 3 ]; then
               echo "❌ Rollback falhou"

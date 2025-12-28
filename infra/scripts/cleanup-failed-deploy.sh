@@ -79,8 +79,9 @@ echo ""
 # =============================================================================
 log_info "Verificando se há versão de produção rodando..."
 
-HEALTHY_CONTAINERS=$(docker ps --filter "health=healthy" --format '{{.Names}}' | grep -c "^alice-" || echo "0")
-RUNNING_ALICE=$(docker ps --format '{{.Names}}' | grep -c "^alice-" || echo "0")
+# CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+HEALTHY_CONTAINERS=$(docker ps --filter "health=healthy" --format '{{.Names}}' | grep -c "^alice-" 2>/dev/null) || HEALTHY_CONTAINERS=0
+RUNNING_ALICE=$(docker ps --format '{{.Names}}' | grep -c "^alice-" 2>/dev/null) || RUNNING_ALICE=0
 
 if [ "$RUNNING_ALICE" -gt 0 ] && [ "$FORCE" != true ]; then
     log_warn "Detectados $RUNNING_ALICE containers Alice rodando ($HEALTHY_CONTAINERS saudáveis)"
@@ -134,7 +135,8 @@ echo ""
 log_info "═══ 2. IMAGENS ÓRFÃS ═══"
 
 DANGLING_IMAGES=$(docker images -f "dangling=true" -q || true)
-DANGLING_COUNT=$(echo "$DANGLING_IMAGES" | grep -c . || echo "0")
+# CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+DANGLING_COUNT=$(echo "$DANGLING_IMAGES" | grep -c . 2>/dev/null) || DANGLING_COUNT=0
 
 if [ "$DANGLING_COUNT" -gt 0 ]; then
     if [ "$DRY_RUN" = true ]; then

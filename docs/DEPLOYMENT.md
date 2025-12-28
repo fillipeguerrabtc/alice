@@ -118,7 +118,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - GEX44) - 50 CONTAINERS         │
+│               PRODUÇÃO (Hetzner Cloud - GEX44) - 51 CONTAINERS         │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │    GEX44 (Intel i5-13500 14 Core, 64GB DDR4, 1.92TB NVMe RAID 1)  │ │
