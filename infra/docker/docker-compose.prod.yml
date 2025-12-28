@@ -2682,8 +2682,8 @@ services:
     # Environment variables (SPAN_STORAGE_TYPE, BADGER_*) não são mais suportadas
     command: ["--config", "/etc/jaeger/jaeger-config.yml"]
     volumes:
-      # Configuração YAML obrigatória para Badger storage em v2
-      - ./infra/observability/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
+      # Config file: caminho relativo ao diretório infra/docker/ onde docker-compose é executado
+      - ../observability/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
       # Volume para persistência de dados (key + data directories)
       - /opt/alice/data/jaeger:/badger
     networks:
