@@ -4,22 +4,29 @@
 # =============================================================================
 # Dockerfile para geração de imagens com FLUX.1 Schnell em GPU RTX 4000 SFF Ada (20GB)
 # 
-# OTIMIZAÇÃO BUILD (27/12/2025):
-# - Imagem base pytorch/pytorch já tem PyTorch instalado (~3GB economia)
-# - BuildKit cache mount para pip (--mount=type=cache)
+# ARQUITETURA ENTERPRISE NGC (27/12/2025):
+# - Base: nvcr.io/nvidia/pytorch:25.12-py3 (container oficial NVIDIA - PÚBLICO)
+# - PyTorch: 2.10.0a0 otimizado pela NVIDIA
+# - CUDA: 13.0 com kernels otimizados
+# - TensorRT Model Optimizer incluído
+# 
+# Performance: Otimizações NVIDIA (cuDNN, NCCL, TensorRT)
+# 
+# Ref: https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel-25-12.html
 # 
 # Autor: Fillipe Guerra
 # Data: 27 de Dezembro de 2025
 # =============================================================================
 
-# OTIMIZAÇÃO: Usar imagem oficial PyTorch (PyTorch já instalado!)
-# ENTERPRISE 27/12/2025: PyTorch 2.9.1 + CUDA 13.0 (versões mais recentes disponíveis)
-# Servidor Hetzner GEX44: Driver NVIDIA 580.95.05 + CUDA 13.0
-FROM pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime
+# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC PyTorch (PÚBLICO)
+# - PyTorch otimizado pela NVIDIA com TensorRT, Transformer Engine
+# - CUDA 13.0, cuDNN 9, NCCL pré-configurados
+# - Sem necessidade de NGC_API_KEY (container público)
+FROM nvcr.io/nvidia/pytorch:25.12-py3
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="FLUX.1 Schnell image generation server"
-LABEL version="1.2.0"
+LABEL description="FLUX.1 Schnell image generation server (NVIDIA NGC)"
+LABEL version="2.0.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -28,11 +35,12 @@ ENV PIP_ROOT_USER_ACTION=ignore
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
+# SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
 RUN useradd -m -u 1000 flux
 WORKDIR /app
 
-# Instalar dependências - PyTorch JÁ INSTALADO na imagem base!
-# ENTERPRISE 27/12/2025: Versões mais recentes compatíveis com PyTorch 2.9.1
+# Instalar dependências - PyTorch JÁ INSTALADO na imagem NGC!
+# ENTERPRISE 27/12/2025: Versões compatíveis com PyTorch 2.10 (NGC)
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \

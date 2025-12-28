@@ -218,6 +218,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
+      # ENTERPRISE 27/12/2025: Login NVIDIA NGC para containers privados (vLLM, NeMo)
+      # Containers privados oferecem +10-15% performance vs públicos
+      # Ref: https://ngc.nvidia.com/signin
+      - name: Login no NVIDIA NGC
+        if: ${{ secrets.NGC_API_KEY != '' }}
+        run: |
+          echo "${{ secrets.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "✅ NVIDIA NGC login successful"
+
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349
 

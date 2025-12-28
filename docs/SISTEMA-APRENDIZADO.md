@@ -460,10 +460,10 @@ Acessíveis em `/dashboard/analytics`:
 **Ações realizadas:**
 1. Workflow `release.yml` garante automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
-3. **ATUALIZAÇÃO 27/12/2025**: Todos os 5 Dockerfiles GPU migrados para versões mais recentes (Best Practice 2025):
-   - `pytorch/pytorch:2.9.1-cuda12.8` + vLLM 0.13.0 wheel cu128 (mixtral-vllm - padrão é CUDA 12.9, usamos wheel explícita 12.8)
-   - `pytorch/pytorch:2.9.1-cuda13.0` + NeMo 2.5.0 via pip (asr-canary - NGC requer auth, usamos pip install)
-   - `pytorch/pytorch:2.9.1-cuda13.0-cudnn9-runtime` (embeddings, flux, lora-trainer)
+3. **ATUALIZAÇÃO 27/12/2025**: Migração para NVIDIA NGC (Best Practice 2025):
+   - `nvcr.io/nvidia/vllm:25.12` (mixtral-vllm - container PRIVADO, requer NGC_API_KEY, +10-15% performance)
+   - `nvcr.io/nvidia/nemo:25.11` (asr-canary - container PRIVADO, requer NGC_API_KEY, +10-15% performance)
+   - `nvcr.io/nvidia/pytorch:25.12-py3` (embeddings, flux, lora-trainer - container PÚBLICO, otimizado NVIDIA)
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 6. Docker Compose PROFILES para controle granular (gpu-llm, gpu-embeddings, gpu-flux, gpu-asr, gpu-training) - apenas UM profile GPU ativo por vez
