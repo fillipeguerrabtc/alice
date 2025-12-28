@@ -300,6 +300,7 @@ jobs:
           SESSION_SECRET_SECRET: ${{ secrets.SESSION_SECRET }}
           INTERNAL_API_SECRET_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
           SEARXNG_SECRET_KEY_SECRET: ${{ secrets.SEARXNG_SECRET_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           CLICKHOUSE_PASSWORD_SECRET: ${{ secrets.CLICKHOUSE_PASSWORD }}
           CLICKHOUSE_USER_SECRET_VAL: ${{ secrets.CLICKHOUSE_USER }}
           REDIS_CACHE_PASSWORD_SECRET: ${{ secrets.REDIS_CACHE_PASSWORD }}
@@ -530,6 +531,26 @@ jobs:
             echo "🔧 Ajustando kernel vm.overcommit_memory=1 (recomendação Redis)..."
             sysctl -w vm.overcommit_memory=1 || true
             echo "vm.overcommit_memory=1 aplicado (não persistente)."
+            echo "=============================================="
+            echo ""
+
+            # =================================================================
+            # GARANTIR NETWORKS EXTERNAS (alice-network, erpnext-network)
+            # =================================================================
+            # docker-compose.prod.yml declara networks como external:true.
+            # Elas DEVEM existir antes do compose up ou o deploy falha.
+            ensure_network() {
+              local net="$1"
+              echo "🌐 Garantindo network '${net}'..."
+              docker network create "${net}" 2>/dev/null || true
+              if ! docker network inspect "${net}" >/dev/null 2>&1; then
+                echo "❌ ERRO: Network '${net}' não existe após tentativa de criação."
+                exit 1
+              fi
+              echo "✅ Network '${net}' pronta."
+            }
+            ensure_network "alice-network"
+            ensure_network "erpnext-network"
             echo "=============================================="
             echo ""
             

@@ -164,6 +164,28 @@ if [ -z "${HUGGINGFACE_TOKEN}" ]; then
 fi
 
 echo "✅ GPU Services validados (Hetzner GPU Server)"
+
+# =============================================================================
+# RESEND SMTP (Alertmanager) - usar API Key como senha SMTP (sem domínio verificado)
+# =============================================================================
+echo ""
+echo "🔐 Validando Resend SMTP (Alertmanager)..."
+
+RESEND_API_KEY="${RESEND_API_KEY:-}"
+if [ -z "${RESEND_API_KEY}" ]; then
+  echo "::error::RESEND_API_KEY não definido. Configure o secret RESEND_API_KEY no repositório (usado como senha SMTP do Alertmanager)." >&2
+  exit 1
+fi
+
+# Definir variáveis SMTP a partir do Resend
+SMTP_HOST_VALUE="smtp.resend.com"
+SMTP_PORT_VALUE="587"
+SMTP_FROM_VALUE="onboarding@resend.dev"
+SMTP_USERNAME_VALUE="resend"
+SMTP_PASSWORD_VALUE="${RESEND_API_KEY}"
+
+echo "✅ Resend SMTP configurado (smtp.resend.com:587, username=resend)"
+
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================
