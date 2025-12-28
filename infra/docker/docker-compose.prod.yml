@@ -385,7 +385,7 @@ services:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
     # ATUALIZADO 27/12/2025: Digest rotacionado no Docker Hub (pull por digest anterior falhava no deploy)
     # Fonte de verdade: Docker Hub API (tag v3.6.4, linux/amd64)
-    image: traefik:v3.6.4
+    image: traefik:v3.6.5
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -2827,7 +2827,7 @@ services:
   # ===========================================================================
   otel-collector:
     # ATUALIZADO 14/12/2025: 0.114.0 -> 0.141.0 (Dec 3, 2025)
-    image: otel/opentelemetry-collector-contrib:0.141.0
+    image: otel/opentelemetry-collector-contrib:0.142.0
     platform: linux/amd64
     container_name: alice-otel-collector
     restart: unless-stopped

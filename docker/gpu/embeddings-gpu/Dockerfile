@@ -9,10 +9,10 @@
 # GPU: RTX 4000 Ada (20GB VRAM) - Hetzner GEX44
 # VRAM estimado: ~16GB para Qwen3 + ~2GB para OpenCLIP
 # 
-# ARQUITETURA ENTERPRISE NGC (27/12/2025):
+# ARQUITETURA ENTERPRISE NGC (28/12/2025):
 # - Base: nvcr.io/nvidia/pytorch:25.12-py3 (container oficial NVIDIA - PÚBLICO)
 # - PyTorch: 2.10.0a0 otimizado pela NVIDIA
-# - CUDA: 13.0 com kernels otimizados
+# - CUDA: 13.1 com kernels otimizados
 # - TensorRT Model Optimizer incluído
 # - Transformer Engine incluído (FP8 support)
 # 
@@ -21,7 +21,7 @@
 # Ref: https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel-25-12.html
 # 
 # Autor: Fillipe Guerra
-# Data: 27 de Dezembro de 2025
+# Data: 28 de Dezembro de 2025
 # =============================================================================
 
 # ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC PyTorch (PÚBLICO)
@@ -32,7 +32,7 @@ FROM nvcr.io/nvidia/pytorch:25.12-py3
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="Embeddings GPU Enterprise (Qwen3-Embedding-8B 4096 + OpenCLIP 1024)"
-LABEL version="3.0.0"
+LABEL version="3.1.0"
 LABEL architecture="unified"
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -48,22 +48,22 @@ RUN useradd -m -u 1000 embeddings
 WORKDIR /app
 
 # Instalar dependências - PyTorch JÁ INSTALADO na imagem NGC!
-# ENTERPRISE 27/12/2025: Versões compatíveis com PyTorch 2.10 (NGC)
+# ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
+# NOTA: torchvision omitido - NGC 25.12 já inclui versão compatível
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    torchvision==0.24.0 \
-    transformers==4.48.0 \
-    sentence-transformers==3.4.1 \
-    open_clip_torch==2.30.0 \
-    accelerate==1.3.0 \
-    safetensors==0.5.2 \
-    fastapi==0.115.6 \
-    uvicorn==0.34.0 \
-    python-multipart==0.0.20 \
-    pillow==11.1.0 \
-    numpy==2.2.2 \
-    prometheus-client==0.21.1 \
+    transformers==4.57.3 \
+    sentence-transformers==5.2.0 \
+    open_clip_torch==3.2.0 \
+    accelerate==1.12.0 \
+    safetensors==0.7.0 \
+    fastapi==0.127.0 \
+    uvicorn==0.40.0 \
+    python-multipart==0.0.21 \
+    pillow==12.0.0 \
+    numpy==2.4.0 \
+    prometheus-client==0.23.1 \
     pybreaker==1.2.0
 
 COPY app/ /app/

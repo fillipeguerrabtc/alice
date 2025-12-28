@@ -28,7 +28,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010) |
 | **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
-| **GPU Manager Service** | gpu-manager-service | GPU_MANAGER_URL, INTERNAL_API_SECRET, REDIS_URL |
+| **GPU Manager Service** | gpu-manager-service | NGC_API_KEY, GPU_MANAGER_URL, INTERNAL_API_SECRET, REDIS_URL |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
@@ -107,13 +107,31 @@ Estes são necessários para o deploy funcionar:
 
 ### FASE 3: GPU Manager Service (Gerenciamento Centralizado de Requisições GPU)
 
-**ARQUITETURA ENTERPRISE (25/12/2025):** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) são gerenciados pelo GPU Manager Service, que roda localmente no servidor Hetzner GPU.
+**ARQUITETURA ENTERPRISE NGC (27/12/2025):** Migração completa para containers oficiais NVIDIA NGC (Best Practice 2025, +10-15% performance).
 
 | Secret | Onde Obter | Descrição | Obrigatório? |
 |--------|------------|-----------|--------------|
+| `NGC_API_KEY` | [ngc.nvidia.com/setup/api-keys](https://org.ngc.nvidia.com/setup/api-keys) → Generate Personal Key | API Key NVIDIA NGC para containers privados (vLLM, NeMo). Performance +10-15% vs públicos. | ✅ **SIM** |
 | `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) | ✅ **SIM** |
 | `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
+
+**Containers NVIDIA NGC (28/12/2025):**
+
+| Container | Imagem NGC | Tipo | Performance |
+|-----------|------------|------|-------------|
+| **mixtral-vllm** | `nvcr.io/nvidia/vllm:25.12` | 🔒 Privado (NGC_API_KEY) | vLLM 0.11.1, PyTorch 2.10, CUDA 13.1, FlashAttention 2.7.4 |
+| **asr-canary** | `nvcr.io/nvidia/nemo:25.07` | 🔒 Privado (NGC_API_KEY) | NeMo Framework 25.07, Canary-1B-v2 multilíngue |
+| **embeddings-gpu** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
+| **flux-schnell** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
+| **lora-trainer** | `nvcr.io/nvidia/pytorch:25.12-py3` | ✅ Público | PyTorch 2.10, CUDA 13.1, TensorRT |
+
+**Como criar NGC_API_KEY:**
+1. Acesse [ngc.nvidia.com/signup](https://ngc.nvidia.com/signup) (gratuito)
+2. Login → Clique no ícone do usuário → Setup → API Keys
+3. "+ Generate Personal Key" → Nome: `alice-enterprise-gpu` → Expiration: `Never Expire`
+4. Copie a key (só aparece uma vez!)
+5. GitHub → Settings → Secrets → New: `NGC_API_KEY`
 
 **NOTA:** O GPU Manager Service gerencia automaticamente:
 - Fila priorizada de requisições (chat > trading > embeddings > outros)

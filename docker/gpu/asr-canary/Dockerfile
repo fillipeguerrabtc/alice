@@ -4,33 +4,33 @@
 # =============================================================================
 # Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
-# ARQUITETURA ENTERPRISE NGC (27/12/2025):
-# - Base: nvcr.io/nvidia/nemo:25.11 (container oficial NVIDIA - PRIVADO)
-# - NeMo Framework: 2.5.3+ pré-instalado e otimizado
-# - PyTorch: 2.6+ (versão interna NVIDIA)
-# - CUDA: 13.x com kernels otimizados
+# ARQUITETURA ENTERPRISE NGC (28/12/2025):
+# - Base: nvcr.io/nvidia/nemo:25.07 (container oficial NVIDIA - PRIVADO)
+# - NeMo Framework: 25.07 com suporte completo ASR
+# - PyTorch: 2.7+ (versão interna NVIDIA)
+# - CUDA: 12.x com kernels otimizados
 # - Canary-1B-v2: Suporte multilíngue (25 idiomas, 10x mais rápido)
 # 
 # REQUER: NGC_API_KEY para pull da imagem (container privado)
 # Performance: +10-15% vs imagens públicas
-# Segurança: CVE-2025-33212 corrigida em NeMo 2.5.3+
 # 
-# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.11/changelog.html
+# NOTA: A partir de 25.07, TensorRT-LLM e vLLM não estão pré-instalados
+# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.07/changelog.html
 # 
 # Autor: Fillipe Guerra
-# Data: 27 de Dezembro de 2025
+# Data: 28 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC NeMo (Best Practice 2025)
+# ENTERPRISE 28/12/2025: Container oficial NVIDIA NGC NeMo (Best Practice 2025)
 # - NeMo Framework, PyTorch, CUDA pré-instalados e otimizados
 # - Canary-1B-v2 pronto para uso (multilíngue, 25 idiomas)
 # - Performance superior (+10-15%) vs instalação manual
 # REQUER: NGC_API_KEY no GitHub Secrets
-FROM nvcr.io/nvidia/nemo:25.11
+FROM nvcr.io/nvidia/nemo:25.07
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="ASR Canary-1B speech-to-text server (NVIDIA NGC)"
-LABEL version="3.0.0"
+LABEL version="3.1.0"
 
 ENV PIP_ROOT_USER_ACTION=ignore
 
@@ -42,14 +42,15 @@ RUN useradd -m -u 1000 asr
 WORKDIR /app
 
 # Dependências adicionais para API e métricas (NeMo já está instalado)
+# ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    fastapi==0.115.6 \
-    uvicorn==0.34.0 \
-    python-multipart==0.0.20 \
+    fastapi==0.127.0 \
+    uvicorn==0.40.0 \
+    python-multipart==0.0.21 \
     pydub==0.25.1 \
-    prometheus-client==0.21.1 \
+    prometheus-client==0.23.1 \
     pybreaker==1.2.0
 
 # Copiar código da aplicação

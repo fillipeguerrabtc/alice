@@ -6,10 +6,10 @@
 # - Objetivo: executar slices curtas de treinamento para permitir preempção (chat > embeddings > training)
 # - Persistência: checkpoints/adapters em /opt/alice/uploads/training (bind mount)
 #
-# ARQUITETURA ENTERPRISE NGC (27/12/2025):
+# ARQUITETURA ENTERPRISE NGC (28/12/2025):
 # - Base: nvcr.io/nvidia/pytorch:25.12-py3 (container oficial NVIDIA - PÚBLICO)
 # - PyTorch: 2.10.0a0 otimizado pela NVIDIA
-# - CUDA: 13.0 com kernels otimizados
+# - CUDA: 13.1 com kernels otimizados
 # - TensorRT Model Optimizer incluído
 # - Transformer Engine incluído (FP8 support para treinamento)
 #
@@ -18,7 +18,7 @@
 # Ref: https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel-25-12.html
 #
 # Autor: Fillipe Guerra
-# Data: 27 de Dezembro de 2025
+# Data: 28 de Dezembro de 2025
 # =============================================================================
 
 # ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC PyTorch (PÚBLICO)
@@ -29,7 +29,7 @@ FROM nvcr.io/nvidia/pytorch:25.12-py3
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="LoRA Trainer GPU (Fine-tuning enterprise) - NVIDIA NGC"
-LABEL version="2.0.0"
+LABEL version="2.1.0"
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
@@ -43,22 +43,22 @@ RUN useradd -m -u 1000 trainer
 WORKDIR /app
 
 # Dependências de ML - PyTorch JÁ INSTALADO na imagem NGC!
-# ENTERPRISE 27/12/2025: Versões compatíveis com PyTorch 2.10 (NGC)
+# ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
-    transformers==4.48.0 \
-    accelerate==1.3.0 \
-    datasets==3.3.0 \
-    peft==0.15.0 \
-    bitsandbytes==0.46.0 \
-    safetensors==0.5.2 \
-    huggingface_hub==0.28.1 \
-    fastapi==0.115.6 \
-    uvicorn==0.34.0 \
-    pydantic==2.10.5 \
-    numpy==2.2.2 \
-    prometheus-client==0.21.1
+    transformers==4.57.3 \
+    accelerate==1.12.0 \
+    datasets==4.0.0 \
+    peft==0.18.0 \
+    bitsandbytes==0.49.0 \
+    safetensors==0.7.0 \
+    huggingface_hub==1.2.3 \
+    fastapi==0.127.0 \
+    uvicorn==0.40.0 \
+    pydantic==2.12.5 \
+    numpy==2.4.0 \
+    prometheus-client==0.23.1
 
 COPY app/ /app/
 COPY healthcheck.py /app/healthcheck.py

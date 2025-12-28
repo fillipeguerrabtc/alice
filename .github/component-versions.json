@@ -1,7 +1,7 @@
 {
   "pgbackrest": "2.56.0",
-  "traefik": "3.6.4",
-  "prometheus": "3.8.0",
+  "traefik": "3.6.5",
+  "prometheus": "3.8.1",
   "grafana": "11.6.2",
   "loki": "3.6.3",
   "promtail": "3.6.3",
@@ -17,7 +17,7 @@
   "qdrant": "v1.16.2",
   "vector": "0.51.1-alpine",
   "alertmanager": "v0.27.0",
-  "otel-collector": "0.141.0",
+  "otel-collector": "0.142.0",
   "node-exporter": "v1.8.2",
   "cadvisor": "v0.49.1",
   "searxng": "latest",
