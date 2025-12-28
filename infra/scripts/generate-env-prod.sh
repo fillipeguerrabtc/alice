@@ -159,8 +159,8 @@ echo "🔐 Validando GPU Services (Hetzner GPU Server)..."
 
 HUGGINGFACE_TOKEN="${HUGGINGFACE_TOKEN:-}"
 if [ -z "${HUGGINGFACE_TOKEN}" ]; then
-  echo "::warning::HUGGINGFACE_TOKEN não definido. Configure o secret HUGGINGFACE_TOKEN no repositório (recomendado para downloads confiáveis de modelos)." >&2
-  # Não é obrigatório, mas recomendado
+  echo "::error::HUGGINGFACE_TOKEN não definido. Configure o secret HUGGINGFACE_TOKEN no repositório (obrigatório para download de modelos GPU em produção)." >&2
+  exit 1
 fi
 
 echo "✅ GPU Services validados (Hetzner GPU Server)"

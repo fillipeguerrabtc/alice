@@ -429,11 +429,13 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          # Fonte de verdade do host de produção (GEX44 GPU) - usado para validação fail-fast no remoto
+          EXPECTED_HOST_IP: ${{ secrets.HETZNER_VM_HOST }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
-          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
+          envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,EXPECTED_HOST_IP
           command_timeout: 30m
           script: |
             set -euo pipefail
@@ -451,41 +453,78 @@ jobs:
             echo ""
             
             # =================================================================
-            # DIAGNÓSTICO CRÍTICO: Verificar QUAL servidor estamos usando
+            # FAIL-FAST ENTERPRISE (2025): Validar host correto + GPU obrigatória
             # =================================================================
-            # CORREÇÃO 28/12/2025: Mostrar informações do servidor para debug
-            # Se este output mostrar o servidor ERRADO, o secret HETZNER_VM_HOST está errado
-            echo "🔍 DIAGNÓSTICO DO SERVIDOR:"
+            # Fonte de verdade: secrets.HETZNER_VM_HOST (passado como EXPECTED_HOST_IP)
+            # Objetivo: impedir deploy acidental no Deploy Server (runner) ou host errado.
+            echo "🔍 DIAGNÓSTICO DO SERVIDOR (fail-fast):"
             echo "   Hostname: $(hostname)"
-            echo "   IP(s): $(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | tr '\n' ' ')"
             echo "   Usuário: $(whoami)"
             echo "   Kernel: $(uname -r)"
             echo ""
-            echo "   ESPERADO para Production Server (GEX44 GPU):"
-            echo "   - IP deve conter: 178.63.41.108"
-            echo "   - nvidia-smi deve existir"
+            echo "   Fonte de verdade (EXPECTED_HOST_IP): ${EXPECTED_HOST_IP:-'(vazio)'}"
             echo ""
-            echo "   Se IP for 46.224.46.93, está no Deploy Server ERRADO!"
-            echo "   Nesse caso, corrija o secret HETZNER_VM_HOST no GitHub."
-            echo ""
-            
-            # Verificar nvidia-smi imediatamente
-            echo "🎮 Verificando nvidia-smi:"
-            if command -v nvidia-smi &> /dev/null; then
-              echo "   ✅ nvidia-smi ENCONTRADO"
-              nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader 2>/dev/null || true
-            else
-              echo "   ❌ nvidia-smi NÃO ENCONTRADO"
-              echo ""
-              echo "   POSSÍVEIS CAUSAS:"
-              echo "   1. Conectou ao servidor ERRADO (Deploy Server sem GPU)"
-              echo "   2. Drivers NVIDIA não estão instalados no Production Server"
-              echo "   3. PATH não inclui nvidia-smi"
-              echo ""
-              echo "   Verificando se nvidia existe em outros paths:"
-              ls -la /usr/bin/nvidia* 2>/dev/null || echo "   Nenhum binário nvidia em /usr/bin/"
-              ls -la /usr/local/bin/nvidia* 2>/dev/null || echo "   Nenhum binário nvidia em /usr/local/bin/"
+
+            if [ -z "${EXPECTED_HOST_IP:-}" ]; then
+              echo "❌ ERRO: EXPECTED_HOST_IP não definido (deveria vir de secrets.HETZNER_VM_HOST)"
+              exit 1
             fi
+
+            # Validar IP público do host remoto (não confundir com IPs internos do Docker/host)
+            # Best practice: usar um endpoint externo simples (curl/wget) e falhar se ferramentas ausentes.
+            PUBLIC_IP=""
+            if command -v curl >/dev/null 2>&1; then
+              PUBLIC_IP="$(curl -fsS --max-time 8 https://api.ipify.org || true)"
+            elif command -v wget >/dev/null 2>&1; then
+              PUBLIC_IP="$(wget -qO- --timeout=8 https://api.ipify.org || true)"
+            fi
+
+            if [ -z "$PUBLIC_IP" ]; then
+              echo "❌ ERRO: Não foi possível determinar o IP público do host remoto (curl/wget ausentes ou sem acesso à internet)."
+              echo "   Este workflow exige validação do host para evitar deploy no servidor errado."
+              exit 1
+            fi
+
+            echo "   IP público detectado: $PUBLIC_IP"
+            if [ "$PUBLIC_IP" != "$EXPECTED_HOST_IP" ]; then
+              echo "❌ ERRO: Host remoto incorreto."
+              echo "   Esperado (HETZNER_VM_HOST): $EXPECTED_HOST_IP"
+              echo "   Detectado (IP público):     $PUBLIC_IP"
+              echo "   Corrija o secret HETZNER_VM_HOST para apontar para o Production Server (GEX44 GPU)."
+              exit 1
+            fi
+
+            echo "✅ Host remoto validado (Production Server)"
+
+            # GPU é OBRIGATÓRIA (Alice é GPU-first). Sem GPU, deploy deve falhar.
+            echo ""
+            echo "🎮 Verificando GPU (obrigatório):"
+            if ! command -v nvidia-smi >/dev/null 2>&1; then
+              echo "❌ ERRO: nvidia-smi não encontrado."
+              echo "   Ação necessária: instalar/validar drivers NVIDIA no Production Server (GEX44 GPU)."
+              exit 1
+            fi
+
+            if ! nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader >/dev/null 2>&1; then
+              echo "❌ ERRO: nvidia-smi falhou ao executar."
+              echo "   Ação necessária: corrigir instalação/estado dos drivers NVIDIA no Production Server."
+              nvidia-smi || true
+              exit 1
+            fi
+
+            echo "✅ Driver NVIDIA OK:"
+            nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader || true
+
+            echo ""
+            echo "🐳 Verificando GPU via Docker (NVIDIA runtime):"
+            if ! timeout 45s docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi >/dev/null 2>&1; then
+              echo "❌ ERRO: Docker não consegue acessar a GPU via --gpus all."
+              echo "   Ação necessária (infra do Production Server): configurar NVIDIA Container Toolkit/runtime para Docker."
+              echo "   Referência: documentação oficial NVIDIA Container Toolkit 2025."
+              exit 1
+            fi
+            echo "✅ GPU acessível via Docker"
+
             echo "=============================================="
             echo ""
             
@@ -522,6 +561,36 @@ jobs:
             chmod 600 "$ENV_FILE"
             ENV_LINES=$(wc -l < "$ENV_FILE")
             echo "✅ .env.prod validado (${ENV_LINES} linhas)"
+
+            # =================================================================
+            # Validação fail-fast de variáveis CRÍTICAS no .env.prod (sem vazar valores)
+            # =================================================================
+            # Objetivo: evitar que docker compose falhe tarde (ex: ${REDIS_URL:?} vazio)
+            echo "🔎 Validando chaves críticas no .env.prod (sem expor secrets)..."
+            REQUIRED_KEYS=(
+              "IMAGE_PREFIX"
+              "IMAGE_TAG"
+              "REDIS_URL"
+              "INTERNAL_API_SECRET"
+              "POSTGRES_PASSWORD"
+              "REDIS_PASSWORD"
+              "QDRANT_API_KEY"
+              "SESSION_SECRET"
+              "SEARXNG_SECRET_KEY"
+              "CLICKHOUSE_PASSWORD"
+              "REDIS_CACHE_PASSWORD"
+              "REDIS_QUEUE_PASSWORD"
+              "ERPNEXT_MYSQL_ROOT_PASSWORD"
+              "ERPNEXT_DB_PASSWORD"
+              "HUGGINGFACE_TOKEN"
+            )
+            for key in "${REQUIRED_KEYS[@]}"; do
+              if ! grep -q "^${key}=" "$ENV_FILE"; then
+                echo "❌ ERRO: chave obrigatória ausente no .env.prod: ${key}"
+                exit 1
+              fi
+            done
+            echo "✅ Chaves críticas presentes"
             
             # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)
@@ -632,74 +701,6 @@ jobs:
             cd /opt/alice/app/infra/docker
             
             # =================================================================
-            # FASE 4: Verificar GPU (OPCIONAL - não bloqueia deploy)
-            # =================================================================
-            # CORREÇÃO 28/12/2025: GPU é OPCIONAL para serviços core
-            # - Serviços CORE (auth, chat, rag, etc.) funcionam SEM GPU
-            # - gpu-manager detecta dinamicamente se serviços GPU estão disponíveis
-            # - Containers GPU usam PROFILES e são iniciados separadamente
-            # 
-            # IMPORTANTE: Verificar se conectou ao servidor CORRETO:
-            # - Production Server (GEX44 GPU): 178.63.41.108 - TEM nvidia-smi
-            # - Deploy Server (CPX32 Runner): 46.224.46.93 - NÃO tem nvidia-smi
-            # Se nvidia-smi não existe, pode ser que HETZNER_VM_HOST está errado!
-            echo "🎮 Verificando configuração GPU (opcional para serviços core)..."
-            
-            GPU_AVAILABLE=false
-            
-            # Verificar se nvidia-smi funciona (driver instalado)
-            if ! command -v nvidia-smi &> /dev/null; then
-              echo "⚠️ nvidia-smi não encontrado - servidor SEM GPU"
-              echo "   Se esperava GPU, verifique o secret HETZNER_VM_HOST"
-              echo "   Production Server (GPU): 178.63.41.108"
-              echo "   Deploy Server (sem GPU): 46.224.46.93"
-            else
-              # Mostrar informações da GPU
-              nvidia-smi --query-gpu=name,memory.total --format=csv,noheader || true
-              
-              # Verificar se NVIDIA Container Toolkit está instalado
-              if ! docker info 2>/dev/null | grep -q "nvidia"; then
-                echo "⚠️ NVIDIA Container Toolkit não configurado no Docker"
-                echo "📦 Instalando NVIDIA Container Toolkit..."
-                
-                # Instalar NVIDIA Container Toolkit (Ubuntu 24.04)
-                curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-                curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list | \
-                  sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' | \
-                  tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-                
-                apt-get update
-                apt-get install -y nvidia-container-toolkit
-                
-                # Configurar Docker para usar nvidia runtime
-                nvidia-ctk runtime configure --runtime=docker
-                
-                # Reiniciar Docker
-                systemctl restart docker
-                
-                echo "✅ NVIDIA Container Toolkit instalado e configurado"
-              else
-                echo "✅ NVIDIA Container Toolkit já configurado"
-              fi
-              
-              # Verificar se GPU está acessível via Docker
-              if docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi &> /dev/null; then
-                GPU_AVAILABLE=true
-                echo "✅ GPU acessível via Docker"
-              else
-                echo "⚠️ Docker não consegue acessar GPU (NVIDIA runtime pode precisar de restart)"
-              fi
-            fi
-            
-            # Resumo do status GPU
-            if [ "$GPU_AVAILABLE" = "true" ]; then
-              echo "✅ GPU disponível - serviços GPU podem ser iniciados via profiles"
-            else
-              echo "⚠️ GPU NÃO disponível - serviços core funcionarão normalmente"
-              echo "   Serviços GPU (Mixtral, Embeddings, etc.) ficarão offline"
-            fi
-            
-            # =================================================================
             # FASE 5: Login nos registries
             # =================================================================
             echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
@@ -725,10 +726,20 @@ jobs:
             # múltiplos modelos grandes simultaneamente.
             
             echo "📥 Baixando imagens Docker (serviços core)..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod pull --ignore-pull-failures
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull
             
             echo "🚀 Iniciando containers CORE (sem GPU)..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans
+            if ! docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans; then
+              echo "❌ ERRO: docker compose up (core) falhou. Capturando diagnóstico..."
+              docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+              echo ""
+              echo "🧾 Logs do gpu-manager (últimas 400 linhas):"
+              docker logs --tail=400 alice-gpu-manager || true
+              echo ""
+              echo "🧾 Logs do Redis (últimas 200 linhas):"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
+              exit 1
+            fi
             
             # Verificar status dos serviços core
             sleep 15
@@ -747,38 +758,51 @@ jobs:
             
             if ! echo "${GPU_MANAGER_STATE}" | grep -q "healthy"; then
               echo "⚠️ alice-gpu-manager não está healthy. Capturando logs e inspect..."
-              docker logs --tail=200 alice-gpu-manager || true
+              docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+              docker logs --tail=400 alice-gpu-manager || true
               docker inspect alice-gpu-manager || true
+              echo ""
+              echo "🧾 Últimos eventos Docker (alice-gpu-manager) - 10 minutos:"
+              timeout 15s docker events --since 10m --until 0m --filter "container=alice-gpu-manager" --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}" || true
+              echo ""
+              echo "🧾 Logs do Redis (dependência direta do gpu-manager):"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
               exit 1
             fi
             
             # =================================================================
-            # FASE 8: Iniciar serviço GPU (apenas se GPU disponível)
+            # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
-            # CORREÇÃO 28/12/2025: Só iniciar GPU se disponível (evita falha em servidor sem GPU)
             
             GPU_PROFILE="${GPU_PROFILE:-gpu-llm}"
             GPU_RUNNING=0
             
-            if [ "$GPU_AVAILABLE" = "true" ]; then
+            echo ""
+            echo "🎮 Iniciando serviços GPU com profile: ${GPU_PROFILE}..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull
+            if ! docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" up -d --remove-orphans; then
+              echo "❌ ERRO: docker compose up (GPU profile ${GPU_PROFILE}) falhou."
+              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" ps || true
+              exit 1
+            fi
+            
+            sleep 15
+            # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
+            GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
+            if [ "$GPU_RUNNING" -lt 1 ]; then
+              echo "❌ ERRO: Nenhum container GPU iniciado (profile ${GPU_PROFILE})."
+              echo "🧾 docker compose ps (com profile):"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" ps || true
               echo ""
-              echo "🎮 Iniciando serviço GPU com profile: ${GPU_PROFILE}..."
-              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" pull --ignore-pull-failures || true
-              docker compose -f docker-compose.prod.yml --env-file .env.prod --profile "${GPU_PROFILE}" up -d || {
-                echo "⚠️ Serviço GPU não iniciou (pode ser problema de driver/toolkit)"
-                echo "   Execute manualmente: docker compose --profile ${GPU_PROFILE} up -d"
-              }
-              sleep 10
-              # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
-              GPU_RUNNING=$(docker ps --format "{{.Names}}" | grep -c "^gpu-" 2>/dev/null) || GPU_RUNNING=0
-            else
-              echo ""
-              echo "⚠️ GPU não disponível - pulando inicialização de serviços GPU"
-              echo "   Serviços core funcionam normalmente sem GPU"
-              echo "   Para habilitar GPU, configure NVIDIA drivers no servidor e redeploy"
+              echo "🧾 Logs containers GPU (últimas 200 linhas):"
+              docker ps --format "{{.Names}}" | grep "^gpu-" | head -n 10 | while read -r c; do
+                echo "----- $c -----"
+                docker logs --tail=200 "$c" || true
+              done
+              exit 1
             fi
             
             # Status final
@@ -788,10 +812,7 @@ jobs:
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
             echo "   - Containers GPU: ${GPU_RUNNING}"
-            echo "   - GPU disponível: ${GPU_AVAILABLE}"
-            if [ "$GPU_AVAILABLE" = "true" ]; then
-              echo "   - Profile GPU ativo: ${GPU_PROFILE}"
-            fi
+            echo "   - Profile GPU ativo: ${GPU_PROFILE}"
             echo "=============================================="
 
   # ===========================================================================

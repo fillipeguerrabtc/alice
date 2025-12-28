@@ -404,7 +404,9 @@ ufw allow 443/tcp
 ufw enable
 
 # Configurar Docker daemon.json (Enterprise GPU - 28/12/2025)
-# NOTA: Requer NVIDIA Container Toolkit instalado (apt install nvidia-container-toolkit)
+# NOTA: Requer NVIDIA Container Toolkit instalado e configurado no Production Server.
+# IMPORTANTE (Best Practices 2025): o workflow de deploy NÃO instala toolkit/driver durante o deploy.
+# Infra de GPU é pré-requisito do servidor e é validada via fail-fast no workflow.
 cat > /etc/docker/daemon.json << 'EOF'
 {
   "default-runtime": "nvidia",
@@ -438,6 +440,12 @@ systemctl restart docker
 
 # Habilitar NVIDIA Persistence Mode (GPU sempre ativa - sem cold start)
 nvidia-smi -pm 1
+
+# Validação obrigatória (deve passar antes do primeiro deploy):
+# 1) Driver OK
+nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader
+# 2) GPU acessível via Docker (runtime NVIDIA)
+timeout 45s docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu22.04 nvidia-smi
 
 # Configurar NVIDIA CDI (Container Device Interface - Best Practice 2025)
 nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml

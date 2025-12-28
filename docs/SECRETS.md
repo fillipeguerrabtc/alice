@@ -28,7 +28,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Auth** | alice-auth | SESSION_SECRET, GOOGLE_*, OAUTH_GITHUB_* |
 | **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010) |
 | **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
-| **GPU Manager Service** | gpu-manager-service | NGC_API_KEY, GPU_MANAGER_URL, INTERNAL_API_SECRET, REDIS_URL |
+| **GPU Manager Service** | gpu-manager-service | INTERNAL_API_SECRET, REDIS_URL |
 | **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
@@ -74,6 +74,11 @@ Estes são necessários para o deploy funcionar:
 > - `nvidia-smi` não existe no Deploy Server
 > - Containers GPU não podem iniciar sem NVIDIA runtime
 > - Erro típico: "nvidia-smi não encontrado" ou "container alice-gpu-manager is unhealthy"
+>
+> **Validação fail-fast no workflow (28/12/2025):**
+> - O workflow valida o **IP público** do host remoto e compara com `HETZNER_VM_HOST` (fonte de verdade).
+> - O workflow valida GPU obrigatória via `nvidia-smi` **e** via Docker com `docker run --gpus all ... nvidia-smi`.
+> - Se qualquer validação falhar, o deploy é abortado imediatamente (evita sujeira e deploy no host errado).
 >
 > Para verificar qual servidor está sendo usado, observe os logs do deploy:
 > - Se mostra GPU info (ex: "RTX 4000 Ada") → servidor correto (Production)
