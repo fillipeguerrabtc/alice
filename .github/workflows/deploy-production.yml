@@ -867,14 +867,30 @@ jobs:
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
               
-              # Remover volumes órfãos (CUIDADO: não remove volumes nomeados com dados)
+              # CORREÇÃO 28/12/2025: Remover TODOS volumes nomeados do projeto
+              # docker volume prune só remove anônimos, não nomeados
+              for vol in $(docker volume ls -q | grep -E "^(alice-|erpnext-)"); do
+                docker volume rm -f "$vol" 2>/dev/null || true
+              done
+              
+              # Remover volumes órfãos restantes
               docker volume prune -f 2>/dev/null || true
               
               # Limpar imagens não utilizadas
-              docker image prune -f 2>/dev/null || true
+              docker image prune -af 2>/dev/null || true
               
-              # Limpar sistema
-              docker system prune -f 2>/dev/null || true
+              # Limpar sistema completo
+              docker system prune -af --volumes 2>/dev/null || true
+              
+              # CORREÇÃO 28/12/2025: Limpar dados residuais de deploys falhados
+              # Sem versão anterior = deploy nunca funcionou = todos dados são lixo
+              echo "🗑️ Removendo dados residuais de /opt/alice..."
+              rm -rf /opt/alice/data/* 2>/dev/null || true
+              rm -rf /opt/alice/logs/* 2>/dev/null || true
+              rm -rf /opt/alice/backups/postgresql/* 2>/dev/null || true
+              rm -rf /opt/alice/backups/mariadb/* 2>/dev/null || true
+              rm -rf /opt/alice/backups/redis/* 2>/dev/null || true
+              # NÃO remover /opt/alice/app (código fonte) nem /opt/alice/secrets (chaves)
               
               echo "✅ Ambiente limpo - pronto para novo deploy"
               echo "ℹ️ Execute novo deploy para provisionar o sistema"
