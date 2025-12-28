@@ -739,6 +739,19 @@ jobs:
             echo "✅ Deploy CORE concluído: ${RUNNING} containers rodando"
             echo "=============================================="
             
+            # Diagnóstico imediato do gpu-manager (depende de Redis)
+            echo ""
+            echo "🔎 Verificando estado do alice-gpu-manager..."
+            GPU_MANAGER_STATE=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.Name}} {{.State}}" gpu-manager 2>/dev/null || true)
+            echo "Estado atual: ${GPU_MANAGER_STATE:-\"(não encontrado)\"}"
+            
+            if ! echo "${GPU_MANAGER_STATE}" | grep -q "healthy"; then
+              echo "⚠️ alice-gpu-manager não está healthy. Capturando logs e inspect..."
+              docker logs --tail=200 alice-gpu-manager || true
+              docker inspect alice-gpu-manager || true
+              exit 1
+            fi
+            
             # =================================================================
             # FASE 8: Iniciar serviço GPU (apenas se GPU disponível)
             # =================================================================
