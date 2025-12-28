@@ -27,6 +27,11 @@ import {
   createProtectedFetch,
   getRedisClient,
   isRedisAvailable,
+  // CORREÇÃO 28/12/2025: Adicionar initializeRedisCache e closeRedisCacheClient
+  // BUG: Serviço usava isRedisAvailable() sem chamar initializeRedisCache() primeiro
+  // Resultado: redisClient sempre null → erro "Redis não disponível" → container crashava
+  initializeRedisCache,
+  closeRedisCacheClient,
   createAlicePrometheus,
   registerShutdownCallback,
   ShutdownPriority,
@@ -996,10 +1001,18 @@ app.use(createNotFoundHandler());
 
 async function start(): Promise<void> {
   try {
+    // CORREÇÃO 28/12/2025: Inicializar Redis ANTES de verificar disponibilidade
+    // BUG CRÍTICO: isRedisAvailable() retornava false porque initializeRedisCache() nunca era chamado
+    // Resultado: redisClient era sempre null → erro "Redis não disponível" → container crashava
+    // Serviços que dependem de gpu-manager (chat, rag, training) falhavam em cascata
+    logger.info('Inicializando conexão Redis...');
+    await initializeRedisCache();
+    
     // Verificar Redis
     if (!isRedisAvailable()) {
-      throw new Error('Redis não disponível');
+      throw new Error('Redis não disponível após inicialização');
     }
+    logger.info('Redis inicializado com sucesso');
     
     // Iniciar worker de fila
     await startQueueWorker();
@@ -1014,6 +1027,9 @@ async function start(): Promise<void> {
       logger.info('Encerrando GPU Manager Service...');
       stopQueueWorker();
       server.close();
+      // CORREÇÃO 28/12/2025: Fechar conexão Redis no shutdown
+      await closeRedisCacheClient();
+      logger.info('Conexão Redis encerrada');
     }, { priority: ShutdownPriority.HTTP_SERVER });
     
   } catch (error) {
