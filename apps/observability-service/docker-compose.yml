@@ -127,29 +127,28 @@ services:
 
   # ============================================================================
   # JAEGER - Distributed tracing
+  # ATUALIZADO 28/12/2025: Jaeger v2.13.0 (v1 EOL em 31/12/2025)
+  # MUDANÇAS v2: imagem 'jaeger' (não 'all-in-one'), health check porta 13133
+  # Ref: https://www.jaegertracing.io/docs/2.13/getting-started/
   # ============================================================================
   jaeger:
-    image: jaegertracing/all-in-one:1.62.0
+    image: jaegertracing/jaeger:2.13.0
     container_name: alice-jaeger
     restart: unless-stopped
     ports:
       - "16686:16686"   # UI
-      - "4317:4317"     # OTLP gRPC
-      - "4318:4318"     # OTLP HTTP
-      - "14268:14268"   # Collector HTTP
-      - "6831:6831/udp" # Thrift UDP
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-      - SPAN_STORAGE_TYPE=badger
-      - BADGER_EPHEMERAL=false
-      - BADGER_DIRECTORY_VALUE=/badger/data
-      - BADGER_DIRECTORY_KEY=/badger/key
+      - "4317:4317"     # OTLP gRPC (habilitado por padrão em v2)
+      - "4318:4318"     # OTLP HTTP (habilitado por padrão em v2)
+      - "8888:8888"     # Métricas Prometheus (nova porta em v2)
+    # NOTA: Jaeger v2 usa OTLP por padrão, configuração simplificada
+    # Storage Badger via flag de linha de comando ou configuração YAML
     volumes:
       - jaeger_data:/badger
     networks:
       - observability
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/"]
+      # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
       interval: 30s
       timeout: 10s
       retries: 3

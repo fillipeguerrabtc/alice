@@ -86,11 +86,12 @@ scrape_configs:
     scrape_interval: 15s
 
   # ============================================================================
-  # JAEGER
+  # JAEGER - ATUALIZADO 28/12/2025 para v2 (métricas na porta 8888)
+  # Ref: https://www.jaegertracing.io/docs/2.13/operations/monitoring/
   # ============================================================================
   - job_name: 'jaeger'
     static_configs:
-      - targets: ['jaeger:14269']
+      - targets: ['jaeger:8888']
     metrics_path: /metrics
 
   # ============================================================================
