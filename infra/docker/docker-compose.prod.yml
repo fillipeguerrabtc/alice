@@ -2670,6 +2670,7 @@ services:
   jaeger:
     # ATUALIZADO 28/12/2025: Jaeger v2.13.0 (migração URGENTE - v1 EOL em 31/12/2025)
     # MUDANÇAS v1→v2: Imagem unificada 'jaeger' (não mais 'all-in-one'), healthcheck porta 13133
+    # STORAGE: Badger configurado via YAML (env vars não suportadas em v2)
     # Ref: https://www.jaegertracing.io/docs/2.13/getting-started/
     image: jaegertracing/jaeger:2.13.0
     platform: linux/amd64
@@ -2677,7 +2678,14 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # NOTA: OTLP habilitado por padrão em v2 - environment simplificado
+    # ENTERPRISE 28/12/2025: Jaeger v2 requer config YAML para Badger storage
+    # Environment variables (SPAN_STORAGE_TYPE, BADGER_*) não são mais suportadas
+    command: ["--config", "/etc/jaeger/jaeger-config.yml"]
+    volumes:
+      # Configuração YAML obrigatória para Badger storage em v2
+      - ./infra/observability/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
+      # Volume para persistência de dados (key + data directories)
+      - /opt/alice/data/jaeger:/badger
     networks:
       - alice-network
     labels:

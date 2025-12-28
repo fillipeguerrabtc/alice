@@ -129,25 +129,30 @@ services:
   # JAEGER - Distributed tracing
   # ATUALIZADO 28/12/2025: Jaeger v2.13.0 (v1 EOL em 31/12/2025)
   # MUDANÇAS v2: imagem 'jaeger' (não 'all-in-one'), health check porta 13133
+  # STORAGE: Badger configurado via YAML (env vars não suportadas em v2)
   # Ref: https://www.jaegertracing.io/docs/2.13/getting-started/
   # ============================================================================
   jaeger:
     image: jaegertracing/jaeger:2.13.0
     container_name: alice-jaeger
     restart: unless-stopped
+    # ENTERPRISE 28/12/2025: Jaeger v2 requer config YAML para Badger storage
+    # Environment variables (SPAN_STORAGE_TYPE, BADGER_*) não são mais suportadas
+    command: ["--config", "/etc/jaeger/jaeger-config.yml"]
     ports:
       - "16686:16686"   # UI
       - "4317:4317"     # OTLP gRPC (habilitado por padrão em v2)
       - "4318:4318"     # OTLP HTTP (habilitado por padrão em v2)
-      - "8888:8888"     # Métricas Prometheus (nova porta em v2)
-    # NOTA: Jaeger v2 usa OTLP por padrão, configuração simplificada
-    # Storage Badger via flag de linha de comando ou configuração YAML
+      - "8888:8888"     # Métricas Prometheus (v2)
     volumes:
+      # Configuração YAML obrigatória para Badger storage em v2
+      - ./config/jaeger/jaeger-config.yml:/etc/jaeger/jaeger-config.yml:ro
+      # Volume para persistência de dados (key + data directories)
       - jaeger_data:/badger
     networks:
       - observability
     healthcheck:
-      # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
+      # MUDANÇA v2: Health check na porta 13133 (healthcheckv2 extension)
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
       interval: 30s
       timeout: 10s

@@ -1,0 +1,104 @@
+# =============================================================================
+# Jaeger v2 Configuration - Alice Enterprise Platform (PRODUÇÃO)
+# =============================================================================
+# 
+# Configuração YAML para Jaeger v2.13.0 com Badger storage persistente
+# 
+# ENTERPRISE 28/12/2025: Migração de environment variables (v1) para YAML (v2)
+# - Jaeger v2 usa arquitetura OpenTelemetry Collector
+# - Badger storage requer configuração via YAML (environment variables não suportadas)
+# - Persistência garantida: ephemeral=false + diretórios dedicados
+# 
+# PRODUÇÃO: TTL de 90 dias para retenção enterprise de traces
+# 
+# Ref: https://www.jaegertracing.io/docs/2.13/deployment/
+# Ref: https://www.jaegertracing.io/docs/2.13/configuration/
+# 
+# Autor: Fillipe Guerra
+# Data: 28 de Dezembro de 2025
+# =============================================================================
+
+# ===========================================================================
+# SERVICE - Configuração principal do pipeline
+# ===========================================================================
+service:
+  extensions: [healthcheckv2, jaeger_storage, jaeger_query]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [jaeger_storage_exporter]
+  telemetry:
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+
+# ===========================================================================
+# EXTENSIONS - Storage e Query
+# ===========================================================================
+extensions:
+  # Health check v2 (porta 13133 - padrão OTel Collector)
+  healthcheckv2:
+    use_v2: true
+    http:
+      endpoint: 0.0.0.0:13133
+
+  # Jaeger Storage - Badger (persistência local)
+  # ENTERPRISE PRODUÇÃO: ephemeral=false + 90 dias de retenção
+  jaeger_storage:
+    backends:
+      badger_main:
+        badger:
+          directories:
+            # Diretórios persistidos via volume Docker /opt/alice/data/jaeger
+            keys: /badger/key
+            values: /badger/data
+          ephemeral: false
+          # Manutenção automática para evitar crescimento indefinido
+          maintenance_interval: 5m
+          # TTL para dados - 90 dias (enterprise retention)
+          span_store_ttl: 2160h
+          # Configurações de performance
+          read_only: false
+          # Limite de memória para índice (otimizado para 512MB container)
+          index_cache_size: 100000000
+
+  # Jaeger Query - UI e API de consulta
+  jaeger_query:
+    storage:
+      traces: badger_main
+      traces_archive: ""
+    ui:
+      config_file: ""
+      base_path: /
+
+# ===========================================================================
+# RECEIVERS - Entrada de dados (OTLP habilitado por padrão em v2)
+# ===========================================================================
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+        # Configurações enterprise para alta carga
+        max_recv_msg_size_mib: 16
+      http:
+        endpoint: 0.0.0.0:4318
+
+# ===========================================================================
+# PROCESSORS - Processamento de spans
+# ===========================================================================
+processors:
+  # Batch processor para melhor performance e eficiência
+  batch:
+    send_batch_size: 10000
+    timeout: 1s
+    send_batch_max_size: 10000
+
+# ===========================================================================
+# EXPORTERS - Saída para storage
+# ===========================================================================
+exporters:
+  # Exporter para Badger storage
+  jaeger_storage_exporter:
+    trace_storage: badger_main
