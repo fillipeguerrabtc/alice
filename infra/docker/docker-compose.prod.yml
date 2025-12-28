@@ -3325,9 +3325,11 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    env_file:
+      - .env.prod
     environment:
       - PORT=3010
-      - REDIS_URL=${REDIS_URL:-redis://:${REDIS_PASSWORD}@alice-redis:6379/0}
+      - REDIS_URL=${REDIS_URL:?REDIS_URL é obrigatório}
       # CORREÇÃO 28/12/2025: INTERNAL_API_SECRET obrigatório em produção (Regra 6)
       # gpu-manager-service/index.ts linha 56-60 exige esta variável
       - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:?INTERNAL_API_SECRET é obrigatório}

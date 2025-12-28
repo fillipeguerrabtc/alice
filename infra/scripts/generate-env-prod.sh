@@ -330,6 +330,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# Redis Alice\n'
   printf 'REDIS_PASSWORD=%s\n' "${REDIS_PASSWORD}"
+  printf 'REDIS_URL=redis://:%s@alice-redis:6379/0\n' "${REDIS_PASSWORD}"
   printf '\n'
   printf '# Redis ERPNext\n'
   printf 'REDIS_CACHE_PASSWORD=%s\n' "${REDIS_CACHE_PASSWORD}"
