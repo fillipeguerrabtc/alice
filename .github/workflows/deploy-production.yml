@@ -395,6 +395,7 @@ jobs:
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             # Limpar qualquer arquivo/diretório anterior (comportamento inconsistente do scp)
             rm -rf /tmp/.env.prod /tmp/.env.prod.tmp
             # Criar diretório destino para garantir estrutura
@@ -434,6 +435,10 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
+            
+            # CORREÇÃO 28/12/2025: Definir PATH explicitamente
+            # SSH não-interativo pode não ter PATH configurado corretamente
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             
             echo "=============================================="
             echo "DEPLOY ALICE ENTERPRISE PLATFORM"
@@ -766,6 +771,7 @@ jobs:
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           script: |
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             if docker ps --filter "name=alice-gpu-manager" --filter "status=running" | grep -q "alice-gpu-manager"; then
               if curl -sf --max-time 10 http://localhost:3010/live > /dev/null 2>&1; then
                 echo "✅ GPU Manager OK"
@@ -844,6 +850,8 @@ jobs:
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           envs: GH_PAT,GITHUB_SHA,GITHUB_ACTOR,IMAGE_PREFIX
           script: |
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            
             echo "=============================================="
             echo "🔄 ROLLBACK AUTOMÁTICO"
             echo "=============================================="
@@ -1011,6 +1019,7 @@ jobs:
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           envs: GITHUB_SHA,GITHUB_ACTOR,VERSION
           script: |
+            export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
             MANIFEST_DIR="/opt/alice/backups/manifests"
             mkdir -p "$MANIFEST_DIR"
             
