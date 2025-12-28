@@ -465,7 +465,7 @@ Acessíveis em `/dashboard/analytics`:
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary - Docker Hub, 100% PÚBLICO)
    - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (embeddings, flux, lora-trainer - Docker Hub, 100% PÚBLICO)
    - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
-   - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 1.2.3, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0, nemo_toolkit 2.2.0
+   - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 0.36.0, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0, nemo_toolkit 2.2.0
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 6. Docker Compose PROFILES para controle granular (gpu-llm, gpu-embeddings, gpu-flux, gpu-asr, gpu-training) - apenas UM profile GPU ativo por vez

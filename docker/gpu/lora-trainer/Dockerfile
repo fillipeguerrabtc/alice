@@ -48,7 +48,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     peft==0.18.0 \
     bitsandbytes==0.49.0 \
     safetensors==0.7.0 \
-    huggingface_hub==1.2.3 \
+    huggingface_hub==0.36.0 \
     fastapi==0.127.0 \
     uvicorn==0.40.0 \
     pydantic==2.12.5 \
