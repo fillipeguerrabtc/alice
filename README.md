@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025  
-**Versão:** 4.37
+**Data:** 28 de Dezembro de 2025  
+**Versão:** 4.38
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.37-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.38-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -47,7 +47,9 @@
 | **Customização** | Fine-tuning específico para cada cliente |
 | **Disponibilidade** | Sem dependência de SLAs externos |
 
-> **Atualização 27/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
+> **Atualização 28/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
+
+> **Server GPU Optimizations 28/12/2025:** Servidor de produção otimizado para máxima performance GPU. **Docker:** default-runtime nvidia, live-restore, BuildKit GC. **NVIDIA:** Persistence Mode ENABLED (sem cold start), CDI configurado, Container Toolkit 1.18.1. **Kernel:** vm.swappiness=10, vm.dirty_ratio=40, shmmax=64GB (CUDA), buffers rede 16MB. **Hardware:** RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0.
 
 ---
 

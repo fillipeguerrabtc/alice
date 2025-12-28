@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 27 de Dezembro de 2025  
+> **Data:** 28 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.23 - Release Performance Fix (fetch-depth)
+> **Versão:** 4.24 - Server GPU Optimizations Enterprise
 
 ---
 
@@ -47,6 +47,10 @@
 > **Padronização de Line Endings 26/12/2025:** Adicionados `.gitattributes` e `.editorconfig` para eliminar diffs ruidosos (LF/CRLF) e garantir consistência enterprise em Windows/Linux/macOS.
 
 > **Deploy Runner Enterprise 27/12/2025:** Pipeline 100% self-hosted em Hetzner CPX32 (4 vCPU AMD EPYC, 8GB RAM, 160GB SSD - IP 46.224.46.93). **HARDENING COMPLETO:** Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10, inotify=524288), Docker daemon otimizado (BuildKit, max-downloads=10, GC=20GB, live-restore), limits (nofile=1048576, nproc=65535), systemd override (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário 3h. Runner 2.330.0, Docker 29.1.3, Buildx 0.30.1, Ubuntu 24.04.3 LTS.
+
+> **Server GPU Optimizations 28/12/2025:** Servidor de produção Hetzner GEX44 otimizado para máxima performance GPU. **Docker daemon:** default-runtime nvidia, live-restore, BuildKit GC 20GB. **NVIDIA:** Persistence Mode ENABLED (GPU sempre ativa), CDI configurado (/etc/cdi/nvidia.yaml), Container Toolkit 1.18.1. **Kernel sysctl:** vm.swappiness=10, vm.dirty_ratio=40, kernel.shmmax=64GB (CUDA shared memory), net.core.rmem_max=16MB (buffers rede), fs.file-max=2M. **Status:** GPU RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0. Servidor 100% limpo, 1.7TB disponível (99% livre).
+
+> **Rollback Inteligente 28/12/2025:** Rollback detecta automaticamente quando primeiro deploy funcionou via arquivo `last-successful-deploy.txt`. Se não existe = nunca teve deploy funcional = LIMPA TUDO (volumes, dados, logs). Se existe = PRESERVA dados e faz rollback para versão anterior. Dados de produção NUNCA são apagados após primeiro deploy bem-sucedido.
 
 > **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `traefik:v3.6.4`) são suficientemente determinísticas. Solução simples - KISS.
 

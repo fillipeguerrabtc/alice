@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 28 de Dezembro de 2025  
-> **Versão:** 1.10.0 - Pente Fino Versões Enterprise (pgbackrest, alertmanager, cAdvisor, node-exporter, langfuse, clickhouse)  
+> **Versão:** 1.11.0 - Server GPU Optimizations Enterprise (Docker daemon, NVIDIA Persistence, Kernel sysctl)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -513,6 +513,8 @@ flowchart LR
 
 > **Otimização CI Performance (27/12/2025):** Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14 execuções → 1x). Versões Node.js/pnpm calculadas uma vez no job `detect-changes` e passadas via outputs. Jobs que não precisam de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10 minutos por run de CI.
 
+> **Server GPU Optimizations (28/12/2025):** Servidor de produção Hetzner GEX44 otimizado para máxima performance GPU. **Docker daemon:** default-runtime nvidia (GPU como runtime padrão), live-restore true, BuildKit GC 20GB. **NVIDIA:** Persistence Mode ENABLED (GPU sempre ativa, sem cold start), CDI configurado em /etc/cdi/nvidia.yaml (Container Device Interface - best practice 2025), Container Toolkit 1.18.1. **Kernel sysctl:** vm.swappiness=10 (prioriza RAM), vm.dirty_ratio=40 (I/O throughput), kernel.shmmax=64GB (CUDA shared memory), net.core.rmem_max=16MB (buffers rede), fs.file-max=2M. **Hardware:** RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0. Servidor 100% limpo, 1.7TB disponível.
+
 ---
 
 ## 8. Conceitos Transversais
@@ -899,8 +901,8 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 27 de Dezembro de 2025*
-*Versão: 1.7.0 - Otimização CI Performance Enterprise*
+*Data: 28 de Dezembro de 2025*
+*Versão: 1.11.0 - Server GPU Optimizations Enterprise*
 *Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  

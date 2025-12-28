@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025  
-**Versão:** 7.11 - CPX32 Runner Enterprise Hardening
+**Data:** 28 de Dezembro de 2025  
+**Versão:** 7.12 - Server GPU Optimizations Enterprise
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -403,28 +403,44 @@ ufw allow 80/tcp
 ufw allow 443/tcp
 ufw enable
 
-# Configurar Docker daemon.json (Enterprise - 19/12/2025)
+# Configurar Docker daemon.json (Enterprise GPU - 28/12/2025)
+# NOTA: Requer NVIDIA Container Toolkit instalado (apt install nvidia-container-toolkit)
 cat > /etc/docker/daemon.json << 'EOF'
 {
-  "log-driver": "json-file",
-  "log-opts": {
-    "max-size": "50m",
-    "max-file": "5"
+  "default-runtime": "nvidia",
+  "runtimes": {
+    "nvidia": {
+      "args": [],
+      "path": "nvidia-container-runtime"
+    }
   },
   "storage-driver": "overlay2",
   "live-restore": true,
-  "userland-proxy": false,
-  "no-new-privileges": true,
-  "default-ulimits": {
-    "nofile": {
-      "Name": "nofile",
-      "Hard": 65536,
-      "Soft": 65536
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "100m",
+    "max-file": "5"
+  },
+  "max-concurrent-downloads": 10,
+  "max-concurrent-uploads": 10,
+  "builder": {
+    "gc": {
+      "enabled": true,
+      "defaultKeepStorage": "20GB"
     }
+  },
+  "features": {
+    "buildkit": true
   }
 }
 EOF
 systemctl restart docker
+
+# Habilitar NVIDIA Persistence Mode (GPU sempre ativa - sem cold start)
+nvidia-smi -pm 1
+
+# Configurar NVIDIA CDI (Container Device Interface - Best Practice 2025)
+nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 
 # Hardening do kernel (segurança de rede - 19/12/2025)
 cat > /etc/sysctl.d/99-security.conf << 'EOF'
@@ -452,6 +468,36 @@ fs.file-max = 65535
 net.core.somaxconn = 65535
 EOF
 sysctl -p /etc/sysctl.d/99-security.conf
+
+# Otimizações GPU (performance CUDA - 28/12/2025)
+cat > /etc/sysctl.d/99-alice-gpu.conf << 'EOF'
+# Alice Enterprise Platform - GPU Optimizations
+# Ref: NVIDIA Best Practices for Data Center GPUs
+
+# Reduzir swap para priorizar RAM (GPU precisa de RAM rápida)
+vm.swappiness = 10
+
+# Aumentar dirty ratio para melhor throughput de I/O
+vm.dirty_ratio = 40
+vm.dirty_background_ratio = 10
+
+# Aumentar limites de memória compartilhada (para CUDA)
+kernel.shmmax = 68719476736
+kernel.shmall = 4294967296
+
+# Network buffers (para transferência de dados GPU)
+net.core.rmem_max = 16777216
+net.core.wmem_max = 16777216
+net.core.rmem_default = 1048576
+net.core.wmem_default = 1048576
+net.ipv4.tcp_rmem = 4096 1048576 16777216
+net.ipv4.tcp_wmem = 4096 1048576 16777216
+
+# File handles (containers GPU abrem muitos arquivos)
+fs.file-max = 2097152
+fs.inotify.max_user_watches = 524288
+EOF
+sysctl -p /etc/sysctl.d/99-alice-gpu.conf
 
 # Verificar se volume Hetzner está montado
 df -h | grep alice-data
