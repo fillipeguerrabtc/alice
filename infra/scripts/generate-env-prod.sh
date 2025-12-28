@@ -487,6 +487,7 @@ printf 'PGBACKREST_STANZA=alice_prod\n'
   printf 'CLICKHOUSE_DB=%s\n' "${CLICKHOUSE_DB_VALUE}"
   printf 'CLICKHOUSE_MIGRATION_URL=%s\n' "${CLICKHOUSE_MIGRATION_URL_VALUE}"
   printf 'CLICKHOUSE_HTTP_URL=%s\n' "http://clickhouse:8123"
+  printf 'CLICKHOUSE_CLUSTER_ENABLED=false\n'
   printf '\n'
   printf '# SearXNG\n'
   printf 'SEARXNG_SECRET_KEY=%s\n' "${SEARXNG_SECRET_KEY}"
