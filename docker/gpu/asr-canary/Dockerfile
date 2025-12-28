@@ -4,46 +4,51 @@
 # =============================================================================
 # Dockerfile para transcrição de áudio com Canary em GPU RTX 4000 SFF Ada (20GB)
 # 
-# ARQUITETURA NGC (28/12/2025):
-# - Base: nvcr.io/nvidia/nemo:25.04.03 (container oficial NVIDIA - conta gratuita)
-# - NeMo Framework: 25.04.03 com suporte completo ASR
-# - PyTorch: 2.x otimizado pela NVIDIA
-# - CUDA: 12.x com kernels otimizados
+# ARQUITETURA DOCKER HUB (28/12/2025):
+# - Base: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel (Docker Hub - 100% PÚBLICO)
+# - PyTorch: 2.7.1 com CUDA 12.8 e cuDNN 9
+# - NeMo Toolkit: Instalado via pip (nemo_toolkit[asr])
 # - Canary-1B-v2: Suporte multilíngue (25 idiomas, 10x mais rápido)
 # 
-# REQUER: NGC_API_KEY (conta gratuita funciona)
-# Ref: https://docs.nvidia.com/nemo-framework/user-guide/25.04/changelog.html
-# Ref: https://catalog.ngc.nvidia.com/orgs/nvidia/containers/nemo
+# SEM AUTENTICAÇÃO NECESSÁRIA - 100% público
+# Ref: https://hub.docker.com/r/pytorch/pytorch
+# Ref: https://github.com/NVIDIA/NeMo
 # 
 # Autor: Fillipe Guerra
 # Data: 28 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 28/12/2025: Container oficial NVIDIA NGC NeMo (Best Practice 2025)
-# - NeMo Framework, PyTorch, CUDA pré-instalados e otimizados
-# - Canary-1B-v2 pronto para uso (multilíngue, 25 idiomas)
-# - Disponível para conta NGC gratuita (não requer Enterprise)
-# REQUER: NGC_API_KEY no GitHub Secrets (conta individual funciona)
-FROM nvcr.io/nvidia/nemo:25.04.03
+# ENTERPRISE 28/12/2025: PyTorch oficial Docker Hub (100% PÚBLICO)
+# - Sem necessidade de NGC login - imagem pública
+# - NeMo instalado via pip
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
 LABEL maintainer="Fillipe Guerra"
-LABEL description="ASR Canary-1B speech-to-text server (NVIDIA NGC)"
-LABEL version="3.1.0"
+LABEL description="ASR Canary-1B speech-to-text server (Docker Hub)"
+LABEL version="3.2.0"
 
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
 ENV PIP_ROOT_USER_ACTION=ignore
 
+# Instalar dependências do sistema
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libsndfile1 \
+    ffmpeg \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # SECURITY HARDENING: Criar usuário não-root (Best Practice 2025)
-# Consistente com outros serviços GPU
-# Ref: CLAUDE.md "51 containers = 100% com security_opt: no-new-privileges"
 RUN useradd -m -u 1000 asr
 
 WORKDIR /app
 
-# Dependências adicionais para API e métricas (NeMo já está instalado)
+# Instalar NeMo Toolkit e dependências
 # ENTERPRISE 28/12/2025: Versões mais recentes de todas as dependências
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip install --upgrade pip && \
     pip install \
+    nemo_toolkit[asr]==2.2.0 \
     fastapi==0.127.0 \
     uvicorn==0.40.0 \
     python-multipart==0.0.21 \

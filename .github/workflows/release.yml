@@ -199,10 +199,6 @@ jobs:
       contents: read
       packages: write
 
-    # Define NGC_API_KEY como env para usar em condicionais (secrets não podem ser usados diretamente em if)
-    env:
-      NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
-
     steps:
       - name: Checkout código
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
@@ -222,17 +218,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ github.token }}
 
-      # ENTERPRISE 28/12/2025: Login NVIDIA NGC para containers públicos (NeMo, PyTorch)
-      # - nvcr.io/nvidia/nemo: Disponível para conta NGC gratuita ✅
-      # - nvcr.io/nvidia/pytorch: Disponível para conta NGC gratuita ✅
-      # - nvcr.io/nvidia/vllm: Requer Enterprise (usamos vllm/vllm-openai do Docker Hub)
-      # Ref: https://docs.nvidia.com/ngc/ngc-private-registry-user-guide/index.html
-      # NOTA: Usa env.NGC_API_KEY porque secrets não podem ser usados diretamente em if
-      - name: Login no NVIDIA NGC
-        if: env.NGC_API_KEY != ''
-        run: |
-          echo "${{ env.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
-          echo "✅ NVIDIA NGC login successful (conta gratuita)"
+      # NOTA 28/12/2025: Removido login NGC - Personal API Key não funciona para containers públicos
+      # Todos os containers GPU agora usam imagens 100% públicas (Docker Hub + PyPI)
+      # - vLLM: vllm/vllm-openai (Docker Hub)
+      # - NeMo: pytorch/pytorch + nemo_toolkit via pip
+      # - PyTorch: pytorch/pytorch (Docker Hub)
 
       - name: Setup Docker Buildx
         uses: docker/setup-buildx-action@c47758b77c9736f4b2ef4073d4d51994fabfe349

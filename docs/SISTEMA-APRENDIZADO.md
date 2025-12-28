@@ -460,12 +460,12 @@ Acessíveis em `/dashboard/analytics`:
 **Ações realizadas:**
 1. Workflow `release.yml` garante automaticamente 5 imagens GPU (mixtral-vllm, embeddings-gpu, flux-schnell, asr-canary, lora-trainer). Quando não há mudanças no contexto do serviço, o pipeline faz **retag no GHCR** (mesmo digest do release anterior) ao invés de rebuild completo.
 2. Timeout aumentado de 30min para 90min (imagens GPU são muito pesadas)
-3. **ATUALIZAÇÃO 28/12/2025**: Arquitetura Híbrida NGC + Docker Hub (Best Practice 2025) + Dependências Atualizadas:
-   - `vllm/vllm-openai:v0.12.0` (mixtral-vllm - Docker Hub, 100% PÚBLICO, sem autenticação)
-   - `nvcr.io/nvidia/nemo:25.04.03` (asr-canary - NGC, conta gratuita funciona)
-   - `nvcr.io/nvidia/pytorch:25.12-py3` (embeddings, flux, lora-trainer - NGC, conta gratuita funciona)
-   - **NOTA**: Container vLLM do NGC (`nvcr.io/nvidia/vllm`) requer licença NVIDIA AI Enterprise ($4,500/ano). Usamos Docker Hub.
-   - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 1.2.3, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0
+3. **ATUALIZAÇÃO 28/12/2025**: Arquitetura 100% Docker Hub (Best Practice 2025) + Dependências Atualizadas:
+   - `vllm/vllm-openai:v0.12.0` (mixtral-vllm - Docker Hub, 100% PÚBLICO)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + nemo_toolkit pip (asr-canary - Docker Hub, 100% PÚBLICO)
+   - `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` (embeddings, flux, lora-trainer - Docker Hub, 100% PÚBLICO)
+   - **NOTA**: NGC_API_KEY REMOVIDO - Personal API Key não funciona para containers públicos (403 Forbidden). Todos usam Docker Hub.
+   - Dependências Python atualizadas: transformers 4.57.3, sentence-transformers 5.2.0, accelerate 1.12.0, diffusers 0.35.1, open_clip_torch 3.2.0, peft 0.18.0, bitsandbytes 0.49.0, datasets 4.0.0, huggingface_hub 1.2.3, fastapi 0.127.0, uvicorn 0.40.0, pillow 12.0.0, numpy 2.4.0, nemo_toolkit 2.2.0
 4. BuildKit cache mount adicionado para cache persistente de pip
 5. GPU Manager Service gerencia automaticamente todos os serviços GPU (sem secrets externos necessários)
 6. Docker Compose PROFILES para controle granular (gpu-llm, gpu-embeddings, gpu-flux, gpu-asr, gpu-training) - apenas UM profile GPU ativo por vez

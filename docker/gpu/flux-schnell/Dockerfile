@@ -4,25 +4,21 @@
 # =============================================================================
 # Dockerfile para geração de imagens com FLUX.1 Schnell em GPU RTX 4000 SFF Ada (20GB)
 # 
-# ARQUITETURA ENTERPRISE NGC (28/12/2025):
-# - Base: nvcr.io/nvidia/pytorch:25.12-py3 (container oficial NVIDIA - PÚBLICO)
-# - PyTorch: 2.10.0a0 otimizado pela NVIDIA
-# - CUDA: 13.1 com kernels otimizados
-# - TensorRT Model Optimizer incluído
+# ARQUITETURA DOCKER HUB (28/12/2025):
+# - Base: pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel (Docker Hub - 100% PÚBLICO)
+# - PyTorch: 2.7.1 com CUDA 12.8 e cuDNN 9
+# - SEM AUTENTICAÇÃO NECESSÁRIA - 100% público
 # 
-# Performance: Otimizações NVIDIA (cuDNN, NCCL, TensorRT)
-# 
-# Ref: https://docs.nvidia.com/deeplearning/frameworks/pytorch-release-notes/rel-25-12.html
+# Ref: https://hub.docker.com/r/pytorch/pytorch
 # 
 # Autor: Fillipe Guerra
 # Data: 28 de Dezembro de 2025
 # =============================================================================
 
-# ENTERPRISE 27/12/2025: Container oficial NVIDIA NGC PyTorch (PÚBLICO)
-# - PyTorch otimizado pela NVIDIA com TensorRT, Transformer Engine
-# - CUDA 13.0, cuDNN 9, NCCL pré-configurados
-# - Sem necessidade de NGC_API_KEY (container público)
-FROM nvcr.io/nvidia/pytorch:25.12-py3
+# ENTERPRISE 28/12/2025: PyTorch oficial Docker Hub (100% PÚBLICO)
+# - Sem necessidade de NGC login - imagem pública
+# - PyTorch 2.7.1 com CUDA 12.8 e cuDNN 9
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
 LABEL maintainer="Fillipe Guerra"
 LABEL description="FLUX.1 Schnell image generation server (NVIDIA NGC)"

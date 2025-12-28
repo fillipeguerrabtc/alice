@@ -107,33 +107,25 @@ Estes são necessários para o deploy funcionar:
 
 ### FASE 3: GPU Manager Service (Gerenciamento Centralizado de Requisições GPU)
 
-**ARQUITETURA HÍBRIDA NGC + DOCKER HUB (28/12/2025):** Containers otimizados com máxima compatibilidade.
+**ARQUITETURA 100% DOCKER HUB (28/12/2025):** Todos os containers GPU usam imagens públicas - SEM AUTENTICAÇÃO NGC.
 
 | Secret | Onde Obter | Descrição | Obrigatório? |
 |--------|------------|-----------|--------------|
-| `NGC_API_KEY` | [ngc.nvidia.com/setup/api-keys](https://org.ngc.nvidia.com/setup/api-keys) → Generate Personal Key | API Key NVIDIA NGC para containers NeMo e PyTorch (conta gratuita funciona). | ✅ **SIM** |
 | `HUGGINGFACE_TOKEN` | [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) → New token → Read (sem write) | Token de acesso read-only do HuggingFace (obrigatório para download de modelos) | ✅ **SIM** |
 | `GPU_MANAGER_URL` | Opcional (default: `http://alice-gpu-manager:3010`) | URL do GPU Manager Service (usado internamente pelos serviços - não precisa de secret) | ⏳ **Opcional** |
 | `INTERNAL_API_SECRET` | Gerar com `openssl rand -hex 32` | Secret para comunicação segura entre serviços (já configurado na FASE 1) | ✅ **SIM** |
 
-**Containers GPU (28/12/2025):**
+**Containers GPU (28/12/2025) - TODOS 100% PÚBLICOS:**
 
 | Container | Imagem | Origem | Autenticação |
 |-----------|--------|--------|--------------|
-| **mixtral-vllm** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa (100% público) |
-| **asr-canary** | `nvcr.io/nvidia/nemo:25.04.03` | NGC | ✅ NGC_API_KEY (conta gratuita) |
-| **embeddings-gpu** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
-| **flux-schnell** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
-| **lora-trainer** | `nvcr.io/nvidia/pytorch:25.12-py3` | NGC | ✅ NGC_API_KEY (conta gratuita) |
+| **mixtral-vllm** | `vllm/vllm-openai:v0.12.0` | Docker Hub | ❌ Não precisa |
+| **asr-canary** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` + NeMo pip | Docker Hub | ❌ Não precisa |
+| **embeddings-gpu** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
+| **flux-schnell** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
+| **lora-trainer** | `pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel` | Docker Hub | ❌ Não precisa |
 
-**NOTA:** O container vLLM do NGC (`nvcr.io/nvidia/vllm`) requer licença NVIDIA AI Enterprise ($4,500/ano). Usamos a imagem oficial vLLM do Docker Hub que é 100% pública e gratuita.
-
-**Como criar NGC_API_KEY:**
-1. Acesse [ngc.nvidia.com/signup](https://ngc.nvidia.com/signup) (gratuito)
-2. Login → Clique no ícone do usuário → Setup → API Keys
-3. "+ Generate Personal Key" → Nome: `alice-enterprise-gpu` → Expiration: `Never Expire`
-4. Copie a key (só aparece uma vez!)
-5. GitHub → Settings → Secrets → New: `NGC_API_KEY`
+**NOTA:** NGC_API_KEY foi **REMOVIDO** - Personal API Key do NGC não funciona para containers públicos (retorna 403 Forbidden). Todos os containers agora usam Docker Hub que é 100% público e gratuito.
 
 **NOTA:** O GPU Manager Service gerencia automaticamente:
 - Fila priorizada de requisições (chat > trading > embeddings > outros)
