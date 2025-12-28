@@ -3324,8 +3324,8 @@ services:
       - FLUX_GPU_URL=${FLUX_GPU_URL:-http://gpu-flux:8000}
       - ASR_GPU_URL=${ASR_GPU_URL:-http://gpu-asr:8000}
       - NODE_ENV=production
-      # Timeout para healthcheck dos serviços GPU (ms)
-      - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-5000}
+      # Timeout padrão para requisições GPU (ms) - LLM inference pode levar 30-60s+
+      - GPU_SERVICE_TIMEOUT=${GPU_SERVICE_TIMEOUT:-60000}
     ports:
       - "127.0.0.1:3010:3010"  # Apenas localhost
     networks:
