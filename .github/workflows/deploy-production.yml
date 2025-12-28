@@ -146,11 +146,13 @@ jobs:
           echo "🔍 Verificando imagens no GHCR para versão $VERSION..."
           
           # Serviços críticos que DEVEM existir (buildados pelo Release)
+          # CORREÇÃO 28/12/2025: gpu-manager adicionado - alice-chat/rag/training dependem dele
           CRITICAL_SERVICES=(
             "auth"
             "chat"
             "frontend"
             "rag"
+            "gpu-manager"
           )
           
           MISSING=0
