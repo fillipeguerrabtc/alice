@@ -177,7 +177,7 @@ if [ -z "${RESEND_API_KEY}" ]; then
   exit 1
 fi
 
-# Definir variáveis SMTP a partir do Resend
+# Definir variáveis SMTP a partir do Resend (fixas)
 SMTP_HOST_VALUE="smtp.resend.com"
 SMTP_PORT_VALUE="587"
 SMTP_FROM_VALUE="onboarding@resend.dev"
@@ -391,7 +391,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
   printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
   printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
-  printf 'SMTP_PASSWORD=%s\n' "${RESEND_API_KEY:-}"
+printf 'SMTP_PASSWORD=%s\n' "${SMTP_PASSWORD_VALUE}"
   printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
   printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
   printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
@@ -438,6 +438,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '\n'
   printf '# Backup (pgBackRest)\n'
   printf 'BACKUP_CIPHER_PASS=%s\n' "${BACKUP_CIPHER_PASS:-}"
+printf 'PGBACKREST_STANZA=alice_prod\n'
   printf '\n'
   printf '# SSL/TLS\n'
   printf 'ACME_EMAIL=%s\n' "${ACME_EMAIL:-}"

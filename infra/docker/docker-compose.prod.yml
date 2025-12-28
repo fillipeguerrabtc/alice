@@ -2761,43 +2761,18 @@ services:
   # apenas as variáveis necessárias via environment (princípio do mínimo privilégio).
   # ===========================================================================
   alertmanager:
-    # ATUALIZADO 20/12/2025: Alertmanager v0.27.0 - tag versionada (digest removido - incompatível com amd64)
     image: prom/alertmanager:v0.29.0
     platform: linux/amd64
     container_name: alice-alertmanager
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    entrypoint: ["/bin/sh", "-c"]
-    # NOTA: $$ é escape para $ no Docker Compose (evita interpolação de variáveis shell)
-    command: |
-      set -e
-      # Suprimir output do apk para não logar informações desnecessárias
-      apk add --no-cache gettext > /dev/null 2>&1 || (echo "ERRO: Falha ao instalar gettext" >&2 && exit 1)
-      # REGRA 6: Validação explícita de variáveis obrigatórias (fail-fast)
-      # CORREÇÃO 28/12/2025: Validação inline sem loop (evita warnings Docker Compose)
-      # Docker Compose interpreta variáveis em comentários - usar texto literal
-      if [ -z "$${SMTP_HOST}" ] || [ -z "$${SMTP_PORT}" ] || [ -z "$${SMTP_FROM}" ] || [ -z "$${SMTP_USERNAME}" ]; then
-        echo "ERRO: Variáveis SMTP obrigatórias não definidas (SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USERNAME)" >&2
-        exit 1
-      fi
-      if [ -z "$${ALERT_EMAIL}" ] || [ -z "$${CRITICAL_EMAIL}" ] || [ -z "$${ONCALL_EMAIL}" ]; then
-        echo "ERRO: Variáveis de email obrigatórias não definidas (ALERT_EMAIL, CRITICAL_EMAIL, ONCALL_EMAIL)" >&2
-        exit 1
-      fi
-      # Processar template com variáveis (sem logar valores)
-      envsubst '$${SMTP_HOST} $${SMTP_PORT} $${SMTP_FROM} $${SMTP_USERNAME} $${ALERT_EMAIL} $${CRITICAL_EMAIL} $${ONCALL_EMAIL}' < /etc/alertmanager/alertmanager.yml > /tmp/alertmanager.yml || (echo "ERRO: Falha ao processar alertmanager.yml" >&2 && exit 1)
-      exec /bin/alertmanager \
-        --config.file=/tmp/alertmanager.yml \
-        --storage.path=/alertmanager \
-        --web.external-url=https://alertmanager.yesyoudeserve.duckdns.org
     environment:
-      # APENAS variáveis necessárias para o Alertmanager (princípio do mínimo privilégio)
-      # Nenhuma outra variável do .env.prod é carregada, evitando vazamento de secrets
-      SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_FROM: ${SMTP_FROM:-onboarding@resend.dev}
-      SMTP_USERNAME: ${SMTP_USERNAME:-resend}
+      # SMTP Resend (sem domínio verificado): user resend / password = RESEND_API_KEY
+      SMTP_HOST: smtp.resend.com
+      SMTP_PORT: 587
+      SMTP_FROM: onboarding@resend.dev
+      SMTP_USERNAME: resend
       ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
       CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}

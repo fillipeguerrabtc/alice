@@ -15,11 +15,10 @@
 
 global:
   resolve_timeout: 5m
-  # REGRA 6: envsubst não suporta ${VAR:-default} - usar apenas ${VAR}
-  # Variáveis devem estar definidas no .env.prod ou ter defaults no environment: do docker-compose
-  smtp_smarthost: '${SMTP_HOST}:${SMTP_PORT}'
-  smtp_from: '${SMTP_FROM}'
-  smtp_auth_username: '${SMTP_USERNAME}'
+  # SMTP Resend - username fixo "resend", password vem de /run/secrets/smtp_password (API Key)
+  smtp_smarthost: 'smtp.resend.com:587'
+  smtp_from: 'onboarding@resend.dev'
+  smtp_auth_username: 'resend'
   smtp_auth_password_file: /run/secrets/smtp_password
   smtp_require_tls: true
 

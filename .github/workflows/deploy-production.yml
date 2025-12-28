@@ -609,6 +609,17 @@ jobs:
               "ERPNEXT_MYSQL_ROOT_PASSWORD"
               "ERPNEXT_DB_PASSWORD"
               "HUGGINGFACE_TOKEN"
+              # Langfuse (web/worker) - evitar container unhealthy por env faltante
+              "LANGFUSE_SECRET_KEY"
+              "LANGFUSE_NEXT_AUTH_SECRET"
+              "LANGFUSE_SALT"
+              "LANGFUSE_ENCRYPTION_KEY"
+              "LANGFUSE_DB_USER"
+              "LANGFUSE_DB_PASSWORD"
+              "LANGFUSE_DB_NAME"
+              "CLICKHOUSE_USER"
+              # Alertmanager (Resend)
+              "RESEND_API_KEY"
             )
             for key in "${REQUIRED_KEYS[@]}"; do
               if ! grep -q "^${key}=" "$ENV_FILE"; then
@@ -764,6 +775,21 @@ jobs:
               echo ""
               echo "🧾 Logs do Redis (últimas 200 linhas):"
               docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
+              echo ""
+              echo "🧾 Logs do alertmanager (últimas 200 linhas):"
+              docker logs --tail=200 alice-alertmanager || true
+              echo ""
+              echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
+              docker logs --tail=200 alice-pgbackrest || true
+              echo ""
+              echo "🧾 Logs do jaeger (últimas 200 linhas):"
+              docker logs --tail=200 jaeger || true
+              echo ""
+              echo "🧾 Logs do langfuse (últimas 200 linhas):"
+              docker logs --tail=200 langfuse || true
+              echo ""
+              echo "🧾 Logs do langfuse-worker (últimas 200 linhas):"
+              docker logs --tail=200 langfuse-worker || true
               exit 1
             fi
             
