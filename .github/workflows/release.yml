@@ -222,9 +222,11 @@ jobs:
       # Containers privados oferecem +10-15% performance vs públicos
       # Ref: https://ngc.nvidia.com/signin
       - name: Login no NVIDIA NGC
-        if: ${{ secrets.NGC_API_KEY != '' }}
+        if: env.NGC_API_KEY != ''
+        env:
+          NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
         run: |
-          echo "${{ secrets.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          echo "$NGC_API_KEY" | docker login nvcr.io -u '$oauthtoken' --password-stdin
           echo "✅ NVIDIA NGC login successful"
 
       - name: Setup Docker Buildx
