@@ -988,14 +988,39 @@ jobs:
               # CORREÇÃO 29/12/2025: Volume montado como ro (read-only) - pnpm install usa cache externo
               echo "   Construindo DATABASE_URL e executando drizzle-kit push..."
               
-              # Criar diretórios necessários para cache e node_modules temporário
-              # Limpar node_modules temporário de execuções anteriores (se existir)
-              rm -rf /tmp/drizzle-node-modules
-              mkdir -p /tmp/pnpm-store /tmp/drizzle-node-modules
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Copiar código para volume temporário rw
+              # =================================================================
+              # PROBLEMA: pnpm em modo isolated (padrão) cria node_modules em cada
+              # workspace package (packages/config/, packages/database/, etc.)
+              # Volume /app:ro (read-only) impede criação desses diretórios, causando
+              # erro EROFS: read-only file system durante pnpm install
+              #
+              # SOLUÇÃO: Copiar código completo para volume temporário rw antes de
+              # executar container. Isso permite que pnpm crie todos os node_modules
+              # necessários sem modificar código original
+              # =================================================================
+              echo "   Preparando ambiente temporário para drizzle-kit push..."
               
-              # CORREÇÃO 29/12/2025: pnpm install precisa escrever em node_modules
-              # Solução: Usar volume temporário para node_modules (mais seguro que montar /app como rw)
-              # Volume /tmp/drizzle-node-modules é criado vazio e usado apenas para esta execução
+              # Limpar volumes temporários de execuções anteriores
+              rm -rf /tmp/drizzle-app /tmp/pnpm-store
+              mkdir -p /tmp/pnpm-store
+              
+              # Copiar código completo para volume temporário rw
+              # Usar cp -a para cópia recursiva (preserva permissões, mais portável que rsync)
+              # Excluir diretórios grandes desnecessários para economizar espaço e tempo
+              echo "   Copiando código para volume temporário..."
+              mkdir -p /tmp/drizzle-app
+              cp -a /opt/alice/app/. /tmp/drizzle-app/ 2>/dev/null || {
+                # Fallback: usar find + cp se cp -a falhar (edge cases de permissões)
+                (cd /opt/alice/app && find . -mindepth 1 -maxdepth 1 ! -name 'node_modules' ! -name '.git' ! -name 'dist' -exec cp -a {} /tmp/drizzle-app/ \;)
+              }
+              
+              # Remover diretórios grandes desnecessários para economizar espaço
+              rm -rf /tmp/drizzle-app/node_modules /tmp/drizzle-app/.git /tmp/drizzle-app/dist 2>/dev/null || true
+              
+              echo "   ✅ Código copiado para /tmp/drizzle-app (volume rw)"
+              
               # =================================================================
               # CORREÇÃO CRÍTICA 29/12/2025: Timeout wrapper de 300s (5 min)
               # =================================================================
@@ -1018,8 +1043,7 @@ jobs:
                 --network alice-network \
                 -e DATABASE_URL="${DATABASE_URL}" \
                 -e NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true \
-                -v /opt/alice/app:/app:ro \
-                -v /tmp/drizzle-node-modules:/app/node_modules:rw \
+                -v /tmp/drizzle-app:/app:rw \
                 -v /tmp/pnpm-store:/root/.pnpm-store:rw \
                 -w /app \
                 node:22-bookworm-slim \
@@ -1052,6 +1076,8 @@ jobs:
                 echo "   - Schema Drizzle ORM muito complexo (muitas tabelas, demora > 5 min)"
                 echo "   - Problemas de rede entre container e PostgreSQL"
                 echo "   - Deadlock ou lock no PostgreSQL"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
                 exit 1
               elif [ "$DRIZZLE_EXIT_CODE" -ne 0 ]; then
                 echo "❌ ERRO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
@@ -1061,6 +1087,8 @@ jobs:
                 echo "   - PostgreSQL não está pronto (aguardar mais tempo)"
                 echo "   - Schema Drizzle ORM tem erros de sintaxe"
                 echo "   - Permissões insuficientes no database"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
                 exit 1
               fi
               
@@ -1071,10 +1099,17 @@ jobs:
               if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
                 echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
                 echo "   Verificar: Schema Drizzle ORM em packages/shared/src/schema.ts"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
                 exit 1
               fi
               
               echo "✅ Schema criado: $TABLE_COUNT_AFTER tabelas criadas pelo drizzle-kit push"
+              
+              # Limpar volume temporário após sucesso (economiza espaço em disco)
+              echo "   Limpando volume temporário..."
+              rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+              echo "   ✅ Limpeza concluída"
             else
               echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
             fi

@@ -1470,6 +1470,13 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Hostname corrigido de `postgres` para `alice-postgres` no DATABASE_URL
 
+**Problema 6: Volume read-only impede criação de node_modules em workspace packages**
+- **Erro:** `pnpm install --frozen-lockfile` falhava com `EROFS: read-only file system` ao tentar criar `node_modules` em workspace packages (`packages/config/`, `packages/database/`, etc.)
+- **Causa Raiz:** pnpm em modo `isolated` (padrão quando não especificado `node-linker`) cria `node_modules` em cada workspace package. Volume `/app:ro` (read-only) impede criação desses diretórios durante `pnpm install`, causando falha silenciosa na criação do schema
+- **Solução:** Copiar código completo para volume temporário rw (`/tmp/drizzle-app`) antes de executar container. Agora pnpm pode criar todos os `node_modules` necessários (raiz e packages) sem modificar código original. Limpeza automática do volume temporário após sucesso ou erro
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Cópia de código para volume temporário rw, montagem `/tmp/drizzle-app:/app:rw`, limpeza automática
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
