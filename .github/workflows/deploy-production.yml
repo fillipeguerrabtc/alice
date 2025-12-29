@@ -905,9 +905,24 @@ jobs:
               
               # Construir DATABASE_URL com URL-encoding (RFC 3986)
               # CORREÇÃO 23/12/2025: Suporta senhas com caracteres especiais
-              PG_USER="${POSTGRES_USER:-alice}"
-              PG_PASS="${POSTGRES_PASSWORD}"
-              PG_DB="${POSTGRES_DB:-alice_prod}"
+              # CORREÇÃO CRÍTICA 29/12/2025: Extrair valores do .env.prod (não variáveis shell)
+              # PROBLEMA: POSTGRES_PASSWORD, POSTGRES_USER, POSTGRES_DB não são variáveis shell
+              # O .env.prod é usado apenas via docker compose --env-file, nunca é sourced
+              # PG_PASS ficava vazio, causando DATABASE_URL com senha vazia e falha de autenticação
+              #
+              # SOLUÇÃO: Extrair valores do .env.prod usando grep + cut (mesmo padrão usado
+              # em outras partes do script para LANGFUSE_DB_PASSWORD, RESEND_API_KEY, etc.)
+              ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
+              PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
+              PG_PASS=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
+              PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
+              
+              # Validação fail-fast: senha não pode estar vazia
+              if [ -z "$PG_PASS" ]; then
+                echo "❌ ERRO: POSTGRES_PASSWORD não encontrado ou vazio no .env.prod"
+                echo "   Ação necessária: Verificar se POSTGRES_PASSWORD está definido em $ENV_FILE"
+                exit 1
+              fi
               
               # Função urlencode (RFC 3986 compliant)
               # CORREÇÃO 29/12/2025: Conversão de caractere para hex em dois passos

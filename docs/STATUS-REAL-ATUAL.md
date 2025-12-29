@@ -1484,6 +1484,13 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Adicionada flag `-d postgres` ao comando de verificação de database
 
+**Problema 8: Variáveis PostgreSQL extraídas incorretamente do .env.prod**
+- **Erro:** `drizzle-kit push` falhava com erro de autenticação durante primeiro deploy quando schema creation era necessário
+- **Causa Raiz:** Variáveis `PG_USER`, `PG_PASS`, `PG_DB` eram atribuídas de `${POSTGRES_USER}`, `${POSTGRES_PASSWORD}`, `${POSTGRES_DB}`, mas essas não são variáveis shell. O arquivo `.env.prod` é usado apenas via `docker compose --env-file` e nunca é sourced no shell. `PG_PASS` ficava vazio, causando `DATABASE_URL` com senha vazia e falha de autenticação
+- **Solução:** Extrair valores do `.env.prod` usando `grep + cut` (mesmo padrão usado em outras partes do script para `LANGFUSE_DB_PASSWORD`, `RESEND_API_KEY`, etc.). Adicionada validação fail-fast para garantir que `POSTGRES_PASSWORD` não está vazio antes de construir `DATABASE_URL`
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Extração de valores do `.env.prod` usando `grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2-`, validação fail-fast de senha
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
