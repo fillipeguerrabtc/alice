@@ -1053,44 +1053,75 @@ jobs:
             done
             
             if [ -z "$PREVIOUS_SHA" ]; then
-              echo "⚠️ Nenhuma versão anterior encontrada"
-              echo "🧹 Limpando ambiente COMPLETO (sem dados de produção)..."
+              echo "=============================================="
+              echo "⚠️  NENHUM DEPLOY COM SUCESSO ANTERIOR"
+              echo "=============================================="
+              echo "🧹 Executando LIMPEZA TOTAL do ambiente..."
+              echo ""
               
-              # Remover TODOS os containers restantes que possam ter ficado
+              # =================================================================
+              # CORREÇÃO 29/12/2025: Limpeza AGRESSIVA quando não há deploy OK
+              # Deploy nunca funcionou = TUDO é lixo e deve ser removido
+              # =================================================================
+              
+              # PASSO 1: Parar e remover TODOS os containers (sem exceção)
+              echo "📦 Removendo TODOS os containers..."
               docker ps -aq | xargs -r docker stop 2>/dev/null || true
               docker ps -aq | xargs -r docker rm -f 2>/dev/null || true
+              CONTAINERS_REMOVED=$(docker ps -aq | wc -l)
+              echo "   Containers restantes: $CONTAINERS_REMOVED"
               
-              # Remover networks do projeto
+              # PASSO 2: Remover TODAS as networks customizadas
+              echo "🌐 Removendo networks customizadas..."
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
+              # Remover qualquer outra network customizada (exceto bridge, host, none)
+              docker network ls --format '{{.Name}}' | grep -vE '^(bridge|host|none)$' | xargs -r docker network rm 2>/dev/null || true
               
-              # CORREÇÃO 28/12/2025: Remover TODOS volumes nomeados do projeto
-              # docker volume prune só remove anônimos, não nomeados
-              for vol in $(docker volume ls -q | grep -E "^(alice-|erpnext-)"); do
-                docker volume rm -f "$vol" 2>/dev/null || true
-              done
-              
-              # Remover volumes órfãos restantes
+              # PASSO 3: Remover TODOS os volumes (nomeados e anônimos)
+              echo "💾 Removendo TODOS os volumes..."
+              docker volume ls -q | xargs -r docker volume rm -f 2>/dev/null || true
               docker volume prune -f 2>/dev/null || true
+              VOLUMES_REMAINING=$(docker volume ls -q | wc -l)
+              echo "   Volumes restantes: $VOLUMES_REMAINING"
               
-              # Limpar imagens não utilizadas
+              # PASSO 4: Remover TODAS as imagens (não apenas dangling)
+              # CRÍTICO: docker image prune -af NÃO remove imagens taggeadas recentes
+              echo "🖼️  Removendo TODAS as imagens Docker..."
+              docker images -aq | xargs -r docker rmi -f 2>/dev/null || true
               docker image prune -af 2>/dev/null || true
+              IMAGES_REMAINING=$(docker images -q | wc -l)
+              echo "   Imagens restantes: $IMAGES_REMAINING"
               
-              # Limpar sistema completo
+              # PASSO 5: Limpar build cache
+              echo "🔧 Limpando build cache..."
+              docker builder prune -af 2>/dev/null || true
+              
+              # PASSO 6: Limpar sistema completo (redundante mas garante limpeza total)
+              echo "🧽 Executando docker system prune completo..."
               docker system prune -af --volumes 2>/dev/null || true
               
-              # CORREÇÃO 28/12/2025: Limpar dados residuais de deploys falhados
-              # Sem versão anterior = deploy nunca funcionou = todos dados são lixo
-              echo "🗑️ Removendo dados residuais de /opt/alice..."
+              # PASSO 7: Limpar dados residuais no filesystem
+              echo "🗑️  Removendo dados residuais de /opt/alice..."
               rm -rf /opt/alice/data/* 2>/dev/null || true
               rm -rf /opt/alice/logs/* 2>/dev/null || true
               rm -rf /opt/alice/backups/postgresql/* 2>/dev/null || true
               rm -rf /opt/alice/backups/mariadb/* 2>/dev/null || true
               rm -rf /opt/alice/backups/redis/* 2>/dev/null || true
-              # NÃO remover /opt/alice/app (código fonte) nem /opt/alice/secrets (chaves)
+              # NÃO remover:
+              # - /opt/alice/app (código fonte - necessário para próximo deploy)
+              # - /opt/alice/secrets (chaves - criadas pelo workflow)
               
-              echo "✅ Ambiente limpo - pronto para novo deploy"
-              echo "ℹ️ Execute novo deploy para provisionar o sistema"
+              # PASSO 8: Mostrar status final
+              echo ""
+              echo "=============================================="
+              echo "📊 STATUS FINAL APÓS LIMPEZA:"
+              echo "=============================================="
+              docker system df
+              echo ""
+              echo "✅ Ambiente COMPLETAMENTE limpo"
+              echo "ℹ️  Servidor pronto para primeiro deploy"
+              echo "=============================================="
               exit 0
             fi
             

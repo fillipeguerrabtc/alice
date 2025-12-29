@@ -495,7 +495,8 @@ services:
     restart: always
     security_opt:
       - no-new-privileges:true
-    read_only: true
+    # CORREÇÃO 29/12/2025: Removido read_only para permitir criação de pg_log
+    # PostgreSQL precisa escrever logs em pg_log/ (configurado em postgresql.conf)
     tmpfs:
       - /tmp:mode=1777,size=64M
       - /var/run/postgresql:mode=1777,size=8M
@@ -508,6 +509,14 @@ services:
       PGDATA: /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # CORREÇÃO 29/12/2025: Configuração customizada do PostgreSQL
+      # Inclui wal_level=replica para backups consistentes
+      - ../docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+    # CORREÇÃO 29/12/2025: Usar configuração customizada
+    command: 
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
     networks:
       - alice-network
     healthcheck:
@@ -515,9 +524,9 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      # CORREÇÃO 22/12/2025: Aumentado start_period de 30s para 60s
-      # No primeiro deploy, PostgreSQL precisa inicializar o diretório de dados
-      start_period: 60s
+      # CORREÇÃO 29/12/2025: Aumentado start_period para 90s
+      # Primeiro deploy: PostgreSQL precisa inicializar PGDATA + carregar config
+      start_period: 90s
     deploy:
       resources:
         limits:
@@ -1296,11 +1305,15 @@ services:
     networks:
       - erpnext-network
     healthcheck:
+      # CORREÇÃO 29/12/2025: Healthcheck mais robusto
+      # mysqladmin ping verifica se servidor aceita conexões
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${ERPNEXT_MYSQL_ROOT_PASSWORD}"]
       interval: 15s
       timeout: 10s
       retries: 10
-      start_period: 60s
+      # CORREÇÃO 29/12/2025: Aumentado start_period de 60s para 120s
+      # Primeira inicialização do MariaDB pode demorar mais (criação de tablespace)
+      start_period: 120s
     deploy:
       resources:
         limits:

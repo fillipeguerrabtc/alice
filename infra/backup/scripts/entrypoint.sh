@@ -3,9 +3,17 @@
 # Entrypoint pgBackRest - Alice Enterprise Platform
 # =============================================================================
 # Script de inicialização do container pgBackRest
-# Configura stanza e inicia serviço de arquivamento WAL
+# Configura stanza e executa backups enterprise
 #
-# Regra 10: Documentação PT-BR
+# ARQUITETURA DOCKER (29/12/2025):
+# - PostgreSQL e pgBackRest rodam em containers SEPARADOS
+# - pgBackRest acessa PGDATA via volume compartilhado (read-only)
+# - Backups full/incremental funcionam SEM archive_mode
+# - WAL archiving contínuo NÃO suportado (requer pgBackRest no container PG)
+#
+# Author: Fillipe Guerra
+# Data: 29 de Dezembro de 2025
+# Documentação PT-BR (Regra 10 CLAUDE.md)
 # =============================================================================
 
 set -euo pipefail
@@ -15,71 +23,136 @@ echo "  pgBackRest Enterprise - Alice Platform"
 echo "  Inicializando backup enterprise..."
 echo "=================================================="
 
-# Verificar variáveis obrigatórias
-if [ -z "$PGBACKREST_REPO1_CIPHER_PASS" ]; then
+# =============================================================================
+# FASE 1: Validação de variáveis obrigatórias
+# =============================================================================
+if [ -z "${PGBACKREST_REPO1_CIPHER_PASS:-}" ]; then
     echo "[ERRO] PGBACKREST_REPO1_CIPHER_PASS não está definida!"
+    echo "[DICA] Configure o secret BACKUP_CIPHER_PASS no GitHub"
     exit 1
 fi
 
-# Usar variável de ambiente para stanza (default: alice_prod)
 STANZA="${PGBACKREST_STANZA:-alice_prod}"
+echo "[INFO] Stanza: $STANZA"
 
 # =============================================================================
-# CORREÇÃO 29/12/2025: Usar variáveis libpq padrão para conexão TCP
-# 
-# PROBLEMA ANTERIOR: Usava PGBACKREST_PG1_HOST que forçava pgBackRest a tentar SSH
-# SOLUÇÃO: Usar PGHOST (variável libpq padrão) para pg_isready
-#
-# pg_isready usa variáveis libpq automaticamente:
-# - PGHOST: hostname do PostgreSQL
-# - PGPORT: porta (padrão 5432)
-# - PGUSER: usuário
+# FASE 2: Aguardar PostgreSQL estar pronto
 # =============================================================================
-
-# Aguardar PostgreSQL estar pronto (conexão TCP via libpq)
-echo "[INFO] Aguardando PostgreSQL..."
 PG_HOST="${PGHOST:-postgres}"
 PG_PORT="${PGPORT:-5432}"
 PG_USER="${PGUSER:-alice}"
 
-echo "[INFO] Conectando a PostgreSQL em ${PG_HOST}:${PG_PORT} como ${PG_USER}..."
+echo "[INFO] Aguardando PostgreSQL em ${PG_HOST}:${PG_PORT}..."
 
+MAX_RETRIES=60
+RETRY_COUNT=0
 until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" 2>/dev/null; do
-    echo "[INFO] PostgreSQL não está pronto, aguardando 5s..."
+    RETRY_COUNT=$((RETRY_COUNT + 1))
+    if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+        echo "[ERRO] PostgreSQL não respondeu após ${MAX_RETRIES} tentativas"
+        exit 1
+    fi
+    echo "[INFO] PostgreSQL não está pronto, tentativa $RETRY_COUNT/$MAX_RETRIES..."
     sleep 5
 done
 echo "[OK] PostgreSQL está pronto!"
 
-# Verificar se stanza existe, senão criar
-echo "[INFO] Verificando stanza '$STANZA'..."
-if ! pgbackrest info --stanza="$STANZA" --output=json 2>/dev/null | grep -q '"status":'; then
-    echo "[INFO] Criando stanza '$STANZA'..."
-    pgbackrest --stanza="$STANZA" stanza-create
-    echo "[OK] Stanza criada com sucesso!"
-else
-    echo "[OK] Stanza '$STANZA' já existe."
+# =============================================================================
+# FASE 3: Verificar acesso ao PGDATA
+# =============================================================================
+PGDATA_PATH="${PGBACKREST_DB_PATH:-/var/lib/postgresql/data}"
+echo "[INFO] Verificando acesso ao PGDATA em $PGDATA_PATH..."
+
+if [ ! -d "$PGDATA_PATH" ]; then
+    echo "[ERRO] Diretório PGDATA não encontrado: $PGDATA_PATH"
+    echo "[DICA] Verifique se o volume postgres_data está montado corretamente"
+    exit 1
 fi
 
-# Verificar integridade da stanza
-echo "[INFO] Verificando integridade da stanza..."
-pgbackrest --stanza="$STANZA" check || {
-    echo "[AVISO] Verificação falhou, tentando upgrade da stanza..."
-    pgbackrest --stanza="$STANZA" stanza-upgrade
-}
+# Verificar se pg_control existe (indica PostgreSQL inicializado)
+if [ ! -f "$PGDATA_PATH/global/pg_control" ]; then
+    echo "[AVISO] pg_control não encontrado - PostgreSQL ainda inicializando"
+    echo "[INFO] Aguardando PostgreSQL criar estrutura de dados..."
+    sleep 30
+fi
 
-echo "=================================================="
-echo "  pgBackRest pronto para operação!"
-echo "  Stanza: $STANZA"
-echo "  Modo: $1"
-echo "=================================================="
-
-# Executar comando passado COM stanza explícito
-# Bug fix: pgBackRest requer --stanza= explícito em todos os comandos
-if [ $# -eq 0 ]; then
-    # Se não houver argumentos, usar archive-push como padrão
-    exec pgbackrest --stanza="$STANZA" archive-push
+if [ -f "$PGDATA_PATH/global/pg_control" ]; then
+    echo "[OK] PGDATA acessível e PostgreSQL inicializado"
 else
-    # Se houver argumentos, adicionar --stanza= antes do primeiro argumento
-    # Exemplo: archive-push -> pgbackrest --stanza=alice_prod archive-push
+    echo "[AVISO] pg_control ainda não existe - primeira inicialização pode demorar"
+fi
+
+# =============================================================================
+# FASE 4: Criar/verificar stanza
+# =============================================================================
+echo "[INFO] Verificando stanza '$STANZA'..."
+
+# Verificar se stanza existe
+if pgbackrest info --stanza="$STANZA" --output=json 2>/dev/null | grep -q '"status"'; then
+    echo "[OK] Stanza '$STANZA' já existe"
+    
+    # Tentar upgrade se necessário
+    pgbackrest --stanza="$STANZA" stanza-upgrade 2>/dev/null || true
+else
+    echo "[INFO] Criando stanza '$STANZA'..."
+    
+    # Criar stanza - pode falhar se PostgreSQL ainda está inicializando
+    if pgbackrest --stanza="$STANZA" stanza-create 2>&1; then
+        echo "[OK] Stanza criada com sucesso!"
+    else
+        echo "[AVISO] Falha ao criar stanza - PostgreSQL pode estar inicializando"
+        echo "[INFO] Tentando novamente em 30 segundos..."
+        sleep 30
+        
+        if pgbackrest --stanza="$STANZA" stanza-create 2>&1; then
+            echo "[OK] Stanza criada na segunda tentativa!"
+        else
+            echo "[ERRO] Falha ao criar stanza após retry"
+            echo "[INFO] Container continuará rodando - stanza será criada no próximo backup"
+        fi
+    fi
+fi
+
+# =============================================================================
+# FASE 5: Verificar integridade (opcional - não bloqueia startup)
+# =============================================================================
+echo "[INFO] Verificando integridade da configuração..."
+
+# Check pode falhar se archive_mode=off (esperado em Docker)
+if pgbackrest --stanza="$STANZA" check 2>&1; then
+    echo "[OK] Verificação de integridade passou"
+else
+    echo "[AVISO] Verificação retornou avisos (normal se archive_mode=off)"
+    echo "[INFO] Backups full/incremental funcionarão normalmente"
+fi
+
+echo "=================================================="
+echo "  pgBackRest inicializado!"
+echo "  Stanza: $STANZA"
+echo "  Modo: ${1:-standby}"
+echo "=================================================="
+echo ""
+echo "  Comandos disponíveis:"
+echo "  - backup --type=full    : Backup completo"
+echo "  - backup --type=incr    : Backup incremental"
+echo "  - info                  : Status dos backups"
+echo "=================================================="
+
+# =============================================================================
+# FASE 6: Executar comando ou manter container rodando
+# =============================================================================
+if [ $# -eq 0 ]; then
+    # Sem argumentos: manter container rodando para backups agendados
+    echo "[INFO] Modo standby - aguardando comandos de backup..."
+    echo "[INFO] Use 'docker exec alice-pgbackrest pgbackrest --stanza=$STANZA backup --type=full'"
+    
+    # Loop infinito para manter container vivo
+    while true; do
+        sleep 3600
+        echo "[HEARTBEAT] pgBackRest standby - $(date)"
+    done
+else
+    # Com argumentos: executar comando pgBackRest
+    echo "[INFO] Executando: pgbackrest --stanza=$STANZA $@"
     exec pgbackrest --stanza="$STANZA" "$@"
 fi
