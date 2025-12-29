@@ -480,14 +480,11 @@ jobs:
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
             
-            // NOTA: ref deve ser 'main' (branch) ao invés da tag version
-            // O GitHub busca o workflow no ref especificado, e tags antigas
-            // podem não ter o workflow_dispatch trigger no deploy-production.yml
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'deploy-production.yml',
-              ref: 'main',
+              ref: version,
               inputs: {
                 version: version,
                 services: 'all',
