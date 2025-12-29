@@ -190,4 +190,4 @@ O ERPNext será integrado com:
 *Autor: Fillipe Guerra*  
 *Documentação em Português Brasileiro*  
 *Atualizado: 27 de Dezembro de 2025*  
-*Total de Containers: 51 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*

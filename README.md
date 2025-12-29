@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 29 de Dezembro de 2025
-**Versão:** 4.39
+**Versão:** 4.46
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.38-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.46-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -94,33 +94,35 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 51 Containers em Produção
+### Arquitetura de Microsserviços - 50 Containers em Produção
 
-A plataforma Alice é composta por **50 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
+A plataforma Alice é composta por **50 containers** organizados em 6 categorias (todos rodando no servidor Hetzner GPU único):
 
-#### Categoria 1: Infraestrutura Core (7 serviços)
+#### Categoria 1: Infraestrutura Core (8 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 1 | Docker Socket Proxy | `dockerproxy` | Proxy seguro para API Docker |
-| 2 | Traefik Init | `traefik-init` | Inicializador de certificados SSL |
-| 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
-| 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
-| 5 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
-| 6 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
-| 7 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
+| 1 | Tor Proxy | `alice-tor` | Proxy SOCKS5 para engines .onion (SearXNG) |
+| 2 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
+| 3 | Docker Socket Proxy | `alice-dockerproxy` | Proxy seguro para API Docker |
+| 4 | Traefik Init | `alice-traefik-init` | Inicializador de certificados SSL |
+| 5 | API Gateway | `alice-traefik` | Gateway com SSL automático (Let's Encrypt) |
+| 6 | PostgreSQL | `alice-postgres` | Banco principal com pgvector e RLS |
+| 7 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
+| 8 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
 
-#### Categoria 2: Microsserviços Alice (7 serviços)
+#### Categoria 2: Microsserviços Alice (8 serviços)
 
 | # | Serviço | Container | Porta | Descrição |
 |---|---------|-----------|-------|-----------|
-| 8 | Frontend | `alice-frontend` | 5000 | React 19.2.3 + Vite 7.3 + shadcn/ui |
-| 9 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
-| 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM via GPU Manager |
-| 11 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
-| 12 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
-| 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend, KuCoin Futures |
-| 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
+| 9 | Frontend | `alice-frontend` | 5000 | React 19.2.3 + Vite 7.3 + shadcn/ui |
+| 10 | Auth Service | `alice-auth` | 3001 | OAuth 2.0, SAML 2.0, RBAC 6 níveis |
+| 11 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM via GPU Manager |
+| 12 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
+| 13 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
+| 14 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend, KuCoin Futures |
+| 15 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
+| 16 | GPU Manager | `alice-gpu-manager` | 3010 | Gerenciamento centralizado GPU (fila, VRAM, circuit breakers) |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
 
@@ -128,55 +130,55 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 15 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
-| 16 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
-| 17 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
-| 18 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
-| 19 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
-| 20 | Backend | `erpnext-backend` | Backend Python Frappe |
-| 21 | Frontend | `erpnext-frontend` | Frontend NGINX |
-| 22 | WebSocket | `erpnext-websocket` | Socket.io real-time |
-| 23 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
-| 24 | Worker Default 1 | `erpnext-worker-default` | Jobs normais (instância 1) |
-| 25 | Worker Short 1 | `erpnext-worker-short` | Jobs rápidos (instância 1) |
-| 26 | Worker Long 1 | `erpnext-worker-long` | Jobs longos (instância 1) |
-| 27 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
-| 28 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
-| 29 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
+| 17 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
+| 18 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
+| 19 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
+| 20 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
+| 21 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
+| 22 | Backend | `erpnext-backend` | Backend Python Frappe |
+| 23 | Frontend | `erpnext-frontend` | Frontend NGINX |
+| 24 | WebSocket | `erpnext-websocket` | Socket.io real-time |
+| 25 | Scheduler | `erpnext-scheduler` | Tarefas periódicas |
+| 26 | Worker Default 1 | `erpnext-worker-default` | Jobs normais (instância 1) |
+| 27 | Worker Short 1 | `erpnext-worker-short` | Jobs rápidos (instância 1) |
+| 28 | Worker Long 1 | `erpnext-worker-long` | Jobs longos (instância 1) |
+| 29 | Worker Default 2 | `erpnext-worker-default-2` | Jobs normais (instância 2) |
+| 30 | Worker Short 2 | `erpnext-worker-short-2` | Jobs rápidos (instância 2) |
+| 31 | Worker Long 2 | `erpnext-worker-long-2` | Jobs longos (instância 2) |
 
 #### Categoria 4: Observability Stack (13 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 30 | Langfuse Web | `langfuse` | LLM observability e analytics |
-| 31 | Langfuse Worker | `langfuse-worker` | Processamento assíncrono (migrations/jobs) |
-| 32 | Langfuse DB | `alice-langfuse-db` | PostgreSQL dedicado Langfuse |
-| 33 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
-| 34 | Grafana | `grafana` | Dashboards e visualizações |
-| 35 | Loki | `loki` | Agregação e armazenamento de logs |
-| 36 | Promtail | `promtail` | Coleta de logs do host |
-| 37 | Jaeger | `jaeger` | Distributed tracing |
-| 38 | Vector | `alice-vector` | Agregação de logs → Loki |
-| 39 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
-| 40 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
-| 41 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
-| 42 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+| 32 | ClickHouse | `alice-clickhouse` | OLAP database para Langfuse analytics |
+| 33 | Langfuse Web | `langfuse` | LLM observability e analytics |
+| 34 | Langfuse DB | `alice-langfuse-db` | PostgreSQL dedicado Langfuse |
+| 35 | Prometheus | `prometheus` | Coleta e armazenamento de métricas |
+| 36 | Grafana | `grafana` | Dashboards e visualizações |
+| 37 | Loki | `loki` | Agregação e armazenamento de logs |
+| 38 | Promtail | `promtail` | Coleta de logs do host |
+| 39 | Jaeger | `jaeger` | Distributed tracing |
+| 40 | Vector | `alice-vector` | Agregação de logs → Loki |
+| 41 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
+| 42 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
+| 43 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
+| 44 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
 
-#### Categoria 5: GPU Services (5 serviços)
+#### Categoria 5: GPU Services (5 serviços Python)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 43 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
-| 44 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
-| 45 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
-| 46 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
-| 47 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 45 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
+| 46 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 47 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
+| 48 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 49 | GPU Trainer | `gpu-trainer` | Fine-tuning LoRA para customização do modelo |
 
 #### Categoria 6: Backup (1 serviço)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 48 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
+| 50 | pgBackRest | `alice-pgbackrest` | Backup enterprise PostgreSQL (PITR, WAL, AES-256) |
 
 ---
 
@@ -186,7 +188,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 
 - Node.js 22 LTS
 - PostgreSQL 16+ com pgvector
-- pnpm 10.26.1+
+- pnpm 10.26.2+
 - Docker (para produção)
 
 ### Desenvolvimento (Cursor IDE)
@@ -243,12 +245,12 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner GPU (50 containers: 8 infra + 7 Alice + 15 ERPNext + 13 obs + 6 GPU + 1 backup)
+   ├── Deploy Hetzner GPU (50 containers: 8 infra + 8 Alice + 15 ERPNext + 13 obs + 5 GPU + 1 backup)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
-**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
+**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
 
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
@@ -364,7 +366,7 @@ alice/
 
 ### Backend
 - Node.js 22 LTS (versão automática via API + fallback .nvmrc), Express 5.2
-- TypeScript 5.9.3, pnpm 10.26.1 (versão automática via package.json)
+- TypeScript 5.9.3, pnpm 10.26.2 (versão automática via package.json)
 - Drizzle ORM, PostgreSQL 16 + pgvector
 - WebSocket (ws), Pino (logging estruturado)
 - Passport.js, openid-client
@@ -383,7 +385,7 @@ alice/
 - Jaeger 2.13.0 (tracing distribuído)
 - Loki 3.6.3, Promtail 3.6.3 (logs)
 - OpenTelemetry Collector 0.142.0 (instrumentação)
-- Langfuse 3.139.0 (métricas LLM)
+- Langfuse 2.94 (métricas LLM)
 
 ---
 
@@ -468,9 +470,9 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.39 - 29 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
+*Versão 4.46 - 29 de Dezembro de 2025*
+*Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.2, TypeScript 5.9.3*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
 *Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
 *PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*

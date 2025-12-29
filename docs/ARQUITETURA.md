@@ -903,7 +903,7 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Autor: Fillipe Guerra*  
 *Data: 29 de Dezembro de 2025*
 *Versão: 1.12.0 - Auditoria Enterprise Container Count*
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*  
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  

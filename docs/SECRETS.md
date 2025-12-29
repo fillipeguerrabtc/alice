@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025
+**Data:** 29 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -10,7 +10,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 **Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 25/12/2025)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
-**Total de Containers:** 50 em produção (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)
+**Total de Containers:** 50 em produção (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)
 **Redis Alice:** Container dedicado para cache distribuído (segregação enterprise do ERPNext)
 **LLM:** Mixtral 8x7B (MoE ~12B ativos, vLLM) via GPU Manager Service (Hetzner GPU)
 **Trading:** KuCoin Futures BTC Perpetuals (XBTUSDTM)
@@ -323,12 +323,12 @@ Estes são necessários para o deploy funcionar:
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
 | `RESEND_API_KEY` | **API Key do Resend** para SMTP do Alertmanager | Workflow escreve em `/opt/alice/secrets/alertmanager/smtp_password` |
 
-**⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 29/12/2025):**
-- Langfuse corrigido para v3.139.0 (downgrade de v3.140.0 devido bug ZodError) que requer novas variáveis obrigatórias:
+**⚠️ IMPORTANTE - Langfuse v2.94 + ClickHouse (Atualizado 29/12/2025):**
+- Langfuse fixado em v2.94 (versão estável - v3.x tem bug ZodError) que requer novas variáveis obrigatórias:
   - `LANGFUSE_SALT`: String aleatória para hashing (gerar com `openssl rand -base64 16`)
   - `LANGFUSE_ENCRYPTION_KEY`: Chave 256-bit hex (gerar com `openssl rand -hex 32`)
-- Nova arquitetura v3 inclui container `langfuse-worker` para processamento assíncrono
-- **ClickHouse 25.12** é backend OLAP obrigatório para Langfuse v3:
+- **NOTA:** Container `langfuse-worker` foi **REMOVIDO** (v2.94 não usa worker separado)
+- **ClickHouse 25.12** é backend OLAP obrigatório para Langfuse:
   - `CLICKHOUSE_USER`: Usuário do ClickHouse (ex: `langfuse`)
   - `CLICKHOUSE_PASSWORD`: Senha segura (gerar com `openssl rand -base64 32`)
 
@@ -608,7 +608,7 @@ openssl rand -base64 24
 *Documento atualizado em: 28 de Dezembro de 2025*
 *Versão: 8.3 - Auditoria Enterprise Container Count*
 *Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*  
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*  
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  
 *Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
 *GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
@@ -616,5 +616,5 @@ openssl rand -base64 24
 *ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
 *GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
 *Secrets PRODUCTION_SERVER_* removidos (28/12/2025): Scripts deploy-remote.sh e deploy-local.sh foram removidos. Workflow usa HETZNER_VM_* diretamente via appleboy/ssh-action.*  
-*LANGFUSE v3: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios + langfuse-worker container*
+*LANGFUSE v2.94: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios (langfuse-worker REMOVIDO)*
 *Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*

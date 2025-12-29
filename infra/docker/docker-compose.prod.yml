@@ -4,7 +4,7 @@
 # Versão: 4.5
 # Ambiente: Produção (Hetzner Cloud - Servidor Único com GPU)
 # Servidor: GPU Hetzner GEX44 (RTX 4000 Ada 20GB), Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD
-# NOTA: Servidor único GEX44 - todos os 51 containers rodam no mesmo servidor (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)
+# NOTA: Servidor único GEX44 - todos os 50 containers rodam no mesmo servidor (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)
 # Volume Adicional: Hetzner Volume 100GB (alice-data) montado em /opt/alice
 # Domínio: yesyoudeserve.duckdns.org
 # IP: 178.63.41.108
@@ -14,7 +14,7 @@
 # - Uploads: /opt/alice/uploads (RAG multimodal)
 # - Backups: /opt/alice/backups (pgBackRest, Mariabackup, Redis)
 #
-# CONTAINERS: 50 total (8 infra + 8 Alice + 15 ERPNext + 14 observability + 1 backup + 4 GPU)
+# CONTAINERS: 50 total (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)
 # GPU SERVICES (4): gpu-mixtral, gpu-embeddings, gpu-flux, gpu-asr
 # GPU MANAGER (1): gpu-manager (gerenciamento centralizado de requisições GPU)
 # INFRAESTRUTURA (8): dockerproxy, traefik-init, traefik, postgres, redis, qdrant, tor, searxng

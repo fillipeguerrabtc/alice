@@ -6,7 +6,7 @@
 #            Instala Docker, NVIDIA Driver, NVIDIA Container Toolkit automaticamente
 #
 # ARQUITETURA ENTERPRISE (25/12/2025):
-# - 49 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 1 backup + 4 GPU)
+# - 50 containers (8 infra + 8 Alice + 15 ERPNext + 13 obs + 5 GPU + 1 backup)
 # - GPU Services: Mixtral 8x7B, Embeddings (Qwen3+OpenCLIP), FLUX.1, ASR Canary
 # - Servidor Único: Todos os containers no mesmo servidor (latência zero)
 #

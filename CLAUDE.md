@@ -394,7 +394,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix messageContent Inconsistente (17/12/2025): buscarContextoRAG e callLlamaAPI agora usam messageContent (com fallback) ao invés de message.content*
 *Bug Fix WebSocket Duplicate Subscriptions (17/12/2025): useKucoinWebSocket evita subscriptions duplicadas na conexão inicial via flag initialSubscriptionSentRef*
 *Bug Fix WebSocket Connection ID (17/12/2025): connectionIdRef invalida callbacks de WebSockets antigos/órfãos, evita dados corrompidos em mudanças rápidas de symbol*
-*Pipeline Unificada (17/12/2025): Deploy 100% automático no servidor Hetzner GPU único - todos os 50 containers (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
+*Pipeline Unificada (17/12/2025): Deploy 100% automático no servidor Hetzner GPU único - todos os 50 containers (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
 *Auditoria KuCoin Completa (17/12/2025): 3 bugs corrigidos - DEFAULT_SYMBOL não definido, riskConfig.enabled→tradingEnabled, stop orders não exportadas*
 *Backup Enterprise Completo (17/12/2025): Qdrant backup/restore implementado - snapshot por coleção, upload via API REST, frontend atualizado*
 *Health Check Completo (17/12/2025): Health check verifica todos os 50 containers no servidor Hetzner GPU único - tolerância zero para falhas*

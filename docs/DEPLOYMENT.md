@@ -63,24 +63,23 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 28 | **Worker Short 2** | `erpnext-worker-short-2` | Worker para jobs rápidos (< 5 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
 | 29 | **Worker Long 2** | `erpnext-worker-long-2` | Worker para jobs longos (> 60 segundos) - instância 2. | Frappe/ERPNext v15.91.3 |
 
-### Categoria 4: Observability Stack (14 serviços)
+### Categoria 4: Observability Stack (13 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.139.0 |
-| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.139.0 |
-| 32 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
-| 33 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 25.12-alpine |
-| 34 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.1 |
-| 35 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 12.3.1 |
-| 36 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
-| 37 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
-| 38 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 2.13.0 |
-| 39 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
-| 40 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
-| 41 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.142.0 |
-| 42 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.9.1 |
-| 43 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.52.1 |
+| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 2.94 |
+| 31 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
+| 32 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 25.12-alpine |
+| 33 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.1 |
+| 34 | **Grafana** | `grafana` | Dashboards e visualização de métricas. SSO integrado com Alice IdP. | Grafana OSS 12.3.1 |
+| 35 | **Loki** | `loki` | Agregação e armazenamento de logs (like Prometheus, but for logs). | Loki 3.6.3 |
+| 36 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
+| 37 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 2.13.0 |
+| 38 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
+| 39 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.29.0 |
+| 40 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.142.0 |
+| 41 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.9.1 |
+| 42 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.52.1 |
 
 ### Categoria 5: Backup (1 serviço)
 
@@ -150,7 +149,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
    │  │                              │                                      │ │
    │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
    │  │  │ OBSERVABILITY STACK (13)                                      │  │ │
-   │  │  │  langfuse (web+worker+db) │ prometheus │ grafana │ loki       │  │ │
+   │  │  │  langfuse (web+db) │ clickhouse │ prometheus │ grafana │ loki   │  │ │
    │  │  │  promtail │ jaeger │ vector │ alertmanager │ otel-collector   │  │ │
    │  │  │  node-exporter │ cadvisor                                     │  │ │
    │  │  └──────────────────────────────────────────────────────────────┘  │ │
@@ -1299,7 +1298,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 *Versão: 7.14 - Auditoria Enterprise Container Count*
 *Data: 29 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
 *Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*

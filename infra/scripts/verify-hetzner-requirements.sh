@@ -9,7 +9,7 @@
 # - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim) via GPU Manager Service
 # - Vector DB: Qdrant (texto 4096 dim) + PostgreSQL pgvector (imagem 1024 dim)
-# - Containers: 50 totais (8 infra + 7 Alice + 15 ERPNext + 14 obs + 5 GPU + 1 backup)
+# - Containers: 50 totais (8 infra + 8 Alice + 15 ERPNext + 13 obs + 5 GPU + 1 backup)
 #
 # Uso: ./verify-hetzner-requirements.sh [--fix] [--verbose]
 #   --fix     : Corrige automaticamente problemas encontrados

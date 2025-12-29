@@ -1,11 +1,11 @@
 # Observability Service - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 14 de Dezembro de 2025
+**Data:** 29 de Dezembro de 2025
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 51 containers da plataforma Alice Enterprise (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup).
+**Contexto:** Este é o serviço de observabilidade dos 50 containers da plataforma Alice Enterprise (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup).
 
 ## Componentes
 
@@ -15,14 +15,13 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Grafana | 3000 | Grafana OSS 12.3.1 | AGPL 3.0 | Dashboards e alertas |
 | Jaeger | 16686 | Jaeger 2.13.0 | Apache 2.0 | Distributed tracing |
 | OTel Collector | 4317/4318 | OpenTelemetry Collector 0.142.0 | Apache 2.0 | Instrumentação |
-| Langfuse Web | 3006 | Langfuse 3.139.0 | MIT | Métricas LLM (UI) |
-| Langfuse Worker | interno | Langfuse 3.139.0 | MIT | Processamento assíncrono/migrations |
+| Langfuse Web | 3006 | Langfuse 2.94 | MIT | Métricas LLM (UI) |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
 | Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
-| Alertmanager | interno | Alertmanager 0.27.0 | Apache 2.0 | Alertas (Prometheus) |
-| node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
-| cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
+| Alertmanager | interno | Alertmanager 0.29.0 | Apache 2.0 | Alertas (Prometheus) |
+| node-exporter | interno | node-exporter 1.9.1 | Apache 2.0 | Métricas do host |
+| cadvisor | 9101 | cadvisor 0.52.1 | Apache 2.0 | Métricas de containers |
 
 ## Métricas LLM Específicas
 
@@ -222,5 +221,5 @@ apps/observability-service/
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 2.7.0 - 17 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 51 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Tecnologias: Node.js 22 LTS, pnpm 10.26.2, TypeScript 5.9.3*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*

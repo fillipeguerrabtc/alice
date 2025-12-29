@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 29 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.25 - PostgreSQL archive_mode e Schema Validation Enterprise
+> **Versão:** 4.46 - Auditoria Enterprise Completa - 50 containers (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup) |
+| **Total de Containers** | 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -827,7 +827,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.139.0** (downgrade de 3.140.0 devido bug ZodError), **pgBackRest 2.57.0**.
+> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 2.94** (versão estável - v3.x tem bug ZodError), **pgBackRest 2.57.0**.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -856,9 +856,9 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Traefik | 3.6.4 | ✅ Atual |
 | Prometheus | 3.8.1 | ✅ Atual |
 | Grafana | 12.3.1 | ✅ Atual |
-| Loki/Promtail | 3.6.2 | ✅ Atual |
+| Loki/Promtail | 3.6.3 | ✅ Atual |
 | Jaeger | 2.13.0 | ✅ Atual |
-| Langfuse | 3.140.0 | ✅ Atual |
+| Langfuse | 2.94 (v3.x tem bug ZodError) | ✅ Estável |
 | ERPNext | 91.0 | ✅ Atual |
 | pgBackRest | 2.57.0 | ✅ Atual |
 
@@ -866,7 +866,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 | Dependência | Versão |
 |-------------|--------|
-| pnpm | 10.26.1 |
+| pnpm | 10.26.2 |
 | Node.js | LTS (API dinâmica) |
 | React | 19.2.3 |
 | TypeScript | 5.9.3 |
@@ -1025,8 +1025,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Prometheus 3.8.1 | Métricas | metrics.yesyoudeserve.duckdns.org |
 | Grafana OSS 12.3.1 | Dashboards | observability.yesyoudeserve.duckdns.org |
 | Jaeger 2.13.0 | Tracing | traces.yesyoudeserve.duckdns.org |
-| Langfuse 3.139.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
-| Langfuse Worker | Processamento Assíncrono | (interno) |
+| Langfuse 2.94 | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | **ClickHouse 25.12** | **OLAP Backend Langfuse v3** | (interno) |
 | Alertmanager 0.29.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
 | OTel Collector 0.142.0 | Instrumentação | (interno) |
@@ -1034,7 +1033,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA IMPORTANTE:** Stack separada da Alice para continuar monitorando mesmo se Alice tiver problemas. Isso é **best practice**, não um problema.
 
-> **NOTA Langfuse v3 (29/12/2025):** Langfuse corrigido para v3.139.0 (downgrade de v3.140.0 que tinha bug ZodError). Arquitetura inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
+> **NOTA Langfuse v2.94 (29/12/2025):** Langfuse fixado em v2.94 (versão estável - v3.x tem bug ZodError). Container `langfuse-worker` foi **REMOVIDO** (v2.94 não usa worker separado). Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
 
 ### Dashboards Grafana Enterprise (9 dashboards, 100% completos)
 
@@ -1224,12 +1223,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 27/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.26 - Auditoria Enterprise Container Count*
+*Versão: 4.46 - Auditoria Enterprise Completa*
 *Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

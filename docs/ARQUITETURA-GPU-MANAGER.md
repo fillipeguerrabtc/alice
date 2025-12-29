@@ -1,7 +1,7 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025  
+**Data:** 29 de Dezembro de 2025  
 **Versão:** 1.4.0
 
 ---
@@ -449,5 +449,5 @@ gpu-manager:
 ---
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025
+**Data:** 29 de Dezembro de 2025
 
