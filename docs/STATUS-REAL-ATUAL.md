@@ -1505,6 +1505,13 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Alterado `sh -c` para `bash -c` no comando `docker run` executando `drizzle-kit push`
 
+**Problema 11: Padrão | xargs || echo "0" não funciona quando psql falha silenciosamente**
+- **Erro:** Script incorretamente concluía que tabelas existiam e pulava `drizzle-kit push`, causando serviços iniciarem sem schema necessário
+- **Causa Raiz:** Padrão `| xargs || echo "0"` não funciona como esperado. Quando `psql` falha silenciosamente (stderr redirecionado), `xargs` recebe input vazio, não produz output, mas sai com código 0, então `|| echo "0"` nunca executa. Variáveis (`DB_EXISTS`, `TABLE_COUNT`, `TABLE_COUNT_AFTER`) ficam como string vazia. A comparação `[ "$VAR" -eq "0" ]` em string vazia produz erro bash ("integer expression expected") e retorna exit code 2, que o `if` trata como "false", fazendo script pular `drizzle-kit push` e concluir incorretamente que tabelas existem
+- **Solução:** Adicionar tratamento explícito de string vazia após cada atribuição: `VAR="${VAR:-0}"`. Isso garante que string vazia vira "0" antes da comparação numérica, prevenindo erros bash e comportamento incorreto
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy

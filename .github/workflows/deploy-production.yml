@@ -886,6 +886,11 @@ jobs:
             # em pg_database. Isso é mais seguro e confiável que tentar conectar ao database
             # que queremos verificar (que pode não existir ainda)
             DB_EXISTS=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname = '${VALIDATION_PG_DB}';" 2>/dev/null | xargs || echo "0")
+            # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+            # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+            # mas sai com código 0, então || echo "0" nunca executa. DB_EXISTS fica como string vazia.
+            # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+            DB_EXISTS="${DB_EXISTS:-0}"
             
             if [ "$DB_EXISTS" != "1" ]; then
               echo "❌ ERRO: Database ${VALIDATION_PG_DB} não existe!"
@@ -899,6 +904,14 @@ jobs:
             # Verificar se tem tabelas (schema Drizzle ORM)
             # Contar tabelas no schema 'public' (Drizzle cria tabelas lá)
             TABLE_COUNT=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+            # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+            # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+            # mas sai com código 0, então || echo "0" nunca executa. TABLE_COUNT fica como string vazia.
+            # A comparação [ "$TABLE_COUNT" -eq "0" ] em string vazia produz erro bash ("integer expression expected")
+            # e retorna exit code 2, que o if trata como "false", fazendo script pular drizzle-kit push
+            # e concluir incorretamente que tabelas existem. Serviços podem iniciar sem schema necessário.
+            # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+            TABLE_COUNT="${TABLE_COUNT:-0}"
             
             if [ "$TABLE_COUNT" -eq "0" ]; then
               echo "⚠️ AVISO: Database existe mas não há tabelas (schema vazio)"
@@ -1138,6 +1151,12 @@ jobs:
               # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
               sleep 2
               TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+              # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+              # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+              # mas sai com código 0, então || echo "0" nunca executa. TABLE_COUNT_AFTER fica como string vazia.
+              # A comparação [ "$TABLE_COUNT_AFTER" -eq "0" ] em string vazia produz erro bash.
+              # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+              TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"
               
               if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
                 echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
