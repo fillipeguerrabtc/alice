@@ -2331,7 +2331,7 @@ services:
   # Documentação: https://clickhouse.com/docs/en/operations/server-configuration-parameters
   # ===========================================================================
   # DESABILITADO 29/12/2025: ClickHouse só é necessário para Langfuse v3
-  # Langfuse v2.95.12 (atual) não usa ClickHouse - apenas PostgreSQL
+  # Langfuse v2.94 (atual) não usa ClickHouse - apenas PostgreSQL
   # Quando Langfuse v3 tiver fix para ZodError, remover profile e restaurar
   # ===========================================================================
   clickhouse:
@@ -2389,7 +2389,7 @@ services:
   # Documentação v2: https://langfuse.com/self-hosting/v2
   # REQUISITOS v2: PostgreSQL apenas (sem ClickHouse)
   # ===========================================================================
-  # CORREÇÃO 29/12/2025: Usar v2.95.12 ao invés de v3.x
+  # CORREÇÃO 29/12/2025: Usar v2.94 ao invés de v3.x
   # =======================================================================
   # PROBLEMA: Todas as versões Langfuse v3.x usam Next.js 14.2.x que tem bug:
   # "Cannot set property message of ZodError which has only a getter"
@@ -2399,14 +2399,15 @@ services:
   # porque todas usam Next.js 14.2.x. O fix requer Next.js 14.2.32+ ou 15.x
   # que ainda não foi integrado ao Langfuse (PR pendente).
   #
-  # SOLUÇÃO: Usar Langfuse v2.95.12 (última versão v2 estável)
+  # SOLUÇÃO: Usar Langfuse v2.94 (última versão v2 estável no Docker Hub)
   # - Não tem o bug do ZodError (usa Next.js mais antigo)
   # - Não requer ClickHouse (apenas PostgreSQL)
   # - Funcionalidade completa de LLM observability
   # - Suporte oficial até Q1 2025 (migrar para v3 quando fix for lançado)
+  # NOTA: v2.95.12 não existe no Docker Hub - usar v2.94 ou tag "2"
   # =======================================================================
   langfuse:
-    image: langfuse/langfuse:2.95.12
+    image: langfuse/langfuse:2.94
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped

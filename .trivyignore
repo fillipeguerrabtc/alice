@@ -43,7 +43,7 @@
 # - loki: 3.6.0 -> 3.6.3 (Dec 11, 2025 - ultima estavel)
 # - promtail: 3.6.0 -> 3.6.3 (pareado com Loki)
 # - jaeger: 1.58 -> 1.76.0 (ultima do v1, v1 EOL Dec 31 2025)
-# - langfuse: 2.95.12 -> 3.139.0 (Dec 10, 2025 - Langfuse v3 estavel)
+# - langfuse: 2.94 -> 3.139.0 (Dec 10, 2025 - Langfuse v3 estavel quando fix ZodError)
 #   ARQUITETURA v3: langfuse-web + langfuse-worker (2 containers)
 #   VARS OBRIGATORIAS v3: LANGFUSE_SALT, LANGFUSE_ENCRYPTION_KEY, NEXTAUTH_URL
 # - vector: 0.43.1 -> 0.51.1 (Nov 11, 2025)
