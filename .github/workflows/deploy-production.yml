@@ -807,8 +807,22 @@ jobs:
               echo "🧾 Logs do langfuse (últimas 200 linhas):"
               docker logs --tail=200 langfuse || true
               echo ""
-              echo "🧾 Logs do langfuse-worker (últimas 200 linhas):"
-              docker logs --tail=200 langfuse-worker || true
+              # CORREÇÃO 29/12/2025: Langfuse v2 não usa worker separado
+              # Adicionar logs dos serviços Alice que estão falhando
+              echo "🧾 Logs do alice-auth (últimas 200 linhas):"
+              docker logs --tail=200 alice-auth || true
+              echo ""
+              echo "🧾 Logs do alice-chat (últimas 200 linhas):"
+              docker logs --tail=200 alice-chat || true
+              echo ""
+              echo "🧾 Logs do alice-training (últimas 200 linhas):"
+              docker logs --tail=200 alice-training || true
+              echo ""
+              echo "🧾 Logs do erpnext-create-site (últimas 200 linhas):"
+              docker logs --tail=200 erpnext-create-site || true
+              echo ""
+              echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
+              docker logs --tail=200 alice-integrations || true
               exit 1
             fi
             
