@@ -1491,6 +1491,20 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Extração de valores do `.env.prod` usando `grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2-`, validação fail-fast de senha
 
+**Problema 9: Comandos de validação usam defaults ao invés de credenciais reais do .env.prod**
+- **Erro:** Deploy abortava com erro enganoso "Database alice_prod não existe!" mesmo quando database real existia com nome diferente
+- **Causa Raiz:** Comandos de validação (linhas 839, 871, 884, 995, 1120) usavam `${POSTGRES_USER:-alice}` e `${POSTGRES_DB:-alice_prod}` que sempre usam defaults porque essas variáveis shell nunca são definidas. Se `.env.prod` contém credenciais não-padrão, validação consulta database errado, causando erro enganoso
+- **Solução:** Extrair credenciais do `.env.prod` ANTES de usar em comandos de validação (linhas 865-866). Todos os comandos `psql` agora usam `VALIDATION_PG_USER` e `VALIDATION_PG_DB` extraídos do arquivo, garantindo que validação usa credenciais reais mesmo quando não-padrão
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Extração de credenciais antes de validações, uso de `VALIDATION_PG_USER` e `VALIDATION_PG_DB` em todos os comandos `psql`
+
+**Problema 10: sh -c com pipefail falha em Debian Bookworm (dash não suporta)**
+- **Erro:** Container `node:22-bookworm-slim` falhava imediatamente com "Illegal option -o pipefail" antes de executar comandos úteis
+- **Causa Raiz:** Script usava `sh -c "set -euo pipefail..."` mas em imagens baseadas em Debian Bookworm, `/bin/sh` está linkado para `dash`, que não suporta a opção `pipefail`. Isso causava falha imediata do container antes de executar `pnpm install` ou `drizzle-kit push`
+- **Solução:** Alterado de `sh -c` para `bash -c`. A imagem `node:22-bookworm-slim` inclui bash, que suporta `pipefail` corretamente. Agora o container executa comandos sem falhas de sintaxe
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Alterado `sh -c` para `bash -c` no comando `docker run` executando `drizzle-kit push`
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy

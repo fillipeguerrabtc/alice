@@ -832,16 +832,6 @@ jobs:
             # =================================================================
             # CORREÇÃO 29/12/2025: Criar extensão pgvector no PostgreSQL
             # =================================================================
-            # O script init.sql só executa na primeira inicialização (PGDATA vazio).
-            # Para bancos existentes, precisamos garantir que a extensão existe.
-            # pgvector é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim).
-            echo "🔌 Garantindo extensão pgvector no PostgreSQL..."
-            if docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
-              echo "✅ Extensão pgvector pronta"
-            else
-              echo "⚠️ Falha ao criar extensão pgvector (PostgreSQL pode ainda estar iniciando)"
-            fi
-            
             # =================================================================
             # VALIDAÇÃO CRÍTICA 29/12/2025: Verificar se database existe e tem tabelas
             # =================================================================
@@ -859,6 +849,33 @@ jobs:
             # Aguardar PostgreSQL estar completamente pronto
             sleep 5
             
+            # =================================================================
+            # CORREÇÃO CRÍTICA 29/12/2025: Extrair credenciais do .env.prod ANTES
+            # de usar em comandos de validação
+            # =================================================================
+            # PROBLEMA: Comandos de validação usavam ${POSTGRES_USER:-alice} e
+            # ${POSTGRES_DB:-alice_prod} que sempre usam defaults porque essas
+            # variáveis shell nunca são definidas. Se .env.prod contém credenciais
+            # não-padrão, validação consulta database errado, causando erro enganoso
+            #
+            # SOLUÇÃO: Extrair valores do .env.prod ANTES de usar em validações
+            # (mesmo padrão usado para DATABASE_URL)
+            # =================================================================
+            ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
+            VALIDATION_PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
+            VALIDATION_PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
+            
+            # CORREÇÃO 29/12/2025: Usar credenciais extraídas na criação de extensão pgvector
+            # O script init.sql só executa na primeira inicialização (PGDATA vazio).
+            # Para bancos existentes, precisamos garantir que a extensão existe.
+            # pgvector é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim).
+            echo "🔌 Garantindo extensão pgvector no PostgreSQL..."
+            if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
+              echo "✅ Extensão pgvector pronta"
+            else
+              echo "⚠️ Falha ao criar extensão pgvector (PostgreSQL pode ainda estar iniciando)"
+            fi
+            
             # Verificar se database existe
             # CORREÇÃO CRÍTICA 29/12/2025: Adicionar flag -d postgres
             # PROBLEMA: Sem -d, psql tenta conectar ao database com mesmo nome do usuário (ex: "alice")
@@ -868,20 +885,20 @@ jobs:
             # SOLUÇÃO: Usar -d postgres (database padrão que sempre existe) para fazer query
             # em pg_database. Isso é mais seguro e confiável que tentar conectar ao database
             # que queremos verificar (que pode não existir ainda)
-            DB_EXISTS=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname = '${POSTGRES_DB:-alice_prod}';" 2>/dev/null | xargs || echo "0")
+            DB_EXISTS=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname = '${VALIDATION_PG_DB}';" 2>/dev/null | xargs || echo "0")
             
             if [ "$DB_EXISTS" != "1" ]; then
-              echo "❌ ERRO: Database ${POSTGRES_DB:-alice_prod} não existe!"
+              echo "❌ ERRO: Database ${VALIDATION_PG_DB} não existe!"
               echo "   Ação necessária: PostgreSQL não criou o database automaticamente."
               echo "   Verificar: POSTGRES_DB no .env.prod e docker-compose.prod.yml"
               exit 1
             fi
             
-            echo "✅ Database ${POSTGRES_DB:-alice_prod} existe"
+            echo "✅ Database ${VALIDATION_PG_DB} existe"
             
             # Verificar se tem tabelas (schema Drizzle ORM)
             # Contar tabelas no schema 'public' (Drizzle cria tabelas lá)
-            TABLE_COUNT=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+            TABLE_COUNT=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
             
             if [ "$TABLE_COUNT" -eq "0" ]; then
               echo "⚠️ AVISO: Database existe mas não há tabelas (schema vazio)"
@@ -912,10 +929,11 @@ jobs:
               #
               # SOLUÇÃO: Extrair valores do .env.prod usando grep + cut (mesmo padrão usado
               # em outras partes do script para LANGFUSE_DB_PASSWORD, RESEND_API_KEY, etc.)
-              ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
-              PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
+              # NOTA: VALIDATION_PG_USER e VALIDATION_PG_DB já foram extraídos acima (linhas 862-863)
+              # Reutilizar essas variáveis para consistência (mesmo arquivo, mesma extração)
+              PG_USER="${VALIDATION_PG_USER}"
               PG_PASS=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
-              PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
+              PG_DB="${VALIDATION_PG_DB}"
               
               # Validação fail-fast: senha não pode estar vazia
               if [ -z "$PG_PASS" ]; then
@@ -990,9 +1008,10 @@ jobs:
               fi
               
               # Validar conexão com retry
+              # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
               MAX_RETRIES=12
               RETRY_COUNT=0
-              while ! docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -c "SELECT 1;" >/dev/null 2>&1; do
+              while ! docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -c "SELECT 1;" >/dev/null 2>&1; do
                 RETRY_COUNT=$((RETRY_COUNT + 1))
                 if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
                   echo "❌ ERRO: PostgreSQL não está acessível após ${MAX_RETRIES} tentativas"
@@ -1070,7 +1089,7 @@ jobs:
                 -v /tmp/pnpm-store:/root/.pnpm-store:rw \
                 -w /app \
                 node:22-bookworm-slim \
-                sh -c "
+                bash -c "
                   set -euo pipefail
                   cd /app
                   npm install -g pnpm@10.26.2
@@ -1116,8 +1135,9 @@ jobs:
               fi
               
               # Verificar novamente se tabelas foram criadas
+              # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
               sleep 2
-              TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+              TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
               
               if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
                 echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
