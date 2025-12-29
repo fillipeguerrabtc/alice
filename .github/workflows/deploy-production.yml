@@ -772,6 +772,51 @@ jobs:
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
             
             # =================================================================
+            # FASE 6.5: Capturar versão anterior (se existir) para rollback inteligente
+            # =================================================================
+            # CORREÇÃO CRÍTICA 29/12/2025: Capturar versão anterior ANTES do deploy
+            # A lógica de rollback já existe e verifica last-successful-deploy.txt
+            # Se arquivo NÃO existe = primeiro deploy nunca funcionou = limpeza total
+            # Se arquivo EXISTE = houve deploy OK antes = preserva dados e faz rollback
+            #
+            # Esta captura é apenas para referência e diagnóstico - o rollback job
+            # já tem a lógica inteligente completa
+            # =================================================================
+            MANIFEST_DIR="/opt/alice/backups/manifests"
+            mkdir -p "$MANIFEST_DIR"
+            
+            if [ -f "$MANIFEST_DIR/last-successful-deploy.txt" ]; then
+              PREVIOUS_SHA=$(cat "$MANIFEST_DIR/last-successful-deploy.txt")
+              echo "📸 Versão anterior detectada: $PREVIOUS_SHA"
+              echo "   Rollback preservará dados de produção se deploy falhar"
+              
+              # Capturar tags das imagens atuais em produção (se containers existem)
+              CURRENT_FRONTEND_TAG=$(docker inspect --format='{{index .Config.Image}}' alice-frontend 2>/dev/null | cut -d':' -f2 || echo "none")
+              CURRENT_AUTH_TAG=$(docker inspect --format='{{index .Config.Image}}' alice-auth 2>/dev/null | cut -d':' -f2 || echo "none")
+              CURRENT_CHAT_TAG=$(docker inspect --format='{{index .Config.Image}}' alice-chat 2>/dev/null | cut -d':' -f2 || echo "none")
+              
+              echo "   Tags atuais:"
+              echo "   - frontend: $CURRENT_FRONTEND_TAG"
+              echo "   - auth: $CURRENT_AUTH_TAG"
+              echo "   - chat: $CURRENT_CHAT_TAG"
+              
+              # Salvar em arquivo para referência (rollback job já usa last-successful-deploy.txt)
+              cat > /tmp/previous-versions.txt <<EOF
+FRONTEND=$CURRENT_FRONTEND_TAG
+AUTH=$CURRENT_AUTH_TAG
+CHAT=$CURRENT_CHAT_TAG
+PREVIOUS_SHA=$PREVIOUS_SHA
+EOF
+              echo "✅ Versões anteriores capturadas em /tmp/previous-versions.txt"
+            else
+              echo "📸 Nenhuma versão anterior detectada (primeiro deploy)"
+              echo "   Se deploy falhar, rollback fará limpeza total do ambiente"
+            fi
+            
+            echo "=============================================="
+            echo ""
+            
+            # =================================================================
             # FASE 7: Pull e Deploy (CORE SERVICES)
             # =================================================================
             # ENTERPRISE (27/12/2025): Deploy em duas etapas
@@ -823,6 +868,15 @@ jobs:
               echo ""
               echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
               docker logs --tail=200 alice-integrations || true
+              
+              # Executar diagnóstico antes de falhar
+              if [ -f /opt/alice/app/infra/scripts/diagnose-failure.sh ]; then
+                echo ""
+                echo "🔍 Executando diagnóstico completo..."
+                bash /opt/alice/app/infra/scripts/diagnose-failure.sh || true
+                echo ""
+              fi
+              
               exit 1
             fi
             
@@ -1147,9 +1201,15 @@ jobs:
                 exit 1
               fi
               
-              # Verificar novamente se tabelas foram criadas
-              # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
-              sleep 2
+              # NOVA VALIDAÇÃO ENTERPRISE: Verificar se tabelas foram realmente criadas
+              # CORREÇÃO CRÍTICA 29/12/2025: Aguardar mais tempo para PostgreSQL processar migrations
+              # PROBLEMA: PostgreSQL pode demorar alguns segundos para processar todas as CREATE TABLE
+              # após drizzle-kit push completar. sleep 2 pode ser insuficiente para schemas grandes.
+              # SOLUÇÃO: Aumentar para 5s e adicionar validação explícita com mensagens detalhadas
+              echo "   Aguardando 5s para PostgreSQL processar migrations..."
+              sleep 5
+              
+              # Recontar tabelas para validar se drizzle-kit push funcionou
               TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
               # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
               # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
@@ -1158,15 +1218,31 @@ jobs:
               # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
               TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"
               
+              echo "   Tabelas após drizzle-kit push: $TABLE_COUNT_AFTER"
+              
+              # Fail-fast se nenhuma tabela foi criada
               if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
                 echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
-                echo "   Verificar: Schema Drizzle ORM em packages/shared/src/schema.ts"
+                echo "   Verificar:"
+                echo "   - Schema Drizzle ORM em packages/shared/src/schema.ts está correto?"
+                echo "   - DATABASE_URL está apontando para o database correto?"
+                echo "   - PostgreSQL tem permissões para criar tabelas?"
+                echo "   - Logs do drizzle-kit push acima mostram erros?"
                 # Limpar volume temporário antes de sair
                 rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+                
+                # Executar diagnóstico antes de falhar
+                if [ -f /opt/alice/app/infra/scripts/diagnose-failure.sh ]; then
+                  echo ""
+                  echo "🔍 Executando diagnóstico completo..."
+                  bash /opt/alice/app/infra/scripts/diagnose-failure.sh || true
+                  echo ""
+                fi
+                
                 exit 1
               fi
               
-              echo "✅ Schema criado: $TABLE_COUNT_AFTER tabelas criadas pelo drizzle-kit push"
+              echo "✅ Schema Drizzle ORM criado com sucesso: $TABLE_COUNT_AFTER tabelas"
               
               # Limpar volume temporário após sucesso (economiza espaço em disco)
               echo "   Limpando volume temporário..."
@@ -1176,32 +1252,189 @@ jobs:
               echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
             fi
             
+            # =================================================================
+            # FASE 7.5: Inicializar pgBackRest stanza (OBRIGATÓRIO)
+            # =================================================================
+            # CORREÇÃO CRÍTICA 29/12/2025: pgBackRest precisa de stanza-create
+            # ANTES de qualquer operação de backup. O healthcheck do container
+            # pgbackrest executa stanza-upgrade, que falha se stanza não existe.
+            #
+            # ORDEM CORRETA:
+            # 1. PostgreSQL está healthy
+            # 2. stanza-create (cria archive.info e backup.info)
+            # 3. check (valida configuração)
+            # 4. Primeiro backup (opcional - pode ser feito depois)
+            # =================================================================
+            echo ""
+            echo "🔧 Inicializando pgBackRest stanza..."
+            
+            # Aguardar PostgreSQL estar completamente pronto
+            sleep 10
+            
+            # Verificar se stanza já existe
+            STANZA_EXISTS=$(docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info --output=json 2>/dev/null | jq -r 'length' || echo "0")
+            
+            if [ "$STANZA_EXISTS" = "0" ]; then
+              echo "   Criando stanza alice_prod pela primeira vez..."
+              
+              # Criar stanza (OBRIGATÓRIO na primeira execução)
+              if ! docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-create; then
+                echo "❌ ERRO: Falha ao criar stanza pgBackRest"
+                echo "   Logs do pgbackrest:"
+                docker logs --tail=100 alice-pgbackrest || true
+                exit 1
+              fi
+              
+              echo "✅ Stanza alice_prod criada com sucesso"
+              
+              # Validar configuração
+              if ! docker exec alice-pgbackrest pgbackrest --stanza=alice_prod check; then
+                echo "⚠️ AVISO: pgBackRest check retornou avisos (verificar logs)"
+                docker logs --tail=50 alice-pgbackrest || true
+                # Não falhar deploy por avisos - backup pode funcionar mesmo assim
+              else
+                echo "✅ pgBackRest check passou"
+              fi
+              
+              # Fazer backup inicial (RECOMENDADO - estabelece baseline)
+              echo "   Executando backup inicial (full)..."
+              if ! timeout 600s docker exec alice-pgbackrest pgbackrest --stanza=alice_prod --type=full backup; then
+                echo "⚠️ AVISO: Backup inicial falhou ou excedeu timeout (10 min)"
+                docker logs --tail=100 alice-pgbackrest || true
+                # Não falhar deploy - backup pode ser feito manualmente depois
+              else
+                echo "✅ Backup inicial concluído"
+              fi
+            else
+              echo "   Stanza alice_prod já existe - pulando criação"
+              
+              # Apenas executar upgrade se necessário (mudança de versão PostgreSQL)
+              if ! docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-upgrade; then
+                echo "⚠️ AVISO: stanza-upgrade falhou (pode não ser necessário)"
+                # Não falhar deploy - upgrade só é necessário em mudança de versão PG
+              fi
+            fi
+            
+            echo "=============================================="
+            echo ""
+            
+            # =================================================================
+            # VALIDAÇÃO CRÍTICA: Verificar se gpu-manager está healthy
+            # =================================================================
+            # CORREÇÃO 29/12/2025: alice-chat, alice-rag e alice-training
+            # dependem de gpu-manager. Se gpu-manager não inicia, esses serviços
+            # ficam unhealthy e deploy falha.
+            #
+            # Validar ANTES de prosseguir para evitar falha tardia
+            # =================================================================
+            echo "🔍 Validando gpu-manager (dependência crítica)..."
+            
+            # Aguardar até 2 minutos para gpu-manager ficar healthy
+            MAX_WAIT=120
+            ELAPSED=0
+            while [ $ELAPSED -lt $MAX_WAIT ]; do
+              GPU_MANAGER_STATUS=$(docker inspect --format='{{.State.Health.Status}}' alice-gpu-manager 2>/dev/null || echo "not_running")
+              
+              if [ "$GPU_MANAGER_STATUS" = "healthy" ]; then
+                echo "✅ gpu-manager está healthy"
+                break
+              elif [ "$GPU_MANAGER_STATUS" = "unhealthy" ]; then
+                echo "❌ ERRO: gpu-manager está unhealthy após $ELAPSED segundos"
+                echo "   Logs do gpu-manager (últimas 200 linhas):"
+                docker logs --tail=200 alice-gpu-manager || true
+                echo ""
+                echo "   Verificar:"
+                echo "   - REDIS_URL está correto no .env.prod?"
+                echo "   - alice-redis está healthy?"
+                echo "   - Variáveis de ambiente obrigatórias estão definidas?"
+                
+                # Executar diagnóstico antes de falhar
+                if [ -f /opt/alice/app/infra/scripts/diagnose-failure.sh ]; then
+                  echo ""
+                  echo "🔍 Executando diagnóstico completo..."
+                  bash /opt/alice/app/infra/scripts/diagnose-failure.sh || true
+                  echo ""
+                fi
+                
+                exit 1
+              elif [ "$GPU_MANAGER_STATUS" = "not_running" ]; then
+                echo "❌ ERRO: gpu-manager não está rodando"
+                echo "   Container pode ter crashado no startup"
+                docker ps -a --filter name=alice-gpu-manager || true
+                docker logs --tail=200 alice-gpu-manager 2>&1 || true
+                exit 1
+              fi
+              
+              echo "   gpu-manager status: $GPU_MANAGER_STATUS (aguardando... ${ELAPSED}s/${MAX_WAIT}s)"
+              sleep 5
+              ELAPSED=$((ELAPSED + 5))
+            done
+            
+            if [ $ELAPSED -ge $MAX_WAIT ]; then
+              echo "❌ ERRO: gpu-manager não ficou healthy após ${MAX_WAIT}s"
+              echo "   Logs do gpu-manager:"
+              docker logs --tail=200 alice-gpu-manager || true
+              exit 1
+            fi
+            
+            echo "=============================================="
+            echo ""
+            
+            # =================================================================
+            # VALIDAÇÃO: erpnext-create-site exit code
+            # =================================================================
+            # CORREÇÃO 29/12/2025: erpnext-create-site é container one-shot
+            # Deve executar e sair com exit code 0 (sucesso)
+            # Se falhar, ERPNext não funciona corretamente
+            # =================================================================
+            echo "🔍 Validando erpnext-create-site..."
+            
+            ERPNEXT_CREATE_EXIT=$(docker inspect --format='{{.State.ExitCode}}' erpnext-create-site 2>/dev/null || echo "255")
+            
+            if [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
+              echo "✅ erpnext-create-site completado com sucesso"
+            elif [ "$ERPNEXT_CREATE_EXIT" = "255" ]; then
+              echo "⚠️ AVISO: erpnext-create-site não encontrado (pode não ter iniciado ainda)"
+              # Aguardar até 2 minutos
+              MAX_WAIT=120
+              ELAPSED=0
+              while [ $ELAPSED -lt $MAX_WAIT ]; do
+                ERPNEXT_CREATE_EXIT=$(docker inspect --format='{{.State.ExitCode}}' erpnext-create-site 2>/dev/null || echo "255")
+                if [ "$ERPNEXT_CREATE_EXIT" != "255" ]; then
+                  break
+                fi
+                sleep 5
+                ELAPSED=$((ELAPSED + 5))
+              done
+              
+              if [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
+                echo "✅ erpnext-create-site completado com sucesso (após ${ELAPSED}s)"
+              elif [ "$ERPNEXT_CREATE_EXIT" = "255" ]; then
+                echo "⚠️ AVISO: erpnext-create-site ainda não executou após ${MAX_WAIT}s"
+                echo "   ERPNext pode não estar configurado corretamente"
+                # Não falhar deploy - ERPNext pode ser configurado manualmente
+              else
+                echo "❌ ERRO: erpnext-create-site falhou (exit code: $ERPNEXT_CREATE_EXIT)"
+                echo "   Logs:"
+                docker logs erpnext-create-site || true
+                exit 1
+              fi
+            else
+              echo "❌ ERRO: erpnext-create-site falhou (exit code: $ERPNEXT_CREATE_EXIT)"
+              echo "   Logs:"
+              docker logs erpnext-create-site || true
+              exit 1
+            fi
+            
+            echo "=============================================="
+            echo ""
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""
             echo "=============================================="
             echo "✅ Deploy CORE concluído: ${RUNNING} containers rodando"
             echo "=============================================="
-            
-            # Diagnóstico imediato do gpu-manager (depende de Redis)
-            echo ""
-            echo "🔎 Verificando estado do alice-gpu-manager..."
-            GPU_MANAGER_STATE=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format "{{.Name}} {{.State}}" gpu-manager 2>/dev/null || true)
-            echo "Estado atual: ${GPU_MANAGER_STATE:-\"(não encontrado)\"}"
-            
-            if ! echo "${GPU_MANAGER_STATE}" | grep -q "healthy"; then
-              echo "⚠️ alice-gpu-manager não está healthy. Capturando logs e inspect..."
-              docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
-              docker logs --tail=400 alice-gpu-manager || true
-              docker inspect alice-gpu-manager || true
-              echo ""
-              echo "🧾 Últimos eventos Docker (alice-gpu-manager) - 10 minutos:"
-              timeout 15s docker events --since 10m --until 0m --filter "container=alice-gpu-manager" --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}" || true
-              echo ""
-              echo "🧾 Logs do Redis (dependência direta do gpu-manager):"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
-              exit 1
-            fi
             
             # =================================================================
             # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)

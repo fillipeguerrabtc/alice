@@ -1512,6 +1512,62 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
 
+**Problema 12: Validação de tabelas após drizzle-kit push insuficiente**
+- **Erro:** `drizzle-kit push` executava mas validação não confirmava se tabelas foram realmente criadas, causando serviços iniciarem sem schema
+- **Causa Raiz:** Validação usava `sleep 2` que pode ser insuficiente para PostgreSQL processar todas as CREATE TABLE em schemas grandes. Mensagens de erro não eram detalhadas o suficiente para diagnóstico
+- **Solução:** Aumentado sleep de 2s para 5s, adicionada mensagem explicativa, adicionada exibição do número de tabelas encontradas, e melhoradas mensagens de erro com checklist de verificação
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Sleep aumentado, mensagens melhoradas, validação mais robusta
+
+**Problema 13: pgBackRest stanza não inicializada antes de healthcheck**
+- **Erro:** Container `alice-pgbackrest` ficava unhealthy porque healthcheck executava `stanza-upgrade` mas stanza não existia
+- **Causa Raiz:** pgBackRest precisa de `stanza-create` ANTES de qualquer operação. O healthcheck do container executa `stanza-upgrade`, que falha se stanza não existe. Ordem correta: PostgreSQL healthy → stanza-create → check → backup
+- **Solução:** Adicionada inicialização de stanza pgBackRest no workflow ANTES de iniciar serviços. Verifica se stanza existe, cria se necessário, valida com check, e opcionalmente executa backup inicial. Healthcheck atualizado para não falhar se stanza não existe ainda
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - FASE 7.5: Inicialização de stanza pgBackRest
+  - `infra/backup/scripts/healthcheck.sh` - Healthcheck robusto que verifica se stanza existe antes de validar
+
+**Problema 14: gpu-manager não validado antes de serviços dependentes**
+- **Erro:** Containers `alice-chat`, `alice-rag`, `alice-training` ficavam unhealthy porque dependem de `gpu-manager` que não estava healthy
+- **Causa Raiz:** Serviços Alice dependem de `gpu-manager` via `depends_on: condition: service_healthy`, mas workflow não validava se `gpu-manager` estava healthy antes de prosseguir, causando falha tardia
+- **Solução:** Adicionada validação explícita de `gpu-manager` healthy ANTES de prosseguir. Aguarda até 2 minutos com retry, captura logs em caso de falha, e executa diagnóstico completo antes de abortar
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Validação de gpu-manager healthy com retry e diagnóstico
+
+**Problema 15: erpnext-create-site exit code não validado**
+- **Erro:** Container `erpnext-create-site` é one-shot e pode falhar silenciosamente, causando ERPNext não funcionar corretamente
+- **Causa Raiz:** Workflow não validava exit code do `erpnext-create-site`. Container one-shot deve executar e sair com exit code 0 (sucesso). Se falhar, ERPNext não funciona
+- **Solução:** Adicionada validação de exit code do `erpnext-create-site`. Aguarda até 2 minutos se container ainda não executou, valida exit code 0, e captura logs em caso de falha
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Validação de erpnext-create-site exit code
+
+**Problema 16: Logs insuficientes para diagnóstico de falhas**
+- **Erro:** Quando deploy falha, logs capturados são limitados e não incluem estado completo do sistema, métricas, network connectivity, configuração
+- **Causa Raiz:** Workflow capturava apenas logs básicos (200 linhas) sem diagnóstico completo do sistema
+- **Solução:** Criado script `infra/scripts/diagnose-failure.sh` que coleta: status de containers, logs completos (500 linhas), healthcheck status, resource usage, network connectivity, database state, Docker Compose config, system info, e compacta tudo em arquivo tar.gz para download
+- **Arquivos Modificados:**
+  - `infra/scripts/diagnose-failure.sh` - Script novo de diagnóstico completo
+  - `.github/workflows/deploy-production.yml` - Chamadas ao script de diagnóstico antes de exit 1
+
+**Problema 17: Captura de versão anterior para rollback inteligente**
+- **Erro:** Rollback não tinha informação sobre versão anterior antes do deploy iniciar
+- **Causa Raiz:** Rollback job já tem lógica inteligente (verifica `last-successful-deploy.txt`), mas deploy não capturava versão anterior para referência e diagnóstico
+- **Solução:** Adicionada captura de versão anterior ANTES do deploy (FASE 6.5). Verifica se `last-successful-deploy.txt` existe, captura tags de imagens atuais, e salva em `/tmp/previous-versions.txt` para referência. Rollback job já usa `last-successful-deploy.txt` para lógica inteligente (limpeza total se não existe, preserva dados se existe)
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - FASE 6.5: Captura de versão anterior
+
+**Problema 18: archive_command do pgBackRest em containers separados**
+- **Erro:** Análise sugeria usar `archive_command = 'pgbackrest --stanza=alice_prod archive-push %p'`, mas comando não funciona em containers separados
+- **Causa Raiz:** PostgreSQL e pgBackRest rodam em containers SEPARADOS. O comando `pgbackrest` não está disponível no container PostgreSQL. Para funcionar, seria necessário script wrapper que executa `docker exec alice-pgbackrest pgbackrest ...`
+- **Solução:** Mantido `archive_command = '/bin/true'` (dummy) temporariamente. Backups full/incremental funcionam via acesso direto ao PGDATA (volume compartilhado). WAL archiving contínuo requer implementação futura de wrapper script. Comentários atualizados explicando limitação e solução futura
+- **Arquivos Modificados:**
+  - `infra/docker/postgres/postgresql.conf` - Comentários atualizados, mantido dummy command temporariamente
+- **Erro:** Script incorretamente concluía que tabelas existiam e pulava `drizzle-kit push`, causando serviços iniciarem sem schema necessário
+- **Causa Raiz:** Padrão `| xargs || echo "0"` não funciona como esperado. Quando `psql` falha silenciosamente (stderr redirecionado), `xargs` recebe input vazio, não produz output, mas sai com código 0, então `|| echo "0"` nunca executa. Variáveis (`DB_EXISTS`, `TABLE_COUNT`, `TABLE_COUNT_AFTER`) ficam como string vazia. A comparação `[ "$VAR" -eq "0" ]` em string vazia produz erro bash ("integer expression expected") e retorna exit code 2, que o `if` trata como "false", fazendo script pular `drizzle-kit push` e concluir incorretamente que tabelas existem
+- **Solução:** Adicionar tratamento explícito de string vazia após cada atribuição: `VAR="${VAR:-0}"`. Isso garante que string vazia vira "0" antes da comparação numérica, prevenindo erros bash e comportamento incorreto
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
