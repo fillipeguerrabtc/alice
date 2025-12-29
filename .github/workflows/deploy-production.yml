@@ -935,7 +935,16 @@ jobs:
               PG_PASS_ENCODED=$(urlencode "$PG_PASS")
               PG_DB_ENCODED=$(urlencode "$PG_DB")
               
-              DATABASE_URL="postgresql://${PG_USER_ENCODED}:${PG_PASS_ENCODED}@postgres:5432/${PG_DB_ENCODED}?sslmode=disable"
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Hostname correto para container standalone
+              # =================================================================
+              # PROBLEMA: docker run cria container standalone fora do docker-compose
+              # Containers standalone só resolvem por container_name, não por service name
+              # Container PostgreSQL tem container_name: alice-postgres (não postgres)
+              #
+              # SOLUÇÃO: Usar alice-postgres como hostname no DATABASE_URL
+              # =================================================================
+              DATABASE_URL="postgresql://${PG_USER_ENCODED}:${PG_PASS_ENCODED}@alice-postgres:5432/${PG_DB_ENCODED}?sslmode=disable"
               
               echo "📦 Executando drizzle-kit push para criar schema base..."
               

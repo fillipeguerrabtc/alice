@@ -1463,6 +1463,13 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Adicionado timeout wrapper e tratamento adequado de exit codes
 
+**Problema 5: Hostname incorreto no DATABASE_URL para container standalone**
+- **Erro:** `DATABASE_URL` usava hostname `postgres`, mas container standalone criado por `docker run` não consegue resolver service names do docker-compose
+- **Causa Raiz:** `docker run --network alice-network` cria container standalone fora do docker-compose. Containers standalone só resolvem por `container_name`, não por service name. Container PostgreSQL tem `container_name: alice-postgres` (não `postgres`)
+- **Solução:** Corrigido hostname de `postgres` para `alice-postgres` no `DATABASE_URL`. Agora container standalone consegue resolver corretamente via DNS da rede Docker
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Hostname corrigido de `postgres` para `alice-postgres` no DATABASE_URL
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy

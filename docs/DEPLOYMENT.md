@@ -737,6 +737,7 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 - **Validação de Schema Automática**: Deploy agora valida se database existe e se tem tabelas ANTES de iniciar serviços Alice. Se não há tabelas, executa `drizzle-kit push` automaticamente em container temporário Node.js ANTES de iniciar serviços (previne containers unhealthy por queries SQL falhando).
 - **Execução Automática drizzle-kit push**: Se schema está vazio, deploy executa `drizzle-kit push` com validação de conexão PostgreSQL, URL-encoding de credenciais, cache do pnpm e fail-fast adequado. Garante que todas as tabelas do schema Drizzle ORM existem antes dos serviços iniciarem.
 - **Timeout Wrapper drizzle-kit push**: Adicionado timeout wrapper de 300s (5 min) ao comando `docker run` executando `drizzle-kit push`. Previne hangs indefinidos se PostgreSQL não responde, schema é muito complexo ou há problemas de rede. Distingue entre timeout (exit code 124) e outros erros, com mensagens específicas para diagnóstico.
+- **Hostname correto no DATABASE_URL**: Corrigido hostname de `postgres` para `alice-postgres` no `DATABASE_URL` usado pelo container standalone. Containers criados via `docker run` (fora do docker-compose) só resolvem por `container_name`, não por service name. Isso garante que `drizzle-kit push` consegue conectar ao PostgreSQL corretamente.
 
 O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 
