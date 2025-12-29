@@ -396,16 +396,19 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# RAG Service\n'
   printf 'RAG_PUBLIC_BASE_URL=https://yesyoudeserve.duckdns.org\n'
   printf '\n'
-  printf '# CORS\n'
+  printf '# CORS e WebSocket\n'
   printf 'CORS_ORIGIN=%s\n' "${CORS_ORIGIN_VALUE}"
   printf 'CORS_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
+  # CORREÇÃO 29/12/2025: WEBSOCKET_ALLOWED_ORIGINS obrigatório para chat-service
+  # Usado no handshake WebSocket - alinhado com CORS_ORIGINS
+  printf 'WEBSOCKET_ALLOWED_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
   printf '\n'
   printf '# Alertmanager / Resend SMTP\n'
   printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
   printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
   printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
   printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
-printf 'SMTP_PASSWORD=%s\n' "${SMTP_PASSWORD_VALUE}"
+  printf 'SMTP_PASSWORD=%s\n' "${SMTP_PASSWORD_VALUE}"
   printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
   printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
   printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
@@ -452,7 +455,7 @@ printf 'SMTP_PASSWORD=%s\n' "${SMTP_PASSWORD_VALUE}"
   printf '\n'
   printf '# Backup (pgBackRest)\n'
   printf 'BACKUP_CIPHER_PASS=%s\n' "${BACKUP_CIPHER_PASS:-}"
-printf 'PGBACKREST_STANZA=alice_prod\n'
+  printf 'PGBACKREST_STANZA=alice_prod\n'
   printf '\n'
   printf '# SSL/TLS\n'
   printf 'ACME_EMAIL=%s\n' "${ACME_EMAIL:-}"
