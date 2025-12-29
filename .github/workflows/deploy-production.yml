@@ -33,7 +33,7 @@
 #   - SSH keys para Hetzner (padrão da indústria - OIDC não suportado por VPS)
 #
 # Author: Fillipe Guerra
-# Data: 27/12/2025
+# Data: 29/12/2025
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)
