@@ -312,11 +312,24 @@ fi
 # =============================================================================
 # FASE 7: Configurar emails de alerta (Alertmanager)
 # =============================================================================
+# CORREÇÃO 29/12/2025: Usar email real (ADMIN_USER) em vez de domínios fictícios
+# Domínios fictícios (@yesyoudeserve.duckdns.org) causam erro:
+# "parse 'to' addresses: mail: missing '@' or angle-addr"
+#
 # NOTA: Valores SMTP fixos (smtp.resend.com:587, user=resend) estão no docker-compose.prod.yml
 # A senha SMTP é RESEND_API_KEY, escrita diretamente em /opt/alice/secrets/alertmanager/smtp_password pelo workflow
-ALERT_EMAIL_VALUE="ops@yesyoudeserve.duckdns.org"
-CRITICAL_EMAIL_VALUE="critical@yesyoudeserve.duckdns.org"
-ONCALL_EMAIL_VALUE="oncall@yesyoudeserve.duckdns.org"
+#
+# PRIORIDADE:
+# 1. ALERT_EMAIL_SECRET se definido no GitHub Secrets
+# 2. ADMIN_USER (já validado como email válido)
+ALERT_EMAIL_VALUE="${ALERT_EMAIL_SECRET:-${ADMIN_USER}}"
+CRITICAL_EMAIL_VALUE="${CRITICAL_EMAIL_SECRET:-${ADMIN_USER}}"
+ONCALL_EMAIL_VALUE="${ONCALL_EMAIL_SECRET:-${ADMIN_USER}}"
+
+echo "📧 Emails de alerta configurados:"
+echo "   ALERT_EMAIL: ${ALERT_EMAIL_VALUE}"
+echo "   CRITICAL_EMAIL: ${CRITICAL_EMAIL_VALUE}"
+echo "   ONCALL_EMAIL: ${ONCALL_EMAIL_VALUE}"
 
 # =============================================================================
 # FASE 8: Gerar arquivo .env.prod

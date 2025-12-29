@@ -108,13 +108,24 @@ COPY infra/backup/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 COPY infra/backup/scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
-# Usuário não-root para segurança (best practices 2025)
-RUN addgroup -g 1000 pgbackrest \
-    && adduser -D -u 1000 -G pgbackrest pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/lib/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/log/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/spool/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /etc/pgbackrest
+# =============================================================================
+# CORREÇÃO 29/12/2025: Usar UID 999 (mesmo do PostgreSQL)
+# =============================================================================
+# PROBLEMA: pgBackRest rodava como UID 1000, mas PostgreSQL usa UID 999
+# Os arquivos do PostgreSQL têm permissões 700 (apenas owner pode ler)
+# Isso causava erro: "unable to open file pg_control: Permission denied"
+#
+# SOLUÇÃO: Fazer pgBackRest rodar como o mesmo UID do PostgreSQL (999)
+# Isso permite que pgBackRest leia os arquivos de dados para backup.
+#
+# NOTA: Em Alpine, o grupo 999 pode não existir, então criamos ambos.
+# =============================================================================
+RUN addgroup -g 999 postgres 2>/dev/null || true \
+    && adduser -D -u 999 -G postgres pgbackrest \
+    && chown -R pgbackrest:postgres /var/lib/pgbackrest \
+    && chown -R pgbackrest:postgres /var/log/pgbackrest \
+    && chown -R pgbackrest:postgres /var/spool/pgbackrest \
+    && chown -R pgbackrest:postgres /etc/pgbackrest
 
 USER pgbackrest
 

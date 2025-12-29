@@ -2777,20 +2777,29 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # =======================================================================
+    # CORREÇÃO 29/12/2025: Usar entrypoint customizado para expansão de variáveis
+    # Alertmanager NÃO expande ${VAR} nativamente no YAML!
+    # O entrypoint usa envsubst para substituir ALERT_EMAIL, CRITICAL_EMAIL, ONCALL_EMAIL
+    # =======================================================================
+    entrypoint: ["/bin/sh", "/etc/alertmanager/docker-entrypoint.sh"]
+    # Argumentos adicionais passados ao alertmanager via entrypoint
+    command: ["--storage.path=/alertmanager", "--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org"]
     environment:
-      # SMTP Resend (sem domínio verificado): user resend / password = RESEND_API_KEY
-      SMTP_HOST: smtp.resend.com
-      SMTP_PORT: 587
-      SMTP_FROM: onboarding@resend.dev
-      SMTP_USERNAME: resend
-      ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
-      CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
-      ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
+      # Emails para notificações (expandidos pelo entrypoint via envsubst)
+      # CORREÇÃO 29/12/2025: Usar email real do usuário (não domínios fictícios)
+      ALERT_EMAIL: ${ALERT_EMAIL:-fillipe.guerra@gmail.com}
+      CRITICAL_EMAIL: ${CRITICAL_EMAIL:-fillipe.guerra@gmail.com}
+      ONCALL_EMAIL: ${ONCALL_EMAIL:-fillipe.guerra@gmail.com}
     volumes:
-      # Config file: caminho relativo ao diretório infra/docker/ onde docker-compose é executado
+      # Config file (template com variáveis - processado pelo entrypoint)
       - ../../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # Entrypoint customizado
+      - ../../apps/observability-service/config/alertmanager/docker-entrypoint.sh:/etc/alertmanager/docker-entrypoint.sh:ro
+      # Data e tmp
       - alertmanager_data:/alertmanager:rw
       - alertmanager_tmp:/tmp:rw
+      # Secret SMTP (Resend API Key)
       - /opt/alice/secrets/alertmanager/smtp_password:/run/secrets/smtp_password:ro
     networks:
       - alice-network
@@ -2808,7 +2817,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
     deploy:
       resources:
         limits:
@@ -3027,13 +3036,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO BUG #2: Usar variável de ambiente PGBACKREST_STANZA (default: alice_prod)
-      # Usa script wrapper que expande corretamente a variável de ambiente
+      # CORREÇÃO 29/12/2025: Aumentado start_period para dar tempo ao PostgreSQL
+      # pgBackRest precisa que PostgreSQL esteja completamente inicializado
+      # e que o volume de dados tenha permissões corretas (999:999)
       test: ["CMD-SHELL", "/usr/local/bin/healthcheck.sh || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 180s
     deploy:
       resources:
         limits:
@@ -3360,14 +3370,15 @@ services:
           memory: 512M
           cpus: '0.5'
     healthcheck:
-      # CORREÇÃO 28/12/2025: Distroless NÃO tem curl/wget
-      # Usar Node.js diretamente (consistente com Dockerfile healthcheck)
+      # CORREÇÃO 29/12/2025: Aumentado start_period e retries para dar tempo
+      # ao serviço inicializar completamente (conexão Redis, etc)
+      # Distroless NÃO tem curl/wget - usar Node.js diretamente
       # /live verifica se processo está vivo (liveness probe)
       test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
-      start_period: 30s
-      retries: 3
+      start_period: 60s
+      retries: 5
     logging:
       driver: "json-file"
       options:
