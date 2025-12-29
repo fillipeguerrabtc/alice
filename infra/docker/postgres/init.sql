@@ -3,8 +3,10 @@
 -- Cria extensões necessárias automaticamente ao inicializar o banco
 -- 
 -- IMPORTANTE: Este script é executado APENAS na primeira inicialização do PostgreSQL
--- quando o diretório PGDATA está vazio. Para adicionar extensões em bancos existentes,
--- execute manualmente ou via migration.
+-- quando o diretório PGDATA está vazio. O PostgreSQL cria automaticamente o database
+-- definido em POSTGRES_DB (alice_prod) e executa este script NELE.
+--
+-- Para adicionar extensões em bancos existentes, execute manualmente ou via migration.
 --
 -- Documentação: https://hub.docker.com/_/postgres (Initialization scripts)
 -- Autor: Fillipe Guerra

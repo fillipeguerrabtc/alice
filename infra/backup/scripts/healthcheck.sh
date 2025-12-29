@@ -5,7 +5,7 @@
 # CORREÇÃO 29/12/2025: Healthcheck mais tolerante
 # - Verifica se processo está vivo (não se stanza está perfeita)
 # - Stanza pode não existir no primeiro deploy
-# - archive_mode pode estar off (esperado em Docker)
+# - CORREÇÃO 29/12/2025: archive_mode=on agora está habilitado (postgresql.conf)
 #
 # Author: Fillipe Guerra
 # Data: 29 de Dezembro de 2025

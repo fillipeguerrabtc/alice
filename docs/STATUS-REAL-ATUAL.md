@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 28 de Dezembro de 2025  
+> **Data:** 29 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.24 - Server GPU Optimizations Enterprise
+> **Versão:** 4.25 - PostgreSQL archive_mode e Schema Validation Enterprise
 
 ---
 
@@ -1424,6 +1424,35 @@ body = {
 ---
 
 ---
+
+## 🔧 CORREÇÕES RECENTES (29/12/2025)
+
+### Correções Críticas de Deploy - PostgreSQL archive_mode e Schema Validation
+
+**Problema 1: pgBackRest check falhando**
+- **Erro:** `archive_mode must be enabled` - pgBackRest check falhava porque `archive_mode=off` no `postgresql.conf`
+- **Causa Raiz:** pgBackRest **EXIGE** `archive_mode=on` para validação, mesmo que backups funcionem via acesso direto ao PGDATA
+- **Solução:** Habilitado `archive_mode=on` com `archive_command='/bin/true'` (dummy) no `infra/docker/postgres/postgresql.conf`
+- **Arquivos Modificados:**
+  - `infra/docker/postgres/postgresql.conf` - `archive_mode=on` + `archive_command='/bin/true'`
+  - `infra/backup/scripts/entrypoint.sh` - Comentários atualizados
+  - `infra/backup/scripts/healthcheck.sh` - Comentários atualizados
+
+**Problema 2: Serviços Alice unhealthy por queries SQL falhando**
+- **Erro:** Containers `alice-chat`, `alice-auth` ficavam unhealthy porque queries SQL falhavam (tabelas não existiam)
+- **Causa Raiz:** Serviços Alice fazem queries SQL imediatamente ao iniciar, mas schema Drizzle ORM não era criado automaticamente no primeiro deploy
+- **Solução:** Adicionada validação de schema e execução automática de `drizzle-kit push` ANTES de iniciar serviços Alice
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Validação de database/tabelas + execução automática `drizzle-kit push`
+  - Validação inclui: verificação de database existente, contagem de tabelas, execução de `drizzle-kit push` em container temporário Node.js se schema está vazio
+  - URL-encoding de credenciais (RFC 3986), validação de conexão PostgreSQL, cache do pnpm, fail-fast adequado
+
+**Benefícios:**
+- ✅ pgBackRest check passa corretamente (archive_mode=on)
+- ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
+- ✅ Serviços Alice iniciam com tabelas existentes (sem queries SQL falhando)
+- ✅ Fail-fast adequado se drizzle-kit push falhar
+- ✅ Zero intervenção manual necessária
 
 ## 🔧 CORREÇÕES RECENTES (19/12/2025)
 

@@ -842,6 +842,191 @@ jobs:
               echo "⚠️ Falha ao criar extensão pgvector (PostgreSQL pode ainda estar iniciando)"
             fi
             
+            # =================================================================
+            # VALIDAÇÃO CRÍTICA 29/12/2025: Verificar se database existe e tem tabelas
+            # =================================================================
+            # PROBLEMA: Se database não existe ou não tem tabelas, serviços Alice
+            # (auth, chat, rag, etc.) falham com queries SQL.
+            # 
+            # SOLUÇÃO: Validar ANTES de iniciar serviços dependentes:
+            # 1. Verificar se database existe
+            # 2. Verificar se tem tabelas (schema Drizzle ORM)
+            # 3. Se não tem tabelas, rodar drizzle-kit push
+            # =================================================================
+            echo ""
+            echo "🔍 Validando schema do banco de dados..."
+            
+            # Aguardar PostgreSQL estar completamente pronto
+            sleep 5
+            
+            # Verificar se database existe
+            DB_EXISTS=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -t -c "SELECT 1 FROM pg_database WHERE datname = '${POSTGRES_DB:-alice_prod}';" 2>/dev/null | xargs || echo "0")
+            
+            if [ "$DB_EXISTS" != "1" ]; then
+              echo "❌ ERRO: Database ${POSTGRES_DB:-alice_prod} não existe!"
+              echo "   Ação necessária: PostgreSQL não criou o database automaticamente."
+              echo "   Verificar: POSTGRES_DB no .env.prod e docker-compose.prod.yml"
+              exit 1
+            fi
+            
+            echo "✅ Database ${POSTGRES_DB:-alice_prod} existe"
+            
+            # Verificar se tem tabelas (schema Drizzle ORM)
+            # Contar tabelas no schema 'public' (Drizzle cria tabelas lá)
+            TABLE_COUNT=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+            
+            if [ "$TABLE_COUNT" -eq "0" ]; then
+              echo "⚠️ AVISO: Database existe mas não há tabelas (schema vazio)"
+              echo "   Executando drizzle-kit push para criar schema base..."
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Executar drizzle-kit push ANTES
+              # de iniciar serviços Alice (Regra 6 - Enterprise-Grade)
+              # =================================================================
+              # PROBLEMA: Serviços Alice (auth, chat, rag, etc.) fazem queries SQL
+              # imediatamente ao iniciar. Se tabelas não existem, queries falham
+              # e containers ficam unhealthy.
+              #
+              # SOLUÇÃO: Executar drizzle-kit push em container temporário Node.js
+              # ANTES de iniciar serviços Alice. Isso cria todas as tabelas do schema
+              # Drizzle ORM (users, tenants, conversations, messages, etc.)
+              #
+              # NOTA: drizzle-kit push é idempotente - pode ser executado múltiplas vezes
+              # sem causar problemas (cria apenas tabelas que não existem)
+              # =================================================================
+              
+              # Construir DATABASE_URL com URL-encoding (RFC 3986)
+              # CORREÇÃO 23/12/2025: Suporta senhas com caracteres especiais
+              PG_USER="${POSTGRES_USER:-alice}"
+              PG_PASS="${POSTGRES_PASSWORD}"
+              PG_DB="${POSTGRES_DB:-alice_prod}"
+              
+              # Função urlencode (RFC 3986 compliant)
+              urlencode() {
+                local string="${1}"
+                local strlen=${#string}
+                local encoded=""
+                local pos c o
+                
+                for (( pos=0 ; pos<strlen ; pos++ )); do
+                  c=${string:$pos:1}
+                  case "$c" in
+                    [-_.~a-zA-Z0-9] ) o="${c}" ;;
+                    * ) LC_ALL=C printf -v o '%%%02X' "'$c" ;;
+                  esac
+                  encoded+="${o}"
+                done
+                echo "${encoded}"
+              }
+              
+              PG_USER_ENCODED=$(urlencode "$PG_USER")
+              PG_PASS_ENCODED=$(urlencode "$PG_PASS")
+              PG_DB_ENCODED=$(urlencode "$PG_DB")
+              
+              DATABASE_URL="postgresql://${PG_USER_ENCODED}:${PG_PASS_ENCODED}@postgres:5432/${PG_DB_ENCODED}?sslmode=disable"
+              
+              echo "📦 Executando drizzle-kit push para criar schema base..."
+              
+              # =================================================================
+              # CORREÇÃO 29/12/2025: Executar drizzle-kit push em container temporário
+              # =================================================================
+              # PROBLEMA: Volume montado como :ro (read-only) impede pnpm install
+              # SOLUÇÃO: Copiar código para volume temporário rw ou usar bind mount rw
+              # =================================================================
+              
+              # Validar conexão PostgreSQL antes de executar drizzle-kit push
+              echo "   Validando conexão PostgreSQL..."
+              
+              # Verificar se container está healthy
+              PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "none")
+              if [ "$PG_HEALTH" != "healthy" ] && [ "$PG_HEALTH" != "none" ]; then
+                echo "⚠️ AVISO: Container alice-postgres não está healthy (status: $PG_HEALTH)"
+                echo "   Aguardando healthcheck passar..."
+                sleep 10
+              fi
+              
+              # Validar conexão com retry
+              MAX_RETRIES=12
+              RETRY_COUNT=0
+              while ! docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -c "SELECT 1;" >/dev/null 2>&1; do
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+                  echo "❌ ERRO: PostgreSQL não está acessível após ${MAX_RETRIES} tentativas"
+                  echo "   Ação necessária: Verificar se container alice-postgres está healthy"
+                  echo "   Status do container:"
+                  docker inspect --format='{{.State.Health.Status}}' alice-postgres || echo "   (não disponível)"
+                  exit 1
+                fi
+                echo "   PostgreSQL não está pronto, tentativa $RETRY_COUNT/$MAX_RETRIES..."
+                sleep 5
+              done
+              echo "   ✅ PostgreSQL está pronto e acessível"
+              
+              # Executar drizzle-kit push em container temporário Node.js
+              # Usa imagem oficial node:22-bookworm-slim (mesma base dos serviços Alice)
+              # CORREÇÃO 29/12/2025: Volume montado como ro (read-only) - pnpm install usa cache externo
+              echo "   Construindo DATABASE_URL e executando drizzle-kit push..."
+              
+              # Criar diretórios necessários para cache e node_modules temporário
+              # Limpar node_modules temporário de execuções anteriores (se existir)
+              rm -rf /tmp/drizzle-node-modules
+              mkdir -p /tmp/pnpm-store /tmp/drizzle-node-modules
+              
+              # CORREÇÃO 29/12/2025: pnpm install precisa escrever em node_modules
+              # Solução: Usar volume temporário para node_modules (mais seguro que montar /app como rw)
+              # Volume /tmp/drizzle-node-modules é criado vazio e usado apenas para esta execução
+              DRIZZLE_EXIT_CODE=0
+              docker run --rm \
+                --network alice-network \
+                -e DATABASE_URL="${DATABASE_URL}" \
+                -e NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true \
+                -v /opt/alice/app:/app:ro \
+                -v /tmp/drizzle-node-modules:/app/node_modules:rw \
+                -v /tmp/pnpm-store:/root/.pnpm-store:rw \
+                -w /app \
+                node:22-bookworm-slim \
+                sh -c "
+                  set -euo pipefail
+                  cd /app
+                  npm install -g pnpm@10.26.2
+                  export PNPM_HOME=\"/root/.local/share/pnpm\"
+                  export PATH=\"\$PNPM_HOME:\$PATH\"
+                  pnpm config set store-dir /root/.pnpm-store
+                  pnpm install --frozen-lockfile --prefer-offline
+                  pnpm db:push
+                " > /tmp/drizzle-push.log 2>&1 || DRIZZLE_EXIT_CODE=$?
+              
+              # Exibir logs independente do resultado
+              echo "   Logs do drizzle-kit push:"
+              cat /tmp/drizzle-push.log || true
+              echo ""
+              
+              # Verificar se drizzle-kit push foi bem-sucedido
+              if [ "$DRIZZLE_EXIT_CODE" -ne 0 ]; then
+                echo "❌ ERRO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
+                echo "   Ação necessária: Verificar logs acima e corrigir schema Drizzle ORM"
+                echo "   Possíveis causas:"
+                echo "   - DATABASE_URL malformada (verificar URL-encoding)"
+                echo "   - PostgreSQL não está pronto (aguardar mais tempo)"
+                echo "   - Schema Drizzle ORM tem erros de sintaxe"
+                exit 1
+              fi
+              
+              # Verificar novamente se tabelas foram criadas
+              sleep 2
+              TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d "${POSTGRES_DB:-alice_prod}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+              
+              if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
+                echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
+                echo "   Verificar: Schema Drizzle ORM em packages/shared/src/schema.ts"
+                exit 1
+              fi
+              
+              echo "✅ Schema criado: $TABLE_COUNT_AFTER tabelas criadas pelo drizzle-kit push"
+            else
+              echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
+            fi
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""

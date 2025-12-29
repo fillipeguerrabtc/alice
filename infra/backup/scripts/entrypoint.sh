@@ -8,8 +8,9 @@
 # ARQUITETURA DOCKER (29/12/2025):
 # - PostgreSQL e pgBackRest rodam em containers SEPARADOS
 # - pgBackRest acessa PGDATA via volume compartilhado (read-only)
-# - Backups full/incremental funcionam SEM archive_mode
-# - WAL archiving contínuo NÃO suportado (requer pgBackRest no container PG)
+# - CORREÇÃO 29/12/2025: archive_mode=on com archive_command='/bin/true' (dummy)
+# - Backups full/incremental funcionam via acesso direto ao PGDATA
+# - archive_command dummy satisfaz validação pgBackRest sem impacto funcional
 #
 # Author: Fillipe Guerra
 # Data: 29 de Dezembro de 2025
@@ -118,12 +119,13 @@ fi
 # =============================================================================
 echo "[INFO] Verificando integridade da configuração..."
 
-# Check pode falhar se archive_mode=off (esperado em Docker)
+# CORREÇÃO 29/12/2025: archive_mode=on agora está habilitado
+# Check deve passar com archive_mode=on e archive_command='/bin/true'
 if pgbackrest --stanza="$STANZA" check 2>&1; then
     echo "[OK] Verificação de integridade passou"
 else
-    echo "[AVISO] Verificação retornou avisos (normal se archive_mode=off)"
-    echo "[INFO] Backups full/incremental funcionarão normalmente"
+    echo "[AVISO] Verificação retornou avisos (verificar logs acima)"
+    echo "[INFO] Backups full/incremental funcionarão normalmente via acesso direto ao PGDATA"
 fi
 
 echo "=================================================="

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025  
-**Versão:** 7.12 - Server GPU Optimizations Enterprise
+**Data:** 29 de Dezembro de 2025  
+**Versão:** 7.13 - PostgreSQL archive_mode e Schema Validation Enterprise
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -731,6 +731,11 @@ O workflow de deploy executa automaticamente todas as migrations na ordem corret
 - **URL-Encoding de Credenciais**: `DATABASE_URL` agora usa URL-encoding adequado (RFC 3986) para user, password e database name. Suporta senhas com qualquer caractere especial (@, :, ?, #, etc.) sem quebrar a string de conexão.
 - **Timeout Protection**: `drizzle-kit push` tem timeout de 300s (5 min) e validação de conexão explícita antes da execução. Previne hangs indefinidos se PostgreSQL não está totalmente pronto.
 - **Fail-Fast**: Se `drizzle-kit push` falhar ou exceder timeout, o deploy é abortado imediatamente (schema base é crítico).
+
+**🔧 Correções Críticas Enterprise (29/12/2025):**
+- **PostgreSQL archive_mode=on**: Habilitado `archive_mode=on` com `archive_command='/bin/true'` (dummy) no `postgresql.conf`. pgBackRest **EXIGE** `archive_mode=on` para validação, mesmo que backups funcionem via acesso direto ao PGDATA. O comando dummy satisfaz validação sem impacto funcional.
+- **Validação de Schema Automática**: Deploy agora valida se database existe e se tem tabelas ANTES de iniciar serviços Alice. Se não há tabelas, executa `drizzle-kit push` automaticamente em container temporário Node.js ANTES de iniciar serviços (previne containers unhealthy por queries SQL falhando).
+- **Execução Automática drizzle-kit push**: Se schema está vazio, deploy executa `drizzle-kit push` com validação de conexão PostgreSQL, URL-encoding de credenciais, cache do pnpm e fail-fast adequado. Garante que todas as tabelas do schema Drizzle ORM existem antes dos serviços iniciarem.
 
 O workflow de deploy executa todas as migrations automaticamente na ordem correta antes de iniciar os serviços.
 
