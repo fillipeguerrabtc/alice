@@ -512,6 +512,9 @@ services:
       # CORREÇÃO 29/12/2025: Configuração customizada do PostgreSQL
       # Inclui wal_level=replica para backups consistentes
       - ../docker/postgres/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      # CORREÇÃO 29/12/2025: Script de inicialização para criar extensões (pgvector, uuid-ossp, pg_trgm)
+      # Executado APENAS na primeira inicialização quando PGDATA está vazio
+      - ../docker/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     # CORREÇÃO 29/12/2025: Usar configuração customizada
     command: 
       - postgres
@@ -1764,7 +1767,7 @@ services:
             echo "  (mysql client não disponível)"
           fi
           exit 1
-        }
+        fi
         echo "✅ Site $${SITE_NAME} criado com sucesso!"
     environment:
       SITE_NAME: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
