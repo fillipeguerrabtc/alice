@@ -1447,6 +1447,14 @@ body = {
   - Validação inclui: verificação de database existente, contagem de tabelas, execução de `drizzle-kit push` em container temporário Node.js se schema está vazio
   - URL-encoding de credenciais (RFC 3986), validação de conexão PostgreSQL, cache do pnpm, fail-fast adequado
 
+**Problema 3: Função urlencode com bug de conversão de caracteres**
+- **Erro:** Função `urlencode` no workflow de deploy usava conversão de caractere para hex em um único passo (`printf -v o '%%%02X' "'$c"`), que não funciona corretamente quando `$c` é variável expandida
+- **Causa Raiz:** Em bash, quando `$c` é expandido de uma variável, `printf "'$c"` não converte corretamente para código ASCII, causando falha silenciosa na codificação de caracteres especiais (@, :, #, etc.)
+- **Solução:** Corrigida função `urlencode` para usar conversão em dois passos (primeiro obter ASCII com `printf -v ascii '%d' "'$c"`, depois converter para hex com `printf -v hex '%%%02X' "$ascii"`)
+- **Correção Adicional:** Padrão case corrigido de `[-_.~a-zA-Z0-9]` para `[_.~a-zA-Z0-9-]` (hífen movido para o final para evitar interpretação como range operator)
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Função `urlencode` corrigida para usar implementação correta (alinhada com `infra/scripts/generate-env-prod.sh`)
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy

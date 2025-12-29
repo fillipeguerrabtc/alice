@@ -902,19 +902,31 @@ jobs:
               PG_DB="${POSTGRES_DB:-alice_prod}"
               
               # Função urlencode (RFC 3986 compliant)
+              # CORREÇÃO 29/12/2025: Conversão de caractere para hex em dois passos
+              # PROBLEMA: printf -v o '%%%02X' "'$c" não funciona corretamente quando $c é variável expandida
+              # SOLUÇÃO: Primeiro obter código ASCII com printf -v ascii '%d' "'$c", depois converter para hex
+              # Ref: Bug fix documentado em CLAUDE.md (23/12/2025)
               urlencode() {
                 local string="${1}"
-                local strlen=${#string}
+                local length="${#string}"
+                local i c ascii hex
                 local encoded=""
-                local pos c o
                 
-                for (( pos=0 ; pos<strlen ; pos++ )); do
-                  c=${string:$pos:1}
+                for (( i=0; i<length; i++ )); do
+                  c="${string:i:1}"
                   case "$c" in
-                    [-_.~a-zA-Z0-9] ) o="${c}" ;;
-                    * ) LC_ALL=C printf -v o '%%%02X' "'$c" ;;
+                    # CORREÇÃO 29/12/2025: Hífen movido para o final do padrão case
+                    # Hífen no início pode ser interpretado como range operator em bash
+                    [_.~a-zA-Z0-9-] ) encoded+="${c}" ;;
+                    * )
+                      # CORREÇÃO 29/12/2025: Conversão em dois passos (ASCII → hex)
+                      # Primeiro passo: obter código ASCII do caractere
+                      LC_ALL=C printf -v ascii '%d' "'$c"
+                      # Segundo passo: converter código ASCII para hex
+                      printf -v hex '%%%02X' "$ascii"
+                      encoded+="${hex}"
+                      ;;
                   esac
-                  encoded+="${o}"
                 done
                 echo "${encoded}"
               }
