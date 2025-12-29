@@ -67,8 +67,8 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.140.0 |
-| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.140.0 |
+| 30 | **Langfuse Web** | `langfuse` | Observabilidade de LLM - interface web e API para métricas de tokens, latência, custos. | Langfuse 3.139.0 |
+| 31 | **Langfuse Worker** | `langfuse-worker` | Worker assíncrono do Langfuse v3 para processamento de traces e métricas. | Langfuse 3.139.0 |
 | 32 | **Langfuse DB** | `alice-langfuse-db` | PostgreSQL dedicado para Langfuse (isolamento de dados). | PostgreSQL 16 |
 | 33 | **ClickHouse** | `clickhouse` | **OLAP Backend obrigatório Langfuse v3**. Analytics de alta performance. | ClickHouse 25.12-alpine |
 | 34 | **Prometheus** | `prometheus` | Coleta e armazenamento de métricas de todos os serviços. | Prometheus 3.8.1 |

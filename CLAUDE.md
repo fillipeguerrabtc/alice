@@ -105,7 +105,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
 - **Database**: PostgreSQL with pgvector extension.
-- **Observability**: Prometheus 3.8.1, Grafana OSS 12.3.1, Jaeger 2.13.0, Loki 3.6.3, Promtail 3.6.3, Alertmanager 0.29.0, Vector 0.51.1, OpenTelemetry Collector 0.142.0, Langfuse 3.140.0, Node Exporter 1.9.1, cAdvisor 0.52.1.
+- **Observability**: Prometheus 3.8.1, Grafana OSS 12.3.1, Jaeger 2.13.0, Loki 3.6.3, Promtail 3.6.3, Alertmanager 0.29.0, Vector 0.51.1, OpenTelemetry Collector 0.142.0, Langfuse 3.139.0, Node Exporter 1.9.1, cAdvisor 0.52.1.
 - **API Gateway**: Traefik v3.6.4.
 - **CI/CD**: GitHub Actions.
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).

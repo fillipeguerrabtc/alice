@@ -24,11 +24,25 @@ fi
 # Usar variável de ambiente para stanza (default: alice_prod)
 STANZA="${PGBACKREST_STANZA:-alice_prod}"
 
-# Aguardar PostgreSQL estar pronto
+# =============================================================================
+# CORREÇÃO 29/12/2025: Usar variáveis libpq padrão para conexão TCP
+# 
+# PROBLEMA ANTERIOR: Usava PGBACKREST_PG1_HOST que forçava pgBackRest a tentar SSH
+# SOLUÇÃO: Usar PGHOST (variável libpq padrão) para pg_isready
+#
+# pg_isready usa variáveis libpq automaticamente:
+# - PGHOST: hostname do PostgreSQL
+# - PGPORT: porta (padrão 5432)
+# - PGUSER: usuário
+# =============================================================================
+
+# Aguardar PostgreSQL estar pronto (conexão TCP via libpq)
 echo "[INFO] Aguardando PostgreSQL..."
-PG_HOST="${PGBACKREST_PG1_HOST:-postgres}"
-PG_PORT="${PGBACKREST_PG1_PORT:-5432}"
+PG_HOST="${PGHOST:-postgres}"
+PG_PORT="${PGPORT:-5432}"
 PG_USER="${PGUSER:-alice}"
+
+echo "[INFO] Conectando a PostgreSQL em ${PG_HOST}:${PG_PORT} como ${PG_USER}..."
 
 until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" 2>/dev/null; do
     echo "[INFO] PostgreSQL não está pronto, aguardando 5s..."

@@ -323,8 +323,8 @@ Estes são necessários para o deploy funcionar:
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
 | `RESEND_API_KEY` | **API Key do Resend** para SMTP do Alertmanager | Workflow escreve em `/opt/alice/secrets/alertmanager/smtp_password` |
 
-**⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
-- Langfuse foi atualizado para v3.140.0 que requer novas variáveis obrigatórias:
+**⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 29/12/2025):**
+- Langfuse corrigido para v3.139.0 (downgrade de v3.140.0 devido bug ZodError) que requer novas variáveis obrigatórias:
   - `LANGFUSE_SALT`: String aleatória para hashing (gerar com `openssl rand -base64 16`)
   - `LANGFUSE_ENCRYPTION_KEY`: Chave 256-bit hex (gerar com `openssl rand -hex 32`)
 - Nova arquitetura v3 inclui container `langfuse-worker` para processamento assíncrono

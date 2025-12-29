@@ -383,7 +383,7 @@ alice/
 - Jaeger 2.13.0 (tracing distribuído)
 - Loki 3.6.3, Promtail 3.6.3 (logs)
 - OpenTelemetry Collector 0.142.0 (instrumentação)
-- Langfuse 3.140.0 (métricas LLM)
+- Langfuse 3.139.0 (métricas LLM)
 
 ---
 

@@ -827,7 +827,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**.
+> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.139.0** (downgrade de 3.140.0 devido bug ZodError), **pgBackRest 2.57.0**.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -1025,7 +1025,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Prometheus 3.8.1 | Métricas | metrics.yesyoudeserve.duckdns.org |
 | Grafana OSS 12.3.1 | Dashboards | observability.yesyoudeserve.duckdns.org |
 | Jaeger 2.13.0 | Tracing | traces.yesyoudeserve.duckdns.org |
-| Langfuse 3.140.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
+| Langfuse 3.139.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | Langfuse Worker | Processamento Assíncrono | (interno) |
 | **ClickHouse 25.12** | **OLAP Backend Langfuse v3** | (interno) |
 | Alertmanager 0.29.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
@@ -1034,7 +1034,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA IMPORTANTE:** Stack separada da Alice para continuar monitorando mesmo se Alice tiver problemas. Isso é **best practice**, não um problema.
 
-> **NOTA Langfuse v3 (28/12/2025):** Langfuse atualizado para v3.140.0 com arquitetura que inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
+> **NOTA Langfuse v3 (29/12/2025):** Langfuse corrigido para v3.139.0 (downgrade de v3.140.0 que tinha bug ZodError). Arquitetura inclui container worker para processamento assíncrono. Requer variáveis `LANGFUSE_SALT` e `LANGFUSE_ENCRYPTION_KEY` obrigatórias.
 
 ### Dashboards Grafana Enterprise (9 dashboards, 100% completos)
 

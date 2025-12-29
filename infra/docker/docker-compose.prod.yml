@@ -2371,8 +2371,12 @@ services:
   # REQUISITOS v3: PostgreSQL + ClickHouse + Redis (alice-redis)
   # ===========================================================================
   langfuse:
-    # Langfuse v3.139.0 (Dec 2025) - última versão estável com ClickHouse
-    image: langfuse/langfuse:3.140.0
+    # CORREÇÃO 29/12/2025: Downgrade para v3.139.0 (última versão estável)
+    # Langfuse v3.140.0 tem bug conhecido com ZodError:
+    # "Cannot set property message of ZodError which has only a getter"
+    # Causado por incompatibilidade Next.js/Zod. PR aberto para fix.
+    # Ref: https://github.com/orgs/langfuse/discussions/8781
+    image: langfuse/langfuse:3.139.0
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2437,7 +2441,8 @@ services:
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
   langfuse-worker:
-    image: langfuse/langfuse:3.140.0
+    # CORREÇÃO 29/12/2025: Downgrade para v3.139.0 (mesma versão do langfuse web)
+    image: langfuse/langfuse:3.139.0
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped
@@ -2962,12 +2967,30 @@ services:
     environment:
       # Stanza name (deve corresponder ao nome no pgbackrest.conf e entrypoint.sh)
       PGBACKREST_STANZA: alice_prod
-      # PostgreSQL connection
+      # =======================================================================
+      # CORREÇÃO 29/12/2025: REMOVIDO PGBACKREST_PG1_HOST
+      # 
+      # PROBLEMA: Com PGBACKREST_PG1_HOST definido, pgBackRest tentava usar SSH
+      # para conectar ao container postgres, causando erro:
+      # "unable to execute 'ssh': No such file or directory"
+      #
+      # SOLUÇÃO: Em Docker com volume compartilhado (postgres_data), pgBackRest
+      # acessa os dados PostgreSQL LOCALMENTE no container. Não precisa de
+      # conexão remota para backups.
+      #
+      # Para verificações de status (pg_isready), usamos variáveis libpq:
+      # - PGHOST: hostname do PostgreSQL para conexões TCP
+      # - PGPORT, PGUSER, PGPASSWORD: credenciais de conexão
+      # =======================================================================
+      # 
+      # Variáveis libpq para conexão TCP (usadas por pg_isready no entrypoint.sh)
+      # Não sobrescrevem pg1-host no pgbackrest.conf (que foi REMOVIDO)
+      PGHOST: postgres
+      PGPORT: "5432"
+      # PostgreSQL database e caminho dos dados
       PGBACKREST_PG1_PORT: "5432"
-      # Forçar conexão via TCP (evita fallback para socket local inexistente)
-      PGBACKREST_PG1_HOST: postgres
       PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
-      # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
+      # Caminho dos dados PostgreSQL (LOCAL ao container via volume compartilhado)
       # PostgreSQL usa /var/lib/postgresql/data diretamente (padrão, não subdiretório /pgdata)
       PGBACKREST_DB_PATH: /var/lib/postgresql/data
       # Repositório de backup (caminho DENTRO do container, não do host)
@@ -2983,8 +3006,8 @@ services:
       # Logging
       PGBACKREST_LOG_LEVEL_CONSOLE: info
       PGBACKREST_LOG_LEVEL_FILE: detail
-      # PostgreSQL credentials
-      # NOTA: PGPASSWORD é variável de ambiente do pgBackRest (não é secret do GitHub)
+      # PostgreSQL credentials (variáveis libpq)
+      # NOTA: PGPASSWORD é variável de ambiente padrão libpq (usado por pg_isready)
       # Recebe valor de POSTGRES_PASSWORD (secret do GitHub)
       PGUSER: ${POSTGRES_USER:-alice}
       PGPASSWORD: ${POSTGRES_PASSWORD}
