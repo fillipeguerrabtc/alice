@@ -480,18 +480,11 @@ jobs:
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
             
-            // NOTA: ref deve ser 'main' (branch) ao invés da tag
-            // MOTIVO: GitHub pode não ter processado o workflow na tag recém-criada,
-            // causando erro 422 "Workflow does not have 'workflow_dispatch' trigger".
-            // O versionamento é preservado porque deploy-production.yml faz checkout
-            // do ref especificado em inputs.version no primeiro step (actions/checkout).
-            // Isso garante que o código usado será exatamente da tag, mantendo
-            // o sistema de versionamento e cache enterprise funcionando corretamente.
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'deploy-production.yml',
-              ref: 'main',
+              ref: version,
               inputs: {
                 version: version,
                 services: 'all',
