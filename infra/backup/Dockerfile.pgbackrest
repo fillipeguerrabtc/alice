@@ -142,7 +142,18 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
 # Os diretórios /var/lib/pgbackrest e /var/log/pgbackrest serão montados explicitamente
 # no docker-compose para garantir persistência no volume Hetzner
 
-# Comando padrão: servidor de arquivamento contínuo
-# Stanza será definido via variável de ambiente no entrypoint.sh
+# =============================================================================
+# CORREÇÃO 29/12/2025: Modo STANDBY por padrão (sem archive-push)
+# =============================================================================
+# PROBLEMA: CMD ["archive-push"] forçava execução de archive-push, que falha
+# quando PostgreSQL tem archive_mode=off (configuração padrão em Docker)
+#
+# SOLUÇÃO: Sem CMD, o entrypoint.sh fica em modo STANDBY aguardando comandos
+# de backup manuais ou agendados via cron/scheduler externo.
+#
+# USO:
+#   docker exec alice-pgbackrest pgbackrest --stanza=alice_prod backup --type=full
+#   docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info
+# =============================================================================
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
-CMD ["archive-push"]
+# Sem CMD = modo standby (entrypoint.sh fica em loop aguardando comandos)
