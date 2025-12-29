@@ -1386,41 +1386,98 @@ EOF
             # CORREÇÃO 29/12/2025: erpnext-create-site é container one-shot
             # Deve executar e sair com exit code 0 (sucesso)
             # Se falhar, ERPNext não funciona corretamente
+            # BUG FIX 29/12/2025: Docker retorna ExitCode=0 tanto para containers
+            # em execução (valor default) quanto para containers terminados.
+            # Solução: verificar State.Status="exited" ANTES de confiar em ExitCode
             # =================================================================
             echo "🔍 Validando erpnext-create-site..."
             
+            # Obter status e exit code juntos para evitar race condition
+            ERPNEXT_STATUS=$(docker inspect --format='{{.State.Status}}' erpnext-create-site 2>/dev/null || echo "not_found")
             ERPNEXT_CREATE_EXIT=$(docker inspect --format='{{.State.ExitCode}}' erpnext-create-site 2>/dev/null || echo "255")
             
-            if [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
+            # CORREÇÃO: Só considerar sucesso se Status=exited E ExitCode=0
+            if [ "$ERPNEXT_STATUS" = "exited" ] && [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
               echo "✅ erpnext-create-site completado com sucesso"
-            elif [ "$ERPNEXT_CREATE_EXIT" = "255" ]; then
-              echo "⚠️ AVISO: erpnext-create-site não encontrado (pode não ter iniciado ainda)"
-              # Aguardar até 2 minutos
+            elif [ "$ERPNEXT_STATUS" = "not_found" ] || [ "$ERPNEXT_STATUS" = "created" ]; then
+              echo "⚠️ AVISO: erpnext-create-site não encontrado ou ainda não iniciou"
+              # Aguardar até 2 minutos pelo container terminar
               MAX_WAIT=120
               ELAPSED=0
               while [ $ELAPSED -lt $MAX_WAIT ]; do
+                ERPNEXT_STATUS=$(docker inspect --format='{{.State.Status}}' erpnext-create-site 2>/dev/null || echo "not_found")
                 ERPNEXT_CREATE_EXIT=$(docker inspect --format='{{.State.ExitCode}}' erpnext-create-site 2>/dev/null || echo "255")
-                if [ "$ERPNEXT_CREATE_EXIT" != "255" ]; then
+                
+                # Container terminou (exited) - sair do loop independente do exit code
+                if [ "$ERPNEXT_STATUS" = "exited" ]; then
                   break
                 fi
+                
+                # Container em execução - continuar aguardando
+                if [ "$ERPNEXT_STATUS" = "running" ]; then
+                  echo "⏳ erpnext-create-site ainda está executando... (${ELAPSED}s/${MAX_WAIT}s)"
+                fi
+                
                 sleep 5
                 ELAPSED=$((ELAPSED + 5))
               done
               
-              if [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
+              # Verificar resultado final após o loop
+              if [ "$ERPNEXT_STATUS" = "exited" ] && [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
                 echo "✅ erpnext-create-site completado com sucesso (após ${ELAPSED}s)"
-              elif [ "$ERPNEXT_CREATE_EXIT" = "255" ]; then
-                echo "⚠️ AVISO: erpnext-create-site ainda não executou após ${MAX_WAIT}s"
+              elif [ "$ERPNEXT_STATUS" = "exited" ] && [ "$ERPNEXT_CREATE_EXIT" != "0" ]; then
+                echo "❌ ERRO: erpnext-create-site falhou (status: $ERPNEXT_STATUS, exit code: $ERPNEXT_CREATE_EXIT)"
+                echo "   Logs:"
+                docker logs erpnext-create-site || true
+                exit 1
+              elif [ "$ERPNEXT_STATUS" = "running" ]; then
+                echo "⚠️ AVISO: erpnext-create-site ainda está executando após ${MAX_WAIT}s"
+                echo "   ERPNext pode não estar configurado corretamente ainda"
+                # Não falhar deploy - ERPNext pode terminar depois
+              else
+                echo "⚠️ AVISO: erpnext-create-site não executou após ${MAX_WAIT}s (status: $ERPNEXT_STATUS)"
                 echo "   ERPNext pode não estar configurado corretamente"
                 # Não falhar deploy - ERPNext pode ser configurado manualmente
-              else
+              fi
+            elif [ "$ERPNEXT_STATUS" = "running" ]; then
+              echo "⏳ erpnext-create-site ainda está executando, aguardando..."
+              # Aguardar até 2 minutos pelo container terminar
+              MAX_WAIT=120
+              ELAPSED=0
+              while [ $ELAPSED -lt $MAX_WAIT ]; do
+                ERPNEXT_STATUS=$(docker inspect --format='{{.State.Status}}' erpnext-create-site 2>/dev/null || echo "not_found")
+                ERPNEXT_CREATE_EXIT=$(docker inspect --format='{{.State.ExitCode}}' erpnext-create-site 2>/dev/null || echo "255")
+                
+                # Container terminou (exited) - sair do loop
+                if [ "$ERPNEXT_STATUS" = "exited" ]; then
+                  break
+                fi
+                
+                echo "⏳ erpnext-create-site ainda está executando... (${ELAPSED}s/${MAX_WAIT}s)"
+                sleep 5
+                ELAPSED=$((ELAPSED + 5))
+              done
+              
+              # Verificar resultado final
+              if [ "$ERPNEXT_STATUS" = "exited" ] && [ "$ERPNEXT_CREATE_EXIT" = "0" ]; then
+                echo "✅ erpnext-create-site completado com sucesso (após ${ELAPSED}s)"
+              elif [ "$ERPNEXT_STATUS" = "exited" ]; then
                 echo "❌ ERRO: erpnext-create-site falhou (exit code: $ERPNEXT_CREATE_EXIT)"
                 echo "   Logs:"
                 docker logs erpnext-create-site || true
                 exit 1
+              else
+                echo "⚠️ AVISO: erpnext-create-site ainda está executando após ${MAX_WAIT}s"
+                echo "   ERPNext pode não estar configurado corretamente ainda"
               fi
-            else
+            elif [ "$ERPNEXT_STATUS" = "exited" ]; then
+              # Status=exited mas ExitCode != 0
               echo "❌ ERRO: erpnext-create-site falhou (exit code: $ERPNEXT_CREATE_EXIT)"
+              echo "   Logs:"
+              docker logs erpnext-create-site || true
+              exit 1
+            else
+              echo "❌ ERRO: erpnext-create-site em estado inesperado (status: $ERPNEXT_STATUS, exit code: $ERPNEXT_CREATE_EXIT)"
               echo "   Logs:"
               docker logs erpnext-create-site || true
               exit 1

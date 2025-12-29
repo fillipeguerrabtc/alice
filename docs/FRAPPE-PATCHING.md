@@ -1,7 +1,7 @@
 # Frappe Framework Patching - Guia de Atualização de Segurança
 
 **Autor:** Fillipe Guerra  
-**Data:** 27 de Dezembro de 2025
+**Data:** 29 de Dezembro de 2025
 
 ## Sumário
 
@@ -273,6 +273,6 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
 
 *Autor: Fillipe Guerra*
 *Documento em Português Brasileiro*
-*Atualizado: 17 de Dezembro de 2025*
-*Versão: 1.4*
-*Total de Containers: 51 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Atualizado: 29 de Dezembro de 2025*
+*Versão: 1.5 - Auditoria Enterprise Container Count*
+*Total de Containers: 50 (8 infraestrutura + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*

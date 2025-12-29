@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) |
+| **Total de Containers** | 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -28,9 +28,9 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 51/51 containers (100%) |
-| `read_only: true` | ✅ | 25/51 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 51/51 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 50/50 containers (100%) |
+| `read_only: true` | ✅ | 25/50 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 50/50 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
@@ -99,7 +99,7 @@
 
 | # | Serviço | Diretório | Container Prod | Porta | Tecnologia |
 |---|---------|-----------|----------------|-------|------------|
-| 1 | Frontend | `apps/frontend-service` | alice-frontend | 5000 | React 18, Vite 7.3, shadcn/ui |
+| 1 | Frontend | `apps/frontend-service` | alice-frontend | 5000 | React 19.2.3, Vite 7.3, shadcn/ui |
 | 2 | Auth | `apps/auth-service` | alice-auth | 3001 | Node.js, OIDC, OAuth, SAML |
 | 3 | Chat | `apps/chat-service` | alice-chat | 3002 | Node.js, WebSocket, LLM |
 | 4 | RAG | `apps/rag-service` | alice-rag | 3003 | Node.js, pgvector, multimodal |
@@ -379,7 +379,7 @@
 
 | Funcionalidade | Status | Arquivo |
 |----------------|--------|---------|
-| React 18 + Vite 7.3 | ✅ | - |
+| React 19.2.3 + Vite 7.3 | ✅ | - |
 | shadcn/ui + Tailwind CSS | ✅ | - |
 | i18n (PT-BR primário, EN secundário) | ✅ | `locales/` |
 | WebSocket Chat | ✅ | `hooks/use-websocket-chat.ts` |
@@ -643,7 +643,7 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (51 containers)
+## 🐳 INFRAESTRUTURA DOCKER (50 containers)
 
 ### Core Infra (8)
 
@@ -711,10 +711,10 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 51/51 containers (100% COMPLETO) |
-| read_only: true | ✅ | 25/51 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 51/51 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 51/51 containers |
+| no-new-privileges | ✅ | 50/50 containers (100% COMPLETO) |
+| read_only: true | ✅ | 25/50 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 50/50 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 50/50 containers |
 | **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
@@ -1224,12 +1224,12 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 *Documento atualizado em: 27/12/2025*
 *Autor: Fillipe Guerra*
-*Versão: 4.20 - Runner Enterprise Hardening*
+*Versão: 4.26 - Auditoria Enterprise Container Count*
 *Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
 *Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
 *Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*
 *ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
@@ -1611,4 +1611,4 @@ body = {
 
 *Documento gerado automaticamente pela auditoria completa da plataforma*  
 *Autor: Fillipe Guerra*  
-*Data: 21 de Dezembro de 2025*
+*Data: 29 de Dezembro de 2025*

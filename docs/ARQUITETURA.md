@@ -1,7 +1,7 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 28 de Dezembro de 2025  
+> **Data:** 29 de Dezembro de 2025  
 > **Versão:** 1.11.0 - Server GPU Optimizations Enterprise (Docker daemon, NVIDIA Persistence, Kernel sysctl)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
@@ -171,7 +171,7 @@ C4Container
     
     Container_Boundary(alice, "Alice Platform") {
         Container(traefik, "Traefik", "API Gateway", "Roteamento, SSL, Rate Limiting")
-        Container(frontend, "Frontend", "React 18 + Vite 7.3", "SPA, shadcn/ui, i18n")
+        Container(frontend, "Frontend", "React 19.2.3 + Vite 7.3", "SPA, shadcn/ui, i18n")
         Container(auth, "Auth Service", "Node.js", "OAuth, SAML, RBAC")
         Container(chat, "Chat Service", "Node.js", "WebSocket, LLM, Trading Commands")
         Container(rag, "RAG Service", "Node.js", "Embeddings, Busca Semântica")
@@ -198,7 +198,7 @@ C4Container
     Rel(auth, redis, "TCP", "Sessions")
 ```
 
-### 4.2 Catálogo de Containers (45 Total)
+### 4.2 Catálogo de Containers (50 Total)
 
 #### Infraestrutura Core (8)
 
@@ -217,7 +217,7 @@ C4Container
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
-| 8 | `alice-frontend` | React 18 + Vite 7.3 | 5000 | SPA, UI/UX |
+| 8 | `alice-frontend` | React 19.2.3 + Vite 7.3 | 5000 | SPA, UI/UX |
 | 9 | `alice-auth` | Node.js | 3001 | OAuth, SAML, RBAC |
 | 10 | `alice-chat` | Node.js | 3002 | WebSocket, LLM, Trading |
 | 11 | `alice-rag` | Node.js | 3003 | RAG, Embeddings |
@@ -503,7 +503,7 @@ flowchart LR
     end
     
     subgraph Production
-        K --> L[51 Containers Hetzner GEX44]
+        K --> L[50 Containers Hetzner GEX44]
         L --> M[GPU Manager Service + 4 GPU Services (local)]
         M --> N[Prometheus Monitoring]
     end
@@ -576,9 +576,9 @@ CREATE POLICY "tenant_isolation" ON conversations
 
 | Medida | Cobertura | Status |
 |--------|-----------|--------|
-| `no-new-privileges` | 51/51 containers | ✅ 100% |
-| `read_only: true` | 25/51 containers | ✅ Onde aplicável |
-| Resource limits | 51/51 containers | ✅ 100% |
+| `no-new-privileges` | 50/50 containers | ✅ 100% |
+| `read_only: true` | 25/50 containers | ✅ Onde aplicável |
+| Resource limits | 50/50 containers | ✅ 100% |
 | SHA256 digests | 26 imagens | ✅ 100% |
 | Healthchecks | 38/38 containers | ✅ 100% |
 
@@ -901,9 +901,9 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
 
 *Autor: Fillipe Guerra*  
-*Data: 28 de Dezembro de 2025*
-*Versão: 1.11.0 - Server GPU Optimizations Enterprise*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
+*Data: 29 de Dezembro de 2025*
+*Versão: 1.12.0 - Auditoria Enterprise Container Count*
+*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*  
 *Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
 *LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
 *Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  

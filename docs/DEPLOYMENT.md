@@ -8,9 +8,9 @@
 
 > **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
 
-## Visão Geral da Arquitetura - 51 Containers em Produção
+## Visão Geral da Arquitetura - 50 Containers em Produção
 
-A plataforma Alice é composta por **51 containers** organizados em 7 categorias (45 serviços + 5 GPU + 1 backup):
+A plataforma Alice é composta por **50 containers** organizados em 7 categorias (44 serviços + 5 GPU + 1 backup):
 
 ### Categoria 1: Infraestrutura Core (8 serviços)
 
@@ -31,7 +31,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 
 | # | Serviço | Container | Diretório | Descrição | Tecnologia |
 |---|---------|-----------|-----------|-----------|------------|
-| 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 18, Vite 7.3, shadcn/ui, i18n PT-BR |
+| 7 | **Frontend** | `alice-frontend` | `apps/frontend-service` | Interface web responsiva com chat em tempo real, dashboard de métricas, painel de takeover/handover. | React 19.2.3, Vite 7.3, shadcn/ui, i18n PT-BR |
 | 8 | **Auth Service** | `alice-auth` | `apps/auth-service` | Autenticação enterprise com OAuth 2.0, SAML 2.0, OIDC Provider, RBAC 6 níveis, sessões PostgreSQL. | Node.js, node-oidc-provider v9.5.2 |
 | 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, GPU Manager Service |
 | 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU local. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
@@ -118,7 +118,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
                                    │
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
-│               PRODUÇÃO (Hetzner Cloud - GEX44) - 51 CONTAINERS         │
+│               PRODUÇÃO (Hetzner Cloud - GEX44) - 50 CONTAINERS         │
 │                                                                          │
 │  ┌────────────────────────────────────────────────────────────────────┐ │
 │  │    GEX44 (Intel i5-13500 14 Core, 64GB DDR4, 1.92TB NVMe RAID 1)  │ │
@@ -338,7 +338,7 @@ GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
 | Servidor | Alias SSH | IP | Função |
 |----------|-----------|-----|--------|
 | **Deploy Server** | `alice-hetzner` | 46.224.46.93 | GitHub Actions Runner, CI/CD (CPX32 - 4 vCPU, 8GB RAM) |
-| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (51 containers) |
+| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (50 containers) |
 
 **Configuração SSH** (`~/.ssh/config`):
 
@@ -638,7 +638,7 @@ O deploy é **100% automático** via GitHub Actions:
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │   51 containers                        │
+│  │ • SSH para Hetzner  │   50 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
 │  │ • Health checks     │   RTX 4000 Ada 20GB (Mixtral, FLUX, ASR, Emb.)  │
@@ -654,7 +654,7 @@ O deploy é **100% automático** via GitHub Actions:
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Hetzner** | Release passa | 51 containers via Docker Compose |
+| **Deploy Hetzner** | Release passa | 50 containers via Docker Compose |
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
@@ -681,7 +681,7 @@ O deploy é **100% automático** via GitHub Actions:
 - Reverte containers para última versão estável
 - GPU services são parte do deploy único (não separado)
 
-Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 51 containers no servidor único).
+Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 50 containers no servidor único).
 
 ### Versionamento Automático
 
@@ -1244,9 +1244,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 51/51 containers (100%) |
-| **resource limits** | ✅ | 51/51 containers (100%) |
-| **read_only: true** | ✅ | 25/51 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 50/50 containers (100%) |
+| **resource limits** | ✅ | 50/50 containers (100%) |
+| **read_only: true** | ✅ | 25/50 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -1296,15 +1296,15 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 27 de Dezembro de 2025*
-*Versão: 7.11 - CPX32 Runner Enterprise Hardening*
-*Data: 27 de Dezembro de 2025*
+*Versão: 7.14 - Auditoria Enterprise Container Count*
+*Data: 29 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
-*Security Hardening: 100% completo - 51/51 containers com no-new-privileges, 51/51 com resource limits, 25/51 com read_only*
+*Total de Containers: 50 (8 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup)*
+*Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 51 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
