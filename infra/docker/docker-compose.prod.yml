@@ -2329,7 +2329,10 @@ services:
   # ===========================================================================
   # CLICKHOUSE - OLAP Database para Langfuse v3 (Arquitetura Oficial 2025)
   # Documentação: https://clickhouse.com/docs/en/operations/server-configuration-parameters
-  # NOTA: ClickHouse é OBRIGATÓRIO para Langfuse v3 - não é opcional
+  # ===========================================================================
+  # DESABILITADO 29/12/2025: ClickHouse só é necessário para Langfuse v3
+  # Langfuse v2.95.12 (atual) não usa ClickHouse - apenas PostgreSQL
+  # Quando Langfuse v3 tiver fix para ZodError, remover profile e restaurar
   # ===========================================================================
   clickhouse:
     # ATUALIZADO 20/12/2025: ClickHouse 24.8 LTS - tag versionada (digest removido - incompatível com amd64)
@@ -2337,6 +2340,9 @@ services:
     platform: linux/amd64
     container_name: alice-clickhouse
     restart: unless-stopped
+    # DESABILITADO 29/12/2025: Profile para não iniciar por padrão (Langfuse v2 não usa)
+    profiles:
+      - langfuse-v3
     security_opt:
       - no-new-privileges:true
     environment:
@@ -2379,54 +2385,45 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # LANGFUSE v3 - LLM Observability (Arquitetura Completa 2025)
-  # Documentação v3: https://langfuse.com/docs/deployment/v3/overview
-  # REQUISITOS v3: PostgreSQL + ClickHouse + Redis (alice-redis)
+  # LANGFUSE v2 - LLM Observability (Versão Estável)
+  # Documentação v2: https://langfuse.com/self-hosting/v2
+  # REQUISITOS v2: PostgreSQL apenas (sem ClickHouse)
   # ===========================================================================
+  # CORREÇÃO 29/12/2025: Usar v2.95.12 ao invés de v3.x
+  # =======================================================================
+  # PROBLEMA: Todas as versões Langfuse v3.x usam Next.js 14.2.x que tem bug:
+  # "Cannot set property message of ZodError which has only a getter"
+  # Ref: https://github.com/orgs/langfuse/discussions/8781
+  #
+  # O bug existe em TODAS versões v3.x (incluindo 3.0.0, 3.139.0, 3.140.0)
+  # porque todas usam Next.js 14.2.x. O fix requer Next.js 14.2.32+ ou 15.x
+  # que ainda não foi integrado ao Langfuse (PR pendente).
+  #
+  # SOLUÇÃO: Usar Langfuse v2.95.12 (última versão v2 estável)
+  # - Não tem o bug do ZodError (usa Next.js mais antigo)
+  # - Não requer ClickHouse (apenas PostgreSQL)
+  # - Funcionalidade completa de LLM observability
+  # - Suporte oficial até Q1 2025 (migrar para v3 quando fix for lançado)
+  # =======================================================================
   langfuse:
-    # =======================================================================
-    # CORREÇÃO 29/12/2025: Downgrade para v3.0.0 (última versão estável SEM bug ZodError)
-    # =======================================================================
-    # PROBLEMA: Langfuse v3.139.0+ tem bug conhecido com ZodError:
-    # "Cannot set property message of ZodError which has only a getter"
-    # Causado por incompatibilidade Next.js 14.2.x/Zod.
-    # Ref: https://github.com/orgs/langfuse/discussions/8781
-    #
-    # SOLUÇÃO: Usar v3.0.0 (release estável de 09/12/2024) que usa Next.js mais antigo
-    # Esta versão é a primeira release estável do v3 e não tem o bug do ZodError.
-    # =======================================================================
-    image: langfuse/langfuse:3.0.0
+    image: langfuse/langfuse:2.95.12
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
     environment:
-      # === VARIÁVEIS OBRIGATÓRIAS v3 ===
+      # === VARIÁVEIS OBRIGATÓRIAS v2 ===
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      # === DATABASE (PostgreSQL para metadados) ===
-      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
+      # === DATABASE (PostgreSQL - único requisito para v2) ===
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
-      # === CLICKHOUSE (OLAP para traces - OBRIGATÓRIO v3) ===
-      CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000, formato clickhouse://)
-      # Valor gerado pelo generate-env-prod.sh com URL-encoding correto das credenciais
-      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
-      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
-      # === REDIS (Queue - usa alice-redis existente) ===
-      REDIS_HOST: alice-redis
-      REDIS_PORT: 6379
-      REDIS_AUTH: ${REDIS_PASSWORD}
-      # === S3/MEDIA (Desabilitado - usamos RAG service para uploads) ===
-      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
-      # === CONFIG v3 ===
-      LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS: "true"
+      # === CONFIG v2 ===
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # Telemetry (opcional - pode desabilitar)
+      TELEMETRY_ENABLED: "false"
     networks:
       - alice-network
     healthcheck:
@@ -2437,10 +2434,6 @@ services:
       start_period: 60s
     depends_on:
       langfuse-db:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-      alice-redis:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
@@ -2457,52 +2450,13 @@ services:
           memory: 512M
           cpus: '0.35'
 
-  # Langfuse Worker - Processamento assíncrono (obrigatório v3)
-  # Processa traces, scores e eventos em background via ClickHouse
-  langfuse-worker:
-    # CORREÇÃO 29/12/2025: Downgrade para v3.0.0 (mesma versão do langfuse web)
-    # Ver comentário no serviço langfuse sobre o bug ZodError
-    image: langfuse/langfuse:3.0.0
-    platform: linux/amd64
-    container_name: langfuse-worker
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    command: ["node", "packages/shared/dist/src/server/background-migrations/run.js"]
-    environment:
-      NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
-      NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
-      SALT: ${LANGFUSE_SALT}
-      ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
-      DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
-      CLICKHOUSE_URL: http://clickhouse:8123
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000)
-      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
-      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
-      REDIS_HOST: alice-redis
-      REDIS_PORT: 6379
-      REDIS_AUTH: ${REDIS_PASSWORD}
-      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
-    networks:
-      - alice-network
-    depends_on:
-      langfuse-db:
-        condition: service_healthy
-      clickhouse:
-        condition: service_healthy
-      langfuse:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 256M
-          cpus: '0.25'
+  # =======================================================================
+  # NOTA: langfuse-worker REMOVIDO
+  # =======================================================================
+  # Langfuse v2 não usa worker separado como v3.
+  # O processamento assíncrono em v2 é feito no container principal.
+  # Quando Langfuse v3 tiver fix para ZodError, restaurar langfuse-worker.
+  # =======================================================================
 
   langfuse-db:
     # ATUALIZADO 20/12/2025: PostgreSQL 16 Alpine (Langfuse DB) - tag versionada (digest removido - incompatível com amd64)

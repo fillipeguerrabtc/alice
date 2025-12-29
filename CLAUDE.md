@@ -66,7 +66,7 @@ Alice employs a microservices architecture with 51 containerized services orches
         - LLM Trading: Mixtral 8x7B (vLLM) - GPU OBRIGATÓRIO
         - GPU Manager: Gerenciamento centralizado com fila priorizada, monitoramento VRAM, circuit breakers
 - **ERPNext Stack (15 serviços)**: Includes MariaDB, Redis Cache/Queue, Frappe Bench services (configurator, create-site, backend), NGINX frontend, WebSocket, Scheduler, and 9 Workers (3x default, 3x short, 3x long) for comprehensive ERP functionalities.
-- **Observability Stack (14 serviços)**: Langfuse Web (LLM observability), **Langfuse Worker (processamento assíncrono v3)**, Langfuse DB (PostgreSQL), **ClickHouse (OLAP Langfuse v3)**, Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers).
+- **Observability Stack (12 serviços)**: Langfuse Web v2.95.12 (LLM observability - v2 estável sem bug ZodError), Langfuse DB (PostgreSQL), Prometheus (métricas), Grafana (dashboards), Loki (logs), Promtail (coleta de logs), Jaeger (tracing), Vector (agregação de logs), Alertmanager (alertas), OTel Collector (instrumentação), Node Exporter (métricas do host), cAdvisor (métricas de containers). **NOTA**: ClickHouse e Langfuse Worker desabilitados temporariamente (profile langfuse-v3) até Langfuse v3 ter fix para bug ZodError.
 - **Backup (1 serviço)**: pgBackRest for PostgreSQL enterprise backups (WAL archiving, incremental, encryption AES-256).
 
 **Shared Packages (`packages/`):**
@@ -105,7 +105,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 - **CRM/ERP**: ERPNext.
 - **Communication**: Twilio (WhatsApp, SMS), Resend (emails transacionais via API Key simplificada - sem domínio verificado).
 - **Database**: PostgreSQL with pgvector extension.
-- **Observability**: Prometheus 3.8.1, Grafana OSS 12.3.1, Jaeger 2.13.0, Loki 3.6.3, Promtail 3.6.3, Alertmanager 0.29.0, Vector 0.51.1, OpenTelemetry Collector 0.142.0, Langfuse 3.139.0, Node Exporter 1.9.1, cAdvisor 0.52.1.
+- **Observability**: Prometheus 3.8.1, Grafana OSS 12.3.1, Jaeger 2.13.0, Loki 3.6.3, Promtail 3.6.3, Alertmanager 0.29.0, Vector 0.51.1, OpenTelemetry Collector 0.142.0, Langfuse 2.95.12 (v2 estável - v3.x tem bug ZodError), Node Exporter 1.9.1, cAdvisor 0.52.1.
 - **API Gateway**: Traefik v3.6.4.
 - **CI/CD**: GitHub Actions.
 - **Storage**: Hetzner Volume local (100GB EXT4, expansível até 10TB).
