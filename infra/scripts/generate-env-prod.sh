@@ -191,14 +191,7 @@ if [ -z "${RESEND_API_KEY}" ]; then
   exit 1
 fi
 
-# Definir variáveis SMTP a partir do Resend (fixas)
-SMTP_HOST_VALUE="smtp.resend.com"
-SMTP_PORT_VALUE="587"
-SMTP_FROM_VALUE="onboarding@resend.dev"
-SMTP_USERNAME_VALUE="resend"
-SMTP_PASSWORD_VALUE="${RESEND_API_KEY}"
-
-echo "✅ Resend SMTP configurado (smtp.resend.com:587, username=resend)"
+echo "✅ RESEND_API_KEY validado (usado diretamente pelo Alertmanager via arquivo de secret)"
 
 echo "✅ Todas as secrets obrigatórias validadas"
 
@@ -317,12 +310,10 @@ if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
 fi
 
 # =============================================================================
-# FASE 7: Configurar valores SMTP (Resend)
+# FASE 7: Configurar emails de alerta (Alertmanager)
 # =============================================================================
-SMTP_HOST_VALUE="smtp.resend.com"
-SMTP_PORT_VALUE="587"
-SMTP_FROM_VALUE="onboarding@resend.dev"
-SMTP_USERNAME_VALUE="resend"
+# NOTA: Valores SMTP fixos (smtp.resend.com:587, user=resend) estão no docker-compose.prod.yml
+# A senha SMTP é RESEND_API_KEY, escrita diretamente em /opt/alice/secrets/alertmanager/smtp_password pelo workflow
 ALERT_EMAIL_VALUE="ops@yesyoudeserve.duckdns.org"
 CRITICAL_EMAIL_VALUE="critical@yesyoudeserve.duckdns.org"
 ONCALL_EMAIL_VALUE="oncall@yesyoudeserve.duckdns.org"
@@ -403,12 +394,7 @@ echo "📄 Gerando arquivo .env.prod..."
   # Usado no handshake WebSocket - alinhado com CORS_ORIGINS
   printf 'WEBSOCKET_ALLOWED_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
   printf '\n'
-  printf '# Alertmanager / Resend SMTP\n'
-  printf 'SMTP_HOST=%s\n' "${SMTP_HOST_VALUE}"
-  printf 'SMTP_PORT=%s\n' "${SMTP_PORT_VALUE}"
-  printf 'SMTP_FROM=%s\n' "${SMTP_FROM_VALUE}"
-  printf 'SMTP_USERNAME=%s\n' "${SMTP_USERNAME_VALUE}"
-  printf 'SMTP_PASSWORD=%s\n' "${SMTP_PASSWORD_VALUE}"
+  printf '# Alertmanager Emails (SMTP via Resend - config fixa no docker-compose.prod.yml)\n'
   printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
   printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
   printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
