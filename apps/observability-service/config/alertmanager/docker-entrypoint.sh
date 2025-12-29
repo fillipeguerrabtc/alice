@@ -60,13 +60,32 @@ echo "   ONCALL_EMAIL: $ONCALL_EMAIL"
 # Substituir variáveis usando sed (disponível em busybox/Alpine)
 # CORREÇÃO 29/12/2025: envsubst não existe na imagem prom/alertmanager
 # =============================================================================
+# CORREÇÃO 29/12/2025: Escapar caracteres especiais do sed no replacement string
+# Caracteres especiais em sed replacement:
+#   & = referência ao padrão correspondido (deve ser escapado como \&)
+#   \ = caractere de escape (deve ser escapado como \\)
+#   | = delimitador (deve ser escapado como \|)
+# Sem escape, email como "user&admin@example.com" vira "user${ALERT_EMAIL}admin@example.com"
+# =============================================================================
+
+# Função para escapar caracteres especiais do sed
+# Ordem importante: escapar \ primeiro, depois & e |
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/&/\\&/g' -e 's/|/\\|/g'
+}
+
+# Escapar valores antes de usar no sed
+ALERT_EMAIL_ESCAPED=$(escape_sed_replacement "$ALERT_EMAIL")
+CRITICAL_EMAIL_ESCAPED=$(escape_sed_replacement "$CRITICAL_EMAIL")
+ONCALL_EMAIL_ESCAPED=$(escape_sed_replacement "$ONCALL_EMAIL")
+
 cp "$CONFIG_TEMPLATE" "$CONFIG_FINAL"
 
 # Substituir ${ALERT_EMAIL}, ${CRITICAL_EMAIL}, ${ONCALL_EMAIL}
 # Usar | como delimitador para evitar problemas com @ em emails
-sed -i "s|\${ALERT_EMAIL}|${ALERT_EMAIL}|g" "$CONFIG_FINAL"
-sed -i "s|\${CRITICAL_EMAIL}|${CRITICAL_EMAIL}|g" "$CONFIG_FINAL"
-sed -i "s|\${ONCALL_EMAIL}|${ONCALL_EMAIL}|g" "$CONFIG_FINAL"
+sed -i "s|\${ALERT_EMAIL}|${ALERT_EMAIL_ESCAPED}|g" "$CONFIG_FINAL"
+sed -i "s|\${CRITICAL_EMAIL}|${CRITICAL_EMAIL_ESCAPED}|g" "$CONFIG_FINAL"
+sed -i "s|\${ONCALL_EMAIL}|${ONCALL_EMAIL_ESCAPED}|g" "$CONFIG_FINAL"
 
 echo "OK: Configuracao gerada em $CONFIG_FINAL"
 
