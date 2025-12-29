@@ -1455,6 +1455,14 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Função `urlencode` corrigida para usar implementação correta (alinhada com `infra/scripts/generate-env-prod.sh`)
 
+**Problema 4: Falta de timeout wrapper no comando drizzle-kit push**
+- **Erro:** Comando `docker run` executando `pnpm db:push` (drizzle-kit push) não tinha timeout wrapper, permitindo hangs indefinidos
+- **Causa Raiz:** Se `drizzle-kit push` hang devido a problemas de conexão, schema complexo ou PostgreSQL não respondendo, o workflow ficaria pendurado até timeout do GitHub Actions (muito longo)
+- **Solução:** Adicionado timeout wrapper de 300s (5 min) usando `timeout 300s docker run ...`, conforme padrão documentado em CLAUDE.md (bug fix 23/12/2025)
+- **Tratamento de Erros:** Distinção entre timeout (exit code 124) e outros erros, com mensagens específicas para cada caso
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Adicionado timeout wrapper e tratamento adequado de exit codes
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
