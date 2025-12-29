@@ -1265,7 +1265,9 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 
 - **Containers com `read_only: true`:** Apenas containers que não precisam escrever em volumes têm `read_only: true` aplicado. Containers que precisam escrever (workers, init, databases) não têm `read_only: true`, mas têm todos os outros aspectos de security hardening aplicados.
 
-- **Alertmanager SMTP:** senha carregada via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets`; não colocar senha inline em variáveis de ambiente.
+- **Alertmanager SMTP:** senha carregada via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets`; não colocar senha inline em variáveis de ambiente. Permissões exigidas: `chmod 640` e owner `65534:65534` (user nobody da imagem) para evitar `permission denied` no container.
+
+- **CORS/WebSocket:** `CORS_ORIGINS` e `WEBSOCKET_ALLOWED_ORIGINS` são obrigatórios no `.env.prod` para o chat-service e agora são validados no workflow de deploy.
 
 - **Vector:** porta 8686 exposta para métricas Prometheus; escreve estado em `/var/lib/vector` (sem `read_only: true`).
 

@@ -2391,6 +2391,8 @@ services:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000, formato clickhouse://)
+      # Valor gerado pelo generate-env-prod.sh com URL-encoding correto das credenciais
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
       CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
       # === REDIS (Queue - usa alice-redis existente) ===
@@ -2452,6 +2454,7 @@ services:
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
+      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000)
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
       CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
       REDIS_HOST: alice-redis
@@ -2961,6 +2964,8 @@ services:
       PGBACKREST_STANZA: alice_prod
       # PostgreSQL connection
       PGBACKREST_PG1_PORT: "5432"
+      # Forçar conexão via TCP (evita fallback para socket local inexistente)
+      PGBACKREST_PG1_HOST: postgres
       PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
       # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
       # PostgreSQL usa /var/lib/postgresql/data diretamente (padrão, não subdiretório /pgdata)

@@ -595,6 +595,8 @@ jobs:
             REQUIRED_KEYS=(
               "IMAGE_PREFIX"
               "IMAGE_TAG"
+              "CORS_ORIGINS"
+              "WEBSOCKET_ALLOWED_ORIGINS"
               "REDIS_URL"
               "INTERNAL_API_SECRET"
               "POSTGRES_PASSWORD"
@@ -703,12 +705,30 @@ jobs:
               echo "⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
             fi
             
-            # Extrair senha SMTP para Alertmanager (se existir)
-            SMTP_PWD=$(grep '^SMTP_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
-            if [ -n "$SMTP_PWD" ]; then
-              printf '%s' "$SMTP_PWD" > /opt/alice/secrets/alertmanager/smtp_password
-              chmod 600 /opt/alice/secrets/alertmanager/smtp_password
-              echo "✅ Secret alertmanager/smtp_password criado"
+            # Extrair API Key do Resend para Alertmanager SMTP
+            # CORREÇÃO 29/12/2025: Resend usa API Key como senha SMTP (integração simplificada)
+            # - Host: smtp.resend.com:587
+            # - Username: resend (fixo)
+            # - Password: RESEND_API_KEY (do GitHub Secrets)
+            # - Sender: onboarding@resend.dev (não requer domínio verificado)
+            # 
+            # Alertmanager (prom/alertmanager) roda como nobody:nogroup (65534:65534)
+            # O arquivo precisa ser legível pelo usuário nobody
+            RESEND_KEY=$(grep '^RESEND_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- || true)
+            if [ -n "$RESEND_KEY" ]; then
+              # Garantir que o diretório alertmanager tenha permissões corretas (755 = rwxr-xr-x)
+              chmod 755 /opt/alice/secrets/alertmanager
+              
+              # Criar o arquivo de secret com a API Key do Resend
+              printf '%s' "$RESEND_KEY" > /opt/alice/secrets/alertmanager/smtp_password
+              
+              # Alertmanager roda como nobody (65534); usar chmod 644 (world-readable)
+              chmod 644 /opt/alice/secrets/alertmanager/smtp_password
+              chown 65534:65534 /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || true
+              
+              echo "✅ Secret alertmanager/smtp_password criado com RESEND_API_KEY (permissões: $(stat -c '%a' /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || echo 'N/A'))"
+            else
+              echo "⚠️ RESEND_API_KEY não encontrado no .env.prod - alertas por email desabilitados"
             fi
             
             # =================================================================

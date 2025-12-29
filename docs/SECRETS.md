@@ -271,6 +271,7 @@ Estes são necessários para o deploy funcionar:
 - O arquivo `/opt/alice/secrets/alertmanager/smtp_password` deve conter a `RESEND_API_KEY`
 - Username fixo: `resend`
 - Não é necessário domínio verificado para usar `onboarding@resend.dev` como remetente
+- Permissões: defina `chmod 640` e `chown 65534:65534` (user nobody da imagem) para evitar `permission denied` ao montar em `/run/secrets/smtp_password`
 
 ### FASE 6.1: CORS (origens frontend) — OBRIGATÓRIO EM PRODUÇÃO
 
@@ -278,6 +279,7 @@ Estes são necessários para o deploy funcionar:
 |--------|----------------|-----------|
 | `CORS_ORIGIN` | `https://yesyoudeserve.duckdns.org` (ou domínio final) | Origin principal usado pelo `auth-service` |
 | `CORS_ORIGINS` | Lista separada por vírgula, sem espaços. Ex: `https://yesyoudeserve.duckdns.org,https://admin.yesyoudeserve.duckdns.org` | Usado por chat, integrations, rag, training, observability |
+| `WEBSOCKET_ALLOWED_ORIGINS` | Lista separada por vírgula, alinhada ao CORS | Necessário para handshake WebSocket do chat-service |
 
 > Defina pelo menos um dos dois. Se apenas `CORS_ORIGINS` estiver setado, o workflow derivará `CORS_ORIGIN` a partir do primeiro item.
 
