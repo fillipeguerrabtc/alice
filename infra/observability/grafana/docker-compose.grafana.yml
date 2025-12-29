@@ -51,12 +51,12 @@ services:
       - GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET=${GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:?GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET is required}
       - ALICE_OIDC_ISSUER=${ALICE_OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}
       
-      # SMTP (opcional)
+      # SMTP via Resend (opcional - alertas enviados pelo Alertmanager em produção)
       - GF_SMTP_ENABLED=${GF_SMTP_ENABLED:-false}
-      - GF_SMTP_HOST=${GF_SMTP_HOST:-smtp.resend.com:587}
-      - GF_SMTP_USER=${GF_SMTP_USER:-resend}
-      - GF_SMTP_PASSWORD=${GF_SMTP_PASSWORD:-}
-      - GF_SMTP_FROM=${GF_SMTP_FROM:-alerts@yesyoudeserve.duckdns.org}
+      - GF_SMTP_HOST=smtp.resend.com:587
+      - GF_SMTP_USER=resend
+      - GF_SMTP_PASSWORD=${RESEND_API_KEY:-}
+      - GF_SMTP_FROM=onboarding@resend.dev
       
       # Instalação de plugins
       - GF_INSTALL_PLUGINS=grafana-clock-panel,grafana-simple-json-datasource,grafana-piechart-panel

@@ -103,11 +103,8 @@ services:
       - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
       - '--cluster.listen-address='
     environment:
-      - SMTP_HOST=${SMTP_HOST:-smtp.resend.com}
-      - SMTP_PORT=${SMTP_PORT:-587}
-      - SMTP_FROM=${SMTP_FROM:-alertas@alice.yesyoudeserve.duckdns.org}
-      - SMTP_USERNAME=${SMTP_USERNAME:-resend}
-      - SMTP_PASSWORD=${SMTP_PASSWORD}
+      # SMTP via Resend (valores fixos - apenas RESEND_API_KEY é variável)
+      - RESEND_API_KEY=${RESEND_API_KEY}
       - ALERT_EMAIL=${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
       - CRITICAL_EMAIL=${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
       - ONCALL_EMAIL=${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}

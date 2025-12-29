@@ -321,7 +321,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_ENCRYPTION_KEY` | **OBRIGATÓRIO v3** - Chave 256-bit hex | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
-| `SMTP_PASSWORD` (arquivo) | **API Key do Resend** para relay SMTP do Alertmanager | O workflow escreve a `RESEND_API_KEY` em `/opt/alice/secrets/alertmanager/smtp_password` |
+| `RESEND_API_KEY` | **API Key do Resend** para SMTP do Alertmanager | Workflow escreve em `/opt/alice/secrets/alertmanager/smtp_password` |
 
 **⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
 - Langfuse foi atualizado para v3.140.0 que requer novas variáveis obrigatórias:
@@ -490,7 +490,7 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
 | `LANGFUSE_SALT` | ✅ **OBRIGATÓRIO v3** |
 | `LANGFUSE_ENCRYPTION_KEY` | ✅ **OBRIGATÓRIO v3** |
-| `SMTP_PASSWORD` (arquivo) | ✅ |
+| `RESEND_API_KEY` | ✅ (usado como senha SMTP do Alertmanager) |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
 | `LANGFUSE_DB_NAME` | ✅ |

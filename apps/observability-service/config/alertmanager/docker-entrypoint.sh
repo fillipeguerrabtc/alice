@@ -13,13 +13,14 @@ SECRETS_DIR="/etc/alertmanager/secrets"
 # Criar diretório de secrets
 mkdir -p "$SECRETS_DIR"
 
-# SMTP Password (obrigatório para email)
-if [ -n "$SMTP_PASSWORD" ]; then
-  echo -n "$SMTP_PASSWORD" > "$SECRETS_DIR/smtp_password"
+# SMTP Password via Resend API Key (obrigatório para email)
+# Resend usa API Key como senha SMTP: smtp.resend.com:587, user=resend
+if [ -n "$RESEND_API_KEY" ]; then
+  echo -n "$RESEND_API_KEY" > "$SECRETS_DIR/smtp_password"
   chmod 600 "$SECRETS_DIR/smtp_password"
-  echo "SMTP password configurado"
+  echo "SMTP configurado com RESEND_API_KEY"
 else
-  echo "AVISO: SMTP_PASSWORD não configurado - emails não funcionarão"
+  echo "AVISO: RESEND_API_KEY não configurado - emails não funcionarão"
   echo -n "" > "$SECRETS_DIR/smtp_password"
 fi
 

@@ -493,7 +493,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix Secrets Validação Fail-Fast (21/12/2025): Adicionada validação fail-fast para TODAS as secrets obrigatórias (QDRANT_API_KEY, HUGGINGFACE_TOKEN, SESSION_SECRET, INTERNAL_API_SECRET, SEARXNG_SECRET_KEY, CLICKHOUSE_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, ERPNEXT_DB_PASSWORD) - deploy falha imediatamente se qualquer secret obrigatória não estiver configurada*
 *Bug Fix Uploads Directory Permissions (21/12/2025): Adicionado chown -R 1000:1000 /opt/alice/uploads - alice-rag roda como UID 1000 (node) e precisa de permissão de escrita no diretório de uploads*
 *Bug Fix CLICKHOUSE_USER Default (21/12/2025): Corrigido default de CLICKHOUSE_USER - se secret vazio, usa "langfuse" como default ao invés de escrever valor vazio no .env.prod*
-*Bug Fix SMTP Secrets Removidos (21/12/2025): Removidos secrets SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USERNAME, SMTP_PASSWORD do workflow - Resend usa valores SMTP fixos (smtp.resend.com:587) + RESEND_API_KEY como senha. Docs: https://resend.com/docs/send-with-smtp*
+*SMTP Simplificado via Resend (21/12/2025): Arquitetura simplificada - apenas RESEND_API_KEY como secret. Valores SMTP fixos no docker-compose.prod.yml (smtp.resend.com:587, user=resend). Workflow escreve RESEND_API_KEY diretamente em /opt/alice/secrets/alertmanager/smtp_password. Docs: https://resend.com/docs/send-with-smtp*
 *Trading Analysis Enterprise (21/12/2025): Indicadores técnicos calculados por CÓDIGO (determinísticos) - RSI, MACD, EMA, SMA, Bollinger Bands, ATR, Stochastic, ADX, Pivot Points*
 *Technical Indicators Service (21/12/2025): technical-indicators.ts usa biblioteca technicalindicators 3.1.0 - cálculos precisos sem alucinação*
 *LLM Validation Service (21/12/2025): llm-validation.ts extrai valores citados pelo LLM e compara com valores reais calculados - detecta alucinações numéricas*
@@ -510,7 +510,7 @@ git commit -a -m "test: adiciona testes unitários"
 *Bug Fix minConfidenceToExecute (21/12/2025): Usar ?? ao invés de || para preservar valor 0 válido (0 é falsy com ||)*
 *Bug Fix Validation noValuesExtracted (21/12/2025): totalFields === 0 agora marca passed=false e overallAccuracy=0 (evita aprovação de respostas vagas)*
 *Bug Fix MACD Enum Mismatch (21/12/2025): MACDResult.interpretation agora usa 'sideways' ao invés de 'neutral' - compatibilidade com trendEnum do PostgreSQL*
-*Bug Fix SMTP_PASSWORD Faltante (21/12/2025): Adicionado SMTP_PASSWORD usando RESEND_API_KEY - Resend usa API Key como senha SMTP para autenticação*
+*SMTP via RESEND_API_KEY (21/12/2025): Alertmanager usa RESEND_API_KEY diretamente como senha SMTP (arquivo /run/secrets/smtp_password). Sem variável SMTP_PASSWORD - simplificação total.*
 *Bug Fix TypeScript interval Enum (21/12/2025): Adicionada validação e type narrowing para interval - TypeScript não entendia que string era um valor válido do enum após validação*
 *Bug Fix Frontend MACDResult (21/12/2025): TechnicalAnalysisPanel.tsx agora usa 'sideways' ao invés de 'neutral' - alinhado com backend e trendEnum PostgreSQL*
 *Bug Fix Typo 'as string' (21/12/2025): Corrigido `as 'string'` (literal) para type assertion correta no insert de indicadores*
