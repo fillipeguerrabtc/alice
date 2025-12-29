@@ -860,7 +860,15 @@ jobs:
             sleep 5
             
             # Verificar se database existe
-            DB_EXISTS=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -t -c "SELECT 1 FROM pg_database WHERE datname = '${POSTGRES_DB:-alice_prod}';" 2>/dev/null | xargs || echo "0")
+            # CORREÇÃO CRÍTICA 29/12/2025: Adicionar flag -d postgres
+            # PROBLEMA: Sem -d, psql tenta conectar ao database com mesmo nome do usuário (ex: "alice")
+            # Esse database não existe, causando falha silenciosa (stderr redirecionado)
+            # DB_EXISTS fica vazio e script incorretamente reporta que database não existe
+            #
+            # SOLUÇÃO: Usar -d postgres (database padrão que sempre existe) para fazer query
+            # em pg_database. Isso é mais seguro e confiável que tentar conectar ao database
+            # que queremos verificar (que pode não existir ainda)
+            DB_EXISTS=$(docker exec alice-postgres psql -U "${POSTGRES_USER:-alice}" -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname = '${POSTGRES_DB:-alice_prod}';" 2>/dev/null | xargs || echo "0")
             
             if [ "$DB_EXISTS" != "1" ]; then
               echo "❌ ERRO: Database ${POSTGRES_DB:-alice_prod} não existe!"

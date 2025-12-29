@@ -1477,6 +1477,13 @@ body = {
 - **Arquivos Modificados:**
   - `.github/workflows/deploy-production.yml` - Cópia de código para volume temporário rw, montagem `/tmp/drizzle-app:/app:rw`, limpeza automática
 
+**Problema 7: Comando psql sem flag -d falha silenciosamente na verificação de database**
+- **Erro:** Script incorretamente reportava "Database alice_prod não existe!" mesmo quando o database existia
+- **Causa Raiz:** Comando `psql` na linha 863 não tinha flag `-d` (database). Sem ela, `psql` tenta conectar ao database com mesmo nome do usuário (ex: "alice"), mas apenas "alice_prod" e "postgres" existem. A conexão falha silenciosamente (stderr redirecionado para `/dev/null`), `DB_EXISTS` fica vazio, e o script interpreta como database inexistente
+- **Solução:** Adicionada flag `-d postgres` ao comando `psql`. O database "postgres" sempre existe e permite fazer queries em `pg_database` para verificar se outros databases existem. Isso é mais seguro e confiável que tentar conectar ao database que queremos verificar (que pode não existir ainda)
+- **Arquivos Modificados:**
+  - `.github/workflows/deploy-production.yml` - Adicionada flag `-d postgres` ao comando de verificação de database
+
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)
 - ✅ Schema Drizzle ORM criado automaticamente no primeiro deploy
