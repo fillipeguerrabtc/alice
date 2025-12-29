@@ -2960,8 +2960,6 @@ services:
       # Stanza name (deve corresponder ao nome no pgbackrest.conf e entrypoint.sh)
       PGBACKREST_STANZA: alice_prod
       # PostgreSQL connection
-      PGBACKREST_PG1_HOST: postgres
-      PGBACKREST_PG1_HOST_TYPE: tls
       PGBACKREST_PG1_PORT: "5432"
       PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
       # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)

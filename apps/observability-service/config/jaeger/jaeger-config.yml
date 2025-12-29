@@ -26,10 +26,6 @@ service:
       receivers: [otlp]
       processors: [batch]
       exporters: [jaeger_storage_exporter]
-  telemetry:
-    metrics:
-      level: detailed
-      address: ":8888"
 
 # ===========================================================================
 # EXTENSIONS - Storage e Query
