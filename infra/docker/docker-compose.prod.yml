@@ -1083,8 +1083,10 @@ services:
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_WHATSAPP_NUMBER: ${TWILIO_WHATSAPP_NUMBER}
-      # Resend
-      RESEND_API_KEY: ${RESEND_API_KEY}
+      # Gmail SMTP (30/12/2025): Usado para emails transacionais do integrations-service
+      # NOTA: Alertmanager usa sua própria configuração SMTP em /etc/alertmanager/alertmanager.yml
+      GMAIL_USER: ${GMAIL_USER:-}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD:-}
       # Wise (pagamentos globais)
       WISE_API_KEY: ${WISE_API_KEY}
       WISE_PROFILE_ID: ${WISE_PROFILE_ID}

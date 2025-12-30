@@ -180,11 +180,12 @@ fi
 echo "✅ GPU Services validados (Hetzner GPU Server)"
 
 # =============================================================================
-# GMAIL SMTP (Alertmanager) - usar App Password para autenticação
+# GMAIL SMTP (Alertmanager + Integrations) - App Password para autenticação
 # =============================================================================
-# MIGRAÇÃO 30/12/2025: De Resend para Gmail SMTP
-# Gmail permite enviar para qualquer email (clientes, equipe, vendas)
-# Resend gratuito só permitia enviar para o próprio email da conta
+# Gmail SMTP (30/12/2025):
+# - Pode enviar para QUALQUER email (clientes, equipe, vendas)
+# - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
+# - Ref: https://support.google.com/accounts/answer/185833
 # =============================================================================
 echo ""
 echo "🔐 Validando Gmail SMTP (Alertmanager)..."
@@ -360,23 +361,17 @@ if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
 fi
 
 # =============================================================================
-# FASE 7: Validar ACME_EMAIL (usado para Let's Encrypt e Alertmanager)
+# FASE 7: Validar ACME_EMAIL (usado APENAS para Let's Encrypt)
 # =============================================================================
-# ACME_EMAIL é usado para:
-# 1. Let's Encrypt (certificados SSL via Traefik)
-# 2. Alertmanager (destino dos emails de alerta)
+# ACME_EMAIL é usado APENAS para:
+# - Let's Encrypt (certificados SSL via Traefik)
 #
-# INTEGRAÇÃO GMAIL SMTP (30/12/2025):
-# - Gmail permite enviar para QUALQUER email (clientes, equipe, vendas)
-# - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
-# - Secrets necessários: GMAIL_USER, GMAIL_APP_PASSWORD
-# - Ref: https://resend.com/docs/knowledge-base/how-do-I-create-an-email-address-or-sender-in-resend
-#
-# Se precisar enviar alertas para outros emails, é necessário verificar um domínio no Resend.
+# NOTA: Alertmanager usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
+# Ver docker-compose.prod.yml linha 2809: ALERT_EMAIL: ${GMAIL_USER}
 # =============================================================================
 if [ -z "${ACME_EMAIL:-}" ]; then
-  echo "::warning::ACME_EMAIL não definido. Alertmanager não conseguirá enviar emails."
-  echo "   Configure o secret ACME_EMAIL com o email registrado na conta Resend."
+  echo "::warning::ACME_EMAIL não definido. Let's Encrypt não conseguirá emitir certificados SSL."
+  echo "   Configure o secret ACME_EMAIL com um email válido para receber avisos do Let's Encrypt."
 fi
 
 # =============================================================================
@@ -454,9 +449,6 @@ echo "📄 Gerando arquivo .env.prod..."
   # CORREÇÃO 29/12/2025: WEBSOCKET_ALLOWED_ORIGINS obrigatório para chat-service
   # Usado no handshake WebSocket - alinhado com CORS_ORIGINS
   printf 'WEBSOCKET_ALLOWED_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
-  printf '\n'
-  printf '# Alertmanager usa ACME_EMAIL para envio de alertas (ver seção SSL/TLS)\n'
-  printf '# Integração Resend simplificada: só envia para email da própria conta Resend\n'
   printf '\n'
   printf '# Stripe Portugal\n'
   printf 'STRIPE_SECRET_KEY=%s\n' "${STRIPE_SECRET_KEY:-}"

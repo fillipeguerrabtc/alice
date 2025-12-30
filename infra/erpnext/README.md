@@ -176,7 +176,7 @@ O ERPNext será integrado com:
 1. **Stripe** - Sincronização de pagamentos
 2. **Wise** - Sincronização de transferências
 3. **Twilio** - Notificações WhatsApp/SMS
-4. **Resend** - Emails transacionais
+4. **Gmail SMTP** - Emails transacionais
 
 ## Referências
 

@@ -142,7 +142,7 @@ C4Context
     Rel(alice, kucoin, "Ordens de trading")
     Rel(alice, stripe, "Webhooks de pagamento")
     Rel(alice, twilio, "Mensagens WhatsApp")
-    Rel(alice, resend, "Emails")
+    Rel(alice, gmail, "Emails")
 ```
 
 ### 3.2 Integrações Externas
