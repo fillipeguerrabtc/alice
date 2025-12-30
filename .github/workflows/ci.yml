@@ -37,6 +37,12 @@ name: CI - Validation
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      skip_release:
+        description: 'Pular disparo automático do Release?'
+        type: boolean
+        default: false
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -331,7 +337,11 @@ jobs:
       contents: read
       actions: write
     needs: [build-and-check, security-and-compliance]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.build-and-check.result == 'success' && needs.security-and-compliance.result == 'success'
+    if: |
+      github.ref == 'refs/heads/main' &&
+      needs.build-and-check.result == 'success' &&
+      needs.security-and-compliance.result == 'success' &&
+      inputs.skip_release != true
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
