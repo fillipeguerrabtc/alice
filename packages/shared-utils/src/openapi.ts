@@ -11,7 +11,7 @@
  * Melhores Práticas 2025 (Regra 11 CLAUDE.md)
  */
 
-import { Express, Request, Response } from 'express';
+import type { Express, Request, Response } from 'express';
 import swaggerUi from 'swagger-ui-express';
 import { createLogger } from '@alice/logger';
 

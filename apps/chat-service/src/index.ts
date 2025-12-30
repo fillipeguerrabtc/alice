@@ -8,7 +8,8 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
 import cors from 'cors';

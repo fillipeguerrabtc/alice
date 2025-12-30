@@ -12,7 +12,8 @@
  * REFATORADO: Usa @alice/database centralizado (Regra 2 - Não Duplicar)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import session from 'express-session';
 import connectPgSimple from 'connect-pg-simple';
 import cors from 'cors';

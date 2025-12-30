@@ -13,7 +13,8 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import http from 'http';
 import cors from 'cors';
 // helmet aplicado via createSecurityMiddleware de @alice/shared-utils

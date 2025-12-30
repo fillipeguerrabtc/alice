@@ -13,7 +13,8 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response } from 'express';
+import express from 'express';
+import type { Request, Response } from 'express';
 import cors from 'cors';
 import compression from 'compression';
 import crypto from 'crypto';

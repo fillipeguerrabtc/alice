@@ -836,7 +836,67 @@ jobs:
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
             
             # =================================================================
-            # FASE 7: Pull e Deploy (CORE SERVICES)
+            # FASE 7: Iniciar PostgreSQL e Executar Migrations
+            # =================================================================
+            # CORREÇÃO CRÍTICA 30/12/2025: Migrations devem ser executadas ANTES
+            # de iniciar os serviços Alice que dependem do banco de dados.
+            # Sem as migrations: pgvector não é habilitado, tabelas não existem.
+            # Erros anteriores: "vector type not found in the database",
+            # "relation users does not exist", "relation oidc_jwks does not exist"
+            
+            echo "📥 Baixando imagens base (PostgreSQL, Redis)..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod pull postgres alice-redis
+            
+            echo "🐘 Iniciando PostgreSQL e Redis..."
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres alice-redis
+            
+            echo "⏳ Aguardando PostgreSQL estar healthy (máximo 120s)..."
+            WAIT_SECONDS=0
+            MAX_WAIT=120
+            while [ $WAIT_SECONDS -lt $MAX_WAIT ]; do
+              PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "starting")
+              if [ "$PG_HEALTH" = "healthy" ]; then
+                echo "✅ PostgreSQL está healthy após ${WAIT_SECONDS}s"
+                break
+              fi
+              echo "   PostgreSQL status: $PG_HEALTH (aguardando...)"
+              sleep 5
+              WAIT_SECONDS=$((WAIT_SECONDS + 5))
+            done
+            
+            if [ "$PG_HEALTH" != "healthy" ]; then
+              echo "❌ ERRO: PostgreSQL não ficou healthy após ${MAX_WAIT}s"
+              docker logs --tail=100 alice-postgres || true
+              exit 1
+            fi
+            
+            echo ""
+            echo "📝 Executando migrations SQL..."
+            # Extrair credenciais do .env.prod
+            DB_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2- || echo "alice")
+            DB_NAME=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- || echo "alice_prod")
+            DB_PASS=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2-)
+            
+            # Executar cada migration SQL em ordem
+            MIGRATIONS_DIR="/opt/alice/app/migrations"
+            if [ -d "$MIGRATIONS_DIR" ]; then
+              for migration in $(ls -1 "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
+                MIGRATION_NAME=$(basename "$migration")
+                echo "   Executando: $MIGRATION_NAME"
+                # Usar docker exec para executar psql dentro do container PostgreSQL
+                if ! docker exec -i alice-postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < "$migration"; then
+                  echo "❌ ERRO: Migration $MIGRATION_NAME falhou"
+                  exit 1
+                fi
+                echo "   ✅ $MIGRATION_NAME concluída"
+              done
+              echo "✅ Todas as migrations SQL executadas com sucesso"
+            else
+              echo "⚠️ Diretório de migrations não encontrado: $MIGRATIONS_DIR"
+            fi
+            
+            # =================================================================
+            # FASE 8: Pull e Deploy (CORE SERVICES)
             # =================================================================
             # ENTERPRISE (27/12/2025): Deploy em duas etapas
             # 1. Serviços CORE (sem GPU) - sempre iniciados
@@ -928,7 +988,7 @@ jobs:
             fi
             
             # =================================================================
-            # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
+            # FASE 9: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training

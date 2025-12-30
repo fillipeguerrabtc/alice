@@ -14,7 +14,8 @@
  * Documentação em PT-BR (Regra 10 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction, RequestHandler, ErrorRequestHandler } from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';

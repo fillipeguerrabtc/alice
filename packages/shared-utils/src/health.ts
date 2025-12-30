@@ -7,7 +7,7 @@
  * @module @alice/shared-utils/health
  */
 
-import { Request, Response } from 'express';
+import type { Request, Response } from 'express';
 import { getCircuitBreakerStats, CircuitBreakerStats } from './circuit-breaker.js';
 import CircuitBreaker from 'opossum';
 

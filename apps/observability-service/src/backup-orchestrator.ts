@@ -25,7 +25,8 @@
  * Data: 05 de Dezembro de 2025
  */
 
-import { Router, Request, Response } from 'express';
+import { Router } from 'express';
+import type { Request, Response } from 'express';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { writeFile, readFile, mkdir, readdir, stat } from 'fs/promises';

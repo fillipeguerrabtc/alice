@@ -15,7 +15,7 @@
  * @module @alice/shared-utils/express-hardening
  */
 
-import { Request, Response, NextFunction, Express, RequestHandler, ErrorRequestHandler } from 'express';
+import type { Request, Response, NextFunction, Express, RequestHandler, ErrorRequestHandler } from 'express';
 import helmet from 'helmet';
 import rateLimit, { Options as RateLimitOptions, Store, ipKeyGenerator } from 'express-rate-limit';
 import { RedisStore } from 'rate-limit-redis';

@@ -439,7 +439,7 @@ export function getDefaultFeatureFlags(): Record<FeatureFlagKey, boolean> {
 // MIDDLEWARE EXPRESS - Injeção de feature flags no request
 // ============================================================================
 
-import { Request, Response, NextFunction } from 'express';
+import type { Request, Response, NextFunction } from 'express';
 
 /**
  * Extensão do Request para incluir feature flags

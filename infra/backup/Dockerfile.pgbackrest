@@ -109,12 +109,16 @@ COPY infra/backup/scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
 # Usuário não-root para segurança (best practices 2025)
-RUN addgroup -g 1000 pgbackrest \
-    && adduser -D -u 1000 -G pgbackrest pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/lib/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/log/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /var/spool/pgbackrest \
-    && chown -R pgbackrest:pgbackrest /etc/pgbackrest
+# CORREÇÃO CRÍTICA 30/12/2025: pgBackRest precisa usar UID 999 (mesmo que PostgreSQL)
+# para ter permissão de leitura nos arquivos de dados do PostgreSQL.
+# Erro anterior: "unable to open file '/var/lib/postgresql/data/global/pg_control' for read: [13] Permission denied"
+# Causa: pgBackRest usava UID 1000, PostgreSQL usa UID 999, sem permissão de leitura.
+RUN addgroup -g 999 postgres \
+    && adduser -D -u 999 -G postgres pgbackrest \
+    && chown -R pgbackrest:postgres /var/lib/pgbackrest \
+    && chown -R pgbackrest:postgres /var/log/pgbackrest \
+    && chown -R pgbackrest:postgres /var/spool/pgbackrest \
+    && chown -R pgbackrest:postgres /etc/pgbackrest
 
 USER pgbackrest
 

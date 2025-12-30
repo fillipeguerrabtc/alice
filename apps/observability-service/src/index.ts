@@ -11,7 +11,8 @@
  * TypeScript strict (Regra 8 CLAUDE.md)
  */
 
-import express, { Request, Response, NextFunction } from 'express';
+import express from 'express';
+import type { Request, Response, NextFunction } from 'express';
 import compression from 'compression';
 import cors from 'cors';
 import CircuitBreaker from 'opossum';
