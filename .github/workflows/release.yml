@@ -503,16 +503,36 @@ jobs:
             console.log('📦 Versão: ' + version);
             console.log('ℹ️  Usando ref: main para disparar (código deployado será da TAG via checkout)');
             
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
-              ref: 'main',  // CORREÇÃO: Usar 'main' para encontrar workflow (código vem da TAG via checkout)
-              inputs: {
-                version: version,
-                services: 'all',
-                triggered_by: 'release-workflow'
+            try {
+              // Validar que o workflow existe antes de disparar
+              const workflow = await github.rest.actions.getWorkflow({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-production.yml'
+              });
+              
+              console.log('✅ Workflow encontrado: ' + workflow.data.name);
+              console.log('✅ Workflow state: ' + workflow.data.state);
+              
+              // Disparar o workflow
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'deploy-production.yml',
+                ref: 'main',
+                inputs: {
+                  version: version,
+                  services: 'all',
+                  triggered_by: 'release-workflow'
+                }
+              });
+              
+              console.log('✅ Deploy disparado com sucesso!');
+            } catch (error) {
+              console.error('❌ ERRO ao disparar deploy:', error.message);
+              if (error.status === 422) {
+                console.error('❌ Workflow não possui trigger workflow_dispatch ou não foi encontrado');
+                console.error('   Verificar: .github/workflows/deploy-production.yml tem workflow_dispatch?');
               }
-            });
-            
-            console.log('✅ Deploy disparado!');
+              throw error;
+            }
