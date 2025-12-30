@@ -39,8 +39,6 @@
 name: Deploy to Production (Hetzner Cloud)
 
 on:
-  # ENTERPRISE: Apenas workflow_dispatch - NÃO dispara automaticamente por push
-  # Deploy só é disparado pelo Release workflow após build das imagens
   workflow_dispatch:
     inputs:
       version:

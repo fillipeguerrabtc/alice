@@ -470,28 +470,6 @@ jobs:
     if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
     
     steps:
-      # ==========================================================================
-      # CORREÇÃO CRÍTICA 29/12/2025: Usar ref: 'main' para disparar workflow
-      # ==========================================================================
-      # PROBLEMA: Usar ref: <tag> causa erro 422 "Workflow does not have 
-      # 'workflow_dispatch' trigger" porque:
-      # 1. GitHub API busca o arquivo deploy-production.yml NA TAG
-      # 2. Tag recém-criada pode ter race condition/cache issues
-      # 3. GitHub não encontra workflow_dispatch na tag (mesmo que exista)
-      #
-      # SOLUÇÃO ENTERPRISE:
-      # - Usar ref: 'main' para DISPARAR o workflow (sempre encontra o arquivo)
-      # - O deploy-production.yml faz checkout com ref: inputs.version (TAG)
-      # - Resultado: workflow roda de main, mas CÓDIGO DEPLOYADO é da TAG
-      #
-      # NOTA: O código deployado (docker-compose, scripts, etc.) vem da TAG
-      # porque deploy-production.yml faz:
-      #   - uses: actions/checkout@...
-      #     with:
-      #       ref: ${{ inputs.version }}  # ← USA A TAG, NÃO MAIN
-      #
-      # Isso garante consistência: imagens Docker e scripts são da mesma TAG.
-      # ==========================================================================
       - name: Disparar workflow de deploy
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
@@ -501,38 +479,17 @@ jobs:
             
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
-            console.log('ℹ️  Usando ref: main para disparar (código deployado será da TAG via checkout)');
             
-            try {
-              // Validar que o workflow existe antes de disparar
-              const workflow = await github.rest.actions.getWorkflow({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'deploy-production.yml'
-              });
-              
-              console.log('✅ Workflow encontrado: ' + workflow.data.name);
-              console.log('✅ Workflow state: ' + workflow.data.state);
-              
-              // Disparar o workflow
-              await github.rest.actions.createWorkflowDispatch({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'deploy-production.yml',
-                ref: 'main',
-                inputs: {
-                  version: version,
-                  services: 'all',
-                  triggered_by: 'release-workflow'
-                }
-              });
-              
-              console.log('✅ Deploy disparado com sucesso!');
-            } catch (error) {
-              console.error('❌ ERRO ao disparar deploy:', error.message);
-              if (error.status === 422) {
-                console.error('❌ Workflow não possui trigger workflow_dispatch ou não foi encontrado');
-                console.error('   Verificar: .github/workflows/deploy-production.yml tem workflow_dispatch?');
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'deploy-production.yml',
+              ref: version,
+              inputs: {
+                version: version,
+                services: 'all',
+                triggered_by: 'release-workflow'
               }
-              throw error;
-            }
+            });
+            
+            console.log('✅ Deploy disparado!');
