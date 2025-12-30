@@ -877,26 +877,56 @@ jobs:
             DB_NAME=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- || echo "alice_prod")
             DB_PASS=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2-)
             
+            # =================================================================
+            # CORREÇÃO CRÍTICA 30/12/2025: Shell Injection Prevention
+            # =================================================================
+            # Bug: Se DB_PASS contiver aspas simples (ex: pass'word), o comando
+            # sh -c "PGPASSWORD='pass'word' psql..." quebra com shell injection.
+            # 
+            # Solução Enterprise: Criar arquivo temporário DENTRO do container
+            # com permissões 600 e usar PGPASSFILE (suportado pelo psql).
+            # Isso evita qualquer interpolação de shell com credenciais.
+            #
+            # Ref: https://www.postgresql.org/docs/16/libpq-pgpass.html
+            # Ref: CLAUDE.md linha 612 "Bug Fix Shell Injection"
+            # =================================================================
+            
+            # Criar arquivo .pgpass dentro do container (formato: host:port:database:user:password)
+            # O psql lê automaticamente de ~/.pgpass quando PGPASSFILE não está definido
+            # Usamos /tmp/.pgpass temporário e PGPASSFILE para controle explícito
+            PGPASS_CONTENT="*:*:*:${DB_USER}:${DB_PASS}"
+            
+            # Usar printf %s para evitar interpretação de caracteres especiais
+            # O comando cria o arquivo, ajusta permissões e o usa
+            docker exec -i alice-postgres sh -c '
+              cat > /tmp/.pgpass_migration
+              chmod 600 /tmp/.pgpass_migration
+            ' << PGPASS_EOF
+${PGPASS_CONTENT}
+PGPASS_EOF
+            
             # Executar cada migration SQL em ordem
-            # CORREÇÃO CRÍTICA 30/12/2025: PGPASSWORD deve ser passado para psql
-            # Bug anterior: DB_PASS era extraído mas nunca passado ao psql
-            # Solução: usar "sh -c" com PGPASSWORD definido dentro do container
-            # Ref: CLAUDE.md linha 605 "Bug Fix Migration PGPASSWORD Missing"
             MIGRATIONS_DIR="/opt/alice/app/migrations"
             if [ -d "$MIGRATIONS_DIR" ]; then
               for migration in $(ls -1 "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
                 MIGRATION_NAME=$(basename "$migration")
                 echo "   Executando: $MIGRATION_NAME"
-                # Usar docker exec com PGPASSWORD via sh -c para autenticação
-                # docker exec não suporta -e flag, então usamos env dentro do shell
-                if ! docker exec -i alice-postgres sh -c "PGPASSWORD='${DB_PASS}' psql -U '${DB_USER}' -d '${DB_NAME}' -v ON_ERROR_STOP=1" < "$migration"; then
+                # Usar PGPASSFILE para autenticação segura (sem interpolação de shell)
+                if ! docker exec -i alice-postgres sh -c 'PGPASSFILE=/tmp/.pgpass_migration psql -U "$1" -d "$2" -v ON_ERROR_STOP=1' -- "${DB_USER}" "${DB_NAME}" < "$migration"; then
                   echo "❌ ERRO: Migration $MIGRATION_NAME falhou"
+                  # Limpar arquivo de senha antes de sair
+                  docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
                   exit 1
                 fi
                 echo "   ✅ $MIGRATION_NAME concluída"
               done
+              
+              # Limpar arquivo de senha após todas as migrations
+              docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
               echo "✅ Todas as migrations SQL executadas com sucesso"
             else
+              # Limpar arquivo de senha
+              docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
               echo "⚠️ Diretório de migrations não encontrado: $MIGRATIONS_DIR"
             fi
             
