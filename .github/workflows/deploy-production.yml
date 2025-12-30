@@ -897,10 +897,35 @@ jobs:
             # Criar arquivo .pgpass dentro do container (formato: host:port:database:user:password)
             # O psql lê automaticamente de ~/.pgpass quando PGPASSFILE não está definido
             # Usamos /tmp/.pgpass temporário e PGPASSFILE para controle explícito
-            PGPASS_CONTENT="*:*:*:${DB_USER}:${DB_PASS}"
+            #
+            # CORREÇÃO CRÍTICA 30/12/2025: Escape de caracteres especiais no .pgpass
+            # Ref: https://www.postgresql.org/docs/16/libpq-pgpass.html
+            # "If an entry needs to contain : or \, escape this character with \"
+            # - Backslash (\) deve ser escapado PRIMEIRO como \\
+            # - Colon (:) deve ser escapado como \:
+            # Sem escape, senhas como "pass\word" viram "password" (interpretação incorreta)
+            # e senhas com ":" quebram o parsing dos campos do .pgpass
             
-            # Usar printf %s para evitar interpretação de caracteres especiais
-            # O comando cria o arquivo, ajusta permissões e o usa
+            # Função de escape para .pgpass (backslash primeiro, depois colon)
+            escape_pgpass() {
+              local val="$1"
+              # Primeiro escapa backslash (\\ -> \\\\) para evitar double-escape
+              val="${val//\\/\\\\}"
+              # Depois escapa colon (: -> \:)
+              val="${val//:/\\:}"
+              printf '%s' "$val"
+            }
+            
+            # Escapar credenciais para formato .pgpass
+            DB_USER_ESCAPED=$(escape_pgpass "${DB_USER}")
+            DB_PASS_ESCAPED=$(escape_pgpass "${DB_PASS}")
+            
+            # Montar linha do .pgpass com credenciais escapadas
+            # Formato: hostname:port:database:username:password
+            # Usamos * para hostname, port e database (wildcard)
+            PGPASS_CONTENT="*:*:*:${DB_USER_ESCAPED}:${DB_PASS_ESCAPED}"
+            
+            # Criar arquivo dentro do container com permissões seguras
             docker exec -i alice-postgres sh -c '
               cat > /tmp/.pgpass_migration
               chmod 600 /tmp/.pgpass_migration
