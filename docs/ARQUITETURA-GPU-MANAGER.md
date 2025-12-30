@@ -448,6 +448,3 @@ gpu-manager:
 
 ---
 
-**Autor:** Fillipe Guerra  
-**Data:** 29 de Dezembro de 2025
-

@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 29 de Dezembro de 2025  
-**Versão:** 7.13 - PostgreSQL archive_mode e Schema Validation Enterprise
+**Data:** 30 de Dezembro de 2025  
+**Versão:** 7.14 - Pipeline Trigger Error and Duplication Fix (Release ref tag, Workflow Rename)
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -1292,19 +1292,4 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 **Referência:** `docs/VERIFICACAO-COMPLETA-ENTERPRISE.md` - Seção "Security Hardening (Docker Compose)"
 
 ---
-
-*Autor: Fillipe Guerra*
-*Documento atualizado em: 27 de Dezembro de 2025*
-*Versão: 7.14 - Auditoria Enterprise Container Count*
-*Data: 29 de Dezembro de 2025*
-*Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
-*Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
-*Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
-*Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
-*ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
-*Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
-*GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
-*Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

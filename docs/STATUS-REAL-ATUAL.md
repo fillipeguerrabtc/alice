@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 29 de Dezembro de 2025  
+> **Data:** 30 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.46 - Auditoria Enterprise Completa - 50 containers (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)
+> **Versão:** 4.47 - Pipeline Trigger Error and Duplication Fix (Release ref tag, Workflow Rename)
 
 ---
 
@@ -1222,16 +1222,6 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 - ✅ Regra 16: UX enterprise 2025
 
 ---
-
-*Documento atualizado em: 27/12/2025*
-*Autor: Fillipe Guerra*
-*Versão: 4.46 - Auditoria Enterprise Completa*
-*Pipeline Unificada (25/12/2025): GPU services integrados em docker-compose.prod.yml - todos os serviços GPU rodam localmente no servidor Hetzner GEX44*
-*Otimização CI Performance (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Versões Node.js/pnpm calculadas UMA VEZ no job detect-changes e passadas via outputs. Jobs sem dependência de Node.js (compliance-checks, trigger-release) não fazem setup. Economia estimada: ~6-10min por run de CI.*
-*Fix Cache Persistence (27/12/2025): Composite action corrigida para usar `actions/cache/restore` + `actions/cache/save` separados. actions/cache não executa post-step de save corretamente em composite actions - best practice GitHub Actions 2025.*
-*ARQUITETURA.md (17/12/2025): Documento completo com arc42, C4 Model, ADRs, 12-Factor App, 18 Regras*
-*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
-*GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
 *Bulk Import: UI enterprise com drag & drop, validação Zod, preview (09/12/2025)*
@@ -1610,6 +1600,4 @@ body = {
 
 ---
 
-*Documento gerado automaticamente pela auditoria completa da plataforma*  
-*Autor: Fillipe Guerra*  
-*Data: 29 de Dezembro de 2025*
+*Documento gerado automaticamente pela auditoria completa da plataforma*

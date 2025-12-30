@@ -63,6 +63,12 @@ jobs:
       node-version: ${{ steps.versions.outputs.node-version }}
       pnpm-version: ${{ steps.versions.outputs.pnpm-version }}
     steps:
+      - name: Identificar Origem
+        run: |
+          echo "🚀 Workflow: CI - Validation"
+          echo "🔗 Trigger: ${{ github.event_name }}"
+          echo "👤 Ator: ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
       - name: Calcular versões Node.js e pnpm

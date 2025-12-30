@@ -1,8 +1,8 @@
 # Sistema de Aprendizado da Alice
 
 **Autor:** Fillipe Guerra  
-**Versão:** 3.9 - Otimização CI Performance Enterprise  
-**Data:** 29 de Dezembro de 2025
+**Versão:** 4.0 - Pipeline Trigger Error and Duplication Fix (Release ref tag, Workflow Rename)  
+**Data:** 30 de Dezembro de 2025
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 
@@ -498,16 +498,3 @@ Acessíveis em `/dashboard/analytics`:
 | Limpeza código obsoleto | ✅ GAP #5 Resolvido | Arquivo deletado |
 
 ---
-
-*Autor: Fillipe Guerra*
-*Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 3.9 - 27 de Dezembro de 2025*
-*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44 RTX 4000 Ada 20GB)*
-*ARQUITETURA ENTERPRISE: Texto (Qwen3-Embedding-8B Apache 2.0, 4096 dim → Qdrant) + Imagem (OpenCLIP ViT-H/14 MIT, 1024 dim → pgvector)*
-*ASR: Canary-1B via NeMo Toolkit (Apache 2.0)*
-*Análise de Licenças (17/12/2025): Qwen3 é ÚNICO modelo top-tier com licença comercial (Apache 2.0). Fin-E5, Linq-Embed-Mistral e NV-Embed-v2 são CC BY-NC (Non-Commercial).*
-*Fisher-Yates Shuffle (17/12/2025): Corrigido bug de distribuição enviesada em train/validation split*
-*Bug Fix Embeddings (17/12/2025): TODOS embeddings de texto (documentos/áudio) agora vão para Qdrant (4096 dim)*
-*Bug Fix SQL IN Clause (19/12/2025): learning-worker.ts corrigido - sql template literal com join() parametrizava string inteira. Usa inArray() do Drizzle (3 ocorrências)*
-*Trading: KuCoin Futures BTC Perpetuals + Scalping (1m/3m/5m) + LoRA Fine-tuning*
-*GPU Dedicada 24/7 (26/12/2025): Hetzner GEX44 - containers Docker rodando continuamente, sem cold start. Estratégia "Warm on Demand" removida.*

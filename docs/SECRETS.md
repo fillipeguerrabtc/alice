@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 29 de Dezembro de 2025
+**Data:** 30 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -603,18 +603,4 @@ openssl rand -base64 24
 | GPU Manager Service | Local (Hetzner GEX44) |
 
 ---
-
-*Autor: Fillipe Guerra*  
-*Documento atualizado em: 28 de Dezembro de 2025*
-*Versão: 8.3 - Auditoria Enterprise Container Count*
-*Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
-*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*  
-*Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  
-*Redis Alice: Container dedicado para cache distribuído (segregação enterprise)*  
-*GPU Manager Service (25/12/2025): Todos os serviços GPU migrados para Hetzner GPU GEX44 - GPU Manager Service gerencia requisições localmente*  
-*Arquitetura Deploy (27/12/2025): Deploy Server (CPX32 - 4 vCPU, 8GB RAM) com Runner Enterprise Hardening + Production Server (GEX44 GPU) - isolamento completo CI/CD e produção*  
-*ARQUITETURA ENTERPRISE (25/12/2025): Qwen3-Embedding-8B Apache 2.0 (4096 dim → Qdrant) | OpenCLIP MIT (1024 dim → pgvector)*  
-*GPU Dedicada 24/7 (26/12/2025): Servidor Hetzner GEX44 - todos os secrets do Salad Cloud removidos permanentemente*  
-*Secrets PRODUCTION_SERVER_* removidos (28/12/2025): Scripts deploy-remote.sh e deploy-local.sh foram removidos. Workflow usa HETZNER_VM_* diretamente via appleboy/ssh-action.*  
-*LANGFUSE v2.94: LANGFUSE_SALT e LANGFUSE_ENCRYPTION_KEY obrigatórios (langfuse-worker REMOVIDO)*
 *Docker Hub (20/12/2025): DOCKERHUB_USERNAME e DOCKERHUB_TOKEN adicionados - evita rate limit 100 pulls/6h anônimo*

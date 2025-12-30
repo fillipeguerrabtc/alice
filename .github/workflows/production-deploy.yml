@@ -36,15 +36,15 @@
 # Data: 29/12/2025
 # =============================================================================
 
-name: Deploy Hetzner
+name: Deploy Hetzner Enterprise
 
 # =============================================================================
 # TRIGGERS - APENAS workflow_dispatch (manual ou via Release workflow)
 # =============================================================================
-# PROIBIDO: push, pull_request, ou qualquer outro trigger automático
+# PROIBIDO: push, pull_request, workflow_run ou qualquer outro trigger automático.
 # Este workflow DEVE ser acionado APENAS por:
-#   1. Release workflow (automático após build de imagens)
-#   2. Manual via GitHub Actions UI
+#   1. Release workflow (automático após build de imagens bem-sucedido)
+#   2. Manual via GitHub Actions UI (aba Actions -> Deploy Hetzner Enterprise)
 # =============================================================================
 on:
   workflow_dispatch:
@@ -111,6 +111,13 @@ jobs:
       pgvector_tag: ${{ steps.versions.outputs.pgvector_tag }}
 
     steps:
+      - name: Identificar Origem
+        run: |
+          echo "🚀 Workflow: Deploy Hetzner Enterprise"
+          echo "🔗 Trigger: ${{ github.event_name }}"
+          echo "📦 Versão: ${{ inputs.version }}"
+          echo "👤 Ator: ${{ github.actor }}"
+          echo "SHA: ${{ github.sha }}"
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.version }}

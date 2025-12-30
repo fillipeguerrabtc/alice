@@ -1,4 +1,4 @@
-﻿# Alice - Plataforma Enterprise de IA AutÃƒÂ´noma
+# Alice - Plataforma Enterprise de IA AutÃƒÂ´noma
 
 ## Overview
 Alice is an autonomous AI enterprise platform powered by the **Mixtral 8x7B (MoE ~12B active parameters)** model served via vLLM AWQ on Hetzner GPU server GEX44 (RTX 4000 Ada 20GB). Its core purpose is to provide a fully autonomous AI solution with absolute privacy, predictable costs, and unlimited customization via LoRA fine-tuning. The platform now includes **Trading BTC Futures** on KuCoin Perpetuals with scalping capabilities (1m, 3m, 5m candles). Key capabilities include real-time chat with streaming, deduplication, multi-tenancy, RBAC, a RAG backend with enterprise embeddings (Qwen3-Embedding-8B 4096 dim Ã¢â€ â€™ Qdrant, OpenCLIP 1024 dim Ã¢â€ â€™ pgvector), image generation (FLUX.1 Schnell), aggressive self-learning, and a robust observability stack. The business vision is to deliver an enterprise-grade AI solution with unparalleled control, performance, data security, and cost predictability.
@@ -344,12 +344,14 @@ git commit -a -m "test: adiciona testes unitÃƒÂ¡rios"
 
 ---
 *Autor: Fillipe Guerra*
-*VersÃƒÂ£o: 4.47 - 29 de Dezembro de 2025*
+*VersÃƒÂ£o: 4.48 - 30 de Dezembro de 2025*
 *Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
 *Backup API: disk-usage, cleanup, delete endpoints (100% Enterprise)*
 *Trading: Schema completo (9 tabelas) + API REST (25 endpoints) + LoRA Dataset + Scalping (1m/3m/5m candles) + RBAC PermissÃƒÂµes + Stop Orders (st-orders)*
+*Bug Fix Release Trigger Deploy 422 Error (30/12/2025): Corrigida expansÃƒÂ£o de variÃƒÂ¡vel DEPLOY_VERSION no release.yml usando env explicita e validaÃƒÂ§ÃƒÂ£o fail-fast. Garante que ref use a TAG correta.*
+*Bug Fix Deploy Duplication (30/12/2025): Renomeado workflow de deploy para 'Deploy Hetzner Enterprise' para invalidar cache de triggers obsoletos do GitHub Actions e adicionada rastreabilidade de origem (Identificar Origem).*
 *RBAC Trading (17/12/2025): Adicionadas permissÃƒÂµes integrations:trading:{read,write,delete,manage} no PERMISSION_MAP*
 *Circuit Breakers: 4 novos presets (kucoinFutures, embeddingsGPU, asrCanary, mixtralLLM)*
 *KuCoin Futures: Cliente enterprise com HMAC-SHA256, OMS/EMS, auditoria completa, gestÃƒÂ£o de risco*

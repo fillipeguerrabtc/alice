@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 29 de Dezembro de 2025  
-> **Versão:** 1.11.0 - Server GPU Optimizations Enterprise (Docker daemon, NVIDIA Persistence, Kernel sysctl)  
+> **Data:** 30 de Dezembro de 2025  
+> **Versão:** 1.12.0 - Pipeline Trigger Error and Duplication Fix (Release ref tag, Workflow Rename)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -899,15 +899,3 @@ A plataforma possui uma **suite de testes unitários completa** usando **Vitest*
 ---
 
 *Documento criado seguindo arc42 + C4 Model + ADR best practices 2025*
-
-*Autor: Fillipe Guerra*  
-*Data: 29 de Dezembro de 2025*
-*Versão: 1.12.0 - Auditoria Enterprise Container Count*
-*Total de Containers: 50 (8 infra + 8 Alice + 15 ERPNext + 13 observability + 5 GPU + 1 backup)*  
-*Stack: Express 5.2, Vite 7.3, Tailwind CSS 4.1, HTTP/2*  
-*LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)*  
-*Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)*  
-*Performance: HTTP Compression, HNSW m=24, SHA Pinning 95%+*  
-*Framework: arc42 + C4 Model + ADRs*  
-*Compliance: 18 Regras CLAUDE.md ✅ | 12-Factor App ✅*
-*Otimização CI (27/12/2025): Composite action reutilizável elimina duplicação de setup (14x → 1x), economia de ~6-10min por run*
