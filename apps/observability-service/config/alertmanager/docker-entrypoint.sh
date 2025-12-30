@@ -123,5 +123,21 @@ fi
 echo ""
 echo "=== Iniciando Alertmanager ==="
 
-# Iniciar Alertmanager com o arquivo processado
-exec /bin/alertmanager --config.file="$CONFIG_OUTPUT" "$@"
+# =============================================================================
+# FASE 5: Iniciar Alertmanager com argumentos padrão da imagem
+# =============================================================================
+# CORREÇÃO CRÍTICA 30/12/2025: Quando o entrypoint é sobrescrito, o CMD padrão
+# da imagem prom/alertmanager é perdido. O CMD original é:
+#   ["--config.file=/etc/alertmanager/alertmanager.yml", "--storage.path=/alertmanager"]
+#
+# Sem --storage.path=/alertmanager, o Alertmanager usa 'data/' relativo ao WORKDIR,
+# resultando em /alertmanager/data/ ao invés de /alertmanager. Isso:
+# - Perde dados existentes (silences, notification state) no path original
+# - Quebra compatibilidade com o volume montado em /alertmanager
+#
+# Ref: https://github.com/prometheus/alertmanager/blob/main/Dockerfile
+# Ref: CLAUDE.md Regra 6 - SEM workarounds, manter comportamento enterprise
+exec /bin/alertmanager \
+  --config.file="$CONFIG_OUTPUT" \
+  --storage.path=/alertmanager \
+  "$@"
