@@ -708,6 +708,11 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 - **Manual**: Forneça a versão explicitamente (ex: `v1.4.25`)
 - **Reutilização de tags**: Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
 
+**Cálculo de versão inteligente (30/12/2025):**
+- Usa a **MAIOR versão existente** como base (não `git describe` que pega tag mais próxima)
+- Se versão calculada já existe (releases paralelos), incrementa PATCH automaticamente
+- Exemplo: se v1.6.0 existe e MINOR bump seria v1.7.0, mas v1.7.0 já existe → usa v1.7.1
+
 **Deploy automático (30/12/2025):**
 - O Deploy workflow aceita versão vazia e obtém automaticamente da tag mais recente quando disparado pelo Release workflow
 - Garante que imagens Docker existem no GHCR antes de fazer deploy

@@ -90,6 +90,10 @@ jobs:
       # Se version="auto", calcula próxima versão baseado em Conventional Commits
       # Se version fornecida, valida formato e permite reutilização se tag
       # aponta para o mesmo commit (útil para rollbacks)
+      #
+      # CORREÇÃO 30/12/2025: Usar MAIOR versão existente (não git describe)
+      # git describe pega tag mais próxima no histórico, mas podem existir
+      # versões maiores criadas em outros branches/releases
       # =======================================================================
       - name: Resolver versão (automático ou manual)
         id: resolve-version
@@ -99,24 +103,58 @@ jobs:
           INPUT_VERSION="${{ inputs.version }}"
           CURRENT_COMMIT=$(git rev-parse HEAD)
           
+          # Função para comparar versões semânticas (retorna 0 se $1 > $2)
+          version_gt() {
+            local v1="${1#v}"
+            local v2="${2#v}"
+            local v1_major=$(echo "$v1" | cut -d. -f1)
+            local v1_minor=$(echo "$v1" | cut -d. -f2)
+            local v1_patch=$(echo "$v1" | cut -d. -f3 | cut -d- -f1)
+            local v2_major=$(echo "$v2" | cut -d. -f1)
+            local v2_minor=$(echo "$v2" | cut -d. -f2)
+            local v2_patch=$(echo "$v2" | cut -d. -f3 | cut -d- -f1)
+            
+            if [ "$v1_major" -gt "$v2_major" ]; then return 0; fi
+            if [ "$v1_major" -lt "$v2_major" ]; then return 1; fi
+            if [ "$v1_minor" -gt "$v2_minor" ]; then return 0; fi
+            if [ "$v1_minor" -lt "$v2_minor" ]; then return 1; fi
+            if [ "$v1_patch" -gt "$v2_patch" ]; then return 0; fi
+            return 1
+          }
+          
+          # Função para verificar se tag existe
+          tag_exists() {
+            git rev-parse "$1" >/dev/null 2>&1
+          }
+          
           # Se "auto", calcular próxima versão automaticamente
           if [ "$INPUT_VERSION" = "auto" ] || [ -z "$INPUT_VERSION" ]; then
             echo "🔄 Calculando versão automaticamente..."
             
-            # Obter última tag e versão atual
-            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-            VERSION=${LAST_TAG#v}
+            # CORREÇÃO: Obter MAIOR tag existente (ordenada por versão semântica)
+            # git tag --sort=-version:refname ordena por versão, não por data/proximidade
+            HIGHEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
+            
+            if [ -z "$HIGHEST_TAG" ]; then
+              HIGHEST_TAG="v0.0.0"
+              echo "⚠️ Nenhuma tag semântica encontrada, iniciando em v0.0.0"
+            fi
+            
+            VERSION=${HIGHEST_TAG#v}
             MAJOR=$(echo $VERSION | cut -d. -f1 | grep -E '^[0-9]+$' || echo "0")
             MINOR=$(echo $VERSION | cut -d. -f2 | grep -E '^[0-9]+$' || echo "0")
             PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1 | grep -E '^[0-9]+$' || echo "0")
             
-            echo "📦 Versão atual: v${MAJOR}.${MINOR}.${PATCH}"
+            echo "📦 Maior versão existente: $HIGHEST_TAG"
             
-            # Analisar commits desde a última tag
-            if [ "$LAST_TAG" = "v0.0.0" ]; then
+            # Tag mais próxima do commit atual (para changelog)
+            NEAREST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            
+            # Analisar commits desde a tag mais próxima (para determinar tipo de bump)
+            if [ -z "$NEAREST_TAG" ]; then
               COMMITS=$(git log --pretty=format:"%s" --no-merges | head -100)
             else
-              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+              COMMITS=$(git log ${NEAREST_TAG}..HEAD --pretty=format:"%s" --no-merges)
             fi
             
             # Determinar tipo de bump baseado em Conventional Commits
@@ -135,7 +173,7 @@ jobs:
               echo "🔧 Apenas fixes/outros → PATCH bump"
             fi
             
-            # Calcular nova versão
+            # Calcular nova versão a partir da MAIOR existente
             case $BUMP_TYPE in
               major)
                 NEW_MAJOR=$((10#$MAJOR + 1))
@@ -151,6 +189,18 @@ jobs:
                 ;;
             esac
             
+            # CORREÇÃO: Se versão calculada já existe, incrementar PATCH até encontrar disponível
+            # Isso pode acontecer quando há releases manuais ou paralelos
+            while tag_exists "$RESOLVED_VERSION"; do
+              echo "⚠️ Tag $RESOLVED_VERSION já existe, incrementando..."
+              CURRENT_VER=${RESOLVED_VERSION#v}
+              CUR_MAJOR=$(echo $CURRENT_VER | cut -d. -f1)
+              CUR_MINOR=$(echo $CURRENT_VER | cut -d. -f2)
+              CUR_PATCH=$(echo $CURRENT_VER | cut -d. -f3 | cut -d- -f1)
+              NEW_PATCH=$((10#$CUR_PATCH + 1))
+              RESOLVED_VERSION="v${CUR_MAJOR}.${CUR_MINOR}.${NEW_PATCH}"
+            done
+            
             echo "✅ Versão calculada: $RESOLVED_VERSION ($BUMP_TYPE bump)"
           else
             # Versão fornecida manualmente - validar formato
@@ -165,7 +215,7 @@ jobs:
           
           # Verificar se tag já existe e se aponta para o mesmo commit
           TAG_REUSED="false"
-          if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
+          if tag_exists "$RESOLVED_VERSION"; then
             TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
             if [ "$TAG_COMMIT" = "$CURRENT_COMMIT" ]; then
               echo "⚠️ Tag $RESOLVED_VERSION já existe e aponta para o commit atual"
