@@ -189,6 +189,14 @@ echo "✅ GPU Services validados (Hetzner GPU Server)"
 echo ""
 echo "🔐 Validando Gmail SMTP (Alertmanager)..."
 
+# GMAIL_USER: Email Gmail completo para autenticação SMTP
+GMAIL_USER="${GMAIL_USER:-}"
+if [ -z "${GMAIL_USER}" ]; then
+  echo "::error::GMAIL_USER não definido. Configure o secret GMAIL_USER no repositório (ex: seuemail@gmail.com)." >&2
+  exit 1
+fi
+
+# GMAIL_APP_PASSWORD: Senha de 16 caracteres gerada em myaccount.google.com/apppasswords
 GMAIL_APP_PASSWORD="${GMAIL_APP_PASSWORD:-}"
 if [ -z "${GMAIL_APP_PASSWORD}" ]; then
   echo "::error::GMAIL_APP_PASSWORD não definido. Configure o secret GMAIL_APP_PASSWORD no repositório." >&2
@@ -197,6 +205,7 @@ if [ -z "${GMAIL_APP_PASSWORD}" ]; then
   exit 1
 fi
 
+echo "✅ GMAIL_USER validado: ${GMAIL_USER}"
 echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Alertmanager via arquivo de secret)"
 
 echo "✅ Todas as secrets obrigatórias validadas"
@@ -460,6 +469,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'TWILIO_WHATSAPP_NUMBER=%s\n' "${TWILIO_WHATSAPP_NUMBER:-}"
   printf '\n'
   printf '# Gmail SMTP (Alertmanager)\n'
+  printf 'GMAIL_USER=%s\n' "${GMAIL_USER}"
   printf 'GMAIL_APP_PASSWORD=%s\n' "${GMAIL_APP_PASSWORD}"
   printf '\n'
   printf '# Resend (opcional - mantido para uso futuro com API direta)\n'

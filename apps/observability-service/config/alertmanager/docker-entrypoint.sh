@@ -77,17 +77,17 @@ echo "   ALERT_EMAIL=${ALERT_EMAIL:-<não definido>}"
 
 # Validar variáveis obrigatórias
 if [ -z "$SMTP_USER" ]; then
-  echo "❌ ERRO: SMTP_USER não definido. Configure ACME_EMAIL nos secrets do repositório."
+  echo "❌ ERRO: SMTP_USER não definido. Configure GMAIL_USER nos secrets do repositório."
   exit 1
 fi
 
 if [ -z "$SMTP_FROM" ]; then
-  echo "❌ ERRO: SMTP_FROM não definido. Configure ACME_EMAIL nos secrets do repositório."
+  echo "❌ ERRO: SMTP_FROM não definido. Configure GMAIL_USER nos secrets do repositório."
   exit 1
 fi
 
 if [ -z "$ALERT_EMAIL" ]; then
-  echo "❌ ERRO: ALERT_EMAIL não definido. Configure ACME_EMAIL nos secrets do repositório."
+  echo "❌ ERRO: ALERT_EMAIL não definido. Configure GMAIL_USER nos secrets do repositório."
   exit 1
 fi
 

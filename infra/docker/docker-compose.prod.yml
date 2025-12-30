@@ -2788,21 +2788,25 @@ services:
       # ==========================================================================
       # Ref: https://support.google.com/accounts/answer/185833
       # - Host: smtp.gmail.com:587
-      # - Username: Email Gmail completo (ACME_EMAIL)
-      # - Password: App Password de 16 caracteres (GMAIL_APP_PASSWORD)
-      # - Sender: Mesmo email Gmail
+      # - Username: GMAIL_USER (email Gmail completo)
+      # - Password: GMAIL_APP_PASSWORD (16 caracteres, via /run/secrets/smtp_password)
+      # - Sender: GMAIL_USER (mesmo email)
       #
       # VANTAGENS vs Resend gratuito:
       # - Pode enviar para QUALQUER email (clientes, equipe, vendas, etc.)
       # - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
       # - Remetente é seu próprio email (profissional)
+      #
+      # SECRETS NECESSÁRIOS:
+      # - GMAIL_USER: fillipe.backup@gmail.com
+      # - GMAIL_APP_PASSWORD: senha de 16 caracteres do Google
       # ==========================================================================
       SMTP_HOST: smtp.gmail.com
       SMTP_PORT: 587
-      SMTP_USER: ${ACME_EMAIL}
-      SMTP_FROM: ${ACME_EMAIL}
-      # Email padrão para alertas (pode ser alterado para outros emails)
-      ALERT_EMAIL: ${ACME_EMAIL}
+      SMTP_USER: ${GMAIL_USER}
+      SMTP_FROM: ${GMAIL_USER}
+      # Email padrão para alertas (mesmo que GMAIL_USER por padrão)
+      ALERT_EMAIL: ${GMAIL_USER}
     volumes:
       # Entrypoint customizado que faz envsubst antes de iniciar Alertmanager
       - ../../apps/observability-service/config/alertmanager/docker-entrypoint.sh:/etc/alertmanager/docker-entrypoint.sh:ro
