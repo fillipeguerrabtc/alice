@@ -480,16 +480,26 @@ jobs:
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
             
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
-              ref: version,
-              inputs: {
-                version: version,
-                services: 'all',
-                triggered_by: 'release-workflow'
-              }
-            });
+              const workflow = await github.rest.actions.getWorkflow({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'production-deploy.yml'
+              });
+              
+              console.log('✅ Workflow encontrado: ' + workflow.data.name);
+              console.log('✅ Workflow state: ' + workflow.data.state);
+              
+              // Disparar o workflow
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: 'production-deploy.yml',
+                ref: version,
+                inputs: {
+                  version: version,
+                  services: 'all',
+                  triggered_by: 'release-workflow'
+                }
+              });
             
             console.log('✅ Deploy disparado!');
