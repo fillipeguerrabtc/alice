@@ -176,8 +176,8 @@ export const CIRCUIT_BREAKER_PRESETS = {
     resetTimeout: 20000,
     volumeThreshold: 5,
   },
-  /** Resend API - emails transacionais */
-  resendAPI: {
+  /** Gmail SMTP - emails transacionais (substitui Resend - 30/12/2025) */
+  gmailSMTP: {
     timeout: 10000,
     errorThresholdPercentage: 50,
     resetTimeout: 30000,

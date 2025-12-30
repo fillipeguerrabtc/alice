@@ -66,8 +66,8 @@ export const FEATURE_FLAGS = {
   WISE_ENABLED: 'wise_enabled',
   ERPNEXT_ENABLED: 'erpnext_enabled',
   TWILIO_ENABLED: 'twilio_enabled',
-  RESEND_ENABLED: 'resend_enabled',
-  
+  EMAIL_ENABLED: 'email_enabled', // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
+
   // AI Features
   IMAGE_GENERATION_ENABLED: 'image_generation_enabled',
   RAG_ENABLED: 'rag_enabled',
@@ -229,8 +229,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.WISE_ENABLED]: false,
   [FEATURE_FLAGS.ERPNEXT_ENABLED]: false,
   [FEATURE_FLAGS.TWILIO_ENABLED]: false,
-  [FEATURE_FLAGS.RESEND_ENABLED]: false,
-  
+  [FEATURE_FLAGS.EMAIL_ENABLED]: false, // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
+
   // AI Features - HABILITADAS (core da plataforma)
   [FEATURE_FLAGS.IMAGE_GENERATION_ENABLED]: true,
   [FEATURE_FLAGS.RAG_ENABLED]: true,

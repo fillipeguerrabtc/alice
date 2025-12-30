@@ -147,10 +147,11 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'integrations:twilio:delete': ['super_admin'],
   'integrations:twilio:manage': ['super_admin', 'admin'],
   
-  'integrations:resend:read': ['super_admin', 'admin', 'manager'],
-  'integrations:resend:write': ['super_admin', 'admin'],
-  'integrations:resend:delete': ['super_admin'],
-  'integrations:resend:manage': ['super_admin', 'admin'],
+  // Email via Gmail SMTP (30/12/2025) - Substitui Resend
+  'integrations:email:read': ['super_admin', 'admin', 'manager'],
+  'integrations:email:write': ['super_admin', 'admin'],
+  'integrations:email:delete': ['super_admin'],
+  'integrations:email:manage': ['super_admin', 'admin'],
   
   // ============================================================================
   // TRADING MODULE - KuCoin Futures BTC Perpetuals (17/12/2025)
@@ -280,10 +281,11 @@ export const PERMISSION_MAP: Record<string, Role[]> = {
   'admin:twilio:delete': ['super_admin'],
   'admin:twilio:manage': ['super_admin', 'admin'],
   
-  'admin:resend:read': ['super_admin', 'admin'],
-  'admin:resend:write': ['super_admin', 'admin'],
-  'admin:resend:delete': ['super_admin'],
-  'admin:resend:manage': ['super_admin', 'admin'],
+  // Email via Gmail SMTP (30/12/2025) - Substitui Resend
+  'admin:email:read': ['super_admin', 'admin'],
+  'admin:email:write': ['super_admin', 'admin'],
+  'admin:email:delete': ['super_admin'],
+  'admin:email:manage': ['super_admin', 'admin'],
 };
 
 /**

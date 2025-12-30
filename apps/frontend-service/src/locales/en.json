@@ -595,11 +595,11 @@
       "description": "WhatsApp and SMS for notifications",
       "configureHint": "Configure to enable WhatsApp and SMS notifications."
     },
-    "resend": {
-      "title": "Resend",
-      "description": "High-delivery transactional emails",
-      "configureHint": "Configure for transactional email sending.",
-      "templatesConfigured": "Templates configured"
+    "email": {
+      "title": "Gmail SMTP",
+      "description": "Transactional emails via Gmail",
+      "configureHint": "Configure for transactional email sending via Gmail SMTP.",
+      "smtpConfigured": "SMTP configured"
     },
     "whatsapp": {
       "title": "WhatsApp Business",

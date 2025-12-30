@@ -2,7 +2,7 @@
  * Integrations - Configuração e Status das Integrações
  * 
  * Página para visualizar status e configurar integrações:
- * Stripe, Wise, ERPNext, Twilio, Resend
+ * Stripe, Wise, ERPNext, Twilio, Gmail SMTP
  * 
  * Regra 6 - SEM MOCKS: Apenas dados reais da API
  * Regra 10 - Documentação PT-BR
@@ -54,7 +54,7 @@ interface HealthResponse {
     wise: { configured: boolean };
     erpnext: { configured: boolean };
     twilio: { configured: boolean };
-    resend: { configured: boolean };
+    email: { configured: boolean }; // Gmail SMTP (substitui resend - 30/12/2025)
   };
   timestamp: string;
 }
@@ -362,7 +362,7 @@ export default function Integrations() {
     wise: { configured: false },
     erpnext: { configured: false },
     twilio: { configured: false },
-    resend: { configured: false },
+    email: { configured: false }, // Gmail SMTP
   };
 
   const configuredCount = Object.values(services).filter(s => s.configured).length;
@@ -450,7 +450,7 @@ export default function Integrations() {
                 <div>
                   <p className="text-xs text-muted-foreground">{t('integrations.stats.communication')}</p>
                   <p className="text-2xl font-bold" data-testid="stat-comms">
-                    {(services.twilio.configured || services.resend.configured) ? 'OK' : '-'}
+                    {(services.twilio.configured || services.email.configured) ? 'OK' : '-'}
                   </p>
                 </div>
                 <MessageSquare className="h-8 w-8 text-green-500/50" />
@@ -585,23 +585,23 @@ export default function Integrations() {
               </IntegrationCard>
 
               <IntegrationCard
-                name={t('integrations.resend.title')}
-                description={t('integrations.resend.description')}
+                name={t('integrations.email.title')}
+                description={t('integrations.email.description')}
                 icon={Mail}
-                configured={services.resend.configured}
-                onConfigure={() => setShowConfigDialog('resend')}
+                configured={services.email.configured}
+                onConfigure={() => setShowConfigDialog('email')}
                 t={t}
               >
-                {services.resend.configured ? (
+                {services.email.configured ? (
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Mail className="h-3 w-3" />
-                      <span>{t('integrations.resend.templatesConfigured')}</span>
+                      <span>{t('integrations.email.smtpConfigured')}</span>
                     </div>
                   </div>
                 ) : (
                   <div className="text-xs text-muted-foreground p-2 bg-muted/50 rounded">
-                    {t('integrations.resend.configureHint')}
+                    {t('integrations.email.configureHint')}
                   </div>
                 )}
               </IntegrationCard>
@@ -656,10 +656,10 @@ export default function Integrations() {
                     <p>TWILIO_WHATSAPP_NUMBER</p>
                   </>
                 )}
-                {showConfigDialog === 'resend' && (
+                {showConfigDialog === 'email' && (
                   <>
-                    <p>RESEND_API_KEY</p>
-                    <p>RESEND_FROM_EMAIL</p>
+                    <p>GMAIL_USER</p>
+                    <p>GMAIL_APP_PASSWORD</p>
                   </>
                 )}
               </div>

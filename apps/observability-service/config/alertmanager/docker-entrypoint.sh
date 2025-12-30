@@ -33,20 +33,30 @@ mkdir -p "$SECRETS_DIR"
 # =============================================================================
 # Gmail usa App Password (16 caracteres) para autenticação SMTP
 # O arquivo /run/secrets/smtp_password é montado via docker-compose
-if [ -f "/run/secrets/smtp_password" ] && [ -s "/run/secrets/smtp_password" ]; then
-  # Copiar para diretório de secrets local (compatibilidade com alertmanager.yml)
-  cp /run/secrets/smtp_password "$SECRETS_DIR/smtp_password"
-  chmod 600 "$SECRETS_DIR/smtp_password"
-  echo "✅ SMTP configurado com Gmail App Password (via /run/secrets/smtp_password)"
+#
+# CORREÇÃO CRÍTICA 30/12/2025: alertmanager.yml espera o arquivo em
+# /run/secrets/smtp_password (smtp_auth_password_file). O fallback DEVE
+# escrever no MESMO local para que o Alertmanager encontre a senha.
+# Erro anterior: fallback escrevia em /etc/alertmanager/secrets/smtp_password
+# mas Alertmanager procurava em /run/secrets/smtp_password.
+SMTP_PASSWORD_FILE="/run/secrets/smtp_password"
+
+if [ -f "$SMTP_PASSWORD_FILE" ] && [ -s "$SMTP_PASSWORD_FILE" ]; then
+  # Secret montado via Docker - já está no local correto
+  echo "✅ SMTP configurado com Gmail App Password (via Docker secret)"
 elif [ -n "$GMAIL_APP_PASSWORD" ]; then
-  # Fallback: usar variável de ambiente
-  echo -n "$GMAIL_APP_PASSWORD" > "$SECRETS_DIR/smtp_password"
-  chmod 600 "$SECRETS_DIR/smtp_password"
-  echo "✅ SMTP configurado com GMAIL_APP_PASSWORD (via env)"
+  # Fallback: criar arquivo no local onde alertmanager.yml espera
+  # Criar diretório /run/secrets se não existir (pode não existir sem Docker secrets)
+  mkdir -p "$(dirname "$SMTP_PASSWORD_FILE")"
+  echo -n "$GMAIL_APP_PASSWORD" > "$SMTP_PASSWORD_FILE"
+  chmod 600 "$SMTP_PASSWORD_FILE"
+  echo "✅ SMTP configurado com GMAIL_APP_PASSWORD (via env → $SMTP_PASSWORD_FILE)"
 else
   echo "⚠️ AVISO: SMTP não configurado - emails não funcionarão"
   echo "   Configure o secret GMAIL_APP_PASSWORD no repositório"
-  echo -n "" > "$SECRETS_DIR/smtp_password"
+  # Criar arquivo vazio para evitar erro fatal do Alertmanager
+  mkdir -p "$(dirname "$SMTP_PASSWORD_FILE")"
+  echo -n "" > "$SMTP_PASSWORD_FILE"
 fi
 
 # =============================================================================

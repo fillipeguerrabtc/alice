@@ -56,7 +56,7 @@ export type AuditResource =
   | 'wise_transfer'
   | 'erpnext'
   | 'twilio'
-  | 'resend'
+  | 'email' // Gmail SMTP (substitui 'resend' - 30/12/2025)
   | 'llm'
   | 'embeddings';
 

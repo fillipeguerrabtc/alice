@@ -49,8 +49,8 @@ const FEATURE_FLAGS = {
   WISE_ENABLED: 'wise_enabled',
   ERPNEXT_ENABLED: 'erpnext_enabled',
   TWILIO_ENABLED: 'twilio_enabled',
-  RESEND_ENABLED: 'resend_enabled',
-  
+  EMAIL_ENABLED: 'email_enabled', // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
+
   // AI Features
   IMAGE_GENERATION_ENABLED: 'image_generation_enabled',
   RAG_ENABLED: 'rag_enabled',
@@ -85,8 +85,8 @@ const DEFAULT_FLAGS: Record<FeatureFlagKey, boolean> = {
   [FEATURE_FLAGS.WISE_ENABLED]: false,
   [FEATURE_FLAGS.ERPNEXT_ENABLED]: false,
   [FEATURE_FLAGS.TWILIO_ENABLED]: false,
-  [FEATURE_FLAGS.RESEND_ENABLED]: false,
-  
+  [FEATURE_FLAGS.EMAIL_ENABLED]: false, // Gmail SMTP (substitui RESEND_ENABLED - 30/12/2025)
+
   // AI Features - HABILITADAS (core da plataforma)
   [FEATURE_FLAGS.IMAGE_GENERATION_ENABLED]: true,
   [FEATURE_FLAGS.RAG_ENABLED]: true,
@@ -131,7 +131,7 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(FEATURE_FLAGS.WISE_ENABLED).toBe('wise_enabled');
       expect(FEATURE_FLAGS.ERPNEXT_ENABLED).toBe('erpnext_enabled');
       expect(FEATURE_FLAGS.TWILIO_ENABLED).toBe('twilio_enabled');
-      expect(FEATURE_FLAGS.RESEND_ENABLED).toBe('resend_enabled');
+      expect(FEATURE_FLAGS.EMAIL_ENABLED).toBe('email_enabled');
     });
 
     it('deve ter flags de AI features', () => {
@@ -166,7 +166,7 @@ describe('Feature Flags - Keys e Constantes', () => {
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.WISE_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.ERPNEXT_ENABLED]).toBe(false);
       expect(DEFAULT_FLAGS[FEATURE_FLAGS.TWILIO_ENABLED]).toBe(false);
-      expect(DEFAULT_FLAGS[FEATURE_FLAGS.RESEND_ENABLED]).toBe(false);
+      expect(DEFAULT_FLAGS[FEATURE_FLAGS.EMAIL_ENABLED]).toBe(false);
     });
 
     it('AI features (core) devem estar HABILITADAS por padrão', () => {
@@ -604,7 +604,7 @@ describe('Feature Flags - Padrão Enterprise', () => {
         FEATURE_FLAGS.WISE_ENABLED,
         FEATURE_FLAGS.ERPNEXT_ENABLED,
         FEATURE_FLAGS.TWILIO_ENABLED,
-        FEATURE_FLAGS.RESEND_ENABLED,
+        FEATURE_FLAGS.EMAIL_ENABLED,
       ];
       
       integrationFlags.forEach(flag => {
