@@ -605,7 +605,20 @@ O deploy é **100% automático** via GitHub Actions:
 
 ## Fluxo de CI/CD (Best Practices 2025)
 
-**Tag única e determinística:** a pipeline de deploy usa a versão recebida pelo `release.yml` (`inputs.version`) como tag principal das imagens. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
+**Tag única e determinística:** a pipeline de deploy usa a versão recebida pelo `release.yml` (`inputs.version` ou calculada automaticamente) como tag principal das imagens. Build, security scan (Trivy) e deploy consomem exatamente a mesma tag, garantindo alinhamento entre imagens analisadas e imagens publicadas.
+
+### Versionamento Automático (30/12/2025)
+
+O workflow de release (`release.yml`) suporta versionamento automático baseado em Conventional Commits:
+
+- **Versão automática**: Use `version: "auto"` ou deixe vazio para calcular automaticamente a próxima versão baseada em:
+  - **BREAKING CHANGE** ou commits com `!` (ex: `feat!:`, `fix!:`) → **MAJOR** bump (v2.0.0)
+  - **feat:** (sem `!`) → **MINOR** bump (v1.1.0)
+  - **fix:** ou outros → **PATCH** bump (v1.0.1)
+
+- **Reutilização de tags**: Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks). Se a tag aponta para um commit diferente, o workflow falha com erro claro.
+
+- **Cache e retagging**: O sistema de cache e retagging funciona corretamente mesmo quando tags são reutilizadas, garantindo que imagens Docker sejam reutilizadas quando apropriado (sem rebuilds desnecessários).
 
 ### Pipeline Unificada (17/12/2025)
 
@@ -683,11 +696,37 @@ O deploy é **100% automático** via GitHub Actions:
 
 Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 51 containers no servidor único).
 
-### Versionamento Automático
+### Versionamento Automático (30/12/2025)
 
-O Release é disparado automaticamente quando o CI passa, com versão incremental:
+O workflow de release (`release.yml`) suporta versionamento automático baseado em Conventional Commits:
 
-- `v1.0.5` → `v1.0.6` → `v1.0.7` ...
+**Opções de versionamento:**
+- **Automático**: Use `version: "auto"` ou deixe vazio no workflow_dispatch para calcular automaticamente a próxima versão baseada em:
+  - **BREAKING CHANGE** ou commits com `!` (ex: `feat!:`, `fix!:`) → **MAJOR** bump (v2.0.0)
+  - **feat:** (sem `!`) → **MINOR** bump (v1.1.0)
+  - **fix:** ou outros → **PATCH** bump (v1.0.1)
+- **Manual**: Forneça a versão explicitamente (ex: `v1.4.25`)
+- **Reutilização de tags**: Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
+
+**Deploy automático (30/12/2025):**
+- O Deploy workflow aceita versão vazia e obtém automaticamente da tag mais recente quando disparado pelo Release workflow
+- Garante que imagens Docker existem no GHCR antes de fazer deploy
+- Cache e tags já gerenciados pelo Release workflow (não faz rebuild no deploy)
+
+**Cache inteligente (30/12/2025):**
+- Builds só acontecem quando há mudanças relevantes nos arquivos do serviço
+- Retagging automático quando não há mudanças (evita rebuilds desnecessários)
+- Cache de registry (GHCR) mantido por imagem para builds mais rápidos
+
+**Reutilização de tags:**
+- Se uma tag já existe e aponta para o mesmo commit atual, ela é reutilizada automaticamente (útil para rollbacks)
+- Se a tag aponta para um commit diferente, o workflow falha com erro claro
+- Cache e retagging funcionam corretamente mesmo quando tags são reutilizadas
+
+**Exemplo de fluxo:**
+- Última tag: `v1.4.24`
+- Commits desde a tag: `feat: adiciona nova funcionalidade`
+- Versão calculada: `v1.5.0` (MINOR bump)
 
 ### Deploy 100% Automático
 

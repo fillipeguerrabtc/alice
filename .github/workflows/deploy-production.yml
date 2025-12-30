@@ -16,6 +16,13 @@
 #   5. Rollback automático em caso de falha
 #   6. Registrar deploy bem-sucedido
 #
+# VERSIONAMENTO AUTOMÁTICO (30/12/2025):
+# - Se version fornecida: valida formato e usa
+# - Se version vazia: obtém automaticamente da tag mais recente (útil quando
+#   disparado pelo Release workflow que já calculou a versão)
+# - Garante que imagens Docker existem no GHCR antes de fazer deploy
+# - Cache e tags já gerenciados pelo Release workflow (não faz rebuild aqui)
+#
 # OTIMIZAÇÃO CRÍTICA (27/12/2025):
 # - REMOVIDO: code-quality (CI já validou código)
 # - REMOVIDO: security-scan no código (CI já escaneou)
@@ -33,7 +40,7 @@
 #   - SSH keys para Hetzner (padrão da indústria - OIDC não suportado por VPS)
 #
 # Author: Fillipe Guerra
-# Data: 27/12/2025
+# Data: 30/12/2025
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)
@@ -42,9 +49,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão para deploy (ex: v1.0.0)'
+        description: 'Versão para deploy (ex: v1.0.0). Se vazio, usa versão da tag do release workflow'
         type: string
-        required: true
+        required: false
       services:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
         type: string
@@ -84,7 +91,8 @@ jobs:
       contents: read
       packages: read
     outputs:
-      image_tag: ${{ steps.validate.outputs.image_tag }}
+      image_tag: ${{ steps.resolve-version.outputs.image_tag }}
+      tag_commit: ${{ steps.resolve-version.outputs.tag_commit }}
       images_exist: ${{ steps.check-images.outputs.exist }}
       # Versões dos componentes (buscadas do arquivo de configuração)
       pgbackrest_version: ${{ steps.versions.outputs.pgbackrest_version }}
@@ -105,32 +113,88 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ inputs.version }}
+          fetch-depth: 0
 
-      - name: Validar parâmetros
-        id: validate
+      # =======================================================================
+      # RESOLUÇÃO DE VERSÃO (30/12/2025)
+      # Se version fornecida: valida e usa
+      # Se version vazia: tenta obter da tag mais recente (release automático)
+      # =======================================================================
+      - name: Resolver versão para deploy
+        id: resolve-version
         run: |
-          VERSION="${{ inputs.version }}"
+          set -e
+          
+          INPUT_VERSION="${{ inputs.version }}"
+          TRIGGERED_BY="${{ inputs.triggered_by }}"
           
           echo "=============================================="
           echo "VALIDANDO DEPLOY"
           echo "=============================================="
-          echo "📋 Versão: ${VERSION:-'(não informado)'}"
+          echo "📋 Versão fornecida: ${INPUT_VERSION:-'(não informado)'}"
           echo "📋 Serviços: ${{ inputs.services }}"
-          echo "📋 Origem: ${{ inputs.triggered_by }}"
+          echo "📋 Origem: ${TRIGGERED_BY:-'manual'}"
           
-          if [ -z "${VERSION}" ] || [ "${VERSION}" = "latest" ]; then
-            echo "❌ ERRO: Parâmetro 'version' é OBRIGATÓRIO!"
-            exit 1
+          # Se versão fornecida, validar formato
+          if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "latest" ]; then
+            if ! echo "$INPUT_VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+              echo "❌ ERRO: Formato de versão inválido: $INPUT_VERSION"
+              echo "Formato esperado: vX.Y.Z ou vX.Y.Z-prerelease"
+              exit 1
+            fi
+            RESOLVED_VERSION="$INPUT_VERSION"
+            echo "✅ Versão fornecida validada: $RESOLVED_VERSION"
+          else
+            # Versão não fornecida: tentar obter da tag mais recente
+            echo "🔄 Versão não fornecida - obtendo tag mais recente..."
+            
+            # Buscar última tag semântica
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            
+            if [ -z "$LAST_TAG" ]; then
+              echo "❌ ERRO: Nenhuma tag encontrada no repositório!"
+              echo "Execute o Release workflow primeiro ou forneça uma versão manualmente."
+              exit 1
+            fi
+            
+            # Validar que a tag é semântica
+            if ! echo "$LAST_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+              echo "❌ ERRO: Tag mais recente não é semântica: $LAST_TAG"
+              echo "Formato esperado: vX.Y.Z ou vX.Y.Z-prerelease"
+              exit 1
+            fi
+            
+            RESOLVED_VERSION="$LAST_TAG"
+            echo "✅ Versão obtida da tag mais recente: $RESOLVED_VERSION"
           fi
           
-          if ! echo "${VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "❌ ERRO: Formato de versão inválido: ${VERSION}"
-            exit 1
+          # Verificar se a tag existe e aponta para um commit válido
+          if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
+            TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
+            echo "✅ Tag $RESOLVED_VERSION aponta para commit: $TAG_COMMIT"
+          else
+            echo "⚠️ AVISO: Tag $RESOLVED_VERSION não encontrada localmente"
+            echo "Fazendo fetch de tags remotas..."
+            git fetch --tags origin || true
+            
+            if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
+              TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
+              echo "✅ Tag $RESOLVED_VERSION encontrada após fetch: $TAG_COMMIT"
+            else
+              echo "❌ ERRO: Tag $RESOLVED_VERSION não existe no repositório!"
+              exit 1
+            fi
           fi
           
-          echo "image_tag=$VERSION" >> $GITHUB_OUTPUT
-          echo "✅ Validação OK: $VERSION"
+          echo "image_tag=$RESOLVED_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
+          echo "✅ Versão resolvida: $RESOLVED_VERSION"
+          
+      - name: Checkout código na versão correta
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.resolve-version.outputs.tag_commit }}
+          fetch-depth: 0
 
       - name: Login no GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
@@ -142,7 +206,7 @@ jobs:
       - name: Verificar se imagens existem no GHCR
         id: check-images
         run: |
-          VERSION="${{ steps.validate.outputs.image_tag }}"
+          VERSION="${{ steps.resolve-version.outputs.image_tag }}"
           echo "🔍 Verificando imagens no GHCR para versão $VERSION..."
           
           # Serviços críticos que DEVEM existir (buildados pelo Release)

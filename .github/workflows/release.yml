@@ -9,11 +9,16 @@
 #   Deploy → Deploya para Hetzner + Health Check + Rollback
 #
 # RESPONSABILIDADES DESTE WORKFLOW:
-#   1. Validar e criar tag semântica (vX.Y.Z)
+#   1. Validar e criar tag semântica (vX.Y.Z) - com versionamento automático opcional
 #   2. Gerar changelog automático (Conventional Commits)
 #   3. Criar GitHub Release com notas
 #   4. Build e push de TODAS as 14 imagens Docker (9 microservices + 5 GPU)
 #   5. Disparar workflow de Deploy
+#
+# VERSIONAMENTO AUTOMÁTICO (30/12/2025):
+# - Se version="auto" ou vazio, calcula próxima versão baseado em Conventional Commits
+# - Permite reutilizar tags existentes se apontarem para o mesmo commit (útil para rollbacks)
+# - Mantém cache e retagging funcionando corretamente mesmo com tags reutilizadas
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
 # - Matrix de 14 jobs → 1 job único com loop
@@ -30,7 +35,7 @@
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #
 # Author: Fillipe Guerra
-# Data: 27/12/2025
+# Data: 30/12/2025
 # =============================================================================
 
 name: Release & Tag
@@ -39,7 +44,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1)'
+        description: 'Versão para release (ex: v1.0.0, v1.0.0-beta.1, ou "auto" para calcular automaticamente)'
         required: true
         type: string
       prerelease:
@@ -69,9 +74,10 @@ jobs:
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
     outputs:
-      version: ${{ inputs.version }}
+      version: ${{ steps.resolve-version.outputs.version }}
       previous_tag: ${{ steps.previous-tag.outputs.previous_tag }}
       changelog: ${{ steps.changelog.outputs.changes }}
+      tag_reused: ${{ steps.resolve-version.outputs.tag_reused }}
     
     steps:
       - name: Checkout código
@@ -79,30 +85,125 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Validar formato da versão
+      # =======================================================================
+      # VERSIONAMENTO AUTOMÁTICO (Best Practices 2025)
+      # Se version="auto", calcula próxima versão baseado em Conventional Commits
+      # Se version fornecida, valida formato e permite reutilização se tag
+      # aponta para o mesmo commit (útil para rollbacks)
+      # =======================================================================
+      - name: Resolver versão (automático ou manual)
+        id: resolve-version
         run: |
-          VERSION="${{ inputs.version }}"
-          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
-            echo "❌ Formato de versão inválido: $VERSION"
-            exit 1
+          set -e
+          
+          INPUT_VERSION="${{ inputs.version }}"
+          CURRENT_COMMIT=$(git rev-parse HEAD)
+          
+          # Se "auto", calcular próxima versão automaticamente
+          if [ "$INPUT_VERSION" = "auto" ] || [ -z "$INPUT_VERSION" ]; then
+            echo "🔄 Calculando versão automaticamente..."
+            
+            # Obter última tag e versão atual
+            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            VERSION=${LAST_TAG#v}
+            MAJOR=$(echo $VERSION | cut -d. -f1 | grep -E '^[0-9]+$' || echo "0")
+            MINOR=$(echo $VERSION | cut -d. -f2 | grep -E '^[0-9]+$' || echo "0")
+            PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1 | grep -E '^[0-9]+$' || echo "0")
+            
+            echo "📦 Versão atual: v${MAJOR}.${MINOR}.${PATCH}"
+            
+            # Analisar commits desde a última tag
+            if [ "$LAST_TAG" = "v0.0.0" ]; then
+              COMMITS=$(git log --pretty=format:"%s" --no-merges | head -100)
+            else
+              COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+            fi
+            
+            # Determinar tipo de bump baseado em Conventional Commits
+            BUMP_TYPE="patch"
+            
+            # Verificar BREAKING CHANGES (MAJOR bump)
+            # Conventional Commits 1.0.0: QUALQUER tipo pode usar ! para breaking change
+            if echo "$COMMITS" | grep -qE "^[a-z]+(\(.+\))?!:|BREAKING CHANGE:"; then
+              BUMP_TYPE="major"
+              echo "⚠️ Breaking change detectado → MAJOR bump"
+            # Verificar features (MINOR bump)
+            elif echo "$COMMITS" | grep -qE "^feat(\(.+\))?:"; then
+              BUMP_TYPE="minor"
+              echo "✨ Feature detectada → MINOR bump"
+            else
+              echo "🔧 Apenas fixes/outros → PATCH bump"
+            fi
+            
+            # Calcular nova versão
+            case $BUMP_TYPE in
+              major)
+                NEW_MAJOR=$((10#$MAJOR + 1))
+                RESOLVED_VERSION="v${NEW_MAJOR}.0.0"
+                ;;
+              minor)
+                NEW_MINOR=$((10#$MINOR + 1))
+                RESOLVED_VERSION="v${MAJOR}.${NEW_MINOR}.0"
+                ;;
+              patch)
+                NEW_PATCH=$((10#$PATCH + 1))
+                RESOLVED_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+                ;;
+            esac
+            
+            echo "✅ Versão calculada: $RESOLVED_VERSION ($BUMP_TYPE bump)"
+          else
+            # Versão fornecida manualmente - validar formato
+            if [[ ! "$INPUT_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+              echo "❌ Formato de versão inválido: $INPUT_VERSION"
+              echo "Formato esperado: vX.Y.Z ou vX.Y.Z-prerelease"
+              exit 1
+            fi
+            RESOLVED_VERSION="$INPUT_VERSION"
+            echo "✅ Versão fornecida: $RESOLVED_VERSION"
           fi
-          echo "✅ Versão válida: $VERSION"
-
-      - name: Verificar se tag já existe
-        run: |
-          if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
-            echo "❌ Tag ${{ inputs.version }} já existe!"
-            exit 1
+          
+          # Verificar se tag já existe e se aponta para o mesmo commit
+          TAG_REUSED="false"
+          if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
+            TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
+            if [ "$TAG_COMMIT" = "$CURRENT_COMMIT" ]; then
+              echo "⚠️ Tag $RESOLVED_VERSION já existe e aponta para o commit atual"
+              echo "✅ Reutilizando tag existente (útil para rollbacks)"
+              TAG_REUSED="true"
+            else
+              echo "❌ Tag $RESOLVED_VERSION já existe mas aponta para commit diferente!"
+              echo "Tag commit: $TAG_COMMIT"
+              echo "Current commit: $CURRENT_COMMIT"
+              echo "Use uma versão diferente ou faça merge/rebase para alinhar commits"
+              exit 1
+            fi
+          else
+            echo "✅ Tag $RESOLVED_VERSION disponível"
           fi
-          echo "✅ Tag ${{ inputs.version }} disponível"
+          
+          echo "version=$RESOLVED_VERSION" >> $GITHUB_OUTPUT
+          echo "tag_reused=$TAG_REUSED" >> $GITHUB_OUTPUT
 
       - name: Detectar tag anterior (para retagging)
         id: previous-tag
         run: |
-          PREVIOUS_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          CURRENT_VERSION="${{ steps.resolve-version.outputs.version }}"
+          # Obter todas as tags ordenadas por versão (mais recente primeiro)
+          ALL_TAGS=$(git tag --sort=-version:refname)
+          
+          # Encontrar a tag anterior à versão atual (não pode ser a mesma)
+          PREVIOUS_TAG=""
+          for tag in $ALL_TAGS; do
+            if [ "$tag" != "$CURRENT_VERSION" ]; then
+              PREVIOUS_TAG="$tag"
+              break
+            fi
+          done
+          
           echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
           if [ -n "$PREVIOUS_TAG" ]; then
-            echo "✅ Tag anterior detectada: $PREVIOUS_TAG"
+            echo "✅ Tag anterior detectada: $PREVIOUS_TAG (versão atual: $CURRENT_VERSION)"
           else
             echo "⚠️ Nenhuma tag anterior encontrada (primeiro release?)"
           fi
@@ -143,38 +244,46 @@ jobs:
           echo -e "$CHANGELOG" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Criar Git Tag
+      - name: Criar Git Tag (se necessário)
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ inputs.version }} -m "Release ${{ inputs.version }}"
-          git push origin ${{ inputs.version }}
-          echo "✅ Tag ${{ inputs.version }} criada"
+          VERSION="${{ steps.resolve-version.outputs.version }}"
+          TAG_REUSED="${{ steps.resolve-version.outputs.tag_reused }}"
+          
+          if [ "$TAG_REUSED" = "true" ]; then
+            echo "⏭️ Tag $VERSION já existe e aponta para o commit atual - pulando criação"
+            echo "✅ Tag reutilizada: $VERSION"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag -a "$VERSION" -m "Release $VERSION"
+            git push origin "$VERSION"
+            echo "✅ Tag $VERSION criada"
+          fi
 
       - name: Criar GitHub Release
         uses: softprops/action-gh-release@01570a1f39cb168c169c802c3bceb9e93fb10974
         with:
-          tag_name: ${{ inputs.version }}
-          name: Alice Enterprise Platform ${{ inputs.version }}
+          tag_name: ${{ steps.resolve-version.outputs.version }}
+          name: Alice Enterprise Platform ${{ steps.resolve-version.outputs.version }}
           prerelease: ${{ inputs.prerelease }}
           generate_release_notes: true
           body: |
-            ## 🚀 Alice Enterprise Platform ${{ inputs.version }}
+            ## 🚀 Alice Enterprise Platform ${{ steps.resolve-version.outputs.version }}
             
             ### Changelog
             ${{ steps.changelog.outputs.changes }}
             
             ### 🐳 Docker Images
             ```
-            ${{ env.IMAGE_PREFIX }}-auth:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-chat:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-frontend:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-rag:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-training:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-integrations:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-observability:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ inputs.version }}
-            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ inputs.version }}
+            ${{ env.IMAGE_PREFIX }}-auth:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-chat:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-frontend:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-rag:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-training:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-integrations:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-observability:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-gpu-manager:${{ steps.resolve-version.outputs.version }}
+            ${{ env.IMAGE_PREFIX }}-api-gateway:${{ steps.resolve-version.outputs.version }}
             ```
 
   # ===========================================================================
