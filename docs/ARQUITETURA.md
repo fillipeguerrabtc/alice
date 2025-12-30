@@ -134,7 +134,7 @@ C4Context
     System_Ext(kucoin, "KuCoin Futures", "Trading BTC Perpetuals")
     System_Ext(stripe, "Stripe", "Pagamentos")
     System_Ext(twilio, "Twilio", "WhatsApp/SMS")
-    System_Ext(resend, "Resend", "Email transacional")
+    System_Ext(gmail, "Gmail SMTP", "Email transacional")
     
     Rel(user, alice, "Chat, consultas, trading")
     Rel(admin, alice, "Configuração, monitoramento")
@@ -153,7 +153,7 @@ C4Context
 | **KuCoin Futures** | Trading BTC | REST + WebSocket | HMAC-SHA256 |
 | **Stripe** | Pagamentos | Webhooks | Signature verification |
 | **Twilio** | WhatsApp/SMS | REST | API Key + Token |
-| **Resend** | Email | REST | API Key |
+| **Gmail SMTP** | Email | SMTP/TLS | App Password |
 | **ERPNext** | ERP/CRM | REST | OAuth 2.0 SSO |
 | **Grafana** | Dashboards | REST | OAuth 2.0 SSO |
 

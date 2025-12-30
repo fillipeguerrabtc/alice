@@ -36,7 +36,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 9 | **Chat Service** | `alice-chat` | `apps/chat-service` | Chat em tempo real com streaming de tokens LLM via WebSocket, rate limiting, conversation orchestrator. | Node.js, WebSocket, GPU Manager Service |
 | 10 | **RAG Service** | `alice-rag` | `apps/rag-service` | Retrieval-Augmented Generation com embeddings GPU local. Texto: Qwen3-Embedding-8B (4096 dim → Qdrant). Imagem: OpenCLIP (1024 dim → pgvector). | Node.js, Qdrant, pgvector |
 | 11 | **Training Service** | `alice-training` | `apps/training-service` | Fine-tuning e self-learning automático. Scheduler de aprendizado, integração GPU Manager Service. | Node.js, GPU Manager Service |
-| 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Resend (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
+| 12 | **Integrations Service** | `alice-integrations` | `apps/integrations-service` | Integrações com serviços externos: Stripe (pagamentos EUR/SEPA), Wise (transferências), Twilio (WhatsApp), Gmail SMTP (emails), KuCoin Futures (Trading). | Node.js, Stripe SDK, Wise API |
 | 13 | **Observability Service** | `alice-observability` | `apps/observability-service` | Stack de observabilidade: métricas Prometheus, dashboards Grafana, tracing Jaeger, backup orchestrator. | Node.js, Prometheus, Grafana, Jaeger |
 
 > **NOTA (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 e são gerenciados pelo GPU Manager Service. Processamento multimodal usa serviços GPU locais com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
@@ -314,8 +314,9 @@ TWILIO_ACCOUNT_SID=ACxxxxx
 TWILIO_AUTH_TOKEN=xxxxx
 TWILIO_WHATSAPP_NUMBER=+14155238886
 
-# ========== RESEND (EMAIL) ==========
-RESEND_API_KEY=re_xxxxx
+# ========== GMAIL SMTP (ALERTMANAGER) ==========
+GMAIL_USER=seuemail@gmail.com
+GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 
 # ========== DOMÍNIO E SSL ==========
 ACME_EMAIL=seu-email@exemplo.com

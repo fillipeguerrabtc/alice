@@ -366,9 +366,10 @@ fi
 # 1. Let's Encrypt (certificados SSL via Traefik)
 # 2. Alertmanager (destino dos emails de alerta)
 #
-# INTEGRAÇÃO RESEND SIMPLIFICADA (sem domínio verificado):
-# - Resend só permite enviar emails para o PRÓPRIO email da conta
-# - Ou seja, ACME_EMAIL deve ser o email registrado na conta Resend
+# INTEGRAÇÃO GMAIL SMTP (30/12/2025):
+# - Gmail permite enviar para QUALQUER email (clientes, equipe, vendas)
+# - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
+# - Secrets necessários: GMAIL_USER, GMAIL_APP_PASSWORD
 # - Ref: https://resend.com/docs/knowledge-base/how-do-I-create-an-email-address-or-sender-in-resend
 #
 # Se precisar enviar alertas para outros emails, é necessário verificar um domínio no Resend.
@@ -471,9 +472,6 @@ echo "📄 Gerando arquivo .env.prod..."
   printf '# Gmail SMTP (Alertmanager)\n'
   printf 'GMAIL_USER=%s\n' "${GMAIL_USER}"
   printf 'GMAIL_APP_PASSWORD=%s\n' "${GMAIL_APP_PASSWORD}"
-  printf '\n'
-  printf '# Resend (opcional - mantido para uso futuro com API direta)\n'
-  printf 'RESEND_API_KEY=%s\n' "${RESEND_API_KEY:-}"
   printf '\n'
   printf '# Wise\n'
   printf 'WISE_API_KEY=%s\n' "${WISE_API_KEY:-}"

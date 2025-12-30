@@ -29,7 +29,7 @@ Este documento contém a lista completa de todos os secrets necessários para a 
 | **Alice Chat** | alice-chat | GPU_MANAGER_URL (opcional, default: http://alice-gpu-manager:3010) |
 | **Alice RAG (GPU + Web Search)** | alice-rag | GPU_MANAGER_URL, SEARXNG_URL |
 | **GPU Manager Service** | gpu-manager-service | INTERNAL_API_SECRET, REDIS_URL |
-| **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, RESEND_*, KUCOIN_* |
+| **Alice Integrations** | alice-integrations | STRIPE_*, WISE_*, TWILIO_*, GMAIL_*, KUCOIN_* |
 | **Alice Trading** | alice-integrations | KUCOIN_API_KEY, KUCOIN_API_SECRET, KUCOIN_API_PASSPHRASE |
 | **Alice Observability** | alice-observability, langfuse, langfuse-db | GRAFANA_*, LANGFUSE_*, LANGFUSE_DB_USER, LANGFUSE_DB_PASSWORD, LANGFUSE_DB_NAME |
 | **Web Search (SearXNG)** | alice-searxng | SEARXNG_SECRET_KEY |
@@ -91,7 +91,7 @@ Estes são necessários para o deploy funcionar:
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
-| `ADMIN_USER` | Email do administrador global (Alice/ERPNext/Grafana) | Definir seu email corporativo |
+| `ADMIN_USER` | Username do administrador global (Alice/ERPNext/Grafana) | Definir username (ex: admin) |
 | `ADMIN_PWD` | Senha do administrador global (mín. 8 chars) | Definir forte e exclusiva |
 | `DOCKERHUB_USERNAME` | Username Docker Hub | Evita rate limit (100 pulls/6h anônimo) |
 | `DOCKERHUB_TOKEN` | Access Token Docker Hub | [hub.docker.com/settings/security](https://hub.docker.com/settings/security) |
@@ -259,19 +259,32 @@ Estes são necessários para o deploy funcionar:
 2. When a message comes in: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/whatsapp`
 3. Status callback URL: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/status`
 
-**Resend (Integração Simplificada via API Key):**
+**Gmail SMTP (Alertmanager - Emails de Alerta):**
 
 | Secret | Onde Obter |
 |--------|------------|
-| `RESEND_API_KEY` | [resend.com/api-keys](https://resend.com/api-keys) |
-| *(sem variável FROM)* | O sender padrão é `onboarding@resend.dev` (permitido sem domínio verificado) |
+| `GMAIL_USER` | Seu email Gmail completo (ex: seuemail@gmail.com) |
+| `GMAIL_APP_PASSWORD` | [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) |
 
-**Importante - Alertmanager usa relay SMTP do Resend:**
-- O Resend oferece um relay SMTP (`smtp.resend.com:587`) que aceita a **API Key como senha**
-- O arquivo `/opt/alice/secrets/alertmanager/smtp_password` deve conter a `RESEND_API_KEY`
-- Username fixo: `resend`
-- Não é necessário domínio verificado para usar `onboarding@resend.dev` como remetente
-- Permissões: defina `chmod 640` e `chown 65534:65534` (user nobody da imagem) para evitar `permission denied` ao montar em `/run/secrets/smtp_password`
+**Configuração Gmail App Password:**
+1. Acesse [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+2. Selecione app "Mail" e dispositivo "Other (Custom name)"
+3. Digite um nome (ex: "Alice Alertmanager")
+4. Copie a senha de 16 caracteres gerada (sem espaços)
+5. Adicione como secret `GMAIL_APP_PASSWORD`
+
+**Vantagens Gmail SMTP vs Resend:**
+- ✅ Pode enviar para QUALQUER email (clientes, equipe, vendas)
+- ✅ 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
+- ✅ Remetente é seu próprio email (profissional)
+- ✅ Gratuito e sem necessidade de verificar domínio
+
+**Importante - Alertmanager usa Gmail SMTP:**
+- Host: `smtp.gmail.com:587`
+- Username: `GMAIL_USER` (email completo)
+- Password: `GMAIL_APP_PASSWORD` (16 caracteres)
+- O arquivo `/opt/alice/secrets/alertmanager/smtp_password` contém a App Password
+- TLS obrigatório (smtp_require_tls: true)
 
 ### FASE 6.1: CORS (origens frontend) — OBRIGATÓRIO EM PRODUÇÃO
 
@@ -321,7 +334,8 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_ENCRYPTION_KEY` | **OBRIGATÓRIO v3** - Chave 256-bit hex | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
-| `RESEND_API_KEY` | **API Key do Resend** para SMTP do Alertmanager | Workflow escreve em `/opt/alice/secrets/alertmanager/smtp_password` |
+| `GMAIL_USER` | **Email Gmail** para SMTP do Alertmanager | Ex: seuemail@gmail.com |
+| `GMAIL_APP_PASSWORD` | **App Password do Gmail** (16 caracteres) | [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) |
 
 **⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
 - Langfuse foi atualizado para v3.140.0 que requer novas variáveis obrigatórias:
@@ -332,10 +346,12 @@ Estes são necessários para o deploy funcionar:
   - `CLICKHOUSE_USER`: Usuário do ClickHouse (ex: `langfuse`)
   - `CLICKHOUSE_PASSWORD`: Senha segura (gerar com `openssl rand -base64 32`)
 
-**Observação sobre Alertmanager + Resend:**
-- O Alertmanager usa o relay SMTP do Resend (`smtp.resend.com:587`) para enviar alertas por email
-- A "senha SMTP" é na verdade a **API Key do Resend** (integração simplificada)
-- Username fixo: `resend` | Sender: `onboarding@resend.dev` (não requer domínio verificado)
+**Observação sobre Alertmanager + Gmail SMTP (Atualizado 30/12/2025):**
+- O Alertmanager usa Gmail SMTP (`smtp.gmail.com:587`) para enviar alertas por email
+- A senha SMTP é uma **App Password do Gmail** (16 caracteres)
+- Username: `GMAIL_USER` (seu email Gmail completo)
+- Sender: mesmo email do `GMAIL_USER` (seu próprio email)
+- Pode enviar para **qualquer email** (clientes, equipe, vendas)
 - O arquivo de senha é montado em `/run/secrets/smtp_password` no container
 
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
@@ -462,7 +478,8 @@ Estes são necessários para o deploy funcionar:
 | `TWILIO_ACCOUNT_SID` | ✅ |
 | `TWILIO_AUTH_TOKEN` | ✅ |
 | `TWILIO_WHATSAPP_NUMBER` | ✅ |
-| `RESEND_API_KEY` | ✅ |
+| `GMAIL_USER` | ✅ (adicionado 30/12/2025) |
+| `GMAIL_APP_PASSWORD` | ✅ (adicionado 30/12/2025) |
 
 ### CORS (Origens Frontend) — OBRIGATÓRIO
 
@@ -490,7 +507,8 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
 | `LANGFUSE_SALT` | ✅ **OBRIGATÓRIO v3** |
 | `LANGFUSE_ENCRYPTION_KEY` | ✅ **OBRIGATÓRIO v3** |
-| `RESEND_API_KEY` | ✅ (usado como senha SMTP do Alertmanager) |
+| `GMAIL_USER` | ✅ (email Gmail para SMTP do Alertmanager) |
+| `GMAIL_APP_PASSWORD` | ✅ (App Password 16 chars) |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |
 | `LANGFUSE_DB_NAME` | ✅ |
@@ -598,15 +616,15 @@ openssl rand -base64 24
 | Google OAuth | https://developers.google.com/identity/protocols/oauth2 |
 | GitHub OAuth | https://docs.github.com/en/developers/apps/building-oauth-apps |
 | Twilio | https://www.twilio.com/docs/usage/webhooks |
-| Resend | https://resend.com/docs |
+| Gmail SMTP | https://support.google.com/accounts/answer/185833 |
 | Wise | https://docs.wise.com/ |
 | GPU Manager Service | Local (Hetzner GEX44) |
 
 ---
 
 *Autor: Fillipe Guerra*  
-*Documento atualizado em: 28 de Dezembro de 2025*
-*Versão: 8.2 - Arquitetura Híbrida NGC + Docker Hub*
+*Documento atualizado em: 30 de Dezembro de 2025*
+*Versão: 9.0 - Gmail SMTP Enterprise (Resend removido)*
 *Total de Secrets: ~50 no GitHub + opcionais pós-deploy (ERPNEXT_API_KEY, ERPNEXT_API_SECRET, WISE_WEBHOOK_SECRET)*  
 *Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*  
 *Backup: Servidor GEX44 1.92TB interno (/opt/alice/backups)*  

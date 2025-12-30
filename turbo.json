@@ -10,7 +10,8 @@
     "ERPNEXT_URL",
     "ERPNEXT_API_KEY",
     "ERPNEXT_API_SECRET",
-    "RESEND_API_KEY",
+    "GMAIL_USER",
+    "GMAIL_APP_PASSWORD",
     "LOG_LEVEL",
     "SERVICE_NAME"
   ],

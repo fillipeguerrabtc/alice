@@ -1,13 +1,13 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025  
-**Versão:** 4.38
+**Data:** 30 de Dezembro de 2025  
+**Versão:** 4.48
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.38-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.48-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -119,7 +119,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 10 | Chat Service | `alice-chat` | 3002 | WebSocket streaming + LLM via GPU Manager |
 | 11 | RAG Service | `alice-rag` | 3003 | pgvector + embeddings + busca semântica |
 | 12 | Training Service | `alice-training` | 3004 | Fine-tuning + self-learning |
-| 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Resend, KuCoin Futures |
+| 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Gmail SMTP, KuCoin Futures |
 | 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
 
 > **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).

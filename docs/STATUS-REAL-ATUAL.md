@@ -272,7 +272,7 @@
 | Wise Service | ✅ | `wiseService.ts` |
 | Wise-ERPNext Sync | ✅ | `wiseSyncService.ts` |
 | Twilio WhatsApp Webhooks | ✅ | `index.ts` |
-| Resend Email | ✅ | `index.ts` |
+| Gmail SMTP (Alertas) | ✅ | `alertmanager.yml` |
 | ERPNext API Client | ✅ | `index.ts` |
 | Webhook Idempotency | ✅ | `webhookEvents` table |
 | Webhook Signature Validation | ✅ | Stripe, Wise, Twilio |
@@ -996,7 +996,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Auth** | SESSION_SECRET, ADMIN_USER, ADMIN_PWD, GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_GITHUB_CLIENT_ID, OAUTH_GITHUB_CLIENT_SECRET |
 | **LLM** | GPU Manager Service (sem secrets externos) |
 | **Payments** | STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, WISE_API_KEY, WISE_PROFILE_ID, WISE_WEBHOOK_SECRET |
-| **Communication** | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, RESEND_API_KEY |
+| **Communication** | TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_NUMBER, GMAIL_USER, GMAIL_APP_PASSWORD |
 | **ERPNext** | ERPNEXT_ADMIN_PASSWORD, ERPNEXT_DB_PASSWORD, ERPNEXT_MYSQL_ROOT_PASSWORD, REDIS_CACHE_PASSWORD, REDIS_QUEUE_PASSWORD, ERPNEXT_API_KEY, ERPNEXT_API_SECRET |
 | **Observability** | LANGFUSE_SECRET_KEY, LANGFUSE_NEXT_AUTH_SECRET, LANGFUSE_SALT, LANGFUSE_ENCRYPTION_KEY, GRAFANA_ADMIN_USER, GRAFANA_ADMIN_PASSWORD |
 | **SearXNG** | SEARXNG_SECRET_KEY |
@@ -1150,7 +1150,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | **Microsserviços** | 8/8 containers | 9 diretórios (api-gateway é dev only) |
 | **CI/CD** | 100% | Push → Produção automático |
 | **Segurança** | 100% | OWASP, hardening, Distroless |
-| **Integrações** | ✅ | Stripe, Wise, ERPNext, Twilio, Resend |
+| **Integrações** | ✅ | Stripe, Wise, ERPNext, Twilio, Gmail SMTP |
 | **Identity Provisioning** | ✅ | Grafana + ERPNext |
 | **Multimodal INPUT** | ✅ | Image, Audio, Document |
 | **Geração** | ✅ | LLM + Image (FLUX.1) |

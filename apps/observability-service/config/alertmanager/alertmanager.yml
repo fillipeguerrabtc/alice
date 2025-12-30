@@ -9,10 +9,10 @@
 # - Password: App Password de 16 caracteres (arquivo /run/secrets/smtp_password)
 # - Sender: ${SMTP_FROM} (mesmo email Gmail)
 #
-# VANTAGENS vs Resend gratuito:
+# VANTAGENS:
 # - Pode enviar para QUALQUER email (clientes, equipe, etc.)
 # - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
-# - Remetente é seu próprio email (não "onboarding@resend.dev")
+# - Remetente é seu próprio email Gmail (profissional)
 #
 # NOTA: As variáveis ${VAR} são expandidas no entrypoint via envsubst antes de carregar.
 #
@@ -51,9 +51,9 @@ route:
       repeat_interval: 30m
 
 receivers:
-  # NOTA: Todos os receivers usam ${ALERT_EMAIL} porque com Resend em modo de
-  # desenvolvimento (sem domínio verificado), só podemos enviar para o email
-  # verificado na conta Resend (ADMIN_EMAIL). O subject diferencia a severidade.
+  # NOTA: Todos os receivers usam ${ALERT_EMAIL} (GMAIL_USER).
+  # Com Gmail SMTP, pode enviar para qualquer destinatário.
+  # O subject diferencia a severidade (default, critical, warning, oncall).
   - name: 'default-receiver'
     email_configs:
       - to: '${ALERT_EMAIL}'
