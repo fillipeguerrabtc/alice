@@ -117,11 +117,29 @@ fi
 # sed -e 's/pattern/replacement/g' substitui todas as ocorrências.
 # Usamos | como delimitador pois emails contêm @ que poderia conflitar com /.
 #
+# CORREÇÃO CRÍTICA 30/12/2025: Escapar caracteres especiais do sed
+# Em sed, '&' na string de substituição é interpretado como backreference ao
+# texto matchado. Se SMTP_USER contiver '&' (válido em emails), o resultado
+# seria incorreto. Exemplo: user&test@gmail.com → user${SMTP_USER}test@gmail.com
+# Solução: escapar '&' como '\&' e '\' como '\\' antes de usar no sed.
+#
 # Ref: CLAUDE.md Regra 6 - SEM workarounds, usar ferramentas disponíveis
 # =============================================================================
-sed -e "s|\${SMTP_USER}|${SMTP_USER}|g" \
-    -e "s|\${SMTP_FROM}|${SMTP_FROM}|g" \
-    -e "s|\${ALERT_EMAIL}|${ALERT_EMAIL}|g" \
+
+# Função para escapar caracteres especiais do sed na string de substituição
+# Ordem CRÍTICA: escapar '\' PRIMEIRO (senão escapa os '\' inseridos para '&')
+escape_sed_replacement() {
+  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/&/\\&/g'
+}
+
+# Escapar valores antes de usar no sed
+SMTP_USER_ESCAPED=$(escape_sed_replacement "$SMTP_USER")
+SMTP_FROM_ESCAPED=$(escape_sed_replacement "$SMTP_FROM")
+ALERT_EMAIL_ESCAPED=$(escape_sed_replacement "$ALERT_EMAIL")
+
+sed -e "s|\${SMTP_USER}|${SMTP_USER_ESCAPED}|g" \
+    -e "s|\${SMTP_FROM}|${SMTP_FROM_ESCAPED}|g" \
+    -e "s|\${ALERT_EMAIL}|${ALERT_EMAIL_ESCAPED}|g" \
     "$CONFIG_TEMPLATE" > "$CONFIG_OUTPUT"
 
 # Verificar se a substituição funcionou
