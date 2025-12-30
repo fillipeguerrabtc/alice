@@ -180,18 +180,24 @@ fi
 echo "✅ GPU Services validados (Hetzner GPU Server)"
 
 # =============================================================================
-# RESEND SMTP (Alertmanager) - usar API Key como senha SMTP (sem domínio verificado)
+# GMAIL SMTP (Alertmanager) - usar App Password para autenticação
+# =============================================================================
+# MIGRAÇÃO 30/12/2025: De Resend para Gmail SMTP
+# Gmail permite enviar para qualquer email (clientes, equipe, vendas)
+# Resend gratuito só permitia enviar para o próprio email da conta
 # =============================================================================
 echo ""
-echo "🔐 Validando Resend SMTP (Alertmanager)..."
+echo "🔐 Validando Gmail SMTP (Alertmanager)..."
 
-RESEND_API_KEY="${RESEND_API_KEY:-}"
-if [ -z "${RESEND_API_KEY}" ]; then
-  echo "::error::RESEND_API_KEY não definido. Configure o secret RESEND_API_KEY no repositório (usado como senha SMTP do Alertmanager)." >&2
+GMAIL_APP_PASSWORD="${GMAIL_APP_PASSWORD:-}"
+if [ -z "${GMAIL_APP_PASSWORD}" ]; then
+  echo "::error::GMAIL_APP_PASSWORD não definido. Configure o secret GMAIL_APP_PASSWORD no repositório." >&2
+  echo "   Para criar: https://myaccount.google.com/apppasswords" >&2
+  echo "   Selecione 'Mail' e 'Other', gere a senha de 16 caracteres." >&2
   exit 1
 fi
 
-echo "✅ RESEND_API_KEY validado (usado diretamente pelo Alertmanager via arquivo de secret)"
+echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Alertmanager via arquivo de secret)"
 
 echo "✅ Todas as secrets obrigatórias validadas"
 
@@ -345,13 +351,23 @@ if [ -z "${CORS_ORIGINS_VALUE}" ] && [ -n "${CORS_ORIGIN_VALUE}" ]; then
 fi
 
 # =============================================================================
-# FASE 7: Configurar emails de alerta (Alertmanager)
+# FASE 7: Validar ACME_EMAIL (usado para Let's Encrypt e Alertmanager)
 # =============================================================================
-# NOTA: Valores SMTP fixos (smtp.resend.com:587, user=resend) estão no docker-compose.prod.yml
-# A senha SMTP é RESEND_API_KEY, escrita diretamente em /opt/alice/secrets/alertmanager/smtp_password pelo workflow
-ALERT_EMAIL_VALUE="ops@yesyoudeserve.duckdns.org"
-CRITICAL_EMAIL_VALUE="critical@yesyoudeserve.duckdns.org"
-ONCALL_EMAIL_VALUE="oncall@yesyoudeserve.duckdns.org"
+# ACME_EMAIL é usado para:
+# 1. Let's Encrypt (certificados SSL via Traefik)
+# 2. Alertmanager (destino dos emails de alerta)
+#
+# INTEGRAÇÃO RESEND SIMPLIFICADA (sem domínio verificado):
+# - Resend só permite enviar emails para o PRÓPRIO email da conta
+# - Ou seja, ACME_EMAIL deve ser o email registrado na conta Resend
+# - Ref: https://resend.com/docs/knowledge-base/how-do-I-create-an-email-address-or-sender-in-resend
+#
+# Se precisar enviar alertas para outros emails, é necessário verificar um domínio no Resend.
+# =============================================================================
+if [ -z "${ACME_EMAIL:-}" ]; then
+  echo "::warning::ACME_EMAIL não definido. Alertmanager não conseguirá enviar emails."
+  echo "   Configure o secret ACME_EMAIL com o email registrado na conta Resend."
+fi
 
 # =============================================================================
 # FASE 8: Gerar arquivo .env.prod
@@ -429,10 +445,8 @@ echo "📄 Gerando arquivo .env.prod..."
   # Usado no handshake WebSocket - alinhado com CORS_ORIGINS
   printf 'WEBSOCKET_ALLOWED_ORIGINS=%s\n' "${CORS_ORIGINS_VALUE}"
   printf '\n'
-  printf '# Alertmanager Emails (SMTP via Resend - config fixa no docker-compose.prod.yml)\n'
-  printf 'ALERT_EMAIL=%s\n' "${ALERT_EMAIL_VALUE}"
-  printf 'CRITICAL_EMAIL=%s\n' "${CRITICAL_EMAIL_VALUE}"
-  printf 'ONCALL_EMAIL=%s\n' "${ONCALL_EMAIL_VALUE}"
+  printf '# Alertmanager usa ACME_EMAIL para envio de alertas (ver seção SSL/TLS)\n'
+  printf '# Integração Resend simplificada: só envia para email da própria conta Resend\n'
   printf '\n'
   printf '# Stripe Portugal\n'
   printf 'STRIPE_SECRET_KEY=%s\n' "${STRIPE_SECRET_KEY:-}"
@@ -445,7 +459,10 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'TWILIO_AUTH_TOKEN=%s\n' "${TWILIO_AUTH_TOKEN:-}"
   printf 'TWILIO_WHATSAPP_NUMBER=%s\n' "${TWILIO_WHATSAPP_NUMBER:-}"
   printf '\n'
-  printf '# Resend\n'
+  printf '# Gmail SMTP (Alertmanager)\n'
+  printf 'GMAIL_APP_PASSWORD=%s\n' "${GMAIL_APP_PASSWORD}"
+  printf '\n'
+  printf '# Resend (opcional - mantido para uso futuro com API direta)\n'
   printf 'RESEND_API_KEY=%s\n' "${RESEND_API_KEY:-}"
   printf '\n'
   printf '# Wise\n'
@@ -537,13 +554,15 @@ echo "🔐 Gerando arquivos de secret..."
 printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
 chmod 600 langfuse_db_password
 
-RESEND_API_KEY_VALUE="${RESEND_API_KEY:-}"
-if [ -z "${RESEND_API_KEY_VALUE}" ]; then
-  echo "::error::RESEND_API_KEY é obrigatório para alertmanager SMTP. Configure o secret no repositório." >&2
+# Gmail App Password para Alertmanager SMTP
+GMAIL_APP_PASSWORD_VALUE="${GMAIL_APP_PASSWORD:-}"
+if [ -z "${GMAIL_APP_PASSWORD_VALUE}" ]; then
+  echo "::error::GMAIL_APP_PASSWORD é obrigatório para alertmanager SMTP. Configure o secret no repositório." >&2
   exit 1
 fi
-printf '%s' "${RESEND_API_KEY_VALUE}" > alertmanager_smtp_password
+printf '%s' "${GMAIL_APP_PASSWORD_VALUE}" > alertmanager_smtp_password
 chmod 600 alertmanager_smtp_password
+echo "✅ alertmanager_smtp_password criado (Gmail App Password)"
 
 echo "=============================================="
 echo "✅ .env.prod GERADO COM SUCESSO!"

@@ -2380,6 +2380,11 @@ services:
       - no-new-privileges:true
     environment:
       # === VARIÁVEIS OBRIGATÓRIAS v3 ===
+      # CORREÇÃO CRÍTICA 30/12/2025: LANGFUSE_SECRET_KEY estava faltando
+      # Causa do erro: "Cannot set property message of ZodError which has only a getter"
+      # LANGFUSE_SECRET_KEY é para autenticação da API (clientes que enviam traces)
+      # NEXTAUTH_SECRET é para criptografia de sessões de usuário (NextAuth.js)
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
@@ -2445,6 +2450,8 @@ services:
       - no-new-privileges:true
     command: ["node", "packages/shared/dist/src/server/background-migrations/run.js"]
     environment:
+      # CORREÇÃO CRÍTICA 30/12/2025: LANGFUSE_SECRET_KEY estava faltando
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
@@ -2772,17 +2779,34 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # CORREÇÃO CRÍTICA 30/12/2025: Usar entrypoint customizado para fazer envsubst
+    # nas variáveis do alertmanager.yml antes de iniciar
+    entrypoint: ["/bin/sh", "/etc/alertmanager/docker-entrypoint.sh"]
     environment:
-      # SMTP Resend (sem domínio verificado): user resend / password = RESEND_API_KEY
-      SMTP_HOST: smtp.resend.com
+      # ==========================================================================
+      # Gmail SMTP - Integração GRATUITA com App Password (30/12/2025)
+      # ==========================================================================
+      # Ref: https://support.google.com/accounts/answer/185833
+      # - Host: smtp.gmail.com:587
+      # - Username: Email Gmail completo (ACME_EMAIL)
+      # - Password: App Password de 16 caracteres (GMAIL_APP_PASSWORD)
+      # - Sender: Mesmo email Gmail
+      #
+      # VANTAGENS vs Resend gratuito:
+      # - Pode enviar para QUALQUER email (clientes, equipe, vendas, etc.)
+      # - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
+      # - Remetente é seu próprio email (profissional)
+      # ==========================================================================
+      SMTP_HOST: smtp.gmail.com
       SMTP_PORT: 587
-      SMTP_FROM: onboarding@resend.dev
-      SMTP_USERNAME: resend
-      ALERT_EMAIL: ${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
-      CRITICAL_EMAIL: ${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
-      ONCALL_EMAIL: ${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
+      SMTP_USER: ${ACME_EMAIL}
+      SMTP_FROM: ${ACME_EMAIL}
+      # Email padrão para alertas (pode ser alterado para outros emails)
+      ALERT_EMAIL: ${ACME_EMAIL}
     volumes:
-      # Config file: caminho relativo ao diretório infra/docker/ onde docker-compose é executado
+      # Entrypoint customizado que faz envsubst antes de iniciar Alertmanager
+      - ../../apps/observability-service/config/alertmanager/docker-entrypoint.sh:/etc/alertmanager/docker-entrypoint.sh:ro
+      # Config file template com ${VAR} - será processado pelo entrypoint
       - ../../apps/observability-service/config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
       - alertmanager_data:/alertmanager:rw
       - alertmanager_tmp:/tmp:rw

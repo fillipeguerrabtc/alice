@@ -878,13 +878,18 @@ jobs:
             DB_PASS=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2-)
             
             # Executar cada migration SQL em ordem
+            # CORREÇÃO CRÍTICA 30/12/2025: PGPASSWORD deve ser passado para psql
+            # Bug anterior: DB_PASS era extraído mas nunca passado ao psql
+            # Solução: usar "sh -c" com PGPASSWORD definido dentro do container
+            # Ref: CLAUDE.md linha 605 "Bug Fix Migration PGPASSWORD Missing"
             MIGRATIONS_DIR="/opt/alice/app/migrations"
             if [ -d "$MIGRATIONS_DIR" ]; then
               for migration in $(ls -1 "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
                 MIGRATION_NAME=$(basename "$migration")
                 echo "   Executando: $MIGRATION_NAME"
-                # Usar docker exec para executar psql dentro do container PostgreSQL
-                if ! docker exec -i alice-postgres psql -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 < "$migration"; then
+                # Usar docker exec com PGPASSWORD via sh -c para autenticação
+                # docker exec não suporta -e flag, então usamos env dentro do shell
+                if ! docker exec -i alice-postgres sh -c "PGPASSWORD='${DB_PASS}' psql -U '${DB_USER}' -d '${DB_NAME}' -v ON_ERROR_STOP=1" < "$migration"; then
                   echo "❌ ERRO: Migration $MIGRATION_NAME falhou"
                   exit 1
                 fi
