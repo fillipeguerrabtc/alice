@@ -32,7 +32,56 @@ export const integrationsServicePaths = {
   '/api/integrations/erpnext/sync': { post: { summary: 'Sincronizar', tags: ['ERPNext'], requestBody: { content: { 'application/json': { schema: { type: 'object', properties: { entity: { type: 'string', enum: ['customers', 'invoices', 'items'] } } } } } }, responses: { 202: { description: 'Iniciada' } } } },
   '/api/integrations/twilio/sms': { post: { summary: 'Enviar SMS', tags: ['Twilio'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['to', 'body'], properties: { to: { type: 'string', example: '+5511999999999' }, body: { type: 'string' } } } } } }, responses: { 200: { description: 'Enviado' } } } },
   '/api/integrations/twilio/whatsapp': { post: { summary: 'Enviar WhatsApp', tags: ['Twilio'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['to', 'body'], properties: { to: { type: 'string' }, body: { type: 'string' }, mediaUrl: { type: 'string', format: 'uri' } } } } } }, responses: { 200: { description: 'Enviado' } } } },
-  '/api/integrations/resend/email': { post: { summary: 'Enviar email', tags: ['Resend'], requestBody: { content: { 'application/json': { schema: { type: 'object', required: ['to', 'subject', 'html'], properties: { to: { type: 'string', format: 'email' }, subject: { type: 'string' }, html: { type: 'string' }, from: { type: 'string', format: 'email' } } } } } }, responses: { 200: { description: 'Enviado' } } } },
+  '/api/integrations/email/send': { 
+    post: { 
+      summary: 'Enviar email transacional via Gmail SMTP', 
+      description: 'Envia emails transacionais (comprovantes, faturas, promoções, notificações) usando Gmail SMTP com App Password.',
+      tags: ['Email'], 
+      requestBody: { 
+        content: { 
+          'application/json': { 
+            schema: { 
+              type: 'object', 
+              required: ['to', 'subject', 'html'], 
+              properties: { 
+                to: { oneOf: [{ type: 'string', format: 'email' }, { type: 'array', items: { type: 'string', format: 'email' }, maxItems: 50 }], description: 'Destinatário(s) do email' },
+                subject: { type: 'string', maxLength: 200, description: 'Assunto do email' },
+                html: { type: 'string', description: 'Corpo do email em HTML' },
+                text: { type: 'string', description: 'Versão texto plano (opcional)' },
+                from: { type: 'string', format: 'email', description: 'Remetente (padrão: GMAIL_USER)' },
+                replyTo: { type: 'string', format: 'email', description: 'Email para resposta' },
+                metadata: { 
+                  type: 'object', 
+                  properties: {
+                    type: { type: 'string', enum: ['receipt', 'invoice', 'promotion', 'notification', 'alert', 'other'] },
+                    orderId: { type: 'string' },
+                    customerId: { type: 'string' },
+                    tenantId: { type: 'string', format: 'uuid' }
+                  }
+                }
+              } 
+            } 
+          } 
+        } 
+      }, 
+      responses: { 
+        200: { description: 'Email enviado com sucesso', content: { 'application/json': { schema: { type: 'object', properties: { success: { type: 'boolean' }, messageId: { type: 'string' }, accepted: { type: 'array', items: { type: 'string' } }, rejected: { type: 'array', items: { type: 'string' } } } } } } },
+        400: { description: 'Payload inválido' },
+        503: { description: 'Serviço de email não configurado' }
+      } 
+    } 
+  },
+  '/api/integrations/email/health': {
+    get: {
+      summary: 'Health check do serviço de email',
+      description: 'Verifica se o Gmail SMTP está configurado e conectado.',
+      tags: ['Email'],
+      responses: {
+        200: { description: 'Serviço saudável' },
+        503: { description: 'Serviço indisponível' }
+      }
+    }
+  },
   '/api/integrations/stats': { get: { summary: 'Estatísticas', tags: ['Health'], responses: { 200: { description: 'Stats', content: { 'application/json': { schema: { type: 'object', properties: { stripe: { type: 'object', properties: { status: { type: 'string' }, lastSync: { type: 'string' } } }, wise: { type: 'object' }, erpnext: { type: 'object' } } } } } } } } },
   '/metrics': { get: { summary: 'Métricas', tags: ['Health'], security: [], responses: { 200: { description: 'OK' } } } },
 };

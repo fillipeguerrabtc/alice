@@ -7,6 +7,7 @@ import compression from 'compression';
 // rateLimit via createRateLimiter de @alice/shared-utils
 // CircuitBreaker via createCircuitBreaker de @alice/shared-utils
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { createLogger } from '@alice/logger';
 import { 
   createCorrelationMiddleware, 
@@ -66,7 +67,7 @@ app.use(metricsRouter);
 setupSwaggerUI(app, {
   serviceName: 'integrations-service',
   version: '1.0.0',
-  description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, Resend.',
+  description: 'Serviço de integrações: Stripe, Wise, ERPNext, Twilio, KuCoin Futures.',
   port: config.PORT ?? 3005,
   tags: INTEGRATIONS_SERVICE_TAGS,
   paths: integrationsServicePaths,
@@ -87,9 +88,65 @@ app.set('trust proxy', 1);
 // STRIPE API VERSION: Versão estável atual (Novembro 2025)
 // Referência: https://docs.stripe.com/changelog
 const STRIPE_API_VERSION = '2024-12-18.acacia' as Stripe.LatestApiVersion;
-const RESEND_API_KEY = process.env.RESEND_API_KEY;
-const DEFAULT_RESEND_FROM = 'onboarding@resend.dev';
+
+// =============================================================================
+// GMAIL SMTP - Emails Transacionais (30/12/2025)
+// =============================================================================
+// Usa Gmail SMTP com App Password para enviar:
+// - Comprovantes de vendas e pagamentos
+// - Notificações de pedidos e entregas
+// - Promoções e campanhas de marketing
+// - Alertas e notificações do sistema
+//
+// Ref: https://support.google.com/accounts/answer/185833
+// Documentação PT-BR (Regra 10 CLAUDE.md)
+// =============================================================================
+const GMAIL_USER = process.env.GMAIL_USER;
+const GMAIL_APP_PASSWORD = process.env.GMAIL_APP_PASSWORD;
 const isProduction = config.NODE_ENV === 'production';
+
+// Transporter do Nodemailer para Gmail SMTP
+// Usando tipo genérico pois nodemailer.Transporter tem tipagem complexa
+let emailTransporter: nodemailer.Transporter | null = null;
+
+if (GMAIL_USER && GMAIL_APP_PASSWORD) {
+  emailTransporter = nodemailer.createTransport({
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // TLS (não SSL)
+    auth: {
+      user: GMAIL_USER,
+      pass: GMAIL_APP_PASSWORD,
+    },
+    // Configurações enterprise para alta disponibilidade
+    pool: true,
+    maxConnections: 5,
+    maxMessages: 100,
+    rateDelta: 1000,
+    rateLimit: 10, // 10 emails por segundo (limite Gmail)
+  });
+
+  // Verificar conexão SMTP no startup
+  // NOTA: verify() retorna Promise, usamos .then() para não bloquear startup
+  emailTransporter.verify()
+    .then(() => {
+      logger.info({ user: GMAIL_USER }, 'Gmail SMTP conectado com sucesso');
+    })
+    .catch((error: unknown) => {
+      logger.error({ error, user: GMAIL_USER }, 'Falha ao conectar Gmail SMTP');
+      if (isProduction) {
+        // Em produção, email é crítico para comprovantes
+        logger.error('Gmail SMTP é obrigatório em produção (Regra 6 - fail-fast)');
+        process.exit(1);
+      }
+    });
+} else {
+  if (isProduction) {
+    logger.error('GMAIL_USER e GMAIL_APP_PASSWORD são obrigatórios em produção (Regra 6 - fail-fast)');
+    process.exit(1);
+  }
+  logger.warn('Gmail SMTP não configurado - emails desabilitados em desenvolvimento');
+}
 
 let stripe: Stripe | null = null;
 if (config.STRIPE_SECRET_KEY) {
@@ -97,11 +154,6 @@ if (config.STRIPE_SECRET_KEY) {
     apiVersion: STRIPE_API_VERSION,
   });
   logger.info({ apiVersion: STRIPE_API_VERSION }, 'Cliente Stripe inicializado');
-}
-
-if (isProduction && !RESEND_API_KEY) {
-  logger.error('RESEND_API_KEY é obrigatório em produção (Regra 6 - fail-fast)');
-  process.exit(1);
 }
 
 // Circuit Breaker para chamadas ao ERPNext (Best Practices 2025)
@@ -422,7 +474,7 @@ app.get('/api/integrations', requirePermission('integrations:integrations:read')
 
 const createIntegrationSchema = z.object({
   tenantId: z.string().uuid().optional(),
-  tipo: z.enum(['stripe', 'erpnext', 'twilio', 'resend', 'whatsapp']),
+  tipo: z.enum(['stripe', 'erpnext', 'twilio', 'whatsapp']),
   nome: z.string().min(1),
   configuracao: z.record(z.unknown()).optional(),
   credenciais: z.record(z.unknown()).optional(),
@@ -1236,66 +1288,124 @@ app.get('/api/integrations/erpnext/items', requirePermission('integrations:erpne
   }
 });
 
-const resendEmailSchema = z.object({
+// =============================================================================
+// GMAIL SMTP API - Emails Transacionais (30/12/2025)
+// =============================================================================
+// Substituiu Resend. Usa Gmail SMTP com App Password.
+// Ref: https://support.google.com/accounts/answer/185833
+// =============================================================================
+
+/**
+ * Schema de validação para envio de email
+ * Suporta envio para múltiplos destinatários
+ */
+const emailSchema = z.object({
   to: z.union([
     z.string().trim().email(),
-    z.array(z.string().trim().email()).min(1),
+    z.array(z.string().trim().email()).min(1).max(50), // Máximo 50 destinatários por envio
   ]),
   subject: z.string().min(1).max(200),
-  html: z.string().min(1),
-  from: z.string().trim().email().optional(),
+  html: z.string().min(1).max(100000), // Máximo 100KB de HTML
+  text: z.string().optional(), // Versão texto plano (opcional, recomendado para acessibilidade)
+  from: z.string().trim().email().optional(), // Se não informado, usa GMAIL_USER
+  replyTo: z.string().trim().email().optional(),
+  // Metadados para rastreamento
+  metadata: z.object({
+    type: z.enum(['receipt', 'invoice', 'promotion', 'notification', 'alert', 'other']).optional(),
+    orderId: z.string().optional(),
+    customerId: z.string().optional(),
+    tenantId: z.string().uuid().optional(),
+  }).optional(),
 });
 
-app.post('/api/integrations/resend/send', requirePermission('integrations:resend:write'), async (req: Request, res: Response) => {
-  const parsed = resendEmailSchema.safeParse(req.body);
+/**
+ * POST /api/integrations/email/send
+ * Envia email transacional via Gmail SMTP
+ * 
+ * Usado para:
+ * - Comprovantes de vendas e pagamentos
+ * - Faturas e recibos
+ * - Notificações de pedidos
+ * - Promoções e campanhas
+ * - Alertas do sistema
+ */
+app.post('/api/integrations/email/send', requirePermission('integrations:email:write'), async (req: Request, res: Response) => {
+  const parsed = emailSchema.safeParse(req.body);
   if (!parsed.success) {
-    logger.warn({ errors: parsed.error.flatten() }, 'Payload inválido para Resend');
+    logger.warn({ errors: parsed.error.flatten() }, 'Payload inválido para email');
     return res.status(400).json({ error: 'Payload inválido', details: parsed.error.format() });
   }
 
-  if (!RESEND_API_KEY) {
-    return res.status(503).json({ error: 'Resend não configurado' });
+  if (!emailTransporter) {
+    logger.error('Gmail SMTP não configurado');
+    return res.status(503).json({ error: 'Serviço de email não configurado' });
   }
 
-  const to = parsed.data.to;
-  const subject = parsed.data.subject;
-  const html = parsed.data.html;
-  const fromEmail = parsed.data.from ?? DEFAULT_RESEND_FROM;
-
-  // RESILIÊNCIA: AbortController com timeout
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EXTERNAL_API_TIMEOUT_MS);
+  const { to, subject, html, text, from, replyTo, metadata } = parsed.data;
+  const fromEmail = from ?? GMAIL_USER;
 
   try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        from: fromEmail,
-        to,
-        subject,
-        html,
-      }),
-      signal: controller.signal,
+    const result = await emailTransporter.sendMail({
+      from: fromEmail,
+      to: Array.isArray(to) ? to.join(', ') : to,
+      subject,
+      html,
+      text: text ?? undefined,
+      replyTo: replyTo ?? undefined,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      logger.error({ status: response.status, errorText }, 'Falha no envio via Resend');
-      throw new Error(errorText || 'Resend returned non-200');
-    }
+    logger.info({ 
+      messageId: result.messageId,
+      to: Array.isArray(to) ? to.length : 1,
+      subject,
+      from: fromEmail,
+      type: metadata?.type ?? 'other',
+      orderId: metadata?.orderId,
+    }, 'Email enviado via Gmail SMTP');
 
-    const data = await response.json() as { id: string };
-    logger.info({ to, subject, from: fromEmail }, 'Email enviado via Resend');
-    res.json({ success: true, id: data.id });
+    res.json({ 
+      success: true, 
+      messageId: result.messageId,
+      accepted: result.accepted,
+      rejected: result.rejected,
+    });
   } catch (error) {
-    logger.error({ error }, 'Failed to send email');
-    res.status(500).json({ error: 'Failed to send email' });
-  } finally {
-    clearTimeout(timeoutId);
+    logger.error({ error, to, subject }, 'Falha ao enviar email via Gmail SMTP');
+    res.status(500).json({ error: 'Falha ao enviar email' });
+  }
+});
+
+/**
+ * GET /api/integrations/email/health
+ * Verifica saúde do serviço de email
+ */
+app.get('/api/integrations/email/health', requirePermission('integrations:email:read'), async (_req: Request, res: Response) => {
+  if (!emailTransporter) {
+    return res.status(503).json({ 
+      status: 'unavailable',
+      configured: false,
+      message: 'Gmail SMTP não configurado',
+    });
+  }
+
+  try {
+    await emailTransporter.verify();
+    res.json({
+      status: 'healthy',
+      configured: true,
+      smtp: {
+        host: 'smtp.gmail.com',
+        port: 587,
+        user: GMAIL_USER,
+      },
+    });
+  } catch (error) {
+    logger.error({ error }, 'Gmail SMTP health check falhou');
+    res.status(503).json({
+      status: 'unhealthy',
+      configured: true,
+      error: 'Falha na conexão SMTP',
+    });
   }
 });
 

@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 30 de Dezembro de 2025  
-**Versão:** 4.48
+**Versão:** 4.49
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.48-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.49-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 

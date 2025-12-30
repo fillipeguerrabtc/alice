@@ -97,8 +97,22 @@ if [ ! -f "$CONFIG_TEMPLATE" ]; then
   exit 1
 fi
 
-# Executar envsubst para substituir TODAS as variáveis SMTP
-envsubst '${SMTP_USER} ${SMTP_FROM} ${ALERT_EMAIL}' < "$CONFIG_TEMPLATE" > "$CONFIG_OUTPUT"
+# =============================================================================
+# CORREÇÃO CRÍTICA 30/12/2025: Usar sed ao invés de envsubst
+# =============================================================================
+# A imagem prom/alertmanager:v0.29.0 é baseada em BusyBox que NÃO inclui envsubst
+# (requer pacote GNU gettext). O container falharia com "envsubst: not found".
+# 
+# Solução enterprise: usar sed para substituição de variáveis (disponível em BusyBox).
+# sed -e 's/pattern/replacement/g' substitui todas as ocorrências.
+# Usamos | como delimitador pois emails contêm @ que poderia conflitar com /.
+#
+# Ref: CLAUDE.md Regra 6 - SEM workarounds, usar ferramentas disponíveis
+# =============================================================================
+sed -e "s|\${SMTP_USER}|${SMTP_USER}|g" \
+    -e "s|\${SMTP_FROM}|${SMTP_FROM}|g" \
+    -e "s|\${ALERT_EMAIL}|${ALERT_EMAIL}|g" \
+    "$CONFIG_TEMPLATE" > "$CONFIG_OUTPUT"
 
 # Verificar se a substituição funcionou
 VARS_NOT_REPLACED=""
