@@ -506,7 +506,7 @@ export const INTEGRATIONS_SERVICE_TAGS: OpenApiTag[] = [
   { name: 'Wise', description: 'Integração com Wise' },
   { name: 'ERPNext', description: 'Integração com ERPNext' },
   { name: 'Twilio', description: 'Integração com Twilio (SMS/WhatsApp)' },
-  { name: 'Resend', description: 'Integração com Resend (Email)' },
+  { name: 'Email', description: 'Integração com Gmail SMTP (Email)' }, // Substitui Resend - 30/12/2025
   { name: 'Webhooks', description: 'Recebimento de webhooks' },
   { name: 'Health', description: 'Health checks e métricas' },
 ];
