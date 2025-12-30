@@ -605,10 +605,6 @@
       "title": "WhatsApp Business",
       "description": "Atendimento automatizado via WhatsApp com Twilio"
     },
-    "email": {
-      "title": "Email",
-      "description": "Envio e recebimento de emails integrado"
-    },
     "calendar": {
       "title": "Calendário",
       "description": "Sincronização com Google Calendar e Outlook"
