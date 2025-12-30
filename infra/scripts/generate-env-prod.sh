@@ -9,7 +9,7 @@
 # REGRA 8: Qualidade obrigatória - validação de todas as secrets obrigatórias
 # REGRA 14: Verificação de secrets existentes
 #
-# Uso: Este script é chamado pelo workflow deploy-production.yml
+# Uso: Este script é chamado pelo workflow production-deploy.yml
 # Todas as variáveis são passadas via environment variables
 # =============================================================================
 

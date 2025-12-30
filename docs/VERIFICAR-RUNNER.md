@@ -39,8 +39,8 @@ runs-on: [self-hosted, linux, deploy]  # ← Runner próprio Hetzner CPX32
 ### 1. Verificar na Interface do GitHub Actions
 
 1. Acesse: `https://github.com/fillipeguerrabtc/alice/actions`
-2. Selecione um workflow run do `deploy-production.yml`
-3. Expanda o job `Deploy Hetzner Cloud`
+2. Selecione um workflow run do `production-deploy.yml` (Deploy Hetzner)
+3. Expanda o job `Deploy Hetzner`
 4. Procure por:
    - Runner: `self-hosted` ou nome do runner
    - Labels: `self-hosted, linux, deploy`
@@ -257,7 +257,7 @@ jobs:
 
 - ✅ **ci.yml**: Todos os jobs migrados
 - ✅ **release.yml**: Todos os jobs migrados
-- ✅ **deploy-production.yml**: Todos os jobs migrados
+- ✅ **production-deploy.yml**: Todos os jobs migrados
 
 ## Conclusão
 

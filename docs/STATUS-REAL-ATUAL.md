@@ -767,7 +767,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 |----------|---------|--------|
 | ci.yml | Push main | Build, TypeCheck, ESLint, Trivy (otimizado 27/12/2025) |
 | release.yml | CI passa | Tag v1.0.X, Docker images, GHCR |
-| deploy-production.yml | Release passa | Deploy Hetzner, Health checks, Rollback (composite action) |
+| production-deploy.yml | Release passa | Deploy Hetzner, Health checks, Rollback (composite action) |
 
 ### Cache Enterprise
 
@@ -897,7 +897,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **NOTA (12/12/2025):** Corrigido erro que invalidava o workflow `update-dependencies.yml`. A causa raiz foi o uso de IDs com hífen (ex.: `check-updates`) referenciados em expressões (`steps.check-updates...` / `needs.check-updates...`), o que quebra o parser de expressões do GitHub Actions. O padrão adotado é usar IDs com underscore (ex.: `check_updates`) para garantir compatibilidade.
 
-> **NOTA (12/12/2025):** Ajuste enterprise: `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS` não fica mais em `env:` global nos workflows (evita warning do `npm/npx`: “Unknown env config”). A env é aplicada **somente nos steps que executam operações de dependências do pnpm** (`pnpm install`, `pnpm update`, `pnpm install --lockfile-only`) em `ci.yml`, `deploy-production.yml` e `update-dependencies.yml`, mantendo o comportamento de build/deploy e reduzindo risco de quebra em futuros majors do npm.
+> **NOTA (12/12/2025):** Ajuste enterprise: `NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS` não fica mais em `env:` global nos workflows (evita warning do `npm/npx`: “Unknown env config”). A env é aplicada **somente nos steps que executam operações de dependências do pnpm** (`pnpm install`, `pnpm update`, `pnpm install --lockfile-only`) em `ci.yml`, `production-deploy.yml` e `update-dependencies.yml`, mantendo o comportamento de build/deploy e reduzindo risco de quebra em futuros majors do npm.
 
 > **NOTA (12/12/2025):** pgBackRest: removido `COPY` da man page `pgbackrest.1` no runtime (build upstream nem sempre gera o arquivo no caminho padrão). O binário continua copiado do stage builder; sem impacto no runtime.
 >
@@ -907,7 +907,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 >
 > **NOTA (12/12/2025):** Cache pnpm no deploy-prod: removida flag `cache: pnpm` do `actions/setup-node` (erro 400 intermitente) e adicionado cache explícito com `actions/cache@v4.2.0` pinado por SHA (`1bd1e32a3bdc45362d1e726936510720a7c30a57`) usando store-dir fixo (`$HOME/.pnpm-store`) e chave baseada em OS + versão do pnpm + hash do `pnpm-lock.yaml`.
 >
-> **NOTA (12/12/2025):** `deploy-production.yml`: corrigido ID do step do cache do pnpm para usar underscore (`pnpm_store_path`) e evitar quebra do parser do GitHub Actions ao referenciar `steps.{id}.outputs`.
+> **NOTA (12/12/2025):** `production-deploy.yml`: corrigido ID do step do cache do pnpm para usar underscore (`pnpm_store_path`) e evitar quebra do parser do GitHub Actions ao referenciar `steps.{id}.outputs`.
 
 ### Arquitetura do CI (Pipeline Enterprise 3 Workflows)
 
@@ -923,7 +923,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 - **trigger-release** depende de: `build-and-check`, `security-and-compliance`
 - **CRÍTICO**: `needs` apenas cria ordem de execução, mas **não impede execução** se jobs upstream falharem
 - A condição `if` **verifica explicitamente** que todos os jobs upstream tiveram `result == 'success'`
-- Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `deploy-production.yml`)
+- Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `production-deploy.yml`)
 
 > **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A validação explícita na condição `if` é mais confiável e segue o padrão usado em outros workflows do projeto.
 
@@ -933,20 +933,20 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > - **Segurança adicional**: Usa `10#$PATCH` na aritmética para forçar interpretação decimal (previne erros de octal como `$((08 + 1))`)
 > - **Fallback seguro**: `v0.0.1` para formatos completamente inválidos
 
-> **NOTA (14/12/2025):** `deploy-production.yml`: corrigido bug na instalação do `ruamel.yaml`. Anteriormente, se `apt-get install` falhasse, o script executava `exit 1` imediatamente, impedindo a execução do fallback via pip. Agora o apt falha graciosamente (apenas warning) e o script continua para a lógica de fallback pip, garantindo resiliência em diferentes ambientes de deploy.
+> **NOTA (14/12/2025):** `production-deploy.yml`: corrigido bug na instalação do `ruamel.yaml`. Anteriormente, se `apt-get install` falhasse, o script executava `exit 1` imediatamente, impedindo a execução do fallback via pip. Agora o apt falha graciosamente (apenas warning) e o script continua para a lógica de fallback pip, garantindo resiliência em diferentes ambientes de deploy.
 
-> **NOTA (14/12/2025):** `deploy-production.yml`: removida variável de ambiente `SERVICES_INPUT` redundante do step SSH. A variável era definida mas nunca referenciada - o input de serviços é corretamente passado via `DEPLOY_SERVICES` que é listada em `envs:` e usada no script.
+> **NOTA (14/12/2025):** `production-deploy.yml`: removida variável de ambiente `SERVICES_INPUT` redundante do step SSH. A variável era definida mas nunca referenciada - o input de serviços é corretamente passado via `DEPLOY_SERVICES` que é listada em `envs:` e usada no script.
 
-> **NOTA (14/12/2025):** `deploy-production.yml`: corrigida ordem de prioridade em `INPUT_VERSION`. Anteriormente `github.event.inputs.version` era priorizado sobre `inputs.version`, o que causava a versão passada via `workflow_call` (de release.yml) ser ignorada. Agora `inputs.version` é verificado primeiro, garantindo que a versão do release seja usada corretamente.
+> **NOTA (14/12/2025):** `production-deploy.yml`: corrigida ordem de prioridade em `INPUT_VERSION`. Anteriormente `github.event.inputs.version` era priorizado sobre `inputs.version`, o que causava a versão passada via `workflow_call` (de release.yml) ser ignorada. Agora `inputs.version` é verificado primeiro, garantindo que a versão do release seja usada corretamente.
 
-> **NOTA (14/12/2025):** `deploy-production.yml`: função `fetch_repo_var()` enterprise para leitura de variáveis do repositório via GitHub API. Diferencia entre 200 (variável existe), 404 (usar default) e 401/403/5xx (fail-fast com erro explícito). Substitui `|| true` que mascarava erros de segurança/permissão.
+> **NOTA (14/12/2025):** `production-deploy.yml`: função `fetch_repo_var()` enterprise para leitura de variáveis do repositório via GitHub API. Diferencia entre 200 (variável existe), 404 (usar default) e 401/403/5xx (fail-fast com erro explícito). Substitui `|| true` que mascarava erros de segurança/permissão.
 
 > **NOTA (14/12/2025):** `release.yml`: adicionado bloco `permissions` ao job `trigger-deploy` para workflow_call. Quando um workflow chama outro via `workflow_call`, as permissões do chamado são limitadas pelas do chamador. Sem permissões explícitas, o job herdava `none` causando falha. Permissões adicionadas: `contents: read`, `packages: write`, `security-events: write`, `actions: read`.
 
-> **NOTA (14/12/2025):** `deploy-production.yml`: adicionado `packages: write` às permissões do workflow-level. Quando chamado via `workflow_call`, as permissões do workflow-level do chamado definem o escopo máximo disponível para os jobs internos. Sem `packages: write`, o job `build-docker` falharia ao tentar push para GHCR.
+> **NOTA (14/12/2025):** `production-deploy.yml`: adicionado `packages: write` às permissões do workflow-level. Quando chamado via `workflow_call`, as permissões do workflow-level do chamado definem o escopo máximo disponível para os jobs internos. Sem `packages: write`, o job `build-docker` falharia ao tentar push para GHCR.
 
 > **NOTA (14/12/2025):** **REVERSÃO ENTERPRISE PIPELINE**: Restaurada arquitetura original de 3 workflows separados (CI → Release → Deploy) para garantir auditoria e versionamento independentes. Alterações:
-> - `deploy-production.yml`: removido `workflow_call` trigger (mantém apenas `workflow_dispatch`), removido `environment: production` (deploy 100% automático), removida função `fetch_repo_var()` (substituída por `vars.*` com fallback direto), removidas permissões extras de workflow_call
+> - `production-deploy.yml`: removido `workflow_call` trigger (mantém apenas `workflow_dispatch`), removido `environment: production` (deploy 100% automático), removida função `fetch_repo_var()` (substituída por `vars.*` com fallback direto), removidas permissões extras de workflow_call
 > - `release.yml`: `trigger-deploy` usa `createWorkflowDispatch` via GH_PAT para disparar deploy como execução SEPARADA
 > - Pipeline 100% automático sem aprovação manual: Push → CI → Release → Deploy (security scan é o gate de qualidade)
 
@@ -954,11 +954,11 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 > **NOTA (26/12/2025):** **ARQUITETURA GPU DEDICADA 24/7**: Todos os serviços GPU rodam localmente no servidor Hetzner GEX44 (RTX 4000 Ada 20GB), gerenciados pelo GPU Manager Service. GPU dedicada elimina cold start - containers Docker rodam 24/7. GPU Manager Service gerencia requisições com fila priorizada, monitoramento VRAM e circuit breakers.
 
-> **NOTA (29/12/2025):** **CORREÇÃO ENTERPRISE - Trigger Deploy com ref: 'main'**: O `createWorkflowDispatch` no `release.yml` DEVE usar `ref: 'main'` (não a TAG) para disparar o deploy. MOTIVO: Quando usa `ref: <tag>`, o GitHub busca o arquivo `deploy-production.yml` NA TAG recém-criada, causando erro 422 "Workflow does not have 'workflow_dispatch' trigger" por race condition/cache. A solução é usar `ref: 'main'` para DISPARAR o workflow, enquanto o `deploy-production.yml` faz `checkout` com `ref: inputs.version` (a TAG) para deployar o código correto. Resultado: workflow encontrado via main, código deployado via TAG. **NOTA HISTÓRICA**: Documentação anterior (14/12/2025) estava INCORRETA ao dizer que usar 'main' causava inconsistência - o `ref` do dispatch apenas determina qual versão do ARQUIVO de workflow é usada, não o código deployado.
+> **NOTA (30/12/2025):** **CORREÇÃO ENTERPRISE - Trigger Deploy com ref: TAG (version)**: O `createWorkflowDispatch` no `release.yml` deve usar `ref: version` (a TAG criada no job `create-release`). Este repositório já validou em produção de pipeline que `ref: 'main'` provoca erro `422` (“Workflow does not have 'workflow_dispatch' trigger”) durante o disparo. Com `ref: version`, a API do GitHub avalia o workflow exatamente na mesma referência do release, eliminando inconsistência e restaurando o comportamento enterprise observado na `v1.4.32`.
 
-> **NOTA (29/12/2025):** **VERIFICAÇÃO - workflow_dispatch Trigger**: O arquivo `.github/workflows/deploy-production.yml` possui o trigger `workflow_dispatch` configurado corretamente (linhas 41-57) com os inputs necessários: `version` (obrigatório), `services` (opcional, default: 'all'), `triggered_by` (opcional, default: 'manual'). Se o erro "Workflow does not have 'workflow_dispatch' trigger" ainda ocorrer, verificar se o arquivo está commitado e pushed para a branch `main` no GitHub, pois o GitHub busca o arquivo na branch especificada no `ref` do `createWorkflowDispatch`.
+> **NOTA (30/12/2025):** **VERIFICAÇÃO - workflow_dispatch Trigger**: O arquivo `.github/workflows/production-deploy.yml` possui o trigger `workflow_dispatch` configurado corretamente com os inputs necessários: `version` (obrigatório), `services` (opcional, default: 'all') e `triggered_by` (opcional, default: 'manual'). Se o erro `422` ainda ocorrer, validar se o disparo está usando `workflow_id: 'production-deploy.yml'` e `ref: <tag>` (não `main`).
 
-> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Contexto inputs.* Obsoleto**: Corrigido bug no `deploy-production.yml` onde o código ainda referenciava `inputs.version` e `inputs.services` (contexto de `workflow_call`), mas o workflow agora usa apenas `workflow_dispatch`. O contexto `inputs.*` só está disponível com `workflow_call`, sendo `github.event.inputs.*` o correto para `workflow_dispatch`. Expressões simplificadas para usar apenas `github.event.inputs.*` e comentários atualizados para refletir arquitetura atual.
+> **NOTA (14/12/2025):** **CORREÇÃO ENTERPRISE - Contexto inputs.* Obsoleto**: Corrigido bug no `production-deploy.yml` onde o código ainda referenciava `inputs.version` e `inputs.services` (contexto de `workflow_call`), mas o workflow agora usa apenas `workflow_dispatch`. O contexto `inputs.*` só está disponível com `workflow_call`, sendo `github.event.inputs.*` o correto para `workflow_dispatch`. Expressões simplificadas para usar apenas `github.event.inputs.*` e comentários atualizados para refletir arquitetura atual.
 
 > **NOTA (14/12/2025):** **LIMPEZA DE DOCUMENTAÇÃO**: Removidos 3 documentos obsoletos/redundantes para evitar confusão: (1) `GAPS-CRITICOS-ENCONTRADOS.md` - gaps já corrigidos, (2) `ANALISE-COMPLETA-TAKEOVER-HANDOVER.md` - redundante com STATUS-REAL-ATUAL, (3) `AUDITORIA-SECRETS.md` - redundante com SECRETS.md. Total de documentos ativos em `/docs`: 8 arquivos focados e sem redundância.
 
@@ -979,7 +979,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 > - **Vulnerabilidade**: Comandos sem dados obrigatórios (ex: "cancele a ordem" sem orderId) resultavam em requests inválidos como `DELETE /orders/` (path vazio).
 > - **Solução**: Adicionada importação de `validateCommand` e chamada antes de `executeTradingCommand`. Comandos incompletos agora retornam `trading:validation_error` com hints amigáveis.
 
-> **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Secrets Faltantes no .env.prod**: Identificado e corrigido bug crítico onde 3 secrets obrigatórios NÃO estavam sendo escritos no `.env.prod` durante deploy: (1) `LANGFUSE_SALT` - obrigatório Langfuse v3, (2) `LANGFUSE_ENCRYPTION_KEY` - obrigatório Langfuse v3, (3) `SEARXNG_SECRET_KEY` - obrigatório SearXNG. O `docker-compose.prod.yml` referenciava estes secrets mas o workflow não os exportava. Corrigido em `deploy-production.yml` linhas 1787-1797.
+> **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Secrets Faltantes no .env.prod**: Identificado e corrigido bug crítico onde 3 secrets obrigatórios NÃO estavam sendo escritos no `.env.prod` durante deploy: (1) `LANGFUSE_SALT` - obrigatório Langfuse v3, (2) `LANGFUSE_ENCRYPTION_KEY` - obrigatório Langfuse v3, (3) `SEARXNG_SECRET_KEY` - obrigatório SearXNG. O `docker-compose.prod.yml` referenciava estes secrets mas o workflow não os exportava. Corrigido em `production-deploy.yml` (mesma lógica/trecho, arquivo renomeado).
 
 > **NOTA (14/12/2025):** **CORREÇÃO CRÍTICA - Checkout Versionado no Deploy**: Corrigido bug onde script SSH sempre fazia `git checkout main` hardcoded, ignorando a versão/TAG passada pelo `release.yml`. Agora o script usa `DEPLOY_VERSION` para checkout da TAG específica (ex: `v1.0.0`) ou branch, garantindo reprodutibilidade total: código deployado = código das imagens Docker buildadas da mesma TAG.
 
@@ -1265,7 +1265,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *Bug Fix Deploy SSH Fallback (27/12/2025): Deploy falhava com "Falha ao conectar ao Production Server via SSH". Fallback de PRODUCTION_SERVER_USER usava 'alice-deploy' (não existe). Corrigido para usar secrets.HETZNER_VM_USER. Script deploy-remote.sh atualizado com validação fail-fast*
 *Performance Otimização (19/12/2025): Express 5.2.1 (breaking changes mitigados), Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6)*
 *HTTP/2 Enterprise (19/12/2025): Habilitado no Traefik via maxConcurrentStreams=250 para melhor multiplexing*
-*SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, deploy-production.yml*
+*SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, production-deploy.yml*
 *PostgreSQL Indexes (19/12/2025): Migration 0009 (HNSW m=24, ef_construction=128) + Migration 0010 (8 índices compostos/parciais)*
 *Vite Build Chunks (19/12/2025): manualChunks otimizado (vendor-react, vendor-ui, vendor-charts, vendor-i18n, vendor-query, vendor-motion)*
 
@@ -1326,7 +1326,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | `infra/docker/docker-compose.prod.yml` | Removidos digests inválidos de 3 imagens |
 | `migrations/0002_create_feature_flags.sql` | DROP POLICY IF EXISTS + removidas FKs |
 | `migrations/0004_multimodal_learning_and_crawler.sql` | 100% idempotente (v1.2) + task_status enum |
-| `.github/workflows/deploy-production.yml` | Ordem correta: secrets dir → mover secrets → bind mounts |
+| `.github/workflows/production-deploy.yml` | Ordem correta: secrets dir → mover secrets → bind mounts |
 | `infra/docker/docker-compose.prod.yml` | Healthcheck langfuse-db com variáveis (Regra 6 - sem hardcoded) |
 
 ---
@@ -1394,7 +1394,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Workflow | Arquivo | Status | Linhas |
 |----------|---------|--------|--------|
 | CI Build & Test | `ci.yml` | ✅ | 1146 |
-| Deploy Production | `deploy-production.yml` | ✅ | 3211 |
+| Deploy Production | `production-deploy.yml` | ✅ | 3211 |
 | Release & Tag | `release.yml` | ✅ | 309 |
 
 **Resultado:** Todos os 3 workflows auditados (~4666 linhas), 0 bugs encontrados. Versionamento automático, SHA pinning, least privilege.
@@ -1444,7 +1444,7 @@ body = {
 - **Causa Raiz:** Serviços Alice fazem queries SQL imediatamente ao iniciar, mas schema Drizzle ORM não era criado automaticamente no primeiro deploy
 - **Solução:** Adicionada validação de schema e execução automática de `drizzle-kit push` ANTES de iniciar serviços Alice
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Validação de database/tabelas + execução automática `drizzle-kit push`
+  - `.github/workflows/production-deploy.yml` - Validação de database/tabelas + execução automática `drizzle-kit push`
   - Validação inclui: verificação de database existente, contagem de tabelas, execução de `drizzle-kit push` em container temporário Node.js se schema está vazio
   - URL-encoding de credenciais (RFC 3986), validação de conexão PostgreSQL, cache do pnpm, fail-fast adequado
 
@@ -1454,7 +1454,7 @@ body = {
 - **Solução:** Corrigida função `urlencode` para usar conversão em dois passos (primeiro obter ASCII com `printf -v ascii '%d' "'$c"`, depois converter para hex com `printf -v hex '%%%02X' "$ascii"`)
 - **Correção Adicional:** Padrão case corrigido de `[-_.~a-zA-Z0-9]` para `[_.~a-zA-Z0-9-]` (hífen movido para o final para evitar interpretação como range operator)
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Função `urlencode` corrigida para usar implementação correta (alinhada com `infra/scripts/generate-env-prod.sh`)
+  - `.github/workflows/production-deploy.yml` - Função `urlencode` corrigida para usar implementação correta (alinhada com `infra/scripts/generate-env-prod.sh`)
 
 **Problema 4: Falta de timeout wrapper no comando drizzle-kit push**
 - **Erro:** Comando `docker run` executando `pnpm db:push` (drizzle-kit push) não tinha timeout wrapper, permitindo hangs indefinidos
@@ -1462,70 +1462,70 @@ body = {
 - **Solução:** Adicionado timeout wrapper de 300s (5 min) usando `timeout 300s docker run ...`, conforme padrão documentado em CLAUDE.md (bug fix 23/12/2025)
 - **Tratamento de Erros:** Distinção entre timeout (exit code 124) e outros erros, com mensagens específicas para cada caso
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Adicionado timeout wrapper e tratamento adequado de exit codes
+  - `.github/workflows/production-deploy.yml` - Adicionado timeout wrapper e tratamento adequado de exit codes
 
 **Problema 5: Hostname incorreto no DATABASE_URL para container standalone**
 - **Erro:** `DATABASE_URL` usava hostname `postgres`, mas container standalone criado por `docker run` não consegue resolver service names do docker-compose
 - **Causa Raiz:** `docker run --network alice-network` cria container standalone fora do docker-compose. Containers standalone só resolvem por `container_name`, não por service name. Container PostgreSQL tem `container_name: alice-postgres` (não `postgres`)
 - **Solução:** Corrigido hostname de `postgres` para `alice-postgres` no `DATABASE_URL`. Agora container standalone consegue resolver corretamente via DNS da rede Docker
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Hostname corrigido de `postgres` para `alice-postgres` no DATABASE_URL
+  - `.github/workflows/production-deploy.yml` - Hostname corrigido de `postgres` para `alice-postgres` no DATABASE_URL
 
 **Problema 6: Volume read-only impede criação de node_modules em workspace packages**
 - **Erro:** `pnpm install --frozen-lockfile` falhava com `EROFS: read-only file system` ao tentar criar `node_modules` em workspace packages (`packages/config/`, `packages/database/`, etc.)
 - **Causa Raiz:** pnpm em modo `isolated` (padrão quando não especificado `node-linker`) cria `node_modules` em cada workspace package. Volume `/app:ro` (read-only) impede criação desses diretórios durante `pnpm install`, causando falha silenciosa na criação do schema
 - **Solução:** Copiar código completo para volume temporário rw (`/tmp/drizzle-app`) antes de executar container. Agora pnpm pode criar todos os `node_modules` necessários (raiz e packages) sem modificar código original. Limpeza automática do volume temporário após sucesso ou erro
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Cópia de código para volume temporário rw, montagem `/tmp/drizzle-app:/app:rw`, limpeza automática
+  - `.github/workflows/production-deploy.yml` - Cópia de código para volume temporário rw, montagem `/tmp/drizzle-app:/app:rw`, limpeza automática
 
 **Problema 7: Comando psql sem flag -d falha silenciosamente na verificação de database**
 - **Erro:** Script incorretamente reportava "Database alice_prod não existe!" mesmo quando o database existia
 - **Causa Raiz:** Comando `psql` na linha 863 não tinha flag `-d` (database). Sem ela, `psql` tenta conectar ao database com mesmo nome do usuário (ex: "alice"), mas apenas "alice_prod" e "postgres" existem. A conexão falha silenciosamente (stderr redirecionado para `/dev/null`), `DB_EXISTS` fica vazio, e o script interpreta como database inexistente
 - **Solução:** Adicionada flag `-d postgres` ao comando `psql`. O database "postgres" sempre existe e permite fazer queries em `pg_database` para verificar se outros databases existem. Isso é mais seguro e confiável que tentar conectar ao database que queremos verificar (que pode não existir ainda)
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Adicionada flag `-d postgres` ao comando de verificação de database
+  - `.github/workflows/production-deploy.yml` - Adicionada flag `-d postgres` ao comando de verificação de database
 
 **Problema 8: Variáveis PostgreSQL extraídas incorretamente do .env.prod**
 - **Erro:** `drizzle-kit push` falhava com erro de autenticação durante primeiro deploy quando schema creation era necessário
 - **Causa Raiz:** Variáveis `PG_USER`, `PG_PASS`, `PG_DB` eram atribuídas de `${POSTGRES_USER}`, `${POSTGRES_PASSWORD}`, `${POSTGRES_DB}`, mas essas não são variáveis shell. O arquivo `.env.prod` é usado apenas via `docker compose --env-file` e nunca é sourced no shell. `PG_PASS` ficava vazio, causando `DATABASE_URL` com senha vazia e falha de autenticação
 - **Solução:** Extrair valores do `.env.prod` usando `grep + cut` (mesmo padrão usado em outras partes do script para `LANGFUSE_DB_PASSWORD`, `RESEND_API_KEY`, etc.). Adicionada validação fail-fast para garantir que `POSTGRES_PASSWORD` não está vazio antes de construir `DATABASE_URL`
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Extração de valores do `.env.prod` usando `grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2-`, validação fail-fast de senha
+  - `.github/workflows/production-deploy.yml` - Extração de valores do `.env.prod` usando `grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2-`, validação fail-fast de senha
 
 **Problema 9: Comandos de validação usam defaults ao invés de credenciais reais do .env.prod**
 - **Erro:** Deploy abortava com erro enganoso "Database alice_prod não existe!" mesmo quando database real existia com nome diferente
 - **Causa Raiz:** Comandos de validação (linhas 839, 871, 884, 995, 1120) usavam `${POSTGRES_USER:-alice}` e `${POSTGRES_DB:-alice_prod}` que sempre usam defaults porque essas variáveis shell nunca são definidas. Se `.env.prod` contém credenciais não-padrão, validação consulta database errado, causando erro enganoso
 - **Solução:** Extrair credenciais do `.env.prod` ANTES de usar em comandos de validação (linhas 865-866). Todos os comandos `psql` agora usam `VALIDATION_PG_USER` e `VALIDATION_PG_DB` extraídos do arquivo, garantindo que validação usa credenciais reais mesmo quando não-padrão
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Extração de credenciais antes de validações, uso de `VALIDATION_PG_USER` e `VALIDATION_PG_DB` em todos os comandos `psql`
+  - `.github/workflows/production-deploy.yml` - Extração de credenciais antes de validações, uso de `VALIDATION_PG_USER` e `VALIDATION_PG_DB` em todos os comandos `psql`
 
 **Problema 10: sh -c com pipefail falha em Debian Bookworm (dash não suporta)**
 - **Erro:** Container `node:22-bookworm-slim` falhava imediatamente com "Illegal option -o pipefail" antes de executar comandos úteis
 - **Causa Raiz:** Script usava `sh -c "set -euo pipefail..."` mas em imagens baseadas em Debian Bookworm, `/bin/sh` está linkado para `dash`, que não suporta a opção `pipefail`. Isso causava falha imediata do container antes de executar `pnpm install` ou `drizzle-kit push`
 - **Solução:** Alterado de `sh -c` para `bash -c`. A imagem `node:22-bookworm-slim` inclui bash, que suporta `pipefail` corretamente. Agora o container executa comandos sem falhas de sintaxe
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Alterado `sh -c` para `bash -c` no comando `docker run` executando `drizzle-kit push`
+  - `.github/workflows/production-deploy.yml` - Alterado `sh -c` para `bash -c` no comando `docker run` executando `drizzle-kit push`
 
 **Problema 11: Padrão | xargs || echo "0" não funciona quando psql falha silenciosamente**
 - **Erro:** Script incorretamente concluía que tabelas existiam e pulava `drizzle-kit push`, causando serviços iniciarem sem schema necessário
 - **Causa Raiz:** Padrão `| xargs || echo "0"` não funciona como esperado. Quando `psql` falha silenciosamente (stderr redirecionado), `xargs` recebe input vazio, não produz output, mas sai com código 0, então `|| echo "0"` nunca executa. Variáveis (`DB_EXISTS`, `TABLE_COUNT`, `TABLE_COUNT_AFTER`) ficam como string vazia. A comparação `[ "$VAR" -eq "0" ]` em string vazia produz erro bash ("integer expression expected") e retorna exit code 2, que o `if` trata como "false", fazendo script pular `drizzle-kit push` e concluir incorretamente que tabelas existem
 - **Solução:** Adicionar tratamento explícito de string vazia após cada atribuição: `VAR="${VAR:-0}"`. Isso garante que string vazia vira "0" antes da comparação numérica, prevenindo erros bash e comportamento incorreto
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
+  - `.github/workflows/production-deploy.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
 
 **Problema 12: Validação de tabelas após drizzle-kit push insuficiente**
 - **Erro:** `drizzle-kit push` executava mas validação não confirmava se tabelas foram realmente criadas, causando serviços iniciarem sem schema
 - **Causa Raiz:** Validação usava `sleep 2` que pode ser insuficiente para PostgreSQL processar todas as CREATE TABLE em schemas grandes. Mensagens de erro não eram detalhadas o suficiente para diagnóstico
 - **Solução:** Aumentado sleep de 2s para 5s, adicionada mensagem explicativa, adicionada exibição do número de tabelas encontradas, e melhoradas mensagens de erro com checklist de verificação
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Sleep aumentado, mensagens melhoradas, validação mais robusta
+  - `.github/workflows/production-deploy.yml` - Sleep aumentado, mensagens melhoradas, validação mais robusta
 
 **Problema 13: pgBackRest stanza não inicializada antes de healthcheck**
 - **Erro:** Container `alice-pgbackrest` ficava unhealthy porque healthcheck executava `stanza-upgrade` mas stanza não existia
 - **Causa Raiz:** pgBackRest precisa de `stanza-create` ANTES de qualquer operação. O healthcheck do container executa `stanza-upgrade`, que falha se stanza não existe. Ordem correta: PostgreSQL healthy → stanza-create → check → backup
 - **Solução:** Adicionada inicialização de stanza pgBackRest no workflow ANTES de iniciar serviços. Verifica se stanza existe, cria se necessário, valida com check, e opcionalmente executa backup inicial. Healthcheck atualizado para não falhar se stanza não existe ainda
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - FASE 7.5: Inicialização de stanza pgBackRest
+  - `.github/workflows/production-deploy.yml` - FASE 7.5: Inicialização de stanza pgBackRest
   - `infra/backup/scripts/healthcheck.sh` - Healthcheck robusto que verifica se stanza existe antes de validar
 
 **Problema 14: gpu-manager não validado antes de serviços dependentes**
@@ -1533,14 +1533,14 @@ body = {
 - **Causa Raiz:** Serviços Alice dependem de `gpu-manager` via `depends_on: condition: service_healthy`, mas workflow não validava se `gpu-manager` estava healthy antes de prosseguir, causando falha tardia
 - **Solução:** Adicionada validação explícita de `gpu-manager` healthy ANTES de prosseguir. Aguarda até 2 minutos com retry, captura logs em caso de falha, e executa diagnóstico completo antes de abortar
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Validação de gpu-manager healthy com retry e diagnóstico
+  - `.github/workflows/production-deploy.yml` - Validação de gpu-manager healthy com retry e diagnóstico
 
 **Problema 15: erpnext-create-site exit code não validado**
 - **Erro:** Container `erpnext-create-site` é one-shot e pode falhar silenciosamente, causando ERPNext não funcionar corretamente
 - **Causa Raiz:** Workflow não validava exit code do `erpnext-create-site`. Container one-shot deve executar e sair com exit code 0 (sucesso). Se falhar, ERPNext não funciona
 - **Solução:** Adicionada validação de exit code do `erpnext-create-site`. Aguarda até 2 minutos se container ainda não executou, valida exit code 0, e captura logs em caso de falha
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Validação de erpnext-create-site exit code
+  - `.github/workflows/production-deploy.yml` - Validação de erpnext-create-site exit code
 
 **Problema 16: Logs insuficientes para diagnóstico de falhas**
 - **Erro:** Quando deploy falha, logs capturados são limitados e não incluem estado completo do sistema, métricas, network connectivity, configuração
@@ -1548,14 +1548,14 @@ body = {
 - **Solução:** Criado script `infra/scripts/diagnose-failure.sh` que coleta: status de containers, logs completos (500 linhas), healthcheck status, resource usage, network connectivity, database state, Docker Compose config, system info, e compacta tudo em arquivo tar.gz para download
 - **Arquivos Modificados:**
   - `infra/scripts/diagnose-failure.sh` - Script novo de diagnóstico completo
-  - `.github/workflows/deploy-production.yml` - Chamadas ao script de diagnóstico antes de exit 1
+  - `.github/workflows/production-deploy.yml` - Chamadas ao script de diagnóstico antes de exit 1
 
 **Problema 17: Captura de versão anterior para rollback inteligente**
 - **Erro:** Rollback não tinha informação sobre versão anterior antes do deploy iniciar
 - **Causa Raiz:** Rollback job já tem lógica inteligente (verifica `last-successful-deploy.txt`), mas deploy não capturava versão anterior para referência e diagnóstico
 - **Solução:** Adicionada captura de versão anterior ANTES do deploy (FASE 6.5). Verifica se `last-successful-deploy.txt` existe, captura tags de imagens atuais, e salva em `/tmp/previous-versions.txt` para referência. Rollback job já usa `last-successful-deploy.txt` para lógica inteligente (limpeza total se não existe, preserva dados se existe)
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - FASE 6.5: Captura de versão anterior
+  - `.github/workflows/production-deploy.yml` - FASE 6.5: Captura de versão anterior
 
 **Problema 18: archive_command do pgBackRest em containers separados**
 - **Erro:** Análise sugeria usar `archive_command = 'pgbackrest --stanza=alice_prod archive-push %p'`, mas comando não funciona em containers separados
@@ -1567,7 +1567,7 @@ body = {
 - **Causa Raiz:** Padrão `| xargs || echo "0"` não funciona como esperado. Quando `psql` falha silenciosamente (stderr redirecionado), `xargs` recebe input vazio, não produz output, mas sai com código 0, então `|| echo "0"` nunca executa. Variáveis (`DB_EXISTS`, `TABLE_COUNT`, `TABLE_COUNT_AFTER`) ficam como string vazia. A comparação `[ "$VAR" -eq "0" ]` em string vazia produz erro bash ("integer expression expected") e retorna exit code 2, que o `if` trata como "false", fazendo script pular `drizzle-kit push` e concluir incorretamente que tabelas existem
 - **Solução:** Adicionar tratamento explícito de string vazia após cada atribuição: `VAR="${VAR:-0}"`. Isso garante que string vazia vira "0" antes da comparação numérica, prevenindo erros bash e comportamento incorreto
 - **Arquivos Modificados:**
-  - `.github/workflows/deploy-production.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
+  - `.github/workflows/production-deploy.yml` - Adicionado `DB_EXISTS="${DB_EXISTS:-0}"`, `TABLE_COUNT="${TABLE_COUNT:-0}"`, `TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"` após cada atribuição
 
 **Benefícios:**
 - ✅ pgBackRest check passa corretamente (archive_mode=on)

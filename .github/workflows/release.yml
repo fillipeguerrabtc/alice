@@ -480,16 +480,8 @@ jobs:
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
             
-              const workflow = await github.rest.actions.getWorkflow({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                workflow_id: 'production-deploy.yml'
-              });
-              
-              console.log('✅ Workflow encontrado: ' + workflow.data.name);
-              console.log('✅ Workflow state: ' + workflow.data.state);
-              
-              // Disparar o workflow
+            try {
+              // Disparar o workflow usando a TAG como referência (Padrão Enterprise v1.4.32)
               await github.rest.actions.createWorkflowDispatch({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
@@ -501,5 +493,9 @@ jobs:
                   triggered_by: 'release-workflow'
                 }
               });
-            
-            console.log('✅ Deploy disparado!');
+              
+              console.log('✅ Deploy disparado com sucesso usando a tag ' + version);
+            } catch (error) {
+              console.error('❌ ERRO ao disparar deploy:', error.message);
+              throw error;
+            }

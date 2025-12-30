@@ -767,7 +767,7 @@ O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
 
 **Vantagens sobre GHA Cache:**
 
-- ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (main)
+- ✅ Compartilhado entre `release.yml` (build/tag) e `production-deploy.yml` (deploy)
 - ✅ Sem limite de 10GB do GitHub Actions cache
 - ✅ Reprodutibilidade: releases usam a tag exata
 - ✅ Funciona com runners GitHub-hosted E self-hosted (cache armazenado no GHCR, não no runner)
@@ -1192,7 +1192,7 @@ docker exec erpnext-create-site ls -la /home/frappe/frappe-bench/sites/
 
 | Arquivo | Descrição |
 |---------|-----------|
-| `.github/workflows/deploy-production.yml` | Pipeline CI/CD completo |
+| `.github/workflows/production-deploy.yml` | Pipeline CI/CD completo |
 | `infra/docker/docker-compose.prod.yml` | Stack Docker para produção |
 | `infra/docker/.env.prod.example` | Exemplo de variáveis de ambiente |
 | `apps/observability-service/docker-compose.yml` | Stack de observabilidade |
@@ -1272,7 +1272,7 @@ Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl 
 | Traefik ACME | 1001 | 700 | /opt/alice/data/traefik-acme |
 | SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
 
-> **NOTA:** Workflow deploy-production.yml configura automaticamente todas essas permissões.
+> **NOTA:** Workflow `production-deploy.yml` configura automaticamente todas essas permissões.
 - Vector 0.43.1: sink Loki ativo; sem mudanças de breaking para docker_logs.
 
 ### Notas Importantes

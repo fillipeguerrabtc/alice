@@ -340,7 +340,7 @@ alice/
 │   └── workflows/                  # CI/CD (3 workflows)
 │       ├── ci.yml                  # Build & Test (otimizado 27/12/2025)
 │       ├── release.yml             # Versionamento semântico
-│       └── deploy-production.yml   # Deploy Hetzner GPU (100% automático)
+│       └── production-deploy.yml   # Deploy Hetzner GPU (100% automático)
 │
 ├── client/                         # Frontend React
 │   └── src/
