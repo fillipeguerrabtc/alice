@@ -38,6 +38,14 @@
 
 name: Deploy Hetzner
 
+# =============================================================================
+# TRIGGERS - APENAS workflow_dispatch (manual ou via Release workflow)
+# =============================================================================
+# PROIBIDO: push, pull_request, ou qualquer outro trigger automático
+# Este workflow DEVE ser acionado APENAS por:
+#   1. Release workflow (automático após build de imagens)
+#   2. Manual via GitHub Actions UI
+# =============================================================================
 on:
   workflow_dispatch:
     inputs:

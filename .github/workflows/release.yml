@@ -472,30 +472,81 @@ jobs:
     steps:
       - name: Disparar workflow de deploy
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
+        env:
+          DEPLOY_VERSION: ${{ needs.create-release.outputs.version }}
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
-            const version = '${{ needs.create-release.outputs.version }}';
+            // Obter versão do output do job (via env para garantir expansão correta)
+            const version = process.env.DEPLOY_VERSION || '${{ needs.create-release.outputs.version }}';
+            
+            // Validação fail-fast: versão OBRIGATÓRIA
+            if (!version || version.trim() === '' || version === 'undefined' || version === 'null') {
+              console.error('❌ ERRO CRÍTICO: Versão não definida!');
+              console.error('   DEPLOY_VERSION env: ' + (process.env.DEPLOY_VERSION || '(não definido)'));
+              console.error('   Output create-release: ${{ needs.create-release.outputs.version }}');
+              throw new Error('Versão não definida! Output do job create-release está vazio ou inválido.');
+            }
+            
+            // Validar formato de versão (vX.Y.Z)
+            if (!/^v\d+\.\d+\.\d+(-[a-zA-Z0-9.]+)?$/.test(version)) {
+              throw new Error(`❌ ERRO: Formato de versão inválido: "${version}". Esperado: vX.Y.Z`);
+            }
             
             console.log('🚀 Iniciando deploy automático');
             console.log('📦 Versão: ' + version);
+            console.log('🔍 Workflow ID: production-deploy.yml');
+            console.log('🔍 Ref (tag): ' + version);
+            console.log('🔍 DEPLOY_VERSION env: ' + process.env.DEPLOY_VERSION);
             
             try {
               // Disparar o workflow usando a TAG como referência (Padrão Enterprise v1.4.32)
-              await github.rest.actions.createWorkflowDispatch({
+              // CRÍTICO: ref DEVE ser a tag (version), NÃO 'main'
+              // O workflow production-deploy.yml faz checkout da tag internamente
+              const dispatchParams = {
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 workflow_id: 'production-deploy.yml',
-                ref: version,
+                ref: version, // TAG - NÃO usar 'main' (causa erro 422)
                 inputs: {
                   version: version,
                   services: 'all',
                   triggered_by: 'release-workflow'
                 }
-              });
+              };
+              
+              console.log('📤 Parâmetros do dispatch:');
+              console.log('   workflow_id: ' + dispatchParams.workflow_id);
+              console.log('   ref: ' + dispatchParams.ref);
+              console.log('   inputs.version: ' + dispatchParams.inputs.version);
+              
+              const response = await github.rest.actions.createWorkflowDispatch(dispatchParams);
               
               console.log('✅ Deploy disparado com sucesso usando a tag ' + version);
+              console.log('📋 Response status: ' + (response.status || 'N/A'));
             } catch (error) {
-              console.error('❌ ERRO ao disparar deploy:', error.message);
+              console.error('❌ ERRO ao disparar deploy:');
+              console.error('   Mensagem: ' + error.message);
+              console.error('   Status: ' + (error.status || 'N/A'));
+              console.error('   Response: ' + JSON.stringify(error.response || {}, null, 2));
+              console.error('   Workflow ID usado: production-deploy.yml');
+              console.error('   Ref usado: ' + version);
+              console.error('   Versão validada: ' + version);
+              
+              // Diagnóstico adicional
+              if (error.message && error.message.includes('workflow_dispatch')) {
+                console.error('⚠️ DIAGNÓSTICO: Workflow não possui trigger workflow_dispatch');
+                console.error('   Verificar: .github/workflows/production-deploy.yml tem workflow_dispatch?');
+                console.error('   Verificar: workflow está ativo na branch main?');
+              }
+              
+              if (error.status === 422) {
+                console.error('⚠️ ERRO 422: Requisição não processável');
+                console.error('   Possíveis causas:');
+                console.error('   1. Workflow não possui trigger workflow_dispatch');
+                console.error('   2. Ref (tag) não existe ou não é válida');
+                console.error('   3. Workflow_id incorreto ou workflow não encontrado');
+              }
+              
               throw error;
             }
