@@ -264,8 +264,41 @@ else
 fi
 
 # =============================================================================
-# FASE 5: Validação Langfuse DB
+# FASE 5: Validação Langfuse (v3 - OBRIGATÓRIO)
 # =============================================================================
+# Langfuse v3 requer essas variáveis para inicialização do servidor Next.js
+# Sem elas, o Langfuse falha com erro: "Cannot set property message of ZodError"
+# Ref: https://langfuse.com/docs/deployment/v3/overview
+# =============================================================================
+
+# 5.1 Variáveis de autenticação Langfuse (OBRIGATÓRIAS)
+LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}"
+if [ -z "${LANGFUSE_SECRET_KEY}" ]; then
+  echo "::error::LANGFUSE_SECRET_KEY não definido. Configure o secret LANGFUSE_SECRET_KEY (obrigatório para API Langfuse v3)." >&2
+  exit 1
+fi
+
+LANGFUSE_NEXT_AUTH_SECRET="${LANGFUSE_NEXT_AUTH_SECRET:-}"
+if [ -z "${LANGFUSE_NEXT_AUTH_SECRET}" ]; then
+  echo "::error::LANGFUSE_NEXT_AUTH_SECRET não definido. Configure o secret LANGFUSE_NEXT_AUTH_SECRET (obrigatório para autenticação Langfuse v3)." >&2
+  exit 1
+fi
+
+LANGFUSE_SALT="${LANGFUSE_SALT:-}"
+if [ -z "${LANGFUSE_SALT}" ]; then
+  echo "::error::LANGFUSE_SALT não definido. Configure o secret LANGFUSE_SALT (obrigatório para criptografia Langfuse v3). Use: openssl rand -hex 32" >&2
+  exit 1
+fi
+
+LANGFUSE_ENCRYPTION_KEY="${LANGFUSE_ENCRYPTION_KEY:-}"
+if [ -z "${LANGFUSE_ENCRYPTION_KEY}" ]; then
+  echo "::error::LANGFUSE_ENCRYPTION_KEY não definido. Configure o secret LANGFUSE_ENCRYPTION_KEY (obrigatório para criptografia Langfuse v3). Use: openssl rand -hex 32" >&2
+  exit 1
+fi
+
+echo "✅ Variáveis de autenticação Langfuse validadas"
+
+# 5.2 Variáveis de banco de dados Langfuse
 LANGFUSE_DB_USER="${LANGFUSE_DB_USER_SECRET:-}"
 LANGFUSE_DB_PASSWORD="${LANGFUSE_DB_PASSWORD_SECRET:-}"
 LANGFUSE_DB_NAME="${LANGFUSE_DB_NAME_SECRET:-}"
@@ -280,6 +313,8 @@ if echo "${LANGFUSE_DB_PASSWORD}" | grep -qE '[][@:/?#%]'; then
   echo "::error::LANGFUSE_DB_PASSWORD contém caracteres especiais de URL (@:/?#%[]). Configure uma senha sem esses caracteres para evitar URL malformada." >&2
   exit 1
 fi
+
+echo "✅ Variáveis de banco de dados Langfuse validadas"
 
 # =============================================================================
 # FASE 6: Validação CORS

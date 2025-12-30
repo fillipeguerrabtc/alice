@@ -2962,13 +2962,21 @@ services:
     environment:
       # Stanza name (deve corresponder ao nome no pgbackrest.conf e entrypoint.sh)
       PGBACKREST_STANZA: alice_prod
-      # PostgreSQL connection
-      PGBACKREST_PG1_PORT: "5432"
-      # Forçar conexão via TCP (evita fallback para socket local inexistente)
-      PGBACKREST_PG1_HOST: postgres
-      PGBACKREST_PG1_DATABASE: ${POSTGRES_DB:-alice_prod}
-      # Caminho dos dados PostgreSQL (deve corresponder ao PGDATA do container postgres)
-      # PostgreSQL usa /var/lib/postgresql/data diretamente (padrão, não subdiretório /pgdata)
+      # ==========================================================================
+      # CORREÇÃO CRÍTICA 30/12/2025: Conexão SQL via libpq (NÃO SSH)
+      # ==========================================================================
+      # pgBackRest usa libpq para conexões SQL quando pg1-host NÃO está no config.
+      # As variáveis PGHOST, PGPORT, PGUSER, PGPASSWORD são padrão do PostgreSQL/libpq.
+      # Ref: https://www.postgresql.org/docs/current/libpq-envars.html
+      # ==========================================================================
+      # Conexão SQL via libpq (variáveis padrão PostgreSQL)
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: ${POSTGRES_USER:-alice}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-alice_prod}
+      # Caminho dos dados PostgreSQL (volume montado no container pgBackRest)
+      # IMPORTANTE: Este é o caminho DENTRO do container pgBackRest
       PGBACKREST_DB_PATH: /var/lib/postgresql/data
       # Repositório de backup (caminho DENTRO do container, não do host)
       # O volume /opt/alice/backups/postgresql do host é montado em /var/lib/pgbackrest no container
@@ -2983,11 +2991,6 @@ services:
       # Logging
       PGBACKREST_LOG_LEVEL_CONSOLE: info
       PGBACKREST_LOG_LEVEL_FILE: detail
-      # PostgreSQL credentials
-      # NOTA: PGPASSWORD é variável de ambiente do pgBackRest (não é secret do GitHub)
-      # Recebe valor de POSTGRES_PASSWORD (secret do GitHub)
-      PGUSER: ${POSTGRES_USER:-alice}
-      PGPASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       # Dados PostgreSQL (read-only para backup)
       - postgres_data:/var/lib/postgresql/data:ro

@@ -24,10 +24,18 @@ fi
 # Usar variável de ambiente para stanza (default: alice_prod)
 STANZA="${PGBACKREST_STANZA:-alice_prod}"
 
-# Aguardar PostgreSQL estar pronto
+# ==========================================================================
+# CORREÇÃO 30/12/2025: Usar variáveis padrão PostgreSQL/libpq
+# ==========================================================================
+# pgBackRest usa libpq para conexões SQL. Variáveis padrão:
+# PGHOST, PGPORT, PGUSER, PGPASSWORD, PGDATABASE
+# Ref: https://www.postgresql.org/docs/current/libpq-envars.html
+# ==========================================================================
+
+# Aguardar PostgreSQL estar pronto via rede Docker
 echo "[INFO] Aguardando PostgreSQL..."
-PG_HOST="${PGBACKREST_PG1_HOST:-postgres}"
-PG_PORT="${PGBACKREST_PG1_PORT:-5432}"
+PG_HOST="${PGHOST:-postgres}"
+PG_PORT="${PGPORT:-5432}"
 PG_USER="${PGUSER:-alice}"
 
 until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" 2>/dev/null; do
@@ -35,6 +43,18 @@ until pg_isready -h "$PG_HOST" -p "$PG_PORT" -U "$PG_USER" 2>/dev/null; do
     sleep 5
 done
 echo "[OK] PostgreSQL está pronto!"
+
+# Verificar que as variáveis de ambiente libpq estão configuradas
+if [ -z "${PGHOST:-}" ]; then
+    echo "[WARN] PGHOST não definido, usando 'postgres' como padrão"
+    export PGHOST="postgres"
+fi
+if [ -z "${PGPASSWORD:-}" ]; then
+    echo "[ERRO] PGPASSWORD não está definido! pgBackRest requer autenticação."
+    exit 1
+fi
+
+echo "[INFO] Conexão libpq configurada: PGHOST=$PGHOST, PGPORT=${PGPORT:-5432}, PGUSER=${PGUSER:-alice}"
 
 # Verificar se stanza existe, senão criar
 echo "[INFO] Verificando stanza '$STANZA'..."
