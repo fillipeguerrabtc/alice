@@ -72,6 +72,17 @@ volumes:
       o: bind
       device: /opt/alice/data/postgres
 
+  # CORREÇÃO 31/12/2025: Volume para WAL archiving (comunicação PostgreSQL → pgBackRest)
+  # PostgreSQL escreve WALs em /archive, pgBackRest lê para backup PITR
+  # Necessário para archive_mode=on funcionar corretamente em Docker
+  wal_archive:
+    name: alice-wal-archive
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/wal-archive
+
   alice_redis_data:
     name: alice-redis-data
     driver: local
@@ -506,11 +517,40 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-alice_prod}
       # PGDATA padrão do PostgreSQL: /var/lib/postgresql/data (não usar subdiretório /pgdata)
       PGDATA: /var/lib/postgresql/data
+    # ==========================================================================
+    # CORREÇÃO 31/12/2025: WAL Archiving para pgBackRest (Backup Enterprise)
+    # ==========================================================================
+    # PROBLEMA: pgBackRest requer archive_mode=on para backup PITR
+    # Erro: "archive_mode must be enabled" causava falha no stanza-create
+    # 
+    # SOLUÇÃO: Configurar PostgreSQL via command com:
+    # - archive_mode=on: Habilita arquivamento de WAL
+    # - archive_command: Copia WALs para volume compartilhado
+    # - wal_level=replica: Nível mínimo para PITR (inclui info necessária)
+    # 
+    # ARQUITETURA:
+    # PostgreSQL escreve WAL → /archive (volume wal_archive)
+    # pgBackRest lê WAL de → /var/lib/pgbackrest/archive (mesmo volume)
+    # ==========================================================================
+    command:
+      - "postgres"
+      - "-c"
+      - "archive_mode=on"
+      - "-c"
+      - "archive_command=cp %p /archive/%f"
+      - "-c"
+      - "wal_level=replica"
+      - "-c"
+      - "max_wal_senders=10"
+      - "-c"
+      - "wal_keep_size=512MB"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # CORREÇÃO 31/12/2025: Init script garante extensão pgvector na primeira inicialização
       # Scripts em /docker-entrypoint-initdb.d/ executam apenas quando PGDATA está vazio
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
+      # CORREÇÃO 31/12/2025: Volume para WAL archive (comunicação com pgBackRest)
+      - wal_archive:/archive
     networks:
       - alice-network
     healthcheck:
@@ -3106,6 +3146,10 @@ services:
     volumes:
       # Dados PostgreSQL (read-only para backup)
       - postgres_data:/var/lib/postgresql/data:ro
+      # CORREÇÃO 31/12/2025: Volume de WAL archive (comunicação PostgreSQL → pgBackRest)
+      # PostgreSQL escreve WALs em /archive via archive_command
+      # pgBackRest lê WALs deste diretório para archive-push assíncrono
+      - wal_archive:/var/lib/pgbackrest/archive:ro
       # Repositório de backups (volume Hetzner persistente) - rw explícito necessário com read_only: true
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       # Logs persistentes (volume Hetzner para troubleshooting) - rw explícito necessário com read_only: true

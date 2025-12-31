@@ -677,11 +677,13 @@ jobs:
             mkdir -p /opt/alice/data/grafana
             mkdir -p /opt/alice/data/loki
             mkdir -p /opt/alice/data/jaeger
-            
+            # CORREÇÃO 31/12/2025: Volume para WAL archive (PostgreSQL → pgBackRest)
+            mkdir -p /opt/alice/data/wal-archive
+
             # Diretórios de logs
             mkdir -p /opt/alice/logs/erpnext
             mkdir -p /opt/alice/logs/clickhouse
-            
+
             # Diretórios de uploads, backups e secrets
             mkdir -p /opt/alice/uploads
             mkdir -p /opt/alice/backups/manifests
@@ -818,36 +820,36 @@ jobs:
               docker logs --tail=400 alice-gpu-manager || true
               echo ""
               echo "🧾 Logs do Redis (últimas 200 linhas):"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
+              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=500 alice-redis || true
               echo ""
               echo "🧾 Logs do alertmanager (últimas 200 linhas):"
-              docker logs --tail=200 alice-alertmanager || true
+              docker logs --tail=500 alice-alertmanager || true
               echo ""
               echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
-              docker logs --tail=200 alice-pgbackrest || true
+              docker logs --tail=500 alice-pgbackrest || true
               echo ""
               echo "🧾 Logs do jaeger (últimas 200 linhas):"
-              docker logs --tail=200 jaeger || true
+              docker logs --tail=500 jaeger || true
               echo ""
               echo "🧾 Logs do langfuse (últimas 200 linhas):"
-              docker logs --tail=200 langfuse || true
+              docker logs --tail=500 langfuse || true
               echo ""
               # CORREÇÃO 29/12/2025: Langfuse v2 não usa worker separado
               # Adicionar logs dos serviços Alice que estão falhando
               echo "🧾 Logs do alice-auth (últimas 200 linhas):"
-              docker logs --tail=200 alice-auth || true
+              docker logs --tail=500 alice-auth || true
               echo ""
               echo "🧾 Logs do alice-chat (últimas 200 linhas):"
-              docker logs --tail=200 alice-chat || true
+              docker logs --tail=500 alice-chat || true
               echo ""
               echo "🧾 Logs do alice-training (últimas 200 linhas):"
-              docker logs --tail=200 alice-training || true
+              docker logs --tail=500 alice-training || true
               echo ""
               echo "🧾 Logs do erpnext-create-site (últimas 200 linhas):"
-              docker logs --tail=200 erpnext-create-site || true
+              docker logs --tail=500 erpnext-create-site || true
               echo ""
               echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
-              docker logs --tail=200 alice-integrations || true
+              docker logs --tail=500 alice-integrations || true
               exit 1
             fi
             
@@ -930,7 +932,34 @@ jobs:
               PGVECTOR_DELAY=$((PGVECTOR_DELAY * 2))
               [ $PGVECTOR_DELAY -gt 15 ] && PGVECTOR_DELAY=15
             done
+
+            # =================================================================
+            # CORREÇÃO 31/12/2025: Validar WAL archiving para pgBackRest
+            # =================================================================
+            # PROBLEMA: pgBackRest requer archive_mode=on para backup PITR
+            # Sem isso, stanza-create falha com "archive_mode must be enabled"
+            # 
+            # VALIDAÇÃO: Verificar se archive_mode está habilitado
+            # Se não estiver, emitir warning (pode ser primeira execução)
+            # =================================================================
+            echo "🔍 Validando configuração WAL archiving do PostgreSQL..."
+            ARCHIVE_MODE=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+              -t -c "SHOW archive_mode;" 2>/dev/null | xargs || echo "off")
             
+            if [ "$ARCHIVE_MODE" = "on" ]; then
+              echo "✅ archive_mode habilitado: $ARCHIVE_MODE"
+              
+              # Verificar archive_command
+              ARCHIVE_CMD=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+                -t -c "SHOW archive_command;" 2>/dev/null | xargs || echo "")
+              echo "   archive_command: $ARCHIVE_CMD"
+            else
+              echo "⚠️ AVISO: archive_mode não está habilitado (status: $ARCHIVE_MODE)"
+              echo "   pgBackRest pode não funcionar corretamente para backup PITR"
+              echo "   Verifique se o container PostgreSQL reiniciou com as novas configurações"
+              # Não falhar aqui, pois primeira execução pode não ter as configs ainda
+            fi
+
             # Verificar se database existe
             # CORREÇÃO CRÍTICA 29/12/2025: Adicionar flag -d postgres
             # PROBLEMA: Sem -d, psql tenta conectar ao database com mesmo nome do usuário (ex: "alice")
@@ -1254,7 +1283,7 @@ jobs:
               timeout 15s docker events --since 10m --until 0m --filter "container=alice-gpu-manager" --format "{{.Time}} {{.Type}} {{.Action}} {{.Actor.Attributes.name}} {{.Actor.Attributes.exitCode}}" || true
               echo ""
               echo "🧾 Logs do Redis (dependência direta do gpu-manager):"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
+              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=500 alice-redis || true
               exit 1
             fi
             
@@ -1288,7 +1317,7 @@ jobs:
               echo "🧾 Logs containers GPU (últimas 200 linhas):"
               docker ps --format "{{.Names}}" | grep "^gpu-" | head -n 10 | while read -r c; do
                 echo "----- $c -----"
-                docker logs --tail=200 "$c" || true
+                docker logs --tail=500 "$c" || true
               done
               exit 1
             fi
@@ -1546,6 +1575,8 @@ jobs:
             mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
             mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
+            # CORREÇÃO 31/12/2025: Volume para WAL archive (PostgreSQL → pgBackRest)
+            mkdir -p /opt/alice/data/wal-archive
             mkdir -p /opt/alice/logs/{erpnext,clickhouse}
             mkdir -p /opt/alice/{uploads,backups/manifests}
             mkdir -p /opt/alice/secrets/alertmanager
