@@ -756,11 +756,15 @@ services:
       # OIDC PROVIDER - ALICE COMO IdP (31/12/2025)
       # =================================================================
       # Configurações para Alice atuar como OIDC Provider para Grafana/ERPNext
+      # Inclui secrets OAuth para seed automático dos clientes no startup
       # =================================================================
       OIDC_ISSUER: ${OIDC_ISSUER:-https://yesyoudeserve.duckdns.org}
       OIDC_COOKIE_KEYS: ${OIDC_COOKIE_KEYS}
       GRAFANA_URL: ${GRAFANA_URL:-https://observability.yesyoudeserve.duckdns.org}
       ERPNEXT_URL: ${ERPNEXT_URL:-https://erp.yesyoudeserve.duckdns.org}
+      # OAuth Client Secrets para seed automático (31/12/2025)
+      GRAFANA_OAUTH_CLIENT_SECRET: ${GRAFANA_OAUTH_CLIENT_SECRET}
+      ERPNEXT_OAUTH_CLIENT_SECRET: ${ERPNEXT_OAUTH_CLIENT_SECRET}
       # Redis Cache distribuído (OBRIGATÓRIO em produção - Regra 6)
       # BUG FIX 21/12/2025: REDIS_URL estava FALTANDO - rate limiting requer Redis
       REDIS_URL: redis://:${REDIS_PASSWORD}@alice-redis:6379

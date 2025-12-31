@@ -411,6 +411,118 @@ async function ensureGlobalAdmin(): Promise<void> {
 }
 
 // ============================================================================
+// SEED: OAuth Clients para SSO Automatizado (31/12/2025)
+// ============================================================================
+// Cria/atualiza clientes OAuth para Grafana e ERPNext no startup
+// Usa secrets pré-definidos do ambiente para deploy 100% automatizado
+// Idempotente: pode rodar múltiplas vezes sem problemas
+// ============================================================================
+
+interface OAuthClientSeedConfig {
+  clientId: string;
+  clientSecret: string;
+  nome: string;
+  descricao: string;
+  redirectUris: string[];
+  scopes: string[];
+}
+
+async function ensureOAuthClients(): Promise<void> {
+  // Variáveis obrigatórias apenas em produção
+  const grafanaSecret = process.env.GRAFANA_OAUTH_CLIENT_SECRET;
+  const erpnextSecret = process.env.ERPNEXT_OAUTH_CLIENT_SECRET;
+  const grafanaUrl = process.env.GRAFANA_URL || 'https://observability.yesyoudeserve.duckdns.org';
+  const erpnextUrl = process.env.ERPNEXT_URL || 'https://erp.yesyoudeserve.duckdns.org';
+
+  if (!grafanaSecret || !erpnextSecret) {
+    if (config.NODE_ENV === 'production') {
+      logger.error({
+        GRAFANA_OAUTH_CLIENT_SECRET: grafanaSecret ? '[SET]' : '[NOT SET]',
+        ERPNEXT_OAUTH_CLIENT_SECRET: erpnextSecret ? '[SET]' : '[NOT SET]',
+      }, 'OAuth client secrets não configurados em produção - SSO não funcionará');
+      // Não é crítico - apenas loga erro, não aborta o serviço
+    } else {
+      logger.warn('OAuth client secrets não configurados - seed de clientes OAuth ignorado');
+    }
+    return;
+  }
+
+  const clients: OAuthClientSeedConfig[] = [
+    {
+      clientId: 'grafana-sso',
+      clientSecret: grafanaSecret,
+      nome: 'Grafana OSS',
+      descricao: 'Dashboard de observabilidade - SSO via Alice IdP',
+      redirectUris: [`${grafanaUrl}/login/generic_oauth`],
+      scopes: ['openid', 'profile', 'email', 'groups', 'roles'],
+    },
+    {
+      clientId: 'erpnext-sso',
+      clientSecret: erpnextSecret,
+      nome: 'ERPNext CRM/ERP',
+      descricao: 'Sistema de gestão empresarial - SSO via Alice IdP',
+      redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
+      scopes: ['openid', 'profile', 'email', 'groups', 'roles'],
+    },
+  ];
+
+  const db = getDatabase();
+
+  for (const client of clients) {
+    try {
+      const existing = await db.query.oauthClients.findFirst({
+        where: eq(schema.oauthClients.clientId, client.clientId),
+      });
+
+      if (!existing) {
+        // Criar cliente novo
+        await db.insert(schema.oauthClients).values({
+          clientId: client.clientId,
+          clientSecret: client.clientSecret,
+          nome: client.nome,
+          descricao: client.descricao,
+          redirectUris: client.redirectUris,
+          scopes: client.scopes,
+          grantTypes: ['authorization_code', 'refresh_token'],
+          tokenEndpointAuthMethod: client.clientId === 'grafana-sso' ? 'client_secret_basic' : 'client_secret_post',
+          accessTokenTtl: 3600,
+          refreshTokenTtl: 86400,
+          autoConsent: true,
+          ativo: true,
+        });
+
+        logger.info(
+          { clientId: client.clientId, secretPrefix: client.clientSecret.substring(0, 8) + '...' },
+          'Cliente OAuth criado no startup'
+        );
+      } else {
+        // Atualizar cliente existente (idempotente)
+        await db.update(schema.oauthClients)
+          .set({
+            clientSecret: client.clientSecret,
+            nome: client.nome,
+            descricao: client.descricao,
+            redirectUris: client.redirectUris,
+            scopes: client.scopes,
+            ativo: true,
+            atualizadoEm: new Date(),
+          })
+          .where(eq(schema.oauthClients.clientId, client.clientId));
+
+        logger.info(
+          { clientId: client.clientId, secretPrefix: client.clientSecret.substring(0, 8) + '...' },
+          'Cliente OAuth atualizado no startup'
+        );
+      }
+    } catch (error) {
+      logger.error({ error, clientId: client.clientId }, 'Falha ao criar/atualizar cliente OAuth');
+    }
+  }
+
+  logger.info('Seed de clientes OAuth concluído - SSO 100% automatizado');
+}
+
+// ============================================================================
 // PROMETHEUS: Instrumentação de métricas (Regra 16 - Observability Enterprise)
 // ============================================================================
 const { metrics, metricsRouter, httpMetricsMiddleware } = createAlicePrometheus({
@@ -2371,6 +2483,11 @@ const server = app.listen(PORT, '0.0.0.0', () => {
   // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
   ensureGlobalAdmin().catch((error) => {
     logger.error({ error }, 'Falha ao criar/atualizar administrador global');
+  });
+
+  // Seed de clientes OAuth para SSO 100% automatizado (31/12/2025)
+  ensureOAuthClients().catch((error) => {
+    logger.error({ error }, 'Falha ao criar/atualizar clientes OAuth');
   });
 
   // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
