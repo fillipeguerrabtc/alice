@@ -82,11 +82,13 @@ jobs:
   # ===========================================================================
   # Job 1: Validação de Disparo e Verificação de Imagens
   # OTIMIZADO: Verifica se imagens existem no GHCR (já buildadas pelo Release)
+  # PROTEÇÃO: Só executa via workflow_dispatch (ignora push acidental)
   # ===========================================================================
   validate-and-prepare:
     name: Validate & Prepare
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: read

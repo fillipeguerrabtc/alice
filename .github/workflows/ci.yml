@@ -436,16 +436,18 @@ jobs:
       - name: Disparar Release Workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          github-token: ${{ secrets.GH_PAT }}
           script: |
+            const version = '${{ steps.version.outputs.version }}';
+            
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'release.yml',
               ref: 'main',
               inputs: {
-                version: '${{ steps.version.outputs.version }}',
+                version: version,
                 prerelease: 'false'
               }
             });
-            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado!');
+            console.log('🚀 Release ' + version + ' disparado!');
