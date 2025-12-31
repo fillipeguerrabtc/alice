@@ -242,9 +242,10 @@ jobs:
           echo "SECURITY SCAN - IMAGENS DOCKER"
           echo "=============================================="
           
-          # CORREÇÃO 31/12/2025: Scan TODAS as imagens custom (não apenas 3)
+          # CORREÇÃO 31/12/2025: Scan TODAS as 11 imagens custom (não apenas 3)
           # Vulnerabilidades podem existir em qualquer serviço
-          SERVICES=("auth" "chat" "frontend" "rag" "training" "gpu-manager" "integrations" "observability" "pgbackrest" "postgres")
+          # Lista DEVE corresponder exatamente ao SERVICES array em release.yml
+          SERVICES=("api-gateway" "auth" "chat" "frontend" "rag" "training" "gpu-manager" "integrations" "observability" "pgbackrest" "postgres")
           
           for svc in "${SERVICES[@]}"; do
             echo ""
