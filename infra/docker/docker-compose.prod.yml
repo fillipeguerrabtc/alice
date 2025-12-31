@@ -552,7 +552,9 @@ services:
       # PostgreSQL escreve WALs, pgBackRest container lê para backup
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       # Logs pgBackRest (troubleshooting)
-      - /opt/alice/logs/pgbackrest:/var/log/pgbackrest:rw
+      # CORREÇÃO 31/12/2025: Usar mesmo caminho do container pgbackrest para consistência
+      # Ambos containers escrevem em /var/log/pgbackrest → mesmo diretório host
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
       # Spool directory para archive-async (pgbackrest-pg.conf configura archive-async=y)
       - pgbackrest_spool:/var/spool/pgbackrest
     networks:
