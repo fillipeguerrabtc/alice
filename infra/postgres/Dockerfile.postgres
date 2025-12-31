@@ -1,0 +1,104 @@
+# =============================================================================
+# PostgreSQL + pgvector + pgBackRest - Alice Enterprise Platform
+# =============================================================================
+# Imagem enterprise PostgreSQL com:
+# - pgvector: Extensão para embeddings de imagem (1024 dim OpenCLIP → PostgreSQL)
+# - pgBackRest: Backup enterprise com PITR, WAL archiving, criptografia AES-256
+#
+# PROBLEMA RESOLVIDO (31/12/2025):
+# pgBackRest exige que archive_command chame diretamente o binário pgbackrest.
+# A imagem padrão pgvector/pgvector:pg16 não tem pgbackrest instalado.
+# Esta imagem customizada resolve isso instalando pgbackrest no container PostgreSQL.
+#
+# Author: Fillipe Guerra
+# Data: 31 de Dezembro de 2025
+#
+# Regra 6: Enterprise-grade (sem workarounds)
+# Regra 11: Seguir docs oficiais pgBackRest + pgvector 2025
+# =============================================================================
+
+# =============================================================================
+# Stage 1: Build pgBackRest from source
+# =============================================================================
+FROM debian:bookworm-slim AS pgbackrest-builder
+
+# Versão do pgBackRest (deve corresponder à versão do container pgbackrest)
+ARG PGBACKREST_VERSION=2.57.0
+
+# Instalar dependências de build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    meson \
+    ninja-build \
+    pkg-config \
+    libpq-dev \
+    libssl-dev \
+    libxml2-dev \
+    liblz4-dev \
+    libzstd-dev \
+    libbz2-dev \
+    libyaml-dev \
+    libssh2-1-dev \
+    zlib1g-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone e build pgBackRest
+RUN git clone --branch release/${PGBACKREST_VERSION} --depth 1 \
+    https://github.com/pgbackrest/pgbackrest.git /tmp/pgbackrest
+
+WORKDIR /tmp/pgbackrest
+RUN meson setup build --prefix=/usr
+RUN ninja -C build
+RUN ninja -C build install
+
+# =============================================================================
+# Stage 2: Runtime - PostgreSQL com pgvector + pgBackRest
+# =============================================================================
+FROM pgvector/pgvector:pg16
+
+LABEL maintainer="Alice Enterprise Platform <admin@yesyoudeserve.duckdns.org>"
+LABEL description="PostgreSQL 16 + pgvector + pgBackRest (enterprise backup with PITR)"
+LABEL version="1.0.0"
+
+# Instalar dependências runtime do pgBackRest
+# NOTA: A imagem base pgvector/pgvector:pg16 é baseada em Debian
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libssl3 \
+    libxml2 \
+    liblz4-1 \
+    libzstd1 \
+    libbz2-1.0 \
+    libyaml-0-2 \
+    libssh2-1 \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copiar binário pgBackRest do stage builder
+COPY --from=pgbackrest-builder /usr/bin/pgbackrest /usr/bin/pgbackrest
+RUN chmod +x /usr/bin/pgbackrest
+
+# Criar diretórios necessários para pgBackRest
+RUN mkdir -p /var/lib/pgbackrest \
+    && mkdir -p /var/log/pgbackrest \
+    && mkdir -p /var/spool/pgbackrest \
+    && mkdir -p /etc/pgbackrest \
+    && chown -R postgres:postgres /var/lib/pgbackrest \
+    && chown -R postgres:postgres /var/log/pgbackrest \
+    && chown -R postgres:postgres /var/spool/pgbackrest \
+    && chown -R postgres:postgres /etc/pgbackrest
+
+# Copiar configuração pgBackRest para PostgreSQL
+# NOTA: Esta é uma configuração mínima que aponta para o repositório compartilhado
+COPY pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
+RUN chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
+
+# Voltar ao usuário postgres (padrão da imagem base)
+USER postgres
+
+# Healthcheck herdado da imagem base (pg_isready)
+# O docker-compose.prod.yml sobrescreve com healthcheck mais avançado
+
+# Entrypoint e CMD herdados da imagem base pgvector/pgvector:pg16

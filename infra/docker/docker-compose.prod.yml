@@ -72,16 +72,15 @@ volumes:
       o: bind
       device: /opt/alice/data/postgres
 
-  # CORREÇÃO 31/12/2025: Volume para WAL archiving (comunicação PostgreSQL → pgBackRest)
-  # PostgreSQL escreve WALs em /archive, pgBackRest lê para backup PITR
-  # Necessário para archive_mode=on funcionar corretamente em Docker
-  wal_archive:
-    name: alice-wal-archive
+  # CORREÇÃO 31/12/2025: Spool directory para pgBackRest archive-async
+  # Usado pelo binário pgbackrest no container PostgreSQL para async archiving
+  pgbackrest_spool:
+    name: alice-pgbackrest-spool
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /opt/alice/data/wal-archive
+      device: /opt/alice/data/pgbackrest-spool
 
   alice_redis_data:
     name: alice-redis-data
@@ -494,19 +493,27 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # POSTGRESQL - Banco de dados Alice com pgvector
+  # POSTGRESQL - Banco de dados Alice com pgvector + pgBackRest
+  # ==========================================================================
+  # IMAGEM CUSTOMIZADA (31/12/2025): PostgreSQL + pgvector + pgBackRest
+  # PROBLEMA ANTERIOR: pgBackRest exige archive_command='pgbackrest archive-push %p'
+  # mas imagem pgvector/pgvector:pg16 não tem binário pgbackrest instalado.
+  # Erro: "archive_command 'cp %p /archive/%f' must contain pgbackrest"
+  # SOLUÇÃO: Imagem customizada com pgvector + pgbackrest instalados.
+  # 
   # Docs: PostgreSQL 16 recomenda 25% RAM para shared_buffers, shm_size > 64MB
   # Configuração: 3GB RAM (750MB shared_buffers), 1.5 CPU limit
-  # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
+  # SEGURANÇA: Imagem buildada no CI/CD com SHA256 reproducível
   # ===========================================================================
   postgres:
-    image: pgvector/pgvector:pg16
+    image: ${IMAGE_PREFIX}-postgres:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
     security_opt:
       - no-new-privileges:true
-    read_only: true
+    # NOTA: read_only: true removido porque pgbackrest precisa escrever em /var/spool/pgbackrest
+    # Segurança mantida via no-new-privileges e diretórios específicos
     tmpfs:
       - /tmp:mode=1777,size=64M
       - /var/run/postgresql:mode=1777,size=8M
@@ -520,24 +527,16 @@ services:
     # ==========================================================================
     # CORREÇÃO 31/12/2025: WAL Archiving para pgBackRest (Backup Enterprise)
     # ==========================================================================
-    # PROBLEMA: pgBackRest requer archive_mode=on para backup PITR
-    # Erro: "archive_mode must be enabled" causava falha no stanza-create
-    # 
-    # SOLUÇÃO: Configurar PostgreSQL via command com:
-    # - archive_mode=on: Habilita arquivamento de WAL
-    # - archive_command: Copia WALs para volume compartilhado
-    # - wal_level=replica: Nível mínimo para PITR (inclui info necessária)
-    # 
-    # ARQUITETURA:
-    # PostgreSQL escreve WAL → /archive (volume wal_archive)
-    # pgBackRest lê WAL de → /var/lib/pgbackrest/archive (mesmo volume)
+    # SOLUÇÃO ENTERPRISE: archive_command chama pgbackrest diretamente
+    # pgBackRest valida que archive_command contém "pgbackrest"
+    # Binário pgbackrest instalado na imagem customizada
     # ==========================================================================
     command:
       - "postgres"
       - "-c"
       - "archive_mode=on"
       - "-c"
-      - "archive_command=cp %p /archive/%f"
+      - "archive_command=pgbackrest --stanza=alice_prod archive-push %p"
       - "-c"
       - "wal_level=replica"
       - "-c"
@@ -549,8 +548,13 @@ services:
       # CORREÇÃO 31/12/2025: Init script garante extensão pgvector na primeira inicialização
       # Scripts em /docker-entrypoint-initdb.d/ executam apenas quando PGDATA está vazio
       - ./postgres-init:/docker-entrypoint-initdb.d:ro
-      # CORREÇÃO 31/12/2025: Volume para WAL archive (comunicação com pgBackRest)
-      - wal_archive:/archive
+      # CORREÇÃO 31/12/2025: Repositório pgBackRest compartilhado
+      # PostgreSQL escreve WALs, pgBackRest container lê para backup
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      # Logs pgBackRest (troubleshooting)
+      - /opt/alice/logs/pgbackrest:/var/log/pgbackrest:rw
+      # Spool directory para archive-async (pgbackrest-pg.conf configura archive-async=y)
+      - pgbackrest_spool:/var/spool/pgbackrest
     networks:
       - alice-network
     healthcheck:

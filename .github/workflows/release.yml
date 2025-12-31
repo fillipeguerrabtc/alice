@@ -284,6 +284,7 @@ jobs:
             "training:./apps/training-service/Dockerfile"
             "gpu-manager:./apps/gpu-manager-service/Dockerfile"
             "pgbackrest:./infra/backup/Dockerfile.pgbackrest"
+            "postgres:./infra/postgres/Dockerfile.postgres"
           )
           
           for entry in "${SERVICES[@]}"; do
@@ -296,6 +297,8 @@ jobs:
             BUILD_PATTERN=""
             if [ "$IMAGE" = "pgbackrest" ]; then
               BUILD_PATTERN="^infra/backup/"
+            elif [ "$IMAGE" = "postgres" ]; then
+              BUILD_PATTERN="^infra/postgres/"
             else
               # Rebuild do serviço se mudou seu diretório real, qualquer package compartilhado, lockfile ou scripts base
               # Observação: padrão conservador para garantir correção (enterprise).
@@ -355,7 +358,7 @@ jobs:
             fi
           done
           
-          echo "✅ All 10 microservices built!"
+          echo "✅ All 11 microservices built!"
 
       # Build de serviços GPU (pesados - ~5-10GB cada)
       - name: Build GPU Services

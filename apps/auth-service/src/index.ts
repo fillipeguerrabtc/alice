@@ -2445,8 +2445,18 @@ mountOIDCRoutes(app)
   .then(() => {
     logger.info('Rotas OIDC Provider montadas com sucesso');
   })
-  .catch((error) => {
-    logger.error({ error }, 'Falha ao montar rotas OIDC Provider');
+  .catch((error: unknown) => {
+    // CORREÇÃO 31/12/2025: Capturar erro completo com stack trace
+    // Erro anterior: error:{} (objeto vazio) - não capturava informações úteis
+    const errorDetails = error instanceof Error 
+      ? { 
+          name: error.name, 
+          message: error.message, 
+          stack: error.stack,
+          cause: error.cause
+        }
+      : { raw: String(error) };
+    logger.error({ error: errorDetails }, 'Falha ao montar rotas OIDC Provider');
   });
 
 // ============================================================================

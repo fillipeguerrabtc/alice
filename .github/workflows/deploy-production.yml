@@ -677,8 +677,9 @@ jobs:
             mkdir -p /opt/alice/data/grafana
             mkdir -p /opt/alice/data/loki
             mkdir -p /opt/alice/data/jaeger
-            # CORREÇÃO 31/12/2025: Volume para WAL archive (PostgreSQL → pgBackRest)
-            mkdir -p /opt/alice/data/wal-archive
+            # CORREÇÃO 31/12/2025: Diretórios pgBackRest (imagem customizada PostgreSQL)
+            mkdir -p /opt/alice/data/pgbackrest-spool
+            mkdir -p /opt/alice/logs/pgbackrest
 
             # Diretórios de logs
             mkdir -p /opt/alice/logs/erpnext
@@ -948,11 +949,67 @@ jobs:
             
             if [ "$ARCHIVE_MODE" = "on" ]; then
               echo "✅ archive_mode habilitado: $ARCHIVE_MODE"
-              
+
               # Verificar archive_command
               ARCHIVE_CMD=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
                 -t -c "SHOW archive_command;" 2>/dev/null | xargs || echo "")
               echo "   archive_command: $ARCHIVE_CMD"
+              
+              # =================================================================
+              # CORREÇÃO 31/12/2025: Inicializar stanza pgBackRest se necessário
+              # =================================================================
+              # pgBackRest requer stanza-create antes do primeiro backup
+              # Verifica se stanza já existe, senão cria
+              # =================================================================
+              echo "🔧 Verificando stanza pgBackRest..."
+              if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status.*ok"; then
+                echo "✅ Stanza alice_prod já existe e está OK"
+              else
+                echo "⚠️ Stanza não existe ou precisa ser criada/atualizada"
+                echo "   Executando stanza-create..."
+                
+                # Tentar stanza-create com retry
+                STANZA_MAX_RETRIES=5
+                STANZA_RETRY_COUNT=0
+                STANZA_DELAY=5
+                
+                while [ $STANZA_RETRY_COUNT -lt $STANZA_MAX_RETRIES ]; do
+                  # Primeiro tentar stanza-upgrade (para repositório existente)
+                  if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-upgrade 2>/dev/null; then
+                    echo "✅ Stanza upgrade bem-sucedido"
+                    break
+                  fi
+                  
+                  # Se upgrade falhar, tentar create (repositório novo)
+                  if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod stanza-create 2>/dev/null; then
+                    echo "✅ Stanza create bem-sucedido"
+                    break
+                  fi
+                  
+                  STANZA_RETRY_COUNT=$((STANZA_RETRY_COUNT + 1))
+                  if [ $STANZA_RETRY_COUNT -eq $STANZA_MAX_RETRIES ]; then
+                    echo "⚠️ AVISO: Não foi possível criar/atualizar stanza após ${STANZA_MAX_RETRIES} tentativas"
+                    echo "   Backups pgBackRest podem não funcionar corretamente"
+                    echo "   Logs do pgBackRest:"
+                    docker logs alice-pgbackrest --tail 20 2>/dev/null || true
+                    # Não falhar deploy por isso - serviços principais devem funcionar
+                    break
+                  fi
+                  
+                  echo "   Tentativa ${STANZA_RETRY_COUNT}/${STANZA_MAX_RETRIES} falhou, aguardando ${STANZA_DELAY}s..."
+                  sleep $STANZA_DELAY
+                done
+                
+                # Verificar check após create/upgrade
+                echo "   Executando pgbackrest check..."
+                if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod check 2>/dev/null; then
+                  echo "✅ pgBackRest check passou - backup PITR está operacional"
+                else
+                  echo "⚠️ AVISO: pgBackRest check falhou"
+                  echo "   Backup PITR pode não estar funcionando corretamente"
+                  docker logs alice-pgbackrest --tail 30 2>/dev/null || true
+                fi
+              fi
             else
               echo "⚠️ AVISO: archive_mode não está habilitado (status: $ARCHIVE_MODE)"
               echo "   pgBackRest pode não funcionar corretamente para backup PITR"
@@ -1575,8 +1632,9 @@ jobs:
             mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
             mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
-            # CORREÇÃO 31/12/2025: Volume para WAL archive (PostgreSQL → pgBackRest)
-            mkdir -p /opt/alice/data/wal-archive
+            # CORREÇÃO 31/12/2025: Diretórios pgBackRest (imagem customizada PostgreSQL)
+            mkdir -p /opt/alice/data/pgbackrest-spool
+            mkdir -p /opt/alice/logs/pgbackrest
             mkdir -p /opt/alice/logs/{erpnext,clickhouse}
             mkdir -p /opt/alice/{uploads,backups/manifests}
             mkdir -p /opt/alice/secrets/alertmanager
