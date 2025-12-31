@@ -182,6 +182,41 @@ fi
 echo "✅ ERPNext 15: Administrator (username fixo, senha 8+ chars)"
 echo "✅ Todas as credenciais admin validadas com sucesso"
 
+# =============================================================================
+# SSO OAUTH CLIENTS - SECRETS PRÉ-DEFINIDOS (31/12/2025)
+# =============================================================================
+# Deploy 100% automatizado - secrets definidos no GitHub, não gerados em runtime
+# Isso elimina passos manuais pós-deploy para configurar SSO
+# =============================================================================
+echo ""
+echo "🔐 Validando OAuth/OIDC Secrets (SSO Automatizado)..."
+
+GRAFANA_OAUTH_CLIENT_SECRET="${GRAFANA_OAUTH_CLIENT_SECRET:-}"
+if [ -z "${GRAFANA_OAUTH_CLIENT_SECRET}" ]; then
+  echo "::error::GRAFANA_OAUTH_CLIENT_SECRET não definido. Configure o secret no GitHub." >&2
+  echo "   Para gerar: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'" >&2
+  exit 1
+fi
+
+ERPNEXT_OAUTH_CLIENT_SECRET="${ERPNEXT_OAUTH_CLIENT_SECRET:-}"
+if [ -z "${ERPNEXT_OAUTH_CLIENT_SECRET}" ]; then
+  echo "::error::ERPNEXT_OAUTH_CLIENT_SECRET não definido. Configure o secret no GitHub." >&2
+  echo "   Para gerar: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'" >&2
+  exit 1
+fi
+
+# OIDC Cookie Keys (opcional - default seguro se não definido)
+OIDC_COOKIE_KEYS="${OIDC_COOKIE_KEYS:-}"
+if [ -z "${OIDC_COOKIE_KEYS}" ]; then
+  # Gerar keys default seguras baseadas em SESSION_SECRET
+  OIDC_COOKIE_KEYS="alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c1-16),alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c17-32)"
+  echo "⚠️  OIDC_COOKIE_KEYS não definido, usando derivado de SESSION_SECRET"
+fi
+
+echo "✅ GRAFANA_OAUTH_CLIENT_SECRET validado (grafana-sso)"
+echo "✅ ERPNEXT_OAUTH_CLIENT_SECRET validado (erpnext-sso)"
+echo "✅ OAuth/OIDC Secrets validados para SSO automatizado"
+
 QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
 if [ -z "${QDRANT_API_KEY}" ]; then
   echo "::error::QDRANT_API_KEY não definido. Configure o secret QDRANT_API_KEY no repositório (necessário para alice-qdrant)." >&2
@@ -560,9 +595,18 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'GF_SECURITY_ADMIN_USER=%s\n' "${GRAFANA_ADMIN_USER}"
   printf 'GF_SECURITY_ADMIN_PASSWORD=%s\n' "${GRAFANA_ADMIN_PASSWORD}"
   printf '\n'
-  printf '# Admin centralizado\n'
+  printf '# Admin centralizado (Alice Auth Service)\n'
   printf 'ADMIN_USER=%s\n' "${ADMIN_USER}"
   printf 'ADMIN_PWD=%s\n' "${ADMIN_PWD}"
+  printf '\n'
+  printf '# SSO OAuth/OIDC (Deploy 100%% Automatizado - 31/12/2025)\n'
+  printf '# Client secrets pré-definidos para Grafana e ERPNext SSO\n'
+  printf 'GRAFANA_OAUTH_CLIENT_SECRET=%s\n' "${GRAFANA_OAUTH_CLIENT_SECRET}"
+  printf 'ERPNEXT_OAUTH_CLIENT_SECRET=%s\n' "${ERPNEXT_OAUTH_CLIENT_SECRET}"
+  printf 'OIDC_COOKIE_KEYS=%s\n' "${OIDC_COOKIE_KEYS}"
+  printf 'OIDC_ISSUER=https://yesyoudeserve.duckdns.org\n'
+  printf 'GRAFANA_URL=https://observability.yesyoudeserve.duckdns.org\n'
+  printf 'ERPNEXT_URL=https://erp.yesyoudeserve.duckdns.org\n'
   printf '\n'
   printf '# Langfuse\n'
   printf 'LANGFUSE_SECRET_KEY=%s\n' "${LANGFUSE_SECRET_KEY:-}"

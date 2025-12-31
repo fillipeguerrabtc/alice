@@ -329,6 +329,16 @@ jobs:
           GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           ERPNEXT_ADMIN_PASSWORD_SECRET: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}
+          # =============================================================
+          # SSO OAUTH/OIDC - DEPLOY 100% AUTOMATIZADO (31/12/2025)
+          # =============================================================
+          # Secrets pré-definidos para SSO Grafana/ERPNext via Alice IdP
+          # Elimina passos manuais pós-deploy
+          # Gerar: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
+          # =============================================================
+          GRAFANA_OAUTH_CLIENT_SECRET: ${{ secrets.GRAFANA_OAUTH_CLIENT_SECRET }}
+          ERPNEXT_OAUTH_CLIENT_SECRET: ${{ secrets.ERPNEXT_OAUTH_CLIENT_SECRET }}
+          OIDC_COOKIE_KEYS: ${{ secrets.OIDC_COOKIE_KEYS }}
           STRIPE_WEBHOOK_BASE_URL_SECRET: ${{ secrets.STRIPE_WEBHOOK_BASE_URL }}
           WISE_WEBHOOK_SECRET_SECRET: ${{ secrets.WISE_WEBHOOK_SECRET }}
           WISE_SANDBOX_SECRET: ${{ secrets.WISE_SANDBOX }}

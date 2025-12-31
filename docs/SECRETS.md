@@ -101,11 +101,29 @@ Estes são necessários para o deploy funcionar:
 >
 > | Sistema | Username Admin | Pode Mudar? | Secret da Senha |
 > |---------|---------------|-------------|-----------------|
+> | **Alice Auth** | Email obrigatório (ex: admin@dominio.com) | ✅ Sim | `ADMIN_PWD` (mín. 8 chars) |
 > | **Grafana 12** | Customizável (default: `admin`) | ✅ Sim | `GRAFANA_ADMIN_PASSWORD` |
 > | **ERPNext 15** | `Administrator` (fixo) | ❌ Não | `ERPNEXT_ADMIN_PASSWORD` |
-> | **Alice Auth** | Derivado de GRAFANA_ADMIN_USER | ✅ Sim | Derivado de GRAFANA_ADMIN_PASSWORD |
 >
-> **Nota:** `ADMIN_USER` e `ADMIN_PWD` são **opcionais** - se não definidos, são derivados de `GRAFANA_ADMIN_*`.
+> **Nota:** Todos os 3 sistemas são **OBRIGATÓRIOS** e **INDEPENDENTES**. Não existe fallback entre sistemas.
+
+### FASE 1.5: SSO OAuth (Deploy 100% Automatizado - 31/12/2025)
+
+Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
+
+| Secret | Descrição | Status |
+|--------|-----------|--------|
+| `GRAFANA_OAUTH_CLIENT_SECRET` | Secret OAuth para grafana-sso | ✅ **CONFIGURADO** |
+| `ERPNEXT_OAUTH_CLIENT_SECRET` | Secret OAuth para erpnext-sso | ✅ **CONFIGURADO** |
+| `OIDC_COOKIE_KEYS` | Chaves para cookies OIDC | ✅ **CONFIGURADO** |
+
+> **SSO 100% AUTOMATIZADO:**
+> - Os secrets acima são usados pelo seed-oidc.ts que roda automaticamente
+> - Grafana e ERPNext já vêm configurados para usar Alice como IdP
+> - Botão "Login com Alice Enterprise" aparece automaticamente
+> - Não é necessário nenhum passo manual pós-deploy
+>
+> **Gerado em:** 31/12/2025 - Secrets criados e configurados no repositório
 
 ### FASE 2: Autenticação (mínimo 1 provider)
 

@@ -198,15 +198,49 @@ function getRequiredEnvVar(name: string): string {
   return value;
 }
 
-// Clientes OAuth para SSO (campos alinhados com schema)
-// SEGURANÇA: URLs devem vir de variáveis de ambiente (Regra 6 - proibido hardcoded)
-function getOAuthClients() {
+// =============================================================================
+// CLIENTES OAUTH SSO - ARQUITETURA 100% AUTOMATIZADA (31/12/2025)
+// =============================================================================
+// SECRETS PRÉ-DEFINIDOS: Em vez de gerar client_secret dinamicamente,
+// usamos secrets pré-definidos no GitHub. Isso permite:
+// 1. Deploy 100% automatizado sem passos manuais pós-deploy
+// 2. Grafana/ERPNext já têm os secrets configurados antes do primeiro acesso
+// 3. Seed é idempotente - pode rodar múltiplas vezes sem problemas
+//
+// SECRETS NECESSÁRIOS NO GITHUB:
+// - GRAFANA_OAUTH_CLIENT_SECRET: Secret pré-gerado para grafana-sso
+// - ERPNEXT_OAUTH_CLIENT_SECRET: Secret pré-gerado para erpnext-sso
+//
+// COMO GERAR: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
+// =============================================================================
+
+interface OAuthClientConfig {
+  clientId: string;
+  clientSecret: string; // Agora vem do ambiente, não é gerado
+  nome: string;
+  descricao: string;
+  redirectUris: string[];
+  grantTypes: string[];
+  scopes: string[];
+  tokenEndpointAuthMethod: string;
+  accessTokenTtl: number;
+  refreshTokenTtl: number;
+  autoConsent: boolean;
+  ativo: boolean;
+}
+
+function getOAuthClients(): OAuthClientConfig[] {
   const grafanaUrl = getRequiredEnvVar('GRAFANA_URL');
   const erpnextUrl = getRequiredEnvVar('ERPNEXT_URL');
+  
+  // SECRETS PRÉ-DEFINIDOS: Obrigatórios para deploy automatizado
+  const grafanaClientSecret = getRequiredEnvVar('GRAFANA_OAUTH_CLIENT_SECRET');
+  const erpnextClientSecret = getRequiredEnvVar('ERPNEXT_OAUTH_CLIENT_SECRET');
   
   return [
     {
       clientId: "grafana-sso",
+      clientSecret: grafanaClientSecret,
       nome: "Grafana OSS",
       descricao: "Dashboard de observabilidade - SSO via Alice IdP",
       redirectUris: [`${grafanaUrl}/login/generic_oauth`],
@@ -220,6 +254,7 @@ function getOAuthClients() {
     },
     {
       clientId: "erpnext-sso",
+      clientSecret: erpnextClientSecret,
       nome: "ERPNext CRM/ERP",
       descricao: "Sistema de gestão empresarial - SSO via Alice IdP",
       redirectUris: [`${erpnextUrl}/api/method/frappe.integrations.oauth2.login_via_oauth2`],
@@ -234,10 +269,9 @@ function getOAuthClients() {
   ];
 }
 
-// Função para gerar client_secret seguro
-function generateClientSecret(): string {
-  return randomBytes(32).toString("base64url");
-}
+// REMOVIDO: generateClientSecret() - agora usamos secrets pré-definidos
+// Secrets são gerados uma vez e configurados no GitHub
+// Comando para gerar: openssl rand -base64 32 | tr -d '=' | tr '+/' '-_'
 
 // Função para gerar par de chaves RS256 (JWKS)
 async function generateJwksPair(): Promise<{
@@ -331,30 +365,23 @@ async function seedRoleModules() {
   logger.info("Seed de permissões role→módulo concluído");
 }
 
-// SEGURANÇA: Salvar secrets em arquivo seguro em vez de imprimir em stdout (Regra 6)
-async function saveSecretsToFile(secrets: { clientId: string; clientSecret: string }[]): Promise<string> {
-  const fs = await import('fs/promises');
-  const path = await import('path');
-  const os = await import('os');
-  
-  const secretsDir = path.join(os.tmpdir(), 'alice-secrets');
-  await fs.mkdir(secretsDir, { recursive: true });
-  
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const secretsFile = path.join(secretsDir, `oauth-secrets-${timestamp}.txt`);
-  
-  const content = secrets.map(s => `CLIENT_ID=${s.clientId}\nCLIENT_SECRET=${s.clientSecret}\n`).join('\n');
-  
-  await fs.writeFile(secretsFile, content, { mode: 0o600 });
-  
-  return secretsFile;
-}
+// =============================================================================
+// SEED OAUTH CLIENTS - IDEMPOTENTE COM SECRETS PRÉ-DEFINIDOS (31/12/2025)
+// =============================================================================
+// Comportamento:
+// - Se cliente NÃO existe: Cria com secret do ambiente
+// - Se cliente JÁ existe: Atualiza secret e configurações (idempotente)
+//
+// Isso garante que:
+// 1. Primeiro deploy: Cria clientes com secrets corretos
+// 2. Deploys subsequentes: Mantém secrets atualizados se mudarem
+// 3. SSO funciona automaticamente sem passos manuais
+// =============================================================================
 
 async function seedOAuthClients() {
-  logger.info("Iniciando seed de clientes OAuth...");
+  logger.info("Iniciando seed de clientes OAuth (secrets pré-definidos)...");
   
   const clients = getOAuthClients();
-  const createdSecrets: { clientId: string; clientSecret: string }[] = [];
 
   for (const client of clients) {
     const existing = await db
@@ -364,11 +391,10 @@ async function seedOAuthClients() {
       .limit(1);
 
     if (existing.length === 0) {
-      const clientSecret = generateClientSecret();
-      
+      // CRIAR: Cliente não existe, criar com secret do ambiente
       await db.insert(oauthClients).values({
         clientId: client.clientId,
-        clientSecret,
+        clientSecret: client.clientSecret,
         nome: client.nome,
         descricao: client.descricao,
         redirectUris: client.redirectUris,
@@ -381,26 +407,38 @@ async function seedOAuthClients() {
         ativo: client.ativo,
       });
 
-      createdSecrets.push({ clientId: client.clientId, clientSecret });
-      
       // SEGURANÇA: Logar apenas prefixo do secret (Regra 6)
       logger.info(
-        { clientId: client.clientId, secretPrefix: clientSecret.substring(0, 8) + "..." },
-        "Cliente OAuth criado"
+        { clientId: client.clientId, secretPrefix: client.clientSecret.substring(0, 8) + "..." },
+        "Cliente OAuth criado com secret pré-definido"
       );
     } else {
-      logger.info({ clientId: client.clientId }, "Cliente OAuth já existe, pulando");
+      // ATUALIZAR: Cliente existe, atualizar secret e configurações (idempotente)
+      await db.update(oauthClients)
+        .set({
+          clientSecret: client.clientSecret,
+          nome: client.nome,
+          descricao: client.descricao,
+          redirectUris: client.redirectUris,
+          grantTypes: client.grantTypes,
+          scopes: client.scopes,
+          tokenEndpointAuthMethod: client.tokenEndpointAuthMethod,
+          accessTokenTtl: client.accessTokenTtl,
+          refreshTokenTtl: client.refreshTokenTtl,
+          autoConsent: client.autoConsent,
+          ativo: client.ativo,
+          atualizadoEm: new Date(),
+        })
+        .where(eq(oauthClients.clientId, client.clientId));
+
+      logger.info(
+        { clientId: client.clientId, secretPrefix: client.clientSecret.substring(0, 8) + "..." },
+        "Cliente OAuth atualizado com secret pré-definido"
+      );
     }
   }
 
-  // SEGURANÇA: Salvar secrets em arquivo seguro em vez de stdout
-  if (createdSecrets.length > 0) {
-    const secretsFile = await saveSecretsToFile(createdSecrets);
-    logger.info({ secretsFile, count: createdSecrets.length }, 
-      "Secrets OAuth salvos em arquivo seguro (chmod 600). Copie e delete o arquivo após uso.");
-  }
-
-  logger.info("Seed de clientes OAuth concluído");
+  logger.info("Seed de clientes OAuth concluído (100% automatizado)");
 }
 
 async function seedJwks() {

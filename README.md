@@ -213,7 +213,19 @@ A plataforma possui **3 sistemas independentes** que requerem credenciais de adm
 | **Grafana 12** | `GRAFANA_ADMIN_USER` (qualquer string) | `GRAFANA_ADMIN_PASSWORD` | Username customizável, senha recomendada 8+ chars |
 | **ERPNext 15** | `Administrator` (fixo) | `ERPNEXT_ADMIN_PASSWORD` | Username não pode mudar (Frappe Framework), senha mín. 8 chars |
 
-**Importante:** Cada sistema tem seu próprio banco de usuários. Alice Auth Service pode atuar como IdP central via OAuth/OIDC/SAML, mas cada sistema ainda precisa de admin local para bootstrap e fallback.
+### SSO 100% Automatizado (31/12/2025)
+
+O deploy configura SSO automaticamente - **não é necessário nenhum passo manual**:
+
+| Secret Pré-Definido | Propósito |
+|---------------------|-----------|
+| `GRAFANA_OAUTH_CLIENT_SECRET` | OAuth para Grafana → Alice IdP |
+| `ERPNEXT_OAUTH_CLIENT_SECRET` | OAuth para ERPNext → Alice IdP |
+
+**Fluxo pós-deploy:**
+1. ✅ Grafana exibe botão "Login com Alice Enterprise" automaticamente
+2. ✅ ERPNext pode usar SSO via Alice (requer ativação no painel admin)
+3. ✅ Admins locais funcionam como fallback de emergência
 
 ### Variáveis de Ambiente
 
