@@ -657,6 +657,8 @@ jobs:
               "GRAFANA_OAUTH_CLIENT_SECRET"
               "ERPNEXT_OAUTH_CLIENT_SECRET"
               "OIDC_COOKIE_KEYS"
+              # CORREÇÃO 31/12/2025: pgBackRest encryption (repositório criptografado AES-256-CBC)
+              "BACKUP_CIPHER_PASS"
             )
             for key in "${REQUIRED_KEYS[@]}"; do
               if ! grep -q "^${key}=" "$ENV_FILE"; then

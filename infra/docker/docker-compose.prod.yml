@@ -524,6 +524,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-alice_prod}
       # PGDATA padrão do PostgreSQL: /var/lib/postgresql/data (não usar subdiretório /pgdata)
       PGDATA: /var/lib/postgresql/data
+      # CORREÇÃO 31/12/2025: Criptografia pgBackRest - OBRIGATÓRIO para archive-push
+      # Container pgbackrest cria repositório com AES-256-CBC criptografado
+      # Sem essas variáveis, archive_command falha com "repo is encrypted but cipher not configured"
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
     # ==========================================================================
     # CORREÇÃO 31/12/2025: WAL Archiving para pgBackRest (Backup Enterprise)
     # ==========================================================================
