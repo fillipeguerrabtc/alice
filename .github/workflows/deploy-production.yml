@@ -16,13 +16,6 @@
 #   5. Rollback automático em caso de falha
 #   6. Registrar deploy bem-sucedido
 #
-# VERSIONAMENTO AUTOMÁTICO (30/12/2025):
-# - Se version fornecida: valida formato e usa
-# - Se version vazia: obtém automaticamente da tag mais recente (útil quando
-#   disparado pelo Release workflow que já calculou a versão)
-# - Garante que imagens Docker existem no GHCR antes de fazer deploy
-# - Cache e tags já gerenciados pelo Release workflow (não faz rebuild aqui)
-#
 # OTIMIZAÇÃO CRÍTICA (27/12/2025):
 # - REMOVIDO: code-quality (CI já validou código)
 # - REMOVIDO: security-scan no código (CI já escaneou)
@@ -40,20 +33,18 @@
 #   - SSH keys para Hetzner (padrão da indústria - OIDC não suportado por VPS)
 #
 # Author: Fillipe Guerra
-# Data: 30/12/2025
+# Data: 27/12/2025
 # =============================================================================
 
 name: Deploy to Production (Hetzner Cloud)
 
 on:
-  # ENTERPRISE: Deploy APENAS via workflow_dispatch (chamado pelo Release workflow)
-  # NÃO usar push/tags pois GitHub registra "runs" fantasmas em push de branch
   workflow_dispatch:
     inputs:
       version:
-        description: 'Versão para deploy (ex: v1.0.0). Se vazio, usa versão da tag do release workflow'
+        description: 'Versão para deploy (ex: v1.0.0)'
         type: string
-        required: false
+        required: true
       services:
         description: 'Serviços para deploy (all, alice-only, erpnext-only)'
         type: string
@@ -84,19 +75,16 @@ jobs:
   # ===========================================================================
   # Job 1: Validação de Disparo e Verificação de Imagens
   # OTIMIZADO: Verifica se imagens existem no GHCR (já buildadas pelo Release)
-  # PROTEÇÃO: Só executa via workflow_dispatch (ignora push acidental)
   # ===========================================================================
   validate-and-prepare:
     name: Validate & Prepare
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: read
     outputs:
-      image_tag: ${{ steps.resolve-version.outputs.image_tag }}
-      tag_commit: ${{ steps.resolve-version.outputs.tag_commit }}
+      image_tag: ${{ steps.validate.outputs.image_tag }}
       images_exist: ${{ steps.check-images.outputs.exist }}
       # Versões dos componentes (buscadas do arquivo de configuração)
       pgbackrest_version: ${{ steps.versions.outputs.pgbackrest_version }}
@@ -117,89 +105,32 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          fetch-depth: 0
+          ref: ${{ inputs.version }}
 
-      # =======================================================================
-      # RESOLUÇÃO DE VERSÃO (30/12/2025)
-      # Se version fornecida: valida e usa
-      # Se version vazia: tenta obter da tag mais recente (release automático)
-      # =======================================================================
-      - name: Resolver versão para deploy
-        id: resolve-version
+      - name: Validar parâmetros
+        id: validate
         run: |
-          set -e
-          
-          # ENTERPRISE: Deploy apenas via workflow_dispatch (chamado pelo Release workflow)
-          INPUT_VERSION="${{ inputs.version }}"
-          TRIGGERED_BY="${{ inputs.triggered_by }}"
+          VERSION="${{ inputs.version }}"
           
           echo "=============================================="
           echo "VALIDANDO DEPLOY"
           echo "=============================================="
-          echo "📋 Versão fornecida: ${INPUT_VERSION:-'(não informado)'}"
+          echo "📋 Versão: ${VERSION:-'(não informado)'}"
           echo "📋 Serviços: ${{ inputs.services }}"
-          echo "📋 Origem: ${TRIGGERED_BY:-'manual'}"
+          echo "📋 Origem: ${{ inputs.triggered_by }}"
           
-          # Se versão fornecida, validar formato
-          if [ -n "$INPUT_VERSION" ] && [ "$INPUT_VERSION" != "latest" ]; then
-            if ! echo "$INPUT_VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-              echo "❌ ERRO: Formato de versão inválido: $INPUT_VERSION"
-              echo "Formato esperado: vX.Y.Z ou vX.Y.Z-prerelease"
-              exit 1
-            fi
-            RESOLVED_VERSION="$INPUT_VERSION"
-            echo "✅ Versão fornecida validada: $RESOLVED_VERSION"
-          else
-            # Versão não fornecida: tentar obter da tag mais recente
-            echo "🔄 Versão não fornecida - obtendo tag mais recente..."
-            
-            # Buscar última tag semântica
-            LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-            
-            if [ -z "$LAST_TAG" ]; then
-              echo "❌ ERRO: Nenhuma tag encontrada no repositório!"
-              echo "Execute o Release workflow primeiro ou forneça uma versão manualmente."
-              exit 1
-            fi
-            
-            # Validar que a tag é semântica
-            if ! echo "$LAST_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-              echo "❌ ERRO: Tag mais recente não é semântica: $LAST_TAG"
-              echo "Formato esperado: vX.Y.Z ou vX.Y.Z-prerelease"
-              exit 1
-            fi
-            
-            RESOLVED_VERSION="$LAST_TAG"
-            echo "✅ Versão obtida da tag mais recente: $RESOLVED_VERSION"
+          if [ -z "${VERSION}" ] || [ "${VERSION}" = "latest" ]; then
+            echo "❌ ERRO: Parâmetro 'version' é OBRIGATÓRIO!"
+            exit 1
           fi
           
-          # Verificar se a tag existe e aponta para um commit válido
-          if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
-            TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
-            echo "✅ Tag $RESOLVED_VERSION aponta para commit: $TAG_COMMIT"
-          else
-            echo "⚠️ AVISO: Tag $RESOLVED_VERSION não encontrada localmente"
-            echo "Fazendo fetch de tags remotas..."
-            git fetch --tags origin || true
-            
-            if git rev-parse "$RESOLVED_VERSION" >/dev/null 2>&1; then
-              TAG_COMMIT=$(git rev-parse "$RESOLVED_VERSION")
-              echo "✅ Tag $RESOLVED_VERSION encontrada após fetch: $TAG_COMMIT"
-            else
-              echo "❌ ERRO: Tag $RESOLVED_VERSION não existe no repositório!"
-              exit 1
-            fi
+          if ! echo "${VERSION}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "❌ ERRO: Formato de versão inválido: ${VERSION}"
+            exit 1
           fi
           
-          echo "image_tag=$RESOLVED_VERSION" >> $GITHUB_OUTPUT
-          echo "tag_commit=$TAG_COMMIT" >> $GITHUB_OUTPUT
-          echo "✅ Versão resolvida: $RESOLVED_VERSION"
-          
-      - name: Checkout código na versão correta
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
-        with:
-          ref: ${{ steps.resolve-version.outputs.tag_commit }}
-          fetch-depth: 0
+          echo "image_tag=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Validação OK: $VERSION"
 
       - name: Login no GHCR
         uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
@@ -211,7 +142,7 @@ jobs:
       - name: Verificar se imagens existem no GHCR
         id: check-images
         run: |
-          VERSION="${{ steps.resolve-version.outputs.image_tag }}"
+          VERSION="${{ steps.validate.outputs.image_tag }}"
           echo "🔍 Verificando imagens no GHCR para versão $VERSION..."
           
           # Serviços críticos que DEVEM existir (buildados pelo Release)
@@ -356,7 +287,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ needs.validate-and-prepare.outputs.tag_commit }}
+          ref: ${{ inputs.version }}
 
       - name: Criar arquivo .env.prod
         env:
@@ -369,8 +300,7 @@ jobs:
           SESSION_SECRET_SECRET: ${{ secrets.SESSION_SECRET }}
           INTERNAL_API_SECRET_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
           SEARXNG_SECRET_KEY_SECRET: ${{ secrets.SEARXNG_SECRET_KEY }}
-          GMAIL_USER_SECRET: ${{ secrets.GMAIL_USER }}
-          GMAIL_APP_PASSWORD_SECRET: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           CLICKHOUSE_PASSWORD_SECRET: ${{ secrets.CLICKHOUSE_PASSWORD }}
           CLICKHOUSE_USER_SECRET_VAL: ${{ secrets.CLICKHOUSE_USER }}
           REDIS_CACHE_PASSWORD_SECRET: ${{ secrets.REDIS_CACHE_PASSWORD }}
@@ -493,7 +423,7 @@ jobs:
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
           DEPLOY_SERVICES: ${{ inputs.services }}
-          DEPLOY_VERSION: ${{ needs.validate-and-prepare.outputs.image_tag }}
+          DEPLOY_VERSION: ${{ inputs.version }}
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -689,9 +619,8 @@ jobs:
               "LANGFUSE_DB_PASSWORD"
               "LANGFUSE_DB_NAME"
               "CLICKHOUSE_USER"
-              # Alertmanager (Gmail SMTP)
-              "GMAIL_USER"
-              "GMAIL_APP_PASSWORD"
+              # Alertmanager (Resend)
+              "RESEND_API_KEY"
             )
             for key in "${REQUIRED_KEYS[@]}"; do
               if ! grep -q "^${key}=" "$ENV_FILE"; then
@@ -776,31 +705,30 @@ jobs:
               echo "⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
             fi
             
-            # Extrair Gmail App Password para Alertmanager SMTP
-            # MIGRAÇÃO 30/12/2025: De Resend para Gmail SMTP
-            # - Host: smtp.gmail.com:587
-            # - Username: GMAIL_USER (email Gmail completo)
-            # - Password: GMAIL_APP_PASSWORD (16 caracteres)
-            # - Sender: GMAIL_USER (mesmo email)
-            # Ref: https://support.google.com/accounts/answer/185833
+            # Extrair API Key do Resend para Alertmanager SMTP
+            # CORREÇÃO 29/12/2025: Resend usa API Key como senha SMTP (integração simplificada)
+            # - Host: smtp.resend.com:587
+            # - Username: resend (fixo)
+            # - Password: RESEND_API_KEY (do GitHub Secrets)
+            # - Sender: onboarding@resend.dev (não requer domínio verificado)
             # 
             # Alertmanager (prom/alertmanager) roda como nobody:nogroup (65534:65534)
             # O arquivo precisa ser legível pelo usuário nobody
-            GMAIL_PASS=$(grep '^GMAIL_APP_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
-            if [ -n "$GMAIL_PASS" ]; then
+            RESEND_KEY=$(grep '^RESEND_API_KEY=' "$ENV_FILE" | cut -d'=' -f2- || true)
+            if [ -n "$RESEND_KEY" ]; then
               # Garantir que o diretório alertmanager tenha permissões corretas (755 = rwxr-xr-x)
               chmod 755 /opt/alice/secrets/alertmanager
               
-              # Criar o arquivo de secret com Gmail App Password
-              printf '%s' "$GMAIL_PASS" > /opt/alice/secrets/alertmanager/smtp_password
+              # Criar o arquivo de secret com a API Key do Resend
+              printf '%s' "$RESEND_KEY" > /opt/alice/secrets/alertmanager/smtp_password
               
               # Alertmanager roda como nobody (65534); usar chmod 644 (world-readable)
               chmod 644 /opt/alice/secrets/alertmanager/smtp_password
               chown 65534:65534 /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || true
               
-              echo "✅ Secret alertmanager/smtp_password criado com GMAIL_APP_PASSWORD (permissões: $(stat -c '%a' /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || echo 'N/A'))"
+              echo "✅ Secret alertmanager/smtp_password criado com RESEND_API_KEY (permissões: $(stat -c '%a' /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || echo 'N/A'))"
             else
-              echo "⚠️ GMAIL_APP_PASSWORD não encontrado no .env.prod - alertas por email desabilitados"
+              echo "⚠️ RESEND_API_KEY não encontrado no .env.prod - alertas por email desabilitados"
             fi
             
             # =================================================================
@@ -844,127 +772,7 @@ jobs:
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
             
             # =================================================================
-            # FASE 7: Iniciar PostgreSQL e Executar Migrations
-            # =================================================================
-            # CORREÇÃO CRÍTICA 30/12/2025: Migrations devem ser executadas ANTES
-            # de iniciar os serviços Alice que dependem do banco de dados.
-            # Sem as migrations: pgvector não é habilitado, tabelas não existem.
-            # Erros anteriores: "vector type not found in the database",
-            # "relation users does not exist", "relation oidc_jwks does not exist"
-            
-            echo "📥 Baixando imagens base (PostgreSQL, Redis)..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod pull postgres alice-redis
-            
-            echo "🐘 Iniciando PostgreSQL e Redis..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d postgres alice-redis
-            
-            echo "⏳ Aguardando PostgreSQL estar healthy (máximo 120s)..."
-            WAIT_SECONDS=0
-            MAX_WAIT=120
-            while [ $WAIT_SECONDS -lt $MAX_WAIT ]; do
-              PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "starting")
-              if [ "$PG_HEALTH" = "healthy" ]; then
-                echo "✅ PostgreSQL está healthy após ${WAIT_SECONDS}s"
-                break
-              fi
-              echo "   PostgreSQL status: $PG_HEALTH (aguardando...)"
-              sleep 5
-              WAIT_SECONDS=$((WAIT_SECONDS + 5))
-            done
-            
-            if [ "$PG_HEALTH" != "healthy" ]; then
-              echo "❌ ERRO: PostgreSQL não ficou healthy após ${MAX_WAIT}s"
-              docker logs --tail=100 alice-postgres || true
-              exit 1
-            fi
-            
-            echo ""
-            echo "📝 Executando migrations SQL..."
-            # Extrair credenciais do .env.prod
-            DB_USER=$(grep '^POSTGRES_USER=' .env.prod | cut -d'=' -f2- || echo "alice")
-            DB_NAME=$(grep '^POSTGRES_DB=' .env.prod | cut -d'=' -f2- || echo "alice_prod")
-            DB_PASS=$(grep '^POSTGRES_PASSWORD=' .env.prod | cut -d'=' -f2-)
-            
-            # =================================================================
-            # CORREÇÃO CRÍTICA 30/12/2025: Shell Injection Prevention
-            # =================================================================
-            # Bug: Se DB_PASS contiver aspas simples (ex: pass'word), o comando
-            # sh -c "PGPASSWORD='pass'word' psql..." quebra com shell injection.
-            # 
-            # Solução Enterprise: Criar arquivo temporário DENTRO do container
-            # com permissões 600 e usar PGPASSFILE (suportado pelo psql).
-            # Isso evita qualquer interpolação de shell com credenciais.
-            #
-            # Ref: https://www.postgresql.org/docs/16/libpq-pgpass.html
-            # Ref: CLAUDE.md linha 612 "Bug Fix Shell Injection"
-            # =================================================================
-            
-            # Criar arquivo .pgpass dentro do container (formato: host:port:database:user:password)
-            # O psql lê automaticamente de ~/.pgpass quando PGPASSFILE não está definido
-            # Usamos /tmp/.pgpass temporário e PGPASSFILE para controle explícito
-            #
-            # CORREÇÃO CRÍTICA 30/12/2025: Escape de caracteres especiais no .pgpass
-            # Ref: https://www.postgresql.org/docs/16/libpq-pgpass.html
-            # "If an entry needs to contain : or \, escape this character with \"
-            # - Backslash (\) deve ser escapado PRIMEIRO como \\
-            # - Colon (:) deve ser escapado como \:
-            # Sem escape, senhas como "pass\word" viram "password" (interpretação incorreta)
-            # e senhas com ":" quebram o parsing dos campos do .pgpass
-            
-            # Função de escape para .pgpass (backslash primeiro, depois colon)
-            escape_pgpass() {
-              local val="$1"
-              # Primeiro escapa backslash (\\ -> \\\\) para evitar double-escape
-              val="${val//\\/\\\\}"
-              # Depois escapa colon (: -> \:)
-              val="${val//:/\\:}"
-              printf '%s' "$val"
-            }
-            
-            # Escapar credenciais para formato .pgpass
-            DB_USER_ESCAPED=$(escape_pgpass "${DB_USER}")
-            DB_PASS_ESCAPED=$(escape_pgpass "${DB_PASS}")
-            
-            # Montar linha do .pgpass com credenciais escapadas
-            # Formato: hostname:port:database:username:password
-            # Usamos * para hostname, port e database (wildcard)
-            PGPASS_CONTENT="*:*:*:${DB_USER_ESCAPED}:${DB_PASS_ESCAPED}"
-            
-            # Criar arquivo dentro do container com permissões seguras
-            docker exec -i alice-postgres sh -c '
-              cat > /tmp/.pgpass_migration
-              chmod 600 /tmp/.pgpass_migration
-            ' << PGPASS_EOF
-${PGPASS_CONTENT}
-PGPASS_EOF
-            
-            # Executar cada migration SQL em ordem
-            MIGRATIONS_DIR="/opt/alice/app/migrations"
-            if [ -d "$MIGRATIONS_DIR" ]; then
-              for migration in $(ls -1 "$MIGRATIONS_DIR"/*.sql 2>/dev/null | sort); do
-                MIGRATION_NAME=$(basename "$migration")
-                echo "   Executando: $MIGRATION_NAME"
-                # Usar PGPASSFILE para autenticação segura (sem interpolação de shell)
-                if ! docker exec -i alice-postgres sh -c 'PGPASSFILE=/tmp/.pgpass_migration psql -U "$1" -d "$2" -v ON_ERROR_STOP=1' -- "${DB_USER}" "${DB_NAME}" < "$migration"; then
-                  echo "❌ ERRO: Migration $MIGRATION_NAME falhou"
-                  # Limpar arquivo de senha antes de sair
-                  docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
-                  exit 1
-                fi
-                echo "   ✅ $MIGRATION_NAME concluída"
-              done
-              
-              # Limpar arquivo de senha após todas as migrations
-              docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
-              echo "✅ Todas as migrations SQL executadas com sucesso"
-            else
-              # Limpar arquivo de senha
-              docker exec alice-postgres rm -f /tmp/.pgpass_migration 2>/dev/null || true
-              echo "⚠️ Diretório de migrations não encontrado: $MIGRATIONS_DIR"
-            fi
-            
-            # =================================================================
-            # FASE 8: Pull e Deploy (CORE SERVICES)
+            # FASE 7: Pull e Deploy (CORE SERVICES)
             # =================================================================
             # ENTERPRISE (27/12/2025): Deploy em duas etapas
             # 1. Serviços CORE (sem GPU) - sempre iniciados
@@ -981,53 +789,393 @@ PGPASS_EOF
               echo "❌ ERRO: docker compose up (core) falhou. Capturando diagnóstico..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
               echo ""
-              # ==========================================================================
-              # CORREÇÃO 30/12/2025: Capturar logs de TODOS os serviços críticos Alice
-              # Antes não capturava alice-auth, alice-chat, alice-training que são os que mais falham
-              # ==========================================================================
-              echo "🧾 Logs do alice-auth (últimas 300 linhas):"
-              docker logs --tail=300 alice-auth || true
-              echo ""
-              echo "🧾 Logs do alice-chat (últimas 300 linhas):"
-              docker logs --tail=300 alice-chat || true
-              echo ""
-              echo "🧾 Logs do alice-training (últimas 300 linhas):"
-              docker logs --tail=300 alice-training || true
-              echo ""
-              echo "🧾 Logs do alice-rag (últimas 300 linhas):"
-              docker logs --tail=300 alice-rag || true
-              echo ""
-              echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
-              docker logs --tail=200 alice-integrations || true
-              echo ""
-              echo "🧾 Logs do gpu-manager (últimas 300 linhas):"
-              docker logs --tail=300 alice-gpu-manager || true
+              echo "🧾 Logs do gpu-manager (últimas 400 linhas):"
+              docker logs --tail=400 alice-gpu-manager || true
               echo ""
               echo "🧾 Logs do Redis (últimas 200 linhas):"
               docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=200 alice-redis || true
               echo ""
-              echo "🧾 Logs do PostgreSQL (últimas 200 linhas):"
-              docker logs --tail=200 alice-postgres || true
+              echo "🧾 Logs do alertmanager (últimas 200 linhas):"
+              docker logs --tail=200 alice-alertmanager || true
               echo ""
-              echo "🧾 Logs do alertmanager (últimas 100 linhas):"
-              docker logs --tail=100 alice-alertmanager || true
+              echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
+              docker logs --tail=200 alice-pgbackrest || true
               echo ""
-              echo "🧾 Logs do pgbackrest (últimas 100 linhas):"
-              docker logs --tail=100 alice-pgbackrest || true
-              echo ""
-              echo "🧾 Logs do jaeger (últimas 100 linhas):"
-              docker logs --tail=100 jaeger || true
+              echo "🧾 Logs do jaeger (últimas 200 linhas):"
+              docker logs --tail=200 jaeger || true
               echo ""
               echo "🧾 Logs do langfuse (últimas 200 linhas):"
               docker logs --tail=200 langfuse || true
               echo ""
-              echo "🧾 Logs do langfuse-worker (últimas 100 linhas):"
-              docker logs --tail=100 langfuse-worker || true
+              # CORREÇÃO 29/12/2025: Langfuse v2 não usa worker separado
+              # Adicionar logs dos serviços Alice que estão falhando
+              echo "🧾 Logs do alice-auth (últimas 200 linhas):"
+              docker logs --tail=200 alice-auth || true
+              echo ""
+              echo "🧾 Logs do alice-chat (últimas 200 linhas):"
+              docker logs --tail=200 alice-chat || true
+              echo ""
+              echo "🧾 Logs do alice-training (últimas 200 linhas):"
+              docker logs --tail=200 alice-training || true
+              echo ""
+              echo "🧾 Logs do erpnext-create-site (últimas 200 linhas):"
+              docker logs --tail=200 erpnext-create-site || true
+              echo ""
+              echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
+              docker logs --tail=200 alice-integrations || true
               exit 1
             fi
             
             # Verificar status dos serviços core
             sleep 15
+            
+            # =================================================================
+            # CORREÇÃO 29/12/2025: Criar extensão pgvector no PostgreSQL
+            # =================================================================
+            # =================================================================
+            # VALIDAÇÃO CRÍTICA 29/12/2025: Verificar se database existe e tem tabelas
+            # =================================================================
+            # PROBLEMA: Se database não existe ou não tem tabelas, serviços Alice
+            # (auth, chat, rag, etc.) falham com queries SQL.
+            # 
+            # SOLUÇÃO: Validar ANTES de iniciar serviços dependentes:
+            # 1. Verificar se database existe
+            # 2. Verificar se tem tabelas (schema Drizzle ORM)
+            # 3. Se não tem tabelas, rodar drizzle-kit push
+            # =================================================================
+            echo ""
+            echo "🔍 Validando schema do banco de dados..."
+            
+            # Aguardar PostgreSQL estar completamente pronto
+            sleep 5
+            
+            # =================================================================
+            # CORREÇÃO CRÍTICA 29/12/2025: Extrair credenciais do .env.prod ANTES
+            # de usar em comandos de validação
+            # =================================================================
+            # PROBLEMA: Comandos de validação usavam ${POSTGRES_USER:-alice} e
+            # ${POSTGRES_DB:-alice_prod} que sempre usam defaults porque essas
+            # variáveis shell nunca são definidas. Se .env.prod contém credenciais
+            # não-padrão, validação consulta database errado, causando erro enganoso
+            #
+            # SOLUÇÃO: Extrair valores do .env.prod ANTES de usar em validações
+            # (mesmo padrão usado para DATABASE_URL)
+            # =================================================================
+            ENV_FILE="/opt/alice/app/infra/docker/.env.prod"
+            VALIDATION_PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
+            VALIDATION_PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
+            
+            # CORREÇÃO 29/12/2025: Usar credenciais extraídas na criação de extensão pgvector
+            # O script init.sql só executa na primeira inicialização (PGDATA vazio).
+            # Para bancos existentes, precisamos garantir que a extensão existe.
+            # pgvector é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim).
+            echo "🔌 Garantindo extensão pgvector no PostgreSQL..."
+            if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
+              echo "✅ Extensão pgvector pronta"
+            else
+              echo "⚠️ Falha ao criar extensão pgvector (PostgreSQL pode ainda estar iniciando)"
+            fi
+            
+            # Verificar se database existe
+            # CORREÇÃO CRÍTICA 29/12/2025: Adicionar flag -d postgres
+            # PROBLEMA: Sem -d, psql tenta conectar ao database com mesmo nome do usuário (ex: "alice")
+            # Esse database não existe, causando falha silenciosa (stderr redirecionado)
+            # DB_EXISTS fica vazio e script incorretamente reporta que database não existe
+            #
+            # SOLUÇÃO: Usar -d postgres (database padrão que sempre existe) para fazer query
+            # em pg_database. Isso é mais seguro e confiável que tentar conectar ao database
+            # que queremos verificar (que pode não existir ainda)
+            DB_EXISTS=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d postgres -t -c "SELECT 1 FROM pg_database WHERE datname = '${VALIDATION_PG_DB}';" 2>/dev/null | xargs || echo "0")
+            # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+            # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+            # mas sai com código 0, então || echo "0" nunca executa. DB_EXISTS fica como string vazia.
+            # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+            DB_EXISTS="${DB_EXISTS:-0}"
+            
+            if [ "$DB_EXISTS" != "1" ]; then
+              echo "❌ ERRO: Database ${VALIDATION_PG_DB} não existe!"
+              echo "   Ação necessária: PostgreSQL não criou o database automaticamente."
+              echo "   Verificar: POSTGRES_DB no .env.prod e docker-compose.prod.yml"
+              exit 1
+            fi
+            
+            echo "✅ Database ${VALIDATION_PG_DB} existe"
+            
+            # Verificar se tem tabelas (schema Drizzle ORM)
+            # Contar tabelas no schema 'public' (Drizzle cria tabelas lá)
+            TABLE_COUNT=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+            # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+            # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+            # mas sai com código 0, então || echo "0" nunca executa. TABLE_COUNT fica como string vazia.
+            # A comparação [ "$TABLE_COUNT" -eq "0" ] em string vazia produz erro bash ("integer expression expected")
+            # e retorna exit code 2, que o if trata como "false", fazendo script pular drizzle-kit push
+            # e concluir incorretamente que tabelas existem. Serviços podem iniciar sem schema necessário.
+            # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+            TABLE_COUNT="${TABLE_COUNT:-0}"
+            
+            if [ "$TABLE_COUNT" -eq "0" ]; then
+              echo "⚠️ AVISO: Database existe mas não há tabelas (schema vazio)"
+              echo "   Executando drizzle-kit push para criar schema base..."
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Executar drizzle-kit push ANTES
+              # de iniciar serviços Alice (Regra 6 - Enterprise-Grade)
+              # =================================================================
+              # PROBLEMA: Serviços Alice (auth, chat, rag, etc.) fazem queries SQL
+              # imediatamente ao iniciar. Se tabelas não existem, queries falham
+              # e containers ficam unhealthy.
+              #
+              # SOLUÇÃO: Executar drizzle-kit push em container temporário Node.js
+              # ANTES de iniciar serviços Alice. Isso cria todas as tabelas do schema
+              # Drizzle ORM (users, tenants, conversations, messages, etc.)
+              #
+              # NOTA: drizzle-kit push é idempotente - pode ser executado múltiplas vezes
+              # sem causar problemas (cria apenas tabelas que não existem)
+              # =================================================================
+              
+              # Construir DATABASE_URL com URL-encoding (RFC 3986)
+              # CORREÇÃO 23/12/2025: Suporta senhas com caracteres especiais
+              # CORREÇÃO CRÍTICA 29/12/2025: Extrair valores do .env.prod (não variáveis shell)
+              # PROBLEMA: POSTGRES_PASSWORD, POSTGRES_USER, POSTGRES_DB não são variáveis shell
+              # O .env.prod é usado apenas via docker compose --env-file, nunca é sourced
+              # PG_PASS ficava vazio, causando DATABASE_URL com senha vazia e falha de autenticação
+              #
+              # SOLUÇÃO: Extrair valores do .env.prod usando grep + cut (mesmo padrão usado
+              # em outras partes do script para LANGFUSE_DB_PASSWORD, RESEND_API_KEY, etc.)
+              # NOTA: VALIDATION_PG_USER e VALIDATION_PG_DB já foram extraídos acima (linhas 862-863)
+              # Reutilizar essas variáveis para consistência (mesmo arquivo, mesma extração)
+              PG_USER="${VALIDATION_PG_USER}"
+              PG_PASS=$(grep '^POSTGRES_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
+              PG_DB="${VALIDATION_PG_DB}"
+              
+              # Validação fail-fast: senha não pode estar vazia
+              if [ -z "$PG_PASS" ]; then
+                echo "❌ ERRO: POSTGRES_PASSWORD não encontrado ou vazio no .env.prod"
+                echo "   Ação necessária: Verificar se POSTGRES_PASSWORD está definido em $ENV_FILE"
+                exit 1
+              fi
+              
+              # Função urlencode (RFC 3986 compliant)
+              # CORREÇÃO 29/12/2025: Conversão de caractere para hex em dois passos
+              # PROBLEMA: printf -v o '%%%02X' "'$c" não funciona corretamente quando $c é variável expandida
+              # SOLUÇÃO: Primeiro obter código ASCII com printf -v ascii '%d' "'$c", depois converter para hex
+              # Ref: Bug fix documentado em CLAUDE.md (23/12/2025)
+              urlencode() {
+                local string="${1}"
+                local length="${#string}"
+                local i c ascii hex
+                local encoded=""
+                
+                for (( i=0; i<length; i++ )); do
+                  c="${string:i:1}"
+                  case "$c" in
+                    # CORREÇÃO 29/12/2025: Hífen movido para o final do padrão case
+                    # Hífen no início pode ser interpretado como range operator em bash
+                    [_.~a-zA-Z0-9-] ) encoded+="${c}" ;;
+                    * )
+                      # CORREÇÃO 29/12/2025: Conversão em dois passos (ASCII → hex)
+                      # Primeiro passo: obter código ASCII do caractere
+                      LC_ALL=C printf -v ascii '%d' "'$c"
+                      # Segundo passo: converter código ASCII para hex
+                      printf -v hex '%%%02X' "$ascii"
+                      encoded+="${hex}"
+                      ;;
+                  esac
+                done
+                echo "${encoded}"
+              }
+              
+              PG_USER_ENCODED=$(urlencode "$PG_USER")
+              PG_PASS_ENCODED=$(urlencode "$PG_PASS")
+              PG_DB_ENCODED=$(urlencode "$PG_DB")
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Hostname correto para container standalone
+              # =================================================================
+              # PROBLEMA: docker run cria container standalone fora do docker-compose
+              # Containers standalone só resolvem por container_name, não por service name
+              # Container PostgreSQL tem container_name: alice-postgres (não postgres)
+              #
+              # SOLUÇÃO: Usar alice-postgres como hostname no DATABASE_URL
+              # =================================================================
+              DATABASE_URL="postgresql://${PG_USER_ENCODED}:${PG_PASS_ENCODED}@alice-postgres:5432/${PG_DB_ENCODED}?sslmode=disable"
+              
+              echo "📦 Executando drizzle-kit push para criar schema base..."
+              
+              # =================================================================
+              # CORREÇÃO 29/12/2025: Executar drizzle-kit push em container temporário
+              # =================================================================
+              # PROBLEMA: Volume montado como :ro (read-only) impede pnpm install
+              # SOLUÇÃO: Copiar código para volume temporário rw ou usar bind mount rw
+              # =================================================================
+              
+              # Validar conexão PostgreSQL antes de executar drizzle-kit push
+              echo "   Validando conexão PostgreSQL..."
+              
+              # Verificar se container está healthy
+              PG_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-postgres 2>/dev/null || echo "none")
+              if [ "$PG_HEALTH" != "healthy" ] && [ "$PG_HEALTH" != "none" ]; then
+                echo "⚠️ AVISO: Container alice-postgres não está healthy (status: $PG_HEALTH)"
+                echo "   Aguardando healthcheck passar..."
+                sleep 10
+              fi
+              
+              # Validar conexão com retry
+              # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
+              MAX_RETRIES=12
+              RETRY_COUNT=0
+              while ! docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -c "SELECT 1;" >/dev/null 2>&1; do
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+                if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+                  echo "❌ ERRO: PostgreSQL não está acessível após ${MAX_RETRIES} tentativas"
+                  echo "   Ação necessária: Verificar se container alice-postgres está healthy"
+                  echo "   Status do container:"
+                  docker inspect --format='{{.State.Health.Status}}' alice-postgres || echo "   (não disponível)"
+                  exit 1
+                fi
+                echo "   PostgreSQL não está pronto, tentativa $RETRY_COUNT/$MAX_RETRIES..."
+                sleep 5
+              done
+              echo "   ✅ PostgreSQL está pronto e acessível"
+              
+              # Executar drizzle-kit push em container temporário Node.js
+              # Usa imagem oficial node:22-bookworm-slim (mesma base dos serviços Alice)
+              # CORREÇÃO 29/12/2025: Volume montado como ro (read-only) - pnpm install usa cache externo
+              echo "   Construindo DATABASE_URL e executando drizzle-kit push..."
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Copiar código para volume temporário rw
+              # =================================================================
+              # PROBLEMA: pnpm em modo isolated (padrão) cria node_modules em cada
+              # workspace package (packages/config/, packages/database/, etc.)
+              # Volume /app:ro (read-only) impede criação desses diretórios, causando
+              # erro EROFS: read-only file system durante pnpm install
+              #
+              # SOLUÇÃO: Copiar código completo para volume temporário rw antes de
+              # executar container. Isso permite que pnpm crie todos os node_modules
+              # necessários sem modificar código original
+              # =================================================================
+              echo "   Preparando ambiente temporário para drizzle-kit push..."
+              
+              # Limpar volumes temporários de execuções anteriores
+              rm -rf /tmp/drizzle-app /tmp/pnpm-store
+              mkdir -p /tmp/pnpm-store
+              
+              # Copiar código completo para volume temporário rw
+              # Usar cp -a para cópia recursiva (preserva permissões, mais portável que rsync)
+              # Excluir diretórios grandes desnecessários para economizar espaço e tempo
+              echo "   Copiando código para volume temporário..."
+              mkdir -p /tmp/drizzle-app
+              cp -a /opt/alice/app/. /tmp/drizzle-app/ 2>/dev/null || {
+                # Fallback: usar find + cp se cp -a falhar (edge cases de permissões)
+                (cd /opt/alice/app && find . -mindepth 1 -maxdepth 1 ! -name 'node_modules' ! -name '.git' ! -name 'dist' -exec cp -a {} /tmp/drizzle-app/ \;)
+              }
+              
+              # Remover diretórios grandes desnecessários para economizar espaço
+              rm -rf /tmp/drizzle-app/node_modules /tmp/drizzle-app/.git /tmp/drizzle-app/dist 2>/dev/null || true
+              
+              echo "   ✅ Código copiado para /tmp/drizzle-app (volume rw)"
+              
+              # =================================================================
+              # CORREÇÃO CRÍTICA 29/12/2025: Timeout wrapper de 300s (5 min)
+              # =================================================================
+              # PROBLEMA: drizzle-kit push pode hang indefinidamente se:
+              # - PostgreSQL não responde apesar de passar validação anterior
+              # - Schema Drizzle ORM é muito complexo (muitas tabelas)
+              # - Problemas de rede entre container e PostgreSQL
+              #
+              # SOLUÇÃO: Wrapper timeout de 300s (5 min) conforme padrão documentado em CLAUDE.md
+              # - Previne hangs indefinidos até timeout do GitHub Actions
+              # - Exit code 124 = timeout (tratado separadamente)
+              # - Exit code != 0 e != 124 = erro real (fail-fast)
+              # =================================================================
+              DRIZZLE_TIMEOUT=300
+              echo "   Executando drizzle-kit push com timeout de ${DRIZZLE_TIMEOUT}s (5 min)..."
+              
+              DRIZZLE_EXIT_CODE=0
+              TIMEOUT_EXIT_CODE=0
+              timeout ${DRIZZLE_TIMEOUT}s docker run --rm \
+                --network alice-network \
+                -e DATABASE_URL="${DATABASE_URL}" \
+                -e NPM_CONFIG_DANGEROUSLY_ALLOW_ALL_BUILDS=true \
+                -v /tmp/drizzle-app:/app:rw \
+                -v /tmp/pnpm-store:/root/.pnpm-store:rw \
+                -w /app \
+                node:22-bookworm-slim \
+                bash -c "
+                  set -euo pipefail
+                  cd /app
+                  npm install -g pnpm@10.26.2
+                  export PNPM_HOME=\"/root/.local/share/pnpm\"
+                  export PATH=\"\$PNPM_HOME:\$PATH\"
+                  pnpm config set store-dir /root/.pnpm-store
+                  pnpm install --frozen-lockfile --prefer-offline
+                  pnpm db:push
+                " > /tmp/drizzle-push.log 2>&1 || TIMEOUT_EXIT_CODE=$?
+              
+              # Capturar exit code do timeout (124 = timeout, outros = erro do comando)
+              DRIZZLE_EXIT_CODE=$TIMEOUT_EXIT_CODE
+              
+              # Exibir logs independente do resultado
+              echo "   Logs do drizzle-kit push:"
+              cat /tmp/drizzle-push.log || true
+              echo ""
+              
+              # Verificar se drizzle-kit push foi bem-sucedido
+              # CORREÇÃO 29/12/2025: Distinguir entre timeout (124) e outros erros
+              if [ "$DRIZZLE_EXIT_CODE" -eq 124 ]; then
+                echo "❌ ERRO: drizzle-kit push excedeu timeout de ${DRIZZLE_TIMEOUT}s (5 min)"
+                echo "   Ação necessária: Verificar logs acima e investigar causa do hang"
+                echo "   Possíveis causas:"
+                echo "   - PostgreSQL não está respondendo (apesar de passar validação anterior)"
+                echo "   - Schema Drizzle ORM muito complexo (muitas tabelas, demora > 5 min)"
+                echo "   - Problemas de rede entre container e PostgreSQL"
+                echo "   - Deadlock ou lock no PostgreSQL"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+                exit 1
+              elif [ "$DRIZZLE_EXIT_CODE" -ne 0 ]; then
+                echo "❌ ERRO: drizzle-kit push falhou (exit code: $DRIZZLE_EXIT_CODE)"
+                echo "   Ação necessária: Verificar logs acima e corrigir schema Drizzle ORM"
+                echo "   Possíveis causas:"
+                echo "   - DATABASE_URL malformada (verificar URL-encoding)"
+                echo "   - PostgreSQL não está pronto (aguardar mais tempo)"
+                echo "   - Schema Drizzle ORM tem erros de sintaxe"
+                echo "   - Permissões insuficientes no database"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+                exit 1
+              fi
+              
+              # Verificar novamente se tabelas foram criadas
+              # CORREÇÃO 29/12/2025: Usar credenciais extraídas do .env.prod (não defaults)
+              sleep 2
+              TABLE_COUNT_AFTER=$(docker exec alice-postgres psql -U "${PG_USER}" -d "${PG_DB}" -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | xargs || echo "0")
+              # CORREÇÃO CRÍTICA 29/12/2025: Tratamento explícito de string vazia
+              # PROBLEMA: Quando psql falha silenciosamente, xargs recebe input vazio, não produz output,
+              # mas sai com código 0, então || echo "0" nunca executa. TABLE_COUNT_AFTER fica como string vazia.
+              # A comparação [ "$TABLE_COUNT_AFTER" -eq "0" ] em string vazia produz erro bash.
+              # SOLUÇÃO: Usar ${VAR:-0} para garantir que string vazia vira "0"
+              TABLE_COUNT_AFTER="${TABLE_COUNT_AFTER:-0}"
+              
+              if [ "$TABLE_COUNT_AFTER" -eq "0" ]; then
+                echo "❌ ERRO: drizzle-kit push executou mas nenhuma tabela foi criada!"
+                echo "   Verificar: Schema Drizzle ORM em packages/shared/src/schema.ts"
+                # Limpar volume temporário antes de sair
+                rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+                exit 1
+              fi
+              
+              echo "✅ Schema criado: $TABLE_COUNT_AFTER tabelas criadas pelo drizzle-kit push"
+              
+              # Limpar volume temporário após sucesso (economiza espaço em disco)
+              echo "   Limpando volume temporário..."
+              rm -rf /tmp/drizzle-app /tmp/pnpm-store 2>/dev/null || true
+              echo "   ✅ Limpeza concluída"
+            else
+              echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
+            fi
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""
@@ -1056,7 +1204,7 @@ PGPASS_EOF
             fi
             
             # =================================================================
-            # FASE 9: Iniciar serviços GPU (OBRIGATÓRIO)
+            # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
@@ -1213,12 +1361,11 @@ PGPASS_EOF
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 10
     needs: [deploy, health-check]
-    # CORREÇÃO 31/12/2025: Rollback apenas via workflow_dispatch
     if: |
-      always() &&
-      github.event_name == 'workflow_dispatch' && (
+      always() && (
         needs.deploy.result == 'failure' ||
         needs.health-check.result == 'failure' ||
+        needs.health-check.result == 'skipped' ||
         needs.health-check.outputs.health_status == 'failed'
       )
     
@@ -1268,44 +1415,75 @@ PGPASS_EOF
             done
             
             if [ -z "$PREVIOUS_SHA" ]; then
-              echo "⚠️ Nenhuma versão anterior encontrada"
-              echo "🧹 Limpando ambiente COMPLETO (sem dados de produção)..."
+              echo "=============================================="
+              echo "⚠️  NENHUM DEPLOY COM SUCESSO ANTERIOR"
+              echo "=============================================="
+              echo "🧹 Executando LIMPEZA TOTAL do ambiente..."
+              echo ""
               
-              # Remover TODOS os containers restantes que possam ter ficado
+              # =================================================================
+              # CORREÇÃO 29/12/2025: Limpeza AGRESSIVA quando não há deploy OK
+              # Deploy nunca funcionou = TUDO é lixo e deve ser removido
+              # =================================================================
+              
+              # PASSO 1: Parar e remover TODOS os containers (sem exceção)
+              echo "📦 Removendo TODOS os containers..."
               docker ps -aq | xargs -r docker stop 2>/dev/null || true
               docker ps -aq | xargs -r docker rm -f 2>/dev/null || true
+              CONTAINERS_REMOVED=$(docker ps -aq | wc -l)
+              echo "   Containers restantes: $CONTAINERS_REMOVED"
               
-              # Remover networks do projeto
+              # PASSO 2: Remover TODAS as networks customizadas
+              echo "🌐 Removendo networks customizadas..."
               docker network rm alice-network 2>/dev/null || true
               docker network rm erpnext-network 2>/dev/null || true
+              # Remover qualquer outra network customizada (exceto bridge, host, none)
+              docker network ls --format '{{.Name}}' | grep -vE '^(bridge|host|none)$' | xargs -r docker network rm 2>/dev/null || true
               
-              # CORREÇÃO 28/12/2025: Remover TODOS volumes nomeados do projeto
-              # docker volume prune só remove anônimos, não nomeados
-              for vol in $(docker volume ls -q | grep -E "^(alice-|erpnext-)"); do
-                docker volume rm -f "$vol" 2>/dev/null || true
-              done
-              
-              # Remover volumes órfãos restantes
+              # PASSO 3: Remover TODOS os volumes (nomeados e anônimos)
+              echo "💾 Removendo TODOS os volumes..."
+              docker volume ls -q | xargs -r docker volume rm -f 2>/dev/null || true
               docker volume prune -f 2>/dev/null || true
+              VOLUMES_REMAINING=$(docker volume ls -q | wc -l)
+              echo "   Volumes restantes: $VOLUMES_REMAINING"
               
-              # Limpar imagens não utilizadas
+              # PASSO 4: Remover TODAS as imagens (não apenas dangling)
+              # CRÍTICO: docker image prune -af NÃO remove imagens taggeadas recentes
+              echo "🖼️  Removendo TODAS as imagens Docker..."
+              docker images -aq | xargs -r docker rmi -f 2>/dev/null || true
               docker image prune -af 2>/dev/null || true
+              IMAGES_REMAINING=$(docker images -q | wc -l)
+              echo "   Imagens restantes: $IMAGES_REMAINING"
               
-              # Limpar sistema completo
+              # PASSO 5: Limpar build cache
+              echo "🔧 Limpando build cache..."
+              docker builder prune -af 2>/dev/null || true
+              
+              # PASSO 6: Limpar sistema completo (redundante mas garante limpeza total)
+              echo "🧽 Executando docker system prune completo..."
               docker system prune -af --volumes 2>/dev/null || true
               
-              # CORREÇÃO 28/12/2025: Limpar dados residuais de deploys falhados
-              # Sem versão anterior = deploy nunca funcionou = todos dados são lixo
-              echo "🗑️ Removendo dados residuais de /opt/alice..."
+              # PASSO 7: Limpar dados residuais no filesystem
+              echo "🗑️  Removendo dados residuais de /opt/alice..."
               rm -rf /opt/alice/data/* 2>/dev/null || true
               rm -rf /opt/alice/logs/* 2>/dev/null || true
               rm -rf /opt/alice/backups/postgresql/* 2>/dev/null || true
               rm -rf /opt/alice/backups/mariadb/* 2>/dev/null || true
               rm -rf /opt/alice/backups/redis/* 2>/dev/null || true
-              # NÃO remover /opt/alice/app (código fonte) nem /opt/alice/secrets (chaves)
+              # NÃO remover:
+              # - /opt/alice/app (código fonte - necessário para próximo deploy)
+              # - /opt/alice/secrets (chaves - criadas pelo workflow)
               
-              echo "✅ Ambiente limpo - pronto para novo deploy"
-              echo "ℹ️ Execute novo deploy para provisionar o sistema"
+              # PASSO 8: Mostrar status final
+              echo ""
+              echo "=============================================="
+              echo "📊 STATUS FINAL APÓS LIMPEZA:"
+              echo "=============================================="
+              docker system df
+              echo ""
+              echo "✅ Ambiente COMPLETAMENTE limpo"
+              echo "ℹ️  Servidor pronto para primeiro deploy"
+              echo "=============================================="
               exit 0
             fi
             
@@ -1400,7 +1578,7 @@ PGPASS_EOF
         env:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
-          VERSION: ${{ needs.validate-and-prepare.outputs.image_tag }}
+          VERSION: ${{ inputs.version }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}

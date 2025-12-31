@@ -343,45 +343,26 @@ jobs:
       # - BREAKING CHANGE: ou feat!/fix! → MAJOR (v2.0.0)
       # - feat: (sem !) → MINOR (v1.1.0)
       # - fix:/outros → PATCH (v1.0.1)
-      #
-      # CORREÇÃO 30/12/2025: Usar MAIOR versão existente (não git describe)
-      # git describe pega tag mais próxima no histórico, mas podem existir
-      # versões maiores criadas em outros branches/releases
       # =======================================================================
       - name: Calcular proxima versao (Semantic Versioning)
         id: version
         run: |
           set -e
           
-          # Função para verificar se tag existe
-          tag_exists() {
-            git rev-parse "$1" >/dev/null 2>&1
-          }
-          
-          # CORREÇÃO: Obter MAIOR tag existente (ordenada por versão semântica)
-          # git tag --sort=-version:refname ordena por versão, não por data/proximidade
-          HIGHEST_TAG=$(git tag --sort=-version:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -1)
-          
-          if [ -z "$HIGHEST_TAG" ]; then
-            HIGHEST_TAG="v0.0.0"
-            echo "⚠️ Nenhuma tag semântica encontrada, iniciando em v0.0.0"
-          fi
-          
-          VERSION=${HIGHEST_TAG#v}
+          # Obter última tag e versão atual
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          VERSION=${LAST_TAG#v}
           MAJOR=$(echo $VERSION | cut -d. -f1 | grep -E '^[0-9]+$' || echo "0")
           MINOR=$(echo $VERSION | cut -d. -f2 | grep -E '^[0-9]+$' || echo "0")
           PATCH=$(echo $VERSION | cut -d. -f3 | cut -d- -f1 | grep -E '^[0-9]+$' || echo "0")
           
-          echo "📦 Maior versão existente: $HIGHEST_TAG"
+          echo "📦 Versão atual: v${MAJOR}.${MINOR}.${PATCH}"
           
-          # Tag mais próxima do commit atual (para changelog)
-          NEAREST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          # Analisar commits desde a tag mais próxima (para determinar tipo de bump)
-          if [ -z "$NEAREST_TAG" ]; then
+          # Analisar commits desde a última tag
+          if [ "$LAST_TAG" = "v0.0.0" ]; then
             COMMITS=$(git log --pretty=format:"%s" --no-merges | head -100)
           else
-            COMMITS=$(git log ${NEAREST_TAG}..HEAD --pretty=format:"%s" --no-merges)
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"%s" --no-merges)
           fi
           
           # Determinar tipo de bump baseado em Conventional Commits
@@ -401,7 +382,7 @@ jobs:
             echo "🔧 Apenas fixes/outros → PATCH bump"
           fi
           
-          # Calcular nova versão a partir da MAIOR existente
+          # Calcular nova versão
           case $BUMP_TYPE in
             major)
               NEW_MAJOR=$((10#$MAJOR + 1))
@@ -417,18 +398,6 @@ jobs:
               ;;
           esac
           
-          # CORREÇÃO: Se versão calculada já existe, incrementar PATCH até encontrar disponível
-          # Isso pode acontecer quando há releases manuais ou paralelos
-          while tag_exists "$NEW_VERSION"; do
-            echo "⚠️ Tag $NEW_VERSION já existe, incrementando..."
-            CURRENT_VER=${NEW_VERSION#v}
-            CUR_MAJOR=$(echo $CURRENT_VER | cut -d. -f1)
-            CUR_MINOR=$(echo $CURRENT_VER | cut -d. -f2)
-            CUR_PATCH=$(echo $CURRENT_VER | cut -d. -f3 | cut -d- -f1)
-            NEW_PATCH=$((10#$CUR_PATCH + 1))
-            NEW_VERSION="v${CUR_MAJOR}.${CUR_MINOR}.${NEW_PATCH}"
-          done
-          
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
           echo "bump_type=$BUMP_TYPE" >> $GITHUB_OUTPUT
           echo "✅ Nova versão: $NEW_VERSION ($BUMP_TYPE bump)"
@@ -436,21 +405,16 @@ jobs:
       - name: Disparar Release Workflow
         uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
         with:
-          github-token: ${{ secrets.GH_PAT }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const version = '${{ steps.version.outputs.version }}';
-            
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'release.yml',
-              // ENTERPRISE: disparar pelo SHA exato validado no CI.
-              // Evita race condition: `ref: main` pode avançar entre o fim do CI e o disparo do Release.
-              // GitHub Actions aceita branch/tag/SHA como `ref` em workflow_dispatch.
-              ref: context.sha,
+              ref: 'main',
               inputs: {
-                version: version,
+                version: '${{ steps.version.outputs.version }}',
                 prerelease: 'false'
               }
             });
-            console.log('🚀 Release ' + version + ' disparado!');
+            console.log('🚀 Release ${{ steps.version.outputs.version }} disparado!');
