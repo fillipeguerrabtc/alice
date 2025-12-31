@@ -485,3 +485,5 @@ Todos os 51 containers têm security hardening completo aplicado. Containers que
 *Runner Enterprise Hardening (27/12/2025): Kernel tuning, Docker daemon otimizado, limits, systemd override, cron cleanup diário 3h*
 
 </div>
+
+<!-- Teste CI/CD 30/12/2025 - verificando se apenas CI inicia ou se Deploy também dispara -->
