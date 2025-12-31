@@ -890,16 +890,46 @@ jobs:
             VALIDATION_PG_USER=$(grep '^POSTGRES_USER=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice")
             VALIDATION_PG_DB=$(grep '^POSTGRES_DB=' "$ENV_FILE" | cut -d'=' -f2- || echo "alice_prod")
             
-            # CORREÇÃO 29/12/2025: Usar credenciais extraídas na criação de extensão pgvector
-            # O script init.sql só executa na primeira inicialização (PGDATA vazio).
-            # Para bancos existentes, precisamos garantir que a extensão existe.
-            # pgvector é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim).
-            echo "🔌 Garantindo extensão pgvector no PostgreSQL..."
-            if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
-              echo "✅ Extensão pgvector pronta"
-            else
-              echo "⚠️ Falha ao criar extensão pgvector (PostgreSQL pode ainda estar iniciando)"
-            fi
+            # CORREÇÃO 31/12/2025: Tornar criação de pgvector OBRIGATÓRIA com retry logic (fail-fast)
+            # PROBLEMA ANTERIOR: Falha silenciosa permitia deploy continuar sem extensão,
+            # causando crash loop em auth-service e training-service (vector type not found)
+            # SOLUÇÃO: Retry com exponential backoff + falha hard se não conseguir criar
+            # pgvector é OBRIGATÓRIO para embeddings de imagem (OpenCLIP 1024 dim → pgvector)
+            echo "🔌 Garantindo extensão pgvector no PostgreSQL (OBRIGATÓRIO)..."
+            PGVECTOR_MAX_RETRIES=15
+            PGVECTOR_RETRY_COUNT=0
+            PGVECTOR_DELAY=3
+            
+            while [ $PGVECTOR_RETRY_COUNT -lt $PGVECTOR_MAX_RETRIES ]; do
+              if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+                -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>/dev/null; then
+                # Verificar se extensão realmente foi criada
+                if docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+                  -t -c "SELECT 1 FROM pg_extension WHERE extname = 'vector';" 2>/dev/null | grep -q 1; then
+                  echo "✅ Extensão pgvector criada e verificada com sucesso"
+                  break
+                fi
+              fi
+              
+              PGVECTOR_RETRY_COUNT=$((PGVECTOR_RETRY_COUNT + 1))
+              if [ $PGVECTOR_RETRY_COUNT -eq $PGVECTOR_MAX_RETRIES ]; then
+                echo "❌ ERRO CRÍTICO: Falha ao criar extensão pgvector após ${PGVECTOR_MAX_RETRIES} tentativas"
+                echo "   Serviços Alice (auth, training) requerem pgvector para embeddings de imagem"
+                echo "   Verificar se imagem PostgreSQL suporta pgvector:"
+                docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+                  -c "SELECT * FROM pg_available_extensions WHERE name = 'vector';" 2>/dev/null || true
+                echo ""
+                echo "   Logs do PostgreSQL:"
+                docker logs alice-postgres --tail 30 2>/dev/null || true
+                exit 1
+              fi
+              
+              echo "⚠️ Tentativa ${PGVECTOR_RETRY_COUNT}/${PGVECTOR_MAX_RETRIES} falhou, aguardando ${PGVECTOR_DELAY}s..."
+              sleep $PGVECTOR_DELAY
+              # Exponential backoff com cap em 15s
+              PGVECTOR_DELAY=$((PGVECTOR_DELAY * 2))
+              [ $PGVECTOR_DELAY -gt 15 ] && PGVECTOR_DELAY=15
+            done
             
             # Verificar se database existe
             # CORREÇÃO CRÍTICA 29/12/2025: Adicionar flag -d postgres
