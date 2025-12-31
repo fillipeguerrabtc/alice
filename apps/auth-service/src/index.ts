@@ -2521,54 +2521,56 @@ let server: ReturnType<typeof app.listen>;
     server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
     server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
     
+    // ============================================================================
+    // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
+    // CORREÇÃO 31/12/2025: Callbacks movidos para dentro do IIFE para garantir
+    // que 'server' está definido antes de registrar o callback
+    // ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
+    // Ordem: Identity Provisioning → HTTP server → Database pool
+    // ============================================================================
+
+    registerShutdownCallback(
+      'auth-identity-provisioning',
+      async () => {
+        logger.info('Parando Identity Provisioning...');
+        await stopIdentityProvisioning();
+        logger.info('Identity Provisioning parado');
+      },
+      { priority: ShutdownPriority.BACKGROUND_JOBS }
+    );
+
+    registerShutdownCallback(
+      'auth-http-server',
+      async () => {
+        logger.info('Encerrando HTTP server...');
+        await new Promise<void>((resolve, reject) => {
+          server.close((err) => {
+            if (err) {
+              logger.error({ error: err }, 'Erro ao fechar HTTP server');
+              reject(err);
+            } else {
+              logger.info('HTTP server encerrado com sucesso');
+              resolve();
+            }
+          });
+        });
+      },
+      { priority: ShutdownPriority.HTTP_SERVER }
+    );
+
+    registerShutdownCallback(
+      'auth-database-pool',
+      async () => {
+        logger.info('Encerrando pool de conexões database...');
+        await closeDatabasePool();
+        logger.info('Pool de conexões encerrado com sucesso');
+      },
+      { priority: ShutdownPriority.DATABASE }
+    );
+    
   } catch (error) {
     logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 
       '❌ FATAL: Falha ao conectar ao PostgreSQL - auth-service não pode iniciar');
     process.exit(1);
   }
 })();
-
-// ============================================================================
-// GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
-// ShutdownManager centralizado elimina duplicação de listeners (Regra 6)
-// Ordem: Identity Provisioning → HTTP server → Database pool
-// ============================================================================
-
-registerShutdownCallback(
-  'auth-identity-provisioning',
-  async () => {
-    logger.info('Parando Identity Provisioning...');
-    await stopIdentityProvisioning();
-    logger.info('Identity Provisioning parado');
-  },
-  { priority: ShutdownPriority.BACKGROUND_JOBS }
-);
-
-registerShutdownCallback(
-  'auth-http-server',
-  async () => {
-    logger.info('Encerrando HTTP server...');
-    await new Promise<void>((resolve, reject) => {
-      server.close((err) => {
-        if (err) {
-          logger.error({ error: err }, 'Erro ao fechar HTTP server');
-          reject(err);
-        } else {
-          logger.info('HTTP server encerrado com sucesso');
-          resolve();
-        }
-      });
-    });
-  },
-  { priority: ShutdownPriority.HTTP_SERVER }
-);
-
-registerShutdownCallback(
-  'auth-database-pool',
-  async () => {
-    logger.info('Encerrando pool de conexões database...');
-    await closeDatabasePool();
-    logger.info('Pool de conexões encerrado com sucesso');
-  },
-  { priority: ShutdownPriority.DATABASE }
-);
