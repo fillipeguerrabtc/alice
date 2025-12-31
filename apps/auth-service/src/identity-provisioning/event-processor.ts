@@ -227,6 +227,12 @@ export class IdentityProvisioningProcessor {
         )
         .limit(this.config.batchSize);
 
+      // CORREÇÃO 31/12/2025: Registrar sucesso IMEDIATAMENTE após query bem-sucedida
+      // IMPORTANTE: Deve ser chamado ANTES do early return quando events.length === 0
+      // Se chamar apenas após processar eventos, queries com 0 resultados não resetam
+      // o contador de falhas, podendo abrir circuit breaker prematuramente
+      this.recordSuccess();
+
       if (events.length === 0) {
         return;
       }
@@ -237,9 +243,6 @@ export class IdentityProvisioningProcessor {
       for (const event of events) {
         await this.processEvent(event);
       }
-      
-      // CORREÇÃO 31/12/2025: Registrar sucesso para resetar circuit breaker
-      this.recordSuccess();
     } catch (error) {
       // CORREÇÃO 31/12/2025: Registrar falha para circuit breaker
       this.recordFailure(error);
