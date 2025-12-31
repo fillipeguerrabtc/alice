@@ -508,22 +508,25 @@ services:
       PGDATA: /var/lib/postgresql/data
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      # CORREÇÃO 31/12/2025: Init script garante extensão pgvector na primeira inicialização
+      # Scripts em /docker-entrypoint-initdb.d/ executam apenas quando PGDATA está vazio
+      - ./postgres-init:/docker-entrypoint-initdb.d:ro
     networks:
       - alice-network
     healthcheck:
       # CORREÇÃO 31/12/2025: Health check avançado verifica 3 condições:
       # 1. Processo PostgreSQL aceita conexões (pg_isready)
       # 2. Database existe e aceita queries (SELECT 1)
-      # 3. Extensão pgvector está disponível (OBRIGATÓRIO para embeddings)
+      # 3. Extensão pgvector está disponível (OBRIGATÓRIO para embeddings de imagem)
       # PROBLEMA ANTERIOR: Apenas pg_isready não garantia que extensão existia,
-      # causando crash loop em auth-service/training-service
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} && psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -c 'SELECT 1' >/dev/null 2>&1"]
+      # causando crash loop em auth-service/training-service (vector type not found)
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} && psql -U ${POSTGRES_USER:-alice} -d ${POSTGRES_DB:-alice_prod} -tAc \"SELECT 1 FROM pg_extension WHERE extname='vector'\" | grep -q 1"]
       interval: 10s
       timeout: 10s
-      retries: 10
-      # CORREÇÃO 31/12/2025: Aumentado start_period para 90s
-      # Primeiro deploy: criar cluster + extensão pgvector pode demorar
-      start_period: 90s
+      retries: 15
+      # CORREÇÃO 31/12/2025: Aumentado start_period para 120s
+      # Primeiro deploy: criar cluster + init scripts + extensão pgvector pode demorar
+      start_period: 120s
     deploy:
       resources:
         limits:

@@ -1327,33 +1327,56 @@ app.use(createErrorHandler({
   includeStackInDev: true,
 }));
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info({ 
-    port: PORT, 
-    embeddingsConfigured: true, // Embeddings via GPU Manager Service (Qwen3-Embedding-8B)
-    fineTuningConfigured: true, // Fine-tuning LoRA via gpu-trainer (prioridade baixa)
-    circuitBreaker: 'enabled',
-  }, 'Training service iniciado com Circuit Breaker');
+// CORREÇÃO 31/12/2025: Usar connectWithRetry para garantir PostgreSQL + pgvector prontos
+// Previne crash loop quando PostgreSQL ainda está inicializando
+import { connectWithRetry } from '@alice/database';
 
-  // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
-  resumePendingFineTuningJobs().catch((error: unknown) => {
-    logger.error({ error }, 'Falha ao retomar jobs de fine-tuning pendentes');
-  });
-  resumePendingTradingLoraJobs().catch((error: unknown) => {
-    logger.error({ error }, 'Falha ao retomar jobs de trading LoRA pendentes');
-  });
+let server: ReturnType<typeof app.listen>;
 
-  // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
-  setInterval(() => {
-    resumePendingFineTuningJobs().catch(() => {});
-    resumePendingTradingLoraJobs().catch(() => {});
-  }, 30000);
-});
+(async () => {
+  try {
+    // Conectar ao PostgreSQL com retry logic ANTES de iniciar servidor HTTP
+    // Training-service usa pgvector para embeddings de imagem
+    await connectWithRetry({
+      maxRetries: 15,
+      initialDelayMs: 2000,
+      checkPgvector: true, // Verificar extensão pgvector (obrigatório para embeddings)
+    });
+    
+    server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info({ 
+        port: PORT, 
+        embeddingsConfigured: true, // Embeddings via GPU Manager Service (Qwen3-Embedding-8B)
+        fineTuningConfigured: true, // Fine-tuning LoRA via gpu-trainer (prioridade baixa)
+        circuitBreaker: 'enabled',
+      }, 'Training service iniciado com Circuit Breaker');
 
-// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 30000; // 30s timeout para requisições
-server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+      // Retomar jobs pendentes após restart (Regra 6: sem dependência de state em memória)
+      resumePendingFineTuningJobs().catch((error: unknown) => {
+        logger.error({ error }, 'Falha ao retomar jobs de fine-tuning pendentes');
+      });
+      resumePendingTradingLoraJobs().catch((error: unknown) => {
+        logger.error({ error }, 'Falha ao retomar jobs de trading LoRA pendentes');
+      });
+
+      // Tick periódico: garante execução de jobs criados por scheduler/rotas mesmo após long uptimes
+      setInterval(() => {
+        resumePendingFineTuningJobs().catch(() => {});
+        resumePendingTradingLoraJobs().catch(() => {});
+      }, 30000);
+    });
+
+    // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+    server.timeout = 30000; // 30s timeout para requisições
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+    
+  } catch (error) {
+    logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 
+      '❌ FATAL: Falha ao conectar ao PostgreSQL - training-service não pode iniciar');
+    process.exit(1);
+  }
+})();
 
 // ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)

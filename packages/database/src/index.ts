@@ -314,6 +314,106 @@ export function getPool(): pg.Pool {
   return poolInstance!;
 }
 
+// ============================================================================
+// CONNECT WITH RETRY (Enterprise-Grade - Regra 16 CLAUDE.md)
+// ============================================================================
+// Implementa retry logic com exponential backoff para conexão com PostgreSQL
+// Verifica também se extensão pgvector está disponível (obrigatório)
+// Usar no startup de serviços ANTES de iniciar server HTTP
+// ============================================================================
+
+export interface ConnectWithRetryOptions {
+  maxRetries?: number;
+  initialDelayMs?: number;
+  maxDelayMs?: number;
+  checkPgvector?: boolean;
+}
+
+/**
+ * Conectar ao PostgreSQL com retry logic e exponential backoff
+ * 
+ * IMPORTANTE: Chamar esta função no startup do serviço ANTES de iniciar o server HTTP
+ * Isso garante que o banco está pronto antes de aceitar requisições
+ * 
+ * @param options - Configurações de retry
+ * @returns Promise<void> - Resolve quando conectado, rejeita após max retries
+ * 
+ * @example
+ * ```typescript
+ * // No startup do serviço
+ * await connectWithRetry({ maxRetries: 15, checkPgvector: true });
+ * app.listen(PORT);
+ * ```
+ * 
+ * Documentação em PT-BR (Regra 10 CLAUDE.md)
+ */
+export async function connectWithRetry(options: ConnectWithRetryOptions = {}): Promise<void> {
+  const {
+    maxRetries = 15,
+    initialDelayMs = 1000,
+    maxDelayMs = 30000,
+    checkPgvector = true,
+  } = options;
+  
+  let attempt = 0;
+  let delay = initialDelayMs;
+  
+  while (attempt < maxRetries) {
+    try {
+      // Tentar obter database (cria pool se não existir)
+      // _db não é usado diretamente, mas getDatabase() inicializa o pool
+      const _db = getDatabase();
+      
+      // Verificar se conexão funciona com query simples
+      const pool = getPool();
+      await pool.query('SELECT 1');
+      
+      // Verificar se extensão pgvector está disponível (obrigatório para embeddings de imagem)
+      if (checkPgvector) {
+        const result = await pool.query(
+          "SELECT 1 FROM pg_extension WHERE extname = 'vector'"
+        );
+        
+        if (result.rows.length === 0) {
+          throw new Error('pgvector extension not available - required for image embeddings');
+        }
+      }
+      
+      logger.info({
+        attempts: attempt + 1,
+        pgvectorChecked: checkPgvector,
+      }, '✅ Conexão com PostgreSQL estabelecida com sucesso');
+      
+      return;
+      
+    } catch (error) {
+      attempt++;
+      
+      if (attempt >= maxRetries) {
+        logger.fatal({
+          error: error instanceof Error ? error.message : String(error),
+          attempts: attempt,
+          maxRetries,
+        }, '❌ FATAL: Falha ao conectar ao PostgreSQL após máximo de tentativas');
+        throw error;
+      }
+      
+      logger.warn({
+        error: error instanceof Error ? error.message : String(error),
+        attempt,
+        maxRetries,
+        nextRetryMs: delay,
+      }, `⚠️ Conexão com PostgreSQL falhou, tentando novamente... (${attempt}/${maxRetries})`);
+      
+      // Aguardar com exponential backoff
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Exponential backoff com cap
+      delay = Math.min(delay * 2, maxDelayMs);
+    }
+  }
+}
+
 export async function closeDatabase(): Promise<void> {
   if (poolInstance) {
     await poolInstance.end();

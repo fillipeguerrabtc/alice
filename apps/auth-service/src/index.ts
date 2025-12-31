@@ -2469,41 +2469,64 @@ app.use(createErrorHandler({
 
 const PORT = config.PORT || 3001;
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-  logger.info({ port: PORT }, 'Auth service iniciado');
-  logger.info({
-    providers: {
-      local: true,
-      google: !!googleClientId,
-      github: !!githubClientId,
-      saml: !!(samlEntryPoint && samlIssuer && samlCert),
-    }
-  }, 'Provedores de autenticação disponíveis');
-  
-  // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
-  ensureGlobalAdmin().catch((error) => {
-    logger.error({ error }, 'Falha ao criar/atualizar administrador global');
-  });
+// CORREÇÃO 31/12/2025: Usar connectWithRetry para garantir PostgreSQL + pgvector prontos
+// Previne crash loop quando PostgreSQL ainda está inicializando
+import { connectWithRetry } from '@alice/database';
 
-  // Seed de clientes OAuth para SSO 100% automatizado (31/12/2025)
-  ensureOAuthClients().catch((error) => {
-    logger.error({ error }, 'Falha ao criar/atualizar clientes OAuth');
-  });
+let server: ReturnType<typeof app.listen>;
 
-  // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
-  // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
+(async () => {
   try {
-    startIdentityProvisioning();
-    logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
-  } catch (error: unknown) {
-    logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
-  }
-});
+    // Conectar ao PostgreSQL com retry logic ANTES de iniciar servidor HTTP
+    // Isso garante que database está pronto antes de aceitar requisições
+    await connectWithRetry({
+      maxRetries: 15,
+      initialDelayMs: 2000,
+      checkPgvector: true, // Verificar extensão pgvector (obrigatório para embeddings)
+    });
+    
+    server = app.listen(PORT, '0.0.0.0', () => {
+      logger.info({ port: PORT }, 'Auth service iniciado');
+      logger.info({
+        providers: {
+          local: true,
+          google: !!googleClientId,
+          github: !!githubClientId,
+          saml: !!(samlEntryPoint && samlIssuer && samlCert),
+        }
+      }, 'Provedores de autenticação disponíveis');
+      
+      // Seed do administrador global (admin central para Alice/ERPNext/Grafana)
+      ensureGlobalAdmin().catch((error) => {
+        logger.error({ error }, 'Falha ao criar/atualizar administrador global');
+      });
 
-// SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
-server.timeout = 30000; // 30s timeout para requisições
-server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
-server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+      // Seed de clientes OAuth para SSO 100% automatizado (31/12/2025)
+      ensureOAuthClients().catch((error) => {
+        logger.error({ error }, 'Falha ao criar/atualizar clientes OAuth');
+      });
+
+      // Identity Provisioning: Sincronização Alice → Grafana/ERPNext
+      // Processa eventos de criação/atualização/deleção de usuários via Outbox Pattern
+      try {
+        startIdentityProvisioning();
+        logger.info('Identity Provisioning iniciado - sincronização com Grafana/ERPNext ativa');
+      } catch (error: unknown) {
+        logger.error({ error }, 'Falha ao iniciar Identity Provisioning (não crítico)');
+      }
+    });
+    
+    // SEGURANÇA: Timeouts para prevenir conexões pendentes (Node.js 20 LTS Best Practices)
+    server.timeout = 30000; // 30s timeout para requisições
+    server.keepAliveTimeout = 65000; // 65s (maior que ALB timeout padrão de 60s)
+    server.headersTimeout = 66000; // Ligeiramente maior que keepAliveTimeout
+    
+  } catch (error) {
+    logger.fatal({ error: error instanceof Error ? error.message : String(error) }, 
+      '❌ FATAL: Falha ao conectar ao PostgreSQL - auth-service não pode iniciar');
+    process.exit(1);
+  }
+})();
 
 // ============================================================================
 // GRACEFUL SHUTDOWN (Enterprise-Grade - Regra 16 CLAUDE.md)
