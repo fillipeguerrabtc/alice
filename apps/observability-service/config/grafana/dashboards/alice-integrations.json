@@ -1,6 +1,6 @@
 {
   "annotations": { "list": [] },
-  "description": "Métricas de integrações externas: Stripe, Wise, ERPNext, Twilio, Resend",
+  "description": "Métricas de integrações externas: Stripe, Wise, ERPNext, Twilio, Gmail SMTP",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 2,
@@ -13,7 +13,7 @@
       "gridPos": { "h": 2, "w": 24, "x": 0, "y": 0 },
       "id": 1,
       "options": {
-        "content": "# Integrações Externas Alice Enterprise\n**Stripe** | **Wise** | **ERPNext** | **Twilio** | **Resend** | **Brave Search** | Circuit Breakers",
+        "content": "# Integrações Externas Alice Enterprise\n**Stripe** | **Wise** | **ERPNext** | **Twilio** | **Gmail SMTP** | **Brave Search** | Circuit Breakers",
         "mode": "markdown"
       },
       "transparent": true,
@@ -102,9 +102,9 @@
       "gridPos": { "h": 4, "w": 4, "x": 16, "y": 3 },
       "id": 15,
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
-      "title": "Resend",
+      "title": "Gmail SMTP",
       "type": "stat",
-      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"resend\",state=\"open\"} or vector(0)", "refId": "A" }]
+      "targets": [{ "expr": "alice_circuit_breaker_state{name=\"gmailSMTP\",state=\"open\"} or vector(0)", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
@@ -311,7 +311,7 @@
       "collapsed": false,
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 31 },
       "id": 50,
-      "title": "Comunicações - Twilio & Resend",
+      "title": "Comunicações - Twilio & Gmail SMTP",
       "type": "row"
     },
     {
@@ -338,7 +338,7 @@
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },
-      "description": "E-mails transacionais Resend",
+      "description": "E-mails transacionais Gmail SMTP",
       "fieldConfig": {
         "defaults": {
           "color": { "mode": "palette-classic" },
@@ -351,11 +351,11 @@
       "gridPos": { "h": 7, "w": 12, "x": 12, "y": 32 },
       "id": 52,
       "options": { "legend": { "calcs": ["sum"], "displayMode": "table", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
-      "title": "Resend Emails",
+      "title": "Gmail SMTP Emails",
       "type": "timeseries",
       "targets": [
-        { "expr": "increase(integration_requests_total{integration=\"resend\",status=\"success\"}[1h])", "legendFormat": "Sent", "refId": "A" },
-        { "expr": "increase(integration_requests_total{integration=\"resend\",status=\"error\"}[1h])", "legendFormat": "Failed", "refId": "B" }
+        { "expr": "increase(integration_requests_total{integration=\"email\",status=\"success\"}[1h])", "legendFormat": "Sent", "refId": "A" },
+        { "expr": "increase(integration_requests_total{integration=\"email\",status=\"error\"}[1h])", "legendFormat": "Failed", "refId": "B" }
       ]
     }
   ],

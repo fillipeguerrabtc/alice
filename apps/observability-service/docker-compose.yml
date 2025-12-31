@@ -103,11 +103,14 @@ services:
       - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
       - '--cluster.listen-address='
     environment:
-      # SMTP via Resend (valores fixos - apenas RESEND_API_KEY é variável)
-      - RESEND_API_KEY=${RESEND_API_KEY}
-      - ALERT_EMAIL=${ALERT_EMAIL:-ops@yesyoudeserve.duckdns.org}
-      - CRITICAL_EMAIL=${CRITICAL_EMAIL:-critical@yesyoudeserve.duckdns.org}
-      - ONCALL_EMAIL=${ONCALL_EMAIL:-oncall@yesyoudeserve.duckdns.org}
+      # Gmail SMTP (30/12/2025) - Substitui Resend
+      # - Host: smtp.gmail.com:587
+      # - Username: GMAIL_USER (email completo)
+      # - Password: App Password 16 chars (via arquivo secret)
+      - SMTP_USER=${GMAIL_USER}
+      - SMTP_FROM=${GMAIL_USER}
+      - ALERT_EMAIL=${GMAIL_USER}
+      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
       - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
       - SLACK_WEBHOOK_TOKEN=${SLACK_WEBHOOK_TOKEN}
     networks:

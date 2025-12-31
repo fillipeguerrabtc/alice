@@ -1,9 +1,10 @@
 #!/bin/sh
 # Alertmanager Docker Entrypoint - Alice Enterprise Platform
 #
-# MIGRAÇÃO 30/12/2025: De Resend para Gmail SMTP
+# INTEGRAÇÃO GMAIL SMTP - 30/12/2025
 # Gmail SMTP permite enviar para QUALQUER email (clientes, equipe, vendas).
-# Resend gratuito só permite enviar para o próprio email da conta.
+# - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
+# - Remetente é seu próprio email Gmail (profissional)
 #
 # Integração Gmail SMTP:
 # - Host: smtp.gmail.com:587
