@@ -108,8 +108,9 @@ export class IdentityProvisioningProcessor {
 
   /**
    * CORREÇÃO 31/12/2025: Registrar falha e abrir circuit breaker se necessário
+   * @param _error - Erro capturado (usado para possível logging futuro)
    */
-  private recordFailure(error: unknown): void {
+  private recordFailure(_error: unknown): void {
     this.consecutiveFailures++;
     
     if (this.consecutiveFailures >= this.config.maxConsecutiveFailures) {

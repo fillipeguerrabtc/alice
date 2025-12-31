@@ -2461,8 +2461,12 @@ services:
   # REQUISITOS v3: PostgreSQL + ClickHouse + Redis (alice-redis)
   # ===========================================================================
   langfuse:
-    # Langfuse v3.139.0 (Dec 2025) - última versão estável com ClickHouse
-    image: langfuse/langfuse:3.140.0
+    # CORREÇÃO 31/12/2025: Downgrade para 3.85.0 - versão sem bug ZodError
+    # Bug: "Cannot set property message of ZodError which has only a getter"
+    # Causa: Incompatibilidade Next.js 14.2.x com Zod em versões 3.90.0+
+    # Versão 3.85.0 é estável e não tem esse problema (confirmado pela comunidade)
+    # Upgrade futuro: Aguardar Langfuse lançar versão com Next.js 15.4.x+
+    image: langfuse/langfuse:3.85.0
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2531,8 +2535,9 @@ services:
 
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
+  # CORREÇÃO 31/12/2025: Mesma versão do langfuse principal (3.85.0)
   langfuse-worker:
-    image: langfuse/langfuse:3.140.0
+    image: langfuse/langfuse:3.85.0
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped

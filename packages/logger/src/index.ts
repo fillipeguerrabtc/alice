@@ -83,8 +83,19 @@ function buildBaseOptions(): LoggerOptions {
       // Serializer para queries SQL - aumenta limite de truncamento
       query: queryErrorSerializer,
       // Melhor serialização de erros SQL (pg, drizzle)
+      // CORREÇÃO 31/12/2025: Guard para evitar spread de non-Error values
+      // Quando um valor não-Error é logado (ex: string), pino.stdSerializers.err()
+      // retorna inalterado, e { ...base } em uma string produz índices como keys
+      // (ex: { '0': 'd', '1': 'a', ... }). Guard defensivo antes do spread.
       err: (err: Error & { code?: string; detail?: string; hint?: string; query?: string; position?: string }) => {
         const base = pino.stdSerializers.err(err);
+        
+        // Guard: Se base não é objeto válido, retornar como está
+        // Isso preserva o comportamento do serializer padrão do Pino
+        if (!base || typeof base !== 'object') {
+          return base;
+        }
+        
         return {
           ...base,
           code: err.code,
