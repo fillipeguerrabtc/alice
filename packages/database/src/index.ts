@@ -231,11 +231,36 @@ export function getDatabase(): NodePgDatabase<typeof schema> {
       idle_in_transaction_session_timeout: 60000,
     });
     
-    // Listener para erros de conexão (enterprise-grade)
-    poolInstance.on('error', (err: Error) => {
-      logger.error({ error: err.message }, 'Erro inesperado no pool');
+    // CORREÇÃO 31/12/2025: Listener para erros de conexão (enterprise-grade)
+    // Melhorado para capturar mais detalhes úteis para debug
+    poolInstance.on('error', (err: Error & { code?: string; detail?: string; hint?: string; position?: string }) => {
+      logger.error({
+        error: {
+          message: err.message,
+          code: err.code,
+          detail: err.detail,
+          hint: err.hint,
+          stack: err.stack,
+        },
+        pool: {
+          totalConnections: poolInstance?.totalCount,
+          idleConnections: poolInstance?.idleCount,
+          waitingClients: poolInstance?.waitingCount,
+        },
+      }, 'Erro inesperado no pool de conexões PostgreSQL');
     });
-    
+
+    // CORREÇÃO 31/12/2025: Log de conexão removida do pool (debug de vazamento)
+    poolInstance.on('remove', () => {
+      logger.debug({
+        pool: {
+          totalConnections: poolInstance?.totalCount,
+          idleConnections: poolInstance?.idleCount,
+          waitingClients: poolInstance?.waitingCount,
+        },
+      }, 'Conexão removida do pool');
+    });
+
     // Registrar tipos pgvector em novas conexões (enterprise-grade)
     poolInstance.on('connect', async (client: pg.PoolClient) => {
       if (!pgvectorRegistered) {

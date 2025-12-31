@@ -41,6 +41,32 @@ export function setLogContext(context: LogContext): void {
   }
 }
 
+// CORREÇÃO 31/12/2025: Limite de caracteres para queries SQL em logs
+// Aumentado de 200 (padrão) para 1000 para melhor debug
+const MAX_QUERY_LENGTH = 1000;
+
+// CORREÇÃO 31/12/2025: Serializer customizado para erros de query SQL
+// Captura informações completas para debug
+function queryErrorSerializer(query: unknown): unknown {
+  if (typeof query === 'string') {
+    return query.length > MAX_QUERY_LENGTH
+      ? `${query.substring(0, MAX_QUERY_LENGTH)}... [truncated at ${MAX_QUERY_LENGTH} chars, total: ${query.length}]`
+      : query;
+  }
+  if (typeof query === 'object' && query !== null) {
+    const q = query as Record<string, unknown>;
+    return {
+      sql: typeof q.sql === 'string'
+        ? q.sql.length > MAX_QUERY_LENGTH
+          ? `${q.sql.substring(0, MAX_QUERY_LENGTH)}... [truncated]`
+          : q.sql
+        : q.sql,
+      params: q.params,
+    };
+  }
+  return query;
+}
+
 function buildBaseOptions(): LoggerOptions {
   return {
     level: resolveLogLevel(),
@@ -50,6 +76,24 @@ function buildBaseOptions(): LoggerOptions {
         pid: bindings.pid,
         host: bindings.hostname,
       }),
+    },
+    // CORREÇÃO 31/12/2025: Serializers customizados para melhor logging de erros
+    serializers: {
+      ...pino.stdSerializers,
+      // Serializer para queries SQL - aumenta limite de truncamento
+      query: queryErrorSerializer,
+      // Melhor serialização de erros SQL (pg, drizzle)
+      err: (err: Error & { code?: string; detail?: string; hint?: string; query?: string; position?: string }) => {
+        const base = pino.stdSerializers.err(err);
+        return {
+          ...base,
+          code: err.code,
+          detail: err.detail,
+          hint: err.hint,
+          position: err.position,
+          query: err.query ? queryErrorSerializer(err.query) : undefined,
+        };
+      },
     },
     timestamp: pino.stdTimeFunctions.isoTime,
     mixin: () => {

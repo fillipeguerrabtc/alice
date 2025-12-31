@@ -3150,10 +3150,10 @@ services:
     volumes:
       # Dados PostgreSQL (read-only para backup)
       - postgres_data:/var/lib/postgresql/data:ro
-      # CORREÇÃO 31/12/2025: Volume de WAL archive (comunicação PostgreSQL → pgBackRest)
-      # PostgreSQL escreve WALs em /archive via archive_command
-      # pgBackRest lê WALs deste diretório para archive-push assíncrono
-      - wal_archive:/var/lib/pgbackrest/archive:ro
+      # CORREÇÃO 31/12/2025: Volume wal_archive REMOVIDO - não mais necessário
+      # Com imagem customizada PostgreSQL, archive_command='pgbackrest archive-push %p'
+      # é executado DENTRO do container PostgreSQL, arquivando diretamente no repositório
+      # pgBackRest container apenas executa backups full/diff/incr e restore
       # Repositório de backups (volume Hetzner persistente) - rw explícito necessário com read_only: true
       - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
       # Logs persistentes (volume Hetzner para troubleshooting) - rw explícito necessário com read_only: true

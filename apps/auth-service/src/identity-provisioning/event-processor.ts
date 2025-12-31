@@ -43,16 +43,27 @@ interface ProcessorConfig {
   batchSize: number;
   pollingIntervalMs: number;
   retryDelayMs: number;
+  // CORREÇÃO 31/12/2025: Circuit breaker para evitar logs infinitos
+  maxConsecutiveFailures: number;
+  circuitBreakerCooldownMs: number;
 }
 
 const DEFAULT_CONFIG: ProcessorConfig = {
   batchSize: 10,
   pollingIntervalMs: 5000, // 5 segundos
   retryDelayMs: 30000, // 30 segundos
+  // CORREÇÃO 31/12/2025: Após 5 falhas consecutivas, pausar por 5 minutos
+  maxConsecutiveFailures: 5,
+  circuitBreakerCooldownMs: 5 * 60 * 1000, // 5 minutos
 };
 
 /**
  * Processador de eventos de Identity Provisioning
+ * 
+ * CORREÇÃO 31/12/2025: Adicionado circuit breaker para evitar:
+ * - Logs infinitos quando tabela não existe
+ * - CPU desperdiçada em retries sem sucesso
+ * - Poluição de logs dificultando troubleshooting
  */
 export class IdentityProvisioningProcessor {
   private grafana: GrafanaClient | null;
@@ -60,6 +71,10 @@ export class IdentityProvisioningProcessor {
   private config: ProcessorConfig;
   private isRunning: boolean = false;
   private pollInterval: NodeJS.Timeout | null = null;
+  // CORREÇÃO 31/12/2025: Circuit breaker state
+  private consecutiveFailures: number = 0;
+  private circuitBreakerOpen: boolean = false;
+  private circuitBreakerResetTime: Date | null = null;
 
   constructor(config: Partial<ProcessorConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
@@ -69,6 +84,54 @@ export class IdentityProvisioningProcessor {
     if (!this.grafana && !this.erpnext) {
       logger.warn('Nenhum sistema externo configurado para Identity Provisioning');
     }
+  }
+
+  /**
+   * CORREÇÃO 31/12/2025: Verificar e atualizar estado do circuit breaker
+   */
+  private checkCircuitBreaker(): boolean {
+    if (!this.circuitBreakerOpen) {
+      return false; // Circuit breaker fechado, pode processar
+    }
+
+    // Verificar se cooldown expirou
+    if (this.circuitBreakerResetTime && new Date() >= this.circuitBreakerResetTime) {
+      logger.info('Circuit breaker cooldown expirado, tentando reconectar...');
+      this.circuitBreakerOpen = false;
+      this.consecutiveFailures = 0;
+      this.circuitBreakerResetTime = null;
+      return false; // Pode tentar novamente
+    }
+
+    return true; // Circuit breaker aberto, não processar
+  }
+
+  /**
+   * CORREÇÃO 31/12/2025: Registrar falha e abrir circuit breaker se necessário
+   */
+  private recordFailure(error: unknown): void {
+    this.consecutiveFailures++;
+    
+    if (this.consecutiveFailures >= this.config.maxConsecutiveFailures) {
+      this.circuitBreakerOpen = true;
+      this.circuitBreakerResetTime = new Date(Date.now() + this.config.circuitBreakerCooldownMs);
+      
+      logger.warn({
+        consecutiveFailures: this.consecutiveFailures,
+        cooldownMs: this.config.circuitBreakerCooldownMs,
+        resetTime: this.circuitBreakerResetTime.toISOString(),
+      }, 'Circuit breaker ABERTO - pausando Identity Provisioning para evitar logs infinitos');
+    }
+  }
+
+  /**
+   * CORREÇÃO 31/12/2025: Registrar sucesso e resetar contador
+   */
+  private recordSuccess(): void {
+    if (this.consecutiveFailures > 0) {
+      logger.info({ previousFailures: this.consecutiveFailures }, 'Conexão restaurada após falhas');
+    }
+    this.consecutiveFailures = 0;
   }
 
   /**
@@ -119,8 +182,15 @@ export class IdentityProvisioningProcessor {
    * 
    * CORREÇÃO AUDITORIA 17/12/2025: Adiciona recuperação de eventos presos
    * Eventos em "processing" há mais de 5 minutos são considerados travados
+   * 
+   * CORREÇÃO 31/12/2025: Circuit breaker para evitar logs infinitos
    */
   async processEvents(): Promise<void> {
+    // CORREÇÃO 31/12/2025: Verificar circuit breaker antes de processar
+    if (this.checkCircuitBreaker()) {
+      return; // Circuit breaker aberto, não processar
+    }
+
     const db = getDatabase();
 
     try {
@@ -166,8 +236,17 @@ export class IdentityProvisioningProcessor {
       for (const event of events) {
         await this.processEvent(event);
       }
+      
+      // CORREÇÃO 31/12/2025: Registrar sucesso para resetar circuit breaker
+      this.recordSuccess();
     } catch (error) {
-      logger.error({ error }, 'Erro ao buscar eventos para processamento');
+      // CORREÇÃO 31/12/2025: Registrar falha para circuit breaker
+      this.recordFailure(error);
+      
+      // Log apenas se circuit breaker não está aberto (evita spam de logs)
+      if (!this.circuitBreakerOpen) {
+        logger.error({ error }, 'Erro ao buscar eventos para processamento');
+      }
     }
   }
 

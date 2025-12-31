@@ -1332,6 +1332,50 @@ jobs:
               echo "✅ Schema validado: $TABLE_COUNT tabelas encontradas"
             fi
             
+            # =================================================================
+            # CORREÇÃO 31/12/2025: Validar tabelas críticas específicas
+            # =================================================================
+            # PROBLEMA: Identity Provisioning e outros serviços falham com erros
+            # de query contínuos quando tabelas específicas não existem
+            # 
+            # SOLUÇÃO: Validar tabelas críticas ANTES de iniciar serviços
+            # Falhar deploy se tabelas obrigatórias não existem
+            # =================================================================
+            echo "🔍 Validando tabelas críticas..."
+            
+            CRITICAL_TABLES=(
+              "users"
+              "tenants"
+              "oauth_clients"
+              "oidc_jwks"
+              "identity_provisioning_events"
+              "conversations"
+              "messages"
+            )
+            
+            MISSING_TABLES=()
+            for table in "${CRITICAL_TABLES[@]}"; do
+              EXISTS=$(docker exec alice-postgres psql -U "${VALIDATION_PG_USER}" -d "${VALIDATION_PG_DB}" \
+                -t -c "SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = '${table}';" 2>/dev/null | xargs || echo "0")
+              
+              if [ "$EXISTS" != "1" ]; then
+                MISSING_TABLES+=("$table")
+              fi
+            done
+            
+            if [ ${#MISSING_TABLES[@]} -gt 0 ]; then
+              echo "❌ ERRO: Tabelas críticas faltando no schema:"
+              for table in "${MISSING_TABLES[@]}"; do
+                echo "   - $table"
+              done
+              echo ""
+              echo "   Ação necessária: Verificar schema Drizzle ORM em packages/shared/src/schema.ts"
+              echo "   Verificar logs do drizzle-kit push acima"
+              exit 1
+            fi
+            
+            echo "✅ Todas as tabelas críticas existem"
+            
             # CORRIGIDO 28/12/2025: grep -c retorna stdout "0" E exit code 1 quando não encontra
             RUNNING=$(docker compose -f docker-compose.prod.yml ps --format "{{.State}}" | grep -c "running" 2>/dev/null) || RUNNING=0
             echo ""
