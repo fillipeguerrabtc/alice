@@ -324,10 +324,18 @@ ACME_EMAIL=seu-email@exemplo.com
 # ========== OBSERVABILITY (Langfuse + Grafana) ==========
 LANGFUSE_SECRET_KEY=sk-lf-xxxxx
 LANGFUSE_NEXT_AUTH_SECRET=sua-chave-segura-32-chars
-ADMIN_USER=seu-email-admin
-ADMIN_PWD=sua-senha-forte
-GRAFANA_ADMIN_USER=${ADMIN_USER}
-GRAFANA_ADMIN_PASSWORD=${ADMIN_PWD}
+
+# ========== ADMIN CREDENTIALS (31/12/2025) ==========
+# Grafana 12: username customizável, senha específica
+GRAFANA_ADMIN_USER=admin
+GRAFANA_ADMIN_PASSWORD=sua-senha-grafana-forte
+
+# ERPNext 15: username FIXO "Administrator", apenas senha configurável
+ERPNEXT_ADMIN_PASSWORD=sua-senha-erpnext-forte
+
+# Admin centralizado (opcional - derivado de GRAFANA_* se não definido)
+# ADMIN_USER=seu-email-admin  # Opcional
+# ADMIN_PWD=sua-senha-forte   # Opcional
 ```
 
 **⚠️ IMPORTANTE:** O GitHub NÃO permite secrets começando com `GITHUB_`. Use `OAUTH_GITHUB_` como prefixo.

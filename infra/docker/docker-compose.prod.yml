@@ -2582,7 +2582,8 @@ services:
     # ATUALIZADO 14/12/2025: Grafana 11.6.2 com SHA256 digest (Supply Chain Security 2025)
     # Grafana 11.x LTS com suporte até Jun 2026
     # ATUALIZADO 28/12/2025: Grafana 12.3.1 (major upgrade - não usamos plugins AngularJS)
-    # Ref: https://grafana.com/docs/grafana/latest/whatsnew/
+    # ATUALIZADO 31/12/2025: Security hardening enterprise (best practices 2025)
+    # Ref: https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/
     image: grafana/grafana:12.3.1
     platform: linux/amd64
     container_name: grafana
@@ -2590,9 +2591,28 @@ services:
     security_opt:
       - no-new-privileges:true
     environment:
+      # =================================================================
+      # GRAFANA 12 - CONFIGURAÇÃO ENTERPRISE (31/12/2025)
+      # =================================================================
+      # ADMIN CREDENTIALS (obrigatórios)
+      # - GRAFANA_ADMIN_USER: Username customizável (pode ser diferente de "admin")
+      # - GRAFANA_ADMIN_PASSWORD: Senha forte (recomendado 8+ chars)
+      # =================================================================
       GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      # SECURITY HARDENING (Best Practices 2025)
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: "true"
+      GF_SECURITY_X_CONTENT_TYPE_OPTIONS: "true"
+      GF_SECURITY_X_XSS_PROTECTION: "true"
+      # SERVER CONFIG
       GF_SERVER_ROOT_URL: https://observability.yesyoudeserve.duckdns.org
+      GF_SERVER_ENFORCE_DOMAIN: "true"
     volumes:
       - /opt/alice/data/grafana:/var/lib/grafana
       # Config file: caminho relativo ao diretório infra/docker/ onde docker-compose é executado

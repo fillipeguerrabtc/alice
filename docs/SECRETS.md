@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025
+**Data:** 31 de Dezembro de 2025
 
 ## Visão Geral
 
@@ -91,10 +91,21 @@ Estes são necessários para o deploy funcionar:
 | `REDIS_PASSWORD` | Senha Redis Alice (obrigatório) | `openssl rand -hex 32` |
 | `SESSION_SECRET` | String aleatória 64+ chars | `openssl rand -hex 64` |
 | `INTERNAL_API_SECRET` | Secret para comunicação S2S | `openssl rand -hex 32` |
-| `ADMIN_USER` | Username do administrador global (Alice/ERPNext/Grafana) | Definir username (ex: admin) |
-| `ADMIN_PWD` | Senha do administrador global (mín. 8 chars) | Definir forte e exclusiva |
+| `GRAFANA_ADMIN_USER` | Username admin Grafana 12 (ex: admin ou email) | Definir username |
+| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana 12 (mín. 8 chars recomendado) | Definir forte e exclusiva |
+| `ERPNEXT_ADMIN_PASSWORD` | Senha admin ERPNext 15 (mín. 8 chars) - Username fixo "Administrator" | Definir forte e exclusiva |
 | `DOCKERHUB_USERNAME` | Username Docker Hub | Evita rate limit (100 pulls/6h anônimo) |
 | `DOCKERHUB_TOKEN` | Access Token Docker Hub | [hub.docker.com/settings/security](https://hub.docker.com/settings/security) |
+
+> **ARQUITETURA ADMIN 2025 (31/12/2025):**
+>
+> | Sistema | Username Admin | Pode Mudar? | Secret da Senha |
+> |---------|---------------|-------------|-----------------|
+> | **Grafana 12** | Customizável (default: `admin`) | ✅ Sim | `GRAFANA_ADMIN_PASSWORD` |
+> | **ERPNext 15** | `Administrator` (fixo) | ❌ Não | `ERPNEXT_ADMIN_PASSWORD` |
+> | **Alice Auth** | Derivado de GRAFANA_ADMIN_USER | ✅ Sim | Derivado de GRAFANA_ADMIN_PASSWORD |
+>
+> **Nota:** `ADMIN_USER` e `ADMIN_PWD` são **opcionais** - se não definidos, são derivados de `GRAFANA_ADMIN_*`.
 
 ### FASE 2: Autenticação (mínimo 1 provider)
 
@@ -332,8 +343,8 @@ Estes são necessários para o deploy funcionar:
 | `LANGFUSE_NEXT_AUTH_SECRET` | Chave de autenticação | `openssl rand -hex 32` |
 | `LANGFUSE_SALT` | **OBRIGATÓRIO v3** - Salt para hashing | `openssl rand -base64 16` |
 | `LANGFUSE_ENCRYPTION_KEY` | **OBRIGATÓRIO v3** - Chave 256-bit hex | `openssl rand -hex 32` |
-| `GRAFANA_ADMIN_USER` | Usuário admin Grafana (usa ADMIN_USER por padrão) | Recomenda-se igual ao ADMIN_USER |
-| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana (usa ADMIN_PWD por padrão) | Recomenda-se igual ao ADMIN_PWD |
+| `GRAFANA_ADMIN_USER` | Usuário admin Grafana 12 (obrigatório) | Ex: admin, email, ou username customizado |
+| `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana 12 (obrigatório, mín. 8 chars recomendado) | Senha forte e exclusiva |
 | `GMAIL_USER` | **Email Gmail** para SMTP do Alertmanager | Ex: seuemail@gmail.com |
 | `GMAIL_APP_PASSWORD` | **App Password do Gmail** (16 caracteres) | [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) |
 

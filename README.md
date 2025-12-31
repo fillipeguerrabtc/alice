@@ -1,8 +1,8 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 30 de Dezembro de 2025  
-**Versão:** 4.49
+**Data:** 31 de Dezembro de 2025  
+**Versão:** 4.50
 
 <div align="center">
 
@@ -202,6 +202,18 @@ pnpm run dev
 ```
 
 O servidor iniciará automaticamente em `http://localhost:5000`.
+
+### Credenciais de Administrador (3 Sistemas Independentes)
+
+A plataforma possui **3 sistemas independentes** que requerem credenciais de admin **obrigatórias e separadas**:
+
+| Sistema | Username | Secret da Senha | Requisitos |
+|---------|----------|-----------------|------------|
+| **Alice Auth Service** | `ADMIN_USER` (email obrigatório) | `ADMIN_PWD` | Email válido (ex: admin@dominio.com), senha mín. 8 chars |
+| **Grafana 12** | `GRAFANA_ADMIN_USER` (qualquer string) | `GRAFANA_ADMIN_PASSWORD` | Username customizável, senha recomendada 8+ chars |
+| **ERPNext 15** | `Administrator` (fixo) | `ERPNEXT_ADMIN_PASSWORD` | Username não pode mudar (Frappe Framework), senha mín. 8 chars |
+
+**Importante:** Cada sistema tem seu próprio banco de usuários. Alice Auth Service pode atuar como IdP central via OAuth/OIDC/SAML, mas cada sistema ainda precisa de admin local para bootstrap e fallback.
 
 ### Variáveis de Ambiente
 
@@ -468,7 +480,7 @@ Todos os 51 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.37 - 27 de Dezembro de 2025*
+*Versão 4.50 - 31 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
 *Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*

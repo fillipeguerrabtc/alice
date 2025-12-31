@@ -294,8 +294,6 @@ jobs:
           # Secrets obrigatórias
           POSTGRES_PASSWORD_SECRET: ${{ secrets.POSTGRES_PASSWORD }}
           REDIS_PASSWORD_SECRET: ${{ secrets.REDIS_PASSWORD }}
-          ADMIN_USER_SECRET: ${{ secrets.ADMIN_USER }}
-          ADMIN_PWD_SECRET: ${{ secrets.ADMIN_PWD }}
           QDRANT_API_KEY_SECRET: ${{ secrets.QDRANT_API_KEY }}
           SESSION_SECRET_SECRET: ${{ secrets.SESSION_SECRET }}
           INTERNAL_API_SECRET_SECRET: ${{ secrets.INTERNAL_API_SECRET }}
@@ -313,7 +311,21 @@ jobs:
           LANGFUSE_DB_NAME_SECRET: ${{ secrets.LANGFUSE_DB_NAME }}
           CORS_ORIGIN_SECRET: ${{ secrets.CORS_ORIGIN }}
           CORS_ORIGINS_SECRET: ${{ secrets.CORS_ORIGINS }}
-          # Secrets opcionais
+          # =============================================================
+          # ADMIN CREDENTIALS - 3 SISTEMAS INDEPENDENTES (OBRIGATÓRIOS)
+          # =============================================================
+          # 1. ALICE AUTH SERVICE (IdP Central):
+          #    - ADMIN_USER: Email obrigatório (ex: admin@yesyoudeserve.duckdns.org)
+          #    - ADMIN_PWD: Senha mínimo 8 caracteres
+          # 2. GRAFANA 12 (Observability):
+          #    - GRAFANA_ADMIN_USER: Qualquer string (ex: admin)
+          #    - GRAFANA_ADMIN_PASSWORD: Senha (recomendado 8+ chars)
+          # 3. ERPNEXT 15 (ERP/CRM):
+          #    - Username fixo "Administrator" (Frappe Framework)
+          #    - ERPNEXT_ADMIN_PASSWORD: Senha mínimo 8 chars
+          # =============================================================
+          ADMIN_USER_SECRET: ${{ secrets.ADMIN_USER }}
+          ADMIN_PWD_SECRET: ${{ secrets.ADMIN_PWD }}
           GRAFANA_ADMIN_USER_SECRET: ${{ secrets.GRAFANA_ADMIN_USER }}
           GRAFANA_ADMIN_PASSWORD_SECRET: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           ERPNEXT_ADMIN_PASSWORD_SECRET: ${{ secrets.ERPNEXT_ADMIN_PASSWORD }}

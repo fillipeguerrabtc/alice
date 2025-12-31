@@ -86,12 +86,101 @@ if echo "${REDIS_PASSWORD}" | grep -qE '[+/=@:?#%]'; then
   exit 1
 fi
 
+# =============================================================================
+# ADMIN CREDENTIALS - Arquitetura Enterprise 2025 (CORRIGIDO 31/12/2025)
+# =============================================================================
+# TODOS OS 3 SISTEMAS REQUEREM CREDENCIAIS ADMIN OBRIGATÓRIAS:
+#
+# 1. ALICE AUTH SERVICE (IdP Central):
+#    - ADMIN_USER: Email obrigatório (ex: admin@yesyoudeserve.duckdns.org)
+#    - ADMIN_PWD: Senha mínimo 8 caracteres
+#    - Cria super_admin automaticamente via ensureGlobalAdmin()
+#    - Ref: apps/auth-service/src/index.ts linha 203 - z.string().email()
+#
+# 2. GRAFANA 12 (Observability):
+#    - GRAFANA_ADMIN_USER: Qualquer string (default "admin")
+#    - GRAFANA_ADMIN_PASSWORD: Senha (recomendado 8+ chars)
+#    - Ref: https://grafana.com/docs/grafana/latest/setup-grafana/configure-security/
+#
+# 3. ERPNEXT 15 (ERP/CRM):
+#    - Username: FIXO "Administrator" (não pode mudar - Frappe Framework)
+#    - ERPNEXT_ADMIN_PASSWORD: Senha mínimo 8 caracteres (Frappe default)
+#    - Ref: https://frappeframework.com/docs/user/en/basics/users-and-permissions
+# =============================================================================
+
+echo "🔐 Validando credenciais admin (Alice + Grafana + ERPNext)..."
+
+# -----------------------------------------------------------------------------
+# ALICE AUTH SERVICE - ADMIN_USER (email) + ADMIN_PWD (obrigatórios)
+# -----------------------------------------------------------------------------
 ADMIN_USER="${ADMIN_USER_SECRET:-}"
 ADMIN_PWD="${ADMIN_PWD_SECRET:-}"
-if [ -z "${ADMIN_USER}" ] || [ -z "${ADMIN_PWD}" ]; then
-  echo "::error::ADMIN_USER/ADMIN_PWD não definidos. Configure os secrets ADMIN_USER e ADMIN_PWD para o administrador global." >&2
+
+if [ -z "${ADMIN_USER}" ]; then
+  echo "::error::ADMIN_USER não definido. Configure o secret ADMIN_USER (email válido, ex: admin@yesyoudeserve.duckdns.org)." >&2
   exit 1
 fi
+
+if [ -z "${ADMIN_PWD}" ]; then
+  echo "::error::ADMIN_PWD não definido. Configure o secret ADMIN_PWD (mínimo 8 caracteres)." >&2
+  exit 1
+fi
+
+# Validar formato de email para ADMIN_USER
+if ! echo "${ADMIN_USER}" | grep -qE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
+  echo "::error::ADMIN_USER deve ser um email válido. Valor fornecido: ${ADMIN_USER}" >&2
+  exit 1
+fi
+
+# Validar comprimento mínimo de ADMIN_PWD
+if [ ${#ADMIN_PWD} -lt 8 ]; then
+  echo "::error::ADMIN_PWD deve ter no mínimo 8 caracteres. Comprimento atual: ${#ADMIN_PWD}" >&2
+  exit 1
+fi
+
+echo "✅ Alice Auth: ${ADMIN_USER} (email válido, senha 8+ chars)"
+
+# -----------------------------------------------------------------------------
+# GRAFANA 12 - GRAFANA_ADMIN_USER + GRAFANA_ADMIN_PASSWORD (obrigatórios)
+# -----------------------------------------------------------------------------
+GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET:-}"
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET:-}"
+
+if [ -z "${GRAFANA_ADMIN_USER}" ]; then
+  echo "::error::GRAFANA_ADMIN_USER não definido. Configure o secret GRAFANA_ADMIN_USER (ex: admin)." >&2
+  exit 1
+fi
+
+if [ -z "${GRAFANA_ADMIN_PASSWORD}" ]; then
+  echo "::error::GRAFANA_ADMIN_PASSWORD não definido. Configure o secret GRAFANA_ADMIN_PASSWORD." >&2
+  exit 1
+fi
+
+# Grafana 12: Aviso se senha curta (não bloqueia, mas recomenda)
+if [ ${#GRAFANA_ADMIN_PASSWORD} -lt 8 ]; then
+  echo "⚠️  AVISO: GRAFANA_ADMIN_PASSWORD tem menos de 8 caracteres. Recomendado senha mais forte."
+fi
+
+echo "✅ Grafana 12: ${GRAFANA_ADMIN_USER} (username customizável)"
+
+# -----------------------------------------------------------------------------
+# ERPNEXT 15 - Username fixo "Administrator" + ERPNEXT_ADMIN_PASSWORD (obrigatório)
+# -----------------------------------------------------------------------------
+ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET:-}"
+
+if [ -z "${ERPNEXT_ADMIN_PASSWORD}" ]; then
+  echo "::error::ERPNEXT_ADMIN_PASSWORD não definido. Configure o secret ERPNEXT_ADMIN_PASSWORD (mínimo 8 caracteres)." >&2
+  exit 1
+fi
+
+# ERPNext 15: Frappe requer mínimo 8 caracteres por default
+if [ ${#ERPNEXT_ADMIN_PASSWORD} -lt 8 ]; then
+  echo "::error::ERPNEXT_ADMIN_PASSWORD deve ter no mínimo 8 caracteres (requisito Frappe). Comprimento atual: ${#ERPNEXT_ADMIN_PASSWORD}" >&2
+  exit 1
+fi
+
+echo "✅ ERPNext 15: Administrator (username fixo, senha 8+ chars)"
+echo "✅ Todas as credenciais admin validadas com sucesso"
 
 QDRANT_API_KEY="${QDRANT_API_KEY_SECRET:-}"
 if [ -z "${QDRANT_API_KEY}" ]; then
@@ -212,42 +301,9 @@ echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Alertmanager via arquivo de se
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================
-# FASE 3: Validação de formato e comprimento
+# FASE 3: Secrets Opcionais (Stripe, Wise, ERPNext API)
 # =============================================================================
-echo "📝 Validando formato de ADMIN_USER e ADMIN_PWD..."
-
-if ! echo "${ADMIN_USER}" | grep -qE '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'; then
-  echo "::error::ADMIN_USER deve ser um email válido (formato: user@example.com). Valor fornecido: ${ADMIN_USER}" >&2
-  exit 1
-fi
-
-if [ ${#ADMIN_PWD} -lt 8 ]; then
-  echo "::error::ADMIN_PWD deve ter no mínimo 8 caracteres. Comprimento atual: ${#ADMIN_PWD}" >&2
-  exit 1
-fi
-
-# =============================================================================
-# FASE 4: Fallback seguro para secrets opcionais
-# =============================================================================
-echo "🔄 Configurando fallbacks para secrets opcionais..."
-
-if [ -z "${GRAFANA_ADMIN_USER_SECRET:-}" ]; then
-  GRAFANA_ADMIN_USER="${ADMIN_USER}"
-else
-  GRAFANA_ADMIN_USER="${GRAFANA_ADMIN_USER_SECRET}"
-fi
-
-if [ -z "${GRAFANA_ADMIN_PASSWORD_SECRET:-}" ]; then
-  GRAFANA_ADMIN_PASSWORD="${ADMIN_PWD}"
-else
-  GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD_SECRET}"
-fi
-
-if [ -z "${ERPNEXT_ADMIN_PASSWORD_SECRET:-}" ]; then
-  ERPNEXT_ADMIN_PASSWORD="${ADMIN_PWD}"
-else
-  ERPNEXT_ADMIN_PASSWORD="${ERPNEXT_ADMIN_PASSWORD_SECRET}"
-fi
+echo "🔄 Configurando secrets opcionais..."
 
 if [ -z "${STRIPE_WEBHOOK_BASE_URL_SECRET:-}" ]; then
   STRIPE_WEBHOOK_BASE_URL="https://yesyoudeserve.duckdns.org"
