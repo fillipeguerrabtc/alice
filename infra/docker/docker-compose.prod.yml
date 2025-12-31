@@ -778,16 +778,21 @@ services:
     labels:
       - "traefik.enable=true"
       # OIDC Provider routes (31/12/2025)
+      # OBRIGATÓRIO: .service label quando container tem múltiplos serviços Traefik
+      # Sem isso: "cannot be linked automatically with multiple Services"
+      # Ref: Bug fix alice-chat/alice-ws 23/12/2025
       - "traefik.http.routers.alice-oidc.rule=Host(`yesyoudeserve.duckdns.org`) && (PathPrefix(`/.well-known/openid-configuration`) || PathPrefix(`/oauth`))"
       - "traefik.http.routers.alice-oidc.entrypoints=websecure"
       - "traefik.http.routers.alice-oidc.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-oidc.middlewares=security-headers@docker"
+      - "traefik.http.routers.alice-oidc.service=alice-oidc"
       - "traefik.http.services.alice-oidc.loadbalancer.server.port=3001"
       # Auth API routes
       - "traefik.http.routers.alice-auth.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/auth`)"
       - "traefik.http.routers.alice-auth.entrypoints=websecure"
       - "traefik.http.routers.alice-auth.tls.certresolver=letsencrypt"
       - "traefik.http.routers.alice-auth.middlewares=security-headers@docker,auth-rate-limit@docker"
+      - "traefik.http.routers.alice-auth.service=alice-auth"
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
