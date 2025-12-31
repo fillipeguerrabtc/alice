@@ -46,6 +46,11 @@
 name: Deploy to Production (Hetzner Cloud)
 
 on:
+  # Produção DEVE disparar somente por TAG semântica (vX.Y.Z...) criada no Release.
+  # Isso impede deploy em push de branch e garante reprodutibilidade (mesma tag = mesmo resultado).
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
     inputs:
       version:
@@ -88,7 +93,7 @@ jobs:
     name: Validate & Prepare
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    if: github.event_name == 'workflow_dispatch'
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
     permissions:
       contents: read
       packages: read
@@ -127,7 +132,12 @@ jobs:
         run: |
           set -e
           
+          # workflow_dispatch: inputs.version pode ser informado.
+          # push(tag): usar a tag como fonte de verdade (github.ref_name).
           INPUT_VERSION="${{ inputs.version }}"
+          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
+            INPUT_VERSION="${GITHUB_REF_NAME}"
+          fi
           TRIGGERED_BY="${{ inputs.triggered_by }}"
           
           echo "=============================================="
@@ -353,7 +363,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
-          ref: ${{ inputs.version }}
+          ref: ${{ needs.validate-and-prepare.outputs.tag_commit }}
 
       - name: Criar arquivo .env.prod
         env:
@@ -490,7 +500,7 @@ jobs:
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
           DEPLOY_SERVICES: ${{ inputs.services }}
-          DEPLOY_VERSION: ${{ inputs.version }}
+          DEPLOY_VERSION: ${{ needs.validate-and-prepare.outputs.image_tag }}
           REPO_FULL_NAME: ${{ github.repository }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
@@ -1215,7 +1225,7 @@ PGPASS_EOF
     # causando falha do workflow mesmo quando deveria ser ignorado
     if: |
       always() &&
-      github.event_name == 'workflow_dispatch' && (
+      (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) && (
         needs.deploy.result == 'failure' ||
         needs.health-check.result == 'failure' ||
         needs.health-check.outputs.health_status == 'failed'
@@ -1399,7 +1409,7 @@ PGPASS_EOF
         env:
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_ACTOR: ${{ github.actor }}
-          VERSION: ${{ inputs.version }}
+          VERSION: ${{ needs.validate-and-prepare.outputs.image_tag }}
         with:
           host: ${{ secrets.HETZNER_VM_HOST }}
           username: ${{ secrets.HETZNER_VM_USER }}

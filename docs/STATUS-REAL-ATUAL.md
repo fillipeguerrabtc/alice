@@ -841,7 +841,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | **Release Workflow** | | |
 | create-release | 5 min | Tag + GitHub Release |
 | build-images | 90 min | 15 imagens Docker (10 microservices + 5 GPU) - rebuild apenas do que mudou; retag do restante |
-| trigger-deploy | 2 min | API call |
+| deploy-production (tag push) | - | Disparo automático por TAG `v*` (sem API call) |
 | **Deploy Workflow** | | |
 | validate-and-prepare | 5 min | Validação + GHCR check |
 | image-security-scan | 10 min | Trivy em 3 imagens |

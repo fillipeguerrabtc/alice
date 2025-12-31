@@ -621,34 +621,7 @@ jobs:
   # Job 3: Disparar Deploy Automaticamente
   # Timeout: 2min (apenas API call)
   # ===========================================================================
-  trigger-deploy:
-    name: Trigger Deploy
-    runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 2
-    needs: [create-release, build-images]
-    if: ${{ !inputs.prerelease && needs.build-images.result == 'success' }}
-    
-    steps:
-      - name: Disparar workflow de deploy
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            const version = '${{ needs.create-release.outputs.version }}';
-            
-            console.log('🚀 Iniciando deploy automático');
-            console.log('📦 Versão: ' + version);
-            
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'deploy-production.yml',
-              ref: version,
-              inputs: {
-                version: version,
-                services: 'all',
-                triggered_by: 'release-workflow'
-              }
-            });
-            
-            console.log('✅ Deploy disparado!');
+  # DISPARO DE PRODUÇÃO (ENTERPRISE):
+  # O deploy agora é iniciado automaticamente por push de TAG (v*), gerada neste workflow.
+  # Isso elimina duplicação/risco de double-deploy (dispatch + tag push) e garante:
+  # CI → Release (tag) → Deploy (trigger por tag).
