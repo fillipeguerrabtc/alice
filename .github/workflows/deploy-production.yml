@@ -46,11 +46,8 @@
 name: Deploy to Production (Hetzner Cloud)
 
 on:
-  # Produção DEVE disparar somente por TAG semântica (vX.Y.Z...) criada no Release.
-  # Isso impede deploy em push de branch e garante reprodutibilidade (mesma tag = mesmo resultado).
-  push:
-    tags:
-      - 'v*'
+  # ENTERPRISE: Deploy APENAS via workflow_dispatch (chamado pelo Release workflow)
+  # NÃO usar push/tags pois GitHub registra "runs" fantasmas em push de branch
   workflow_dispatch:
     inputs:
       version:
@@ -93,7 +90,7 @@ jobs:
     name: Validate & Prepare
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 5
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
       packages: read
@@ -132,12 +129,8 @@ jobs:
         run: |
           set -e
           
-          # workflow_dispatch: inputs.version pode ser informado.
-          # push(tag): usar a tag como fonte de verdade (github.ref_name).
+          # ENTERPRISE: Deploy apenas via workflow_dispatch (chamado pelo Release workflow)
           INPUT_VERSION="${{ inputs.version }}"
-          if [ "${GITHUB_EVENT_NAME}" = "push" ] && [[ "${GITHUB_REF:-}" == refs/tags/* ]]; then
-            INPUT_VERSION="${GITHUB_REF_NAME}"
-          fi
           TRIGGERED_BY="${{ inputs.triggered_by }}"
           
           echo "=============================================="
@@ -1220,12 +1213,10 @@ PGPASS_EOF
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 10
     needs: [deploy, health-check]
-    # CORREÇÃO 30/12/2025: Adicionar verificação de workflow_dispatch
-    # Sem isso, o rollback roda quando disparado por push (health-check skipado)
-    # causando falha do workflow mesmo quando deveria ser ignorado
+    # CORREÇÃO 31/12/2025: Rollback apenas via workflow_dispatch
     if: |
       always() &&
-      (github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v'))) && (
+      github.event_name == 'workflow_dispatch' && (
         needs.deploy.result == 'failure' ||
         needs.health-check.result == 'failure' ||
         needs.health-check.outputs.health_status == 'failed'
