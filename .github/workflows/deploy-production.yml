@@ -1210,11 +1210,14 @@ PGPASS_EOF
     runs-on: [self-hosted, linux, deploy]
     timeout-minutes: 10
     needs: [deploy, health-check]
+    # CORREÇÃO 30/12/2025: Adicionar verificação de workflow_dispatch
+    # Sem isso, o rollback roda quando disparado por push (health-check skipado)
+    # causando falha do workflow mesmo quando deveria ser ignorado
     if: |
-      always() && (
+      always() &&
+      github.event_name == 'workflow_dispatch' && (
         needs.deploy.result == 'failure' ||
         needs.health-check.result == 'failure' ||
-        needs.health-check.result == 'skipped' ||
         needs.health-check.outputs.health_status == 'failed'
       )
     
