@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025  
-**Versão:** 7.12 - Server GPU Optimizations Enterprise
+**Data:** 31 de Dezembro de 2025  
+**Versão:** 7.13 - CI/Release Dispatch by SHA (Enterprise)
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -794,7 +794,7 @@ O pipeline utiliza **Registry Cache no GHCR** para acelerar builds:
 
 **Vantagens sobre GHA Cache:**
 
-- ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (main)
+- ✅ Compartilhado entre `release.yml` (tags) e `deploy-production.yml` (tag/SHA versionado)
 - ✅ Sem limite de 10GB do GitHub Actions cache
 - ✅ Reprodutibilidade: releases usam a tag exata
 - ✅ Funciona com runners GitHub-hosted E self-hosted (cache armazenado no GHCR, não no runner)

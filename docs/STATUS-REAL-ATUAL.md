@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 28 de Dezembro de 2025  
+> **Data:** 31 de Dezembro de 2025  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.24 - Server GPU Optimizations Enterprise
+> **Versão:** 4.25 - CI/Release Dispatch by SHA (Enterprise)
 
 ---
 
@@ -926,6 +926,8 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 - Padrão enterprise: `needs.{job}.result == 'success'` para cada job crítico (mesmo padrão usado em `release.yml` e `deploy-production.yml`)
 
 > **NOTA (12/12/2025):** Removido job `ci-status` intermediário que estava instável. A validação explícita na condição `if` é mais confiável e segue o padrão usado em outros workflows do projeto.
+>
+> **NOTA (31/12/2025):** **Correção enterprise de reprodutibilidade**: o job `trigger-release` no `ci.yml` passou a disparar o workflow `release.yml` com `ref` apontando para o **SHA exato** validado no CI (em vez de `ref: main`). Isso elimina race condition em pushes rápidos onde `main` pode avançar entre o fim do CI e o disparo do Release, garantindo: **CI valida commit X → Release tagueia commit X → Deploy executa tag vX.Y.Z do mesmo commit**.
 
 > **NOTA (12/12/2025):** O cálculo de versão no `trigger-release` trata tags não-semânticas e zeros à esquerda corretamente:
 > - **Valores default para componentes ausentes** (`v1` → `MAJOR=1, MINOR=0, PATCH=0` → `v1.0.1`)

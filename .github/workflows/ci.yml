@@ -444,7 +444,10 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               workflow_id: 'release.yml',
-              ref: 'main',
+              // ENTERPRISE: disparar pelo SHA exato validado no CI.
+              // Evita race condition: `ref: main` pode avançar entre o fim do CI e o disparo do Release.
+              // GitHub Actions aceita branch/tag/SHA como `ref` em workflow_dispatch.
+              ref: context.sha,
               inputs: {
                 version: version,
                 prerelease: 'false'
