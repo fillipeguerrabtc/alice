@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 28 de Dezembro de 2025  
-> **Versão:** 1.11.0 - Server GPU Optimizations Enterprise (Docker daemon, NVIDIA Persistence, Kernel sysctl)  
+> **Data:** 31 de Dezembro de 2025  
+> **Versão:** 1.12.0 - Gmail SMTP Enterprise (Resend removido)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 

@@ -134,7 +134,7 @@ VALUES
     ('wise_enabled', false, 'Integração Wise (requer configuração)'),
     ('erpnext_enabled', false, 'Integração ERPNext (requer configuração)'),
     ('twilio_enabled', false, 'Integração Twilio (requer configuração)'),
-    ('resend_enabled', false, 'Integração Resend (requer configuração)'),
+    ('email_enabled', false, 'Integração Gmail SMTP (requer configuração)'),
     ('saml_enabled', false, 'Autenticação SAML 2.0 (requer configuração)'),
     ('google_oauth_enabled', false, 'OAuth Google (requer configuração)'),
     ('github_oauth_enabled', false, 'OAuth GitHub (requer configuração)')
