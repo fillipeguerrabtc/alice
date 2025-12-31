@@ -205,13 +205,8 @@ if [ -z "${ERPNEXT_OAUTH_CLIENT_SECRET}" ]; then
   exit 1
 fi
 
-# OIDC Cookie Keys (opcional - default seguro se não definido)
-OIDC_COOKIE_KEYS="${OIDC_COOKIE_KEYS:-}"
-if [ -z "${OIDC_COOKIE_KEYS}" ]; then
-  # Gerar keys default seguras baseadas em SESSION_SECRET
-  OIDC_COOKIE_KEYS="alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c1-16),alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c17-32)"
-  echo "⚠️  OIDC_COOKIE_KEYS não definido, usando derivado de SESSION_SECRET"
-fi
+# OIDC Cookie Keys - Validação adiada para após SESSION_SECRET ser carregado
+OIDC_COOKIE_KEYS_INPUT="${OIDC_COOKIE_KEYS:-}"
 
 echo "✅ GRAFANA_OAUTH_CLIENT_SECRET validado (grafana-sso)"
 echo "✅ ERPNEXT_OAUTH_CLIENT_SECRET validado (erpnext-sso)"
@@ -227,6 +222,16 @@ SESSION_SECRET="${SESSION_SECRET_SECRET:-}"
 if [ -z "${SESSION_SECRET}" ]; then
   echo "::error::SESSION_SECRET não definido. Configure o secret SESSION_SECRET no repositório (necessário para auth-service)." >&2
   exit 1
+fi
+
+# OIDC Cookie Keys - Gerado APÓS SESSION_SECRET estar disponível (31/12/2025 - Bug Fix)
+# Usa o input salvo anteriormente, agora com SESSION_SECRET já carregado
+if [ -z "${OIDC_COOKIE_KEYS_INPUT}" ]; then
+  # Gerar keys default seguras baseadas em SESSION_SECRET (agora disponível)
+  OIDC_COOKIE_KEYS="alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c1-16),alice-oidc-key-$(echo ${SESSION_SECRET} | cut -c17-32)"
+  echo "⚠️  OIDC_COOKIE_KEYS não definido, usando derivado de SESSION_SECRET"
+else
+  OIDC_COOKIE_KEYS="${OIDC_COOKIE_KEYS_INPUT}"
 fi
 
 INTERNAL_API_SECRET="${INTERNAL_API_SECRET_SECRET:-}"
