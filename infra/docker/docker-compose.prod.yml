@@ -2964,7 +2964,7 @@ services:
   # - Suporta múltiplas fontes de dados (não só Prometheus)
   # - Elimina container redundante (-256MB RAM, -1 container)
   #
-  # MIGRAÇÃO: Todas as 18 regras de alerta foram migradas para Grafana Alerting
+  # MIGRAÇÃO: Todas as 15 regras de alerta foram migradas para Grafana Alerting
   # via provisioning em /etc/grafana/provisioning/alerting/
   #
   # SMTP: Grafana usa mesmo Gmail SMTP via variáveis GF_SMTP_*

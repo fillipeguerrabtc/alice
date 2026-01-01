@@ -1,7 +1,7 @@
 # Grafana Alerting - Alert Rules
 #
 # Regras de alerta migradas do Prometheus/Alertmanager para Grafana Unified Alerting.
-# MIGRAÇÃO 01/01/2026: 18 regras migradas do llm-alerts.yml
+# MIGRAÇÃO 01/01/2026: 15 regras migradas do llm-alerts.yml (12 LLM + 3 Infrastructure)
 #
 # Ref: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
 #
@@ -16,7 +16,7 @@ apiVersion: 1
 # =============================================================================
 # Migradas das seguintes fontes:
 # - apps/observability-service/config/prometheus/rules/llm-alerts.yml
-# - Grupos: llm_alerts (14 regras) + infrastructure_alerts (4 regras)
+# - Grupos: llm_alerts (12 regras) + infrastructure_alerts (3 regras) = 15 total
 # =============================================================================
 
 groups:
