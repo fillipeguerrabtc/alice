@@ -2482,9 +2482,10 @@ services:
   # REQUISITOS v3: PostgreSQL + ClickHouse + Redis + S3/MinIO (OBRIGATÓRIO)
   # ===========================================================================
   langfuse:
-    # CORREÇÃO 01/01/2026: Usar versão estável mais recente
-    # A versão 3 é estável com todas as dependências corretas (S3, ClickHouse, Redis)
-    image: langfuse/langfuse:3
+    # CORREÇÃO 31/12/2025: Langfuse 3.85.0 - versão estável sem ZodError bug
+    # PROIBIDO: Versões 3.90.0 a 3.140.0 têm bug ZodError com Next.js 14.2.x
+    # Ref: https://github.com/orgs/langfuse/discussions/8781
+    image: langfuse/langfuse:3.85.0
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2566,8 +2567,9 @@ services:
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
   langfuse-worker:
-    # CORREÇÃO 01/01/2026: Mesma versão do langfuse principal
-    image: langfuse/langfuse:3
+    # CORREÇÃO 31/12/2025: Langfuse 3.85.0 - versão estável sem ZodError bug
+    # DEVE SER SEMPRE a mesma versão do langfuse principal
+    image: langfuse/langfuse:3.85.0
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped
@@ -2916,8 +2918,9 @@ services:
   # VECTOR - Agregador de logs para Loki
   # ===========================================================================
   vector:
-    # ATUALIZADO 14/12/2025: Vector 0.51.1-alpine com SHA256 digest (Supply Chain Security 2025)
-    image: timberio/vector:0.51.1-alpine
+    # ATUALIZADO 01/01/2026: Vector 0.45.0-alpine (última versão Alpine disponível)
+    # NOTA: 0.51.1-alpine NÃO existe no Docker Hub
+    image: timberio/vector:0.45.0-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped

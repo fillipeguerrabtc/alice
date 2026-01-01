@@ -15,7 +15,7 @@
   "pgvector": "pg16",
   "clickhouse": "25.12-alpine",
   "qdrant": "v1.16.2",
-  "vector": "0.51.1-alpine",
+  "vector": "0.45.0-alpine",
   "otel-collector": "0.142.0",
   "node-exporter": "v1.9.1",
   "cadvisor": "v0.52.1",
