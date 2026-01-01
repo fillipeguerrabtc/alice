@@ -76,9 +76,29 @@ RUN git clone --branch v${PGVECTOR_VERSION} --depth 1 \
 
 WORKDIR /tmp/pgvector
 
-# Build pgvector
-# NOTA: Desabilitar JIT se houver problemas com clang version mismatch
-RUN make PG_CONFIG=/usr/local/bin/pg_config && make install PG_CONFIG=/usr/local/bin/pg_config
+# =============================================================================
+# CORREÇÃO CRÍTICA 01/01/2026: Flags de compilação compatíveis com CPU i5-13500
+# =============================================================================
+# PROBLEMA: Build em GitHub Actions (CPU moderna) gerava binário com AVX-512
+# CAUSA: CPU do runner suporta AVX-512, mas servidor Hetzner (i5-13500) NÃO suporta
+# ERRO: "signal 4: Illegal instruction" ao executar CREATE EXTENSION vector
+# 
+# SOLUÇÃO: Usar -march=x86-64-v3 que inclui:
+#   - SSE, SSE2, SSE3, SSSE3, SSE4.1, SSE4.2
+#   - AVX, AVX2, BMI1, BMI2, F16C, FMA, LZCNT, MOVBE, XSAVE
+#   - NÃO inclui AVX-512 (não suportado pelo i5-13500)
+#
+# REFERÊNCIA: https://gcc.gnu.org/onlinedocs/gcc/x86-Options.html
+# =============================================================================
+ENV CFLAGS="-O3 -march=x86-64-v3 -mtune=generic -fno-omit-frame-pointer"
+ENV CXXFLAGS="-O3 -march=x86-64-v3 -mtune=generic -fno-omit-frame-pointer"
+ENV OPTFLAGS="-O3 -march=x86-64-v3 -mtune=generic"
+
+# Build pgvector com flags explícitas
+# NOTA: PG_CFLAGS passa flags diretamente para o compilador do PostgreSQL extension
+RUN make clean 2>/dev/null || true && \
+    make PG_CONFIG=/usr/local/bin/pg_config PG_CFLAGS="$CFLAGS" OPTFLAGS="$OPTFLAGS" && \
+    make install PG_CONFIG=/usr/local/bin/pg_config
 
 # =============================================================================
 # Stage 3: Runtime - PostgreSQL Alpine + pgvector + pgBackRest
@@ -134,10 +154,45 @@ RUN mkdir -p /var/lib/pgbackrest \
 COPY infra/postgres/pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
 RUN chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
 
-# Script de inicialização para criar extensão pgvector automaticamente
+# =============================================================================
+# Script de inicialização para criar extensão pgvector com validação
+# CORREÇÃO 01/01/2026: Fail-fast se extensão não for criada corretamente
+# =============================================================================
 RUN mkdir -p /docker-entrypoint-initdb.d && \
-    echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/00-create-pgvector.sql && \
-    chown postgres:postgres /docker-entrypoint-initdb.d/00-create-pgvector.sql
+    cat > /docker-entrypoint-initdb.d/00-create-pgvector.sh << 'EOSCRIPT'
+#!/bin/bash
+set -e
+
+echo "🔌 [postgres-init] Criando extensão pgvector..."
+
+# Criar extensão
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS vector;
+EOSQL
+
+# Validar se extensão foi criada
+VECTOR_EXISTS=$(psql -t -A --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT COUNT(*) FROM pg_extension WHERE extname = 'vector';")
+if [ "$VECTOR_EXISTS" != "1" ]; then
+    echo "❌ [postgres-init] ERRO CRÍTICO: Extensão pgvector NÃO foi criada!" >&2
+    exit 1
+fi
+
+echo "✅ [postgres-init] Extensão pgvector criada"
+
+# Testar operação vetorial (detectar SIGILL em runtime)
+echo "🧪 [postgres-init] Testando operações pgvector..."
+if psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" -c "SELECT '[1,2,3]'::vector <-> '[3,2,1]'::vector;" > /dev/null 2>&1; then
+    echo "✅ [postgres-init] Operações pgvector funcionando corretamente"
+else
+    echo "❌ [postgres-init] ERRO CRÍTICO: SIGILL detectado em operações pgvector!" >&2
+    echo "   CPU do servidor não suporta instruções usadas pelo binário pgvector" >&2
+    exit 1
+fi
+
+echo "✅ [postgres-init] pgvector inicializado com sucesso!"
+EOSCRIPT
+RUN chmod +x /docker-entrypoint-initdb.d/00-create-pgvector.sh && \
+    chown postgres:postgres /docker-entrypoint-initdb.d/00-create-pgvector.sh
 
 # Voltar ao usuário postgres (padrão da imagem base)
 USER postgres

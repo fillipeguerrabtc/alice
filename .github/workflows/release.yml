@@ -360,6 +360,90 @@ jobs:
           
           echo "✅ All 11 microservices built!"
 
+      # ==========================================================================
+      # SMOKE TEST: Validar imagem PostgreSQL + pgvector (CRÍTICO)
+      # ==========================================================================
+      # CORREÇÃO 01/01/2026: Detectar SIGILL (Illegal Instruction) ANTES do deploy
+      # PROBLEMA: Build em runners com AVX-512 gerava binário incompatível com i5-13500
+      # CAUSA: CPU do servidor Hetzner (i5-13500) NÃO suporta AVX-512
+      # SOLUÇÃO: Testar operações pgvector no CI para detectar incompatibilidade
+      # ==========================================================================
+      - name: Smoke Test PostgreSQL + pgvector
+        run: |
+          set -e
+          VERSION="${{ needs.create-release.outputs.version }}"
+          
+          echo "🧪 Iniciando smoke test da imagem PostgreSQL..."
+          
+          # Iniciar container temporário
+          docker run -d \
+            --name postgres-smoke-test \
+            --platform linux/amd64 \
+            -e POSTGRES_PASSWORD=smoketest123 \
+            -e POSTGRES_USER=smoketest \
+            -e POSTGRES_DB=smoketest_db \
+            "${{ env.IMAGE_PREFIX }}-postgres:${VERSION}"
+          
+          # Aguardar PostgreSQL iniciar (até 60s)
+          echo "⏳ Aguardando PostgreSQL iniciar..."
+          for i in $(seq 1 60); do
+            if docker exec postgres-smoke-test pg_isready -U smoketest -d smoketest_db 2>/dev/null; then
+              echo "✅ PostgreSQL iniciou com sucesso"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "❌ ERRO: PostgreSQL não iniciou após 60s"
+              docker logs postgres-smoke-test
+              docker stop postgres-smoke-test || true
+              docker rm postgres-smoke-test || true
+              exit 1
+            fi
+            sleep 1
+          done
+          
+          # Aguardar script init executar (cria extensão pgvector)
+          echo "⏳ Aguardando inicialização completa..."
+          sleep 5
+          
+          # TESTE CRÍTICO: Verificar se extensão pgvector foi criada
+          echo "🧪 Verificando extensão pgvector..."
+          VECTOR_EXISTS=$(docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -tAc "SELECT COUNT(*) FROM pg_extension WHERE extname='vector';")
+          if [ "$VECTOR_EXISTS" != "1" ]; then
+            echo "❌ ERRO CRÍTICO: Extensão pgvector NÃO foi criada!"
+            echo "Logs do PostgreSQL:"
+            docker logs postgres-smoke-test
+            docker stop postgres-smoke-test || true
+            docker rm postgres-smoke-test || true
+            exit 1
+          fi
+          echo "✅ Extensão pgvector criada"
+          
+          # TESTE CRÍTICO: Verificar operações vetoriais (detectar SIGILL)
+          echo "🧪 Testando operações pgvector (verificar SIGILL)..."
+          if docker exec postgres-smoke-test psql -U smoketest -d smoketest_db -v ON_ERROR_STOP=1 <<'EOSQL' 2>&1 | tee /tmp/pgvector-ops-test.log; then
+          CREATE TABLE IF NOT EXISTS test_vectors (id serial PRIMARY KEY, embedding vector(3));
+          INSERT INTO test_vectors (embedding) VALUES ('[1,2,3]'), ('[4,5,6]');
+          SELECT * FROM test_vectors ORDER BY embedding <-> '[3,3,3]' LIMIT 1;
+          DROP TABLE test_vectors;
+          EOSQL
+            echo "✅ Operações pgvector executadas com sucesso"
+          else
+            echo "❌ ERRO CRÍTICO: SIGILL detectado em operações pgvector!"
+            echo "   CPU do runner pode ter compilado com instruções não suportadas pelo servidor de produção"
+            echo "Logs do PostgreSQL:"
+            docker logs postgres-smoke-test
+            cat /tmp/pgvector-ops-test.log || true
+            docker stop postgres-smoke-test || true
+            docker rm postgres-smoke-test || true
+            exit 1
+          fi
+          
+          # Cleanup
+          docker stop postgres-smoke-test
+          docker rm postgres-smoke-test
+          
+          echo "✅ SMOKE TEST PostgreSQL + pgvector PASSOU!"
+
       # Build de serviços GPU (pesados - ~5-10GB cada)
       - name: Build GPU Services
         run: |
