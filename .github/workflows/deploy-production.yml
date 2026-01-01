@@ -684,13 +684,33 @@ jobs:
             log "🔍 PRE-FLIGHT CHECKS ADICIONAIS..."
             
             # Check 1: Espaço em disco (mínimo 50GB para primeiro deploy)
-            AVAILABLE_GB=$(df -BG /opt/alice 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//' || echo "0")
-            if [ -z "$AVAILABLE_GB" ] || [ "$AVAILABLE_GB" = "0" ]; then
-              # Se /opt/alice não existe, verificar /opt ou /
-              AVAILABLE_GB=$(df -BG /opt 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//' || df -BG / | tail -1 | awk '{print $4}' | sed 's/G//')
+            # CORREÇÃO 01/01/2026: Bug fix - sed sempre retorna 0, então || echo "0" nunca executava
+            # Se parsing falhasse, comparação -lt falhava silenciosamente e ia para else
+            get_disk_space() {
+              local path="$1"
+              local result
+              result=$(df -BG "$path" 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//')
+              # Validar que resultado é um número
+              if [ -n "$result" ] && [ "$result" -eq "$result" ] 2>/dev/null; then
+                echo "$result"
+              else
+                echo ""
+              fi
+            }
+            
+            AVAILABLE_GB=$(get_disk_space "/opt/alice")
+            if [ -z "$AVAILABLE_GB" ]; then
+              AVAILABLE_GB=$(get_disk_space "/opt")
+            fi
+            if [ -z "$AVAILABLE_GB" ]; then
+              AVAILABLE_GB=$(get_disk_space "/")
             fi
             
-            if [ "$AVAILABLE_GB" -lt 50 ] 2>/dev/null; then
+            # Se ainda vazio, avisar mas não bloquear
+            if [ -z "$AVAILABLE_GB" ]; then
+              echo "⚠️ AVISO: Não foi possível determinar espaço em disco"
+              echo "   Continuando mesmo assim..."
+            elif [ "$AVAILABLE_GB" -lt 50 ]; then
               echo "⚠️ AVISO: Espaço em disco baixo (${AVAILABLE_GB}GB disponível)"
               echo "   Recomendado: 50GB+ para primeiro deploy"
               echo "   Continuando mesmo assim..."
