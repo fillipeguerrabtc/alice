@@ -252,6 +252,19 @@ if [ -z "${CLICKHOUSE_PASSWORD}" ]; then
   exit 1
 fi
 
+# =============================================================================
+# MINIO - Object Storage S3-Compatible para Langfuse v3 (OBRIGATÓRIO)
+# CORREÇÃO 01/01/2026: Langfuse v3 REQUER S3 para armazenamento de eventos
+# Ref: https://langfuse.com/self-hosting/infrastructure/blobstorage
+# =============================================================================
+MINIO_ROOT_PASSWORD="${MINIO_ROOT_PASSWORD_SECRET:-}"
+if [ -z "${MINIO_ROOT_PASSWORD}" ]; then
+  echo "::error::MINIO_ROOT_PASSWORD não definido. Configure o secret MINIO_ROOT_PASSWORD no repositório (necessário para MinIO/Langfuse v3)." >&2
+  echo "   Para gerar: openssl rand -hex 32" >&2
+  exit 1
+fi
+echo "✅ MINIO_ROOT_PASSWORD validado (obrigatório para Langfuse v3)"
+
 REDIS_CACHE_PASSWORD="${REDIS_CACHE_PASSWORD_SECRET:-}"
 if [ -z "${REDIS_CACHE_PASSWORD}" ]; then
   echo "::error::REDIS_CACHE_PASSWORD não definido. Configure o secret REDIS_CACHE_PASSWORD no repositório (necessário para ERPNext redis-cache)." >&2
@@ -634,6 +647,10 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'CLICKHOUSE_MIGRATION_URL=%s\n' "${CLICKHOUSE_MIGRATION_URL_VALUE}"
   printf 'CLICKHOUSE_HTTP_URL=%s\n' "http://clickhouse:8123"
   printf 'CLICKHOUSE_CLUSTER_ENABLED=false\n'
+  printf '\n'
+  printf '# MinIO (OBRIGATÓRIO Langfuse v3)\n'
+  printf 'MINIO_ROOT_USER=minioadmin\n'
+  printf 'MINIO_ROOT_PASSWORD=%s\n' "${MINIO_ROOT_PASSWORD}"
   printf '\n'
   printf '# SearXNG\n'
   printf 'SEARXNG_SECRET_KEY=%s\n' "${SEARXNG_SECRET_KEY}"

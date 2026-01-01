@@ -103,6 +103,36 @@ jobs:
       pgvector_tag: ${{ steps.versions.outputs.pgvector_tag }}
 
     steps:
+      # CORREÇÃO 01/01/2026: Validar secrets CRÍTICOS antes de qualquer operação
+      # Evita deploy parcial que falha no meio por secret ausente
+      - name: Validar secrets obrigatórios
+        run: |
+          echo "🔐 Validando secrets obrigatórios..."
+          MISSING=()
+          
+          # Lista de secrets CRÍTICOS (deploy falha sem eles)
+          [ -z "${{ secrets.POSTGRES_PASSWORD }}" ] && MISSING+=("POSTGRES_PASSWORD")
+          [ -z "${{ secrets.REDIS_PASSWORD }}" ] && MISSING+=("REDIS_PASSWORD")
+          [ -z "${{ secrets.SESSION_SECRET }}" ] && MISSING+=("SESSION_SECRET")
+          [ -z "${{ secrets.INTERNAL_API_SECRET }}" ] && MISSING+=("INTERNAL_API_SECRET")
+          [ -z "${{ secrets.ADMIN_USER }}" ] && MISSING+=("ADMIN_USER")
+          [ -z "${{ secrets.ADMIN_PWD }}" ] && MISSING+=("ADMIN_PWD")
+          [ -z "${{ secrets.BACKUP_CIPHER_PASS }}" ] && MISSING+=("BACKUP_CIPHER_PASS")
+          [ -z "${{ secrets.MINIO_ROOT_PASSWORD }}" ] && MISSING+=("MINIO_ROOT_PASSWORD")
+          [ -z "${{ secrets.CLICKHOUSE_PASSWORD }}" ] && MISSING+=("CLICKHOUSE_PASSWORD")
+          [ -z "${{ secrets.QDRANT_API_KEY }}" ] && MISSING+=("QDRANT_API_KEY")
+          
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "❌ ERRO: Secrets obrigatórios ausentes:"
+            printf '  - %s\n' "${MISSING[@]}"
+            echo ""
+            echo "Ação necessária: Adicionar os secrets em:"
+            echo "  GitHub → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          
+          echo "✅ Todos os secrets obrigatórios estão presentes"
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.version }}
@@ -307,6 +337,8 @@ jobs:
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
           CLICKHOUSE_PASSWORD_SECRET: ${{ secrets.CLICKHOUSE_PASSWORD }}
           CLICKHOUSE_USER_SECRET_VAL: ${{ secrets.CLICKHOUSE_USER }}
+          # CORREÇÃO 01/01/2026: MinIO obrigatório para Langfuse v3
+          MINIO_ROOT_PASSWORD_SECRET: ${{ secrets.MINIO_ROOT_PASSWORD }}
           REDIS_CACHE_PASSWORD_SECRET: ${{ secrets.REDIS_CACHE_PASSWORD }}
           REDIS_QUEUE_PASSWORD_SECRET: ${{ secrets.REDIS_QUEUE_PASSWORD }}
           ERPNEXT_MYSQL_ROOT_PASSWORD_SECRET: ${{ secrets.ERPNEXT_MYSQL_ROOT_PASSWORD }}
@@ -467,18 +499,23 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
-            
+
             # CORREÇÃO 28/12/2025: Definir PATH explicitamente
             # SSH não-interativo pode não ter PATH configurado corretamente
             export PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-            
-            echo "=============================================="
-            echo "DEPLOY ALICE ENTERPRISE PLATFORM"
-            echo "=============================================="
-            echo "Versão: ${DEPLOY_VERSION}"
-            echo "Serviços: ${DEPLOY_SERVICES}"
-            echo "SHA: ${GITHUB_SHA}"
-            echo ""
+
+            # CORREÇÃO 01/01/2026: Função log() com timestamp para troubleshooting
+            log() {
+              echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
+            }
+
+            log "=============================================="
+            log "DEPLOY ALICE ENTERPRISE PLATFORM"
+            log "=============================================="
+            log "Versão: ${DEPLOY_VERSION}"
+            log "Serviços: ${DEPLOY_SERVICES}"
+            log "SHA: ${GITHUB_SHA}"
+            log ""
             
             # =================================================================
             # FAIL-FAST ENTERPRISE (2025): Validar host correto + GPU obrigatória
@@ -694,6 +731,8 @@ jobs:
             mkdir -p /opt/alice/data/grafana
             mkdir -p /opt/alice/data/loki
             mkdir -p /opt/alice/data/jaeger
+            # CORREÇÃO 01/01/2026: MinIO para Langfuse v3 (S3 obrigatório)
+            mkdir -p /opt/alice/data/minio
             # CORREÇÃO 31/12/2025: Diretórios pgBackRest (imagem customizada PostgreSQL)
             mkdir -p /opt/alice/data/pgbackrest-spool
             # CORREÇÃO 31/12/2025: Logs pgBackRest no repositório de backups (consistência)
@@ -979,13 +1018,31 @@ jobs:
               echo "   archive_command: $ARCHIVE_CMD"
               
               # =================================================================
-              # CORREÇÃO 31/12/2025: Inicializar stanza pgBackRest se necessário
+              # CORREÇÃO 01/01/2026: Inicializar stanza pgBackRest se necessário
               # =================================================================
               # pgBackRest requer stanza-create antes do primeiro backup
-              # Verifica se stanza já existe, senão cria
+              # IMPORTANTE: Primeiro verificar se container existe (primeiro deploy)
               # =================================================================
-              echo "🔧 Verificando stanza pgBackRest..."
-              if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status.*ok"; then
+              echo "🔧 Verificando container pgBackRest..."
+              PGBACKREST_FOUND=false
+              for i in {1..30}; do
+                if docker ps --format '{{.Names}}' | grep -q '^alice-pgbackrest$'; then
+                  echo "✅ Container alice-pgbackrest encontrado"
+                  PGBACKREST_FOUND=true
+                  break
+                fi
+                if [ $i -eq 30 ]; then
+                  echo "⚠️ AVISO: Container alice-pgbackrest não encontrado após 30s"
+                  echo "   Backup enterprise NÃO estará disponível neste deploy"
+                fi
+                sleep 1
+              done
+
+              if [ "$PGBACKREST_FOUND" = "true" ]; then
+                # Aguardar container estar totalmente inicializado
+                sleep 5
+                echo "🔧 Verificando stanza pgBackRest..."
+                if docker exec alice-pgbackrest pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status.*ok"; then
                 echo "✅ Stanza alice_prod já existe e está OK"
               else
                 echo "⚠️ Stanza não existe ou precisa ser criada/atualizada"
@@ -1033,6 +1090,7 @@ jobs:
                   docker logs alice-pgbackrest --tail 30 2>/dev/null || true
                 fi
               fi
+              fi  # PGBACKREST_FOUND
             else
               echo "⚠️ AVISO: archive_mode não está habilitado (status: $ARCHIVE_MODE)"
               echo "   pgBackRest pode não funcionar corretamente para backup PITR"
@@ -1252,9 +1310,11 @@ jobs:
               # - Previne hangs indefinidos até timeout do GitHub Actions
               # - Exit code 124 = timeout (tratado separadamente)
               # - Exit code != 0 e != 124 = erro real (fail-fast)
+              # CORREÇÃO 01/01/2026: Timeout reduzido de 300s para 180s (3 min)
+              # 5 min era excessivo e indica problema se demorar tanto
               # =================================================================
-              DRIZZLE_TIMEOUT=300
-              echo "   Executando drizzle-kit push com timeout de ${DRIZZLE_TIMEOUT}s (5 min)..."
+              DRIZZLE_TIMEOUT=180
+              echo "   Executando drizzle-kit push com timeout de ${DRIZZLE_TIMEOUT}s (3 min)..."
               
               DRIZZLE_EXIT_CODE=0
               TIMEOUT_EXIT_CODE=0
@@ -1699,6 +1759,8 @@ jobs:
             mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
             mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
+            # CORREÇÃO 01/01/2026: MinIO para Langfuse v3 (S3 obrigatório)
+            mkdir -p /opt/alice/data/minio
             # CORREÇÃO 31/12/2025: Diretórios pgBackRest (imagem customizada PostgreSQL)
             mkdir -p /opt/alice/data/pgbackrest-spool
             # CORREÇÃO 31/12/2025: Logs pgBackRest no repositório de backups (consistência)

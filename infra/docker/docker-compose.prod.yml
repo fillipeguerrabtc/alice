@@ -104,7 +104,16 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /opt/alice/data/searxng-config
+      device: /opt/alice/data/searxng
+
+  # CORREÇÃO 01/01/2026: MinIO volume para Langfuse v3 (S3 obrigatório)
+  minio_data:
+    name: alice-minio-data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/minio-config
   
   # ERPNext
   erpnext_sites:
@@ -2308,6 +2317,72 @@ services:
   # Documentação: https://clickhouse.com/docs/en/operations/server-configuration-parameters
   # NOTA: ClickHouse é OBRIGATÓRIO para Langfuse v3 - não é opcional
   # ===========================================================================
+  # ===========================================================================
+  # MINIO - Object Storage S3-Compatible para Langfuse v3
+  # OBRIGATÓRIO: Langfuse v3 requer S3 para armazenamento de eventos/traces
+  # Documentação: https://langfuse.com/self-hosting/infrastructure/blobstorage
+  # ===========================================================================
+  minio:
+    # ATUALIZADO 01/01/2026: MinIO estável para Langfuse v3
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    platform: linux/amd64
+    container_name: alice-minio
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - alice-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+        reservations:
+          memory: 128M
+          cpus: '0.1'
+
+  # MinIO Init - Cria bucket para Langfuse na primeira execução
+  minio-init:
+    image: minio/mc:RELEASE.2024-12-18T01-15-30Z
+    platform: linux/amd64
+    container_name: alice-minio-init
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      echo '⏳ Aguardando MinIO iniciar...'
+      sleep 5
+      until mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
+        echo 'MinIO não está pronto, tentando novamente em 3s...'
+        sleep 3
+      done
+      echo '✅ MinIO conectado'
+      
+      echo '📦 Criando bucket langfuse-events...'
+      mc mb --ignore-existing myminio/langfuse-events
+      mc anonymous set download myminio/langfuse-events
+      echo '✅ Bucket criado com sucesso'
+      "
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - alice-network
+
   clickhouse:
     # ATUALIZADO 20/12/2025: ClickHouse 24.8 LTS - tag versionada (digest removido - incompatível com amd64)
     image: clickhouse/clickhouse-server:25.12-alpine
@@ -2358,15 +2433,12 @@ services:
   # ===========================================================================
   # LANGFUSE v3 - LLM Observability (Arquitetura Completa 2025)
   # Documentação v3: https://langfuse.com/docs/deployment/v3/overview
-  # REQUISITOS v3: PostgreSQL + ClickHouse + Redis (alice-redis)
+  # REQUISITOS v3: PostgreSQL + ClickHouse + Redis + S3/MinIO (OBRIGATÓRIO)
   # ===========================================================================
   langfuse:
-    # CORREÇÃO 31/12/2025: Downgrade para 3.85.0 - versão sem bug ZodError
-    # Bug: "Cannot set property message of ZodError which has only a getter"
-    # Causa: Incompatibilidade Next.js 14.2.x com Zod em versões 3.90.0+
-    # Versão 3.85.0 é estável e não tem esse problema (confirmado pela comunidade)
-    # Upgrade futuro: Aguardar Langfuse lançar versão com Next.js 15.4.x+
-    image: langfuse/langfuse:3.85.0
+    # CORREÇÃO 01/01/2026: Usar versão estável mais recente
+    # A versão 3 é estável com todas as dependências corretas (S3, ClickHouse, Redis)
+    image: langfuse/langfuse:3
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2374,37 +2446,39 @@ services:
       - no-new-privileges:true
     environment:
       # === VARIÁVEIS OBRIGATÓRIAS v3 ===
-      # CORREÇÃO CRÍTICA 30/12/2025: LANGFUSE_SECRET_KEY estava faltando
-      # Causa do erro: "Cannot set property message of ZodError which has only a getter"
-      # LANGFUSE_SECRET_KEY é para autenticação da API (clientes que enviam traces)
-      # NEXTAUTH_SECRET é para criptografia de sessões de usuário (NextAuth.js)
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
       # === DATABASE (PostgreSQL para metadados) ===
-      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
       # === CLICKHOUSE (OLAP para traces - OBRIGATÓRIO v3) ===
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000, formato clickhouse://)
-      # Valor gerado pelo generate-env-prod.sh com URL-encoding correto das credenciais
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
       CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
       # === REDIS (Queue - usa alice-redis existente) ===
       REDIS_HOST: alice-redis
       REDIS_PORT: 6379
       REDIS_AUTH: ${REDIS_PASSWORD}
-      # === S3/MEDIA (Desabilitado - usamos RAG service para uploads) ===
+      # === S3/MINIO (OBRIGATÓRIO v3 para armazenamento de eventos) ===
+      # CORREÇÃO CRÍTICA 01/01/2026: Langfuse v3 REQUER S3 para traces
+      # Ref: https://langfuse.com/self-hosting/infrastructure/blobstorage
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      # Media uploads desabilitado (usamos RAG service)
       LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
       # === CONFIG v3 ===
       LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS: "true"
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
-      # === CORREÇÃO 01/01/2026: Variáveis adicionais para evitar ZodError ===
-      # Ref: https://github.com/orgs/langfuse/discussions/8781
+      # === Variáveis Next.js para evitar problemas de inicialização ===
       NEXT_RUNTIME: nodejs
       NODE_ENV: production
     networks:
@@ -2412,15 +2486,18 @@ services:
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
       interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+      timeout: 15s
+      retries: 10
+      # CORREÇÃO 01/01/2026: start_period aumentado para primeiro deploy (Next.js build + migrations)
+      start_period: 180s
     depends_on:
       langfuse-db:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
       alice-redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     labels:
       - "traefik.enable=true"
@@ -2439,9 +2516,9 @@ services:
 
   # Langfuse Worker - Processamento assíncrono (obrigatório v3)
   # Processa traces, scores e eventos em background via ClickHouse
-  # CORREÇÃO 31/12/2025: Mesma versão do langfuse principal (3.85.0)
   langfuse-worker:
-    image: langfuse/langfuse:3.85.0
+    # CORREÇÃO 01/01/2026: Mesma versão do langfuse principal
+    image: langfuse/langfuse:3
     platform: linux/amd64
     container_name: langfuse-worker
     restart: unless-stopped
@@ -2449,23 +2526,28 @@ services:
       - no-new-privileges:true
     command: ["node", "packages/shared/dist/src/server/background-migrations/run.js"]
     environment:
-      # CORREÇÃO CRÍTICA 30/12/2025: LANGFUSE_SECRET_KEY estava faltando
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
       NEXTAUTH_SECRET: ${LANGFUSE_NEXT_AUTH_SECRET}
       NEXTAUTH_URL: https://langfuse.yesyoudeserve.duckdns.org
       SALT: ${LANGFUSE_SALT}
       ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
-      # CORREÇÃO 21/12/2025: sslmode=disable para conexões internas Docker (PostgreSQL sem SSL)
       DATABASE_URL: postgresql://${LANGFUSE_DB_USER:-langfuse}:${LANGFUSE_DB_PASSWORD}@langfuse-db:5432/${LANGFUSE_DB_NAME:-langfuse}?sslmode=disable
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_USER: ${CLICKHOUSE_USER:-langfuse}
       CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD}
-      # CLICKHOUSE_MIGRATION_URL usa native protocol (porta 9000)
       CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL}
       CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
       REDIS_HOST: alice-redis
       REDIS_PORT: 6379
       REDIS_AUTH: ${REDIS_PASSWORD}
+      # === S3/MINIO (OBRIGATÓRIO v3) ===
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse-events
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
     networks:
       - alice-network
@@ -2475,6 +2557,8 @@ services:
       clickhouse:
         condition: service_healthy
       langfuse:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     deploy:
       resources:
@@ -2486,16 +2570,13 @@ services:
           cpus: '0.25'
 
   langfuse-db:
-    # ATUALIZADO 20/12/2025: PostgreSQL 16 Alpine (Langfuse DB) - tag versionada (digest removido - incompatível com amd64)
+    # ATUALIZADO 20/12/2025: PostgreSQL 16 Alpine (Langfuse DB)
     image: postgres:16-alpine
     platform: linux/amd64
     container_name: alice-langfuse-db
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    # CORREÇÃO 19/12/2025: Removido env_file que carregava POSTGRES_PASSWORD
-    # POSTGRES_PASSWORD e POSTGRES_PASSWORD_FILE são mutuamente exclusivos
-    # Usando apenas POSTGRES_PASSWORD_FILE (mais seguro - arquivo de secret)
     environment:
       POSTGRES_USER: ${LANGFUSE_DB_USER:-langfuse}
       POSTGRES_PASSWORD_FILE: /run/secrets/langfuse_db_password
@@ -2506,15 +2587,13 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # CORREÇÃO 15/12/2025: pg_isready NÃO precisa de senha - apenas verifica se PostgreSQL aceita conexões
-      # Docker Compose expande variáveis ANTES de passar para o container
-      # Isso é Enterprise-Grade (Regra 6) - respeita configuração customizada via .env.prod
-      # start_period aumentado para 60s: primeira inicialização do PostgreSQL cria cluster de dados
+      # pg_isready verifica se PostgreSQL aceita conexões
       test: ["CMD-SHELL", "pg_isready -U ${LANGFUSE_DB_USER:-langfuse} -d ${LANGFUSE_DB_NAME:-langfuse}"]
       interval: 10s
       timeout: 5s
       retries: 15
-      start_period: 60s
+      # CORREÇÃO 01/01/2026: start_period aumentado para primeiro deploy (cluster init)
+      start_period: 120s
     deploy:
       resources:
         limits:
