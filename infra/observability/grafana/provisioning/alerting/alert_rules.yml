@@ -646,3 +646,87 @@ groups:
           description: "Uso de CPU acima de 85% por mais de 5 minutos."
         labels:
           severity: warning
+
+      # -----------------------------------------------------------------------
+      # CONTAINER CRASHES (SIGILL/SIGBUS/OOM)
+      # -----------------------------------------------------------------------
+      # CORREÇÃO 01/01/2026: Detectar containers que crasham frequentemente
+      # Isso captura SIGILL (Illegal Instruction), SIGBUS, OOMKilled, etc.
+      # Métrica: increase(container_cpu_system_seconds_total) com restart
+      # -----------------------------------------------------------------------
+      - uid: container-frequent-restarts
+        title: Container Reiniciando Frequentemente
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 900
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(kube_pod_container_status_restarts_total[15m]) > 0 or increase(container_start_time_seconds[15m]) > 2
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [2]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Container reiniciando frequentemente"
+          description: "Container reiniciou mais de 2 vezes em 15 minutos. Possíveis causas: SIGILL (incompatibilidade CPU), SIGBUS, OOMKilled. Verificar logs com: docker logs <container>"
+        labels:
+          severity: critical
+
+      - uid: postgres-unhealthy
+        title: PostgreSQL Unhealthy
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: pg_up == 0
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "PostgreSQL indisponível"
+          description: "PostgreSQL está down. Verificar logs com: docker logs alice-postgres. Possíveis causas: SIGILL (pgvector incompatível), disco cheio, crash de conexões."
+        labels:
+          severity: critical
+          service: postgres

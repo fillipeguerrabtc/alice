@@ -437,6 +437,10 @@ services:
       - "--entrypoints.websecure.http2.maxConcurrentStreams=250"
       
       # SSL/TLS Let's Encrypt
+      # CORREÇÃO 01/01/2026: CA Server configurável para evitar rate limit em testes
+      # Staging: https://acme-staging-v02.api.letsencrypt.org/directory (30k certs/semana)
+      # Produção: https://acme-v02.api.letsencrypt.org/directory (5 certs/semana por domínio)
+      - "--certificatesresolvers.letsencrypt.acme.caserver=${ACME_CA_SERVER:-https://acme-v02.api.letsencrypt.org/directory}"
       - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
       - "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json"
       - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
