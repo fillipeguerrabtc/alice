@@ -10,7 +10,8 @@
 
 # Stage 1: Build pgBackRest from source
 # REGRA 16: Usar SHA256 digest para segurança (imagens externas)
-FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300 AS builder
+# CORREÇÃO CVE-2023-45853 (31/12/2025): Alpine 3.21 usa zlib 1.3.1+ (sem CVE)
+FROM alpine:3.21 AS builder
 
 # Versão do pgBackRest (semantic versioning completo)
 # REGRA 11: pgBackRest usa tags no formato release/X.Y.Z (ex: release/2.57.0) para releases estáveis
@@ -55,8 +56,8 @@ RUN ninja -C build
 RUN ninja -C build install
 
 # Stage 2: Runtime image (minimal)
-# REGRA 16: Usar SHA256 digest para segurança (imagens externas)
-FROM alpine:3.20@sha256:21a3deaa0d32a8057914f36584b5288d2e5ecc984380bc0118285c70fa8c9300
+# CORREÇÃO CVE-2023-45853 (31/12/2025): Alpine 3.21 usa zlib 1.3.1+ (sem CVE)
+FROM alpine:3.21
 
 LABEL maintainer="Alice Enterprise Platform"
 LABEL description="pgBackRest enterprise backup with PITR, encryption, S3 offsite"

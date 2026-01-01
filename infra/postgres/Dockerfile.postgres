@@ -5,44 +5,42 @@
 # - pgvector: Extensão para embeddings de imagem (1024 dim OpenCLIP → PostgreSQL)
 # - pgBackRest: Backup enterprise com PITR, WAL archiving, criptografia AES-256
 #
-# PROBLEMA RESOLVIDO (31/12/2025):
-# pgBackRest exige que archive_command chame diretamente o binário pgbackrest.
-# A imagem padrão pgvector/pgvector:pg16 não tem pgbackrest instalado.
-# Esta imagem customizada resolve isso instalando pgbackrest no container PostgreSQL.
+# CORREÇÃO CRÍTICA 31/12/2025:
+# Migrado de pgvector/pgvector:pg16 (Debian) para postgres:16-alpine + pgvector
+# MOTIVO: CVE-2023-45853 (CRITICAL) em zlib1g do Debian 12 - status "will_not_fix"
+# Alpine Linux usa zlib 1.3.1+ que já corrigiu esta vulnerabilidade.
 #
 # Author: Fillipe Guerra
 # Data: 31 de Dezembro de 2025
 #
-# Regra 6: Enterprise-grade (sem workarounds)
+# Regra 6: Enterprise-grade (sem workarounds, sem CVEs)
 # Regra 11: Seguir docs oficiais pgBackRest + pgvector 2025
 # =============================================================================
 
 # =============================================================================
-# Stage 1: Build pgBackRest from source
+# Stage 1: Build pgBackRest from source (Alpine)
 # =============================================================================
-FROM debian:bookworm-slim AS pgbackrest-builder
+FROM alpine:3.21 AS pgbackrest-builder
 
 # Versão do pgBackRest (deve corresponder à versão do container pgbackrest)
 ARG PGBACKREST_VERSION=2.57.0
 
 # Instalar dependências de build
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    git \
+RUN apk add --no-cache \
     meson \
-    ninja-build \
-    pkg-config \
+    gcc \
+    musl-dev \
     libpq-dev \
-    libssl-dev \
+    openssl-dev \
     libxml2-dev \
-    liblz4-dev \
-    libzstd-dev \
-    libbz2-dev \
-    libyaml-dev \
-    libssh2-1-dev \
-    zlib1g-dev \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    lz4-dev \
+    zstd-dev \
+    bzip2-dev \
+    yaml-dev \
+    libssh2-dev \
+    make \
+    ninja \
+    git
 
 # Clone e build pgBackRest
 RUN git clone --branch release/${PGBACKREST_VERSION} --depth 1 \
@@ -54,27 +52,39 @@ RUN ninja -C build
 RUN ninja -C build install
 
 # =============================================================================
-# Stage 2: Runtime - PostgreSQL com pgvector + pgBackRest
+# Stage 2: Runtime - PostgreSQL Alpine + pgvector + pgBackRest
 # =============================================================================
-FROM pgvector/pgvector:pg16
+# CORREÇÃO CVE-2023-45853: Usar postgres:16-alpine ao invés de pgvector/pgvector:pg16
+# Alpine Linux usa zlib 1.3.1+ que tem correção do CVE
+FROM postgres:16-alpine
 
 LABEL maintainer="Alice Enterprise Platform <admin@yesyoudeserve.duckdns.org>"
 LABEL description="PostgreSQL 16 + pgvector + pgBackRest (enterprise backup with PITR)"
-LABEL version="1.0.0"
+LABEL version="2.0.0"
 
-# Instalar dependências runtime do pgBackRest
-# NOTA: A imagem base pgvector/pgvector:pg16 é baseada em Debian
+# Variáveis de ambiente PostgreSQL
+ENV POSTGRES_USER=postgres
+ENV PGDATA=/var/lib/postgresql/data
+
+# Instalar pgvector via Alpine package + dependências runtime do pgBackRest
+# NOTA: PostgreSQL Alpine já inclui as dependências básicas
+# pgvector é instalado via community repo do Alpine
 USER root
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libssl3 \
+RUN apk update && apk upgrade --no-cache && \
+    apk add --no-cache \
+    # pgvector extension (Alpine community repo)
+    postgresql16-pgvector \
+    # pgBackRest runtime dependencies
+    openssl \
     libxml2 \
-    liblz4-1 \
-    libzstd1 \
-    libbz2-1.0 \
-    libyaml-0-2 \
-    libssh2-1 \
+    lz4-libs \
+    zstd-libs \
+    libbz2 \
+    yaml \
+    libssh2 \
+    libpq \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/cache/apk/*
 
 # Copiar binário pgBackRest do stage builder
 COPY --from=pgbackrest-builder /usr/bin/pgbackrest /usr/bin/pgbackrest
@@ -96,10 +106,16 @@ RUN mkdir -p /var/lib/pgbackrest \
 COPY infra/postgres/pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
 RUN chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
 
+# Script de inicialização para criar extensão pgvector automaticamente
+# NOTA: PostgreSQL Alpine executa scripts .sql/.sh em /docker-entrypoint-initdb.d/
+RUN mkdir -p /docker-entrypoint-initdb.d && \
+    echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/00-create-pgvector.sql && \
+    chown postgres:postgres /docker-entrypoint-initdb.d/00-create-pgvector.sql
+
 # Voltar ao usuário postgres (padrão da imagem base)
 USER postgres
 
 # Healthcheck herdado da imagem base (pg_isready)
 # O docker-compose.prod.yml sobrescreve com healthcheck mais avançado
 
-# Entrypoint e CMD herdados da imagem base pgvector/pgvector:pg16
+# Entrypoint e CMD herdados da imagem base postgres:16-alpine

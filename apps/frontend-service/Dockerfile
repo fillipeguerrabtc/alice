@@ -9,7 +9,8 @@
 # ==============================================================================
 # Stage: base - Node.js Alpine para build (tem shell para pnpm/npm)
 # ==============================================================================
-FROM node:22-alpine AS base
+# CORREÇÃO CVE-2023-45853 (31/12/2025): Alpine 3.21 usa zlib 1.3.1+ (sem CVE)
+FROM node:22-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 # pnpm v10+: permitir execução automática de scripts de build de dependências
@@ -62,8 +63,8 @@ RUN pnpm --filter @alice/frontend-service run build
 # SEGURANÇA: Non-root container (Docker 2025 + OWASP Container Security)
 # NOTA: Não existe Distroless nginx, então usamos nginx:1.27-alpine (hardened)
 # ==============================================================================
-# Atualizado para tag com Alpine 3.20 (libpng >= 1.6.53) para mitigar CVEs recentes
-FROM nginx:1.27.3-alpine3.20 AS runner
+# CORREÇÃO CVE-2023-45853 (31/12/2025): Alpine 3.21 usa zlib 1.3.1+ (sem CVE)
+FROM nginx:1.27-alpine3.21 AS runner
 ENV SERVICE_NAME=frontend-service
 
 # SEGURANÇA: Atualizar pacotes e configurar nginx para rodar como non-root

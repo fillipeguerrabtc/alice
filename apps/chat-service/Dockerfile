@@ -20,7 +20,8 @@
 # ==============================================================================
 # Stage: base - Node.js Alpine para build (tem shell para pnpm/npm)
 # ==============================================================================
-FROM node:22-alpine AS base
+# CORREÇÃO CVE-2023-45853 (31/12/2025): Alpine 3.21 usa zlib 1.3.1+ (sem CVE)
+FROM node:22-alpine3.21 AS base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 # pnpm v10+: permitir execução automática de scripts de build de dependências
@@ -109,7 +110,7 @@ RUN pnpm --filter @alice/chat-service deploy --prod --legacy /prod/chat-service
 # - Imagem mínima (~50MB vs ~200MB)
 # - CA certificates já inclusos no Alpine
 # ==============================================================================
-FROM node:22-alpine AS runner
+FROM node:22-alpine3.21 AS runner
 
 # Variáveis de ambiente
 ENV NODE_ENV=production
