@@ -60,5 +60,42 @@
 # TODAS as 26 imagens externas agora possuem SHA256 digests
 # Corrigido bug onde 9 imagens estavam sem digests
 #
+# =============================================================================
+# CVEs COM RISCO ACEITO (will_not_fix no upstream)
+# =============================================================================
+# Estes CVEs foram analisados e o risco foi aceito porque:
+# - Não há correção disponível no upstream (will_not_fix)
+# - A superfície de ataque é limitada no contexto Alice
+# - Mitigações alternativas estão em vigor
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# CVE-2023-45853 - zlib1g (minizip) integer overflow
+# -----------------------------------------------------------------------------
+# Data análise: 31/12/2025
+# Severidade: CRITICAL
+# Status upstream: will_not_fix (Debian 12.12)
+# Biblioteca: zlib1g 1:1.2.13.dfsg-1
+# Função vulnerável: zipOpenNewFileInZip4_6 (CRIAÇÃO de arquivos ZIP)
+#
+# JUSTIFICATIVA PARA ACEITAR RISCO:
+# 1. Status "will_not_fix" no Debian - não há patch disponível
+# 2. Vulnerabilidade é na função de CRIAÇÃO de ZIP, não leitura/descompressão
+# 3. Serviços Alice (RAG, auth, chat) NÃO criam arquivos ZIP programaticamente
+# 4. zlib1g é dependência crítica do sistema (SSL, compressão HTTP, etc.)
+# 5. Containers rodam em ambiente isolado (Docker + Traefik + no-new-privileges)
+# 6. Sem input externo não confiável para função de criação ZIP
+#
+# MITIGAÇÕES EM VIGOR:
+# - Containers com security_opt: no-new-privileges:true
+# - Network isolation via Docker networks
+# - Traefik reverse proxy com rate limiting
+# - Input validation em todas as APIs
+#
+# Ref: https://avd.aquasec.com/nvd/cve-2023-45853
+# Revisar quando: Debian lançar correção ou migrar para Alpine/distroless
+# -----------------------------------------------------------------------------
+CVE-2023-45853
+
 # Se o Trivy detectar novos CVEs apos esta atualizacao, eles devem ser
 # analisados e corrigidos, NAO ignorados.
