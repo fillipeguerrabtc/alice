@@ -1237,25 +1237,25 @@ docker exec erpnext-create-site ls -la /home/frappe/frappe-bench/sites/
 
 ---
 
-## Docker Compose v2+ Health Checks (04/12/2025)
+## Docker Compose v2+ Health Checks (01/01/2026)
 
 ### Formato Correto para Health Checks
 
 Docker Compose v2.40+ **requer** que o array `test:` comece com "CMD" ou "CMD-SHELL":
 
 ```yaml
-# CORRETO - Docker Compose v2+
+# CORRETO - Docker Compose v2+ (Alpine - "node" no PATH)
 healthcheck:
-  test: ["CMD", "/nodejs/bin/node", "-e", "require('http').get(...)"]
+  test: ["CMD", "node", "-e", "require('http').get(...)"]
 
 # ERRADO - causa erro "healthcheck.test must start with CMD"
 healthcheck:
-  test: ["/nodejs/bin/node", "-e", "require('http').get(...)"]
+  test: ["node", "-e", "require('http').get(...)"]
 ```
 
-### Serviços Distroless (sem curl/wget)
+### Serviços Node.js Alpine (sem curl/wget por padrão)
 
-Os 6 serviços Node.js usam imagens Google Distroless que **não** incluem curl ou wget. Health checks usam Node.js diretamente:
+Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). Health checks usam Node.js diretamente via `node` no PATH:
 
 | Serviço | Endpoint | Verifica |
 |---------|----------|----------|

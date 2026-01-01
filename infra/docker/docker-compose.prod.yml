@@ -855,12 +855,10 @@ services:
       - "traefik.http.routers.alice-auth.service=alice-auth"
       - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
     healthcheck:
-      # Distroless não tem curl/wget, usar Node.js diretamente
-      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready é para Kubernetes readiness (roteamento de tráfego) - verifica dependências externas
-      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
+      # /live verifica se processo está vivo (liveness probe)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3001/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3001/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -919,11 +917,9 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
-      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
-      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
-      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
+      # GPU é OBRIGATÓRIO para Alice (Regra 6 - sem fallback)
       gpu-manager:
-        condition: service_started
+        condition: service_healthy
     networks:
       - alice-network
     labels:
@@ -944,12 +940,10 @@ services:
       - "traefik.http.routers.alice-ws.service=alice-ws"
       - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
     healthcheck:
-      # Distroless não tem curl/wget, usar Node.js diretamente
-      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready verifica dependências externas (GPU Manager Service) - pode falhar sem GPU estar pronta
-      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
+      # /live verifica se processo está vivo (liveness probe)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3002/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3002/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1028,11 +1022,9 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
-      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
-      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
-      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
+      # GPU é OBRIGATÓRIO para Alice (Regra 6 - sem fallback)
       gpu-manager:
-        condition: service_started
+        condition: service_healthy
     networks:
       - alice-network
     labels:
@@ -1106,11 +1098,9 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
-      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
-      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
-      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
+      # GPU é OBRIGATÓRIO para Alice (Regra 6 - sem fallback)
       gpu-manager:
-        condition: service_started
+        condition: service_healthy
     networks:
       - alice-network
     labels:
@@ -1121,12 +1111,10 @@ services:
       - "traefik.http.routers.alice-training.middlewares=security-headers@docker,rate-limit@docker"
       - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
     healthcheck:
-      # Distroless não tem curl/wget, usar Node.js diretamente
-      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready verifica dependências externas (GPU, PostgreSQL) - pode falhar temporariamente
-      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
+      # /live verifica se processo está vivo (liveness probe)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3004/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3004/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1239,12 +1227,10 @@ services:
       # BUG FIX 23/12/2025: Especificar service explícito apontando para alice-integrations (mesmo serviço)
       - "traefik.http.routers.alice-webhook.service=alice-integrations"
     healthcheck:
-      # Distroless não tem curl/wget, usar Node.js diretamente
-      # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
-      # /ready verifica dependências externas (ERPNext, Stripe) - pode falhar temporariamente
-      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
+      # /live verifica se processo está vivo (liveness probe)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3005/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1320,12 +1306,10 @@ services:
       - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
-      # BUG FIX 23/12/2025: Usar /health em vez de /live (endpoint /live requer autenticação INTERNAL_API_SECRET)
-      # /health não requer autenticação e é adequado para Docker healthcheck (verifica se processo está vivo)
-      # /ready verifica observability stack (Prometheus, Grafana) - pode falhar temporariamente
-      # Docker healthcheck deve verificar se PROCESSO está vivo, não dependências externas
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
+      # /health não requer autenticação (adequado para Docker healthcheck)
       # Docker Compose v2+ requer "CMD" como primeiro elemento do array
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3007/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3007/health',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -3425,10 +3409,9 @@ services:
           memory: 512M
           cpus: '0.5'
     healthcheck:
-      # CORREÇÃO 28/12/2025: Distroless NÃO tem curl/wget
-      # Usar Node.js diretamente (consistente com Dockerfile healthcheck)
+      # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
-      test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+      test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
       interval: 30s
       timeout: 10s
       start_period: 30s

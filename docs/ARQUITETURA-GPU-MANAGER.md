@@ -396,16 +396,16 @@ gpu-manager:
   depends_on:
     alice-redis:
       condition: service_healthy
-  # CORREÇÃO 28/12/2025: Distroless NÃO tem curl/wget - usar Node.js
+  # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (migrado de Distroless para CVE-2023-45853 fix)
   healthcheck:
-    test: ["CMD", "/nodejs/bin/node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
+    test: ["CMD", "node", "-e", "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"]
     interval: 30s
     timeout: 10s
     start_period: 30s
     retries: 3
 ```
 
-> **NOTA (28/12/2025):** O healthcheck usa Node.js diretamente porque a imagem Distroless **não tem curl/wget**. O endpoint `/live` verifica se o processo está vivo (liveness probe).
+> **NOTA (01/01/2026):** O healthcheck usa Node.js diretamente (`node` no PATH) porque Alpine por padrão **não inclui curl/wget**. O endpoint `/live` verifica se o processo está vivo (liveness probe). Migrado de Distroless para Alpine 3.21 para corrigir CVE-2023-45853.
 
 ---
 
