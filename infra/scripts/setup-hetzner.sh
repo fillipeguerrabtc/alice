@@ -203,7 +203,7 @@ DIRS=(
     /opt/alice/data/erpnext-redis-cache
     /opt/alice/data/erpnext-redis-queue
     /opt/alice/data/vector
-    /opt/alice/data/alertmanager
+    # REMOVIDO 01/01/2026: alertmanager substituído por Grafana Alerting
     /opt/alice/data/langfuse-db
     /opt/alice/data/prometheus
     /opt/alice/data/grafana
@@ -215,7 +215,7 @@ DIRS=(
     /opt/alice/backups/redis
     /opt/alice/backups/manifests
     /opt/alice/logs/erpnext
-    /opt/alice/secrets/alertmanager
+    # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
 )
 
 for dir in "${DIRS[@]}"; do

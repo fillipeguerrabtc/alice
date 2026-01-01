@@ -244,7 +244,7 @@ REQUIRED_DIRS=(
     "/opt/alice/data/grafana"
     "/opt/alice/data/loki"
     "/opt/alice/data/langfuse-db"
-    "/opt/alice/data/alertmanager"
+    # REMOVIDO 01/01/2026: alertmanager substituído por Grafana Alerting
     "/opt/alice/uploads"
     "/opt/alice/uploads/tts"
     "/opt/alice/uploads/media"
@@ -257,7 +257,7 @@ REQUIRED_DIRS=(
     "/opt/alice/logs"
     "/opt/alice/logs/erpnext"
     "/opt/alice/secrets"
-    "/opt/alice/secrets/alertmanager"
+    # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
 )
 
 for dir in "${REQUIRED_DIRS[@]}"; do

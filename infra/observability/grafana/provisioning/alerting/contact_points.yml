@@ -1,0 +1,92 @@
+# Grafana Alerting - Contact Points
+#
+# Configuração de pontos de contato para notificações de alertas.
+# MIGRAÇÃO 01/01/2026: Substituiu Alertmanager (container removido)
+#
+# Ref: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+#
+# Author: Fillipe Guerra
+# Data: 01 de Janeiro de 2026
+# Documentação PT-BR (Regra 10 CLAUDE.md)
+
+apiVersion: 1
+
+# =============================================================================
+# CONTACT POINTS - Destinos de Notificação
+# =============================================================================
+# Email via Gmail SMTP - mesmo usado anteriormente no Alertmanager
+# Configuração SMTP via variáveis GF_SMTP_* no docker-compose.prod.yml
+# =============================================================================
+
+contactPoints:
+  # ---------------------------------------------------------------------------
+  # DEFAULT RECEIVER - Alertas gerais (severity: info, warning não crítico)
+  # ---------------------------------------------------------------------------
+  - orgId: 1
+    name: alice-email-default
+    receivers:
+      - uid: alice-email-default-receiver
+        type: email
+        settings:
+          # Endereço de email para alertas (usa variável do Grafana)
+          # NOTA: Grafana não suporta ${VAR} aqui, usa o GF_SMTP_FROM_ADDRESS
+          addresses: fillipe.backup@gmail.com
+          singleEmail: true
+        disableResolveMessage: false
+
+  # ---------------------------------------------------------------------------
+  # CRITICAL RECEIVER - Alertas críticos (severity: critical)
+  # ---------------------------------------------------------------------------
+  - orgId: 1
+    name: alice-email-critical
+    receivers:
+      - uid: alice-email-critical-receiver
+        type: email
+        settings:
+          addresses: fillipe.backup@gmail.com
+          singleEmail: true
+          # Subject customizado para críticos
+          subject: "[CRITICAL] {{ .GroupLabels.alertname }} - Ação Imediata Necessária"
+          message: |
+            ⚠️ ALERTA CRÍTICO - AÇÃO IMEDIATA NECESSÁRIA
+            
+            Alerta: {{ .GroupLabels.alertname }}
+            Severidade: {{ .CommonLabels.severity }}
+            Serviço: {{ .CommonLabels.service }}
+            
+            {{ range .Alerts }}
+            ---
+            Status: {{ .Status }}
+            Início: {{ .StartsAt }}
+            Summary: {{ .Annotations.summary }}
+            Descrição: {{ .Annotations.description }}
+            {{ end }}
+        disableResolveMessage: false
+
+  # ---------------------------------------------------------------------------
+  # WARNING RECEIVER - Alertas de aviso (severity: warning)
+  # ---------------------------------------------------------------------------
+  - orgId: 1
+    name: alice-email-warning
+    receivers:
+      - uid: alice-email-warning-receiver
+        type: email
+        settings:
+          addresses: fillipe.backup@gmail.com
+          singleEmail: true
+          subject: "[WARNING] {{ .GroupLabels.alertname }}"
+          message: |
+            ⚡ ALERTA DE AVISO
+            
+            Alerta: {{ .GroupLabels.alertname }}
+            Severidade: {{ .CommonLabels.severity }}
+            Serviço: {{ .CommonLabels.service }}
+            
+            {{ range .Alerts }}
+            ---
+            Status: {{ .Status }}
+            Início: {{ .StartsAt }}
+            Summary: {{ .Annotations.summary }}
+            Descrição: {{ .Annotations.description }}
+            {{ end }}
+        disableResolveMessage: false

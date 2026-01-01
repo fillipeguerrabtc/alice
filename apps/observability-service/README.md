@@ -20,8 +20,9 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
 | Health Checker | 3010 | Node.js/Express | - | Status do stack |
 | Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
-| Alertmanager | interno | Alertmanager 0.27.0 | Apache 2.0 | Alertas (Prometheus) |
 | node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
+
+> **NOTA 01/01/2026**: Alertmanager removido. Alertas gerenciados via **Grafana Alerting**.
 | cadvisor | 9101 | cadvisor 0.49.1 | Apache 2.0 | Métricas de containers |
 
 ## Métricas LLM Específicas
@@ -77,8 +78,9 @@ docker-compose down
 | Prometheus | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
 | Jaeger | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
 | Langfuse | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
-| Alertmanager | https://alertmanager.yesyoudeserve.duckdns.org | Alertas e notificações |
 | Health API | https://yesyoudeserve.duckdns.org/api/observability/health | Health check endpoint |
+
+> **Alertas**: Gerenciados via Grafana Alerting (menu Alerting no Grafana).
 
 ## Configuração do API Gateway (Traefik)
 

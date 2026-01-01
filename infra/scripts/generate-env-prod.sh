@@ -322,15 +322,15 @@ fi
 echo "✅ GPU Services validados (Hetzner GPU Server)"
 
 # =============================================================================
-# GMAIL SMTP (Alertmanager + Integrations) - App Password para autenticação
+# GMAIL SMTP (Grafana Alerting + Integrations) - App Password para autenticação
 # =============================================================================
-# Gmail SMTP (30/12/2025):
+# Gmail SMTP (01/01/2026 - Alertmanager removido, Grafana Alerting assumiu):
 # - Pode enviar para QUALQUER email (clientes, equipe, vendas)
 # - 500 emails/dia (conta pessoal) ou 2000/dia (Google Workspace)
 # - Ref: https://support.google.com/accounts/answer/185833
 # =============================================================================
 echo ""
-echo "🔐 Validando Gmail SMTP (Alertmanager)..."
+echo "🔐 Validando Gmail SMTP (Grafana Alerting)..."
 
 # GMAIL_USER: Email Gmail completo para autenticação SMTP
 GMAIL_USER="${GMAIL_USER:-}"
@@ -349,7 +349,7 @@ if [ -z "${GMAIL_APP_PASSWORD}" ]; then
 fi
 
 echo "✅ GMAIL_USER validado: ${GMAIL_USER}"
-echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Alertmanager via arquivo de secret)"
+echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Grafana Alerting via variável GF_SMTP_PASSWORD)"
 
 echo "✅ Todas as secrets obrigatórias validadas"
 
@@ -475,8 +475,8 @@ fi
 # ACME_EMAIL é usado APENAS para:
 # - Let's Encrypt (certificados SSL via Traefik)
 #
-# NOTA: Alertmanager usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
-# Ver docker-compose.prod.yml linha 2809: ALERT_EMAIL: ${GMAIL_USER}
+# NOTA: Grafana Alerting usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
+# Ver docker-compose.prod.yml seção grafana: GF_SMTP_USER: ${GMAIL_USER}
 # =============================================================================
 if [ -z "${ACME_EMAIL:-}" ]; then
   echo "::warning::ACME_EMAIL não definido. Let's Encrypt não conseguirá emitir certificados SSL."
@@ -570,7 +570,7 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'TWILIO_AUTH_TOKEN=%s\n' "${TWILIO_AUTH_TOKEN:-}"
   printf 'TWILIO_WHATSAPP_NUMBER=%s\n' "${TWILIO_WHATSAPP_NUMBER:-}"
   printf '\n'
-  printf '# Gmail SMTP (Alertmanager)\n'
+  printf '# Gmail SMTP (Grafana Alerting)\n'
   printf 'GMAIL_USER=%s\n' "${GMAIL_USER}"
   printf 'GMAIL_APP_PASSWORD=%s\n' "${GMAIL_APP_PASSWORD}"
   printf '\n'
@@ -676,15 +676,15 @@ echo "🔐 Gerando arquivos de secret..."
 printf '%s' "${LANGFUSE_DB_PASSWORD}" > langfuse_db_password
 chmod 600 langfuse_db_password
 
-# Gmail App Password para Alertmanager SMTP
+# Gmail App Password para Grafana Alerting SMTP
+# NOTA 01/01/2026: Alertmanager removido, Grafana usa variável GF_SMTP_PASSWORD diretamente
+# Arquivo de secret não é mais necessário - mantido apenas para retrocompatibilidade
 GMAIL_APP_PASSWORD_VALUE="${GMAIL_APP_PASSWORD:-}"
 if [ -z "${GMAIL_APP_PASSWORD_VALUE}" ]; then
-  echo "::error::GMAIL_APP_PASSWORD é obrigatório para alertmanager SMTP. Configure o secret no repositório." >&2
+  echo "::error::GMAIL_APP_PASSWORD é obrigatório para Grafana Alerting SMTP. Configure o secret no repositório." >&2
   exit 1
 fi
-printf '%s' "${GMAIL_APP_PASSWORD_VALUE}" > alertmanager_smtp_password
-chmod 600 alertmanager_smtp_password
-echo "✅ alertmanager_smtp_password criado (Gmail App Password)"
+echo "✅ GMAIL_APP_PASSWORD validado para Grafana Alerting SMTP"
 
 echo "=============================================="
 echo "✅ .env.prod GERADO COM SUCESSO!"

@@ -231,11 +231,13 @@ C4Container
 |---|-----------|-----------|
 | 15-29 | ERPNext | MariaDB, Redis x2, Backend, Frontend, WebSocket, Scheduler, 9 Workers |
 
-#### Observability Stack (14)
+#### Observability Stack (13)
 
 | # | Container | Descrição |
 |---|-----------|-----------|
-| 30-43 | Observability | Prometheus, Grafana, Loki, Promtail, Jaeger, Langfuse x2, **ClickHouse**, Vector, Alertmanager, OTel, Node-Exporter, cAdvisor |
+| 30-42 | Observability | Prometheus, **Grafana** (+ Alerting), Loki, Promtail, Jaeger, Langfuse x2, **ClickHouse**, Vector, OTel, Node-Exporter, cAdvisor |
+
+> **NOTA 01/01/2026**: Alertmanager removido. Grafana Alerting assumiu 100% das funcionalidades de alertas com UI completa.
 
 #### Backup (1)
 
@@ -613,8 +615,8 @@ flowchart TB
     end
     
     subgraph Alerting
-        H --> L[Alertmanager]
-        L --> M[Email/Slack]
+        K --> L[Grafana Alerting]
+        L --> M[Email SMTP]
     end
     
     subgraph LLM Specific

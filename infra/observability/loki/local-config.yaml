@@ -108,13 +108,15 @@ compactor:
   delete_request_store: filesystem
 
 # Ruler para alertas
+# NOTA 01/01/2026: Alertmanager removido - alertas agora via Grafana Alerting
+# alertmanager_url comentado - Loki ruler não envia mais para Alertmanager
 ruler:
   storage:
     type: local
     local:
       directory: /loki/rules
   rule_path: /tmp/rules
-  alertmanager_url: http://alice-alertmanager:9093
+  # alertmanager_url: http://alice-alertmanager:9093  # REMOVIDO 01/01/2026
   ring:
     kvstore:
       store: memberlist

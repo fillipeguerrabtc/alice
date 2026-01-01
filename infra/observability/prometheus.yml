@@ -3,12 +3,14 @@ global:
   evaluation_interval: 30s
 
 # REGRA 6: Configuração de alertas obrigatória para observabilidade enterprise
-# Alertmanager recebe alertas e os roteia para email/Slack/etc conforme configuração
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets:
-            - alice-alertmanager:9093
+# NOTA 01/01/2026: Alertmanager REMOVIDO - Grafana Alerting assumiu 100%
+# Prometheus ainda avalia regras (para recording rules e métricas derivadas)
+# Notificações são gerenciadas pelo Grafana Alerting
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alice-alertmanager:9093
 
 # Arquivos de regras de alerta (montados via docker-compose)
 rule_files:
@@ -41,10 +43,7 @@ scrape_configs:
       - targets: ['prometheus:9090']
     metrics_path: '/metrics'
 
-  - job_name: 'alertmanager'
-    static_configs:
-      - targets: ['alice-alertmanager:9093']
-    metrics_path: '/metrics'
+  # REMOVIDO 01/01/2026: alertmanager substituído por Grafana Alerting
 
   - job_name: 'loki'
     static_configs:

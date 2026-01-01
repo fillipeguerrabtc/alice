@@ -1,0 +1,648 @@
+# Grafana Alerting - Alert Rules
+#
+# Regras de alerta migradas do Prometheus/Alertmanager para Grafana Unified Alerting.
+# MIGRAÇÃO 01/01/2026: 18 regras migradas do llm-alerts.yml
+#
+# Ref: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+#
+# Author: Fillipe Guerra
+# Data: 01 de Janeiro de 2026
+# Documentação PT-BR (Regra 10 CLAUDE.md)
+
+apiVersion: 1
+
+# =============================================================================
+# ALERT RULES - Regras de Alerta
+# =============================================================================
+# Migradas das seguintes fontes:
+# - apps/observability-service/config/prometheus/rules/llm-alerts.yml
+# - Grupos: llm_alerts (14 regras) + infrastructure_alerts (4 regras)
+# =============================================================================
+
+groups:
+  # ===========================================================================
+  # LLM ALERTS - Alertas específicos para Large Language Models
+  # ===========================================================================
+  - orgId: 1
+    name: LLM Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      # -----------------------------------------------------------------------
+      # LATÊNCIA LLM
+      # -----------------------------------------------------------------------
+      - uid: llm-high-latency
+        title: LLM Alta Latência (Warning)
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, rate(llm_request_duration_seconds_bucket[5m]))
+              refId: A
+          - refId: B
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [30]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alta latência nas requisições LLM"
+          description: "P95 de latência está acima de 30s por mais de 5 minutos."
+        labels:
+          severity: warning
+          service: chat-service
+      
+      - uid: llm-critical-latency
+        title: LLM Latência Crítica
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.99, rate(llm_request_duration_seconds_bucket[5m]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [60]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Latência crítica nas requisições LLM"
+          description: "P99 de latência está acima de 60s por mais de 2 minutos."
+        labels:
+          severity: critical
+          service: chat-service
+
+      # -----------------------------------------------------------------------
+      # TIME TO FIRST TOKEN (TTFT)
+      # -----------------------------------------------------------------------
+      - uid: llm-high-ttft
+        title: LLM Alto TTFT
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, rate(llm_ttft_seconds_bucket[5m]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alto Time to First Token"
+          description: "TTFT P95 está acima de 5s - impacto na experiência do usuário."
+        labels:
+          severity: warning
+          service: chat-service
+
+      # -----------------------------------------------------------------------
+      # TAXA DE ERROS LLM
+      # -----------------------------------------------------------------------
+      - uid: llm-high-error-rate
+        title: LLM Alta Taxa de Erros
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.05]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alta taxa de erros no LLM"
+          description: "Taxa de erros acima de 5% nos últimos 5 minutos."
+        labels:
+          severity: warning
+          service: chat-service
+
+      - uid: llm-critical-error-rate
+        title: LLM Taxa Crítica de Erros
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(llm_requests_total{status="error"}[5m]) / rate(llm_requests_total[5m])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.15]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Taxa crítica de erros no LLM"
+          description: "Taxa de erros acima de 15% - possível problema com GPU Manager Service."
+        labels:
+          severity: critical
+          service: chat-service
+
+      # -----------------------------------------------------------------------
+      # CIRCUIT BREAKER
+      # -----------------------------------------------------------------------
+      - uid: circuit-breaker-open
+        title: Circuit Breaker Aberto
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 60
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: circuit_breaker_state{state="open"} == 1
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 1m
+        annotations:
+          summary: "Circuit Breaker aberto"
+          description: "Circuit breaker está aberto - serviço degradado."
+        labels:
+          severity: critical
+
+      # -----------------------------------------------------------------------
+      # TOKENS E CUSTOS
+      # -----------------------------------------------------------------------
+      - uid: high-token-usage
+        title: Alto Consumo de Tokens
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(llm_tokens_total[1h])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [1000000]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alto consumo de tokens"
+          description: "Mais de 1M tokens consumidos na última hora."
+        labels:
+          severity: warning
+          service: chat-service
+
+      - uid: critical-token-usage
+        title: Consumo Crítico de Tokens
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 3600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: increase(llm_tokens_total[1h])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [5000000]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Consumo crítico de tokens"
+          description: "Mais de 5M tokens consumidos na última hora - verificar custos."
+        labels:
+          severity: critical
+          service: chat-service
+
+      # -----------------------------------------------------------------------
+      # RAG SERVICE
+      # -----------------------------------------------------------------------
+      - uid: rag-high-retrieval-time
+        title: RAG Alta Latência de Busca
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, rate(rag_retrieval_duration_seconds_bucket[5m]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [3]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alta latência na busca RAG"
+          description: "P95 de busca vetorial está acima de 3s."
+        labels:
+          severity: warning
+          service: rag-service
+
+      - uid: rag-low-relevance
+        title: RAG Baixa Relevância
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 600
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: avg(rag_relevance_score)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: lt
+                    params: [0.5]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 10m
+        annotations:
+          summary: "Baixa relevância nos resultados RAG"
+          description: "Score médio de relevância abaixo de 0.5 - revisar embeddings."
+        labels:
+          severity: warning
+          service: rag-service
+
+      # -----------------------------------------------------------------------
+      # IMAGE GENERATION (FLUX.1)
+      # -----------------------------------------------------------------------
+      - uid: image-gen-high-latency
+        title: Geração de Imagem Alta Latência
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: histogram_quantile(0.95, rate(image_generation_duration_seconds_bucket[5m]))
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [10]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alta latência na geração de imagens"
+          description: "P95 de geração FLUX.1 está acima de 10s."
+        labels:
+          severity: warning
+          service: chat-service
+
+      - uid: image-gen-high-error-rate
+        title: Geração de Imagem Alta Taxa de Erros
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: rate(image_generation_total{status="error"}[5m]) / rate(image_generation_total[5m])
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.1]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alta taxa de erros na geração de imagens"
+          description: "Taxa de erros FLUX.1 acima de 10%."
+        labels:
+          severity: warning
+          service: chat-service
+
+  # ===========================================================================
+  # INFRASTRUCTURE ALERTS - Alertas de Infraestrutura
+  # ===========================================================================
+  - orgId: 1
+    name: Infrastructure Alerts
+    folder: Alice Enterprise
+    interval: 30s
+    rules:
+      # -----------------------------------------------------------------------
+      # DISPONIBILIDADE DOS SERVIÇOS
+      # -----------------------------------------------------------------------
+      - uid: service-down
+        title: Serviço Indisponível
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 120
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: up == 0
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 2m
+        annotations:
+          summary: "Serviço indisponível"
+          description: "Um ou mais serviços estão indisponíveis há mais de 2 minutos."
+        labels:
+          severity: critical
+
+      # -----------------------------------------------------------------------
+      # RECURSOS DO SISTEMA
+      # -----------------------------------------------------------------------
+      - uid: high-memory-usage
+        title: Alto Uso de Memória
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0.9]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alto uso de memória"
+          description: "Uso de memória acima de 90% por mais de 5 minutos."
+        labels:
+          severity: warning
+
+      - uid: high-cpu-usage
+        title: Alto Uso de CPU
+        condition: C
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              expr: 100 - (avg by(instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100)
+              refId: A
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              type: reduce
+              expression: A
+              reducer: last
+              refId: B
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [85]
+              refId: C
+        noDataState: NoData
+        execErrState: Error
+        for: 5m
+        annotations:
+          summary: "Alto uso de CPU"
+          description: "Uso de CPU acima de 85% por mais de 5 minutos."
+        labels:
+          severity: warning

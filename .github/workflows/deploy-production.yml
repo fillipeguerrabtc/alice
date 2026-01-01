@@ -257,7 +257,7 @@ jobs:
             "grafana/grafana:12.3.1"
             "grafana/loki:3.6.3"
             "grafana/promtail:3.6.3"
-            "prom/alertmanager:v0.29.0"
+            # REMOVIDO 01/01/2026: prom/alertmanager - substituído por Grafana Alerting
             "jaegertracing/jaeger:2.13.0"
             "qdrant/qdrant:v1.16.2"
             "langfuse/langfuse:3"
@@ -827,7 +827,7 @@ jobs:
               "LANGFUSE_DB_PASSWORD"
               "LANGFUSE_DB_NAME"
               "CLICKHOUSE_USER"
-              # Alertmanager (Gmail SMTP - 30/12/2025)
+              # Grafana Alerting SMTP (01/01/2026) - substituiu Alertmanager
               "GMAIL_USER"
               "GMAIL_APP_PASSWORD"
               # CORREÇÃO 31/12/2025: Admin credentials para 3 sistemas independentes
@@ -866,7 +866,7 @@ jobs:
             mkdir -p /opt/alice/data/erpnext-redis-cache
             mkdir -p /opt/alice/data/erpnext-redis-queue
             mkdir -p /opt/alice/data/vector
-            mkdir -p /opt/alice/data/alertmanager
+            # REMOVIDO 01/01/2026: alertmanager substituído por Grafana Alerting
             mkdir -p /opt/alice/data/langfuse-db
             mkdir -p /opt/alice/data/clickhouse
             mkdir -p /opt/alice/data/qdrant
@@ -889,7 +889,7 @@ jobs:
             # Diretórios de uploads, backups e secrets
             mkdir -p /opt/alice/uploads
             mkdir -p /opt/alice/backups/manifests
-            mkdir -p /opt/alice/secrets/alertmanager
+            # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente GF_SMTP_*
             # NOTA: langfuse_db_password é um ARQUIVO, não diretório (criado na FASE 2.5)
             
             # Permissões específicas por serviço (UIDs dos containers)
@@ -921,10 +921,7 @@ jobs:
               echo "⚠️ Removendo diretório conflitante: /opt/alice/secrets/langfuse_db_password"
               rm -rf /opt/alice/secrets/langfuse_db_password
             fi
-            if [ -d /opt/alice/secrets/alertmanager/smtp_password ]; then
-              echo "⚠️ Removendo diretório conflitante: /opt/alice/secrets/alertmanager/smtp_password"
-              rm -rf /opt/alice/secrets/alertmanager/smtp_password
-            fi
+            # REMOVIDO 01/01/2026: alertmanager/smtp_password - Grafana Alerting usa GF_SMTP_PASSWORD via variável de ambiente
             
             # Extrair LANGFUSE_DB_PASSWORD do .env.prod e criar arquivo de secret
             LANGFUSE_DB_PWD=$(grep '^LANGFUSE_DB_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2-)
@@ -937,32 +934,13 @@ jobs:
               echo "⚠️ LANGFUSE_DB_PASSWORD não encontrado no .env.prod"
             fi
             
-            # Extrair App Password do Gmail para Alertmanager SMTP
-            # MIGRAÇÃO 30/12/2025: De Resend para Gmail SMTP
-            # - Host: smtp.gmail.com:587
-            # - Username: GMAIL_USER (email Gmail completo)
-            # - Password: GMAIL_APP_PASSWORD (App Password 16 chars)
-            # - Sender: mesmo que GMAIL_USER
-            # Vantagem: Pode enviar para QUALQUER email (clientes, equipe, vendas)
-            # 
-            # Alertmanager (prom/alertmanager) roda como nobody:nogroup (65534:65534)
-            # O arquivo precisa ser legível pelo usuário nobody
-            GMAIL_PASS=$(grep '^GMAIL_APP_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || true)
-            if [ -n "$GMAIL_PASS" ]; then
-              # Garantir que o diretório alertmanager tenha permissões corretas (755 = rwxr-xr-x)
-              chmod 755 /opt/alice/secrets/alertmanager
-              
-              # Criar o arquivo de secret com a App Password do Gmail
-              printf '%s' "$GMAIL_PASS" > /opt/alice/secrets/alertmanager/smtp_password
-              
-              # Alertmanager roda como nobody (65534); usar chmod 644 (world-readable)
-              chmod 644 /opt/alice/secrets/alertmanager/smtp_password
-              chown 65534:65534 /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || true
-              
-              echo "✅ Secret alertmanager/smtp_password criado com GMAIL_APP_PASSWORD (permissões: $(stat -c '%a' /opt/alice/secrets/alertmanager/smtp_password 2>/dev/null || echo 'N/A'))"
-            else
-              echo "⚠️ GMAIL_APP_PASSWORD não encontrado no .env.prod - alertas por email desabilitados"
-            fi
+            # =============================================================
+            # REMOVIDO 01/01/2026: Alertmanager SMTP Secret
+            # =============================================================
+            # Grafana Alerting usa variáveis de ambiente GF_SMTP_* ao invés de arquivo
+            # GMAIL_APP_PASSWORD é passado diretamente via GF_SMTP_PASSWORD
+            # Ver docker-compose.prod.yml seção grafana para configuração SMTP
+            # =============================================================
             
             # =================================================================
             # FASE 3: Clonar/atualizar repositório
@@ -1115,9 +1093,11 @@ jobs:
             sleep 10
             
             # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
+            # CORREÇÃO 01/01/2026: Nomes devem corresponder exatamente ao container_name no docker-compose
+            # Bug anterior: "traefik-init" não existe, nome correto é "alice-traefik-init"
             INIT_CONTAINERS=(
               "alice-minio-init"
-              "traefik-init"
+              "alice-traefik-init"
               "erpnext-configurator"
             )
             
@@ -1915,7 +1895,8 @@ jobs:
             echo "🧹 Parando e removendo TODOS os containers do projeto..."
             
             # Lista de prefixos de containers do projeto Alice
-            for prefix in "alice-" "gpu-" "erpnext-" "langfuse" "clickhouse" "loki" "grafana" "prometheus" "jaeger" "promtail" "alertmanager" "vector" "otel" "node-exporter" "cadvisor"; do
+            # REMOVIDO 01/01/2026: "alertmanager" - substituído por Grafana Alerting
+            for prefix in "alice-" "gpu-" "erpnext-" "langfuse" "clickhouse" "loki" "grafana" "prometheus" "jaeger" "promtail" "vector" "otel" "node-exporter" "cadvisor"; do
               docker ps -aq --filter "name=${prefix}" | xargs -r docker stop 2>/dev/null || true
               docker ps -aq --filter "name=${prefix}" | xargs -r docker rm -f 2>/dev/null || true
             done
@@ -1996,7 +1977,8 @@ jobs:
             # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios e secrets necessários
             mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
-            mkdir -p /opt/alice/data/{vector,alertmanager,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
+            # REMOVIDO 01/01/2026: alertmanager - substituído por Grafana Alerting
+            mkdir -p /opt/alice/data/{vector,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
             # CORREÇÃO 01/01/2026: MinIO para Langfuse v3 (S3 obrigatório)
             mkdir -p /opt/alice/data/minio
             # CORREÇÃO 31/12/2025: Diretórios pgBackRest (imagem customizada PostgreSQL)
@@ -2005,7 +1987,7 @@ jobs:
             mkdir -p /opt/alice/backups/postgresql/logs
             mkdir -p /opt/alice/logs/{erpnext,clickhouse}
             mkdir -p /opt/alice/{uploads,backups/manifests}
-            mkdir -p /opt/alice/secrets/alertmanager
+            # REMOVIDO 01/01/2026: secrets/alertmanager - Grafana usa variáveis de ambiente
             mkdir -p /opt/alice/app/infra/docker
             
             # Permissões específicas por serviço

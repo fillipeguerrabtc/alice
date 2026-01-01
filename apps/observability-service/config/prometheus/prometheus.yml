@@ -12,15 +12,20 @@ global:
     cluster: 'alice-production'
     env: 'production'
 
-# Regras de alerta
+# Regras de alerta - MANTIDAS para consulta de métricas
+# NOTA 01/01/2026: Alertmanager REMOVIDO - Grafana Alerting assumiu 100%
+# Prometheus ainda avalia regras (para recording rules e métricas derivadas)
+# mas notificações são gerenciadas pelo Grafana Alerting
 rule_files:
   - /etc/prometheus/rules/*.yml
 
-# Configuração de Alertmanager (ativo em produção)
-alerting:
-  alertmanagers:
-    - static_configs:
-        - targets: ['alertmanager:9093']
+# REMOVIDO 01/01/2026: Alertmanager substituído por Grafana Alerting
+# Grafana Alerting oferece UI completa para configuração de alertas
+# sem necessidade de container adicional. Ver docs/ARQUITETURA.md
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['alertmanager:9093']
 
 scrape_configs:
   # ============================================================================
@@ -106,13 +111,9 @@ scrape_configs:
     scrape_interval: 30s
 
   # ============================================================================
-  # ALERTMANAGER
+  # ALERTMANAGER REMOVIDO (01/01/2026)
+  # Substituído por Grafana Alerting - não há mais container alertmanager
   # ============================================================================
-  - job_name: 'alertmanager'
-    static_configs:
-      - targets: ['alertmanager:9093']
-    metrics_path: /metrics
-    scrape_interval: 30s
 
   # ============================================================================
   # NODE EXPORTER - Métricas de infraestrutura (CPU, memória, disco, rede)

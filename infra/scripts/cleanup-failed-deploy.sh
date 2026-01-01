@@ -191,7 +191,7 @@ log_info "═══ 4. ARQUIVOS TEMPORÁRIOS ═══"
 TEMP_FILES=(
     "/tmp/.env.prod"
     "/tmp/langfuse_db_password"
-    "/tmp/alertmanager_smtp_password"
+    # REMOVIDO 01/01/2026: alertmanager_smtp_password - Grafana usa variáveis de ambiente
     "/tmp/.env.prod.tmp"
 )
 

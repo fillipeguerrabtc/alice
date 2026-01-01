@@ -288,7 +288,9 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 2. When a message comes in: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/whatsapp`
 3. Status callback URL: `https://yesyoudeserve.duckdns.org/api/integrations/twilio/webhook/status`
 
-**Gmail SMTP (Alertmanager - Emails de Alerta):**
+**Gmail SMTP (Grafana Alerting - Emails de Alerta):**
+
+> **NOTA 01/01/2026**: Alertmanager foi removido. Grafana Alerting agora gerencia todas as notificações.
 
 | Secret | Onde Obter |
 |--------|------------|
@@ -298,7 +300,7 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 **Configuração Gmail App Password:**
 1. Acesse [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
 2. Selecione app "Mail" e dispositivo "Other (Custom name)"
-3. Digite um nome (ex: "Alice Alertmanager")
+3. Digite um nome (ex: "Alice Grafana Alerting")
 4. Copie a senha de 16 caracteres gerada (sem espaços)
 5. Adicione como secret `GMAIL_APP_PASSWORD`
 
@@ -308,12 +310,11 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 - ✅ Remetente é seu próprio email (profissional)
 - ✅ Gratuito e sem necessidade de verificar domínio
 
-**Importante - Alertmanager usa Gmail SMTP:**
-- Host: `smtp.gmail.com:587`
-- Username: `GMAIL_USER` (email completo)
-- Password: `GMAIL_APP_PASSWORD` (16 caracteres)
-- O arquivo `/opt/alice/secrets/alertmanager/smtp_password` contém a App Password
-- TLS obrigatório (smtp_require_tls: true)
+**Importante - Grafana Alerting usa Gmail SMTP (01/01/2026):**
+- Host: `smtp.gmail.com:587` (via `GF_SMTP_HOST`)
+- Username: `GMAIL_USER` (via `GF_SMTP_USER`)
+- Password: `GMAIL_APP_PASSWORD` (via `GF_SMTP_PASSWORD`)
+- TLS obrigatório (`GF_SMTP_STARTTLS_POLICY: MandatoryStartTLS`)
 
 ### FASE 6.1: CORS (origens frontend) — OBRIGATÓRIO EM PRODUÇÃO
 
@@ -363,7 +364,7 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 | `LANGFUSE_ENCRYPTION_KEY` | **OBRIGATÓRIO v3** - Chave 256-bit hex | `openssl rand -hex 32` |
 | `GRAFANA_ADMIN_USER` | Usuário admin Grafana 12 (obrigatório) | Ex: admin, email, ou username customizado |
 | `GRAFANA_ADMIN_PASSWORD` | Senha admin Grafana 12 (obrigatório, mín. 8 chars recomendado) | Senha forte e exclusiva |
-| `GMAIL_USER` | **Email Gmail** para SMTP do Alertmanager | Ex: seuemail@gmail.com |
+| `GMAIL_USER` | **Email Gmail** para SMTP do Grafana Alerting | Ex: seuemail@gmail.com |
 | `GMAIL_APP_PASSWORD` | **App Password do Gmail** (16 caracteres) | [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) |
 
 **⚠️ IMPORTANTE - Langfuse v3 + ClickHouse (Atualizado 19/12/2025):**
@@ -375,11 +376,11 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
   - `CLICKHOUSE_USER`: Usuário do ClickHouse (ex: `langfuse`)
   - `CLICKHOUSE_PASSWORD`: Senha segura (gerar com `openssl rand -base64 32`)
 
-**Observação sobre Alertmanager + Gmail SMTP (Atualizado 30/12/2025):**
-- O Alertmanager usa Gmail SMTP (`smtp.gmail.com:587`) para enviar alertas por email
-- A senha SMTP é uma **App Password do Gmail** (16 caracteres)
-- Username: `GMAIL_USER` (seu email Gmail completo)
-- Sender: mesmo email do `GMAIL_USER` (seu próprio email)
+**Observação sobre Grafana Alerting + Gmail SMTP (Atualizado 01/01/2026):**
+- Alertmanager foi **removido** em 01/01/2026
+- **Grafana Alerting** agora gerencia alertas via Gmail SMTP (`smtp.gmail.com:587`)
+- Configuração via variáveis `GF_SMTP_*` no docker-compose.prod.yml
+- Contact Points e Notification Policies configuráveis via UI do Grafana
 - Pode enviar para **qualquer email** (clientes, equipe, vendas)
 - O arquivo de senha é montado em `/run/secrets/smtp_password` no container
 
@@ -566,7 +567,7 @@ docker logs alice-minio-init --tail 50
 | `LANGFUSE_NEXT_AUTH_SECRET` | ✅ |
 | `LANGFUSE_SALT` | ✅ **OBRIGATÓRIO v3** |
 | `LANGFUSE_ENCRYPTION_KEY` | ✅ **OBRIGATÓRIO v3** |
-| `GMAIL_USER` | ✅ (email Gmail para SMTP do Alertmanager) |
+| `GMAIL_USER` | ✅ (email Gmail para SMTP do Grafana Alerting) |
 | `GMAIL_APP_PASSWORD` | ✅ (App Password 16 chars) |
 | `LANGFUSE_DB_USER` | ✅ |
 | `LANGFUSE_DB_PASSWORD` | ✅ **NÃO use caracteres especiais** (`@:/?#%[]`) - libpq não suporta encoding automático em connection strings. Workflow valida e rejeita (fail-fast) |

@@ -2,10 +2,12 @@
 # ALICE ENTERPRISE - Regras de Alerta Prometheus
 # =============================================================================
 # Autor: Fillipe Guerra
-# Data: 10 de Dezembro de 2025
+# Data: 01 de Janeiro de 2026
 #
-# NOTA: Estas regras são carregadas automaticamente pelo Prometheus
-# e enviadas ao Alertmanager quando acionadas.
+# NOTA 01/01/2026: Alertmanager REMOVIDO - Grafana Alerting assumiu 100%
+# Estas regras de alerta foram MIGRADAS para Grafana Alerting (provisioning).
+# Este arquivo é mantido para compatibilidade com recording rules e referência.
+# Ver: infra/observability/grafana/provisioning/alerting/alert_rules.yml
 
 groups:
   - name: alice_availability
@@ -139,15 +141,7 @@ groups:
   - name: alice_observability
     interval: 60s
     rules:
-      # Alertmanager indisponível
-      - alert: AlertmanagerDown
-        expr: up{job="alertmanager"} == 0
-        for: 2m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Alertmanager indisponível"
-          description: "O Alertmanager está down. Alertas não serão enviados."
+      # REMOVIDO 01/01/2026: AlertmanagerDown - Alertmanager substituído por Grafana Alerting
 
       # Loki indisponível (logs não são coletados)
       - alert: LokiDown

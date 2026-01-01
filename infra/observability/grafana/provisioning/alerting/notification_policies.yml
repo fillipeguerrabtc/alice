@@ -1,0 +1,68 @@
+# Grafana Alerting - Notification Policies
+#
+# Configuração de políticas de notificação - define como alertas são roteados.
+# MIGRAÇÃO 01/01/2026: Substituiu Alertmanager (container removido)
+#
+# Ref: https://grafana.com/docs/grafana/latest/alerting/set-up/provision-alerting-resources/file-provisioning/
+#
+# Author: Fillipe Guerra
+# Data: 01 de Janeiro de 2026
+# Documentação PT-BR (Regra 10 CLAUDE.md)
+
+apiVersion: 1
+
+# =============================================================================
+# NOTIFICATION POLICIES - Roteamento de Alertas
+# =============================================================================
+# Define como alertas são agrupados e roteados para contact points
+# Baseado na configuração anterior do Alertmanager
+# =============================================================================
+
+policies:
+  - orgId: 1
+    # Receiver padrão para alertas não correspondidos
+    receiver: alice-email-default
+    
+    # Agrupamento por alertname, severity e service (mesmo do Alertmanager)
+    group_by:
+      - grafana_folder
+      - alertname
+      - severity
+      - service
+    
+    # Timings de agrupamento
+    group_wait: 30s        # Aguardar antes de enviar primeiro alerta do grupo
+    group_interval: 5m     # Intervalo entre notificações do mesmo grupo
+    repeat_interval: 4h    # Repetir alerta não resolvido após 4h
+    
+    # Rotas específicas por severidade
+    routes:
+      # -------------------------------------------------------------------------
+      # CRITICAL - Prioridade máxima, notificação imediata
+      # -------------------------------------------------------------------------
+      - receiver: alice-email-critical
+        object_matchers:
+          - ["severity", "=", "critical"]
+        group_wait: 10s         # Envio mais rápido para críticos
+        repeat_interval: 1h     # Repetir a cada hora
+        continue: false
+      
+      # -------------------------------------------------------------------------
+      # WARNING - Prioridade média
+      # -------------------------------------------------------------------------
+      - receiver: alice-email-warning
+        object_matchers:
+          - ["severity", "=", "warning"]
+        group_wait: 30s
+        repeat_interval: 4h
+        continue: false
+      
+      # -------------------------------------------------------------------------
+      # Circuit Breaker - Notificação especial para falhas de serviço
+      # -------------------------------------------------------------------------
+      - receiver: alice-email-critical
+        object_matchers:
+          - ["alertname", "=", "CircuitBreakerOpen"]
+        group_wait: 0s          # Notificação imediata
+        repeat_interval: 30m    # Repetir a cada 30 min
+        continue: false

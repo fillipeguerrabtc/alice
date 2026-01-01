@@ -77,10 +77,11 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 37 | **Promtail** | `promtail` | Agent que coleta logs dos containers e envia para Loki. | Promtail 3.6.3 |
 | 38 | **Jaeger** | `jaeger` | Distributed tracing para debug de requisições entre microsserviços. | Jaeger 2.13.0 |
 | 39 | **Vector** | `alice-vector` | Agregador de logs enterprise. Coleta logs de todos os containers e envia para Loki. | Vector 0.51.1 |
-| 40 | **Alertmanager** | `alice-alertmanager` | Gerenciamento de alertas do Prometheus. Notificações via email/Slack. | Alertmanager 0.27.0 |
-| 41 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.142.0 |
-| 42 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.9.1 |
-| 43 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.52.1 |
+| 40 | **OTel Collector** | `alice-otel-collector` | OpenTelemetry Collector para traces e métricas (OTLP). | OTel Collector 0.142.0 |
+| 41 | **Node Exporter** | `alice-node-exporter` | Métricas do host (CPU, memória, disco) para Prometheus. | Node Exporter 1.9.1 |
+| 42 | **cAdvisor** | `alice-cadvisor` | Métricas de containers Docker para Prometheus. | cAdvisor 0.52.1 |
+
+> **NOTA 01/01/2026**: Alertmanager foi removido. **Grafana Alerting** assumiu todas as funcionalidades de alertas, oferecendo UI completa para configuração de Contact Points, Notification Policies e Mute Timings.
 
 ### Categoria 5: Backup (1 serviço)
 
@@ -149,9 +150,9 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
    │  │  └──────────────────────────────────────────────────────────────┘  │ │
    │  │                              │                                      │ │
    │  │  ┌──────────────────────────┴───────────────────────────────────┐  │ │
-   │  │  │ OBSERVABILITY STACK (13)                                      │  │ │
-   │  │  │  langfuse (web+worker+db) │ prometheus │ grafana │ loki       │  │ │
-   │  │  │  promtail │ jaeger │ vector │ alertmanager │ otel-collector   │  │ │
+   │  │  │ OBSERVABILITY STACK (12) + Grafana Alerting                    │  │ │
+   │  │  │  langfuse (web+worker+db) │ prometheus │ grafana+alerting     │  │ │
+   │  │  │  loki │ promtail │ jaeger │ vector │ otel-collector           │  │ │
    │  │  │  node-exporter │ cadvisor                                     │  │ │
    │  │  └──────────────────────────────────────────────────────────────┘  │ │
    │  │                              │                                      │ │
@@ -314,7 +315,8 @@ TWILIO_ACCOUNT_SID=ACxxxxx
 TWILIO_AUTH_TOKEN=xxxxx
 TWILIO_WHATSAPP_NUMBER=+14155238886
 
-# ========== GMAIL SMTP (ALERTMANAGER) ==========
+# ========== GMAIL SMTP (GRAFANA ALERTING) ==========
+# NOTA 01/01/2026: Alertmanager removido, SMTP agora via Grafana GF_SMTP_*
 GMAIL_USER=seuemail@gmail.com
 GMAIL_APP_PASSWORD=xxxx xxxx xxxx xxxx
 
@@ -906,8 +908,9 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 | Prometheus | <https://metrics.yesyoudeserve.duckdns.org> | Métricas e consultas |
 | Jaeger | <https://traces.yesyoudeserve.duckdns.org> | Distributed tracing |
 | Langfuse | <https://langfuse.yesyoudeserve.duckdns.org> | LLM observability |
-| Alertmanager | <https://alertmanager.yesyoudeserve.duckdns.org> | Alertas e notificações |
 | Health Check | <https://yesyoudeserve.duckdns.org/api/observability/health> | Status do stack |
+
+> **NOTA 01/01/2026**: Alertas gerenciados via Grafana Alerting (menu Alerting no Grafana).
 
 ### Infraestrutura
 
@@ -1371,7 +1374,7 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 ### Compatibilidade do Stack de Observabilidade (pins atuais - 19/12/2025)
 
-- Prometheus 3.8.1 + Alertmanager 0.27.0: sem breaking conhecido para scrape/alert rules existentes.
+- Prometheus 3.8.1 + Grafana Alerting: Alertmanager removido em 01/01/2026, alertas via Grafana Alerting.
 - Grafana 12.3.1: atualização maior; dashboards e datasources preservados.
 - Loki/Promtail 3.6.3: versão alinhada; labels e pipeline existentes compatíveis.
 - Jaeger 2.13.0: estável; OTLP habilitado por padrão. v1 EOL em 31/12/2025.
@@ -1384,7 +1387,6 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 | Grafana | 472 | 755 | /opt/alice/data/grafana |
 | Prometheus | 65534 | 755 | /opt/alice/data/prometheus |
 | Loki | 10001 | 755 | /opt/alice/data/loki |
-| Alertmanager | 65534 | 755 | /opt/alice/data/alertmanager |
 | PostgreSQL | 999 | 700 | /opt/alice/data/postgres |
 | Langfuse DB | 70 | 755 | /opt/alice/data/langfuse-db |
 | Redis | 999 | 755 | /opt/alice/data/redis-alice |
@@ -1403,7 +1405,7 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 - **Containers com `read_only: true`:** Apenas containers que não precisam escrever em volumes têm `read_only: true` aplicado. Containers que precisam escrever (workers, init, databases) não têm `read_only: true`, mas têm todos os outros aspectos de security hardening aplicados.
 
-- **Alertmanager SMTP:** senha carregada via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets`; não colocar senha inline em variáveis de ambiente. Permissões exigidas: `chmod 640` e owner `65534:65534` (user nobody da imagem) para evitar `permission denied` no container.
+- **Grafana Alerting SMTP (01/01/2026):** GMAIL_APP_PASSWORD passado via variável de ambiente `GF_SMTP_PASSWORD` no Grafana. Alertmanager foi removido.
 
 - **CORS/WebSocket:** `CORS_ORIGINS` e `WEBSOCKET_ALLOWED_ORIGINS` são obrigatórios no `.env.prod` para o chat-service e agora são validados no workflow de deploy.
 

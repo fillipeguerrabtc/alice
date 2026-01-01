@@ -86,44 +86,13 @@ services:
       start_period: 60s
 
   # ============================================================================
-  # ALERTMANAGER - Notificações de alertas
+  # ALERTMANAGER REMOVIDO (01/01/2026)
   # ============================================================================
-  alertmanager:
-    image: prom/alertmanager:v0.29.0
-    container_name: alice-alertmanager
-    restart: unless-stopped
-    ports:
-      - "9093:9093"
-    volumes:
-      - ./config/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
-      - alertmanager_data:/alertmanager
-    command:
-      - '--config.file=/etc/alertmanager/alertmanager.yml'
-      - '--storage.path=/alertmanager'
-      - '--web.external-url=https://alertmanager.yesyoudeserve.duckdns.org'
-      - '--cluster.listen-address='
-    environment:
-      # Gmail SMTP (30/12/2025) - Substitui Resend
-      # - Host: smtp.gmail.com:587
-      # - Username: GMAIL_USER (email completo)
-      # - Password: App Password 16 chars (via arquivo secret)
-      - SMTP_USER=${GMAIL_USER}
-      - SMTP_FROM=${GMAIL_USER}
-      - ALERT_EMAIL=${GMAIL_USER}
-      - GMAIL_APP_PASSWORD=${GMAIL_APP_PASSWORD}
-      - SLACK_WEBHOOK_URL=${SLACK_WEBHOOK_URL}
-      - SLACK_WEBHOOK_TOKEN=${SLACK_WEBHOOK_TOKEN}
-    networks:
-      - observability
-    depends_on:
-      prometheus:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
+  # Substituído por Grafana Alerting - não há mais container alertmanager
+  # Alertas são gerenciados via Grafana Alerting com UI completa
+  # Contact Points e Notification Policies configuráveis via interface
+  # Ver: infra/observability/grafana/provisioning/alerting/
+  # ============================================================================
 
   # ============================================================================
   # JAEGER - Distributed tracing
@@ -346,5 +315,4 @@ volumes:
     name: alice-jaeger-data
   langfuse_db_data:
     name: alice-langfuse-db-data
-  alertmanager_data:
-    name: alice-alertmanager-data
+  # REMOVIDO 01/01/2026: alertmanager_data - Alertmanager substituído por Grafana Alerting

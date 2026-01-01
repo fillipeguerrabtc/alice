@@ -81,14 +81,14 @@
 | `trading_llm_validations` | ✅ | **NOVO 21/12** - Validação cruzada anti-alucinação |
 | `trading_market_data` | ❌ | Dados públicos de mercado (sem tenant) |
 
-**Compatibilidade Observabilidade (pins atuais)**  
-- Prometheus 3.8.1 / Alertmanager 0.29.0  
-- Grafana 12.3.1  
-- Loki/Promtail 3.6.3 (pareados)  
-- Jaeger 2.13.0 (OTLP habilitado por padrão)  
-- OTel Collector 0.142.0  
-- Vector 0.51.1  
-- Alertmanager SMTP: senha via arquivo `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
+**Compatibilidade Observabilidade (pins atuais - atualizado 01/01/2026)**
+- Prometheus 3.8.1
+- Grafana 12.3.1 + **Grafana Alerting** (substituiu Alertmanager em 01/01/2026)
+- Loki/Promtail 3.6.3 (pareados)
+- Jaeger 2.13.0 (OTLP habilitado por padrão)
+- OTel Collector 0.142.0
+- Vector 0.51.1
+- **Grafana SMTP**: configuração via variáveis `GF_SMTP_*` no docker-compose.prod.yml (Alertmanager removido).
 - Vector: métricas expostas em 8686 para Prometheus; escrita em `/var/lib/vector` (sem read_only).
 
 ---
@@ -272,7 +272,7 @@
 | Wise Service | ✅ | `wiseService.ts` |
 | Wise-ERPNext Sync | ✅ | `wiseSyncService.ts` |
 | Twilio WhatsApp Webhooks | ✅ | `index.ts` |
-| Gmail SMTP (Alertas) | ✅ | `alertmanager.yml` |
+| Gmail SMTP (Alertas) | ✅ | `grafana/provisioning/alerting/*.yml` |
 | ERPNext API Client | ✅ | `index.ts` |
 | Webhook Idempotency | ✅ | `webhookEvents` table |
 | Webhook Signature Validation | ✅ | Stripe, Wise, Twilio |
@@ -712,10 +712,10 @@ Retenção Arquivo:   30 dias
 | Item | Status | Cobertura |
 |------|--------|-----------|
 | no-new-privileges | ✅ | 51/51 containers (100% COMPLETO) |
-| read_only: true | ✅ | 25/51 containers (apenas onde não há escrita necessária) |
-| resource limits | ✅ | 51/51 containers (100% COMPLETO) |
-| platform: linux/amd64 | ✅ | 51/51 containers |
-| **Nota:** Containers que precisam escrever (18: bancos, workers/init ERPNext, node-exporter, cadvisor, alertmanager) não usam `read_only`, mas mantêm `no-new-privileges` e limits. |
+| read_only: true | ✅ | 25/50 containers (apenas onde não há escrita necessária) |
+| resource limits | ✅ | 50/50 containers (100% COMPLETO) |
+| platform: linux/amd64 | ✅ | 50/50 containers |
+| **Nota (01/01/2026):** Containers que precisam escrever (17: bancos, workers/init ERPNext, node-exporter, cadvisor) não usam `read_only`, mas mantêm `no-new-privileges` e limits. Alertmanager removido - alertas via Grafana Alerting. |
 | SHA256 digests | ✅ | 26 imagens externas |
 | healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
 
@@ -827,7 +827,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **Alertmanager v0.29.0**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**.
+> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**. **(01/01/2026):** Alertmanager removido - alertas via Grafana Alerting.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -1030,7 +1030,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 | Langfuse 3.140.0 (Web) | LLM Observability | langfuse.yesyoudeserve.duckdns.org |
 | Langfuse Worker | Processamento Assíncrono | (interno) |
 | **ClickHouse 25.12** | **OLAP Backend Langfuse v3** | (interno) |
-| Alertmanager 0.29.0 | Alertas | alertmanager.yesyoudeserve.duckdns.org |
+| **Grafana Alerting** | **Alertas (substituiu Alertmanager)** | observability.yesyoudeserve.duckdns.org/alerting |
 | OTel Collector 0.142.0 | Instrumentação | (interno) |
 | Vector 0.51.1 | Log Aggregation | (interno) |
 
@@ -1278,7 +1278,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 **1. Digests SHA256 Inválidos no docker-compose.prod.yml**
 - `prom/node-exporter:v1.9.1` - atualizado para última versão (28/12/2025)
-- `prom/alertmanager:v0.29.0` - atualizado para última versão (28/12/2025)
+- ~~`prom/alertmanager:v0.29.0`~~ - **REMOVIDO em 01/01/2026** (substituído por Grafana Alerting)
 - `postgres:16-alpine` (Langfuse DB) - digest incorreto causava "not found" no pull
 
 **Solução:** Removidos digests inválidos. Tags versionadas são suficientes para segurança enquanto imagens não são incluídas no versionamento automático.
@@ -1299,10 +1299,10 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 ```
 /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config,
   erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue,
-  vector,alertmanager,langfuse-db,prometheus,grafana,loki}
+  vector,langfuse-db,prometheus,grafana,loki}
 /opt/alice/logs/erpnext
 /opt/alice/backups/postgresql{,/logs}
-/opt/alice/secrets/alertmanager
+# NOTA 01/01/2026: /opt/alice/data/alertmanager e /opt/alice/secrets/alertmanager removidos
 ```
 
 **4. Migrações SQL Não Idempotentes**
@@ -1445,7 +1445,6 @@ body = {
 | Grafana | 472 | 755 |
 | Prometheus | 65534 | 755 |
 | Loki | 10001 | 755 |
-| Alertmanager | 65534 | 755 |
 | PostgreSQL | 999 | 700 |
 | Langfuse DB | 70 | 755 |
 | Redis | 999 | 755 |

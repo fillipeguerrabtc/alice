@@ -157,20 +157,21 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 36 | Promtail | `promtail` | Coleta de logs do host |
 | 37 | Jaeger | `jaeger` | Distributed tracing |
 | 38 | Vector | `alice-vector` | Agregação de logs → Loki |
-| 39 | Alertmanager | `alice-alertmanager` | Gestão e roteamento de alertas |
-| 40 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
-| 41 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
-| 42 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+| 39 | OTel Collector | `alice-otel-collector` | Instrumentação OpenTelemetry |
+| 40 | Node Exporter | `alice-node-exporter` | Métricas do host Linux |
+| 41 | cAdvisor | `alice-cadvisor` | Métricas de containers Docker |
+
+> **NOTA**: Alertmanager foi removido em 01/01/2026 e substituído pelo **Grafana Alerting**.
 
 #### Categoria 5: GPU Services (5 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 43 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
-| 44 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
-| 45 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
-| 46 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
-| 47 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
+| 42 | GPU Manager Service | `gpu-manager-service` | Gerenciamento centralizado de requisições GPU (fila priorizada, VRAM monitoring, circuit breakers) |
+| 43 | GPU Mixtral (LLM) | `gpu-mixtral` | Mixtral 8x7B vLLM AWQ para chat e trading |
+| 44 | GPU Embeddings | `gpu-embeddings` | Qwen3-Embedding-8B (texto) + OpenCLIP ViT-H/14 (imagem) |
+| 45 | GPU FLUX | `gpu-flux` | FLUX.1 Schnell para geração de imagens |
+| 46 | GPU ASR | `gpu-asr` | Canary-1B (NeMo) para transcrição de áudio |
 
 #### Categoria 6: Backup (1 serviço)
 
@@ -321,7 +322,6 @@ Host alice-prod
 | **Prometheus** | https://metrics.yesyoudeserve.duckdns.org | Métricas e consultas |
 | **Jaeger** | https://traces.yesyoudeserve.duckdns.org | Distributed tracing |
 | **Langfuse** | https://langfuse.yesyoudeserve.duckdns.org | LLM observability |
-| **Alertmanager** | https://alertmanager.yesyoudeserve.duckdns.org | Alertas e notificações |
 
 Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 
@@ -481,9 +481,9 @@ Proprietário - Todos os direitos reservados.
 
 ### Immutable Infrastructure
 
-Todos os 51 containers têm security hardening completo aplicado. Containers que não precisam escrever (25 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (26 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, alertmanager, serviços GPU) mantêm `security_opt: no-new-privileges:true` e resource limits.
+Todos os 50 containers têm security hardening completo aplicado. Containers que não precisam escrever (25 containers) operam com filesystem read-only + tmpfs para escrita temporária. Containers que precisam escrever (25 containers: bancos de dados, workers/init ERPNext, langfuse-worker, node-exporter, cadvisor, serviços GPU) mantêm `security_opt: no-new-privileges:true` e resource limits.
 
-- Alertmanager: senha SMTP via arquivo em `/opt/alice/secrets/alertmanager/smtp_password` montado em `/run/secrets` (sem senha inline em env).
+> **NOTA 01/01/2026**: Alertmanager foi substituído pelo **Grafana Alerting**. Configuração SMTP agora via variáveis de ambiente `GF_SMTP_*` no Grafana.
 
 ---
 
