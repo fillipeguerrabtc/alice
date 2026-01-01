@@ -2358,70 +2358,73 @@ services:
           cpus: '0.1'
 
   # MinIO Init - Cria bucket para Langfuse na primeira execução
+  # CORREÇÃO 01/01/2026: Syntax error fix - usar | ao invés de > para preservar quebras de linha
   minio-init:
-    # CORREÇÃO 01/01/2026: Tag anterior não existia mais no Docker Hub
-    # Atualizado para última release estável verificada
     image: minio/mc:RELEASE.2025-04-16T18-13-26Z
     platform: linux/amd64
     container_name: alice-minio-init
     restart: "no"
-    entrypoint: >
-      /bin/sh -c "
-      set -e
-      
-      echo '🔧 MinIO Init - Configuração de Bucket para Langfuse'
-      echo '   MINIO_ROOT_USER: $${MINIO_ROOT_USER}'
-      echo '   MINIO_ROOT_PASSWORD: (definido: $${MINIO_ROOT_PASSWORD:+sim}$${MINIO_ROOT_PASSWORD:-NÃO DEFINIDO})'
-      
-      # Validar que senha foi fornecida
-      if [ -z \"$${MINIO_ROOT_PASSWORD}\" ]; then
-        echo '❌ ERRO: MINIO_ROOT_PASSWORD não está definido!'
-        echo '   Adicione o secret no GitHub: MINIO_ROOT_PASSWORD'
-        exit 1
-      fi
-      
-      echo ''
-      echo '⏳ Aguardando MinIO iniciar (máx 60s)...'
-      
-      MAX_RETRIES=20
-      RETRY=0
-      while [ $$RETRY -lt $$MAX_RETRIES ]; do
-        echo \"   Tentativa $$((RETRY + 1))/$$MAX_RETRIES...\"
-        if mc alias set myminio http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\" 2>/dev/null; then
-          echo '✅ MinIO conectado com sucesso'
-          break
-        fi
-        RETRY=$$((RETRY + 1))
-        if [ $$RETRY -eq $$MAX_RETRIES ]; then
-          echo '❌ ERRO: Não foi possível conectar ao MinIO após 60s'
-          echo '   Verifique se:'
-          echo '   - Container minio está rodando e healthy'
-          echo '   - MINIO_ROOT_USER/PASSWORD estão corretos'
+    security_opt:
+      - no-new-privileges:true
+    # CORREÇÃO 01/01/2026: Usar entrypoint + command com | (literal scalar)
+    # O formato > (folded scalar) REMOVE quebras de linha, causando syntax error
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        
+        echo '🔧 MinIO Init - Configuração de Bucket para Langfuse'
+        echo "   MINIO_ROOT_USER: $${MINIO_ROOT_USER}"
+        
+        # Validar que senha foi fornecida
+        if [ -z "$${MINIO_ROOT_PASSWORD}" ]; then
+          echo '❌ ERRO: MINIO_ROOT_PASSWORD não está definido!'
+          echo '   Adicione o secret no GitHub: MINIO_ROOT_PASSWORD'
           exit 1
         fi
-        sleep 3
-      done
-      
-      echo ''
-      echo '📦 Criando bucket langfuse-events...'
-      if mc mb --ignore-existing myminio/langfuse-events; then
-        echo '✅ Bucket langfuse-events criado/verificado'
-      else
-        echo '❌ ERRO: Falha ao criar bucket langfuse-events'
-        exit 1
-      fi
-      
-      echo '🔓 Configurando permissões de download...'
-      if mc anonymous set download myminio/langfuse-events; then
-        echo '✅ Permissões configuradas'
-      else
-        echo '❌ ERRO: Falha ao configurar permissões'
-        exit 1
-      fi
-      
-      echo ''
-      echo '✅ MinIO Init concluído com sucesso!'
-      "
+        echo '   MINIO_ROOT_PASSWORD: (definido)'
+        
+        echo ''
+        echo '⏳ Aguardando MinIO iniciar (máx 60s)...'
+        
+        MAX_RETRIES=20
+        RETRY=0
+        while [ $$RETRY -lt $$MAX_RETRIES ]; do
+          echo "   Tentativa $$((RETRY + 1))/$$MAX_RETRIES..."
+          if mc alias set myminio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" 2>/dev/null; then
+            echo '✅ MinIO conectado com sucesso'
+            break
+          fi
+          RETRY=$$((RETRY + 1))
+          if [ $$RETRY -eq $$MAX_RETRIES ]; then
+            echo '❌ ERRO: Não foi possível conectar ao MinIO após 60s'
+            echo '   Verifique se:'
+            echo '   - Container minio está rodando e healthy'
+            echo '   - MINIO_ROOT_USER/PASSWORD estão corretos'
+            exit 1
+          fi
+          sleep 3
+        done
+        
+        echo ''
+        echo '📦 Criando bucket langfuse-events...'
+        if mc mb --ignore-existing myminio/langfuse-events; then
+          echo '✅ Bucket langfuse-events criado/verificado'
+        else
+          echo '❌ ERRO: Falha ao criar bucket langfuse-events'
+          exit 1
+        fi
+        
+        echo '🔓 Configurando permissões de download...'
+        if mc anonymous set download myminio/langfuse-events; then
+          echo '✅ Permissões configuradas'
+        else
+          echo '❌ ERRO: Falha ao configurar permissões'
+          exit 1
+        fi
+        
+        echo ''
+        echo '✅ MinIO Init concluído com sucesso!'
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
@@ -2430,6 +2433,11 @@ services:
         condition: service_healthy
     networks:
       - alice-network
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
 
   clickhouse:
     # ATUALIZADO 20/12/2025: ClickHouse 24.8 LTS - tag versionada (digest removido - incompatível com amd64)

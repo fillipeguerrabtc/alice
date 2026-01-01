@@ -1061,23 +1061,13 @@ jobs:
               echo "❌ ERRO: docker compose up (core) falhou. Capturando diagnóstico..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
               echo ""
-              echo "🧾 Logs do gpu-manager (últimas 400 linhas):"
-              docker logs --tail=400 alice-gpu-manager || true
+              # CORREÇÃO 01/01/2026: Capturar logs de TODOS os containers críticos
+              # Especialmente PostgreSQL que causa cascata de falhas
+              echo "🧾 Logs do PostgreSQL (últimas 300 linhas) - CRÍTICO:"
+              docker logs --tail=300 alice-postgres || true
               echo ""
               echo "🧾 Logs do Redis (últimas 200 linhas):"
-              docker compose -f docker-compose.prod.yml --env-file .env.prod logs --tail=500 alice-redis || true
-              echo ""
-              echo "🧾 Logs do alertmanager (últimas 200 linhas):"
-              docker logs --tail=500 alice-alertmanager || true
-              echo ""
-              echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
-              docker logs --tail=500 alice-pgbackrest || true
-              echo ""
-              echo "🧾 Logs do jaeger (últimas 200 linhas):"
-              docker logs --tail=500 jaeger || true
-              echo ""
-              echo "🧾 Logs do langfuse (últimas 200 linhas):"
-              docker logs --tail=500 langfuse || true
+              docker logs --tail=200 alice-redis || true
               echo ""
               echo "🧾 Logs do MinIO (últimas 200 linhas):"
               docker logs --tail=200 alice-minio || true
@@ -1085,22 +1075,32 @@ jobs:
               echo "🧾 Logs do MinIO Init (últimas 100 linhas):"
               docker logs --tail=100 alice-minio-init || true
               echo ""
-              # CORREÇÃO 29/12/2025: Langfuse v2 não usa worker separado
-              # Adicionar logs dos serviços Alice que estão falhando
+              echo "🧾 Logs do ClickHouse (últimas 200 linhas):"
+              docker logs --tail=200 alice-clickhouse || true
+              echo ""
+              echo "🧾 Logs do gpu-manager (últimas 300 linhas):"
+              docker logs --tail=300 alice-gpu-manager || true
+              echo ""
+              echo "🧾 Logs do langfuse (últimas 200 linhas):"
+              docker logs --tail=200 langfuse || true
+              echo ""
               echo "🧾 Logs do alice-auth (últimas 200 linhas):"
-              docker logs --tail=500 alice-auth || true
+              docker logs --tail=200 alice-auth || true
               echo ""
               echo "🧾 Logs do alice-chat (últimas 200 linhas):"
-              docker logs --tail=500 alice-chat || true
+              docker logs --tail=200 alice-chat || true
               echo ""
               echo "🧾 Logs do alice-training (últimas 200 linhas):"
-              docker logs --tail=500 alice-training || true
+              docker logs --tail=200 alice-training || true
               echo ""
               echo "🧾 Logs do erpnext-create-site (últimas 200 linhas):"
-              docker logs --tail=500 erpnext-create-site || true
+              docker logs --tail=200 erpnext-create-site || true
               echo ""
-              echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
-              docker logs --tail=500 alice-integrations || true
+              echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
+              docker logs --tail=200 alice-pgbackrest || true
+              echo ""
+              echo "🧾 Logs do traefik (últimas 100 linhas):"
+              docker logs --tail=100 alice-traefik || true
               exit 1
             fi
             
