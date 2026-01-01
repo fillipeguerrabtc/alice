@@ -2368,18 +2368,59 @@ services:
     entrypoint: >
       /bin/sh -c "
       set -e
-      echo '⏳ Aguardando MinIO iniciar...'
-      sleep 5
-      until mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
-        echo 'MinIO não está pronto, tentando novamente em 3s...'
+      
+      echo '🔧 MinIO Init - Configuração de Bucket para Langfuse'
+      echo '   MINIO_ROOT_USER: $${MINIO_ROOT_USER}'
+      echo '   MINIO_ROOT_PASSWORD: (definido: $${MINIO_ROOT_PASSWORD:+sim}$${MINIO_ROOT_PASSWORD:-NÃO DEFINIDO})'
+      
+      # Validar que senha foi fornecida
+      if [ -z \"$${MINIO_ROOT_PASSWORD}\" ]; then
+        echo '❌ ERRO: MINIO_ROOT_PASSWORD não está definido!'
+        echo '   Adicione o secret no GitHub: MINIO_ROOT_PASSWORD'
+        exit 1
+      fi
+      
+      echo ''
+      echo '⏳ Aguardando MinIO iniciar (máx 60s)...'
+      
+      MAX_RETRIES=20
+      RETRY=0
+      while [ $$RETRY -lt $$MAX_RETRIES ]; do
+        echo \"   Tentativa $$((RETRY + 1))/$$MAX_RETRIES...\"
+        if mc alias set myminio http://minio:9000 \"$${MINIO_ROOT_USER}\" \"$${MINIO_ROOT_PASSWORD}\" 2>/dev/null; then
+          echo '✅ MinIO conectado com sucesso'
+          break
+        fi
+        RETRY=$$((RETRY + 1))
+        if [ $$RETRY -eq $$MAX_RETRIES ]; then
+          echo '❌ ERRO: Não foi possível conectar ao MinIO após 60s'
+          echo '   Verifique se:'
+          echo '   - Container minio está rodando e healthy'
+          echo '   - MINIO_ROOT_USER/PASSWORD estão corretos'
+          exit 1
+        fi
         sleep 3
       done
-      echo '✅ MinIO conectado'
       
+      echo ''
       echo '📦 Criando bucket langfuse-events...'
-      mc mb --ignore-existing myminio/langfuse-events
-      mc anonymous set download myminio/langfuse-events
-      echo '✅ Bucket criado com sucesso'
+      if mc mb --ignore-existing myminio/langfuse-events; then
+        echo '✅ Bucket langfuse-events criado/verificado'
+      else
+        echo '❌ ERRO: Falha ao criar bucket langfuse-events'
+        exit 1
+      fi
+      
+      echo '🔓 Configurando permissões de download...'
+      if mc anonymous set download myminio/langfuse-events; then
+        echo '✅ Permissões configuradas'
+      else
+        echo '❌ ERRO: Falha ao configurar permissões'
+        exit 1
+      fi
+      
+      echo ''
+      echo '✅ MinIO Init concluído com sucesso!'
       "
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}

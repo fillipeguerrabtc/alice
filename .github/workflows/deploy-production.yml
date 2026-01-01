@@ -1104,8 +1104,58 @@ jobs:
               exit 1
             fi
             
+            # =================================================================
+            # FAIL-FAST: Verificar containers INIT imediatamente (01/01/2026)
+            # Docker Compose --detach retorna 0 mesmo se init containers falharem
+            # Precisamos verificar ATIVAMENTE se eles falharam
+            # =================================================================
+            log "🔍 FAIL-FAST: Verificando containers de inicialização..."
+            
+            # Aguardar containers init tentarem executar
+            sleep 10
+            
+            # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
+            INIT_CONTAINERS=(
+              "alice-minio-init"
+              "traefik-init"
+              "erpnext-configurator"
+            )
+            
+            INIT_FAILED=0
+            for container in "${INIT_CONTAINERS[@]}"; do
+              # Verificar se container existe
+              if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                # Obter exit code (0 = sucesso, vazio = ainda rodando)
+                EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "")
+                STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                
+                if [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                  echo "❌ FAIL-FAST: Container $container FALHOU (exit code: $EXIT_CODE)"
+                  echo ""
+                  echo "🧾 Logs de $container:"
+                  docker logs --tail=100 "$container" || true
+                  echo ""
+                  INIT_FAILED=1
+                elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" = "0" ]; then
+                  echo "✅ Container $container completou com sucesso"
+                fi
+              fi
+            done
+            
+            if [ $INIT_FAILED -eq 1 ]; then
+              echo ""
+              echo "❌ ERRO CRÍTICO: Um ou mais containers de inicialização falharam!"
+              echo "   O deploy NÃO pode continuar com containers init falhando."
+              echo ""
+              echo "📋 Status de todos os containers:"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+              exit 1
+            fi
+            
+            log "✅ Containers de inicialização OK (ou ainda em execução)"
+            
             # Verificar status dos serviços core
-            sleep 15
+            sleep 5
             
             # =================================================================
             # CORREÇÃO 29/12/2025: Criar extensão pgvector no PostgreSQL
