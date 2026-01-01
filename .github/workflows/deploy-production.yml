@@ -1084,6 +1084,15 @@ jobs:
               echo "🧾 Logs do alice-training (últimas 200 linhas):"
               docker logs --tail=200 alice-training || true
               echo ""
+              echo "🧾 Logs do alice-rag (últimas 200 linhas):"
+              docker logs --tail=200 alice-rag || true
+              echo ""
+              echo "🧾 Logs do alice-integrations (últimas 200 linhas):"
+              docker logs --tail=200 alice-integrations || true
+              echo ""
+              echo "🧾 Logs do alice-observability (últimas 200 linhas):"
+              docker logs --tail=200 alice-observability || true
+              echo ""
               echo "🧾 Logs do erpnext-create-site (últimas 200 linhas):"
               docker logs --tail=200 erpnext-create-site || true
               echo ""
