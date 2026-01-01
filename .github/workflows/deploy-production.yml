@@ -207,6 +207,56 @@ jobs:
             echo "exist=true" >> $GITHUB_OUTPUT
           fi
 
+      # CORREÇÃO 01/01/2026: Validar imagens EXTERNAS antes do deploy
+      # Evita falha tardia por tag rotacionada/removida do Docker Hub
+      - name: Verificar imagens externas (Docker Hub)
+        id: check-external-images
+        run: |
+          echo "🔍 Verificando imagens externas no Docker Hub..."
+          
+          # Lista de imagens externas CRÍTICAS (não buildadas por nós)
+          # Tags devem corresponder ao docker-compose.prod.yml
+          EXTERNAL_IMAGES=(
+            "minio/minio:RELEASE.2024-12-18T13-15-44Z"
+            "minio/mc:RELEASE.2025-04-16T18-13-26Z"
+            "clickhouse/clickhouse-server:25.12-alpine"
+            "redis:7.4.6-alpine"
+            "postgres:16-alpine"
+            "traefik:v3.6.5"
+            "prom/prometheus:v3.8.1"
+            "grafana/grafana-oss:12.3.1"
+            "grafana/loki:3.6.3"
+            "grafana/promtail:3.6.3"
+            "prom/alertmanager:v0.29.0"
+            "jaegertracing/jaeger:2.13.0"
+            "qdrant/qdrant:v1.16.2"
+            "langfuse/langfuse:3"
+            "frappe/erpnext:v15.91.3"
+            "mariadb:10.11"
+            "busybox:1.36"
+            "prom/node-exporter:v1.9.1"
+          )
+          
+          MISSING=0
+          for img in "${EXTERNAL_IMAGES[@]}"; do
+            if docker manifest inspect "$img" > /dev/null 2>&1; then
+              echo "  ✅ $img"
+            else
+              echo "  ❌ $img: NÃO ENCONTRADA"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          
+          if [ $MISSING -gt 0 ]; then
+            echo ""
+            echo "❌ ERRO CRÍTICO: $MISSING imagem(s) externa(s) não encontrada(s)"
+            echo "O deploy FALHARIA no pull. Atualize as tags em docker-compose.prod.yml"
+            exit 1
+          fi
+          
+          echo ""
+          echo "✅ Todas as imagens externas estão disponíveis"
+
       - name: Carregar versões dos componentes
         id: versions
         run: |

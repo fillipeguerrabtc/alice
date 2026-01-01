@@ -21,5 +21,7 @@
   "node-exporter": "v1.9.1",
   "cadvisor": "v0.52.1",
   "searxng": "latest",
-  "torproxy": "latest"
+  "torproxy": "latest",
+  "minio": "RELEASE.2024-12-18T13-15-44Z",
+  "minio-mc": "RELEASE.2025-04-16T18-13-26Z"
 }

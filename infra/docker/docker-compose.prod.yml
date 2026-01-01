@@ -2359,7 +2359,9 @@ services:
 
   # MinIO Init - Cria bucket para Langfuse na primeira execução
   minio-init:
-    image: minio/mc:RELEASE.2024-12-18T01-15-30Z
+    # CORREÇÃO 01/01/2026: Tag anterior não existia mais no Docker Hub
+    # Atualizado para última release estável verificada
+    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
     platform: linux/amd64
     container_name: alice-minio-init
     restart: "no"
