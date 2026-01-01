@@ -104,7 +104,8 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /opt/alice/data/searxng
+      # CORREÇÃO 01/01/2026: Path alinhado com mkdir no deploy-production.yml
+      device: /opt/alice/data/searxng-config
 
   # CORREÇÃO 01/01/2026: MinIO volume para Langfuse v3 (S3 obrigatório)
   minio_data:
@@ -113,7 +114,8 @@ volumes:
     driver_opts:
       type: none
       o: bind
-      device: /opt/alice/data/minio-config
+      # CORREÇÃO 01/01/2026: Path alinhado com mkdir no deploy-production.yml
+      device: /opt/alice/data/minio
   
   # ERPNext
   erpnext_sites:
@@ -2339,7 +2341,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      # CORREÇÃO 01/01/2026: minio/minio não tem mc binário, usar curl com endpoint oficial
+      # Ref: https://min.io/docs/minio/linux/operations/monitoring/healthcheck-probe.html
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 5
