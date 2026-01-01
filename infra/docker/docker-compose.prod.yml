@@ -395,7 +395,7 @@ services:
   traefik:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
     # ATUALIZADO 27/12/2025: v3.6.5 (última versão estável da série 3.6.x)
-    image: traefik:v3.6.5
+    image: traefik:v3.6.6
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -1528,7 +1528,7 @@ services:
   # ===================================================================
   erpnext-configurator:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-configurator
     restart: "no"
@@ -1642,7 +1642,7 @@ services:
 
   erpnext-create-site:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-create-site
     restart: "no"
@@ -1788,7 +1788,7 @@ services:
 
   erpnext-backend:
     # ATUALIZADO 14/12/2025: ERPNext v15.91.3 (última versão estável) com SHA256 digest
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-backend
     restart: unless-stopped
@@ -1848,7 +1848,7 @@ services:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
     # Ref: https://github.com/frappe/frappe_docker (arquitetura 2024/2025)
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-frontend
     restart: unless-stopped
@@ -1895,7 +1895,7 @@ services:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
     # Ref: https://github.com/frappe/frappe_docker (arquitetura 2024/2025)
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-websocket
     restart: unless-stopped
@@ -1935,7 +1935,7 @@ services:
   erpnext-worker-default:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
     # ERPNext v15 usa imagem única frappe/erpnext com comandos diferentes para cada serviço
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-default
     restart: unless-stopped
@@ -1990,7 +1990,7 @@ services:
 
   erpnext-worker-short:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-short
     restart: unless-stopped
@@ -2044,7 +2044,7 @@ services:
 
   erpnext-worker-long:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-long
     restart: unless-stopped
@@ -2098,7 +2098,7 @@ services:
 
   erpnext-scheduler:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-scheduler
     restart: unless-stopped
@@ -2152,7 +2152,7 @@ services:
 
   erpnext-worker-default-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-default-2
     restart: unless-stopped
@@ -2206,7 +2206,7 @@ services:
 
   erpnext-worker-short-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-short-2
     restart: unless-stopped
@@ -2260,7 +2260,7 @@ services:
 
   erpnext-worker-long-2:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
-    image: frappe/erpnext:v15.91.3
+    image: frappe/erpnext:v15.91.1
     platform: linux/amd64
     container_name: erpnext-worker-long-2
     restart: unless-stopped
@@ -2490,10 +2490,11 @@ services:
   # REQUISITOS v3: PostgreSQL + ClickHouse + Redis + S3/MinIO (OBRIGATÓRIO)
   # ===========================================================================
   langfuse:
-    # CORREÇÃO 31/12/2025: Langfuse 3.85.0 - versão estável sem ZodError bug
-    # PROIBIDO: Versões 3.90.0 a 3.140.0 têm bug ZodError com Next.js 14.2.x
+    # CORREÇÃO 01/01/2026: Langfuse 3.89 - última versão estável sem ZodError bug
+    # PROIBIDO: Versões 3.90.0+ têm bug ZodError com Next.js 14.2.x
+    # Tag 3.85.0 NÃO EXISTE no Docker Hub (só 3.89, 3.80, etc.)
     # Ref: https://github.com/orgs/langfuse/discussions/8781
-    image: langfuse/langfuse:3.85.0
+    image: langfuse/langfuse:3.89
     platform: linux/amd64
     container_name: langfuse
     restart: unless-stopped
@@ -2928,7 +2929,7 @@ services:
   vector:
     # ATUALIZADO 01/01/2026: Vector 0.50.0-alpine (última versão Alpine estável)
     # NOTA: 0.51.1-alpine NÃO existe, 0.51.0 existe mas usamos 0.50.0 (estável)
-    image: timberio/vector:0.50.0-alpine
+    image: timberio/vector:0.51.0-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped
