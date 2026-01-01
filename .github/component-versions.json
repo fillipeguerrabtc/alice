@@ -1,6 +1,6 @@
 {
   "pgbackrest": "2.57.0",
-  "traefik": "3.6.5",
+  "traefik": "3.6.6",
   "prometheus": "3.8.1",
   "grafana": "12.3.1",
   "loki": "3.6.3",
@@ -22,5 +22,5 @@
   "searxng": "latest",
   "torproxy": "latest",
   "minio": "RELEASE.2024-12-18T13-15-44Z",
-  "minio-mc": "RELEASE.2025-04-16T18-13-26Z"
+  "minio-mc": "RELEASE.2024-10-29T15-34-59Z"
 }

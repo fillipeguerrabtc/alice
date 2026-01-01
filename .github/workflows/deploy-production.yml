@@ -235,7 +235,20 @@ jobs:
             echo "exist=true" >> $GITHUB_OUTPUT
           fi
 
-      # CORREÇÃO 01/01/2026: Validar imagens EXTERNAS antes do deploy
+      # CORREÇÃO 01/01/2026: Login Docker Hub ANTES da verificação de imagens
+      # PROBLEMA: Sem autenticação, Docker Hub aplica rate limiting (200 pulls/6h)
+      # SOLUÇÃO: Autenticar com DOCKERHUB_USERNAME/TOKEN para aumentar limite (200000/day)
+      - name: Login Docker Hub (evitar rate limit)
+        run: |
+          if [ -n "${{ secrets.DOCKERHUB_USERNAME }}" ] && [ -n "${{ secrets.DOCKERHUB_TOKEN }}" ]; then
+            echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+            echo "✅ Autenticado no Docker Hub (rate limit: 200000 pulls/day)"
+          else
+            echo "⚠️ DOCKERHUB_USERNAME/TOKEN não configurados - usando acesso anônimo"
+            echo "   Rate limit anônimo: 200 pulls/6h - pode causar falhas em validação"
+          fi
+
+      # Validar imagens EXTERNAS antes do deploy
       # Evita falha tardia por tag rotacionada/removida do Docker Hub
       - name: Verificar imagens externas (Docker Hub)
         id: check-external-images
@@ -248,11 +261,11 @@ jobs:
           # Adicionadas: vector, otel-collector, cadvisor
           EXTERNAL_IMAGES=(
             "minio/minio:RELEASE.2024-12-18T13-15-44Z"
-            "minio/mc:RELEASE.2025-04-16T18-13-26Z"
+            "minio/mc:RELEASE.2024-10-29T15-34-59Z"
             "clickhouse/clickhouse-server:25.12-alpine"
             "redis:7.4.6-alpine"
             "postgres:16-alpine"
-            "traefik:v3.6.5"
+            "traefik:v3.6.6"
             "prom/prometheus:v3.8.1"
             "grafana/grafana:12.3.1"
             "grafana/loki:3.6.3"
