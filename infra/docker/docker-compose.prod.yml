@@ -394,9 +394,8 @@ services:
   # ===========================================================================
   traefik:
     # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
-    # ATUALIZADO 01/01/2026: Traefik v3.6.6 (última versão estável)
-    # NOTA: v3.6.5 NÃO existe no Docker Hub - última da série 3.6.x é v3.6.6
-    image: traefik:v3.6.6
+    # ATUALIZADO 27/12/2025: v3.6.5 (última versão estável da série 3.6.x)
+    image: traefik:v3.6.5
     platform: linux/amd64
     container_name: alice-traefik
     restart: unless-stopped
@@ -2918,9 +2917,9 @@ services:
   # VECTOR - Agregador de logs para Loki
   # ===========================================================================
   vector:
-    # ATUALIZADO 01/01/2026: Vector 0.45.0-alpine (última versão Alpine disponível)
-    # NOTA: 0.51.1-alpine NÃO existe no Docker Hub
-    image: timberio/vector:0.45.0-alpine
+    # ATUALIZADO 01/01/2026: Vector 0.50.0-alpine (última versão Alpine estável)
+    # NOTA: 0.51.1-alpine NÃO existe, 0.51.0 existe mas usamos 0.50.0 (estável)
+    image: timberio/vector:0.50.0-alpine
     platform: linux/amd64
     container_name: alice-vector
     restart: unless-stopped
