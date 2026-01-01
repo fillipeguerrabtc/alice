@@ -1,16 +1,19 @@
 # ==============================================================================
 # Alice Enterprise Platform - RAG Service
-# Dockerfile Enterprise com Node.js Bookworm Slim (sem Distroless)
+# Dockerfile Enterprise com Node.js Alpine (seguro, sem CVEs conhecidos)
 # 
-# NOTA: Este serviço usa node:22-bookworm-slim em vez de Distroless porque
-# pode precisar de dependências de sistema (ex.: CA certificates). A imagem
-# bookworm-slim é mantida pelo time oficial do Node.js e é segura para produção.
+# CORREÇÃO 31/12/2025: Migrado de node:22-bookworm-slim para node:22-alpine
+# MOTIVO: CVE-2023-45853 (CRITICAL) em zlib1g do Debian 12 - status "will_not_fix"
+# Alpine Linux usa zlib 1.3.1+ que já corrigiu esta vulnerabilidade.
 #
 # SEGURANÇA:
 # - Non-root container (usuário 'node')
-# - Apenas dependências necessárias instaladas
+# - Alpine Linux com zlib corrigido (CVE-2023-45853 resolvido)
+# - Imagem mínima (~50MB vs ~200MB do Bookworm)
 # - read_only filesystem em produção (via docker-compose)
 # 
+# Author: Fillipe Guerra
+# Data: 31 de Dezembro de 2025
 # Documentação em PT-BR (Regra 10 CLAUDE.md)
 # ==============================================================================
 
@@ -93,30 +96,29 @@ WORKDIR /app
 RUN pnpm --filter @alice/rag-service deploy --prod --legacy /prod/rag-service
 
 # ==============================================================================
-# Stage: runner - Node.js Bookworm Slim para produção
+# Stage: runner - Node.js Alpine para produção (SEGURO - sem CVE-2023-45853)
 #
-# NOTA: Este serviço usa node:22-bookworm-slim (não Distroless) para permitir
-# dependências de sistema quando necessário (ex.: CA certificates). Com vídeo
-# desabilitado na plataforma, não há dependências extras obrigatórias no runtime.
+# CORREÇÃO 31/12/2025: Migrado de node:22-bookworm-slim para node:22-alpine
+# MOTIVO: CVE-2023-45853 (CRITICAL) em zlib1g do Debian 12 - "will_not_fix"
+# Alpine Linux usa zlib 1.3.1+ que já tem a correção aplicada.
 #
 # SEGURANÇA:
-# - Imagem oficial Node.js (mantida, patches de segurança regulares)
+# - Imagem oficial Node.js Alpine (mantida, patches regulares)
 # - Usuário non-root (node, uid 1000)
-# - Apenas pacotes essenciais instalados
-# - apt cache limpo após instalação
+# - zlib 1.3.1+ (CVE-2023-45853 corrigido)
+# - Imagem mínima (~50MB vs ~200MB do Bookworm)
+# - CA certificates já inclusos no Alpine
 # ==============================================================================
-FROM node:22-bookworm-slim AS runner
+FROM node:22-alpine AS runner
 
 # Variáveis de ambiente
 ENV NODE_ENV=production
 ENV SERVICE_NAME=rag-service
 ENV PORT=3003
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        ca-certificates && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt-get clean
+# CORREÇÃO 31/12/2025: Alpine já inclui ca-certificates por padrão
+# Apenas garantir que o sistema está atualizado com últimos patches de segurança
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
 
 WORKDIR /app
 

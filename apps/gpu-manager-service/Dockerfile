@@ -1,6 +1,19 @@
 # ==============================================================================
 # Alice Enterprise Platform - GPU Manager Service
-# Dockerfile Enterprise com Google Distroless para ZERO CVEs
+# Dockerfile Enterprise com Node.js Alpine (seguro, sem CVEs conhecidos)
+# 
+# CORREÇÃO 31/12/2025: Migrado de gcr.io/distroless/nodejs22-debian12 para node:22-alpine
+# MOTIVO: CVE-2023-45853 (CRITICAL) em zlib1g do Debian 12 - status "will_not_fix"
+# Alpine Linux usa zlib 1.3.1+ que já corrigiu esta vulnerabilidade.
+#
+# SEGURANÇA:
+# - Non-root container (usuário 'node')
+# - Alpine Linux com zlib corrigido (CVE-2023-45853 resolvido)
+# - Imagem mínima (~50MB vs ~200MB)
+# - read_only filesystem em produção (via docker-compose)
+# 
+# Author: Fillipe Guerra
+# Data: 31 de Dezembro de 2025
 # Documentação em PT-BR (Regra 10 CLAUDE.md)
 # ==============================================================================
 
@@ -79,36 +92,48 @@ WORKDIR /app
 RUN pnpm --filter @alice/gpu-manager-service deploy --prod --legacy /prod/gpu-manager-service
 
 # ==============================================================================
-# Stage: runner - Google Distroless para ZERO CVEs em produção
-# SEGURANÇA ENTERPRISE: Sem shell, sem package manager, sem utilitários
-# Referência: https://github.com/GoogleContainerTools/distroless
+# Stage: runner - Node.js Alpine para produção (SEGURO - sem CVE-2023-45853)
+#
+# CORREÇÃO 31/12/2025: Migrado de gcr.io/distroless/nodejs22-debian12 para node:22-alpine
+# MOTIVO: CVE-2023-45853 (CRITICAL) em zlib1g do Debian 12 - "will_not_fix"
+# Alpine Linux usa zlib 1.3.1+ que já tem a correção aplicada.
+#
+# SEGURANÇA:
+# - Imagem oficial Node.js Alpine (mantida, patches regulares)
+# - Usuário non-root (node, uid 1000)
+# - zlib 1.3.1+ (CVE-2023-45853 corrigido)
+# - Imagem mínima (~50MB vs ~200MB)
+# - CA certificates já inclusos no Alpine
 # ==============================================================================
-FROM gcr.io/distroless/nodejs22-debian12 AS runner
+FROM node:22-alpine AS runner
 
-# Variáveis de ambiente (Distroless suporta ENV)
+# Variáveis de ambiente
 ENV NODE_ENV=production
 ENV SERVICE_NAME=gpu-manager-service
 ENV PORT=3010
 
+# CORREÇÃO 31/12/2025: Alpine já inclui ca-certificates por padrão
+# Apenas garantir que o sistema está atualizado com últimos patches de segurança
+RUN apk update && apk upgrade --no-cache && rm -rf /var/cache/apk/*
+
 WORKDIR /app
 
 # Copiar dependências de produção extraídas pelo pnpm deploy
-# NOTA: Distroless roda como nonroot (uid 65532) por padrão
-COPY --from=pruner /prod/gpu-manager-service/node_modules ./node_modules
+# Usando --chown para garantir que o usuário node tenha acesso
+COPY --from=pruner --chown=node:node /prod/gpu-manager-service/node_modules ./node_modules
 
 # Copiar bundle compilado (com @alice/* inline)
-COPY --from=builder /app/apps/gpu-manager-service/dist/bundle.js ./dist/bundle.js
-COPY --from=builder /app/apps/gpu-manager-service/dist/bundle.js.map ./dist/bundle.js.map
+COPY --from=builder --chown=node:node /app/apps/gpu-manager-service/dist/bundle.js ./dist/bundle.js
+COPY --from=builder --chown=node:node /app/apps/gpu-manager-service/dist/bundle.js.map ./dist/bundle.js.map
 
-# Distroless já roda como nonroot por padrão (uid 65532)
-USER nonroot
+# Mudar para usuário non-root (segurança)
+USER node
 
 EXPOSE 3010
 
-# Health check compatível com Distroless (usa node diretamente, não shell)
+# Health check com handlers de erro e timeout
 # /live verifica se processo está vivo (liveness probe)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD ["/nodejs/bin/node", "-e", "require('http').get('http://localhost:3010/live', (r) => process.exit(r.statusCode === 200 ? 0 : 1))"]
+    CMD node -e "const r=require('http').get('http://localhost:3010/live',{timeout:5000},(res)=>{res.resume();process.exit(res.statusCode===200?0:1)});r.on('error',()=>process.exit(1));r.on('timeout',()=>{r.destroy();process.exit(1)})"
 
-# Entrypoint do Distroless nodejs já é /nodejs/bin/node
-CMD ["dist/bundle.js"]
+CMD ["node", "dist/bundle.js"]
