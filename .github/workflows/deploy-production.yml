@@ -277,7 +277,9 @@ jobs:
   deploy:
     name: Deploy Hetzner
     runs-on: [self-hosted, linux, deploy]
-    timeout-minutes: 30
+    # CORREÇÃO 01/01/2026: Aumentado de 30 para 45 minutos
+    # Pull de 50+ containers + init pode exceder 30min em conexões lentas
+    timeout-minutes: 45
     needs: [validate-and-prepare, image-security-scan]
     if: always() && needs.validate-and-prepare.result == 'success' && (needs.image-security-scan.result == 'success' || needs.image-security-scan.result == 'skipped')
     

@@ -919,8 +919,11 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
+      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
+      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
+      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
       gpu-manager:
-        condition: service_healthy
+        condition: service_started
     networks:
       - alice-network
     labels:
@@ -1025,8 +1028,11 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
+      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
+      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
+      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
       gpu-manager:
-        condition: service_healthy
+        condition: service_started
     networks:
       - alice-network
     labels:
@@ -1100,8 +1106,11 @@ services:
         condition: service_healthy
       alice-redis:
         condition: service_healthy
+      # CORREÇÃO 01/01/2026: service_started ao invés de service_healthy
+      # GPU Manager pode não estar healthy sem NVIDIA drivers instalados
+      # Serviços Alice devem iniciar e degradar graciosamente se GPU não disponível
       gpu-manager:
-        condition: service_healthy
+        condition: service_started
     networks:
       - alice-network
     labels:
@@ -2410,6 +2419,10 @@ services:
       # === CONFIG v3 ===
       LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS: "true"
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+      # === CORREÇÃO 01/01/2026: Variáveis adicionais para evitar ZodError ===
+      # Ref: https://github.com/orgs/langfuse/discussions/8781
+      NEXT_RUNTIME: nodejs
+      NODE_ENV: production
     networks:
       - alice-network
     healthcheck:
