@@ -2365,6 +2365,7 @@ services:
     restart: "no"
     entrypoint: >
       /bin/sh -c "
+      set -e
       echo '⏳ Aguardando MinIO iniciar...'
       sleep 5
       until mc alias set myminio http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD}; do
@@ -2503,6 +2504,9 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # CORREÇÃO 01/01/2026: Aguardar bucket ser criado antes de iniciar Langfuse
+      minio-init:
+        condition: service_completed_successfully
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.langfuse.rule=Host(`langfuse.yesyoudeserve.duckdns.org`)"
@@ -2564,6 +2568,9 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      # CORREÇÃO 01/01/2026: Aguardar bucket ser criado antes de iniciar worker
+      minio-init:
+        condition: service_completed_successfully
     deploy:
       resources:
         limits:
