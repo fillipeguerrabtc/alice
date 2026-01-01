@@ -18,29 +18,7 @@
 # =============================================================================
 
 # =============================================================================
-# Stage 1: Build pgvector from source
-# =============================================================================
-FROM postgres:16-alpine AS pgvector-builder
-
-# Instalar dependências de build para pgvector
-RUN apk add --no-cache \
-    build-base \
-    clang \
-    llvm \
-    git
-
-# Versão do pgvector (latest stable)
-ARG PGVECTOR_VERSION=0.8.0
-
-# Clone e build pgvector
-RUN git clone --branch v${PGVECTOR_VERSION} --depth 1 \
-    https://github.com/pgvector/pgvector.git /tmp/pgvector
-
-WORKDIR /tmp/pgvector
-RUN make && make install
-
-# =============================================================================
-# Stage 2: Build pgBackRest from source (Alpine)
+# Stage 1: Build pgBackRest from source (Alpine)
 # =============================================================================
 FROM alpine:3.21 AS pgbackrest-builder
 
@@ -74,10 +52,37 @@ RUN ninja -C build
 RUN ninja -C build install
 
 # =============================================================================
+# Stage 2: Build pgvector from source
+# Usa postgres:16-alpine como base para ter os headers corretos
+# =============================================================================
+FROM postgres:16-alpine AS pgvector-builder
+
+# Versão do pgvector (latest stable)
+ARG PGVECTOR_VERSION=0.8.0
+
+# Instalar dependências de build para pgvector
+# NOTA: PostgreSQL Alpine usa clang para JIT, precisamos dos headers de desenvolvimento
+RUN apk add --no-cache \
+    build-base \
+    clang19 \
+    clang19-dev \
+    llvm19 \
+    llvm19-dev \
+    git
+
+# Clone pgvector
+RUN git clone --branch v${PGVECTOR_VERSION} --depth 1 \
+    https://github.com/pgvector/pgvector.git /tmp/pgvector
+
+WORKDIR /tmp/pgvector
+
+# Build pgvector
+# NOTA: Desabilitar JIT se houver problemas com clang version mismatch
+RUN make PG_CONFIG=/usr/local/bin/pg_config && make install PG_CONFIG=/usr/local/bin/pg_config
+
+# =============================================================================
 # Stage 3: Runtime - PostgreSQL Alpine + pgvector + pgBackRest
 # =============================================================================
-# CORREÇÃO CVE-2023-45853: Usar postgres:16-alpine ao invés de pgvector/pgvector:pg16
-# Alpine Linux usa zlib 1.3.1+ que tem correção do CVE
 FROM postgres:16-alpine
 
 LABEL maintainer="Alice Enterprise Platform <admin@yesyoudeserve.duckdns.org>"
@@ -89,11 +94,11 @@ ENV POSTGRES_USER=postgres
 ENV PGDATA=/var/lib/postgresql/data
 
 # Copiar pgvector do builder stage
+# NOTA: Extensões PostgreSQL ficam em /usr/local/lib/postgresql/ e /usr/local/share/postgresql/extension/
 COPY --from=pgvector-builder /usr/local/lib/postgresql/vector.so /usr/local/lib/postgresql/
-COPY --from=pgvector-builder /usr/local/lib/postgresql/bitcode/vector /usr/local/lib/postgresql/bitcode/vector
 COPY --from=pgvector-builder /usr/local/share/postgresql/extension/vector* /usr/local/share/postgresql/extension/
 
-# Instalar dependências runtime do pgBackRest
+# Instalar dependências runtime do pgBackRest + LLVM runtime para pgvector JIT
 USER root
 RUN apk update && apk upgrade --no-cache && \
     apk add --no-cache \
@@ -107,6 +112,8 @@ RUN apk update && apk upgrade --no-cache && \
     libssh2 \
     libpq \
     ca-certificates \
+    # LLVM runtime para pgvector JIT (se compilado com suporte)
+    llvm19-libs \
     && rm -rf /var/cache/apk/*
 
 # Copiar binário pgBackRest do stage builder
@@ -124,13 +131,10 @@ RUN mkdir -p /var/lib/pgbackrest \
     && chown -R postgres:postgres /etc/pgbackrest
 
 # Copiar configuração pgBackRest para PostgreSQL
-# NOTA: Esta é uma configuração mínima que aponta para o repositório compartilhado
-# CORREÇÃO 31/12/2025: Caminho relativo ao build context (raiz do repo), não ao Dockerfile
 COPY infra/postgres/pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
 RUN chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
 
 # Script de inicialização para criar extensão pgvector automaticamente
-# NOTA: PostgreSQL Alpine executa scripts .sql/.sh em /docker-entrypoint-initdb.d/
 RUN mkdir -p /docker-entrypoint-initdb.d && \
     echo "CREATE EXTENSION IF NOT EXISTS vector;" > /docker-entrypoint-initdb.d/00-create-pgvector.sql && \
     chown postgres:postgres /docker-entrypoint-initdb.d/00-create-pgvector.sql
@@ -140,5 +144,3 @@ USER postgres
 
 # Healthcheck herdado da imagem base (pg_isready)
 # O docker-compose.prod.yml sobrescreve com healthcheck mais avançado
-
-# Entrypoint e CMD herdados da imagem base postgres:16-alpine
