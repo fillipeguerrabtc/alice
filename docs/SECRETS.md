@@ -1,7 +1,7 @@
 # Guia Completo de Secrets - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Dezembro de 2025
+**Data:** 01 de Janeiro de 2026
 
 ## Visão Geral
 
@@ -385,6 +385,36 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 
 **Observação:** Langfuse usa PostgreSQL dedicado na porta 5433 (separado do banco principal).
 
+### FASE 8b: MinIO - Object Storage (S3 para Langfuse v3)
+
+| Secret | Descrição | Como Obter |
+|--------|-----------|------------|
+| `MINIO_ROOT_PASSWORD` | **OBRIGATÓRIO** - Senha do MinIO (S3 para Langfuse v3) | `openssl rand -base64 32` |
+
+**Configuração:**
+1. Gerar senha segura: `openssl rand -base64 32`
+2. Adicionar no GitHub Secrets como `MINIO_ROOT_PASSWORD`
+3. **Importante:** Usar caracteres URL-safe (evitar `+`, `/`, `=` se possível)
+4. Mínimo: 8 caracteres (recomendado: 32+)
+
+**Arquitetura (01/01/2026):**
+- MinIO é **OBRIGATÓRIO** para Langfuse v3 (armazenamento S3 de eventos)
+- Roda como container `alice-minio` na porta 9000 (API) e 9001 (Console)
+- Container `alice-minio-init` cria bucket `langfuse-events` automaticamente
+- Langfuse Web e Worker dependem do MinIO estar healthy antes de iniciar
+
+**Troubleshooting:**
+```bash
+# Verificar status do MinIO
+docker logs alice-minio --tail 100
+
+# Verificar se bucket foi criado
+docker logs alice-minio-init --tail 50
+
+# Acessar console MinIO (apenas rede interna)
+# URL: http://localhost:9001 (via port-forward se necessário)
+```
+
 ### FASE 9: Backup (pgBackRest)
 
 | Secret | Descrição | Como Obter |
@@ -551,6 +581,7 @@ Secrets pré-definidos para SSO funcionar automaticamente no primeiro deploy:
 |--------|--------|
 | `CLICKHOUSE_USER` | ✅ **OBRIGATÓRIO Langfuse v3** (adicionado 19/12/2025) |
 | `CLICKHOUSE_PASSWORD` | ✅ **OBRIGATÓRIO Langfuse v3** (adicionado 19/12/2025) |
+| `MINIO_ROOT_PASSWORD` | ✅ **OBRIGATÓRIO Langfuse v3** (adicionado 01/01/2026) |
 
 ### Web Search (SearXNG)
 

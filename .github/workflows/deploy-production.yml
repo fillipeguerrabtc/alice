@@ -105,33 +105,61 @@ jobs:
     steps:
       # CORREÇÃO 01/01/2026: Validar secrets CRÍTICOS antes de qualquer operação
       # Evita deploy parcial que falha no meio por secret ausente
+      # CORREÇÃO 01/01/2026: Validação expandida de 10 para 20 secrets críticos
+      # Evita deploy parcial que falha no meio por secret ausente
       - name: Validar secrets obrigatórios
         run: |
           echo "🔐 Validando secrets obrigatórios..."
           MISSING=()
           
-          # Lista de secrets CRÍTICOS (deploy falha sem eles)
+          # === BANCO DE DADOS ===
           [ -z "${{ secrets.POSTGRES_PASSWORD }}" ] && MISSING+=("POSTGRES_PASSWORD")
           [ -z "${{ secrets.REDIS_PASSWORD }}" ] && MISSING+=("REDIS_PASSWORD")
+          [ -z "${{ secrets.QDRANT_API_KEY }}" ] && MISSING+=("QDRANT_API_KEY")
+          [ -z "${{ secrets.CLICKHOUSE_PASSWORD }}" ] && MISSING+=("CLICKHOUSE_PASSWORD")
+          
+          # === APLICAÇÃO ===
           [ -z "${{ secrets.SESSION_SECRET }}" ] && MISSING+=("SESSION_SECRET")
           [ -z "${{ secrets.INTERNAL_API_SECRET }}" ] && MISSING+=("INTERNAL_API_SECRET")
+          [ -z "${{ secrets.SEARXNG_SECRET_KEY }}" ] && MISSING+=("SEARXNG_SECRET_KEY")
+          
+          # === ADMIN ACCOUNTS ===
           [ -z "${{ secrets.ADMIN_USER }}" ] && MISSING+=("ADMIN_USER")
           [ -z "${{ secrets.ADMIN_PWD }}" ] && MISSING+=("ADMIN_PWD")
+          [ -z "${{ secrets.GRAFANA_ADMIN_PASSWORD }}" ] && MISSING+=("GRAFANA_ADMIN_PASSWORD")
+          [ -z "${{ secrets.ERPNEXT_ADMIN_PASSWORD }}" ] && MISSING+=("ERPNEXT_ADMIN_PASSWORD")
+          
+          # === STORAGE & BACKUP ===
           [ -z "${{ secrets.BACKUP_CIPHER_PASS }}" ] && MISSING+=("BACKUP_CIPHER_PASS")
           [ -z "${{ secrets.MINIO_ROOT_PASSWORD }}" ] && MISSING+=("MINIO_ROOT_PASSWORD")
-          [ -z "${{ secrets.CLICKHOUSE_PASSWORD }}" ] && MISSING+=("CLICKHOUSE_PASSWORD")
-          [ -z "${{ secrets.QDRANT_API_KEY }}" ] && MISSING+=("QDRANT_API_KEY")
+          
+          # === OBSERVABILITY (Langfuse v3) ===
+          [ -z "${{ secrets.LANGFUSE_SECRET_KEY }}" ] && MISSING+=("LANGFUSE_SECRET_KEY")
+          [ -z "${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}" ] && MISSING+=("LANGFUSE_NEXT_AUTH_SECRET")
+          [ -z "${{ secrets.LANGFUSE_SALT }}" ] && MISSING+=("LANGFUSE_SALT")
+          [ -z "${{ secrets.LANGFUSE_ENCRYPTION_KEY }}" ] && MISSING+=("LANGFUSE_ENCRYPTION_KEY")
+          
+          # === SMTP ===
+          [ -z "${{ secrets.GMAIL_USER }}" ] && MISSING+=("GMAIL_USER")
+          [ -z "${{ secrets.GMAIL_APP_PASSWORD }}" ] && MISSING+=("GMAIL_APP_PASSWORD")
+          
+          # === GPU & AI ===
+          [ -z "${{ secrets.HUGGINGFACE_TOKEN }}" ] && MISSING+=("HUGGINGFACE_TOKEN")
           
           if [ ${#MISSING[@]} -gt 0 ]; then
             echo "❌ ERRO: Secrets obrigatórios ausentes:"
             printf '  - %s\n' "${MISSING[@]}"
             echo ""
-            echo "Ação necessária: Adicionar os secrets em:"
-            echo "  GitHub → Settings → Secrets and variables → Actions"
+            echo "Total faltando: ${#MISSING[@]} de 20 secrets obrigatórios"
+            echo ""
+            echo "Ação necessária:"
+            echo "  1. Acesse GitHub → Settings → Secrets and variables → Actions"
+            echo "  2. Adicione os secrets listados acima"
+            echo "  3. Consulte docs/SECRETS.md para valores corretos"
             exit 1
           fi
           
-          echo "✅ Todos os secrets obrigatórios estão presentes"
+          echo "✅ Todos os 20 secrets obrigatórios estão presentes"
 
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
@@ -215,7 +243,9 @@ jobs:
           echo "🔍 Verificando imagens externas no Docker Hub..."
           
           # Lista de imagens externas CRÍTICAS (não buildadas por nós)
-          # Tags devem corresponder ao docker-compose.prod.yml
+          # Tags devem corresponder EXATAMENTE ao docker-compose.prod.yml
+          # CORREÇÃO 01/01/2026: grafana/grafana-oss → grafana/grafana
+          # Adicionadas: vector, otel-collector, cadvisor
           EXTERNAL_IMAGES=(
             "minio/minio:RELEASE.2024-12-18T13-15-44Z"
             "minio/mc:RELEASE.2025-04-16T18-13-26Z"
@@ -224,7 +254,7 @@ jobs:
             "postgres:16-alpine"
             "traefik:v3.6.5"
             "prom/prometheus:v3.8.1"
-            "grafana/grafana-oss:12.3.1"
+            "grafana/grafana:12.3.1"
             "grafana/loki:3.6.3"
             "grafana/promtail:3.6.3"
             "prom/alertmanager:v0.29.0"
@@ -235,6 +265,9 @@ jobs:
             "mariadb:10.11"
             "busybox:1.36"
             "prom/node-exporter:v1.9.1"
+            "timberio/vector:0.51.1-alpine"
+            "otel/opentelemetry-collector-contrib:0.142.0"
+            "gcr.io/cadvisor/cadvisor:v0.52.1"
           )
           
           MISSING=0
@@ -546,7 +579,9 @@ jobs:
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,EXPECTED_HOST_IP
-          command_timeout: 30m
+          # CORREÇÃO 01/01/2026: Aumentado de 30m para 40m
+          # Pull de 51 containers + init pode demorar em conexões lentas
+          command_timeout: 40m
           script: |
             set -euo pipefail
 
@@ -642,6 +677,44 @@ jobs:
 
             echo "=============================================="
             echo ""
+            
+            # =================================================================
+            # PRE-FLIGHT CHECKS ADICIONAIS (01/01/2026)
+            # =================================================================
+            log "🔍 PRE-FLIGHT CHECKS ADICIONAIS..."
+            
+            # Check 1: Espaço em disco (mínimo 50GB para primeiro deploy)
+            AVAILABLE_GB=$(df -BG /opt/alice 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//' || echo "0")
+            if [ -z "$AVAILABLE_GB" ] || [ "$AVAILABLE_GB" = "0" ]; then
+              # Se /opt/alice não existe, verificar /opt ou /
+              AVAILABLE_GB=$(df -BG /opt 2>/dev/null | tail -1 | awk '{print $4}' | sed 's/G//' || df -BG / | tail -1 | awk '{print $4}' | sed 's/G//')
+            fi
+            
+            if [ "$AVAILABLE_GB" -lt 50 ] 2>/dev/null; then
+              echo "⚠️ AVISO: Espaço em disco baixo (${AVAILABLE_GB}GB disponível)"
+              echo "   Recomendado: 50GB+ para primeiro deploy"
+              echo "   Continuando mesmo assim..."
+            else
+              echo "✅ Espaço em disco OK: ${AVAILABLE_GB}GB disponível"
+            fi
+            
+            # Check 2: Docker e Docker Compose
+            if ! command -v docker >/dev/null 2>&1; then
+              echo "❌ ERRO: Docker não está instalado"
+              exit 1
+            fi
+            if ! docker compose version >/dev/null 2>&1; then
+              echo "❌ ERRO: Docker Compose (v2+) não está instalado"
+              exit 1
+            fi
+            echo "✅ Docker $(docker --version | cut -d' ' -f3 | tr -d ',') OK"
+            echo "✅ Docker Compose $(docker compose version --short) OK"
+            
+            echo "=============================================="
+            echo "✅ PRE-FLIGHT CHECKS COMPLETOS"
+            echo "=============================================="
+            echo ""
+            
             echo "🔧 Ajustando kernel vm.overcommit_memory=1 (recomendação Redis)..."
             sysctl -w vm.overcommit_memory=1 || true
             echo "vm.overcommit_memory=1 aplicado (não persistente)."
@@ -921,8 +994,47 @@ jobs:
             # Containers GPU usam PROFILES porque GPU única de 20GB não suporta
             # múltiplos modelos grandes simultaneamente.
             
+            # =================================================================
+            # CORREÇÃO 01/01/2026: Pull com retry e exponential backoff
+            # Docker Hub pode ter rate limiting ou falhas temporárias
+            # =================================================================
             echo "📥 Baixando imagens Docker (serviços core)..."
-            docker compose -f docker-compose.prod.yml --env-file .env.prod pull
+            
+            pull_with_retry() {
+              local max_attempts=3
+              local timeout=10
+              local attempt=1
+              
+              while [ $attempt -le $max_attempts ]; do
+                log "📥 Tentativa $attempt/$max_attempts de pull das imagens..."
+                
+                if docker compose -f docker-compose.prod.yml --env-file .env.prod pull; then
+                  log "✅ Pull concluído com sucesso"
+                  return 0
+                else
+                  log "⚠️ Falha no pull (tentativa $attempt)"
+                  
+                  if [ $attempt -lt $max_attempts ]; then
+                    log "⏳ Aguardando ${timeout}s antes de retry (exponential backoff)..."
+                    sleep $timeout
+                    timeout=$((timeout * 2))
+                  fi
+                  
+                  attempt=$((attempt + 1))
+                fi
+              done
+              
+              log "❌ ERRO: Pull falhou após $max_attempts tentativas"
+              return 1
+            }
+            
+            if ! pull_with_retry; then
+              echo "❌ Pull de imagens falhou. Verifique:"
+              echo "   - Conectividade com Docker Hub"
+              echo "   - Rate limiting (adicione DOCKERHUB_USERNAME/TOKEN se anônimo)"
+              echo "   - Tags das imagens em docker-compose.prod.yml"
+              exit 1
+            fi
             
             echo "🚀 Iniciando containers CORE (sem GPU)..."
             if ! docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans; then
@@ -946,6 +1058,12 @@ jobs:
               echo ""
               echo "🧾 Logs do langfuse (últimas 200 linhas):"
               docker logs --tail=500 langfuse || true
+              echo ""
+              echo "🧾 Logs do MinIO (últimas 200 linhas):"
+              docker logs --tail=200 alice-minio || true
+              echo ""
+              echo "🧾 Logs do MinIO Init (últimas 100 linhas):"
+              docker logs --tail=100 alice-minio-init || true
               echo ""
               # CORREÇÃO 29/12/2025: Langfuse v2 não usa worker separado
               # Adicionar logs dos serviços Alice que estão falhando

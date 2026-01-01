@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Dezembro de 2025  
-**Versão:** 7.13 - CI/Release Dispatch by SHA (Enterprise)
+**Data:** 01 de Janeiro de 2026  
+**Versão:** 7.14 - Deploy Enterprise Hardening Complete
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -1193,6 +1193,91 @@ docker logs alice-langfuse --tail 50
 # Health check
 curl http://localhost:3010/health
 ```
+
+### Erro "manifest unknown" ao fazer pull de imagem
+
+**Sintoma:**
+```
+Error response from daemon: manifest for <image>:<tag> not found: manifest unknown
+```
+
+**Causa:** Tag da imagem foi removida/rotacionada do Docker Hub. Isso é comum com imagens como MinIO, Traefik e Prometheus que fazem rotação agressiva de tags antigas.
+
+**Solução:**
+1. Verificar tags disponíveis no Docker Hub:
+   ```bash
+   # Usando skopeo (instalado em muitas distros)
+   docker run --rm quay.io/skopeo/stable list-tags docker://docker.io/<imagem>
+   
+   # Ou via API Docker Hub
+   curl -s "https://hub.docker.com/v2/repositories/<namespace>/<image>/tags?page_size=20" | jq '.results[].name'
+   ```
+
+2. Atualizar `docker-compose.prod.yml` com tag válida
+
+3. Se tag `latest` existir, usar temporariamente e abrir issue para fixar versão
+
+4. **IMPORTANTE:** O workflow de deploy agora valida TODAS as imagens externas ANTES de iniciar o deploy. Se uma tag está inválida, o deploy falha rapidamente (fail-fast) ao invés de falhar após 20+ minutos durante o pull.
+
+**Prevenção (01/01/2026):**
+- O step `Verificar imagens externas (Docker Hub)` no workflow valida 18 imagens externas
+- Se qualquer imagem estiver com tag inválida, o deploy é abortado imediatamente
+- Verifique `.github/component-versions.json` para tags atuais
+
+---
+
+### Deploy timeout após 45 minutos
+
+**Causa:** Primeiro deploy pode demorar mais que o esperado devido a:
+- Pull de ~51 containers (15-30min com conexão lenta ou rate limiting do Docker Hub)
+- Inicialização do ClickHouse (até 6 minutos)
+- Criação de site ERPNext (~300 tabelas, até 10 minutos)
+- Execução de migrations SQL
+- Inicialização de Langfuse v3 + MinIO
+
+**Solução:**
+1. Timeout atual já é 45 minutos (adequado para maioria dos casos)
+2. `command_timeout` SSH é 40 minutos
+3. Se necessário, fazer pull manual das imagens pesadas antes:
+   ```bash
+   ssh alice-hetzner
+   cd /opt/alice/app/infra/docker
+   docker compose pull minio clickhouse erpnext-backend langfuse
+   ```
+
+4. Se usando Docker Hub anônimo (rate limit de 100 pulls/6h):
+   - Adicionar `DOCKERHUB_USERNAME` e `DOCKERHUB_TOKEN` nos secrets
+   - Rate limit autenticado: 200 pulls/6h
+
+---
+
+### MinIO não inicia ou bucket não é criado
+
+**Sintoma:** Langfuse reporta erros de S3 ou não consegue salvar eventos.
+
+**Diagnóstico:**
+```bash
+# Verificar status do MinIO
+docker logs alice-minio --tail 100
+
+# Verificar se bucket foi criado (minio-init)
+docker logs alice-minio-init --tail 50
+
+# Verificar health
+docker inspect alice-minio | jq '.[0].State.Health'
+```
+
+**Causas Comuns:**
+1. **Secret `MINIO_ROOT_PASSWORD` não configurado** - Verificar em GitHub Secrets
+2. **Diretório de dados não existe** - Verificado automaticamente pelo deploy
+3. **Tag do `minio/mc` rotacionada** - Atualizar para tag válida
+
+**Solução:**
+1. Garantir que `MINIO_ROOT_PASSWORD` está nos secrets do GitHub
+2. Verificar se diretório `/opt/alice/data/minio` existe no servidor
+3. Verificar tag do MinIO Client em `docker-compose.prod.yml`
+
+---
 
 ### ERPNext não instala (erro "No such option: --verbose")
 
