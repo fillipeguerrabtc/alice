@@ -14,7 +14,7 @@ source = '''
 # Parse JSON logs
 parsed, err = parse_json(.message)
 if err == null {
-  . = merge(., parsed)
+  . = merge!(., parsed)
 }
 
 # Add metadata

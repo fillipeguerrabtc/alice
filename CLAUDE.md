@@ -369,7 +369,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.61 - 02 de Janeiro de 2026*
+*Versão: 4.62 - 02 de Janeiro de 2026*
+*Multi-Fix Deploy Enterprise (02/01/2026): Correção de 5 problemas que impediam deploy: (1) Vector VRL merge→merge! em ambos arquivos (infra/docker/vector.toml e infra/observability/vector.toml); (2) pgbackrest entrypoint.sh tolerante a falhas de permissão em pg_control; (3) postgres-init ajusta permissões PGDATA para pgBackRest (chmod 750, g+rX); (4) Langfuse healthcheck wget→curl + start_period 180s→300s + retries 10→15; (5) ERPNext backend healthcheck start_period 120s→300s + retries 5→15.*
 *CRITICAL BUG FIX pgbackrest-init Docker Compose Variable Expansion (02/01/2026): CAUSA RAIZ DO DEPLOY FALHANDO IDENTIFICADA - Container pgbackrest-init falhava com "PGBACKREST_REPO1_CIPHER_PASS não definido" mesmo com BACKUP_CIPHER_PASS corretamente configurado no .env.prod. PROBLEMA: No script inline do `command:`, a variável `${PGBACKREST_REPO1_CIPHER_PASS:-}` era expandida pelo Docker Compose (que não conhece essa variável de ambiente do container) ANTES de passar para o shell do container, resultando em string vazia. SOLUÇÃO: Escapar `$` como `$$` para que Docker Compose passe a variável literalmente (`$${PGBACKREST_REPO1_CIPHER_PASS:-}`) e o shell do container faça a expansão. ARQUIVOS MODIFICADOS: infra/docker/docker-compose.prod.yml (linha 439). Esta correção é CRÍTICA para o primeiro deploy funcionar - sem ela, pgBackRest init falha e impede todo o deploy. Ref: https://docs.docker.com/compose/compose-file/12-interpolation/*
 *Bug Fix progress Decimal Arithmetic (02/01/2026): Corrigido `progress 4.5` para `progress 4` - bash não suporta decimais em expressões aritméticas. Causava "syntax error: invalid arithmetic operator".*
 *Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)*

@@ -1751,14 +1751,14 @@ services:
       erpnext-redis-queue:
         condition: service_healthy
     healthcheck:
-      # BUG FIX 24/12/2025: Aumentado start_period de 60s para 120s
-      # ERPNext backend pode demorar mais para iniciar após create-site
-      # Especialmente em primeira instalação quando precisa processar migrations
-      test: ["CMD-SHELL", "curl -f http://localhost:8000/api/method/ping || exit 1"]
+      # CORREÇÃO 02/01/2026: Aumentado start_period para 300s (5min)
+      # ERPNext backend pode demorar MUITO para iniciar após create-site
+      # Especialmente em primeira instalação quando precisa processar TODAS as migrations
+      test: ["CMD-SHELL", "curl -sf http://localhost:8000/api/method/ping || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
+      timeout: 15s
+      retries: 15
+      start_period: 300s
 
   erpnext-frontend:
     # ATUALIZADO 14/12/2025: Migrado para arquitetura unificada ERPNext v15
@@ -2460,12 +2460,14 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/public/health"]
+      # CORREÇÃO 02/01/2026: Imagem Langfuse não tem wget, usar curl
+      test: ["CMD-SHELL", "curl -sf http://localhost:3000/api/public/health || exit 1"]
       interval: 30s
       timeout: 15s
-      retries: 10
-      # CORREÇÃO 01/01/2026: start_period aumentado para primeiro deploy (Next.js build + migrations)
-      start_period: 180s
+      retries: 15
+      # CORREÇÃO 02/01/2026: start_period aumentado para 300s (5min)
+      # Next.js precisa buildar + migrations ClickHouse + inicializar
+      start_period: 300s
     depends_on:
       langfuse-db:
         condition: service_healthy

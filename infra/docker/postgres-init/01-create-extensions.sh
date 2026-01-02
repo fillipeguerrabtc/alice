@@ -81,7 +81,32 @@ else
     exit 1
 fi
 
+# =============================================================================
+# ETAPA 4: Ajustar permissões para pgBackRest (backup enterprise)
+# =============================================================================
+# CORREÇÃO 02/01/2026: pgBackRest precisa ler arquivos do PGDATA para backup
+# PROBLEMA: PostgreSQL cria PGDATA com permissões 0700 (apenas owner)
+# Container pgbackrest (mesmo UID 999) não consegue ler de outro container
+# SOLUÇÃO: Adicionar permissão de leitura para o grupo postgres (GID 999)
+# Ref: https://pgbackrest.org/user-guide.html#quickstart/configure-stanza
+# =============================================================================
+echo "🔐 [postgres-init] Ajustando permissões para pgBackRest..."
+
+# Adicionar permissão de leitura para grupo em pg_control (arquivo crítico)
+chmod 640 "$PGDATA/global/pg_control" 2>/dev/null || echo "[WARN] pg_control não existe ainda"
+
+# Ajustar permissão do diretório principal para 750 (owner rwx, group rx)
+chmod 750 "$PGDATA" 2>/dev/null || true
+
+# Ajustar subdiretórios críticos para backup
+chmod -R g+rX "$PGDATA/base" 2>/dev/null || true
+chmod -R g+rX "$PGDATA/global" 2>/dev/null || true
+chmod -R g+rX "$PGDATA/pg_wal" 2>/dev/null || true
+
+echo "✅ [postgres-init] Permissões ajustadas para backup enterprise"
+
 echo ""
 echo "✅ [postgres-init] TODAS as extensões criadas e validadas com sucesso!"
 echo "   - pgvector: disponível para embeddings de imagem (1024 dim)"
 echo "   - Operações vetoriais: testadas e funcionando"
+echo "   - Permissões: configuradas para pgBackRest"

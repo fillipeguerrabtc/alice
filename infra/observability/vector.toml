@@ -42,7 +42,7 @@ source = '''
 # Parse JSON logs if possible
 parsed, err = parse_json(.message)
 if err == null {
-  . = merge(., parsed)
+  . = merge!(., parsed)
 }
 
 # Add environment label
