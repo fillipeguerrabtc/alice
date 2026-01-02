@@ -2,12 +2,12 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Janeiro de 2026  
-**Versão:** 4.56
+**Versão:** 4.59
 
 <div align="center">
 
 ![Alice Logo](https://img.shields.io/badge/Alice-IA%20Enterprise-blue?style=for-the-badge&logo=robot&logoColor=white)
-![Version](https://img.shields.io/badge/versão-4.56-green?style=for-the-badge)
+![Version](https://img.shields.io/badge/versão-4.59-green?style=for-the-badge)
 ![License](https://img.shields.io/badge/licença-Proprietária-red?style=for-the-badge)
 ![LLM](https://img.shields.io/badge/LLM-Mixtral%208x7B%20vLLM-purple?style=for-the-badge)
 
@@ -50,6 +50,8 @@
 > **Atualização 28/12/2025:** Pipeline 100% self-hosted com **Runner Enterprise Hardening** (Hetzner CPX32 - 4 vCPU AMD EPYC, 8GB RAM). Otimizações aplicadas: Kernel tuning (net.core.rmem_max=16MB, vm.swappiness=10), Docker daemon (BuildKit, max-downloads=10, GC=20GB), limits (nofile=1048576), systemd (NODE_OPTIONS=6GB, Nice=-5), cron cleanup diário. GPU dedicada Hetzner GEX44 (RTX 4000 Ada 20GB) 24/7 - containers Docker rodam continuamente, sem cold start.
 
 > **Server GPU Optimizations 28/12/2025:** Servidor de produção otimizado para máxima performance GPU. **Docker:** default-runtime nvidia, live-restore, BuildKit GC. **NVIDIA:** Persistence Mode ENABLED (sem cold start), CDI configurado, Container Toolkit 1.18.1. **Kernel:** vm.swappiness=10, vm.dirty_ratio=40, shmmax=64GB (CUDA), buffers rede 16MB. **Hardware:** RTX 4000 Ada 20GB, Driver 580.95.05, CUDA 13.0.
+
+> **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING/PONG), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs de deploy salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validações:** Repositório pgBackRest (permissões 999:999, estrutura), volumes pré-criados com UIDs corretos, retry logic com exponential backoff para pgvector e stanza-create. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar via stanza-upgrade.
 
 ---
 

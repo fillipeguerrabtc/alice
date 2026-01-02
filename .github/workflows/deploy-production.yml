@@ -657,7 +657,7 @@ jobs:
             # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
             # Conforme PROBLEMA #10 do relatório de deploy
             # =================================================================
-            TOTAL_STEPS=12
+            TOTAL_STEPS=13
             progress() {
               local step="$1"
               local desc="$2"
@@ -683,6 +683,18 @@ jobs:
               fi
             }
             trap cleanup_on_failure EXIT
+            
+            # =================================================================
+            # MELHORIA M2 (02/01/2026): Persistir logs de deploy
+            # =================================================================
+            # Salvar logs para troubleshooting futuro
+            # Útil para análise de deploys passados
+            # =================================================================
+            DEPLOY_LOG="/opt/alice/logs/deploy-$(date +%Y%m%d-%H%M%S).log"
+            mkdir -p /opt/alice/logs
+            exec > >(tee -a "$DEPLOY_LOG") 2>&1
+            echo "📝 Logs de deploy salvos em: $DEPLOY_LOG"
+            echo ""
 
             log "=============================================="
             log "DEPLOY ALICE ENTERPRISE PLATFORM"
@@ -1007,6 +1019,54 @@ jobs:
             chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
 
             echo "✅ Estrutura de diretórios criada"
+            
+            # =================================================================
+            # CORREÇÃO 02/01/2026: Validação EXPLÍCITA do repositório pgBackRest
+            # =================================================================
+            # PROBLEMA #3: Deploy pode continuar silenciosamente se repositório
+            # estiver corrompido ou com permissões erradas
+            # 
+            # VALIDAÇÃO: Verificar estrutura e permissões ANTES de docker compose
+            # =================================================================
+            progress 4.5 "Validando repositório pgBackRest"
+            echo "🔍 Validando repositório pgBackRest..."
+            
+            # Verificar se diretório principal existe
+            if [ ! -d "/opt/alice/backups/postgresql" ]; then
+              echo "❌ ERRO: Repositório pgBackRest não existe: /opt/alice/backups/postgresql"
+              echo "   Ação necessária: Verificar se diretório foi criado corretamente"
+              exit 1
+            fi
+            
+            # Verificar permissões (999:999 = postgres user/group)
+            REPO_UID=$(stat -c '%u' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
+            REPO_GID=$(stat -c '%g' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
+            
+            if [ "$REPO_UID" != "999" ] || [ "$REPO_GID" != "999" ]; then
+              echo "⚠️ Permissões incorretas no repositório pgBackRest: UID=$REPO_UID GID=$REPO_GID (esperado 999:999)"
+              echo "   Corrigindo permissões..."
+              chown -R 999:999 /opt/alice/backups/postgresql
+              chmod -R 755 /opt/alice/backups/postgresql
+              
+              # Verificar novamente
+              REPO_UID_AFTER=$(stat -c '%u' /opt/alice/backups/postgresql 2>/dev/null || echo "unknown")
+              if [ "$REPO_UID_AFTER" != "999" ]; then
+                echo "❌ ERRO: Falha ao corrigir permissões do repositório pgBackRest"
+                exit 1
+              fi
+              echo "   ✅ Permissões corrigidas"
+            fi
+            
+            # Verificar se há repositório corrompido (partial de deploy anterior)
+            if [ -f "/opt/alice/backups/postgresql/backup.info" ]; then
+              echo "   ℹ️ Repositório pgBackRest existente detectado (backup.info presente)"
+              echo "   Stanza-upgrade será executado após PostgreSQL iniciar"
+            else
+              echo "   ℹ️ Repositório pgBackRest vazio (primeiro deploy)"
+              echo "   Stanza será criada pelo pgbackrest-init"
+            fi
+            
+            echo "✅ Repositório pgBackRest validado"
             
             # =================================================================
             # FASE 2.5: Criar arquivos de secrets a partir do .env.prod
@@ -1991,15 +2051,94 @@ jobs:
               exit 1
             fi
             
+            # =================================================================
+            # MELHORIA M1 (02/01/2026): Smoke Tests Pós-Deploy
+            # =================================================================
+            # Validar serviços críticos ANTES de marcar deploy como sucesso
+            # Detecta problemas de conectividade/funcionalidade cedo
+            # =================================================================
+            progress 12 "Executando smoke tests"
+            echo ""
+            echo "=============================================="
+            echo "🧪 SMOKE TESTS PÓS-DEPLOY"
+            echo "=============================================="
+            
+            SMOKE_FAILED=0
+            
+            # Test 1: PostgreSQL aceita conexões
+            echo "🔍 Test 1: PostgreSQL aceita conexões..."
+            if docker exec alice-postgres pg_isready -U alice 2>/dev/null; then
+              echo "   ✅ PostgreSQL: OK"
+            else
+              echo "   ❌ PostgreSQL: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 2: pgvector operacional
+            echo "🔍 Test 2: pgvector operacional..."
+            PGVECTOR_TEST=$(docker exec alice-postgres psql -U alice -d alice_prod -t -c "SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector AS distance;" 2>/dev/null | xargs || echo "")
+            if [ -n "$PGVECTOR_TEST" ]; then
+              echo "   ✅ pgvector: OK (distância calculada: $PGVECTOR_TEST)"
+            else
+              echo "   ❌ pgvector: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 3: Redis responde
+            echo "🔍 Test 3: Redis responde..."
+            REDIS_PWD=$(grep '^REDIS_PASSWORD=' "$ENV_FILE" | cut -d'=' -f2- || echo "")
+            if docker exec alice-redis redis-cli -a "$REDIS_PWD" --no-auth-warning PING 2>/dev/null | grep -q "PONG"; then
+              echo "   ✅ Redis: OK"
+            else
+              echo "   ❌ Redis: FALHOU"
+              SMOKE_FAILED=1
+            fi
+            
+            # Test 4: Caddy responde HTTP
+            echo "🔍 Test 4: Caddy responde HTTP..."
+            if docker exec alice-caddy wget -q --spider http://localhost:80/ 2>/dev/null || \
+               docker exec alice-caddy wget -q --spider --timeout=5 http://localhost:2019/metrics 2>/dev/null; then
+              echo "   ✅ Caddy: OK"
+            else
+              echo "   ⚠️ Caddy: HTTP não respondeu (pode ser normal se SSL ainda não configurado)"
+            fi
+            
+            # Test 5: GPU Manager responde (MELHORIA M3: conectividade entre services)
+            echo "🔍 Test 5: GPU Manager responde..."
+            if docker exec alice-gpu-manager wget -q --spider http://localhost:3010/health 2>/dev/null; then
+              echo "   ✅ GPU Manager: OK"
+            else
+              echo "   ⚠️ GPU Manager: não respondeu (verificar se está healthy)"
+            fi
+            
+            # Test 6: Chat Service alcança GPU Manager (MELHORIA M3)
+            echo "🔍 Test 6: Chat Service → GPU Manager (conectividade)..."
+            if docker exec alice-chat wget -q --spider http://alice-gpu-manager:3010/health 2>/dev/null; then
+              echo "   ✅ Chat → GPU Manager: OK"
+            else
+              echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
+            fi
+            
+            echo ""
+            if [ $SMOKE_FAILED -eq 1 ]; then
+              echo "❌ ERRO: Um ou mais smoke tests críticos falharam!"
+              echo "   Deploy pode estar em estado inconsistente"
+              exit 1
+            fi
+            
+            echo "✅ Todos os smoke tests críticos passaram"
+            echo "=============================================="
+            
             # Status final
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
             echo ""
-            progress 12 "Deploy COMPLETO - Verificando resultado"
+            progress 13 "Deploy COMPLETO - Verificando resultado"
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
             echo "   - Containers GPU: ${GPU_RUNNING}"
             echo "   - Profile GPU ativo: ${GPU_PROFILE}"
+            echo "   - Smoke tests: PASSOU"
             echo "=============================================="
 
   # ===========================================================================

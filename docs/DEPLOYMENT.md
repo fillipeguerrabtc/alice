@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Janeiro de 2026  
-**Versão:** 7.16 - Caddy Gateway (Traefik removido)
+**Versão:** 7.17 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -769,6 +769,65 @@ Actions → Deploy to Production → Run workflow → Selecionar versão
 - ✅ Feedback rápido (push → produção em minutos)
 - ✅ Security scan obrigatório antes do deploy
 - ✅ Migrations executadas automaticamente na ordem correta (0001 → 0002 → 0003)
+
+### Deploy Enterprise Hardening (02/01/2026)
+
+O workflow de deploy inclui validações enterprise completas para garantir deploys confiáveis:
+
+#### Smoke Tests Pós-Deploy
+
+Validações automáticas executadas APÓS o deploy completar e ANTES de marcar como sucesso:
+
+| Test | Descrição | Comando |
+|------|-----------|---------|
+| **PostgreSQL** | Verifica se aceita conexões | `pg_isready -U alice` |
+| **pgvector** | Valida operação vetorial real | `SELECT '[1,2,3]'::vector <-> '[4,5,6]'::vector` |
+| **Redis** | Verifica resposta PING/PONG | `redis-cli PING` |
+| **Caddy** | Verifica HTTP na porta 80/443 | `wget --spider http://localhost:80/` |
+| **GPU Manager** | Valida health endpoint | `wget --spider http://localhost:3010/health` |
+| **Conectividade** | Chat → GPU Manager | `wget http://alice-gpu-manager:3010/health` |
+
+#### Persistência de Logs de Deploy
+
+Todos os logs de deploy são salvos automaticamente para troubleshooting futuro:
+
+```bash
+# Formato do arquivo de log
+/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log
+
+# Exemplo
+/opt/alice/logs/deploy-20260102-141530.log
+
+# Visualizar logs de um deploy específico
+cat /opt/alice/logs/deploy-20260102-141530.log | less
+```
+
+#### Validação do Repositório pgBackRest
+
+Antes de iniciar o deploy, o workflow valida:
+
+1. **Existência do diretório**: `/opt/alice/backups/postgresql` deve existir
+2. **Permissões**: UID/GID devem ser 999:999 (postgres)
+3. **Estrutura**: Detecta se é primeiro deploy ou repositório existente
+4. **Correção automática**: Se permissões incorretas, corrige automaticamente
+
+#### pgBackRest Stanza Creation (Fix Crítico)
+
+O `pgbackrest-init` agora cria a stanza SEM precisar de `pg_control`:
+
+```bash
+# ANTES (falhava): Tentava ler pg_control que não existe no primeiro deploy
+pgbackrest --stanza=alice_prod --no-online stanza-create  # Lia pg1-path do config
+
+# DEPOIS (funciona): Passa configs via CLI, sem pg1-*
+pgbackrest \
+    --stanza=alice_prod \
+    --repo1-path=/var/lib/pgbackrest \
+    --repo1-cipher-type=aes-256-cbc \
+    --repo1-cipher-pass="${CIPHER_PASS}" \
+    --no-online \
+    stanza-create  # Cria stanza vazia, sincroniza depois
+```
 
 ### Migrations do Banco de Dados
 

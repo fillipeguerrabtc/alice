@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.56 - Critical Pipeline Fixes
+> **Versão:** 4.59 - Deploy Enterprise Hardening (Smoke Tests + Persistência de Logs)
 
 ---
 
@@ -55,6 +55,8 @@
 > **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `caddy:2.8.4-alpine`) são suficientemente determinísticas. Solução simples - KISS.
 
 > **Migração Traefik→Caddy 02/01/2026:** Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy. Adicionado pgBackRest Init container para criar stanza ANTES do PostgreSQL iniciar.
+
+> **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica permissões (999:999), estrutura e corrige automaticamente se necessário. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (80/443) além de admin API (2019).
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
 
