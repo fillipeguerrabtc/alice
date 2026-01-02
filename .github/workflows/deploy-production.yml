@@ -1069,9 +1069,32 @@ jobs:
             # FASE 5: Login nos registries
             # =================================================================
             progress 7 "Login nos registries (GHCR + Docker Hub)"
-            echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
+            
+            # Login GHCR
+            log "🔐 Fazendo login no GHCR..."
+            if echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin 2>&1; then
+              log "✅ Login GHCR: OK"
+            else
+              log "❌ Login GHCR: FALHOU"
+              exit 1
+            fi
+            
+            # Login Docker Hub (OBRIGATÓRIO para evitar rate limit)
+            log "🔐 Fazendo login no Docker Hub..."
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
-              echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
+              log "   Username: ${DOCKERHUB_USERNAME}"
+              if echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin 2>&1; then
+                log "✅ Login Docker Hub: OK (rate limit: 200 pulls/6h autenticado)"
+              else
+                log "❌ Login Docker Hub: FALHOU - Token pode estar inválido ou expirado"
+                log "   Verifique DOCKERHUB_TOKEN no GitHub Secrets"
+                exit 1
+              fi
+            else
+              log "⚠️ DOCKERHUB_USERNAME ou DOCKERHUB_TOKEN não configurados!"
+              log "   Rate limit anônimo: 100 pulls/6h - MUITO BAIXO para deploy!"
+              log "   Configure os secrets no GitHub: Settings → Secrets → Actions"
+              exit 1
             fi
             
             # =================================================================
