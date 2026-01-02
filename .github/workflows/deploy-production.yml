@@ -1272,70 +1272,81 @@ jobs:
             log "✅ Containers de inicialização OK (ou ainda em execução)"
             
             # =================================================================
-            # FAIL-FAST ENTERPRISE: Função para verificar saúde dos containers
+            # FAIL-FAST ENTERPRISE: Verificação de saúde dos containers
             # =================================================================
             # PROBLEMA: docker compose up -d retorna 0 mesmo com falhas
-            # DETECTA: created, dead, exited (!=0), restarting, RestartCount>0
+            # SOLUÇÃO: Usar docker ps diretamente (mais confiável que JSON)
+            # DETECTA: created, dead, exited, restarting, unhealthy
             # =================================================================
             check_container_health() {
               local context_msg="${1:-Verificação de containers}"
               log "🔍 FAIL-FAST: $context_msg..."
               
-              # 1. Containers em estado problemático (created, dead, exited com erro, restarting)
-              PROBLEM_CONTAINERS=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format json 2>/dev/null | \
-                jq -r 'select(.State == "created" or .State == "dead" or .State == "restarting" or (.State == "exited" and .ExitCode != 0)) | .Name' 2>/dev/null || true)
+              # Usar docker ps com filtros diretos (mais confiável que JSON parsing)
+              PROBLEM_CONTAINERS=""
               
-              # 2. Containers com RestartCount > 0 (indica crash loop)
-              RESTART_LOOP_CONTAINERS=""
-              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger'); do
+              # Verificar containers em estados problemáticos
+              for container in $(docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^alice-|^gpu-|^erpnext-|^langfuse|^grafana|^prometheus|^loki|^jaeger|^minio|^clickhouse'); do
+                STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "0")
+                HEALTH=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$container" 2>/dev/null || echo "none")
                 RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$container" 2>/dev/null || echo "0")
-                if [ "$RESTART_COUNT" -gt 0 ] 2>/dev/null; then
-                  RESTART_LOOP_CONTAINERS="${RESTART_LOOP_CONTAINERS}${container} (restarts: ${RESTART_COUNT})\n"
+                
+                # Estados problemáticos: created (nunca iniciou), dead, exited com erro, restarting (crash loop)
+                IS_PROBLEM=0
+                REASON=""
+                
+                if [ "$STATUS" = "created" ]; then
+                  IS_PROBLEM=1
+                  REASON="nunca iniciou (dependency failed?)"
+                elif [ "$STATUS" = "dead" ]; then
+                  IS_PROBLEM=1
+                  REASON="dead"
+                elif [ "$STATUS" = "exited" ] && [ "$EXIT_CODE" != "0" ]; then
+                  IS_PROBLEM=1
+                  REASON="exited com exit code $EXIT_CODE"
+                elif [ "$STATUS" = "restarting" ]; then
+                  IS_PROBLEM=1
+                  REASON="restarting (crash loop)"
+                elif [ "$HEALTH" = "unhealthy" ]; then
+                  IS_PROBLEM=1
+                  REASON="unhealthy"
+                elif [ "$RESTART_COUNT" -gt 2 ] 2>/dev/null; then
+                  IS_PROBLEM=1
+                  REASON="RestartCount=$RESTART_COUNT (instável)"
+                fi
+                
+                if [ "$IS_PROBLEM" = "1" ]; then
+                  PROBLEM_CONTAINERS="${PROBLEM_CONTAINERS}${container}|${STATUS}|${EXIT_CODE}|${REASON}\n"
                 fi
               done
               
               # Se encontrou problemas, falhar imediatamente
-              if [ -n "$PROBLEM_CONTAINERS" ] || [ -n "$RESTART_LOOP_CONTAINERS" ]; then
+              if [ -n "$PROBLEM_CONTAINERS" ]; then
                 echo ""
                 echo "❌ FAIL-FAST: Containers com problemas detectados!"
                 echo ""
+                echo "📋 Containers problemáticos:"
+                echo -e "$PROBLEM_CONTAINERS" | while IFS='|' read -r name status exit_code reason; do
+                  if [ -n "$name" ]; then
+                    echo "   - $name: status=$status, exit=$exit_code ($reason)"
+                  fi
+                done
                 
-                if [ -n "$PROBLEM_CONTAINERS" ]; then
-                  echo "📋 Containers em estado problemático:"
-                  echo "$PROBLEM_CONTAINERS" | while read -r container; do
-                    if [ -n "$container" ]; then
-                      STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
-                      EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "N/A")
-                      ERROR=$(docker inspect --format='{{.State.Error}}' "$container" 2>/dev/null || echo "")
-                      echo "   - $container: status=$STATUS, exit=$EXIT_CODE"
-                      [ -n "$ERROR" ] && echo "     Erro: $ERROR"
-                    fi
-                  done
-                fi
-                
-                if [ -n "$RESTART_LOOP_CONTAINERS" ]; then
-                  echo ""
-                  echo "📋 Containers em crash loop (RestartCount > 0):"
-                  echo -e "$RESTART_LOOP_CONTAINERS" | while read -r line; do
-                    [ -n "$line" ] && echo "   - $line"
-                  done
-                fi
-                
-                # Capturar logs dos containers problemáticos
+                # Capturar logs dos 5 primeiros containers problemáticos
                 echo ""
-                echo "🧾 Logs dos containers problemáticos (últimas 50 linhas cada):"
-                ALL_PROBLEMS=$(echo -e "${PROBLEM_CONTAINERS}\n$(echo -e "$RESTART_LOOP_CONTAINERS" | cut -d' ' -f1)" | sort -u | head -5)
-                echo "$ALL_PROBLEMS" | while read -r container; do
-                  if [ -n "$container" ]; then
+                echo "🧾 Logs dos containers problemáticos (últimas 100 linhas cada):"
+                echo -e "$PROBLEM_CONTAINERS" | head -5 | while IFS='|' read -r name status exit_code reason; do
+                  if [ -n "$name" ]; then
                     echo ""
-                    echo "--- Logs de $container ---"
-                    docker logs --tail=50 "$container" 2>&1 || true
+                    echo "--- Logs de $name ---"
+                    docker logs --tail=100 "$name" 2>&1 || true
                   fi
                 done
                 
                 echo ""
-                echo "📋 Status completo:"
-                docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+                echo "📋 Status completo de todos containers:"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.State}}" | head -60
                 return 1
               fi
               
