@@ -472,7 +472,7 @@ Proprietário - Todos os direitos reservados.
 | **Caddy** | 2.8.4-alpine | Pinned |
 | PostgreSQL | pg16 (pgvector) | Pinned |
 | MariaDB | 10.11 | Pinned |
-| Redis (Alice) | 8.4.0-alpine | Pinned |
+| Redis (Alice) | 7.4.7-alpine | Pinned |
 | Redis (ERPNext) | 6.2.21-alpine | Pinned |
 | ERPNext | v15.91.3 | Pinned |
 | Vector | 0.51.1-alpine | Pinned |

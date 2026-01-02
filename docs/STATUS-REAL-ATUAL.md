@@ -654,7 +654,7 @@ Retenção Arquivo:   30 dias
 | 1 | `alice-pgbackrest-init` | pgbackrest:2.57.0 | Init stanza backup PostgreSQL |
 | 2 | `alice-caddy` | caddy:2.8.4-alpine | API Gateway + SSL automático + HTTP/3 |
 | 3 | `alice-postgres` | postgres:16-alpine | Banco principal + pgvector |
-| 4 | `alice-redis` | redis:8.4.0-alpine | Cache distribuído |
+| 4 | `alice-redis` | redis:7.4.7-alpine | Cache distribuído |
 | 5 | `alice-qdrant` | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
 | 6 | `alice-tor` | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
 | 7 | `alice-searxng` | searxng/searxng | Metabusca interna (SearXNG) |

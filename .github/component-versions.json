@@ -9,7 +9,7 @@
   "langfuse": "3.85.0",
   "erpnext": "v15.91.3",
   "busybox": "1.36",
-  "redis-alice": "8.4.0-alpine",
+  "redis-alice": "7.4.7-alpine",
   "redis-erpnext": "6.2.21-alpine",
   "mariadb": "10.11",
   "pgvector": "pg16",

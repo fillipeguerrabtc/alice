@@ -19,7 +19,7 @@ A plataforma Alice é composta por **50 containers** organizados em 7 categorias
 | 1 | **Caddy Gateway** | `alice-caddy` | Reverse proxy com SSL automático (Let's Encrypt), HTTP/3 nativo (QUIC), configuração declarativa. Substitui Traefik desde 02/01/2026. | Caddy 2.8.4 Alpine |
 | 2 | **pgBackRest Init** | `alice-pgbackrest-init` | Init container que cria stanza de backup ANTES do PostgreSQL iniciar. Corrige crash loop de archive_command. | pgBackRest 2.57.0 |
 | 3 | **PostgreSQL** | `alice-postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 4 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 8. | Redis 8.4.0 Alpine |
+| 4 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 7.x. | Redis 7.4.7 Alpine |
 | 5 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
 | 6 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
@@ -1496,6 +1496,6 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 *Migração Traefik→Caddy (02/01/2026): Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo (QUIC), footprint 40MB vs 100MB. Total: 7 infra (era 8).*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
-*Redis Alice: 8.4.0-alpine - Cache distribuído (node-redis 5.x suporta Redis 8)*
+*Redis Alice: 7.4.7-alpine - Cache distribuído (node-redis 5.x suporta Redis 7.x)*
 *Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*

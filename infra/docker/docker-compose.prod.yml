@@ -544,8 +544,10 @@ services:
   # ISOLAMENTO: Redis dedicado para Alice (segregação de ERPNext - Regra 15)
   # ===========================================================================
   alice-redis:
-    # ATUALIZADO 01/01/2026: 7.4.6-alpine -> 8.4.0-alpine (node-redis 5.x suporta Redis 8)
-    image: redis:8.4.0-alpine
+    # CORREÇÃO 02/01/2026: Redis 8.4.0 crasha com SIGSEGV nos módulos (RedisBloom/RediSearch)
+    # Downgrade para Redis 7.4.7 (LTS estável, patches de segurança CVE-2025-21605)
+    # node-redis 5.x suporta Redis 7.x perfeitamente
+    image: redis:7.4.7-alpine
     platform: linux/amd64
     container_name: alice-redis
     restart: always

@@ -134,7 +134,7 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 
 | Serviço | Versão Redis | Justificativa |
 |---------|--------------|---------------|
-| **Alice Redis** | `redis:8.4.0-alpine` | Alice usa `node-redis 5.x` que suporta Redis 8 completamente (fonte: redis.io/blog/redis-8-ga) |
+| **Alice Redis** | `redis:7.4.7-alpine` | Redis 8.4.0 crasha com SIGSEGV nos módulos (RedisBloom). Redis 7.4.7 é LTS estável com CVE-2025-21605 corrigido. node-redis 5.x suporta Redis 7.x perfeitamente. |
 | **ERPNext Redis (cache + queue)** | `redis:6.2.21-alpine` | ERPNext v15 **REQUER Redis 6.x** conforme documentação oficial Frappe (fonte: docs.frappe.io) |
 
 **ALERTA CRÍTICO - Compatibilidade Redis:**
