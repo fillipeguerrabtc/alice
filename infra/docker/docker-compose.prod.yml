@@ -2406,6 +2406,9 @@ services:
       # === Variáveis Next.js para evitar problemas de inicialização ===
       NEXT_RUNTIME: nodejs
       NODE_ENV: production
+      # CORREÇÃO 02/01/2026: Next.js por padrão escuta no IP do container
+      # Forçar binding em 0.0.0.0 para healthcheck via localhost funcionar
+      HOSTNAME: "0.0.0.0"
     networks:
       - alice-network
     healthcheck:
