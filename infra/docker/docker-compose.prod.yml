@@ -90,13 +90,31 @@ volumes:
       o: bind
       device: /opt/alice/data/redis-alice
 
-  traefik_acme:
-    name: alice-traefik-acme
+  # MIGRAÇÃO 02/01/2026: Traefik substituído por Caddy
+  # Caddy oferece SSL automático com retry inteligente e HTTP/3 nativo
+  caddy_data:
+    name: alice-caddy-data
     driver: local
     driver_opts:
       type: none
       o: bind
-      device: /opt/alice/data/traefik-acme
+      device: /opt/alice/data/caddy
+  
+  caddy_config:
+    name: alice-caddy-config
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/data/caddy-config
+  
+  caddy_logs:
+    name: alice-caddy-logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/alice/logs/caddy
   
   searxng_config:
     name: alice-searxng-config
@@ -311,187 +329,116 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # DOCKER SOCKET PROXY - Proxy seguro para Docker API
-  # Docs 2025: Minimal proxy - 0.1 CPU, 64MB
-  # SEGURANÇA: Container hardening + Image digest SHA256 (Supply Chain Security 2025)
+  # CADDY - Reverse Proxy com SSL Automático (Substitui Traefik)
   # ===========================================================================
-  # Resolve incompatibilidade de versão da API Docker com Traefik v3.0
-  # Expõe API Docker via TCP para o Traefik consumir
-  dockerproxy:
-    image: tecnativa/docker-socket-proxy:latest
+  # MIGRAÇÃO 02/01/2026: Traefik → Caddy
+  # Vantagens do Caddy:
+  # - SSL automático via ACME com retry inteligente
+  # - HTTP/3 nativo (QUIC protocol)
+  # - Footprint menor: 40MB vs 100MB (Traefik)
+  # - Configuração declarativa via Caddyfile
+  # - Elimina necessidade de dockerproxy (acesso ao socket Docker)
+  # - Security headers nativos
+  #
+  # Docs: https://caddyserver.com/docs/
+  # ===========================================================================
+  caddy:
+    image: ${IMAGE_PREFIX}-caddy:${IMAGE_TAG:-latest}
     platform: linux/amd64
-    container_name: alice-dockerproxy
-    restart: always
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=16M
-      # CORREÇÃO 19/12/2025: HAProxy precisa escrever /run/haproxy.pid
-      - /run:mode=1777,size=16M
-    environment:
-      - CONTAINERS=1
-      - SERVICES=1
-      - NETWORKS=1
-      - TASKS=1
-      - INFO=1
-      - POST=0
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - alice-network
-    healthcheck:
-      # CORREÇÃO 21/12/2025: Healthcheck robusto para docker-socket-proxy
-      # A imagem usa HAProxy - verificamos se o processo está rodando e escutando
-      # wget está disponível no Alpine base da imagem tecnativa/docker-socket-proxy
-      test: ["CMD-SHELL", "wget --quiet --spider http://localhost:2375/_ping 2>/dev/null || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
-    deploy:
-      resources:
-        limits:
-          memory: 64M
-          cpus: '0.1'
-        reservations:
-          memory: 32M
-          cpus: '0.05'
-
-  # ===========================================================================
-  # TRAEFIK INIT - Inicializa diretório ACME com permissões corretas
-  # SEGURANÇA: Necessário para Traefik rodar como non-root
-  # Image digest SHA256 (Supply Chain Security 2025)
-  # ===========================================================================
-  traefik-init:
-    image: busybox:1.36
-    platform: linux/amd64
-    container_name: alice-traefik-init
-    security_opt:
-      - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=8M
-    deploy:
-      resources:
-        limits:
-          memory: 32M
-          cpus: '0.1'
-        reservations:
-          memory: 8M
-          cpus: '0.05'
-    volumes:
-      - traefik_acme:/acme
-    command: ["sh", "-c", "chown -R 1001:1001 /acme && chmod 700 /acme"]
-    restart: "no"
-    networks:
-      - alice-network
-
-  # ===========================================================================
-  # TRAEFIK - API Gateway com SSL Automático
-  # Docs 2025: Traefik v3 small/medium traffic - 0.5 CPU, 512MB
-  # SEGURANÇA: CAP_NET_BIND_SERVICE + Image digest SHA256 (Supply Chain Security 2025)
-  # ===========================================================================
-  traefik:
-    # ATUALIZADO 14/12/2025: v3.3 -> v3.6.4 (corrige CVE-2025-66490, CVE-2025-66491)
-    # ATUALIZADO 01/01/2026: Traefik v3.6.6 (última versão estável)
-    # NOTA: v3.6.5 NÃO existe no Docker Hub - última da série 3.6.x é v3.6.6
-    image: traefik:v3.6.6
-    platform: linux/amd64
-    container_name: alice-traefik
+    container_name: alice-caddy
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,size=32M
-    user: "1001:1001"
-    cap_add:
-      - NET_BIND_SERVICE
-    depends_on:
-      dockerproxy:
-        condition: service_healthy
-      traefik-init:
-        condition: service_completed_successfully
-    command:
-      # API e Dashboard (desabilitado em produção por segurança)
-      - "--api.dashboard=false"
-      - "--api.insecure=false"
-      
-      # Ping endpoint para healthcheck (porta interna dedicada)
-      - "--ping=true"
-      - "--ping.entrypoint=ping"
-      - "--entrypoints.ping.address=:8082"
-      
-      # Providers - via Docker Socket Proxy
-      - "--providers.docker=true"
-      - "--providers.docker.endpoint=tcp://dockerproxy:2375"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=alice-network"
-      
-      # Entrypoints públicos
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
-      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
-      - "--entrypoints.websecure.address=:443"
-      # HTTP/2 para melhor performance (Traefik 2025 Best Practices)
-      - "--entrypoints.websecure.http2.maxConcurrentStreams=250"
-      
-      # SSL/TLS Let's Encrypt
-      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/acme/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-      
-      # Logging
-      - "--log.level=INFO"
-      - "--accesslog=true"
-      - "--accesslog.format=json"
+    # Caddy precisa escrever em /data (certificados) e /config
+    # read_only não é possível
+    environment:
+      ACME_EMAIL: ${ACME_EMAIL}
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"  # HTTP/3 (QUIC)
     volumes:
-      - traefik_acme:/acme
+      - caddy_data:/data
+      - caddy_config:/config
+      - caddy_logs:/var/log/caddy
     networks:
       - alice-network
       - erpnext-network
-    labels:
-      - "traefik.enable=true"
-      # Middleware: Security Headers (OWASP 2025)
-      - "traefik.http.middlewares.security-headers.headers.browserXssFilter=true"
-      - "traefik.http.middlewares.security-headers.headers.contentTypeNosniff=true"
-      - "traefik.http.middlewares.security-headers.headers.frameDeny=true"
-      - "traefik.http.middlewares.security-headers.headers.stsIncludeSubdomains=true"
-      - "traefik.http.middlewares.security-headers.headers.stsPreload=true"
-      - "traefik.http.middlewares.security-headers.headers.stsSeconds=31536000"
-      - "traefik.http.middlewares.security-headers.headers.referrerPolicy=strict-origin-when-cross-origin"
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Content-Type-Options=nosniff"
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-Frame-Options=DENY"
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.X-XSS-Protection=1; mode=block"
-      - "traefik.http.middlewares.security-headers.headers.customResponseHeaders.Permissions-Policy=geolocation=(), microphone=(), camera=()"
-      - "traefik.http.middlewares.security-headers.headers.contentSecurityPolicy=default-src 'self'; base-uri 'self'; form-action 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss: https:; frame-ancestors 'none'; upgrade-insecure-requests"
-      # Middleware: Rate Limiting (100 req/s média, burst 200)
-      - "traefik.http.middlewares.rate-limit.ratelimit.average=100"
-      - "traefik.http.middlewares.rate-limit.ratelimit.burst=200"
-      - "traefik.http.middlewares.rate-limit.ratelimit.period=1s"
-      - "traefik.http.middlewares.rate-limit.ratelimit.sourcecriterion.ipstrategy.depth=1"
-      # Middleware: Auth Rate Limiting (10 req/min para login)
-      - "traefik.http.middlewares.auth-rate-limit.ratelimit.average=10"
-      - "traefik.http.middlewares.auth-rate-limit.ratelimit.burst=20"
-      - "traefik.http.middlewares.auth-rate-limit.ratelimit.period=60s"
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --tries=1 --spider http://127.0.0.1:8082/ping || exit 1"]
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
       interval: 30s
       timeout: 10s
-      retries: 5
+      retries: 3
       start_period: 30s
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 256M
           cpus: '0.5'
         reservations:
+          memory: 64M
+          cpus: '0.1'
+
+  # ===========================================================================
+  # PGBACKREST INIT - Inicializa stanza ANTES do PostgreSQL (02/01/2026)
+  # ===========================================================================
+  # PROBLEMA: PostgreSQL com archive_command='pgbackrest archive-push %p' falha
+  # se a stanza não existir. Erro: "unable to open missing file 'archive.info'"
+  # SOLUÇÃO: Init container que executa stanza-create antes do PostgreSQL iniciar.
+  # Idempotente: verifica se stanza existe antes de criar.
+  # ===========================================================================
+  pgbackrest-init:
+    image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
+    platform: linux/amd64
+    container_name: alice-pgbackrest-init
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,size=64M
+    environment:
+      PGBACKREST_REPO1_PATH: /var/lib/pgbackrest
+      PGBACKREST_REPO1_CIPHER_TYPE: aes-256-cbc
+      PGBACKREST_REPO1_CIPHER_PASS: ${BACKUP_CIPHER_PASS}
+      PGBACKREST_LOG_LEVEL_CONSOLE: info
+      PGBACKREST_LOG_LEVEL_FILE: detail
+      PGBACKREST_STANZA: alice_prod
+    volumes:
+      - /opt/alice/backups/postgresql:/var/lib/pgbackrest:rw
+      - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
+    networks:
+      - alice-network
+    command: >
+      sh -c '
+        echo "🔐 [pgBackRest Init] Verificando stanza alice_prod..."
+        
+        # Idempotência: verificar se stanza já existe
+        if pgbackrest --stanza=alice_prod --log-level-console=warn info 2>/dev/null | grep -q "status: ok"; then
+          echo "✅ [pgBackRest Init] Stanza alice_prod já existe e está OK"
+          exit 0
+        fi
+        
+        echo "📦 [pgBackRest Init] Criando stanza alice_prod..."
+        
+        # Criar stanza (não requer PostgreSQL rodando para repositório local)
+        if pgbackrest --stanza=alice_prod --log-level-console=info stanza-create; then
+          echo "✅ [pgBackRest Init] Stanza criada com sucesso"
+          pgbackrest --stanza=alice_prod info
+          exit 0
+        else
+          echo "❌ [pgBackRest Init] ERRO ao criar stanza"
+          exit 1
+        fi
+      '
+    restart: "no"
+    deploy:
+      resources:
+        limits:
           memory: 256M
           cpus: '0.25'
+        reservations:
+          memory: 64M
+          cpus: '0.1'
 
   # ===========================================================================
   # POSTGRESQL - Banco de dados Alice com pgvector + pgBackRest
@@ -511,6 +458,11 @@ services:
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
+    # CORREÇÃO 02/01/2026: PostgreSQL depende de pgbackrest-init para criar stanza
+    # Sem stanza, archive_command falha com "unable to open missing file 'archive.info'"
+    depends_on:
+      pgbackrest-init:
+        condition: service_completed_successfully
     security_opt:
       - no-new-privileges:true
     # NOTA: read_only: true removido porque pgbackrest precisa escrever em /var/spool/pgbackrest
@@ -737,18 +689,14 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+    # MIGRAÇÃO 02/01/2026: Caddy substitui Traefik
+    # Rotas configuradas no Caddyfile (não via labels)
     depends_on:
-      traefik:
+      caddy:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-frontend.rule=Host(`yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.alice-frontend.entrypoints=websecure"
-      - "traefik.http.routers.alice-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-frontend.middlewares=security-headers@docker,rate-limit@docker"
-      - "traefik.http.services.alice-frontend.loadbalancer.server.port=8080"
+    # Labels Traefik removidas - Caddy usa Caddyfile declarativo
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -837,25 +785,7 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      # OIDC Provider routes (31/12/2025)
-      # OBRIGATÓRIO: .service label quando container tem múltiplos serviços Traefik
-      # Sem isso: "cannot be linked automatically with multiple Services"
-      # Ref: Bug fix alice-chat/alice-ws 23/12/2025
-      - "traefik.http.routers.alice-oidc.rule=Host(`yesyoudeserve.duckdns.org`) && (PathPrefix(`/.well-known/openid-configuration`) || PathPrefix(`/oauth`))"
-      - "traefik.http.routers.alice-oidc.entrypoints=websecure"
-      - "traefik.http.routers.alice-oidc.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-oidc.middlewares=security-headers@docker"
-      - "traefik.http.routers.alice-oidc.service=alice-oidc"
-      - "traefik.http.services.alice-oidc.loadbalancer.server.port=3001"
-      # Auth API routes
-      - "traefik.http.routers.alice-auth.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/auth`)"
-      - "traefik.http.routers.alice-auth.entrypoints=websecure"
-      - "traefik.http.routers.alice-auth.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-auth.middlewares=security-headers@docker,auth-rate-limit@docker"
-      - "traefik.http.routers.alice-auth.service=alice-auth"
-      - "traefik.http.services.alice-auth.loadbalancer.server.port=3001"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -924,23 +854,7 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-chat.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/chat`)"
-      - "traefik.http.routers.alice-chat.entrypoints=websecure"
-      - "traefik.http.routers.alice-chat.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-chat.middlewares=security-headers@docker,rate-limit@docker"
-      # CORREÇÃO 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
-      - "traefik.http.routers.alice-chat.service=alice-chat"
-      - "traefik.http.services.alice-chat.loadbalancer.server.port=3002"
-      # WebSocket - mesma porta, router separado
-      - "traefik.http.routers.alice-ws.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/ws`)"
-      - "traefik.http.routers.alice-ws.entrypoints=websecure"
-      - "traefik.http.routers.alice-ws.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-ws.middlewares=rate-limit@docker"
-      # CORREÇÃO 23/12/2025: Especificar service explícito para WebSocket
-      - "traefik.http.routers.alice-ws.service=alice-ws"
-      - "traefik.http.services.alice-ws.loadbalancer.server.port=3002"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -1029,13 +943,7 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-rag.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/rag`)"
-      - "traefik.http.routers.alice-rag.entrypoints=websecure"
-      - "traefik.http.routers.alice-rag.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-rag.middlewares=security-headers@docker,rate-limit@docker"
-      - "traefik.http.services.alice-rag.loadbalancer.server.port=3003"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
     # RAG Service usa node:22-bookworm-slim (base consistente com dependências do serviço; suporte a vídeo foi removido)
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
@@ -1105,13 +1013,7 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-training.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/training`)"
-      - "traefik.http.routers.alice-training.entrypoints=websecure"
-      - "traefik.http.routers.alice-training.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-training.middlewares=security-headers@docker,rate-limit@docker"
-      - "traefik.http.services.alice-training.loadbalancer.server.port=3004"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -1210,24 +1112,7 @@ services:
     networks:
       - alice-network
       - erpnext-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-integrations.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/integrations`)"
-      - "traefik.http.routers.alice-integrations.entrypoints=websecure"
-      - "traefik.http.routers.alice-integrations.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-integrations.middlewares=security-headers@docker,rate-limit@docker"
-      # BUG FIX 23/12/2025: Especificar service explícito (evita "cannot be linked automatically with multiple Services")
-      - "traefik.http.routers.alice-integrations.service=alice-integrations"
-      - "traefik.http.services.alice-integrations.loadbalancer.server.port=3005"
-      # Webhook Stripe (rota específica)
-      # BUG FIX 23/12/2025: Router alice-webhook deve usar o mesmo serviço alice-integrations
-      # Não existe serviço separado alice-webhook - ambos routers apontam para alice-integrations:3005
-      - "traefik.http.routers.alice-webhook.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/webhook`)"
-      - "traefik.http.routers.alice-webhook.entrypoints=websecure"
-      - "traefik.http.routers.alice-webhook.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-webhook.middlewares=security-headers@docker"
-      # BUG FIX 23/12/2025: Especificar service explícito apontando para alice-integrations (mesmo serviço)
-      - "traefik.http.routers.alice-webhook.service=alice-integrations"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -1299,13 +1184,7 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.alice-observability.rule=Host(`yesyoudeserve.duckdns.org`) && PathPrefix(`/api/observability`)"
-      - "traefik.http.routers.alice-observability.entrypoints=websecure"
-      - "traefik.http.routers.alice-observability.tls.certresolver=letsencrypt"
-      - "traefik.http.routers.alice-observability.middlewares=security-headers@docker,rate-limit@docker"
-      - "traefik.http.services.alice-observability.loadbalancer.server.port=3007"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
@@ -1868,12 +1747,7 @@ services:
         condition: service_started
     networks:
       - erpnext-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.erpnext-frontend.rule=Host(`erp.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.erpnext-frontend.entrypoints=websecure"
-      - "traefik.http.routers.erpnext-frontend.tls.certresolver=letsencrypt"
-      - "traefik.http.services.erpnext-frontend.loadbalancer.server.port=8080"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # BUG FIX 24/12/2025: Aumentado start_period de 30s para 90s
       # ERPNext frontend depende do backend estar healthy, pode demorar mais
@@ -1912,12 +1786,7 @@ services:
         condition: service_started
     networks:
       - erpnext-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.erpnext-ws.rule=Host(`erp.yesyoudeserve.duckdns.org`) && PathPrefix(`/socket.io`)"
-      - "traefik.http.routers.erpnext-ws.entrypoints=websecure"
-      - "traefik.http.routers.erpnext-ws.tls.certresolver=letsencrypt"
-      - "traefik.http.services.erpnext-ws.loadbalancer.server.port=9000"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider 'http://localhost:9000/socket.io/?EIO=4&transport=polling' || exit 1"]
       interval: 30s
@@ -2550,12 +2419,7 @@ services:
       # CORREÇÃO 01/01/2026: Aguardar bucket ser criado antes de iniciar Langfuse
       minio-init:
         condition: service_completed_successfully
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.langfuse.rule=Host(`langfuse.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.langfuse.entrypoints=websecure"
-      - "traefik.http.routers.langfuse.tls.certresolver=letsencrypt"
-      - "traefik.http.services.langfuse.loadbalancer.server.port=3000"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     deploy:
       resources:
         limits:
@@ -2694,12 +2558,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.prometheus.rule=Host(`metrics.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.prometheus.entrypoints=websecure"
-      - "traefik.http.routers.prometheus.tls.certresolver=letsencrypt"
-      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     deploy:
       resources:
         limits:
@@ -2796,12 +2655,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`observability.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
-      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     deploy:
       resources:
         limits:
@@ -2893,12 +2747,7 @@ services:
       - /opt/alice/data/jaeger:/badger
     networks:
       - alice-network
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.jaeger.rule=Host(`traces.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.jaeger.entrypoints=websecure"
-      - "traefik.http.routers.jaeger.tls.certresolver=letsencrypt"
-      - "traefik.http.services.jaeger.loadbalancer.server.port=16686"
+    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]

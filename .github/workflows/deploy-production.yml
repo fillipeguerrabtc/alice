@@ -218,6 +218,7 @@ jobs:
             "observability"
             "pgbackrest"
             "postgres"
+            "caddy"
           )
           
           MISSING=0
@@ -955,7 +956,10 @@ jobs:
             # Diretórios de dados
             mkdir -p /opt/alice/data/postgres
             mkdir -p /opt/alice/data/redis-alice
-            mkdir -p /opt/alice/data/traefik-acme
+            # MIGRAÇÃO 02/01/2026: Traefik substituído por Caddy
+            mkdir -p /opt/alice/data/caddy
+            mkdir -p /opt/alice/data/caddy-config
+            mkdir -p /opt/alice/logs/caddy
             mkdir -p /opt/alice/data/searxng-config
             mkdir -p /opt/alice/data/erpnext-sites
             mkdir -p /opt/alice/data/erpnext-mariadb
@@ -1001,7 +1005,9 @@ jobs:
             chmod 755 /opt/alice/backups/postgresql/logs 2>/dev/null || true
             # Jaeger v2 usa UID 10001 (padrão OTel Collector)
             chown -R 10001:10001 /opt/alice/data/jaeger 2>/dev/null || true
-            
+            # MIGRAÇÃO 02/01/2026: Caddy usa UID 1000:1000 (padrão Alpine caddy user)
+            chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+
             echo "✅ Estrutura de diretórios criada"
             
             # =================================================================
@@ -2139,7 +2145,9 @@ jobs:
             chmod 755 /opt/alice/backups/postgresql/logs 2>/dev/null || true
             # Jaeger v2 usa UID 10001 (padrão OTel Collector)
             chown -R 10001:10001 /opt/alice/data/jaeger 2>/dev/null || true
-            
+            # MIGRAÇÃO 02/01/2026: Caddy usa UID 1000:1000 (padrão Alpine caddy user)
+            chown -R 1000:1000 /opt/alice/data/caddy /opt/alice/data/caddy-config /opt/alice/logs/caddy 2>/dev/null || true
+
             # Criar arquivos de secrets a partir do .env.prod existente
             # CORREÇÃO 28/12/2025: Remover diretórios conflitantes antes de criar arquivos
             if [ -d /opt/alice/secrets/langfuse_db_password ]; then

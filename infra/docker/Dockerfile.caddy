@@ -1,0 +1,50 @@
+# =============================================================================
+# CADDY - Reverse Proxy com SSL Automático
+# =============================================================================
+# Versão: 2.8.4-alpine
+# Autor: Fillipe Guerra
+# Data: 02/01/2026
+#
+# Substituição Enterprise do Traefik:
+# - SSL automático via ACME (Let's Encrypt)
+# - Retry inteligente (espaça tentativas para evitar rate limit)
+# - HTTP/3 nativo (QUIC protocol)
+# - Footprint menor: 40MB vs 100MB (Traefik)
+# - Configuração declarativa via Caddyfile
+#
+# Referência: https://caddyserver.com/docs/
+# =============================================================================
+
+FROM caddy:2.8.4-alpine
+
+LABEL org.opencontainers.image.source="https://github.com/fillipeguerrabtc/alice"
+LABEL org.opencontainers.image.description="Caddy Reverse Proxy for Alice Platform"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.authors="Fillipe Guerra"
+
+# Copiar configuração Caddy
+COPY Caddyfile /etc/caddy/Caddyfile
+
+# Criar diretórios necessários com permissões corretas
+# Caddy precisa escrever em /data (certificados) e /config (configuração runtime)
+RUN mkdir -p /var/log/caddy && \
+    chown -R caddy:caddy /var/log/caddy && \
+    chmod 755 /var/log/caddy
+
+# Health check - Caddy Admin API na porta 2019
+# Verifica se Caddy está rodando e respondendo
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget -q --spider http://localhost:2019/config/ || exit 1
+
+# Expor portas
+# 80: HTTP (redirect para HTTPS)
+# 443: HTTPS (TCP)
+# 443/udp: HTTP/3 (QUIC)
+# 2019: Admin API (interno)
+EXPOSE 80 443 443/udp 2019
+
+# Caddy roda como non-root por padrão (UID/GID 1000)
+USER caddy
+
+# Comando padrão
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

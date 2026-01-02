@@ -285,6 +285,7 @@ jobs:
             "gpu-manager:./apps/gpu-manager-service/Dockerfile"
             "pgbackrest:./infra/backup/Dockerfile.pgbackrest"
             "postgres:./infra/postgres/Dockerfile.postgres"
+            "caddy:./infra/docker/Dockerfile.caddy"
           )
           
           for entry in "${SERVICES[@]}"; do
