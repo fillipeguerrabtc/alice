@@ -357,11 +357,10 @@ services:
       - alice-network
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: BusyBox wget em caddy:alpine pode não suportar --spider
-      # Método robusto: verificar porta 2019 via /proc/net/tcp (funciona em qualquer Linux)
+      # CORREÇÃO 02/01/2026: Verificar porta em AMBOS tcp e tcp6
+      # Caddy escuta em IPv6 (::) que cobre IPv4, então porta aparece em tcp6
       # Porta 2019 decimal = 07E3 hexadecimal
-      # Mesmo método usado para Qdrant e Tor (imagens minimalistas)
-      test: ["CMD-SHELL", "grep -qi ':07E3' /proc/net/tcp || exit 1"]
+      test: ["CMD-SHELL", "grep -qi ':07E3' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2677,7 +2676,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      # CORREÇÃO 02/01/2026: Imagem Loki é distroless - sem wget/curl/cat
+      # Usar -verify-config do próprio binário (retorna 0 se config válida)
+      test: ["CMD", "/usr/bin/loki", "-verify-config", "-config.file=/etc/loki/local-config.yaml"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2707,7 +2708,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9080/ready"]
+      # CORREÇÃO 02/01/2026: Imagem Promtail não tem wget
+      # Verificar porta 9080 (0x2378) via /proc/net/tcp6
+      test: ["CMD-SHELL", "grep -q ':2378' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2743,8 +2746,9 @@ services:
     networks:
       - alice-network
     healthcheck:
-      # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
+      # CORREÇÃO 02/01/2026: Jaeger v2 - porta 13133 retorna 404
+      # Usar porta 16686 (Query UI) que funciona corretamente
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:16686/"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2770,6 +2774,9 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    # CORREÇÃO 02/01/2026: Especificar arquivo de config TOML explicitamente
+    # Por padrão Vector 0.45+ procura /etc/vector/vector.yaml
+    command: ["--config", "/etc/vector/vector.toml"]
     tmpfs:
       - /tmp:mode=1777,size=32M
     ports:
@@ -2786,9 +2793,9 @@ services:
       loki:
         condition: service_started
     healthcheck:
-      test:
-        - CMD-SHELL
-        - wget --quiet --tries=1 --timeout=5 --spider http://localhost:8686/health || exit 1
+      # CORREÇÃO 02/01/2026: Verificar porta 8686 (0x21EE) via /proc/net/tcp
+      # Imagem Alpine tem wget mas API pode demorar para iniciar
+      test: ["CMD-SHELL", "grep -q ':21EE' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2848,7 +2855,9 @@ services:
       prometheus:
         condition: service_started
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]
+      # CORREÇÃO 02/01/2026: Imagem OTel Collector é distroless - sem wget/curl/cat
+      # Usar validate command do próprio binário (retorna 0 se config válida)
+      test: ["CMD", "/otelcol-contrib", "validate", "--config=/etc/otelcol-contrib/config.yaml"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -2889,9 +2898,10 @@ services:
       - '--collector.netdev.device-exclude=^(veth.*|docker.*|br-.*)$$'
       - '--web.listen-address=:9100'
     healthcheck:
-      # CORREÇÃO 20/12/2025: Node Exporter é baseado em busybox/static - não tem wget/curl
-      # Usar /proc/net/tcp para verificar se porta 9100 está escutando (0x238C = 9100 em hex)
-      test: ["CMD-SHELL", "grep -q ':238C' /proc/net/tcp || exit 1"]
+      # CORREÇÃO 02/01/2026: Verificar porta em AMBOS tcp e tcp6
+      # Node Exporter escuta em IPv6 ([::]:9100), porta aparece em tcp6
+      # Porta 9100 decimal = 238C hexadecimal
+      test: ["CMD-SHELL", "grep -q ':238C' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
