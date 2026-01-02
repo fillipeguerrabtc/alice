@@ -25,10 +25,11 @@ LABEL org.opencontainers.image.authors="Fillipe Guerra"
 # Copiar configuração Caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 
-# Garantir existência do usuário/grupo caddy antes de usá-lo
-# Nota: Imagens alpine oficiais costumam já ter o usuário, mas garantimos aqui para o build
-RUN getent group caddy || addgroup -g 1000 -S caddy && \
-    getent passwd caddy || adduser -u 1000 -D -S -G caddy caddy
+# Instalar wget para healthcheck (Alpine não inclui por padrão)
+# e garantir existência do usuário/grupo caddy
+RUN apk add --no-cache wget && \
+    (getent group caddy || addgroup -g 1000 -S caddy) && \
+    (getent passwd caddy || adduser -u 1000 -D -S -G caddy caddy)
 
 # Criar diretórios necessários com permissões corretas
 # Caddy precisa escrever em /data (certificados) e /config (configuração runtime)
