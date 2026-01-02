@@ -102,11 +102,11 @@ RUN mkdir -p /var/lib/pgbackrest \
     && mkdir -p /etc/pgbackrest
 
 # Copiar configuração
-# NOTA: Build context é raiz do repositório, não o diretório do Dockerfile
-COPY infra/backup/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
+# NOTA: Build context é ./infra/backup (definido no release.yml)
+COPY pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 
 # Copiar scripts de automação (inclui healthcheck.sh)
-COPY infra/backup/scripts/ /usr/local/bin/
+COPY scripts/ /usr/local/bin/
 RUN chmod +x /usr/local/bin/*.sh
 
 # Usuário não-root para segurança (best practices 2025)
