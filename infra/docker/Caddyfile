@@ -33,6 +33,9 @@
 	# Admin API (healthcheck interno)
 	admin :2019
 	
+	# Métricas Prometheus (opt-in Caddy 2.6+)
+	metrics
+	
 	# HTTP/3 habilitado globalmente (QUIC)
 	servers {
 		protocols h1 h2 h3

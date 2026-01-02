@@ -38,11 +38,6 @@ except ImportError:
 # CONFIGURAÇÃO DE COMPONENTES
 # =============================================================================
 COMPONENT_CONFIG = {
-    "caddy": {
-        "docker_image": "caddy",
-        "version_prefix": "",
-        "services": ["alice-caddy"],
-    },
     "prometheus": {
         "docker_image": "prom/prometheus",
         "version_prefix": "v",
@@ -92,11 +87,6 @@ COMPONENT_CONFIG = {
             "erpnext-websocket",  # Websocket também usa frappe/erpnext (não frappe-socketio)
         ],
     },
-    "busybox": {
-        "docker_image": "busybox",
-        "version_prefix": "",
-        "services": ["pgbackrest-init"],
-    },
     "redis": {
         "docker_image": "redis",
         "version_prefix": "",
@@ -106,11 +96,6 @@ COMPONENT_CONFIG = {
         "docker_image": "mariadb",
         "version_prefix": "",
         "services": ["erpnext-mariadb"],
-    },
-    "pgvector": {
-        "docker_image": "pgvector/pgvector",
-        "version_prefix": "",
-        "services": ["postgres"],
     },
 }
 
@@ -157,14 +142,7 @@ def update_docker_compose(
             services = config["services"]
             
             # Construir tag completa
-            # pgvector usa tag diretamente (não tem prefixo)
-            if component == "pgvector":
-                full_tag = version  # version já contém a tag (ex: "pg16")
-            elif component == "docker-socket-proxy" and not version:
-                # docker-socket-proxy pode usar "latest" se versão não for fornecida
-                full_tag = "latest"
-            else:
-                full_tag = f"{version_prefix}{version}"
+            full_tag = f"{version_prefix}{version}"
             
             # Obter digest
             digest = digests.get(component)
@@ -214,15 +192,11 @@ def main():
     )
     
     # Argumentos para cada componente
-    components = ["caddy", "prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "erpnext", 
-                  "busybox", "redis", "mariadb"]
+    components = ["prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "erpnext", 
+                  "redis", "mariadb"]
     for component in components:
         parser.add_argument(f"--{component}-version", help=f"Versão do {component}")
         parser.add_argument(f"--{component}-digest", default="", help=f"SHA256 digest do {component}")
-    
-    # pgvector usa tag (não versão)
-    parser.add_argument("--pgvector-tag", default="pg16", help="Tag do pgvector")
-    parser.add_argument("--pgvector-digest", default="", help="SHA256 digest do pgvector")
     
     # NOTA: ERPNext usa UMA imagem (frappe/erpnext) para TUDO
     # NÃO existem imagens separadas como frappe/erpnext-nginx ou frappe/erpnext-worker
@@ -271,14 +245,6 @@ def main():
     # NOTA: ERPNext usa UMA ÚNICA imagem (frappe/erpnext) para TUDO
     # Backend, Frontend, Workers, Scheduler e Websocket usam a mesma imagem
     # Código obsoleto removido - não existem mais componentes separados
-    
-    # pgvector usa tag (não versão)
-    pgvector_tag = getattr(args, "pgvector_tag", None) or "pg16"
-    pgvector_digest = getattr(args, "pgvector_digest", None) or ""
-    if pgvector_tag:
-        versions["pgvector"] = pgvector_tag
-        digests["pgvector"] = pgvector_digest if pgvector_digest else None
-        print(f"✅ pgvector: {pgvector_tag}{' @' + pgvector_digest[:20] + '...' if pgvector_digest else ' (sem digest)'}")
     
     print()
     

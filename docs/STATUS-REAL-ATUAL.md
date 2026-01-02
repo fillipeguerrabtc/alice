@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.52 - Caddy Gateway (Traefik removido)
+> **Versão:** 4.54 - Caddy Gateway Metrics Fix
 
 ---
 
