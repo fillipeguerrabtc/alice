@@ -264,19 +264,25 @@ jobs:
           
           # Lista de imagens externas CRÍTICAS (não buildadas por nós)
           # Tags devem corresponder EXATAMENTE ao docker-compose.prod.yml
-          # CORREÇÃO 02/01/2026: 
-          # - REMOVIDO: postgres:16-alpine (imagem customizada no GHCR)
-          # - ADICIONADO: dperson/torproxy, searxng/searxng, tecnativa/docker-socket-proxy
+          # CORREÇÃO 02/01/2026: Tags verificadas em documentações oficiais
+          # - MinIO: bitnami/minio (minio/minio descontinuado em 2025)
+          # - Langfuse: 3.75.2 (versões 3.84+ têm ZodError bug)
+          # - Redis ERPNext: 6.2-alpine (compatibilidade Frappe)
+          # - ClickHouse: 24.12.5-alpine (25.12-alpine não existe)
+          # - Vector: 0.41.0-alpine (última Alpine estável)
+          # - Qdrant: v1.13.2 (estável)
           EXTERNAL_IMAGES=(
-            # MinIO (Langfuse v3 S3 obrigatório)
-            "minio/minio:RELEASE.2024-12-18T13-15-44Z"
-            "minio/mc:RELEASE.2024-10-29T15-34-59Z"
+            # MinIO (Langfuse v3 S3 obrigatório) - Bitnami mantém imagens após descontinuação oficial
+            "bitnami/minio:2024"
+            "bitnami/minio-client:2024"
             
             # Database & Vector Store
-            "clickhouse/clickhouse-server:25.12-alpine"
-            "redis:7.4.6-alpine"
-            "qdrant/qdrant:v1.16.2"
+            "clickhouse/clickhouse-server:24.12.5-alpine"
+            "redis:7-alpine"
+            "redis:6.2-alpine"
+            "qdrant/qdrant:v1.13.2"
             "mariadb:10.11"
+            "postgres:16-alpine"
             
             # Infrastructure
             "traefik:v3.6.6"
@@ -291,14 +297,14 @@ jobs:
             "grafana/loki:3.6.3"
             "grafana/promtail:3.6.3"
             "jaegertracing/jaeger:2.13.0"
-            "langfuse/langfuse:3.89"
+            "langfuse/langfuse:3.75.2"
             "prom/node-exporter:v1.9.1"
-            "timberio/vector:0.51.0-alpine"
+            "timberio/vector:0.41.0-alpine"
             "otel/opentelemetry-collector-contrib:0.142.0"
             "gcr.io/cadvisor/cadvisor:v0.52.1"
             
             # ERPNext
-            "frappe/erpnext:v15.91.1"
+            "frappe/erpnext:v15.93.1"
           )
           
           MISSING=0
