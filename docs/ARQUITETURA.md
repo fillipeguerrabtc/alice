@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Arquitetura de Software
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 31 de Dezembro de 2025  
-> **Versão:** 1.12.0 - Gmail SMTP Enterprise (Resend removido)  
+> **Data:** 02 de Janeiro de 2026  
+> **Versão:** 1.13.0 - Caddy Gateway (Traefik removido)  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 
@@ -170,7 +170,7 @@ C4Container
     Person(user, "Usuário")
     
     Container_Boundary(alice, "Alice Platform") {
-        Container(traefik, "Traefik", "API Gateway", "Roteamento, SSL, Rate Limiting")
+        Container(caddy, "Caddy", "API Gateway", "Roteamento, SSL automático, HTTP/3")
         Container(frontend, "Frontend", "React 18 + Vite 7.3", "SPA, shadcn/ui, i18n")
         Container(auth, "Auth Service", "Node.js", "OAuth, SAML, RBAC")
         Container(chat, "Chat Service", "Node.js", "WebSocket, LLM, Trading Commands")
@@ -186,11 +186,11 @@ C4Container
     
     System_Ext(gpuManager, "GPU Manager Service", "Gerenciamento GPU local")
     
-    Rel(user, traefik, "HTTPS")
-    Rel(traefik, frontend, "HTTP")
-    Rel(traefik, auth, "HTTP")
-    Rel(traefik, chat, "HTTP/WS")
-    Rel(traefik, rag, "HTTP")
+    Rel(user, caddy, "HTTPS/HTTP3")
+    Rel(caddy, frontend, "HTTP")
+    Rel(caddy, auth, "HTTP")
+    Rel(caddy, chat, "HTTP/WS")
+    Rel(caddy, rag, "HTTP")
     Rel(chat, gpuManager, "HTTP", "LLM Inference (local)")
     Rel(rag, gpuManager, "HTTP", "Embeddings (local)")
     Rel(chat, postgres, "TCP")
@@ -198,20 +198,21 @@ C4Container
     Rel(auth, redis, "TCP", "Sessions")
 ```
 
-### 4.2 Catálogo de Containers (45 Total)
+### 4.2 Catálogo de Containers (50 Total)
 
-#### Infraestrutura Core (8)
+#### Infraestrutura Core (7)
 
 | # | Container | Tecnologia | Porta | Responsabilidade |
 |---|-----------|------------|-------|------------------|
-| 1 | `dockerproxy` | Docker Socket Proxy | - | Acesso seguro à API Docker |
-| 2 | `traefik-init` | Alpine | - | Inicialização SSL |
-| 3 | `traefik` | Traefik v3.6.5 | 80,443 | API Gateway, SSL automático |
-| 4 | `postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
-| 5 | `alice-redis` | Redis 8.4 | 6379 | Cache distribuído (node-redis 5.x) |
-| 6 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
-| 7 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
-| 8 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
+| 1 | `alice-caddy` | Caddy 2.8.4 | 80,443 | API Gateway, SSL automático, HTTP/3 |
+| 2 | `alice-pgbackrest-init` | pgBackRest | - | Inicialização stanza backup |
+| 3 | `alice-postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
+| 4 | `alice-redis` | Redis 8.4 | 6379 | Cache distribuído (node-redis 5.x) |
+| 5 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
+| 6 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
+| 7 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
+
+> **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile.
 
 #### Microsserviços Alice (7)
 

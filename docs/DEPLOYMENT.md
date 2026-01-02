@@ -2,28 +2,29 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Janeiro de 2026  
-**Versão:** 7.15 - Fix External Images Validation
+**Versão:** 7.16 - Caddy Gateway (Traefik removido)
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
 > **Semantic Versioning Automático (27/12/2025):** Versionamento agora segue Conventional Commits automaticamente: `feat!:` ou `BREAKING CHANGE:` → MAJOR bump, `feat:` → MINOR bump, `fix:` → PATCH bump. Cache Docker otimizado com `--provenance=false`, `--sbom=false` e `BUILDKIT_INLINE_CACHE=1` para builds mais rápidos.
 
-## Visão Geral da Arquitetura - 51 Containers em Produção
+## Visão Geral da Arquitetura - 50 Containers em Produção
 
-A plataforma Alice é composta por **51 containers** organizados em 7 categorias (45 serviços + 5 GPU + 1 backup):
+A plataforma Alice é composta por **50 containers** organizados em 7 categorias (44 serviços + 5 GPU + 1 backup):
 
-### Categoria 1: Infraestrutura Core (8 serviços)
+### Categoria 1: Infraestrutura Core (7 serviços)
 
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
-| 1 | **Docker Socket Proxy** | `dockerproxy` | Proxy seguro para API Docker. Expõe apenas endpoints necessários para Traefik, sem acesso de escrita. | Tecnativa Docker Socket Proxy |
-| 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.37 |
-| 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting, HTTP/2. | Traefik v3.6.4 |
-| 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 8. | Redis 8.4.0 Alpine |
-| 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
-| 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
-| 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
+| 1 | **Caddy Gateway** | `alice-caddy` | Reverse proxy com SSL automático (Let's Encrypt), HTTP/3 nativo (QUIC), configuração declarativa. Substitui Traefik desde 02/01/2026. | Caddy 2.8.4 Alpine |
+| 2 | **pgBackRest Init** | `alice-pgbackrest-init` | Init container que cria stanza de backup ANTES do PostgreSQL iniciar. Corrige crash loop de archive_command. | pgBackRest 2.57.0 |
+| 3 | **PostgreSQL** | `alice-postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
+| 4 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 8. | Redis 8.4.0 Alpine |
+| 5 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
+| 6 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
+| 7 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
+
+> **NOTA 02/01/2026**: Traefik, traefik-init e dockerproxy foram substituídos por **Caddy**. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy pois Caddy não precisa acessar a API Docker.
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM). Todos os workflows (CI, Release, Deploy) executam no self-hosted runner (`runs-on: [self-hosted, linux, deploy]`) para controle total, custos previsíveis e compliance. Deploy workflow com gate de segurança (`validate-trigger`) - `version` é OBRIGATÓRIA e deve ser tag válida (v1.0.0). Deploy executa remoto no Production Server via `appleboy/ssh-action` (SSH para `secrets.HETZNER_VM_HOST`). Pipeline 100% sequencial: Push → CI → Release → Deploy. **CORREÇÃO 28/12/2025:** Scripts obsoletos `deploy-remote.sh` e `deploy-local.sh` removidos - workflow usa script inline no SSH action (mais auditável, sem dependências externas).
 
@@ -41,7 +42,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 
 > **NOTA (25/12/2025):** Todos os serviços GPU rodam localmente no servidor Hetzner GPU GEX44 e são gerenciados pelo GPU Manager Service. Processamento multimodal usa serviços GPU locais com Qwen3-Embedding-8B (texto, 4096 dim) e OpenCLIP ViT-H/14 (imagem, 1024 dim).
 
-> **NOTA:** O Traefik (`alice-traefik`) já atua como API Gateway em produção com roteamento dinâmico, rate limiting e circuit breakers via middlewares. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
+> **NOTA 02/01/2026:** O Caddy (`alice-caddy`) atua como API Gateway em produção com roteamento via Caddyfile, SSL automático e HTTP/3. O `apps/api-gateway` Node.js existe apenas para desenvolvimento local.
 
 ### Categoria 3: ERPNext Stack (15 serviços)
 
@@ -126,7 +127,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 │  │                                                                     │ │
 │  │  ┌──────────────────────────────────────────────────────────────┐  │ │
    │  │  │ INFRAESTRUTURA CORE (6)                                       │  │ │
-   │  │  │  dockerproxy → traefik-init → traefik → postgres → redis      │  │ │
+   │  │  │  pgbackrest-init → caddy → postgres → redis → qdrant          │  │ │
    │  │  │  searxng (metabusca)                                          │  │ │
    │  │  └──────────────────────────────────────────────────────────────┘  │ │
    │  │                              │                                      │ │
@@ -349,7 +350,7 @@ ERPNEXT_ADMIN_PASSWORD=sua-senha-erpnext-forte
 | Servidor | Alias SSH | IP | Função |
 |----------|-----------|-----|--------|
 | **Deploy Server** | `alice-hetzner` | 46.224.46.93 | GitHub Actions Runner, CI/CD (CPX32 - 4 vCPU, 8GB RAM) |
-| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (51 containers) |
+| **Production Server** | `alice-prod` | 178.63.41.108 | Aplicação + GPU (50 containers) |
 
 **Configuração SSH** (`~/.ssh/config`):
 
@@ -662,7 +663,7 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 │       ▼                                                          │
 │  ┌─────────────────────┐                                        │
 │  │ Deploy Production   │ ← 100% AUTO (sem aprovação)            │
-│  │ • SSH para Hetzner  │   51 containers                        │
+│  │ • SSH para Hetzner  │   50 containers                        │
 │  │ • Docker Compose up │                                        │
 │  │ • Validate GPU URLs │   4 Container Groups (pré-criados)     │
 │  │ • Health checks     │   RTX 4000 Ada 20GB (Mixtral, FLUX, ASR, Emb.)  │
@@ -678,7 +679,7 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 |-------|---------|-----------|
 | **CI - Build & Test** | Push para `main` | Validação automática de código |
 | **Release & Tag** | CI passa | Versionamento semântico automático |
-| **Deploy Hetzner** | Release passa | 51 containers via Docker Compose |
+| **Deploy Hetzner** | Release passa | 50 containers via Docker Compose |
 | **Validate GPU** | Deploy Hetzner passa | Valida URLs GPU (Container Groups pré-criados) |
 | **Health Check** | Validate GPU passa | Validação e rollback automático |
 
@@ -705,7 +706,7 @@ O workflow de release (`release.yml`) suporta versionamento automático baseado 
 - Reverte containers para última versão estável
 - GPU services são parte do deploy único (não separado)
 
-Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 51 containers no servidor único).
+Pipeline: push para `main` → CI → Release → Deploy (100% automático - todos os 50 containers no servidor único).
 
 ### Versionamento Automático (30/12/2025)
 
@@ -916,9 +917,9 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 
 | Serviço | URL | Status |
 |---------|-----|--------|
-| Traefik Dashboard | N/A | Desabilitado em produção (segurança) |
+| Caddy Admin API | localhost:2019 | Healthcheck interno (não exposto externamente) |
 
-> **NOTA:** O Traefik Dashboard está desabilitado em produção por motivos de segurança. Para debug, acesse via SSH e `docker logs alice-traefik`.
+> **NOTA:** A Admin API do Caddy é usada apenas para healthcheck interno e não está exposta externamente por segurança. Para debug, acesse via SSH e `docker logs alice-caddy`.
 
 ---
 
@@ -932,7 +933,7 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 Antes de cada deploy, o workflow valida que TODAS as 23 imagens externas existem no Docker Hub:
 
 - 14 imagens de observability (Prometheus, Grafana, Loki, etc.)
-- 3 imagens de infrastructure (Traefik, Tor, SearXNG)
+- 3 imagens de infrastructure (Caddy, Tor, SearXNG)
 - 2 imagens MinIO (S3 para Langfuse v3)
 - 2 imagens de database (ClickHouse, Redis)
 - 1 imagem ERPNext
@@ -963,7 +964,7 @@ qdrant/qdrant:v1.16.2
 mariadb:10.11
 
 # Infrastructure
-traefik:v3.6.6
+caddy:2.8.4-alpine
 busybox:1.36
 dperson/torproxy:latest
 searxng/searxng:latest
@@ -1020,8 +1021,8 @@ cd /opt/alice && docker compose logs -f
 # Logs de serviço específico
 docker logs -f alice-auth
 
-# Logs do Traefik (API Gateway)
-docker logs -f traefik
+# Logs do Caddy (API Gateway)
+docker logs -f alice-caddy
 
 # Logs da Observability Stack
 docker logs -f alice-prometheus
@@ -1230,11 +1231,11 @@ docker compose restart alice-auth
 ### SSL não funciona
 
 ```bash
-# Verificar Traefik
-docker logs traefik
+# Verificar Caddy
+docker logs alice-caddy
 
-# Verificar certificados
-docker exec traefik cat /letsencrypt/acme.json | jq '.le.Certificates'
+# Verificar certificados (Caddy armazena em /data)
+docker exec alice-caddy ls -la /data/caddy/certificates/acme-v02.api.letsencrypt.org-directory
 ```
 
 ### Firewall bloqueando
@@ -1269,7 +1270,7 @@ curl http://localhost:3010/health
 Error response from daemon: manifest for <image>:<tag> not found: manifest unknown
 ```
 
-**Causa:** Tag da imagem foi removida/rotacionada do Docker Hub. Isso é comum com imagens como MinIO, Traefik e Prometheus que fazem rotação agressiva de tags antigas.
+**Causa:** Tag da imagem foi removida/rotacionada do Docker Hub. Isso é comum com imagens como MinIO, Caddy e Prometheus que fazem rotação agressiva de tags antigas.
 
 **Solução:**
 1. Verificar tags disponíveis no Docker Hub:
@@ -1297,7 +1298,7 @@ Error response from daemon: manifest for <image>:<tag> not found: manifest unkno
 ### Deploy timeout após 45 minutos
 
 **Causa:** Primeiro deploy pode demorar mais que o esperado devido a:
-- Pull de ~51 containers (15-30min com conexão lenta ou rate limiting do Docker Hub)
+- Pull de ~50 containers (15-30min com conexão lenta ou rate limiting do Docker Hub)
 - Inicialização do ClickHouse (até 6 minutos)
 - Criação de site ERPNext (~300 tabelas, até 10 minutos)
 - Execução de migrations SQL
@@ -1431,9 +1432,9 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| **no-new-privileges** | ✅ | 51/51 containers (100%) |
-| **resource limits** | ✅ | 51/51 containers (100%) |
-| **read_only: true** | ✅ | 25/51 containers (aplicável apenas onde não há escrita) |
+| **no-new-privileges** | ✅ | 50/50 containers (100%) |
+| **resource limits** | ✅ | 50/50 containers (100%) |
+| **read_only: true** | ✅ | 25/50 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
 | **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 
@@ -1456,7 +1457,7 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 | Langfuse DB | 70 | 755 | /opt/alice/data/langfuse-db |
 | Redis | 999 | 755 | /opt/alice/data/redis-alice |
 | Qdrant | root | 755 | /opt/alice/data/qdrant |
-| Traefik ACME | 1001 | 700 | /opt/alice/data/traefik-acme |
+| Caddy Data | 1000 | 700 | /opt/alice/data/caddy |
 | SearXNG | 977 | 755 | /opt/alice/data/searxng-config |
 
 > **NOTA:** Workflow deploy-production.yml configura automaticamente todas essas permissões.
@@ -1486,11 +1487,13 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 *Data: 27 de Dezembro de 2025*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
 *Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
-*Security Hardening: 100% completo - 51/51 containers com no-new-privileges, 51/51 com resource limits, 25/51 com read_only*
+*Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
 *ARQUITETURA ENTERPRISE: Texto Qwen3-Embedding-8B (4096 dim → Qdrant) | Imagem OpenCLIP (1024 dim → pgvector) | LLM Mixtral 8x7B (vLLM)*
-*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 51 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+*Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 50 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
+
+*Migração Traefik→Caddy (02/01/2026): Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo (QUIC), footprint 40MB vs 100MB. Total: 7 infra (era 8).*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
 *Redis Alice: 8.4.0-alpine - Cache distribuído (node-redis 5.x suporta Redis 8)*

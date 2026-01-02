@@ -473,7 +473,7 @@ fi
 # FASE 7: Validar ACME_EMAIL (usado APENAS para Let's Encrypt)
 # =============================================================================
 # ACME_EMAIL é usado APENAS para:
-# - Let's Encrypt (certificados SSL via Traefik)
+# - Let's Encrypt (certificados SSL via Caddy)
 #
 # NOTA: Grafana Alerting usa GMAIL_USER para SMTP (NÃO ACME_EMAIL).
 # Ver docker-compose.prod.yml seção grafana: GF_SMTP_USER: ${GMAIL_USER}

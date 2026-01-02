@@ -1,8 +1,8 @@
 # Alice - Plataforma Enterprise de IA Autônoma
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Dezembro de 2025  
-**Versão:** 4.50
+**Data:** 02 de Janeiro de 2026  
+**Versão:** 4.51
 
 <div align="center">
 
@@ -79,7 +79,7 @@
 │  │    GPU Server GEX44 (RTX 4000 Ada 20GB, 64GB DDR4, 1.92TB NVMe)  ││
 │  │    IP: 178.63.41.108 | Domínio: yesyoudeserve.duckdns.org      ││
 │  │  ┌─────────┐ ┌───────┐ ┌───────┐ ┌─────────┐ ┌───────────┐     ││
-│  │  │ Traefik │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
+│  │  │  Caddy  │ │ Auth  │ │ Chat  │ │   RAG   │ │ Training  │     ││
 │  │  │ Gateway │ │:3001  │ │:3002  │ │  :3003  │ │  :3004    │     ││
 │  │  └─────────┘ └───────┘ └───────┘ └─────────┘ └───────────┘     ││
 │  │  ┌─────────────┐ ┌─────────────────────────────────────────┐   ││
@@ -94,21 +94,21 @@
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-### Arquitetura de Microsserviços - 51 Containers em Produção
+### Arquitetura de Microsserviços - 50 Containers em Produção
 
-A plataforma Alice é composta por **51 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
+A plataforma Alice é composta por **50 containers** organizados em 7 categorias (todos rodando no servidor Hetzner GPU único):
 
 #### Categoria 1: Infraestrutura Core (7 serviços)
 
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
-| 1 | Docker Socket Proxy | `dockerproxy` | Proxy seguro para API Docker |
-| 2 | Traefik Init | `traefik-init` | Inicializador de certificados SSL |
-| 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
-| 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
-| 5 | Alice Redis | `alice-redis` | Cache distribuído (Redis 8.4 - node-redis 5.x) |
-| 6 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
-| 7 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
+| 1 | Caddy Gateway | `alice-caddy` | Reverse proxy com SSL automático + HTTP/3 (substitui Traefik) |
+| 2 | pgBackRest Init | `alice-pgbackrest-init` | Inicializador de stanza para backup (init container) |
+| 3 | PostgreSQL | `alice-postgres` | Banco principal com pgvector e RLS |
+| 4 | Alice Redis | `alice-redis` | Cache distribuído (Redis 8.4 - node-redis 5.x) |
+| 5 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
+| 6 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
+| 7 | Tor Proxy | `alice-tor` | Proxy SOCKS5 para engines .onion |
 
 #### Categoria 2: Microsserviços Alice (7 serviços)
 
@@ -122,7 +122,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 13 | Integrations | `alice-integrations` | 3005 | Stripe, Wise, Twilio, Gmail SMTP, KuCoin Futures |
 | 14 | Observability | `alice-observability` | 3007 | Prometheus, Grafana, Jaeger, Backup |
 
-> **NOTA:** O Traefik (`alice-traefik`) atua como API Gateway em produção. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
+> **NOTA (02/01/2026):** Caddy (`alice-caddy`) substitui Traefik como API Gateway. Vantagens: SSL automático com retry inteligente, HTTP/3 nativo, footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile. Embeddings 100% via GPU Manager Service local (Qwen3-Embedding-8B 4096 dim + OpenCLIP 1024 dim).
 
 #### Categoria 3: ERPNext Stack (15 serviços)
 
@@ -268,12 +268,12 @@ Push → CI (auto) → Release (auto) → Deploy Hetzner (auto) → Validate GPU
    └── Push para GHCR
 4. Deploy Production (100% automático):
    ├── Dispara automaticamente após Release
-   ├── Deploy Hetzner GPU (51 containers: 8 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
+   ├── Deploy Hetzner GPU (50 containers: 7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
    ├── Health checks + Rollback automático
    └── GPU: RTX 4000 Ada (20GB VRAM) - Mixtral, FLUX, ASR, Embeddings (gerenciados pelo GPU Manager Service)
 ```
 
-**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 51 containers (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
+**Hetzner GPU 100% Automático:** Push para `main` aciona CI → Release → Deploy com health checks e rollback. Todos os 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) rodam no mesmo servidor Hetzner GPU único, eliminando latência de rede e simplificando gerenciamento.
 
 **GPU Manager Service:**
 - Gerenciamento centralizado de todas as requisições GPU (LLM, Embeddings, FLUX, ASR)
@@ -333,7 +333,7 @@ Consulte [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) para instruções detalhadas.
 alice/
 ├── apps/                           # Microserviços independentes
 │   ├── frontend-service/           # React 18 + Vite 7.3 SPA
-│   ├── api-gateway/                # Traefik v3.6.4 config (dev only)
+│   ├── api-gateway/                # Node.js gateway (dev only - Caddy 2.8.4 em prod)
 │   ├── auth-service/               # OAuth/SAML/Local + RBAC
 │   ├── chat-service/               # LLM Proxy + WebSocket
 │   ├── rag-service/                # Embeddings + pgvector
@@ -395,7 +395,7 @@ alice/
 - HTTP Compression (gzip level 6)
 
 ### Infraestrutura
-- Docker, Traefik v3.6.4 (HTTP/2 habilitado)
+- Docker, **Caddy 2.8.4** (SSL automático + HTTP/3 nativo)
 - **Google Distroless** (6 serviços Node.js)
 - nginx:1.27-alpine (frontend)
 - GitHub Actions CI/CD (95%+ SHA pinning, composite actions reutilizáveis)
@@ -469,15 +469,14 @@ Proprietário - Todos os direitos reservados.
 
 | Imagem | Versão | Status |
 |--------|--------|--------|
-| Traefik | v3.6.4 | Pinned |
+| **Caddy** | 2.8.4-alpine | Pinned |
 | PostgreSQL | pg16 (pgvector) | Pinned |
 | MariaDB | 10.11 | Pinned |
 | Redis (Alice) | 8.4.0-alpine | Pinned |
 | Redis (ERPNext) | 6.2.21-alpine | Pinned |
 | ERPNext | v15.91.3 | Pinned |
-| Vector | 0.45.0-alpine | Pinned |
+| Vector | 0.51.1-alpine | Pinned |
 | pgBackRest | 2.57.0 | Pinned |
-| Docker Socket Proxy | latest | Pinned |
 | BusyBox | 1.37 | Pinned |
 
 > **NOTA Redis (01/01/2026)**: Alice usa Redis 8.4 (node-redis 5.x suporta completamente). ERPNext usa Redis 6.2 (ERPNext v15 requer Redis 6.x conforme docs.frappe.io).
@@ -495,11 +494,11 @@ Todos os 50 containers têm security hardening completo aplicado. Containers que
 **Desenvolvido para empresas que exigem IA autônoma, privada e customizável**
 
 *Autor: Fillipe Guerra*
-*Versão 4.50 - 31 de Dezembro de 2025*
+*Versão 4.51 - 02 de Janeiro de 2026*
 *Tecnologias: Node.js 22 LTS, Express 5.2, Vite 7.3, Tailwind CSS 4.1, React 19.2, pnpm 10.26.1, TypeScript 5.9.3*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *Production Audit: 100% Compliant | Zero CVEs (Distroless) | Docker Compose v5.0.0*
-*Performance (19/12/2025): HTTP Compression (gzip), HTTP/2 (Traefik), SHA Pinning 95%+*
+*Performance (02/01/2026): HTTP Compression (gzip), HTTP/3 (Caddy), SHA Pinning 95%+*
 *PostgreSQL (21/12/2025): HNSW indexes + 10 índices compostos + 12 tabelas Trading com RLS*
 *Storage: Servidor GEX44 1.92TB interno (/opt/alice) - SEM S3 externo*
 *ARQUITETURA ENTERPRISE: Texto 4096 dim Qwen3-Embedding-8B (Qdrant) | Imagem 1024 dim OpenCLIP (pgvector)*

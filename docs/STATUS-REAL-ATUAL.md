@@ -1,9 +1,9 @@
 # Alice Enterprise Platform - STATUS REAL ATUAL
 
 > **Autor:** Fillipe Guerra  
-> **Data:** 31 de Dezembro de 2025  
+> **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.25 - CI/Release Dispatch by SHA (Enterprise)
+> **Versão:** 4.26 - Caddy Gateway + pgBackRest Init
 
 ---
 
@@ -12,7 +12,7 @@
 | Aspecto | Valor |
 |---------|-------|
 | **Arquitetura** | Microsserviços containerizados |
-| **Total de Containers** | 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) |
+| **Total de Containers** | 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup) |
 | **Servidor** | Hetzner GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB) |
 | **Volume Adicional** | Não necessário - servidor GEX44 possui 1.92TB interno (substitui volume externo) |
 | **SO** | Ubuntu 24.04.3 LTS |
@@ -28,9 +28,9 @@
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| `security_opt: no-new-privileges` | ✅ | 51/51 containers (100%) |
-| `read_only: true` | ✅ | 25/51 (aplicável apenas onde não há escrita) |
-| Resource limits | ✅ | 51/51 containers (100%) |
+| `security_opt: no-new-privileges` | ✅ | 50/50 containers (100%) |
+| `read_only: true` | ✅ | 25/50 (aplicável apenas onde não há escrita) |
+| Resource limits | ✅ | 50/50 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
 | Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
 | **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
@@ -52,13 +52,15 @@
 
 > **Rollback Inteligente 28/12/2025:** Rollback detecta automaticamente quando primeiro deploy funcionou via arquivo `last-successful-deploy.txt`. Se não existe = nunca teve deploy funcional = LIMPA TUDO (volumes, dados, logs). Se existe = PRESERVA dados e faz rollback para versão anterior. Dados de produção NUNCA são apagados após primeiro deploy bem-sucedido.
 
-> **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `traefik:v3.6.4`) são suficientemente determinísticas. Solução simples - KISS.
+> **Bug Fix Digests Rotacionados 27/12/2025:** Removidos digests SHA256 de 23 imagens de terceiros no docker-compose.prod.yml. Docker Hub rotaciona digests quando republica tags, causando falha no deploy. Tags versionadas (ex: `caddy:2.8.4-alpine`) são suficientemente determinísticas. Solução simples - KISS.
+
+> **Migração Traefik→Caddy 02/01/2026:** Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy. Adicionado pgBackRest Init container para criar stanza ANTES do PostgreSQL iniciar.
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
 
 > **Release Performance Fix 27/12/2025:** Corrigido bug no `release.yml` que causava rebuild de TODAS as imagens (16+ minutos) ao invés de retag seletivo (~2 minutos). O job `build-images` fazia checkout shallow (sem `fetch-depth: 0`), quebrando o `git diff` entre tags. Com `CHANGED_FILES` vazio, o workflow assumia que todas as imagens precisavam de rebuild. Solução: adicionado `fetch-depth: 0` ao checkout do job `build-images` para permitir que `git diff` funcione entre tags.
 
-> **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-traefik`. Adicionados workers faltantes: `erpnext-worker-*-2`.
+> **Bug Fix Log Capture 21/12/2025:** Captura de logs agora respeita `DEPLOY_SERVICES`: `alice-only` captura containers Alice (12), `erpnext-only` captura containers ERPNext (15 incluindo workers -2), `all` captura ambos (27 total). Bug anterior só capturava Alice mesmo quando ERPNext falhava. Corrigidos nomes `postgres`→`alice-postgres`, `traefik`→`alice-caddy` (migração 02/01/2026). Adicionados workers faltantes: `erpnext-worker-*-2`.
 
 > **GPU Manager Service 25/12/2025:** Todos os serviços GPU (LLM, Embeddings, FLUX, ASR) agora rodam localmente no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service com fila priorizada, monitoramento VRAM e circuit breakers. Elimina latência de rede e simplifica arquitetura. Guia completo: [docs/ARQUITETURA-GPU-MANAGER.md](ARQUITETURA-GPU-MANAGER.md).
 
@@ -107,9 +109,9 @@
 | 6 | Integrations | `apps/integrations-service` | alice-integrations | 3005 | Node.js, Stripe, Wise, Twilio |
 | 7 | Observability | `apps/observability-service` | alice-observability | 3007 | Node.js, backup orchestrator |
 | 43-48 | GPU Services | `gpu-manager-service`, `gpu-mixtral`, `gpu-embeddings`, `gpu-flux`, `gpu-asr`, **gpu-trainer** | - | - | GPU Manager Service + 5 serviços GPU locais (Hetzner GEX44) - Texto: Qwen3-Embedding-8B (4096 dim → Qdrant), Imagem: OpenCLIP (1024 dim → pgvector), ASR: Canary-1B, LLM: Mixtral 8x7B, **Fine-tuning LoRA (prioridade 3)** |
-| 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Traefik em prod) |
+| 9 | API Gateway | `apps/api-gateway` | **N/A (dev only)** | 3000 | Node.js (Caddy em prod) |
 
-> **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Traefik v3.6.4 atua como API Gateway.
+> **NOTA:** O `api-gateway` Node.js é APENAS para desenvolvimento local. Em produção, Caddy 2.8.4 atua como API Gateway (migração de Traefik em 02/01/2026).
 
 ---
 
@@ -643,15 +645,15 @@ Retenção Arquivo:   30 dias
 
 ---
 
-## 🐳 INFRAESTRUTURA DOCKER (51 containers)
+## 🐳 INFRAESTRUTURA DOCKER (50 containers)
 
 ### Core Infra (8)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
 | 1 | dockerproxy | tecnativa/docker-socket-proxy | Proxy seguro Docker API |
-| 2 | traefik-init | busybox:1.36 | Inicializa ACME |
-| 3 | traefik | traefik:v3.6.4 | API Gateway + SSL + Rate Limiting |
+| 2 | alice-caddy | caddy:2.8.4-alpine | API Gateway + SSL automático + HTTP/3 |
+| 3 | alice-pgbackrest-init | pgbackrest:2.57.0 | Init stanza backup PostgreSQL |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
 | 5 | alice-redis | redis:8.4.0-alpine | Cache distribuído (node-redis 5.x suporta Redis 8) |
 | 6 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
@@ -711,7 +713,7 @@ Retenção Arquivo:   30 dias
 
 | Item | Status | Cobertura |
 |------|--------|-----------|
-| no-new-privileges | ✅ | 51/51 containers (100% COMPLETO) |
+| no-new-privileges | ✅ | 50/50 containers (100% COMPLETO) |
 | read_only: true | ✅ | 25/50 containers (apenas onde não há escrita necessária) |
 | resource limits | ✅ | 50/50 containers (100% COMPLETO) |
 | platform: linux/amd64 | ✅ | 50/50 containers |
@@ -723,7 +725,7 @@ Retenção Arquivo:   30 dias
 
 | Item | Status |
 |------|--------|
-| CSP Headers (Traefik) | ✅ |
+| CSP Headers (Caddy) | ✅ |
 | HSTS | ✅ |
 | Rate Limiting (multi-tier) | ✅ |
 | Circuit Breakers (todas APIs) | ✅ |
@@ -827,7 +829,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 
 > **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
-> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Traefik v3.6.5**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**. **(01/01/2026):** Alertmanager removido - alertas via Grafana Alerting.
+> **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Caddy 2.8.4**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**. **(01/01/2026):** Alertmanager removido - alertas via Grafana Alerting. **(02/01/2026):** Traefik removido - Caddy é novo API Gateway.
 
 **3. Timeouts Otimizados para Runner Dedicado ✅**
 
@@ -853,7 +855,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | Componente | Versão | Status |
 |------------|--------|--------|
 | PostgreSQL | 16 + pgvector | ✅ Atual |
-| Traefik | 3.6.4 | ✅ Atual |
+| Caddy | 2.8.4 | ✅ Atual |
 | Prometheus | 3.8.1 | ✅ Atual |
 | Grafana | 12.3.1 | ✅ Atual |
 | Loki/Promtail | 3.6.2 | ✅ Atual |
@@ -1265,7 +1267,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 *GPU Docker Build Timeout Fix (27/12/2025): Build de GPU Services travava após ~31min. Corrigido: (1) Timeout aumentado de 30min para 90min; (2) 4/5 Dockerfiles GPU migrados para imagem base pytorch/pytorch (PyTorch pré-instalado = ~12GB economia); (3) BuildKit cache mount adicionado (--mount=type=cache); (4) Progress plain e network host para melhor performance*
 *Bug Fix Deploy SSH Fallback (27/12/2025): Deploy falhava com "Falha ao conectar ao Production Server via SSH". Fallback de PRODUCTION_SERVER_USER usava 'alice-deploy' (não existe). Corrigido para usar secrets.HETZNER_VM_USER. Script deploy-remote.sh atualizado com validação fail-fast*
 *Performance Otimização (19/12/2025): Express 5.2.1 (breaking changes mitigados), Vite 7.3.0, Tailwind CSS 4.1.18, HTTP Compression (gzip level 6)*
-*HTTP/2 Enterprise (19/12/2025): Habilitado no Traefik via maxConcurrentStreams=250 para melhor multiplexing*
+*HTTP/3 Enterprise (02/01/2026): Habilitado no Caddy via QUIC protocol para melhor performance. Migrado de HTTP/2 (Traefik) para HTTP/3 (Caddy).*
 *SHA Pinning (19/12/2025): 95%+ das GitHub Actions com SHA pinning completo - ci.yml, release.yml, deploy-production.yml*
 *PostgreSQL Indexes (19/12/2025): Migration 0009 (HNSW m=24, ef_construction=128) + Migration 0010 (8 índices compostos/parciais)*
 *Vite Build Chunks (19/12/2025): manualChunks otimizado (vendor-react, vendor-ui, vendor-charts, vendor-i18n, vendor-query, vendor-motion)*
@@ -1297,7 +1299,7 @@ O workflow CI usa dependência direta do GitHub Actions com validação explíci
 
 **Solução:** Workflow atualizado para criar TODOS os 18 subdiretórios necessários pelos bind mounts do docker-compose.prod.yml:
 ```
-/opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config,
+/opt/alice/data/{postgres,redis-alice,caddy,caddy-config,searxng-config,
   erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue,
   vector,langfuse-db,prometheus,grafana,loki}
 /opt/alice/logs/erpnext
@@ -1448,7 +1450,7 @@ body = {
 | PostgreSQL | 999 | 700 |
 | Langfuse DB | 70 | 755 |
 | Redis | 999 | 755 |
-| Traefik ACME | 1001 | 700 |
+| Caddy Data | 1000 | 700 |
 | SearXNG | 977 | 755 |
 | ERPNext | 999/1000 | 755 |
 

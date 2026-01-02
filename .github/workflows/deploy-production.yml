@@ -88,7 +88,7 @@ jobs:
       images_exist: ${{ steps.check-images.outputs.exist }}
       # Versões dos componentes (buscadas do arquivo de configuração)
       pgbackrest_version: ${{ steps.versions.outputs.pgbackrest_version }}
-      traefik_version: ${{ steps.versions.outputs.traefik_version }}
+      caddy_version: ${{ steps.versions.outputs.caddy_version }}
       prometheus_version: ${{ steps.versions.outputs.prometheus_version }}
       grafana_version: ${{ steps.versions.outputs.grafana_version }}
       loki_version: ${{ steps.versions.outputs.loki_version }}
@@ -96,7 +96,6 @@ jobs:
       jaeger_version: ${{ steps.versions.outputs.jaeger_version }}
       langfuse_version: ${{ steps.versions.outputs.langfuse_version }}
       erpnext_version: ${{ steps.versions.outputs.erpnext_version }}
-      docker_socket_proxy_version: ${{ steps.versions.outputs.docker_socket_proxy_version }}
       busybox_version: ${{ steps.versions.outputs.busybox_version }}
       redis_version: ${{ steps.versions.outputs.redis_version }}
       mariadb_version: ${{ steps.versions.outputs.mariadb_version }}
@@ -296,7 +295,7 @@ jobs:
           
           # Extrair versões do JSON
           echo "pgbackrest_version=$(jq -r '.pgbackrest' .github/component-versions.json)" >> $GITHUB_OUTPUT
-          echo "traefik_version=$(jq -r '.traefik' .github/component-versions.json)" >> $GITHUB_OUTPUT
+          echo "caddy_version=$(jq -r '.caddy' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "prometheus_version=$(jq -r '.prometheus' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "grafana_version=$(jq -r '.grafana' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "loki_version=$(jq -r '.loki' .github/component-versions.json)" >> $GITHUB_OUTPUT
@@ -304,7 +303,6 @@ jobs:
           echo "jaeger_version=$(jq -r '.jaeger' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "langfuse_version=$(jq -r '.langfuse' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "erpnext_version=$(jq -r '.erpnext' .github/component-versions.json)" >> $GITHUB_OUTPUT
-          echo "docker_socket_proxy_version=$(jq -r '.["docker-socket-proxy"]' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "busybox_version=$(jq -r '.busybox' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "redis_version=$(jq -r '.redis' .github/component-versions.json)" >> $GITHUB_OUTPUT
           echo "mariadb_version=$(jq -r '.mariadb' .github/component-versions.json)" >> $GITHUB_OUTPUT
@@ -462,7 +460,7 @@ jobs:
           IMAGE_PREFIX: ghcr.io/${{ github.repository_owner }}/alice
           IMAGE_TAG: ${{ needs.validate-and-prepare.outputs.image_tag }}
           PGBACKREST_VERSION: ${{ needs.validate-and-prepare.outputs.pgbackrest_version }}
-          TRAEFIK_VERSION: ${{ needs.validate-and-prepare.outputs.traefik_version }}
+          CADDY_VERSION: ${{ needs.validate-and-prepare.outputs.caddy_version }}
           PROMETHEUS_VERSION: ${{ needs.validate-and-prepare.outputs.prometheus_version }}
           GRAFANA_VERSION: ${{ needs.validate-and-prepare.outputs.grafana_version }}
           LOKI_VERSION: ${{ needs.validate-and-prepare.outputs.loki_version }}
@@ -470,7 +468,6 @@ jobs:
           JAEGER_VERSION: ${{ needs.validate-and-prepare.outputs.jaeger_version }}
           LANGFUSE_VERSION: ${{ needs.validate-and-prepare.outputs.langfuse_version }}
           ERPNEXT_VERSION: ${{ needs.validate-and-prepare.outputs.erpnext_version }}
-          DOCKER_SOCKET_PROXY_VERSION: ${{ needs.validate-and-prepare.outputs.docker_socket_proxy_version }}
           BUSYBOX_VERSION: ${{ needs.validate-and-prepare.outputs.busybox_version }}
           REDIS_VERSION: ${{ needs.validate-and-prepare.outputs.redis_version }}
           MARIADB_VERSION: ${{ needs.validate-and-prepare.outputs.mariadb_version }}
@@ -1217,8 +1214,8 @@ jobs:
               echo "🧾 Logs do pgbackrest (últimas 200 linhas):"
               docker logs --tail=200 alice-pgbackrest || true
               echo ""
-              echo "🧾 Logs do traefik (últimas 100 linhas):"
-              docker logs --tail=100 alice-traefik || true
+              echo "🧾 Logs do caddy (últimas 100 linhas):"
+              docker logs --tail=100 alice-caddy || true
               exit 1
             fi
             
@@ -1234,10 +1231,10 @@ jobs:
             
             # Lista de containers init CRÍTICOS (restart: "no", devem completar com sucesso)
             # CORREÇÃO 01/01/2026: Nomes devem corresponder exatamente ao container_name no docker-compose
-            # Bug anterior: "traefik-init" não existe, nome correto é "alice-traefik-init"
+            # MIGRAÇÃO 02/01/2026: traefik-init removido (Caddy não precisa de init), pgbackrest-init adicionado
             INIT_CONTAINERS=(
               "alice-minio-init"
-              "alice-traefik-init"
+              "alice-pgbackrest-init"
               "erpnext-configurator"
             )
             
@@ -2117,7 +2114,8 @@ jobs:
             fi
             
             # CORREÇÃO DEFINITIVA 27/12/2025: Criar diretórios e secrets necessários
-            mkdir -p /opt/alice/data/{postgres,redis-alice,traefik-acme,searxng-config}
+            # MIGRAÇÃO 02/01/2026: traefik-acme removido, caddy e caddy-config adicionados
+            mkdir -p /opt/alice/data/{postgres,redis-alice,caddy,caddy-config,searxng-config}
             mkdir -p /opt/alice/data/{erpnext-sites,erpnext-mariadb,erpnext-redis-cache,erpnext-redis-queue}
             # REMOVIDO 01/01/2026: alertmanager - substituído por Grafana Alerting
             mkdir -p /opt/alice/data/{vector,langfuse-db,clickhouse,qdrant,prometheus,grafana,loki,jaeger}
