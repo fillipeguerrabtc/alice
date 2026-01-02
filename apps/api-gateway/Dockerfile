@@ -14,9 +14,11 @@ RUN npm config set update-notifier false && corepack enable
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 
 # Copiar package.json de cada pacote interno
+COPY packages/shared/package.json ./packages/shared/
 COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
+COPY packages/database/package.json ./packages/database/
 
 # Copiar package.json do serviço
 COPY apps/api-gateway/package.json ./apps/api-gateway/
@@ -27,6 +29,9 @@ RUN pnpm install --frozen-lockfile
 # Copiar código fonte
 COPY packages/ ./packages/
 COPY apps/api-gateway/ ./apps/api-gateway/
+
+# Compilar pacotes internos primeiro (ordem de dependências)
+RUN pnpm run build:packages
 
 # Build do serviço
 RUN pnpm --filter @alice/api-gateway build

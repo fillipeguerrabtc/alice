@@ -17,7 +17,13 @@
     "allowSyntheticDefaultImports": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "noFallthroughCasesInSwitch": true
+    "noFallthroughCasesInSwitch": true,
+    "baseUrl": ".",
+    "paths": {
+      "@alice/shared-utils": ["../../packages/shared-utils/src"],
+      "@alice/logger": ["../../packages/logger/src"],
+      "@alice/config": ["../../packages/config/src"]
+    }
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
