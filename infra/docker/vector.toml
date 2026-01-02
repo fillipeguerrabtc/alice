@@ -26,7 +26,8 @@ if err == null {
 [transforms.filter_noise]
 type = "filter"
 inputs = ["parse_logs"]
-condition = '.level != "debug" || get_env_var("LOG_DEBUG") == "true"'
+# CORREÇÃO 02/01/2026: get_env_var é fallible - usar ?? para default
+condition = '.level != "debug" || (get_env_var("LOG_DEBUG") ?? "false") == "true"'
 
 [sinks.console]
 type = "console"
