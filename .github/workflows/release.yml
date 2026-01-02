@@ -29,8 +29,15 @@
 #   - GAP-GHACTIONS-001: Actions pinadas a SHA (supply chain security)
 #   - GAP-GHACTIONS-003: Least privilege permissions
 #
+# CORREÇÃO CRÍTICA (02/01/2026): Build Context Caddy
+# - Adicionado terceiro campo CONTEXT no array SERVICES
+# - Parsing atualizado para extrair IMAGE:DOCKERFILE:CONTEXT
+# - Caddy agora usa contexto ./infra/docker/ (contém Caddyfile)
+# - Microservices mantêm contexto raiz (precisam de packages/ compartilhados)
+# - Infra services usam contextos específicos
+#
 # Author: Fillipe Guerra
-# Data: 27/12/2025
+# Data: 02/01/2026
 # =============================================================================
 
 name: Release & Tag
@@ -273,24 +280,34 @@ jobs:
               "$full_from"
           }
           
+          # ✅ CORREÇÃO CRÍTICA: Formato IMAGE:DOCKERFILE:CONTEXT
+          # - Microservices Node.js: contexto raiz (precisam de packages/ compartilhados)
+          # - Infra (caddy/postgres/pgbackrest): contexto específico (não precisam packages/)
           SERVICES=(
-            "api-gateway:./apps/api-gateway/Dockerfile"
-            "auth:./apps/auth-service/Dockerfile"
-            "chat:./apps/chat-service/Dockerfile"
-            "frontend:./apps/frontend-service/Dockerfile"
-            "integrations:./apps/integrations-service/Dockerfile"
-            "observability:./apps/observability-service/Dockerfile"
-            "rag:./apps/rag-service/Dockerfile"
-            "training:./apps/training-service/Dockerfile"
-            "gpu-manager:./apps/gpu-manager-service/Dockerfile"
-            "pgbackrest:./infra/backup/Dockerfile.pgbackrest"
-            "postgres:./infra/postgres/Dockerfile.postgres"
-            "caddy:./infra/docker/Dockerfile.caddy"
+            "api-gateway:./apps/api-gateway/Dockerfile:."
+            "auth:./apps/auth-service/Dockerfile:."
+            "chat:./apps/chat-service/Dockerfile:."
+            "frontend:./apps/frontend-service/Dockerfile:."
+            "integrations:./apps/integrations-service/Dockerfile:."
+            "observability:./apps/observability-service/Dockerfile:."
+            "rag:./apps/rag-service/Dockerfile:."
+            "training:./apps/training-service/Dockerfile:."
+            "gpu-manager:./apps/gpu-manager-service/Dockerfile:."
+            "pgbackrest:./infra/backup/Dockerfile.pgbackrest:./infra/backup"
+            "postgres:./infra/postgres/Dockerfile.postgres:./infra/postgres"
+            "caddy:./infra/docker/Dockerfile.caddy:./infra/docker"
           )
           
           for entry in "${SERVICES[@]}"; do
+            # ✅ CORREÇÃO: Extrair 3 campos (IMAGE:DOCKERFILE:CONTEXT)
             IMAGE="${entry%%:*}"
-            DOCKERFILE="${entry#*:}"
+            REST="${entry#*:}"
+            DOCKERFILE="${REST%%:*}"
+            CONTEXT="${REST#*:}"
+            
+            echo "📦 Processing: $IMAGE"
+            echo "   Dockerfile: $DOCKERFILE"
+            echo "   Context: $CONTEXT"
             
             # Build condicional por mudanças:
             # - Microservices: rebuild se mudou o service, packages/, lockfile, scripts de build, tsconfigs
@@ -300,6 +317,8 @@ jobs:
               BUILD_PATTERN="^infra/backup/"
             elif [ "$IMAGE" = "postgres" ]; then
               BUILD_PATTERN="^infra/postgres/"
+            elif [ "$IMAGE" = "caddy" ]; then
+              BUILD_PATTERN="^infra/docker/"
             else
               # Rebuild do serviço se mudou seu diretório real, qualquer package compartilhado, lockfile ou scripts base
               # Observação: padrão conservador para garantir correção (enterprise).
@@ -355,7 +374,7 @@ jobs:
                 --cache-from "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache" \
                 --cache-to "type=registry,ref=${{ env.IMAGE_PREFIX }}-${IMAGE}:cache,mode=max" \
                 --file "$DOCKERFILE" \
-                .
+                "$CONTEXT"
               echo "✅ $IMAGE (build)"
             fi
           done
