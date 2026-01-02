@@ -2360,13 +2360,17 @@ jobs:
               # PASSO 7: Limpar dados residuais no filesystem
               echo "🗑️  Removendo dados residuais de /opt/alice..."
               rm -rf /opt/alice/data/* 2>/dev/null || true
-              rm -rf /opt/alice/logs/* 2>/dev/null || true
+              # CORREÇÃO 02/01/2026: Preservar logs de deploy para troubleshooting
+              # Apaga apenas logs de serviços (erpnext, clickhouse, caddy), NÃO logs de deploy
+              find /opt/alice/logs -mindepth 1 -maxdepth 1 -type d -exec rm -rf {} \; 2>/dev/null || true
+              # Logs de deploy (deploy-*.log) são PRESERVADOS para análise
               rm -rf /opt/alice/backups/postgresql/* 2>/dev/null || true
               rm -rf /opt/alice/backups/mariadb/* 2>/dev/null || true
               rm -rf /opt/alice/backups/redis/* 2>/dev/null || true
               # NÃO remover:
               # - /opt/alice/app (código fonte - necessário para próximo deploy)
               # - /opt/alice/secrets (chaves - criadas pelo workflow)
+              # - /opt/alice/logs/deploy-*.log (logs de deploy para troubleshooting)
               
               # PASSO 8: Mostrar status final
               echo ""
