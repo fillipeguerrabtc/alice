@@ -1,27 +1,48 @@
 # ==============================================================================
-# Alice Enterprise Platform - API Gateway (Traefik)
+# Alice Enterprise Platform - API Gateway (Node.js - Dev Only)
 # Documentação em PT-BR (Regra 10 CLAUDE.md)
-# SEGURANÇA: Traefik v3.3+ com configurações hardened
 # ==============================================================================
-ARG TRAEFIK_VERSION=3.6.4
-FROM traefik:v${TRAEFIK_VERSION}
+FROM node:22-alpine3.21 AS builder
 
-# Copiar configurações do Traefik
-COPY apps/api-gateway/config/traefik.yml /etc/traefik/traefik.yml
-COPY apps/api-gateway/config/dynamic /etc/traefik/dynamic
+WORKDIR /app
 
-# Criar diretório para certificados Let's Encrypt com permissões seguras
-RUN mkdir -p /letsencrypt && \
-    chmod 700 /letsencrypt
+# Instalar pnpm
+RUN npm install -g pnpm@10.26.2
 
-# NOTA: Traefik requer root para portas < 1024 (80, 443)
-# Em produção, usar CAP_NET_BIND_SERVICE via docker-compose
-# ou executar Traefik atrás de load balancer em porta alta
+# Copiar arquivos de configuração do workspace
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api-gateway/package.json ./apps/api-gateway/
+COPY packages/shared-utils/package.json ./packages/shared-utils/
+COPY packages/config/package.json ./packages/config/
+COPY packages/logger/package.json ./packages/logger/
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
-    CMD traefik healthcheck || exit 1
+# Instalar dependências
+RUN pnpm install --frozen-lockfile
 
-EXPOSE 80 443 8080 9090
+# Copiar código fonte
+COPY apps/api-gateway ./apps/api-gateway
+COPY packages ./packages
 
-CMD ["traefik"]
+# Build do serviço
+RUN pnpm --filter @alice/api-gateway build
+
+# Stage final
+FROM node:22-alpine3.21
+
+WORKDIR /app
+
+# Usuário não-root por segurança
+RUN addgroup -S nodejs && adduser -S nodejs -G nodejs
+USER nodejs
+
+# Copiar bundle e node_modules necessários
+COPY --from=builder /app/apps/api-gateway/dist ./dist
+COPY --from=builder /app/apps/api-gateway/node_modules ./node_modules
+
+# Health check (Regra 16)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD node -e "fetch('http://localhost:3000/api/health').then(r => r.ok ? process.exit(0) : process.exit(1)).catch(() => process.exit(1))"
+
+EXPOSE 3000
+
+CMD ["node", "dist/bundle.js"]

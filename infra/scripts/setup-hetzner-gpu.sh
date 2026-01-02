@@ -264,7 +264,8 @@ DIRS=(
     /opt/alice/data/postgres
     /opt/alice/data/redis-alice
     /opt/alice/data/qdrant
-    /opt/alice/data/traefik-acme
+    /opt/alice/data/caddy-data
+    /opt/alice/data/caddy-config
     /opt/alice/data/searxng-config
     /opt/alice/data/erpnext-sites
     /opt/alice/data/erpnext-mariadb

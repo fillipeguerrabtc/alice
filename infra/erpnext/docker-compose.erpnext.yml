@@ -128,13 +128,7 @@ services:
       - FRAPPE_SITE_NAME_HEADER=${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
       - BACKEND=erpnext-backend:8000
       - SOCKETIO=erpnext-socketio:9000
-    labels:
-      # Traefik labels para routing
-      - "traefik.enable=true"
-      - "traefik.http.routers.erpnext.rule=Host(`erp.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.erpnext.entrypoints=websecure"
-      - "traefik.http.routers.erpnext.tls.certresolver=letsencrypt"
-      - "traefik.http.services.erpnext.loadbalancer.server.port=8080"
+    # Caddy usa Caddyfile declarativo para routing (MIGRAÇÃO 02/01/2026)
     deploy:
       resources:
         limits:

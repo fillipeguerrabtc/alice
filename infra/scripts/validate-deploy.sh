@@ -125,7 +125,7 @@ echo ""
 # =============================================================================
 echo -e "\n${YELLOW}═══ 1. CONTAINERS DOCKER ═══${NC}\n"
 
-check_container "Traefik (API Gateway)" "alice-traefik"
+check_container "Caddy (API Gateway)" "alice-caddy"
 check_container "PostgreSQL" "alice-postgres"
 check_container "Auth Service" "alice-auth"
 check_container "Chat Service" "alice-chat"
@@ -164,8 +164,10 @@ check_endpoint "Integrations Health" "https://$DOMAIN/api/integrations/health"
 check_endpoint "ERPNext" "https://erp.$DOMAIN/"
 
 # Observability
-check_endpoint "Grafana" "https://grafana.$DOMAIN/"
-check_endpoint "Prometheus" "https://prometheus.$DOMAIN/-/healthy"
+check_endpoint "Grafana" "https://observability.$DOMAIN/"
+check_endpoint "Prometheus" "https://metrics.$DOMAIN/-/healthy"
+check_endpoint "Jaeger" "https://traces.$DOMAIN/"
+check_endpoint "Langfuse" "https://langfuse.$DOMAIN/"
 
 # =============================================================================
 # 3. VERIFICAR CONEXÕES DE BANCO DE DADOS

@@ -441,7 +441,7 @@ C4Deployment
     Deployment_Node(hetzner, "Hetzner Cloud", "Nuremberg, Germany") {
         Deployment_Node(vm, "GEX44 GPU Server", "Intel i5-13500 14 Core, 64GB DDR4, 2x 1.92TB NVMe RAID 1, RTX 4000 Ada 20GB") {
             Deployment_Node(docker, "Docker 29.1.2") {
-                Container(traefik, "Traefik", "API Gateway")
+                Container(caddy, "Caddy", "API Gateway")
                 Container(services, "Alice Services", "7 containers")
                 Container(erpnext, "ERPNext", "15 containers")
                 Container(obs, "Observability", "13 containers")
@@ -457,7 +457,7 @@ C4Deployment
         }
     }
     
-    Rel(traefik, services, "HTTP")
+    Rel(caddy, services, "HTTP")
     Rel(services, gpuServices, "HTTP", "GPU Inference (local)")
 ```
 

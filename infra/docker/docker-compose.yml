@@ -13,27 +13,30 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U alice -d alice_development"]
+      test: ["CMD-SHELL", "pg_isready -U alice -d alice_development && psql -U alice -d alice_development -c 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - alice-network
 
-  traefik:
-    image: traefik:v3.6.5
-    container_name: alice-gateway
-    command:
-      - "--api.insecure=true"
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:80"
-      - "--log.level=INFO"
+  # Caddy substitui Traefik em todos os ambientes (MIGRAÇÃO 02/01/2026)
+  caddy:
+    build:
+      context: ./
+      dockerfile: Dockerfile.caddy
+    container_name: alice-caddy
     ports:
       - "80:80"
-      - "8080:8080"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ACME_EMAIL: admin@yesyoudeserve.duckdns.org
+      NODE_ENV: development
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
     networks:
       - alice-network
 
@@ -51,10 +54,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.auth.rule=PathPrefix(`/api/auth`)"
-      - "traefik.http.services.auth.loadbalancer.server.port=3001"
     networks:
       - alice-network
 
@@ -71,10 +70,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.chat.rule=PathPrefix(`/api/chat`) || PathPrefix(`/ws/chat`)"
-      - "traefik.http.services.chat.loadbalancer.server.port=3002"
     networks:
       - alice-network
 
@@ -91,10 +86,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.rag.rule=PathPrefix(`/api/rag`)"
-      - "traefik.http.services.rag.loadbalancer.server.port=3003"
     networks:
       - alice-network
 
@@ -111,10 +102,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.training.rule=PathPrefix(`/api/training`)"
-      - "traefik.http.services.training.loadbalancer.server.port=3004"
     networks:
       - alice-network
 
@@ -136,10 +123,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.integrations.rule=PathPrefix(`/api/integrations`)"
-      - "traefik.http.services.integrations.loadbalancer.server.port=3005"
     networks:
       - alice-network
 
@@ -152,13 +135,16 @@ services:
     environment:
       NODE_ENV: development
     depends_on:
-      - traefik
+      caddy:
+        condition: service_healthy
     networks:
       - alice-network
 
 volumes:
   postgres_data:
     driver: local
+  caddy_data:
+  caddy_config:
 
 networks:
   alice-network:

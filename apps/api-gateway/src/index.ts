@@ -2,7 +2,7 @@
  * Alice Enterprise Platform - API Gateway (Desenvolvimento)
  * 
  * Gateway de desenvolvimento para orquestrar microserviços localmente.
- * Em produção, usar Traefik com a configuração em config/traefik.yml
+ * Em produção, usar Caddy com a configuração em infra/docker/Caddyfile
  * 
  * Funcionalidades:
  * - Rate limiting (Regra 16 - Best Practices 2025)
@@ -201,7 +201,7 @@ const app: express.Application = express();
 // SEGURANÇA: Desabilitar X-Powered-By header (Express.js 2025 + OWASP API8)
 app.disable('x-powered-by');
 
-// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Traefik)
+// SEGURANÇA: Trust proxy = 1 para confiar apenas no primeiro proxy (Caddy)
 // Evita bypass de rate limiting (express-rate-limit 2025 best practice)
 app.set('trust proxy', 1);
 

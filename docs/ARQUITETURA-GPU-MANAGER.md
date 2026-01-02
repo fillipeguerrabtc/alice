@@ -1,8 +1,8 @@
 # Arquitetura GPU Manager Service
 
 **Autor:** Fillipe Guerra  
-**Data:** 28 de Dezembro de 2025  
-**Versão:** 1.4.0
+**Data:** 02 de Janeiro de 2026  
+**Versão:** 1.5.0 - Migração Caddy Gateway
 
 ---
 

@@ -1,7 +1,8 @@
 # Observability Service - Alice Enterprise Platform
 
 **Autor:** Fillipe Guerra  
-**Data:** 14 de Dezembro de 2025
+**Data:** 02 de Janeiro de 2026
+**Versão:** 3.0.0 - Migração Caddy Gateway (Traefik removido)
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
@@ -82,36 +83,29 @@ docker-compose down
 
 > **Alertas**: Gerenciados via Grafana Alerting (menu Alerting no Grafana).
 
-## Configuração do API Gateway (Traefik)
+## Configuração do API Gateway (Caddy)
 
-O frontend Alice acessa os endpoints `/api/observability/*` através do API Gateway.
-Em produção, configure o Traefik para rotear essas requisições para o observability-service:
+O frontend Alice acessa os endpoints `/api/observability/*` através do Caddy.
+Em produção, o Caddyfile em `infra/docker/Caddyfile` gerencia o roteamento automaticamente:
 
-```yaml
-# docker-compose.yml ou traefik/dynamic/observability.yml
-http:
-  routers:
-    observability-api:
-      rule: "PathPrefix(`/api/observability`)"
-      service: observability-service
-      middlewares:
-        - auth-session
-      entryPoints:
-        - websecure
-      tls:
-        certResolver: letsencrypt
+```caddy
+observability.yesyoudeserve.duckdns.org {
+	import security_headers
+	
+	reverse_proxy grafana:3000 {
+		import proxy_headers
+	}
+}
+```
 
-  services:
-    observability-service:
-      loadBalancer:
-        servers:
-          - url: "http://observability-health:3007"
+O roteamento para a API de observabilidade é feito via subpath:
 
-  middlewares:
-    auth-session:
-      forwardAuth:
-        address: "http://auth-service:3001/api/auth/verify"
-        trustForwardHeader: true
+```caddy
+handle /api/observability/* {
+    reverse_proxy alice-observability:3010 {
+        import proxy_headers
+    }
+}
 ```
 
 ### Autenticação
@@ -225,4 +219,4 @@ apps/observability-service/
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
 *Versão 2.7.0 - 17 de Dezembro de 2025*
 *Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
-*Total de Containers: 51 (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Total de Containers: 50 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

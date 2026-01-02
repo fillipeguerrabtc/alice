@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.28 - Fix Caddy Dockerfile User error
+> **Versão:** 4.52 - Caddy Gateway (Traefik removido)
 
 ---
 
@@ -651,14 +651,13 @@ Retenção Arquivo:   30 dias
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
-| 1 | dockerproxy | tecnativa/docker-socket-proxy | Proxy seguro Docker API |
-| 2 | alice-caddy | caddy:2.8.4-alpine | API Gateway + SSL automático + HTTP/3 |
-| 3 | alice-pgbackrest-init | pgbackrest:2.57.0 | Init stanza backup PostgreSQL |
-| 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
-| 5 | alice-redis | redis:8.4.0-alpine | Cache distribuído (node-redis 5.x suporta Redis 8) |
-| 6 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
-| 7 | alice-tor | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
-| 8 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
+| 1 | `alice-pgbackrest-init` | pgbackrest:2.57.0 | Init stanza backup PostgreSQL |
+| 2 | `alice-caddy` | caddy:2.8.4-alpine | API Gateway + SSL automático + HTTP/3 |
+| 3 | `alice-postgres` | postgres:16-alpine | Banco principal + pgvector |
+| 4 | `alice-redis` | redis:8.4.0-alpine | Cache distribuído |
+| 5 | `alice-qdrant` | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
+| 6 | `alice-tor` | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
+| 7 | `alice-searxng` | searxng/searxng | Metabusca interna (SearXNG) |
 
 ### Alice Microservices (8)
 

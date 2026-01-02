@@ -90,8 +90,8 @@ volumes:
       o: bind
       device: /opt/alice/data/redis-alice
 
-  # MIGRAÇÃO 02/01/2026: Traefik substituído por Caddy
-  # Caddy oferece SSL automático com retry inteligente e HTTP/3 nativo
+  # Caddy - Reverse Proxy com SSL Automático
+  # Oferece SSL automático com retry inteligente e HTTP/3 nativo
   caddy_data:
     name: alice-caddy-data
     driver: local
@@ -329,17 +329,9 @@ services:
           cpus: '0.25'
 
   # ===========================================================================
-  # CADDY - Reverse Proxy com SSL Automático (Substitui Traefik)
+  # CADDY - Reverse Proxy com SSL Automático
   # ===========================================================================
-  # MIGRAÇÃO 02/01/2026: Traefik → Caddy
-  # Vantagens do Caddy:
-  # - SSL automático via ACME com retry inteligente
-  # - HTTP/3 nativo (QUIC protocol)
-  # - Footprint menor: 40MB vs 100MB (Traefik)
-  # - Configuração declarativa via Caddyfile
-  # - Elimina necessidade de dockerproxy (acesso ao socket Docker)
-  # - Security headers nativos
-  #
+  # SSL automático via ACME com retry inteligente e HTTP/3 nativo.
   # Docs: https://caddyserver.com/docs/
   # ===========================================================================
   caddy:
@@ -689,14 +681,12 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-    # MIGRAÇÃO 02/01/2026: Caddy substitui Traefik
     # Rotas configuradas no Caddyfile (não via labels)
     depends_on:
       caddy:
         condition: service_healthy
     networks:
       - alice-network
-    # Labels Traefik removidas - Caddy usa Caddyfile declarativo
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -785,7 +775,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -854,7 +843,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -943,7 +931,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
     # RAG Service usa node:22-bookworm-slim (base consistente com dependências do serviço; suporte a vídeo foi removido)
       # CORREÇÃO 21/12/2025: Usar /live (liveness probe - processo vivo) para Docker healthcheck
@@ -1013,7 +1000,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -1112,7 +1098,6 @@ services:
     networks:
       - alice-network
       - erpnext-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
       # /live verifica se processo está vivo (liveness probe)
@@ -1184,7 +1169,6 @@ services:
         condition: service_healthy
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # Distroless não tem curl/wget, usar Node.js diretamente
       # CORREÇÃO 01/01/2026: Alpine usa "node" no PATH (não /nodejs/bin/node do Distroless)
@@ -1747,7 +1731,6 @@ services:
         condition: service_started
     networks:
       - erpnext-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # BUG FIX 24/12/2025: Aumentado start_period de 30s para 90s
       # ERPNext frontend depende do backend estar healthy, pode demorar mais
@@ -1786,7 +1769,6 @@ services:
         condition: service_started
     networks:
       - erpnext-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider 'http://localhost:9000/socket.io/?EIO=4&transport=polling' || exit 1"]
       interval: 30s
@@ -2747,7 +2729,6 @@ services:
       - /opt/alice/data/jaeger:/badger
     networks:
       - alice-network
-    # MIGRAÇÃO 02/01/2026: Labels Traefik removidas - Caddy usa Caddyfile declarativo
     healthcheck:
       # MUDANÇA v2: Health check agora na porta 13133 (healthcheckv2 extension)
       test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:13133/"]

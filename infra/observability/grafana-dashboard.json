@@ -109,7 +109,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(traefik_service_requests_total[5m]))",
+          "expr": "sum(rate(caddy_http_requests_total[5m]))",
           "refId": "A"
         }
       ],
@@ -136,7 +136,7 @@
       "id": 5,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(traefik_service_request_duration_seconds_bucket[5m])) by (le)) * 1000",
+          "expr": "histogram_quantile(0.95, sum(rate(caddy_http_request_duration_seconds_bucket[5m])) by (le)) * 1000",
           "refId": "A"
         }
       ],
@@ -164,7 +164,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(traefik_service_requests_total[5m])) by (service)",
+          "expr": "sum(rate(caddy_http_requests_total[5m])) by (handler)",
           "legendFormat": "{{service}}",
           "refId": "A"
         }
@@ -186,7 +186,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(traefik_service_requests_total{code=~\"5..\"}[5m])) by (service)",
+          "expr": "sum(rate(caddy_http_requests_total{status=~\"5..\"}[5m])) by (handler)",
           "legendFormat": "{{service}}",
           "refId": "A"
         }

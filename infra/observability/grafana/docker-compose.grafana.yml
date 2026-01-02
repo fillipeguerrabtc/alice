@@ -32,8 +32,8 @@ services:
       - grafana-data:/var/lib/grafana
     environment:
       # Server
-      - GF_SERVER_DOMAIN=${GF_SERVER_DOMAIN:-grafana.yesyoudeserve.duckdns.org}
-      - GF_SERVER_ROOT_URL=${GF_SERVER_ROOT_URL:-https://grafana.yesyoudeserve.duckdns.org}
+      - GF_SERVER_DOMAIN=${GF_SERVER_DOMAIN:-observability.yesyoudeserve.duckdns.org}
+      - GF_SERVER_ROOT_URL=${GF_SERVER_ROOT_URL:-https://observability.yesyoudeserve.duckdns.org}
       
       # Security
       - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:?GF_SECURITY_ADMIN_PASSWORD is required}
@@ -66,13 +66,7 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
-    labels:
-      # Traefik labels para routing
-      - "traefik.enable=true"
-      - "traefik.http.routers.grafana.rule=Host(`grafana.yesyoudeserve.duckdns.org`)"
-      - "traefik.http.routers.grafana.entrypoints=websecure"
-      - "traefik.http.routers.grafana.tls.certresolver=letsencrypt"
-      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+    # Caddy usa Caddyfile declarativo para routing (MIGRAÇÃO 02/01/2026)
     deploy:
       resources:
         limits:

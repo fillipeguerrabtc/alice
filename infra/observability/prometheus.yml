@@ -28,9 +28,9 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_timeout: 10s
 
-  - job_name: 'traefik'
+  - job_name: 'caddy'
     static_configs:
-      - targets: ['alice-traefik:8080']
+      - targets: ['alice-caddy:2019']
     metrics_path: '/metrics'
 
   - job_name: 'vector'

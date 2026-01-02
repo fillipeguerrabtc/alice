@@ -127,7 +127,7 @@
       "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "center", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
       "title": "API Gateway",
       "type": "stat",
-      "targets": [{ "expr": "up{job=\"traefik\"}", "refId": "A" }]
+      "targets": [{ "expr": "up{job=\"caddy\"}", "refId": "A" }]
     },
     {
       "datasource": { "type": "prometheus", "uid": "prometheus" },

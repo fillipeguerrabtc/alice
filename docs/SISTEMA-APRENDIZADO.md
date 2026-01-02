@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Versão:** 3.9 - Otimização CI Performance Enterprise  
-**Data:** 28 de Dezembro de 2025
+**Data:** 02 de Janeiro de 2026
 
 > Atualização 21/12/2025: Ajuste no CI para evitar duplicação de execuções (push apenas em `main` + PR) e correção de tipos do frontend (SignalApprovalPanel/TechnicalAnalysisPanel) garantindo sucesso do Release.
 

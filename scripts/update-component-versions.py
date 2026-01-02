@@ -38,10 +38,10 @@ except ImportError:
 # CONFIGURAÇÃO DE COMPONENTES
 # =============================================================================
 COMPONENT_CONFIG = {
-    "traefik": {
-        "docker_image": "traefik",
-        "version_prefix": "v",
-        "services": ["traefik"],
+    "caddy": {
+        "docker_image": "caddy",
+        "version_prefix": "",
+        "services": ["alice-caddy"],
     },
     "prometheus": {
         "docker_image": "prom/prometheus",
@@ -92,15 +92,10 @@ COMPONENT_CONFIG = {
             "erpnext-websocket",  # Websocket também usa frappe/erpnext (não frappe-socketio)
         ],
     },
-    "docker-socket-proxy": {
-        "docker_image": "tecnativa/docker-socket-proxy",
-        "version_prefix": "v",
-        "services": ["dockerproxy"],
-    },
     "busybox": {
         "docker_image": "busybox",
         "version_prefix": "",
-        "services": ["traefik-init"],
+        "services": ["pgbackrest-init"],
     },
     "redis": {
         "docker_image": "redis",
@@ -219,8 +214,8 @@ def main():
     )
     
     # Argumentos para cada componente
-    components = ["traefik", "prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "erpnext", 
-                  "docker-socket-proxy", "busybox", "redis", "mariadb"]
+    components = ["caddy", "prometheus", "grafana", "loki", "promtail", "jaeger", "langfuse", "erpnext", 
+                  "busybox", "redis", "mariadb"]
     for component in components:
         parser.add_argument(f"--{component}-version", help=f"Versão do {component}")
         parser.add_argument(f"--{component}-digest", default="", help=f"SHA256 digest do {component}")

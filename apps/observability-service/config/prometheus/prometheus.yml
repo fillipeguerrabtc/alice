@@ -82,11 +82,11 @@ scrape_configs:
     scrape_interval: 30s
 
   # ============================================================================
-  # TRAEFIK API GATEWAY
+  # CADDY API GATEWAY (MIGRAÇÃO 02/01/2026)
   # ============================================================================
-  - job_name: 'traefik'
+  - job_name: 'caddy'
     static_configs:
-      - targets: ['host.docker.internal:8080']
+      - targets: ['host.docker.internal:2019']
     metrics_path: /metrics
     scrape_interval: 15s
 

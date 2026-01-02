@@ -18,7 +18,7 @@
 set -euo pipefail
 
 DOMAIN="${1:-yesyoudeserve.duckdns.org}"
-CERT_DIR="/opt/alice/data/traefik-acme/fallback"
+CERT_DIR="/opt/alice/data/caddy-data/fallback"
 VALIDITY_DAYS=365
 
 echo "=============================================="
@@ -106,12 +106,9 @@ echo ""
 echo "⚠️  IMPORTANTE:"
 echo "   - Este certificado NÃO é confiável por navegadores"
 echo "   - Use apenas como fallback até Let's Encrypt rate limit expirar"
-echo "   - Para usar no Traefik, configure em docker-compose.prod.yml:"
+echo "   - Para usar no Caddy, configure em infra/docker/Caddyfile:"
 echo ""
-echo "   traefik:"
-echo "     volumes:"
-echo "       - $CERT_DIR:/certs/fallback:ro"
-echo "     command:"
-echo "       - \"--entrypoints.websecure.http.tls.certificates.certFile=/certs/fallback/cert.crt\""
-echo "       - \"--entrypoints.websecure.http.tls.certificates.keyFile=/certs/fallback/cert.key\""
+echo "   {\$DOMAIN} {"
+echo "     tls /data/fallback/cert.crt /data/fallback/cert.key"
+echo "   }"
 echo ""

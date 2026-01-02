@@ -10,7 +10,7 @@
 # - LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)
 # - Vector DB: Qdrant (texto) + PostgreSQL pgvector (imagem)
-# - API Gateway: Traefik v3.6.4 (NÃO Nginx)
+# - API Gateway: Caddy 2.8.4 (MIGRAÇÃO 02/01/2026)
 # - GPU Manager Service: Gerenciamento centralizado de requisições GPU
 #
 # Servidor: GEX44 (Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD RAID 1, RTX 4000 Ada 20GB)
@@ -196,7 +196,8 @@ DIRS=(
     /opt/alice/data/postgres
     /opt/alice/data/redis-alice
     /opt/alice/data/qdrant
-    /opt/alice/data/traefik-acme
+    /opt/alice/data/caddy-data
+    /opt/alice/data/caddy-config
     /opt/alice/data/searxng-config
     /opt/alice/data/erpnext-sites
     /opt/alice/data/erpnext-mariadb

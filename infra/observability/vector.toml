@@ -20,7 +20,7 @@ include_containers = [
   "alice-training",
   "alice-integrations",
   "alice-frontend",
-  "alice-traefik"
+  "alice-caddy"
 ]
 
 [sources.host_metrics]
