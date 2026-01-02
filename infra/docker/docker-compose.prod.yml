@@ -1,7 +1,7 @@
 # =============================================================================
 # ALICE PLATFORM - DOCKER COMPOSE PRODUÇÃO
 # =============================================================================
-# Versão: 4.5
+# Versão: 4.6
 # Ambiente: Produção (Hetzner Cloud - Servidor Único com GPU)
 # Servidor: GPU Hetzner GEX44 (RTX 4000 Ada 20GB), Intel Core i5-13500 14 Core, 64GB DDR4 RAM, 2x 1.92TB NVMe SSD
 # NOTA: Servidor único GEX44 - todos os 51 containers rodam no mesmo servidor (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)
@@ -433,7 +433,10 @@ services:
         # =================================================================
         
         # Validar que variável de ambiente está definida (fail-fast)
-        if [ -z "${PGBACKREST_REPO1_CIPHER_PASS:-}" ]; then
+        # CORREÇÃO CRÍTICA 02/01/2026: Escapar $ como $$ para Docker Compose passar variável literalmente
+        # Docker Compose interpreta ${VAR} como variável do compose, não do container
+        # $$ é escape do Docker Compose que resulta em $ literal no script do container
+        if [ -z "$${PGBACKREST_REPO1_CIPHER_PASS:-}" ]; then
           echo "❌ [pgBackRest Init] ERRO: PGBACKREST_REPO1_CIPHER_PASS não definido"
           echo "   Configure BACKUP_CIPHER_PASS nos secrets do GitHub"
           exit 1

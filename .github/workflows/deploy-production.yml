@@ -1058,7 +1058,8 @@ jobs:
             # 
             # VALIDAÇÃO: Verificar estrutura e permissões ANTES de docker compose
             # =================================================================
-            progress 4.5 "Validando repositório pgBackRest"
+            # CORREÇÃO 02/01/2026: Usar inteiro (bash não suporta decimais em aritmética)
+            progress 4 "Validando repositório pgBackRest"
             echo "🔍 Validando repositório pgBackRest..."
             
             # Verificar se diretório principal existe

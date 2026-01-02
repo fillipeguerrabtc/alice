@@ -369,7 +369,9 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
-*Versão: 4.60 - 02 de Janeiro de 2026*
+*Versão: 4.61 - 02 de Janeiro de 2026*
+*CRITICAL BUG FIX pgbackrest-init Docker Compose Variable Expansion (02/01/2026): CAUSA RAIZ DO DEPLOY FALHANDO IDENTIFICADA - Container pgbackrest-init falhava com "PGBACKREST_REPO1_CIPHER_PASS não definido" mesmo com BACKUP_CIPHER_PASS corretamente configurado no .env.prod. PROBLEMA: No script inline do `command:`, a variável `${PGBACKREST_REPO1_CIPHER_PASS:-}` era expandida pelo Docker Compose (que não conhece essa variável de ambiente do container) ANTES de passar para o shell do container, resultando em string vazia. SOLUÇÃO: Escapar `$` como `$$` para que Docker Compose passe a variável literalmente (`$${PGBACKREST_REPO1_CIPHER_PASS:-}`) e o shell do container faça a expansão. ARQUIVOS MODIFICADOS: infra/docker/docker-compose.prod.yml (linha 439). Esta correção é CRÍTICA para o primeiro deploy funcionar - sem ela, pgBackRest init falha e impede todo o deploy. Ref: https://docs.docker.com/compose/compose-file/12-interpolation/*
+*Bug Fix progress Decimal Arithmetic (02/01/2026): Corrigido `progress 4.5` para `progress 4` - bash não suporta decimais em expressões aritméticas. Causava "syntax error: invalid arithmetic operator".*
 *Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 13 observability + 6 GPU + 1 backup + 1 storage)*
 *GitHub Secrets: 54 configurados (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN adicionados 20/12/2025)*
 *Storage: Volume Hetzner 100GB local (/opt/alice) - SEM S3 externo*
