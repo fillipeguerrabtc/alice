@@ -33,12 +33,12 @@
 	# Admin API (healthcheck interno)
 	admin :2019
 	
-	# Métricas Prometheus (opt-in Caddy 2.6+)
-	metrics
-	
-	# HTTP/3 habilitado globalmente (QUIC)
+	# HTTP/3 habilitado globalmente (QUIC) + Métricas Prometheus
+	# CORREÇÃO 02/01/2026: 'metrics' deve estar DENTRO do bloco 'servers'
+	# Ref: https://caddyserver.com/docs/caddyfile/options#servers
 	servers {
 		protocols h1 h2 h3
+		metrics
 	}
 	
 	# Logs estruturados
