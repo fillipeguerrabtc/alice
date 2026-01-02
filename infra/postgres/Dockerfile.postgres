@@ -151,7 +151,7 @@ RUN mkdir -p /var/lib/pgbackrest \
     && chown -R postgres:postgres /etc/pgbackrest
 
 # Copiar configuração pgBackRest para PostgreSQL
-COPY infra/postgres/pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
+COPY pgbackrest-pg.conf /etc/pgbackrest/pgbackrest.conf
 RUN chown postgres:postgres /etc/pgbackrest/pgbackrest.conf
 
 # =============================================================================
