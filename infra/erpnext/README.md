@@ -34,12 +34,15 @@ O stack ERPNext inclui:
 | Container             | Imagem                       | Função                    |
 |-----------------------|------------------------------|---------------------------|
 | erpnext-db            | mariadb:10.11                | Banco de dados            |
-| erpnext-redis         | redis:7-alpine               | Cache e filas             |
+| erpnext-redis-cache   | redis:6.2.21-alpine          | Cache (ERPNext v15 requer Redis 6.x) |
+| erpnext-redis-queue   | redis:6.2.21-alpine          | Filas (ERPNext v15 requer Redis 6.x) |
 | erpnext-backend       | frappe/erpnext:v15.91.3      | Backend Python            |
 | erpnext-frontend      | frappe/erpnext:v15.91.3      | Servidor web (NGINX)      |
 | erpnext-socketio      | frappe/erpnext:v15.91.3      | Real-time WebSocket       |
 | erpnext-scheduler     | frappe/erpnext:v15.91.3      | Jobs agendados            |
 | erpnext-worker-*      | frappe/erpnext:v15.91.3      | Workers de background     |
+
+> **IMPORTANTE (01/01/2026)**: ERPNext v15 **REQUER Redis 6.x** conforme documentação oficial Frappe (docs.frappe.io). Redis 7+ pode causar problemas de compatibilidade. Alice usa Redis 8.4 (segregado) porque node-redis 5.x suporta completamente.
 
 **SEGURANÇA:** v15.91.3 inclui TODOS os patches de segurança (SQL Injection, XSS, etc).
 Ver `docs/FRAPPE-PATCHING.md` para detalhes.

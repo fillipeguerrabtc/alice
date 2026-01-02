@@ -590,13 +590,14 @@ services:
 
   # ===========================================================================
   # ALICE REDIS - Cache Distribuído para Serviços Alice
-  # Docs 2025: Redis 7.4 - Cache de sessões e dados temporários
+  # Docs 2026: Redis 8.4 - Cache de sessões e dados temporários
+  # COMPATIBILIDADE: node-redis 5.x suporta Redis 8 completamente (redis.io/blog/redis-8-ga)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   # ISOLAMENTO: Redis dedicado para Alice (segregação de ERPNext - Regra 15)
   # ===========================================================================
   alice-redis:
-    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine
+    # ATUALIZADO 01/01/2026: 7.4.6-alpine -> 8.4.0-alpine (node-redis 5.x suporta Redis 8)
+    image: redis:8.4.0-alpine
     platform: linux/amd64
     container_name: alice-redis
     restart: always

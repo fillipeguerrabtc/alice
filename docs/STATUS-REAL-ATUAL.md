@@ -653,7 +653,7 @@ Retenção Arquivo:   30 dias
 | 2 | traefik-init | busybox:1.36 | Inicializa ACME |
 | 3 | traefik | traefik:v3.6.4 | API Gateway + SSL + Rate Limiting |
 | 4 | postgres | pgvector/pgvector:pg16 | Banco principal + RLS |
-| 5 | alice-redis | redis:7-alpine | Cache distribuído dedicado Alice |
+| 5 | alice-redis | redis:8.4.0-alpine | Cache distribuído (node-redis 5.x suporta Redis 8) |
 | 6 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim) |
 | 7 | alice-tor | dperson/torproxy | Proxy SOCKS5 Tor para engines .onion |
 | 8 | alice-searxng | searxng/searxng | Metabusca interna (SearXNG) para Web Search |
@@ -684,8 +684,8 @@ Retenção Arquivo:   30 dias
 | # | Container | Função |
 |---|-----------|--------|
 | 15 | erpnext-mariadb | Banco ERPNext |
-| 16 | erpnext-redis-cache | Cache |
-| 17 | erpnext-redis-queue | Filas |
+| 16 | erpnext-redis-cache | Cache (Redis 6.2 - ERPNext v15 requer 6.x) |
+| 17 | erpnext-redis-queue | Filas (Redis 6.2 - ERPNext v15 requer 6.x) |
 | 18 | erpnext-configurator | Configuração inicial |
 | 19 | erpnext-create-site | Criação site |
 | 20 | erpnext-backend | Frappe/Python |

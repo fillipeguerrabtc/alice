@@ -106,7 +106,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 2 | Traefik Init | `traefik-init` | Inicializador de certificados SSL |
 | 3 | API Gateway | `traefik` | Gateway com SSL automático (Let's Encrypt) |
 | 4 | PostgreSQL | `postgres` | Banco principal com pgvector e RLS |
-| 5 | Alice Redis | `alice-redis` | Cache distribuído dedicado para Alice |
+| 5 | Alice Redis | `alice-redis` | Cache distribuído (Redis 8.4 - node-redis 5.x) |
 | 6 | Qdrant | `alice-qdrant` | Banco vetorial para texto (4096 dim, HNSW index) |
 | 7 | SearXNG | `alice-searxng` | Metabusca interna (Web Search) |
 
@@ -129,8 +129,8 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | # | Serviço | Container | Descrição |
 |---|---------|-----------|-----------|
 | 15 | MariaDB | `erpnext-mariadb` | Banco de dados ERPNext |
-| 16 | Redis Cache | `erpnext-redis-cache` | Cache de sessões ERPNext |
-| 17 | Redis Queue | `erpnext-redis-queue` | Fila de jobs ERPNext |
+| 16 | Redis Cache | `erpnext-redis-cache` | Cache ERPNext (Redis 6.2 - compatibilidade v15) |
+| 17 | Redis Queue | `erpnext-redis-queue` | Fila ERPNext (Redis 6.2 - compatibilidade v15) |
 | 18 | Configurator | `erpnext-configurator` | Configurador Frappe Bench (init) |
 | 19 | Create Site | `erpnext-create-site` | Criador do site ERPNext (init) |
 | 20 | Backend | `erpnext-backend` | Backend Python Frappe |
@@ -472,12 +472,15 @@ Proprietário - Todos os direitos reservados.
 | Traefik | v3.6.4 | Pinned |
 | PostgreSQL | pg16 (pgvector) | Pinned |
 | MariaDB | 10.11 | Pinned |
-| Redis | 7.4.6-alpine | Pinned |
+| Redis (Alice) | 8.4.0-alpine | Pinned |
+| Redis (ERPNext) | 6.2.21-alpine | Pinned |
 | ERPNext | v15.91.3 | Pinned |
-| Vector | 0.51.1-alpine | Pinned |
+| Vector | 0.45.0-alpine | Pinned |
 | pgBackRest | 2.57.0 | Pinned |
 | Docker Socket Proxy | latest | Pinned |
 | BusyBox | 1.37 | Pinned |
+
+> **NOTA Redis (01/01/2026)**: Alice usa Redis 8.4 (node-redis 5.x suporta completamente). ERPNext usa Redis 6.2 (ERPNext v15 requer Redis 6.x conforme docs.frappe.io).
 
 ### Immutable Infrastructure
 

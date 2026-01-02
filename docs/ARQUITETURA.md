@@ -180,7 +180,7 @@ C4Container
         Container(observability, "Observability", "Node.js", "Health, Backup")
         
         ContainerDb(postgres, "PostgreSQL", "PostgreSQL 16", "pgvector, RLS")
-        ContainerDb(redis, "Redis", "Redis 7.4", "Cache, Pub/Sub")
+        ContainerDb(redis, "Redis", "Redis 8.4 (Alice) / 6.2 (ERPNext)", "Cache, Pub/Sub")
         ContainerDb(qdrant, "Qdrant", "Vector DB", "Embeddings texto 4096 dim")
     }
     
@@ -208,7 +208,7 @@ C4Container
 | 2 | `traefik-init` | Alpine | - | Inicialização SSL |
 | 3 | `traefik` | Traefik v3.6.5 | 80,443 | API Gateway, SSL automático |
 | 4 | `postgres` | PostgreSQL 16 | 5432 | Banco principal + pgvector |
-| 5 | `alice-redis` | Redis 7.4 | 6379 | Cache distribuído |
+| 5 | `alice-redis` | Redis 8.4 | 6379 | Cache distribuído (node-redis 5.x) |
 | 6 | `alice-qdrant` | Qdrant | 6333 | Embeddings texto (4096 dim) |
 | 7 | `alice-tor` | torproxy | 9050 | Proxy SOCKS5 Tor (.onion) |
 | 8 | `alice-searxng` | SearXNG | 8080 | Metabusca interna |
@@ -229,7 +229,7 @@ C4Container
 
 | # | Container | Descrição |
 |---|-----------|-----------|
-| 15-29 | ERPNext | MariaDB, Redis x2, Backend, Frontend, WebSocket, Scheduler, 9 Workers |
+| 15-29 | ERPNext | MariaDB, Redis 6.2 x2 (cache+queue), Backend, Frontend, WebSocket, Scheduler, 9 Workers |
 
 #### Observability Stack (13)
 

@@ -130,6 +130,18 @@ Embeddings otimizados por caso de uso para máxima qualidade:
 | **pgvector** | x86-64-v3 | Compilado com `-march=x86-64-v3` para compatibilidade |
 | **GPU Services** | CUDA 12.x | RTX 4000 Ada 20GB |
 
+### Versões Redis e Compatibilidade (CRÍTICO - Atualizado 01/01/2026)
+
+| Serviço | Versão Redis | Justificativa |
+|---------|--------------|---------------|
+| **Alice Redis** | `redis:8.4.0-alpine` | Alice usa `node-redis 5.x` que suporta Redis 8 completamente (fonte: redis.io/blog/redis-8-ga) |
+| **ERPNext Redis (cache + queue)** | `redis:6.2.21-alpine` | ERPNext v15 **REQUER Redis 6.x** conforme documentação oficial Frappe (fonte: docs.frappe.io) |
+
+**ALERTA CRÍTICO - Compatibilidade Redis:**
+- **Alice**: Usa biblioteca `node-redis` (não ioredis). node-redis 5.x suporta Redis 8 completamente.
+- **ERPNext**: Documentação oficial Frappe especifica que ERPNext v15 requer Redis versão 6. Redis 7+ pode causar problemas de compatibilidade.
+- **Segregação Enterprise**: Alice Redis e ERPNext Redis são containers SEPARADOS (Regra 15 - Microsserviços), permitindo versões diferentes.
+
 **ALERTA CRÍTICO - pgvector e AVX-512:**
 - A extensão pgvector pode ser compilada com instruções AVX-512 em runners de CI com CPUs modernas
 - O Intel i5-13500 do servidor Hetzner **NÃO suporta AVX-512**

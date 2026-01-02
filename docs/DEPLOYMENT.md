@@ -20,7 +20,7 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | 2 | **Traefik Init** | `traefik-init` | Inicializador de certificados SSL. Configura permissões do diretório ACME para que Traefik rode como non-root. | BusyBox 1.37 |
 | 3 | **API Gateway** | `traefik` | Gateway de API com SSL automático (Let's Encrypt), roteamento dinâmico, rate limiting, HTTP/2. | Traefik v3.6.4 |
 | 4 | **PostgreSQL** | `postgres` | Banco de dados principal com extensão pgvector para busca semântica, RLS para multi-tenancy. | PostgreSQL 16 + pgvector |
-| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. | Redis 7.4.6 Alpine |
+| 5 | **Alice Redis** | `alice-redis` | Cache distribuído dedicado para serviços Alice (sessões, RBAC). Segregação enterprise do ERPNext. node-redis 5.x suporta Redis 8. | Redis 8.4.0 Alpine |
 | 6 | **Qdrant** | `alice-qdrant` | Banco vetorial para embeddings de texto (4096 dim Qwen3-Embedding-8B). HNSW index otimizado. | Qdrant v1.16.2 |
 | 7 | **Tor Proxy** | `alice-tor` | Proxy SOCKS5 Tor para engines .onion no SearXNG (ahmia, torch). Enterprise 23/12/2025. | dperson/torproxy |
 | 8 | **SearXNG** | `alice-searxng` | Metabusca interna para Web Search (auto-hospedado, protegido por secret) | searxng/searxng |
@@ -48,8 +48,8 @@ A plataforma Alice é composta por **51 containers** organizados em 7 categorias
 | # | Serviço | Container | Descrição | Tecnologia |
 |---|---------|-----------|-----------|------------|
 | 15 | **MariaDB** | `erpnext-mariadb` | Banco de dados do ERPNext com replicação GTID, binlog para backup incremental. | MariaDB 10.11 |
-| 16 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. | Redis 7 Alpine |
-| 17 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). | Redis 7 Alpine |
+| 16 | **Redis Cache** | `erpnext-redis-cache` | Cache de sessões e dados frequentes do ERPNext. ERPNext v15 requer Redis 6.x. | Redis 6.2.21 Alpine |
+| 17 | **Redis Queue** | `erpnext-redis-queue` | Fila de jobs assíncronos do ERPNext (background jobs). ERPNext v15 requer Redis 6.x. | Redis 6.2.21 Alpine |
 | 18 | **Configurator** | `erpnext-configurator` | Configurador inicial do Frappe Bench. Roda uma vez no primeiro deploy. | Frappe/ERPNext v15.91.3 |
 | 19 | **Create Site** | `erpnext-create-site` | Criador do site ERPNext. Inicializa banco de dados e estrutura. | Frappe/ERPNext v15.91.3 |
 | 20 | **Backend** | `erpnext-backend` | Backend Python do Frappe/ERPNext. APIs REST e lógica de negócio. | Frappe/ERPNext v15.91.3 |
@@ -957,7 +957,8 @@ minio/mc:RELEASE.2024-10-29T15-34-59Z
 
 # Database & Vector Store
 clickhouse/clickhouse-server:25.12-alpine
-redis:7.4.6-alpine
+redis:8.4.0-alpine                # Alice (node-redis 5.x suporta Redis 8)
+redis:6.2.21-alpine               # ERPNext (requer Redis 6.x - docs.frappe.io)
 qdrant/qdrant:v1.16.2
 mariadb:10.11
 
@@ -1492,5 +1493,6 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 *Pipeline Enterprise (26/12/2025): Deploy Server (CPX32 - IP 46.224.46.93, 4 vCPU, 8GB RAM) separado + Production Server (GEX44 GPU - IP 178.63.41.108). Todos os 51 containers rodam no servidor único, incluindo GPU services gerenciados pelo GPU Manager Service.*
 *Otimização CI (27/12/2025): Composite action `.github/actions/setup-node-pnpm` elimina duplicação de setup (14x → 1x). Economia de ~6-10min por run. Fix cache persistence: usa actions/cache/restore + actions/cache/save separados (best practice 2025).*
 *GPU: RTX 4000 SFF Ada (20GB VRAM) - Mixtral 8x7B vLLM, FLUX.1 Schnell, ASR Canary-1B, Embeddings Qwen3+OpenCLIP*
-*Redis Alice: Cache distribuído dedicado (segregação enterprise do ERPNext)*
+*Redis Alice: 8.4.0-alpine - Cache distribuído (node-redis 5.x suporta Redis 8)*
+*Redis ERPNext: 6.2.21-alpine - ERPNext v15 requer Redis 6.x (docs.frappe.io)*
 *Retenção Padrão: Full 15d, Incremental 7d, Archive 30d*
