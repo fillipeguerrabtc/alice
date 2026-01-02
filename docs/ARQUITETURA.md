@@ -2,7 +2,7 @@
 
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
-> **Versão:** 1.14.0 - Caddy Gateway Metrics Fix  
+> **Versão:** 1.15.0 - Caddy Infrastructure Path Fix  
 > **Framework:** arc42 + C4 Model + ADRs  
 > **Idioma:** Português Brasileiro (termos técnicos em inglês)
 

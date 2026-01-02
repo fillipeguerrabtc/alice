@@ -5,18 +5,18 @@
 # Descrição: Verifica e configura automaticamente todos os requisitos para
 #            a arquitetura 100% GPU local (Hetzner GPU GEX44)
 #
-# ARQUITETURA ENTERPRISE (25/12/2025):
+# ARQUITETURA ENTERPRISE (02/01/2026):
 # - LLM: Mixtral 8x7B (vLLM AWQ) via GPU Manager Service (Hetzner GEX44)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim) via GPU Manager Service
 # - Vector DB: Qdrant (texto 4096 dim) + PostgreSQL pgvector (imagem 1024 dim)
-# - Containers: 50 totais (8 infra + 7 Alice + 15 ERPNext + 14 obs + 5 GPU + 1 backup)
+# - Containers: 50 totais (7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
 #
 # Uso: ./verify-hetzner-requirements.sh [--fix] [--verbose]
 #   --fix     : Corrige automaticamente problemas encontrados
 #   --verbose : Mostra detalhes adicionais
 #
 # Autor: Fillipe Guerra
-# Data: 25 de Dezembro de 2025
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 
 set -euo pipefail
@@ -236,7 +236,7 @@ REQUIRED_DIRS=(
     "/opt/alice/data/postgres"
     "/opt/alice/data/redis-alice"
     "/opt/alice/data/qdrant"
-    "/opt/alice/data/caddy-data"
+    "/opt/alice/data/caddy"
     "/opt/alice/data/caddy-config"
     "/opt/alice/data/searxng-config"
     "/opt/alice/data/erpnext-sites"

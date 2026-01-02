@@ -647,7 +647,7 @@ Retenção Arquivo:   30 dias
 
 ## 🐳 INFRAESTRUTURA DOCKER (50 containers)
 
-### Core Infra (8)
+### Core Infra (7)
 
 | # | Container | Imagem | Função |
 |---|-----------|--------|--------|
@@ -663,22 +663,21 @@ Retenção Arquivo:   30 dias
 
 | # | Container | Imagem Base | Função |
 |---|-----------|-------------|--------|
-| 7 | alice-frontend | nginx:1.27-alpine | React/Nginx |
-| 8 | alice-auth | gcr.io/distroless/nodejs22 | Autenticação |
-| 9 | alice-chat | gcr.io/distroless/nodejs22 | Chat + LLM |
-| 10 | alice-rag | node:22-bookworm-slim | RAG + Embeddings (texto/imagem/áudio/documentos) |
-| 11 | alice-training | gcr.io/distroless/nodejs22 | Fine-tuning |
-| 12 | alice-integrations | gcr.io/distroless/nodejs22 | Stripe/Wise/ERPNext |
-| 13 | alice-observability | gcr.io/distroless/nodejs22 | Health + Backup |
-| 14 | alice-qdrant | qdrant/qdrant:v1.16.2 | Banco vetorial texto (4096 dim HNSW) |
+| 8 | `alice-frontend` | nginx:1.27-alpine | React/Nginx |
+| 9 | `alice-auth` | node:22-alpine3.21 | Autenticação (OAuth/OIDC) |
+| 10 | `alice-chat` | node:22-alpine3.21 | Chat + LLM Streaming |
+| 11 | `alice-rag` | node:22-alpine3.21 | RAG + Processamento Multimodal |
+| 12 | `alice-training` | node:22-alpine3.21 | Fine-tuning/Aprendizado |
+| 13 | `alice-integrations` | node:22-alpine3.21 | Stripe/Wise/Twilio/ERPNext |
+| 14 | `alice-observability` | node:22-alpine3.21 | Health Checker/Backup Orchestrator |
+| 15 | `alice-gpu-manager` | node:22-alpine3.21 | Gestão de Requisições GPU |
 
 > **ARQUITETURA GPU ENTERPRISE (25/12/2025):** Todos os serviços GPU 100% locais no servidor Hetzner GPU GEX44, gerenciados pelo GPU Manager Service:
 > - **Texto (Trading/RAG):** Qwen3-Embedding-8B (4096 dim) → Qdrant (Apache 2.0 - única opção comercial top-tier)
 > - **Imagem:** OpenCLIP ViT-H/14 (1024 dim) → pgvector (MIT)
-> - **Configuração:** URLs configuradas como secrets no GitHub (ver [docs/SECRETS.md](SECRETS.md))
 > - **ASR:** Canary-1B (NeMo, Apache 2.0)
 > - **LLM:** Mixtral 8x7B (vLLM AWQ)
-> O container permanece para compatibilidade durante a transição.
+> - **Flux:** FLUX.1 Schnell (Geração de Imagens)
 
 ### ERPNext Stack (12)
 

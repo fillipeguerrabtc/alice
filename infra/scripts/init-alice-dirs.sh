@@ -23,7 +23,7 @@
 # - Secrets: 600 (rw-------) - apenas owner
 #
 # Autor: Fillipe Guerra
-# Data: 13 de Dezembro de 2025
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 
 set -euo pipefail

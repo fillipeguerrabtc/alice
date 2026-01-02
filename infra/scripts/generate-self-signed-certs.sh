@@ -13,12 +13,12 @@
 # por padrão. Use apenas como fallback temporário até rate limit expirar.
 #
 # Author: Fillipe Guerra
-# Data: 01 de Janeiro de 2026
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 set -euo pipefail
 
 DOMAIN="${1:-yesyoudeserve.duckdns.org}"
-CERT_DIR="/opt/alice/data/caddy-data/fallback"
+CERT_DIR="/opt/alice/data/caddy/fallback"
 VALIDITY_DAYS=365
 
 echo "=============================================="

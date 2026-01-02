@@ -7,7 +7,7 @@
 
 Este documento contém a lista completa de todos os secrets necessários para a plataforma Alice Enterprise, incluindo instruções de configuração para webhooks e OAuth.
 
-**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 25/12/2025)
+**Total de Secrets:** ~50 configurados no repositório GitHub (verificado em 02/01/2026)
 **Arquitetura:** Deploy Server (CPX32 - 4 vCPU, 8GB RAM) + Production Server (GEX44 GPU)
 **Arquitetura:** Cursor IDE é APENAS editor de código. Produção 100% na Hetzner Cloud.
 **Total de Containers:** 50 em produção (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)

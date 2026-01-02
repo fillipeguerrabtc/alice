@@ -269,3 +269,9 @@ jobs:
 - Compliance completo (dados na infra própria)
 - Performance otimizada (recursos dedicados)
 - Cache enterprise (Registry Cache GHCR)
+
+---
+
+*Autor: Fillipe Guerra*
+*Data: 02 de Janeiro de 2026*
+*Versão: 1.1 - Caddy Migration Validation*

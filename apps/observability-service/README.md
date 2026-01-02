@@ -6,7 +6,7 @@
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
-**Contexto:** Este é o serviço de observabilidade dos 51 containers da plataforma Alice Enterprise (8 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup).
+**Contexto:** Este é o serviço de observabilidade dos 50 containers da plataforma Alice Enterprise (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup).
 
 ## Componentes
 
@@ -217,6 +217,6 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 2.7.0 - 17 de Dezembro de 2025*
-*Tecnologias: Node.js 22 LTS, pnpm 10.24.0, TypeScript 5.9.3*
+*Versão 3.1.0 - 02 de Janeiro de 2026*
+*Tecnologias: Node.js 22 LTS (Alpine 3.21), pnpm 10.26.2, TypeScript 5.9.3*
 *Total de Containers: 50 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

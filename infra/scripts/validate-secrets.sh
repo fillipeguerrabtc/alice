@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# =============================================================================
+# Script de Validação de Secrets - Alice Enterprise Platform
+# =============================================================================
+# Autor: Fillipe Guerra
+# Data: 02 de Janeiro de 2026
+# =============================================================================
 set -euo pipefail
 
 echo "🔍 Validando secrets obrigatórias..."

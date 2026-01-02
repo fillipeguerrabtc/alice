@@ -5,16 +5,16 @@
 # Descrição: Configura servidor Hetzner GPU para deploy da Alice Enterprise Platform
 #            Instala Docker, NVIDIA Driver, NVIDIA Container Toolkit automaticamente
 #
-# ARQUITETURA ENTERPRISE (25/12/2025):
-# - 49 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 1 backup + 4 GPU)
-# - GPU Services: Mixtral 8x7B, Embeddings (Qwen3+OpenCLIP), FLUX.1, ASR Canary
+# ARQUITETURA ENTERPRISE (02/01/2026):
+# - 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 obs + 1 backup + 6 GPU)
+# - GPU Services: Mixtral 8x7B, Embeddings (Qwen3+OpenCLIP), FLUX.1, ASR Canary, Trainer
 # - Servidor Único: Todos os containers no mesmo servidor (latência zero)
 #
 # Uso: Executado automaticamente pelo pipeline CI/CD
 #      Ou manualmente: curl -fsSL https://raw.githubusercontent.com/.../setup-hetzner-gpu.sh | bash
 #
 # Autor: Fillipe Guerra
-# Data: 25 de Dezembro de 2025
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 
 set -euo pipefail
@@ -264,7 +264,7 @@ DIRS=(
     /opt/alice/data/postgres
     /opt/alice/data/redis-alice
     /opt/alice/data/qdrant
-    /opt/alice/data/caddy-data
+    /opt/alice/data/caddy
     /opt/alice/data/caddy-config
     /opt/alice/data/searxng-config
     /opt/alice/data/erpnext-sites

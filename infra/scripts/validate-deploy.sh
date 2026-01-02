@@ -9,6 +9,9 @@
 # Uso: ./validate-deploy.sh [--verbose] [--domain DOMINIO]
 #
 # Documentação PT-BR (Regra 10 CLAUDE.md)
+#
+# Autor: Fillipe Guerra
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 
 set -e

@@ -3,7 +3,7 @@
 # Script: generate-env-prod.sh
 # Descrição: Gera arquivo .env.prod para deploy em produção
 # Autor: Fillipe Guerra
-# Data: 21/12/2025
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 # REGRA 6 (CLAUDE.md): Enterprise-grade - sem mocks, sem hardcoded, persistência real
 # REGRA 8: Qualidade obrigatória - validação de todas as secrets obrigatórias

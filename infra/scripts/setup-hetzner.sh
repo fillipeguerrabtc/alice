@@ -5,8 +5,8 @@
 # Descrição: Configura servidor Hetzner para deploy da Alice Enterprise Platform
 #            com arquitetura 100% GPU local (Hetzner GPU GEX44)
 #
-# ARQUITETURA ENTERPRISE (25/12/2025):
-# - 51 containers (8 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
+# ARQUITETURA ENTERPRISE (02/01/2026):
+# - 50 containers (7 infra + 7 Alice + 15 ERPNext + 14 obs + 6 GPU + 1 backup)
 # - LLM: Mixtral 8x7B (vLLM AWQ) via Hetzner GPU GEX44 (RTX 4000 Ada 20GB)
 # - Embeddings: Qwen3-Embedding-8B (4096 dim) + OpenCLIP (1024 dim)
 # - Vector DB: Qdrant (texto) + PostgreSQL pgvector (imagem)
@@ -22,7 +22,7 @@
 # Uso: curl -fsSL https://raw.githubusercontent.com/.../setup-hetzner.sh | bash
 #
 # Autor: Fillipe Guerra
-# Data: 17 de Dezembro de 2025
+# Data: 02 de Janeiro de 2026
 # =============================================================================
 
 set -euo pipefail
@@ -196,7 +196,7 @@ DIRS=(
     /opt/alice/data/postgres
     /opt/alice/data/redis-alice
     /opt/alice/data/qdrant
-    /opt/alice/data/caddy-data
+    /opt/alice/data/caddy
     /opt/alice/data/caddy-config
     /opt/alice/data/searxng-config
     /opt/alice/data/erpnext-sites

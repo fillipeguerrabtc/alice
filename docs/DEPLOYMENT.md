@@ -1482,11 +1482,11 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 ---
 
 *Autor: Fillipe Guerra*
-*Documento atualizado em: 27 de Dezembro de 2025*
-*Versão: 7.11 - CPX32 Runner Enterprise Hardening*
-*Data: 27 de Dezembro de 2025*
-*Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Google Distroless*
-*Total de Containers: 51 (8 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
+*Documento atualizado em: 02 de Janeiro de 2026*
+*Versão: 7.12 - Caddy Migration Path Fix*
+*Data: 02 de Janeiro de 2026*
+*Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Alpine 3.21*
+*Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*
 *Security Hardening: 100% completo - 50/50 containers com no-new-privileges, 50/50 com resource limits, 25/50 com read_only*
 *Servidor: Ubuntu 24.04.3 LTS, Docker 29.1.3, Docker Compose v5.0.0*
 *Storage: Volume Hetzner alice-data 100GB montado em /opt/alice*
