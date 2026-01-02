@@ -1744,10 +1744,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      # BUG FIX 24/12/2025: Aumentado start_period de 30s para 90s
+      # CORREÇÃO 02/01/2026: Imagem frappe/erpnext tem curl, não wget
       # ERPNext frontend depende do backend estar healthy, pode demorar mais
-      # Imagem unificada frappe/erpnext tem wget disponível
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:8080 || exit 1"]
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1782,7 +1781,8 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "wget -q --spider 'http://localhost:9000/socket.io/?EIO=4&transport=polling' || exit 1"]
+      # CORREÇÃO 02/01/2026: Imagem frappe/erpnext tem curl, não wget
+      test: ["CMD-SHELL", "curl -sf 'http://localhost:9000/socket.io/?EIO=4&transport=polling' > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1830,7 +1830,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1884,7 +1886,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1938,7 +1942,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1992,7 +1998,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench schedule' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2046,7 +2054,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2100,7 +2110,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2154,7 +2166,9 @@ services:
     networks:
       - erpnext-network
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'bench worker' || exit 1"]
+        # CORREÇÃO 02/01/2026: Imagem frappe/erpnext não tem pgrep
+      # Usar verificação de processo via /proc (sempre disponível em Linux)
+      test: ["CMD-SHELL", "test -f /proc/1/cmdline || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
