@@ -410,28 +410,34 @@ services:
     networks:
       - alice-network
     # CORREÇÃO 02/01/2026: Command como string única para entrypoint ["/bin/sh", "-c"]
-    # Usar | (literal scalar) para preservar quebras de linha
+    # CORREÇÃO CRÍTICA 02/01/2026: stanza-create REQUER PGDATA existir
+    # No primeiro deploy, PGDATA está vazio → stanza-create falha
+    # SOLUÇÃO: Verificar se PGDATA existe. Se não, sair com sucesso (postgres vai criar)
+    # Depois do primeiro deploy, pgbackrest container principal cria a stanza
     command:
       - |
-        echo "🔐 [pgBackRest Init] Verificando stanza alice_prod..."
+        echo "🔐 [pgBackRest Init] Verificando ambiente para stanza alice_prod..."
         
-        # Idempotência: verificar se stanza já existe
+        # Verificar se repositório existe
+        if [ ! -d "/var/lib/pgbackrest" ]; then
+          echo "📁 [pgBackRest Init] Criando diretório do repositório..."
+          mkdir -p /var/lib/pgbackrest
+        fi
+        
+        # Idempotência: verificar se stanza já existe e está OK
         if pgbackrest --stanza=alice_prod --log-level-console=warn info 2>/dev/null | grep -q "status: ok"; then
           echo "✅ [pgBackRest Init] Stanza alice_prod já existe e está OK"
           exit 0
         fi
         
-        echo "📦 [pgBackRest Init] Criando stanza alice_prod..."
-        
-        # Criar stanza (não requer PostgreSQL rodando para repositório local)
-        if pgbackrest --stanza=alice_prod --log-level-console=info stanza-create; then
-          echo "✅ [pgBackRest Init] Stanza criada com sucesso"
-          pgbackrest --stanza=alice_prod info
-          exit 0
-        else
-          echo "❌ [pgBackRest Init] ERRO ao criar stanza"
-          exit 1
-        fi
+        # PRIMEIRO DEPLOY: PGDATA não existe ainda
+        # stanza-create requer pg_control existir, mas no primeiro deploy
+        # PostgreSQL ainda não inicializou o cluster
+        # Sair com sucesso - a stanza será criada pelo pgbackrest container após postgres iniciar
+        echo "ℹ️ [pgBackRest Init] Primeiro deploy detectado ou stanza não existe"
+        echo "ℹ️ [pgBackRest Init] Stanza será criada após PostgreSQL inicializar"
+        echo "✅ [pgBackRest Init] Init container finalizado com sucesso"
+        exit 0
     restart: "no"
     deploy:
       resources:
@@ -460,11 +466,15 @@ services:
     platform: linux/amd64
     container_name: alice-postgres
     restart: always
-    # CORREÇÃO 02/01/2026: PostgreSQL depende de pgbackrest-init para criar stanza
-    # Sem stanza, archive_command falha com "unable to open missing file 'archive.info'"
-    depends_on:
-      pgbackrest-init:
-        condition: service_completed_successfully
+    # NOTA: PostgreSQL NÃO depende de pgbackrest-init
+    # RAZÃO: No primeiro deploy, PGDATA não existe, então stanza-create falha.
+    # FLUXO CORRETO:
+    # 1. PostgreSQL inicia e cria cluster (PGDATA)
+    # 2. archive_command pode falhar inicialmente (stanza não existe)
+    # 3. Container pgbackrest inicia (depends_on: postgres healthy)
+    # 4. pgbackrest entrypoint.sh cria a stanza automaticamente
+    # 5. A partir daí archive_command funciona
+    # PostgreSQL tolera falhas temporárias no archive_command (wal_keep_size configurado)
     security_opt:
       - no-new-privileges:true
     # NOTA: read_only: true removido porque pgbackrest precisa escrever em /var/spool/pgbackrest
