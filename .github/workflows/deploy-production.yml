@@ -490,7 +490,7 @@ jobs:
           KUCOIN_PRO_API_SECRET: ${{ secrets.KUCOIN_PRO_API_SECRET }}
           KUCOIN_PRO_API_PASSPHRASE: ${{ secrets.KUCOIN_PRO_API_PASSPHRASE }}
           KUCOIN_PRO_BASE_URL: ${{ secrets.KUCOIN_PRO_BASE_URL }}
-          BACKUP_CIPHER_PASS: ${{ secrets.BACKUP_CIPHER_PASS }}
+          BACKUP_CIPHER_PASS_SECRET: ${{ secrets.BACKUP_CIPHER_PASS }}
           ACME_EMAIL: ${{ secrets.ACME_EMAIL }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_NEXT_AUTH_SECRET: ${{ secrets.LANGFUSE_NEXT_AUTH_SECRET }}
@@ -1256,6 +1256,30 @@ jobs:
             
             progress 10 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
+            
+            # =================================================================
+            # DIAGNÓSTICO CRÍTICO 02/01/2026: Verificar BACKUP_CIPHER_PASS antes do docker compose
+            # Problema: pgbackrest-init falha com "PGBACKREST_REPO1_CIPHER_PASS não definido"
+            # mesmo quando secret existe no GitHub. Esse diagnóstico ajuda identificar onde a
+            # variável está sendo perdida no fluxo.
+            # =================================================================
+            echo "🔎 Diagnóstico: verificando BACKUP_CIPHER_PASS no .env.prod..."
+            BACKUP_LINE=$(grep '^BACKUP_CIPHER_PASS=' .env.prod || echo "NÃO ENCONTRADO")
+            BACKUP_LEN=$(echo "$BACKUP_LINE" | cut -d'=' -f2- | wc -c)
+            echo "   Linha no .env.prod: ${BACKUP_LINE:0:30}... (${BACKUP_LEN} chars após =)"
+            
+            if [ "$BACKUP_LINE" = "NÃO ENCONTRADO" ]; then
+              echo "❌ ERRO CRÍTICO: BACKUP_CIPHER_PASS não existe no .env.prod!"
+              exit 1
+            fi
+            
+            if [ "$BACKUP_LEN" -lt 33 ]; then
+              echo "❌ ERRO CRÍTICO: BACKUP_CIPHER_PASS no .env.prod tem valor muito curto ou vazio (${BACKUP_LEN} chars)!"
+              echo "   Conteúdo da linha: $BACKUP_LINE"
+              exit 1
+            fi
+            
+            echo "✅ BACKUP_CIPHER_PASS presente no .env.prod (${BACKUP_LEN} chars)"
             
             # CORREÇÃO 02/01/2026: Capturar saída do docker compose para detectar erros imediatamente
             # docker compose up -d retorna 0 mesmo com "dependency failed to start"

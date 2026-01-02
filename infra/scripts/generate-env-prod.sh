@@ -361,16 +361,37 @@ echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Grafana Alerting via variável
 echo ""
 echo "🔐 Validando pgBackRest Encryption..."
 
-BACKUP_CIPHER_PASS="${BACKUP_CIPHER_PASS:-}"
+# DIAGNÓSTICO CRÍTICO 02/01/2026: Verificar se variável de ambiente foi passada
+# O workflow passa BACKUP_CIPHER_PASS_SECRET: ${{ secrets.BACKUP_CIPHER_PASS }}
+# Se o secret existir mas estiver vazio no GitHub, a variável chega vazia aqui
+echo "   Verificando variável de ambiente BACKUP_CIPHER_PASS_SECRET..."
+
+# Verificar se variável existe no ambiente (set vs unset)
+# CORREÇÃO 02/01/2026: Usar sufixo _SECRET igual às outras variáveis (ex: POSTGRES_PASSWORD_SECRET)
+if [ -z "${BACKUP_CIPHER_PASS_SECRET+x}" ]; then
+  echo "::error::BACKUP_CIPHER_PASS_SECRET NÃO FOI PASSADA como variável de ambiente!" >&2
+  echo "   Verifique se o workflow está passando: BACKUP_CIPHER_PASS_SECRET: \${{ secrets.BACKUP_CIPHER_PASS }}" >&2
+  echo "   E se o secret BACKUP_CIPHER_PASS está configurado no GitHub." >&2
+  exit 1
+fi
+
+BACKUP_CIPHER_PASS="${BACKUP_CIPHER_PASS_SECRET:-}"
 # Diagnóstico: mostrar se variável existe e seu tamanho (sem revelar valor)
 BACKUP_CIPHER_LEN=${#BACKUP_CIPHER_PASS}
-echo "   BACKUP_CIPHER_PASS: ${BACKUP_CIPHER_LEN} caracteres"
+echo "   BACKUP_CIPHER_PASS presente: SIM"
+echo "   BACKUP_CIPHER_PASS tamanho: ${BACKUP_CIPHER_LEN} caracteres"
+
+# Mostrar primeiros 4 caracteres para diagnóstico (sem revelar secret completo)
+if [ ${BACKUP_CIPHER_LEN} -gt 0 ]; then
+  FIRST_CHARS=$(echo "${BACKUP_CIPHER_PASS}" | cut -c1-4)
+  echo "   BACKUP_CIPHER_PASS prefixo: ${FIRST_CHARS}..."
+fi
 
 if [ -z "${BACKUP_CIPHER_PASS}" ]; then
-  echo "::error::BACKUP_CIPHER_PASS não definido ou VAZIO. Configure o secret BACKUP_CIPHER_PASS no repositório GitHub." >&2
-  echo "   Este secret é OBRIGATÓRIO para criptografia AES-256-CBC do repositório pgBackRest." >&2
+  echo "::error::BACKUP_CIPHER_PASS está VAZIO (secret existe mas sem valor). Configure o valor do secret BACKUP_CIPHER_PASS no GitHub." >&2
+  echo "   O secret existe no GitHub mas o valor está vazio!" >&2
   echo "   Para gerar: openssl rand -hex 32" >&2
-  echo "   Após gerar, adicione em: GitHub → Settings → Secrets and variables → Actions" >&2
+  echo "   Após gerar, ATUALIZE o secret em: GitHub → Settings → Secrets and variables → Actions" >&2
   exit 1
 fi
 
@@ -379,6 +400,12 @@ if [ ${BACKUP_CIPHER_LEN} -lt 32 ]; then
   echo "::error::BACKUP_CIPHER_PASS muito curto (${BACKUP_CIPHER_LEN} caracteres). Use pelo menos 32 caracteres." >&2
   echo "   Recomendado: openssl rand -hex 32 (gera 64 caracteres hexadecimais)" >&2
   exit 1
+fi
+
+# Verificar se contém caracteres problemáticos
+if echo "${BACKUP_CIPHER_PASS}" | grep -qE '[$`\\]'; then
+  echo "⚠️  AVISO: BACKUP_CIPHER_PASS contém caracteres especiais (\$, \`, \\)"
+  echo "   Esses caracteres serão escapados no .env.prod"
 fi
 
 echo "✅ BACKUP_CIPHER_PASS validado (${BACKUP_CIPHER_LEN} chars, pgBackRest AES-256-CBC)"
@@ -632,7 +659,12 @@ echo "📄 Gerando arquivo .env.prod..."
   printf 'ERPNEXT_API_SECRET=%s\n' "${ERPNEXT_API_SECRET}"
   printf '\n'
   printf '# Backup (pgBackRest)\n'
-  printf 'BACKUP_CIPHER_PASS=%s\n' "${BACKUP_CIPHER_PASS:-}"
+  # CORREÇÃO CRÍTICA 02/01/2026: Escapar $ no valor para evitar interpretação pelo Docker Compose
+  # Se BACKUP_CIPHER_PASS contiver $, Docker Compose tenta expandir como variável
+  # Ex: valor "abc$xyz" → Docker Compose expande $xyz como variável (vazia) → "abc"
+  # Solução: Substituir $ por $$ (escape do Docker Compose)
+  BACKUP_CIPHER_PASS_ESCAPED=$(echo "${BACKUP_CIPHER_PASS:-}" | sed 's/\$/\$\$/g')
+  printf 'BACKUP_CIPHER_PASS=%s\n' "${BACKUP_CIPHER_PASS_ESCAPED}"
   printf 'PGBACKREST_STANZA=alice_prod\n'
   printf '\n'
   printf '# SSL/TLS\n'
