@@ -1163,8 +1163,37 @@ jobs:
             
             progress 10 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
-            if ! docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans; then
-              echo "❌ ERRO: docker compose up (core) falhou. Capturando diagnóstico..."
+            
+            # CORREÇÃO 02/01/2026: Capturar saída do docker compose para detectar erros imediatamente
+            # docker compose up -d retorna 0 mesmo com "dependency failed to start"
+            COMPOSE_OUTPUT=$(docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans 2>&1) || true
+            COMPOSE_EXIT=$?
+            echo "$COMPOSE_OUTPUT"
+            
+            # FAIL-FAST IMEDIATO: Verificar erros de dependência na saída
+            if echo "$COMPOSE_OUTPUT" | grep -qi "dependency.*failed to start\|Error response from daemon\|error creating\|no such image"; then
+              echo ""
+              echo "❌ FAIL-FAST IMEDIATO: Erro crítico detectado na saída do docker compose!"
+              echo ""
+              echo "📋 Status dos containers:"
+              docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.State}}" | head -60
+              echo ""
+              echo "🧾 Logs dos containers problemáticos:"
+              for container in alice-caddy alice-redis alice-postgres alice-qdrant alice-gpu-manager; do
+                if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                  if [ "$STATUS" != "running" ]; then
+                    echo ""
+                    echo "--- Logs de $container (status: $STATUS) ---"
+                    docker logs --tail=100 "$container" 2>&1 || true
+                  fi
+                fi
+              done
+              exit 1
+            fi
+            
+            if [ $COMPOSE_EXIT -ne 0 ]; then
+              echo "❌ ERRO: docker compose up (core) falhou com exit code $COMPOSE_EXIT. Capturando diagnóstico..."
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
               echo ""
               # CORREÇÃO 01/01/2026: Capturar logs de TODOS os containers críticos

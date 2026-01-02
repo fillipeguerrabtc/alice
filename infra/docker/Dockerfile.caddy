@@ -25,10 +25,8 @@ LABEL org.opencontainers.image.authors="Fillipe Guerra"
 # Copiar configuração Caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 
-# Instalar wget para healthcheck (Alpine não inclui por padrão)
-# e garantir existência do usuário/grupo caddy
-RUN apk add --no-cache wget && \
-    (getent group caddy || addgroup -g 1000 -S caddy) && \
+# Garantir existência do usuário/grupo caddy (imagens oficiais geralmente já têm)
+RUN (getent group caddy || addgroup -g 1000 -S caddy) && \
     (getent passwd caddy || adduser -u 1000 -D -S -G caddy caddy)
 
 # Criar diretórios necessários com permissões corretas
@@ -37,10 +35,11 @@ RUN mkdir -p /var/log/caddy && \
     chown -R caddy:caddy /var/log/caddy && \
     chmod 755 /var/log/caddy
 
-# Health check - Caddy Admin API na porta 2019
-# Verifica se Caddy está rodando e respondendo
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
-    CMD wget -q --spider http://localhost:2019/config/ || exit 1
+# Health check - Verifica porta 2019 via /proc/net/tcp (método robusto)
+# BusyBox wget no Alpine pode não suportar --spider corretamente
+# Porta 2019 decimal = 07E3 hexadecimal
+HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=5 \
+    CMD grep -qi ':07E3' /proc/net/tcp || exit 1
 
 # Expor portas
 # 80: HTTP (redirect para HTTPS)

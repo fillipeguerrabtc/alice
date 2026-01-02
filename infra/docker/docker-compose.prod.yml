@@ -357,11 +357,15 @@ services:
       - alice-network
       - erpnext-network
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:2019/config/"]
+      # CORREÇÃO 02/01/2026: BusyBox wget em caddy:alpine pode não suportar --spider
+      # Método robusto: verificar porta 2019 via /proc/net/tcp (funciona em qualquer Linux)
+      # Porta 2019 decimal = 07E3 hexadecimal
+      # Mesmo método usado para Qdrant e Tor (imagens minimalistas)
+      test: ["CMD-SHELL", "grep -qi ':07E3' /proc/net/tcp || exit 1"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 30s
+      retries: 5
+      start_period: 45s
     deploy:
       resources:
         limits:
