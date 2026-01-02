@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.27 - Fix Release Pipeline Caddy Service
+> **Versão:** 4.28 - Fix Caddy Dockerfile User error
 
 ---
 
