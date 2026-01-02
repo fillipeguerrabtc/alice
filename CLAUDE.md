@@ -369,6 +369,8 @@ git commit -a -m "test: adiciona testes unitários"
 
 ---
 *Autor: Fillipe Guerra*
+*Versão: 4.64 - 02 de Janeiro de 2026*
+*Bug Fix ERPNext Worker Healthcheck Quote Injection (02/01/2026): CORREÇÃO SEGURANÇA - Healthchecks dos 7 ERPNext workers/scheduler usavam `redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@...')` que quebrava se senha contivesse aspas simples. CORRIGIDO: Usar `redis.Redis(host=...,password=os.environ.get('REDIS_QUEUE_PASSWORD',''))` que lê senha via variável de ambiente do container, evitando interpolação em string Python. Ref: Regra 6 (Zero workarounds), Regra 8 (Qualidade obrigatória).*
 *Versão: 4.63 - 02 de Janeiro de 2026*
 *Healthchecks Enterprise 100% Saúde REAL (02/01/2026): CORREÇÃO COMPLETA - TODOS os 46 healthchecks agora verificam saúde REAL (não apenas portas abertas). REMOVIDO /proc/net/tcp de Tor e Qdrant. CORRIGIDO: (1) Tor→curl via SOCKS5 check.torproject.org/api/ip; (2) Qdrant→wget /readyz; (3) SearXNG→Python urllib /healthz; (4) ERPNext Backend/Frontend/WebSocket→Python urllib; (5) ERPNext Workers (7x)→Python redis.ping(); (6) Vector→wget /health; (7) MinIO→curl /minio/health/live; (8) Grafana/Prometheus/Promtail/Jaeger/Node-Exporter/cAdvisor→wget endpoints oficiais; (9) Frontend nginx→wget /; (10) Caddy→wget Admin API /config/. pgBackRest entrypoint.sh FAIL-FAST obrigatório implementado (Regra 6) - removido "Continuando mesmo assim" que violava CLAUDE.md. Ref: Regra 6 (Zero workarounds), Regra 16 (Healthchecks robustos).*
 *Versão: 4.62 - 02 de Janeiro de 2026*

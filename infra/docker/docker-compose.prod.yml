@@ -1834,7 +1834,8 @@ services:
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
       # Workers RQ dependem do Redis para funcionar - verificar conexão é a melhor prova de saúde
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      # CORREÇÃO 02/01/2026: Usar os.environ para evitar quebra de sintaxe se senha tiver aspas
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1889,7 +1890,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1944,7 +1945,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1999,7 +2000,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do scheduler)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2054,7 +2055,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2109,7 +2110,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2164,7 +2165,7 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: ERPNext é Python - verificar conexão Redis (saúde REAL do worker)
-      test: ["CMD-SHELL", "python3 -c \"import redis; r=redis.Redis.from_url('redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379'); r.ping()\""]
+      test: ["CMD-SHELL", "python3 -c \"import os,redis; r=redis.Redis(host='erpnext-redis-queue',port=6379,password=os.environ.get('REDIS_QUEUE_PASSWORD','')); r.ping()\""]
       interval: 30s
       timeout: 10s
       retries: 5
