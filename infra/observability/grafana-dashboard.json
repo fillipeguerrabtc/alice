@@ -165,7 +165,7 @@
       "targets": [
         {
           "expr": "sum(rate(caddy_http_requests_total[5m])) by (handler)",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{handler}}",
           "refId": "A"
         }
       ],
@@ -187,7 +187,7 @@
       "targets": [
         {
           "expr": "sum(rate(caddy_http_requests_total{status=~\"5..\"}[5m])) by (handler)",
-          "legendFormat": "{{service}}",
+          "legendFormat": "{{handler}}",
           "refId": "A"
         }
       ],

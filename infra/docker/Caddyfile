@@ -177,7 +177,7 @@ yesyoudeserve.duckdns.org {
 	# Observability API
 	# =========================================================================
 	handle /api/observability/* {
-		reverse_proxy alice-observability:3010 {
+		reverse_proxy alice-observability:3007 {
 			import proxy_headers
 		}
 	}

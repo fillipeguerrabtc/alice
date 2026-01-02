@@ -19,7 +19,7 @@ Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento
 | Langfuse Web | 3006 | Langfuse 3.140.0 | MIT | Métricas LLM (UI) |
 | Langfuse Worker | interno | Langfuse 3.140.0 | MIT | Processamento assíncrono/migrations |
 | Langfuse DB | 5433 | PostgreSQL 16 | PostgreSQL | Persistência Langfuse |
-| Health Checker | 3010 | Node.js/Express | - | Status do stack |
+| Health Checker | 3007 | Node.js/Express | - | Status do stack |
 | Vector | 8686 | Vector 0.51.1 | MPL 2.0 | Agregação de logs → Loki (metrics expostas para Prometheus) |
 | node-exporter | interno | node-exporter 1.8.2 | Apache 2.0 | Métricas do host |
 
@@ -102,7 +102,7 @@ O roteamento para a API de observabilidade é feito via subpath:
 
 ```caddy
 handle /api/observability/* {
-    reverse_proxy alice-observability:3010 {
+    reverse_proxy alice-observability:3007 {
         import proxy_headers
     }
 }
@@ -200,7 +200,7 @@ apps/observability-service/
 │                           │                                      │
 │  ┌─────────────┐  ┌───────┴───────┐  ┌─────────────────────┐   │
 │  │  Langfuse   │  │Health Checker │  │ Langfuse PostgreSQL │   │
-│  │   :3006     │  │    :3010      │  │       :5433         │   │
+│  │   :3006     │  │    :3007      │  │       :5433         │   │
 │  └──────┬──────┘  └───────────────┘  └──────────┬──────────┘   │
 │         └────────────────────────────────────────┘              │
 └─────────────────────────────────────────────────────────────────┘

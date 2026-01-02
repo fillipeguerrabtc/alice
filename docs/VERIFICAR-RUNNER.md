@@ -1,7 +1,7 @@
 # Como Verificar se o Pipeline Está Usando Runner Próprio
 
 **Autor:** Fillipe Guerra  
-**Data:** 31 de Dezembro de 2025
+**Data:** 02 de Janeiro de 2026
 
 ## Status Atual dos Runners
 
