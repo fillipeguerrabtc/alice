@@ -1,8 +1,8 @@
 # Alice Enterprise Platform - Guia de Deploy
 
 **Autor:** Fillipe Guerra  
-**Data:** 01 de Janeiro de 2026  
-**Versão:** 7.14 - Deploy Enterprise Hardening Complete
+**Data:** 02 de Janeiro de 2026  
+**Versão:** 7.15 - Fix External Images Validation
 
 > **Migração 100% Self-Hosted (27/12/2025):** Pipeline completo migrado para runner próprio (Hetzner CPX32 - 4 vCPU, 8GB RAM) seguindo melhores práticas enterprise 2025. Todos os workflows (CI, Release, Deploy) executam no self-hosted runner para controle total, custos previsíveis e compliance.
 
@@ -919,6 +919,70 @@ O CI utiliza cache nativo do GitHub Actions para dependências:
 | Traefik Dashboard | N/A | Desabilitado em produção (segurança) |
 
 > **NOTA:** O Traefik Dashboard está desabilitado em produção por motivos de segurança. Para debug, acesse via SSH e `docker logs alice-traefik`.
+
+---
+
+## Manutenção de Imagens Docker Externas
+
+**Autor:** Fillipe Guerra  
+**Data:** 02 de Janeiro de 2026
+
+### Validação de Tags
+
+Antes de cada deploy, o workflow valida que TODAS as 23 imagens externas existem no Docker Hub:
+
+- 14 imagens de observability (Prometheus, Grafana, Loki, etc.)
+- 3 imagens de infrastructure (Traefik, Tor, SearXNG)
+- 2 imagens MinIO (S3 para Langfuse v3)
+- 2 imagens de database (ClickHouse, Redis)
+- 1 imagem ERPNext
+- 1 imagem MariaDB
+
+### Atualização de Tags Rotacionadas
+
+Se uma tag for removida do Docker Hub:
+
+1. Executar `docker manifest inspect <image>:<tag>` para verificar se existe
+2. Atualizar em `docker-compose.prod.yml`
+3. Atualizar em `.github/workflows/deploy-production.yml` (linha 270+)
+4. Testar localmente: `docker compose -f docker-compose.prod.yml pull <service>`
+5. Commit + Push
+
+### Lista de Imagens Externas (23 total)
+
+```bash
+# MinIO (Langfuse v3 S3)
+minio/minio:RELEASE.2024-12-18T13-15-44Z
+minio/mc:RELEASE.2024-10-29T15-34-59Z
+
+# Database & Vector Store
+clickhouse/clickhouse-server:25.12-alpine
+redis:7.4.6-alpine
+qdrant/qdrant:v1.16.2
+mariadb:10.11
+
+# Infrastructure
+traefik:v3.6.6
+busybox:1.36
+dperson/torproxy:latest
+searxng/searxng:latest
+tecnativa/docker-socket-proxy:latest
+
+# Observability
+prom/prometheus:v3.8.1
+grafana/grafana:12.3.1
+grafana/loki:3.6.3
+grafana/promtail:3.6.3
+jaegertracing/jaeger:2.13.0
+langfuse/langfuse:3.89
+prom/node-exporter:v1.9.1
+timberio/vector:0.51.0-alpine
+otel/opentelemetry-collector-contrib:0.142.0
+gcr.io/cadvisor/cadvisor:v0.52.1
+
+# ERPNext
+frappe/erpnext:v15.91.1
+```
 
 ---
 

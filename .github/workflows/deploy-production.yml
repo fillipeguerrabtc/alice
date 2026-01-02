@@ -204,13 +204,20 @@ jobs:
           echo "🔍 Verificando imagens no GHCR para versão $VERSION..."
           
           # Serviços críticos que DEVEM existir (buildados pelo Release)
-          # CORREÇÃO 28/12/2025: gpu-manager adicionado - alice-chat/rag/training dependem dele
+          # CORREÇÃO 02/01/2026: Lista COMPLETA de imagens customizadas
+          # Corresponde EXATAMENTE ao array SERVICES em release.yml (11 imagens)
           CRITICAL_SERVICES=(
+            "api-gateway"
             "auth"
             "chat"
             "frontend"
             "rag"
+            "training"
             "gpu-manager"
+            "integrations"
+            "observability"
+            "pgbackrest"
+            "postgres"
           )
           
           MISSING=0
@@ -257,30 +264,41 @@ jobs:
           
           # Lista de imagens externas CRÍTICAS (não buildadas por nós)
           # Tags devem corresponder EXATAMENTE ao docker-compose.prod.yml
-          # CORREÇÃO 01/01/2026: grafana/grafana-oss → grafana/grafana
-          # Adicionadas: vector, otel-collector, cadvisor
+          # CORREÇÃO 02/01/2026: 
+          # - REMOVIDO: postgres:16-alpine (imagem customizada no GHCR)
+          # - ADICIONADO: dperson/torproxy, searxng/searxng, tecnativa/docker-socket-proxy
           EXTERNAL_IMAGES=(
+            # MinIO (Langfuse v3 S3 obrigatório)
             "minio/minio:RELEASE.2024-12-18T13-15-44Z"
             "minio/mc:RELEASE.2024-10-29T15-34-59Z"
+            
+            # Database & Vector Store
             "clickhouse/clickhouse-server:25.12-alpine"
             "redis:7.4.6-alpine"
-            "postgres:16-alpine"
+            "qdrant/qdrant:v1.16.2"
+            "mariadb:10.11"
+            
+            # Infrastructure
             "traefik:v3.6.6"
+            "busybox:1.36"
+            "dperson/torproxy:latest"
+            "searxng/searxng:latest"
+            "tecnativa/docker-socket-proxy:latest"
+            
+            # Observability
             "prom/prometheus:v3.8.1"
             "grafana/grafana:12.3.1"
             "grafana/loki:3.6.3"
             "grafana/promtail:3.6.3"
-            # REMOVIDO 01/01/2026: prom/alertmanager - substituído por Grafana Alerting
             "jaegertracing/jaeger:2.13.0"
-            "qdrant/qdrant:v1.16.2"
             "langfuse/langfuse:3.89"
-            "frappe/erpnext:v15.91.1"
-            "mariadb:10.11"
-            "busybox:1.36"
             "prom/node-exporter:v1.9.1"
             "timberio/vector:0.51.0-alpine"
             "otel/opentelemetry-collector-contrib:0.142.0"
             "gcr.io/cadvisor/cadvisor:v0.52.1"
+            
+            # ERPNext
+            "frappe/erpnext:v15.91.1"
           )
           
           MISSING=0
