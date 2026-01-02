@@ -56,42 +56,100 @@ fi
 
 echo "[INFO] Conexão libpq configurada: PGHOST=$PGHOST, PGPORT=${PGPORT:-5432}, PGUSER=${PGUSER:-alice}"
 
-# Verificar se stanza existe, senão criar
+# ==========================================================================
+# CORREÇÃO 02/01/2026: Criar stanza SEMPRE (idempotente)
+# ==========================================================================
+# PROBLEMA ANTERIOR: Verificação com 'grep -q "status"' era falha
+# pgbackrest info retorna "status" mesmo sem stanza real
+# Resultado: stanza nunca era criada, archive-push falhava
+#
+# SOLUÇÃO: Verificar se arquivo archive.info existe (prova real)
+# stanza-create é idempotente - pode rodar múltiplas vezes sem problema
+# ==========================================================================
+
+ARCHIVE_INFO="/var/lib/pgbackrest/archive/$STANZA/archive.info"
+
 echo "[INFO] Verificando stanza '$STANZA'..."
-if ! pgbackrest info --stanza="$STANZA" --output=json 2>/dev/null | grep -q '"status":'; then
-    echo "[INFO] Criando stanza '$STANZA'..."
-    pgbackrest --stanza="$STANZA" stanza-create
-    echo "[OK] Stanza criada com sucesso!"
+if [ -f "$ARCHIVE_INFO" ]; then
+    echo "[OK] Stanza '$STANZA' já existe (archive.info encontrado)"
 else
-    echo "[OK] Stanza '$STANZA' já existe."
+    echo "[INFO] Criando stanza '$STANZA' (archive.info não existe)..."
+    
+    # stanza-create precisa do pg1-path para ler pg_control
+    # PostgreSQL já deve estar rodando neste ponto
+    if pgbackrest --stanza="$STANZA" stanza-create 2>&1; then
+        echo "[OK] Stanza criada com sucesso!"
+    else
+        echo "[ERRO] Falha ao criar stanza. Verificando detalhes..."
+        pgbackrest --stanza="$STANZA" info 2>&1 || true
+        
+        # Tentar stanza-upgrade se stanza parcial existir
+        echo "[INFO] Tentando stanza-upgrade..."
+        if pgbackrest --stanza="$STANZA" stanza-upgrade 2>&1; then
+            echo "[OK] Stanza atualizada com sucesso!"
+        else
+            # ==========================================================================
+            # CORREÇÃO 02/01/2026: FAIL-FAST obrigatório (Regra 6 CLAUDE.md)
+            # ==========================================================================
+            # PROBLEMA ANTERIOR: "Continuando mesmo assim" violava Regra 6
+            # Deploy continuava sem backup funcional - inaceitável em produção
+            # SOLUÇÃO: Falhar imediatamente se stanza não puder ser criada
+            # ==========================================================================
+            echo "[ERRO CRÍTICO] stanza-upgrade também falhou"
+            echo "[ERRO] FAIL-FAST: Backup enterprise OBRIGATÓRIO (Regra 6 CLAUDE.md)"
+            echo "[ERRO] Não é permitido continuar sem backup funcional"
+            echo "[ERRO] Verifique:"
+            echo "       1. PostgreSQL está rodando e acessível"
+            echo "       2. pg_control existe em PGDATA"
+            echo "       3. Variáveis PGHOST, PGPASSWORD estão configuradas"
+            echo "       4. Permissões em /var/lib/pgbackrest"
+            exit 1
+        fi
+    fi
 fi
 
-# Verificar integridade da stanza
-# CORREÇÃO 02/01/2026: Não falhar se check falhar por permissão
-# O pgBackRest pode não ter permissão de leitura em pg_control quando
-# o volume está montado de outro container com permissões 0700.
-# Isso é normal em ambientes Docker - o backup via libpq ainda funciona.
+# Verificar integridade final
 echo "[INFO] Verificando integridade da stanza..."
-if pgbackrest --stanza="$STANZA" check 2>&1; then
-    echo "[OK] Stanza verificada com sucesso!"
-else
-    CHECK_OUTPUT=$(pgbackrest --stanza="$STANZA" check 2>&1 || true)
-    if echo "$CHECK_OUTPUT" | grep -q "Permission denied"; then
-        echo "[WARN] Verificação de arquivos falhou (permissão - normal em Docker)"
-        echo "[INFO] Backup via conexão SQL (libpq) ainda funcionará corretamente"
+# CORREÇÃO 02/01/2026: Retry com timeout para primeiro deploy
+# No primeiro deploy, PostgreSQL pode ainda estar criando arquivos WAL
+MAX_CHECK_RETRIES=5
+CHECK_RETRY=0
+CHECK_SUCCESS=false
+
+while [ $CHECK_RETRY -lt $MAX_CHECK_RETRIES ]; do
+    CHECK_RETRY=$((CHECK_RETRY + 1))
+    echo "[INFO] Tentativa $CHECK_RETRY de $MAX_CHECK_RETRIES..."
+    
+    if pgbackrest --stanza="$STANZA" check 2>&1; then
+        echo "[OK] Stanza verificada com sucesso!"
+        CHECK_SUCCESS=true
+        break
     else
-        echo "[AVISO] Verificação falhou, tentando upgrade da stanza..."
-        pgbackrest --stanza="$STANZA" stanza-upgrade 2>&1 || {
-            echo "[WARN] Upgrade também falhou - continuando mesmo assim"
-            echo "[INFO] O backup pode funcionar via libpq mesmo sem acesso direto aos arquivos"
-        }
+        if [ $CHECK_RETRY -lt $MAX_CHECK_RETRIES ]; then
+            echo "[WARN] Verificação falhou, aguardando 10s antes de tentar novamente..."
+            sleep 10
+        fi
     fi
+done
+
+if [ "$CHECK_SUCCESS" != "true" ]; then
+    # ==========================================================================
+    # CORREÇÃO 02/01/2026: FAIL-FAST obrigatório (Regra 6 CLAUDE.md)
+    # ==========================================================================
+    echo "[ERRO CRÍTICO] Verificação da stanza falhou após $MAX_CHECK_RETRIES tentativas"
+    echo "[ERRO] FAIL-FAST: pgBackRest check é obrigatório para garantir backup funcional"
+    echo "[ERRO] Verifique:"
+    echo "       1. PostgreSQL está rodando com archive_mode=on"
+    echo "       2. archive_command está configurado corretamente"
+    echo "       3. WAL archiving está funcionando"
+    pgbackrest --stanza="$STANZA" info 2>&1 || true
+    exit 1
 fi
 
 echo "=================================================="
 echo "  pgBackRest pronto para operação!"
 echo "  Stanza: $STANZA"
-echo "  Modo: $1"
+echo "  Modo: ${1:-archive-push}"
 echo "=================================================="
 
 # Executar comando passado COM stanza explícito

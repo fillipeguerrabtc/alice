@@ -35,11 +35,9 @@ RUN mkdir -p /var/log/caddy && \
     chown -R caddy:caddy /var/log/caddy && \
     chmod 755 /var/log/caddy
 
-# Health check - Verifica porta 2019 via /proc/net/tcp (método robusto)
-# BusyBox wget no Alpine pode não suportar --spider corretamente
-# Porta 2019 decimal = 07E3 hexadecimal
+# Health check - Verificar Admin API (saúde REAL)
 HEALTHCHECK --interval=30s --timeout=10s --start-period=45s --retries=5 \
-    CMD grep -qi ':07E3' /proc/net/tcp || exit 1
+    CMD wget --spider -q http://localhost:2019/config/ || exit 1
 
 # Expor portas
 # 80: HTTP (redirect para HTTPS)

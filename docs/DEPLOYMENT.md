@@ -1532,7 +1532,7 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 | **resource limits** | ✅ | 50/50 containers (100%) |
 | **read_only: true** | ✅ | 25/50 containers (aplicável apenas onde não há escrita) |
 | **SHA256 digests** | ✅ | 26/26 imagens externas (100%) |
-| **healthchecks** | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
+| **healthchecks** | ✅ | 46/46 containers verificam saúde REAL (3 init usam service_completed_successfully) |
 
 ### Compatibilidade do Stack de Observabilidade (pins atuais - 19/12/2025)
 

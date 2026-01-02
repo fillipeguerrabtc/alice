@@ -32,8 +32,9 @@
 | `read_only: true` | ✅ | 25/50 (aplicável apenas onde não há escrita) |
 | Resource limits | ✅ | 50/50 containers (100%) |
 | SHA256 digests | ✅ | 26 imagens externas únicas |
-| Healthchecks | ✅ | 38/38 containers (3 init usam service_completed_successfully) |
+| Healthchecks | ✅ | 46/46 containers verificam saúde REAL (3 init usam service_completed_successfully) |
 | **Healthchecks Alice** | ✅ | **6 serviços usam /live** (liveness - processo vivo, não dependências) |
+| **Healthchecks REAL** | ✅ | **100% verificam saúde REAL** - zero /proc/net/tcp (02/01/2026) |
 | **PostgreSQL RLS Trading** | ✅ | **10 tabelas com RLS** (migrations 0007 + 0008 + 0012) |
 
 > Atualização 21/12/2025: Deploy workflow com gate de segurança - job `validate-trigger` verifica que `version` é obrigatória e válida (formato v1.0.0). Impede disparo acidental. Script externo `infra/scripts/generate-env-prod.sh` para .env.prod. Pipeline sequencial: CI → Release → Deploy (sem execução paralela).
@@ -57,6 +58,8 @@
 > **Migração Traefik→Caddy 02/01/2026:** Traefik, traefik-init e dockerproxy substituídos por Caddy. Vantagens: SSL automático com retry inteligente (evita rate limits Let's Encrypt), HTTP/3 nativo (QUIC protocol), footprint 40MB (vs 100MB Traefik), configuração declarativa via Caddyfile (vs labels Docker). Elimina necessidade de Docker Socket Proxy. Adicionado pgBackRest Init container para criar stanza ANTES do PostgreSQL iniciar.
 
 > **Deploy Enterprise Hardening 02/01/2026:** Workflow de deploy com validações enterprise completas. **Smoke Tests Pós-Deploy:** PostgreSQL (pg_isready), pgvector (operação vetorial real), Redis (PING), Caddy (HTTP), GPU Manager (health endpoint), conectividade inter-serviços (Chat→GPU Manager). **Persistência de Logs:** Todos os logs salvos em `/opt/alice/logs/deploy-YYYYMMDD-HHMMSS.log` para troubleshooting futuro. **Validação pgBackRest:** Verifica permissões (999:999), estrutura e corrige automaticamente se necessário. **pgBackRest Fix:** Stanza criada sem pg1-path (não requer pg_control), sincronizada após PostgreSQL iniciar. **Caddy Healthcheck:** Melhorado para verificar HTTP (80/443) além de admin API (2019).
+
+> **Healthchecks 100% Saúde REAL 02/01/2026:** TODOS os 46 healthchecks corrigidos para verificar saúde REAL (não apenas portas abertas). REMOVIDO /proc/net/tcp de Tor e Qdrant. Metodologia: Node.js services usam `node -e "require('http').get(...)"`; Python services usam `python3 -c "urllib.request.urlopen(...)"`; ERPNext workers usam `python3 -c "redis.ping()"`; Databases usam CLIs nativos (pg_isready, mysqladmin, redis-cli); Alpine images usam wget/curl. pgBackRest entrypoint.sh implementa FAIL-FAST obrigatório (Regra 6 CLAUDE.md).
 
 > **Mocks Eliminados 27/12/2025:** Removidos todos os mocks de desenvolvimento: `setupPreviewData()`, `setupPreviewChatEndpoint()`, `generatePreviewResponse()` do `server/index-dev.ts`. LLM Client desabilitado (`server/services/llm-client.ts`). Todos os serviços agora usam fail-fast em produção (sem fallback para localhost). Configuração centralizada em `packages/config/src/index.ts` lança erro se variáveis de ambiente estiverem faltando.
 
@@ -719,7 +722,7 @@ Retenção Arquivo:   30 dias
 | platform: linux/amd64 | ✅ | 50/50 containers |
 | **Nota (01/01/2026):** Containers que precisam escrever (17: bancos, workers/init ERPNext, node-exporter, cadvisor) não usam `read_only`, mas mantêm `no-new-privileges` e limits. Alertmanager removido - alertas via Grafana Alerting. |
 | SHA256 digests | ✅ | 26 imagens externas |
-| healthchecks | ✅ | 38/38 (3 init usam service_completed_successfully) |
+| healthchecks | ✅ | 46/46 verificam saúde REAL (3 init usam service_completed_successfully) |
 
 ### Segurança Aplicação
 
@@ -1434,7 +1437,7 @@ body = {
 ### Bug Fix Qdrant ReadOnlyFilesystem
 - **Problema:** Container falhava com `Failed to create snapshots temp directory: ReadOnlyFilesystem`
 - **Solução:** Adicionado `tmpfs` para `/qdrant/snapshots` no docker-compose.prod.yml
-- **Healthcheck (21/12/2025):** Removido `pgrep` - imagem oficial qdrant/qdrant é minimalista e não tem pgrep instalado. Healthcheck usa apenas `grep /proc/net/tcp` para verificar porta 6333
+- **Healthcheck (02/01/2026):** Atualizado para verificar saúde REAL via `wget --spider -q http://localhost:6333/readyz` ao invés de /proc/net/tcp. Qdrant é baseado em Debian e tem wget disponível.
 
 ### Rollback Enterprise Robusto
 - **Problema:** `full_system_cleanup()` falhava com lista de containers vazia
