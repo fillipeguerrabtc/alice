@@ -1407,6 +1407,43 @@ docker inspect alice-minio | jq '.[0].State.Health'
 
 ---
 
+### pgBackRest Init falha com "PGBACKREST_REPO1_CIPHER_PASS não definido"
+
+**Sintoma:** Deploy falha no container `alice-pgbackrest-init` com erro:
+```
+[pgBackRest Init] ERRO: PGBACKREST_REPO1_CIPHER_PASS não definido
+Configure BACKUP_CIPHER_PASS nos secrets do GitHub
+```
+
+**Causas:**
+1. **Secret `BACKUP_CIPHER_PASS` não configurado no GitHub** - Mais comum
+2. **Secret existe mas está vazio** - GitHub permite secrets vazios
+3. **Secret muito curto** - Mínimo 32 caracteres exigido
+
+**Diagnóstico:**
+```bash
+# Verificar logs do pgbackrest-init
+docker logs alice-pgbackrest-init --tail 50
+
+# Verificar se .env.prod tem a variável
+grep BACKUP_CIPHER_PASS /opt/alice/app/infra/docker/.env.prod | wc -c
+# Deve retornar > 50 (32 chars + nome da variável)
+```
+
+**Solução:**
+1. Acessar GitHub → Settings → Secrets and variables → Actions
+2. Verificar se `BACKUP_CIPHER_PASS` existe e tem valor
+3. Se não existir ou estiver vazio, gerar novo valor:
+   ```bash
+   openssl rand -hex 32  # Gera 64 caracteres hexadecimais
+   ```
+4. Atualizar o secret no GitHub com o valor gerado
+5. Re-executar o deploy
+
+**Nota (02/01/2026):** A validação agora acontece em 3 pontos do workflow, garantindo fail-fast antes de iniciar containers.
+
+---
+
 ### ERPNext não instala (erro "No such option: --verbose")
 
 **Problema:** Deploy falha com erro `Error: No such option: --verbose` durante instalação do ERPNext.

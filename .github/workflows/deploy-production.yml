@@ -537,16 +537,19 @@ jobs:
           
           MISSING=0
           for key in "${REQUIRED_KEYS[@]}"; do
-            if ! grep -q "^${key}=" .env.prod; then
-              echo "❌ ERRO: Variável obrigatória AUSENTE em .env.prod: $key"
+            # CORREÇÃO 02/01/2026: Verificar se chave existe E tem valor (não apenas se linha existe)
+            # PROBLEMA: grep "^${key}=" passava mesmo com valor vazio (ex: KEY=)
+            # SOLUÇÃO: Usar grep -E com regex que exige pelo menos 1 caractere após =
+            if ! grep -qE "^${key}=.+" .env.prod; then
+              echo "❌ ERRO: Variável obrigatória AUSENTE ou VAZIA em .env.prod: $key"
               MISSING=$((MISSING + 1))
             fi
           done
           
           if [ $MISSING -gt 0 ]; then
             echo ""
-            echo "❌ ERRO: $MISSING variável(is) obrigatória(s) ausente(s)"
-            echo "Verifique se os secrets estão configurados no GitHub"
+            echo "❌ ERRO: $MISSING variável(is) obrigatória(s) ausente(s) ou vazia(s)"
+            echo "Ação necessária: Verifique se os secrets estão configurados no GitHub (Settings → Secrets → Actions)"
             exit 1
           fi
           
@@ -972,12 +975,16 @@ jobs:
               "BACKUP_CIPHER_PASS"
             )
             for key in "${REQUIRED_KEYS[@]}"; do
-              if ! grep -q "^${key}=" "$ENV_FILE"; then
-                echo "❌ ERRO: chave obrigatória ausente no .env.prod: ${key}"
+              # CORREÇÃO 02/01/2026: Verificar se chave existe E tem valor (não apenas se linha existe)
+              # PROBLEMA: grep "^${key}=" passava mesmo com valor vazio (ex: BACKUP_CIPHER_PASS=)
+              # SOLUÇÃO: Usar grep -E com regex que exige pelo menos 1 caractere após =
+              if ! grep -qE "^${key}=.+" "$ENV_FILE"; then
+                echo "❌ ERRO: chave obrigatória ausente ou VAZIA no .env.prod: ${key}"
+                echo "   Ação necessária: Configure o secret ${key} no GitHub (Settings → Secrets → Actions)"
                 exit 1
               fi
             done
-            echo "✅ Chaves críticas presentes"
+            echo "✅ Chaves críticas presentes e com valores"
             
             # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)

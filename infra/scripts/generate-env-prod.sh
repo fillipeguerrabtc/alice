@@ -351,6 +351,38 @@ fi
 echo "✅ GMAIL_USER validado: ${GMAIL_USER}"
 echo "✅ GMAIL_APP_PASSWORD validado (usado pelo Grafana Alerting via variável GF_SMTP_PASSWORD)"
 
+# =============================================================================
+# pgBackRest Encryption (OBRIGATÓRIO para backup enterprise AES-256-CBC)
+# =============================================================================
+# CORREÇÃO 02/01/2026: BACKUP_CIPHER_PASS não era validado, causando falha no pgbackrest-init
+# pgBackRest criptografa repositório de backups com AES-256-CBC
+# Sem esta variável, archive_command falha com "repo is encrypted but cipher not configured"
+# =============================================================================
+echo ""
+echo "🔐 Validando pgBackRest Encryption..."
+
+BACKUP_CIPHER_PASS="${BACKUP_CIPHER_PASS:-}"
+# Diagnóstico: mostrar se variável existe e seu tamanho (sem revelar valor)
+BACKUP_CIPHER_LEN=${#BACKUP_CIPHER_PASS}
+echo "   BACKUP_CIPHER_PASS: ${BACKUP_CIPHER_LEN} caracteres"
+
+if [ -z "${BACKUP_CIPHER_PASS}" ]; then
+  echo "::error::BACKUP_CIPHER_PASS não definido ou VAZIO. Configure o secret BACKUP_CIPHER_PASS no repositório GitHub." >&2
+  echo "   Este secret é OBRIGATÓRIO para criptografia AES-256-CBC do repositório pgBackRest." >&2
+  echo "   Para gerar: openssl rand -hex 32" >&2
+  echo "   Após gerar, adicione em: GitHub → Settings → Secrets and variables → Actions" >&2
+  exit 1
+fi
+
+# Validar tamanho mínimo (openssl rand -hex 32 gera 64 caracteres)
+if [ ${BACKUP_CIPHER_LEN} -lt 32 ]; then
+  echo "::error::BACKUP_CIPHER_PASS muito curto (${BACKUP_CIPHER_LEN} caracteres). Use pelo menos 32 caracteres." >&2
+  echo "   Recomendado: openssl rand -hex 32 (gera 64 caracteres hexadecimais)" >&2
+  exit 1
+fi
+
+echo "✅ BACKUP_CIPHER_PASS validado (${BACKUP_CIPHER_LEN} chars, pgBackRest AES-256-CBC)"
+
 echo "✅ Todas as secrets obrigatórias validadas"
 
 # =============================================================================

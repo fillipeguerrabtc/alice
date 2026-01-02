@@ -418,12 +418,17 @@ docker logs alice-minio-init --tail 50
 
 ### FASE 9: Backup (pgBackRest)
 
-| Secret | Descrição | Como Obter |
-|--------|-----------|------------|
-| `BACKUP_CIPHER_PASS` | Senha para criptografia AES-256 dos backups | `openssl rand -hex 32` |
-| `PGBACKREST_STANZA` | (Opcional) Override da stanza; default: `alice_prod` (alinhado ao pgbackrest.conf) | Definir somente se for usar stanza diferente |
+| Secret | Descrição | Requisitos | Como Obter |
+|--------|-----------|------------|------------|
+| `BACKUP_CIPHER_PASS` | Senha para criptografia AES-256-CBC dos backups | **OBRIGATÓRIO**, mínimo 32 caracteres | `openssl rand -hex 32` (gera 64 chars) |
+| `PGBACKREST_STANZA` | (Opcional) Override da stanza; default: `alice_prod` | Definir somente se for usar stanza diferente | Manual |
 
-**Uso:** Criptografa backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
+**Uso:** Criptografa repositório de backups do PostgreSQL via pgBackRest. Obrigatório para PITR (Point-in-Time Recovery) seguro.
+
+**IMPORTANTE (02/01/2026):** O deploy **FALHARÁ** se `BACKUP_CIPHER_PASS` não estiver configurado ou tiver menos de 32 caracteres. A validação acontece em 3 pontos:
+1. `generate-env-prod.sh` - validação fail-fast antes de gerar `.env.prod`
+2. Workflow runner - validação do `.env.prod` gerado
+3. Servidor Hetzner - validação após transferência SCP
 
 ### FASE 10: Web Search (SearXNG)
 | Secret | Descrição | Como Obter |
