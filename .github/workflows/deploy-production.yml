@@ -1271,6 +1271,55 @@ jobs:
             
             log "✅ Containers de inicialização OK (ou ainda em execução)"
             
+            # =================================================================
+            # FAIL-FAST: Verificar containers com ERRO DE DEPENDÊNCIA (02/01/2026)
+            # PROBLEMA: docker compose up -d retorna 0 mesmo com "dependency failed to start"
+            # Containers ficam em loop de restart enquanto workflow continua por minutos
+            # SOLUÇÃO: Verificar ativamente containers com status "created" ou "error"
+            # =================================================================
+            log "🔍 FAIL-FAST: Verificando erros de dependência..."
+            
+            # Capturar containers em estado problemático
+            # "created" = não conseguiu iniciar (geralmente erro de dependência)
+            # Usando docker compose ps com formato JSON para parsing confiável
+            PROBLEM_CONTAINERS=$(docker compose -f docker-compose.prod.yml --env-file .env.prod ps --format json 2>/dev/null | \
+              jq -r 'select(.State == "created" or .State == "dead" or (.State == "exited" and .ExitCode != 0)) | .Name' 2>/dev/null || true)
+            
+            if [ -n "$PROBLEM_CONTAINERS" ]; then
+              echo "❌ FAIL-FAST: Containers com problemas detectados!"
+              echo ""
+              echo "📋 Containers problemáticos:"
+              echo "$PROBLEM_CONTAINERS" | while read -r container; do
+                if [ -n "$container" ]; then
+                  STATUS=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "unknown")
+                  EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' "$container" 2>/dev/null || echo "N/A")
+                  ERROR=$(docker inspect --format='{{.State.Error}}' "$container" 2>/dev/null || echo "")
+                  echo "   - $container: status=$STATUS, exit=$EXIT_CODE"
+                  if [ -n "$ERROR" ]; then
+                    echo "     Erro: $ERROR"
+                  fi
+                fi
+              done
+              echo ""
+              
+              # Capturar logs dos primeiros 5 containers problemáticos
+              echo "🧾 Logs dos containers problemáticos:"
+              echo "$PROBLEM_CONTAINERS" | head -5 | while read -r container; do
+                if [ -n "$container" ]; then
+                  echo ""
+                  echo "--- Logs de $container (últimas 50 linhas) ---"
+                  docker logs --tail=50 "$container" 2>&1 || true
+                fi
+              done
+              
+              echo ""
+              echo "📋 Status completo de todos os containers:"
+              docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+              exit 1
+            fi
+            
+            log "✅ Nenhum erro de dependência detectado"
+            
             # Verificar status dos serviços core
             sleep 5
             
