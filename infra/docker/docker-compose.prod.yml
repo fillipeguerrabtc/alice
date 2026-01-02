@@ -387,6 +387,12 @@ services:
     image: ${IMAGE_PREFIX}-pgbackrest:${IMAGE_TAG:-latest}
     platform: linux/amd64
     container_name: alice-pgbackrest-init
+    # CORREÇÃO CRÍTICA 02/01/2026: Bypass do entrypoint original que aguarda PostgreSQL
+    # O entrypoint.sh da imagem faz pg_isready loop, causando DEADLOCK:
+    # - postgres depende de pgbackrest-init (service_completed_successfully)
+    # - entrypoint.sh aguarda postgres estar pronto
+    # SOLUÇÃO: Sobrescrever entrypoint para executar apenas o command inline
+    entrypoint: ["/bin/sh", "-c"]
     security_opt:
       - no-new-privileges:true
     read_only: true
@@ -404,8 +410,10 @@ services:
       - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
     networks:
       - alice-network
-    command: >
-      sh -c '
+    # CORREÇÃO 02/01/2026: Command como string única para entrypoint ["/bin/sh", "-c"]
+    # Usar | (literal scalar) para preservar quebras de linha
+    command:
+      - |
         echo "🔐 [pgBackRest Init] Verificando stanza alice_prod..."
         
         # Idempotência: verificar se stanza já existe
@@ -425,7 +433,6 @@ services:
           echo "❌ [pgBackRest Init] ERRO ao criar stanza"
           exit 1
         fi
-      '
     restart: "no"
     deploy:
       resources:
