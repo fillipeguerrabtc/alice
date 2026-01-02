@@ -6,8 +6,6 @@
   "license": "MIT",
   "packageManager": "pnpm@10.26.2",
   "pnpm": {
-    "inject-workspace-packages": true,
-    "force-legacy-deploy": true,
     "dedupe-peer-dependents": true,
     "overrides": {
       "drizzle-orm": "0.45.1",

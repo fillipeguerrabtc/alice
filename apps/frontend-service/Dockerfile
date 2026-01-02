@@ -44,12 +44,26 @@ RUN set -e; \
 FROM base AS builder
 WORKDIR /app
 
-# Copiar todo o código fonte
-COPY . .
+# Copiar arquivos de configuração do workspace (INCLUIR .npmrc!)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 
-# Instalar dependências (com cache)
+# Copiar package.json dos pacotes
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/shared-utils/package.json ./packages/shared-utils/
+COPY packages/config/package.json ./packages/config/
+COPY packages/logger/package.json ./packages/logger/
+COPY packages/database/package.json ./packages/database/
+
+# Copiar package.json do frontend
+COPY apps/frontend-service/package.json ./apps/frontend-service/
+
+# Instalar dependências (ANTES de copiar código fonte)
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
     pnpm install
+
+# Copiar código fonte dos pacotes e serviço
+COPY packages/ ./packages/
+COPY apps/frontend-service/ ./apps/frontend-service/
 
 # Compilar TODOS os pacotes na ordem correta de dependências
 # Usa pnpm workspace recursivo para garantir ordem de build

@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Janeiro de 2026  
-**Versão:** 1.6.0 - Infrastructure Path Fix
+**Versão:** 1.7.0 - Critical Pipeline Fixes
 
 ---
 

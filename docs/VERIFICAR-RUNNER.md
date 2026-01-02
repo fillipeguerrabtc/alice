@@ -274,4 +274,4 @@ jobs:
 
 *Autor: Fillipe Guerra*
 *Data: 02 de Janeiro de 2026*
-*Versão: 1.1 - Caddy Migration Validation*
+*Versão: 1.2 - Critical Pipeline Fixes*

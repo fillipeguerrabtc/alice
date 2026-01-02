@@ -2,7 +2,7 @@
 
 **Autor:** Fillipe Guerra  
 **Data:** 02 de Janeiro de 2026
-**Versão:** 3.0.0 - Migração Caddy Gateway (Traefik removido)
+**Versão:** 3.2.0 - Critical Pipeline Fixes
 
 Stack de observabilidade **SEPARADO e INDEPENDENTE** para garantir monitoramento mesmo se o sistema principal travar.
 
@@ -217,6 +217,6 @@ apps/observability-service/
 
 *Autor: Fillipe Guerra*
 *Documentação em Português Brasileiro (Regra 10 CLAUDE.md)*
-*Versão 3.1.0 - 02 de Janeiro de 2026*
+*Versão 3.2.0 - 02 de Janeiro de 2026*
 *Tecnologias: Node.js 22 LTS (Alpine 3.21), pnpm 10.26.2, TypeScript 5.9.3*
 *Total de Containers: 50 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

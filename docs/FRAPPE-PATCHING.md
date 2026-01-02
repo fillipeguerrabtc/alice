@@ -274,5 +274,5 @@ docker compose -f docker-compose.prod.yml exec erpnext-backend \
 *Autor: Fillipe Guerra*
 *Documento em Português Brasileiro*
 *Atualizado: 02 de Janeiro de 2026*
-*Versão: 1.5 - Caddy Gateway Integration*
+*Versão: 1.6 - Critical Pipeline Fixes*
 *Total de Containers: 50 (7 infraestrutura + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

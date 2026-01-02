@@ -1483,7 +1483,7 @@ Os 7 serviços Node.js usam imagens `node:22-alpine3.21` (CVE-2023-45853 fix). H
 
 *Autor: Fillipe Guerra*
 *Documento atualizado em: 02 de Janeiro de 2026*
-*Versão: 7.12 - Caddy Migration Path Fix*
+*Versão: 7.13 - Critical Pipeline Fixes*
 *Data: 02 de Janeiro de 2026*
 *Tecnologias: Node.js (versão LTS automática via API + fallback .nvmrc), pnpm (versão automática via package.json), TypeScript 5.9.3, Alpine 3.21*
 *Total de Containers: 50 (7 infra + 7 Alice + 15 ERPNext + 14 observability + 6 GPU + 1 backup)*

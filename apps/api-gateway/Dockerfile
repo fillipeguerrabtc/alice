@@ -6,22 +6,27 @@ FROM node:22-alpine3.21 AS builder
 
 WORKDIR /app
 
-# Instalar pnpm
-RUN npm install -g pnpm@10.26.2
+# Habilitar corepack para pnpm (Best Practice 2025)
+# Usa packageManager field do package.json (pnpm@10.26.2)
+RUN npm config set update-notifier false && corepack enable
 
-# Copiar arquivos de configuração do workspace
-COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY apps/api-gateway/package.json ./apps/api-gateway/
+# Copiar arquivos de configuração do workspace (INCLUIR .npmrc!)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
+
+# Copiar package.json de cada pacote interno
 COPY packages/shared-utils/package.json ./packages/shared-utils/
 COPY packages/config/package.json ./packages/config/
 COPY packages/logger/package.json ./packages/logger/
+
+# Copiar package.json do serviço
+COPY apps/api-gateway/package.json ./apps/api-gateway/
 
 # Instalar dependências
 RUN pnpm install --frozen-lockfile
 
 # Copiar código fonte
-COPY apps/api-gateway ./apps/api-gateway
-COPY packages ./packages
+COPY packages/ ./packages/
+COPY apps/api-gateway/ ./apps/api-gateway/
 
 # Build do serviço
 RUN pnpm --filter @alice/api-gateway build

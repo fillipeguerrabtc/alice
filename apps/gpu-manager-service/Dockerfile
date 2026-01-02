@@ -51,8 +51,8 @@ RUN set -e; \
 FROM base AS builder
 WORKDIR /app
 
-# Copiar arquivos de configuração do workspace
-COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+# Copiar arquivos de configuração do workspace (INCLUIR .npmrc!)
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc ./
 
 # Copiar package.json de cada pacote interno
 COPY packages/shared/package.json ./packages/shared/
