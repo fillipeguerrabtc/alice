@@ -233,12 +233,23 @@ jobs:
           
           if [ $MISSING -gt 0 ]; then
             echo ""
-            echo "⚠️ AVISO: $MISSING imagem(s) não encontrada(s) no GHCR"
-            echo "Isso pode indicar que o Release workflow não completou."
+            echo "❌ ERRO CRÍTICO: $MISSING imagem(s) obrigatória(s) NÃO ENCONTRADA(S) no GHCR"
+            echo ""
+            echo "DIAGNÓSTICO:"
+            echo "  - Release workflow pode ter falhado ao buildar essas imagens"
+            echo "  - Dockerfile pode não existir para esse serviço"
+            echo "  - Build pode ter falhado silenciosamente"
+            echo ""
+            echo "AÇÃO NECESSÁRIA:"
+            echo "  1. Verificar logs do workflow Release (job build-images)"
+            echo "  2. Verificar se Dockerfile existe em infra/ para o serviço"
+            echo "  3. Rodar build local para debug"
+            echo ""
             echo "exist=false" >> $GITHUB_OUTPUT
+            exit 1
           else
             echo ""
-            echo "✅ Todas as imagens críticas existem no GHCR"
+            echo "✅ Todas as ${#CRITICAL_SERVICES[@]} imagens obrigatórias existem no GHCR"
             echo "exist=true" >> $GITHUB_OUTPUT
           fi
 
@@ -372,9 +383,9 @@ jobs:
   deploy:
     name: Deploy Hetzner
     runs-on: [self-hosted, linux, deploy]
-    # CORREÇÃO 01/01/2026: Aumentado de 30 para 45 minutos
-    # Pull de 50+ containers + init pode exceder 30min em conexões lentas
-    timeout-minutes: 45
+    # CORREÇÃO 02/01/2026: Aumentado de 45 para 60 minutos
+    # Primeiro deploy: 51 containers + init scripts (ERPNext create-site, migrations) podem demorar
+    timeout-minutes: 60
     needs: [validate-and-prepare, image-security-scan]
     if: always() && needs.validate-and-prepare.result == 'success' && (needs.image-security-scan.result == 'success' || needs.image-security-scan.result == 'skipped')
     
@@ -495,6 +506,57 @@ jobs:
           ls -la .env.prod
 
       # ==========================================================================
+      # CORREÇÃO 02/01/2026: Validação pós-geração do .env.prod (fail-fast)
+      # ==========================================================================
+      - name: Validar .env.prod gerado
+        run: |
+          echo "🔐 Validando .env.prod gerado..."
+          
+          if [ ! -f .env.prod ]; then
+            echo "❌ ERRO: .env.prod NÃO foi gerado!"
+            exit 1
+          fi
+          
+          if [ ! -s .env.prod ]; then
+            echo "❌ ERRO: .env.prod está VAZIO!"
+            exit 1
+          fi
+          
+          # Validar presença de variáveis CRÍTICAS
+          REQUIRED_KEYS=(
+            "IMAGE_PREFIX"
+            "IMAGE_TAG"
+            "POSTGRES_PASSWORD"
+            "REDIS_PASSWORD"
+            "SESSION_SECRET"
+            "INTERNAL_API_SECRET"
+            "QDRANT_API_KEY"
+            "CLICKHOUSE_PASSWORD"
+            "LANGFUSE_DB_PASSWORD"
+            "ADMIN_USER"
+            "ADMIN_PWD"
+          )
+          
+          MISSING=0
+          for key in "${REQUIRED_KEYS[@]}"; do
+            if ! grep -q "^${key}=" .env.prod; then
+              echo "❌ ERRO: Variável obrigatória AUSENTE em .env.prod: $key"
+              MISSING=$((MISSING + 1))
+            fi
+          done
+          
+          if [ $MISSING -gt 0 ]; then
+            echo ""
+            echo "❌ ERRO: $MISSING variável(is) obrigatória(s) ausente(s)"
+            echo "Verifique se os secrets estão configurados no GitHub"
+            exit 1
+          fi
+          
+          ENV_LINES=$(wc -l < .env.prod)
+          ENV_SIZE=$(stat -c%s .env.prod 2>/dev/null || stat -f%z .env.prod 2>/dev/null || echo "?")
+          echo "✅ .env.prod validado (${ENV_LINES} linhas, ${ENV_SIZE} bytes)"
+
+      # ==========================================================================
       # CORREÇÃO DEFINITIVA 27/12/2025: Transferência .env.prod via SCP em 3 etapas
       # ==========================================================================
       # PROBLEMA ANTERIOR (base64 via SSH):
@@ -561,9 +623,9 @@ jobs:
           username: ${{ secrets.HETZNER_VM_USER }}
           key: ${{ secrets.HETZNER_SSH_PRIVATE_KEY }}
           envs: GH_PAT,IMAGE_PREFIX,IMAGE_TAG,DEPLOY_SERVICES,DEPLOY_VERSION,REPO_FULL_NAME,GITHUB_SHA,GITHUB_ACTOR,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,EXPECTED_HOST_IP
-          # CORREÇÃO 01/01/2026: Aumentado de 30m para 40m
-          # Pull de 51 containers + init pode demorar em conexões lentas
-          command_timeout: 40m
+          # CORREÇÃO 02/01/2026: Aumentado de 40m para 55m
+          # Primeiro deploy: 51 containers + init scripts podem demorar muito
+          command_timeout: 55m
           script: |
             set -euo pipefail
 
@@ -575,6 +637,54 @@ jobs:
             log() {
               echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
             }
+            
+            # =================================================================
+            # CORREÇÃO 02/01/2026: Função log_cmd() para rastrear cada comando
+            # Conforme PROBLEMA #5 do relatório de deploy
+            # =================================================================
+            log_cmd() {
+              local cmd="$1"
+              log "🔄 Executando: $cmd"
+              if eval "$cmd"; then
+                log "✅ Sucesso: $cmd"
+                return 0
+              else
+                local exit_code=$?
+                log "❌ FALHOU: $cmd (exit code: $exit_code)" >&2
+                return $exit_code
+              fi
+            }
+            
+            # =================================================================
+            # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
+            # Conforme PROBLEMA #10 do relatório de deploy
+            # =================================================================
+            TOTAL_STEPS=12
+            progress() {
+              local step="$1"
+              local desc="$2"
+              log "[$step/$TOTAL_STEPS] $desc"
+            }
+            
+            # =================================================================
+            # CORREÇÃO 02/01/2026: Cleanup automático em caso de falha
+            # Conforme PROBLEMA #9 do relatório de deploy
+            # =================================================================
+            cleanup_on_failure() {
+              local exit_code=$?
+              if [ $exit_code -ne 0 ]; then
+                log "❌ [CLEANUP] Script falhou com exit code $exit_code na linha $LINENO"
+                log "🧹 [CLEANUP] Capturando estado dos containers para diagnóstico..."
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
+                log "🧹 [CLEANUP] Logs dos containers com erro (últimas 50 linhas cada):"
+                for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
+                  log "--- Logs de $c ---"
+                  docker logs --tail=50 "$c" 2>&1 || true
+                done
+                log "🧹 [CLEANUP] Diagnóstico completo"
+              fi
+            }
+            trap cleanup_on_failure EXIT
 
             log "=============================================="
             log "DEPLOY ALICE ENTERPRISE PLATFORM"
@@ -589,6 +699,7 @@ jobs:
             # =================================================================
             # Fonte de verdade: secrets.HETZNER_VM_HOST (passado como EXPECTED_HOST_IP)
             # Objetivo: impedir deploy acidental no Deploy Server (runner) ou host errado.
+            progress 1 "Validando servidor de produção (fail-fast)"
             echo "🔍 DIAGNÓSTICO DO SERVIDOR (fail-fast):"
             echo "   Hostname: $(hostname)"
             echo "   Usuário: $(whoami)"
@@ -663,6 +774,7 @@ jobs:
             # =================================================================
             # PRE-FLIGHT CHECKS ADICIONAIS (01/01/2026)
             # =================================================================
+            progress 2 "PRE-FLIGHT CHECKS (disco, Docker, Docker Compose)"
             log "🔍 PRE-FLIGHT CHECKS ADICIONAIS..."
             
             # Check 1: Espaço em disco (mínimo 50GB para primeiro deploy)
@@ -746,6 +858,7 @@ jobs:
             # =================================================================
             # FASE 1: Validar .env.prod transferido
             # =================================================================
+            progress 3 "Validando .env.prod transferido"
             echo "🔐 Validando .env.prod..."
             
             # scp-action pode criar estrutura: /opt/alice/app/infra/docker/.env.prod
@@ -836,6 +949,7 @@ jobs:
             # =================================================================
             # FASE 2: Estrutura de diretórios (volumes Docker)
             # =================================================================
+            progress 4 "Criando estrutura de diretórios para volumes Docker"
             echo "📁 Criando estrutura de diretórios para volumes Docker..."
             
             # Diretórios de dados
@@ -896,6 +1010,7 @@ jobs:
             # CORREÇÃO 27/12/2025: langfuse-db usa POSTGRES_PASSWORD_FILE que espera um ARQUIVO
             # contendo a senha, não uma variável de ambiente. Extraímos do .env.prod.
             # CORREÇÃO 28/12/2025: Verificar e remover diretórios conflitantes antes de criar arquivos
+            progress 5 "Criando arquivos de secrets"
             echo "🔐 Criando arquivos de secrets..."
             
             # CORREÇÃO 28/12/2025: Remover diretórios conflitantes (bug onde mkdir -p criou diretório ao invés de arquivo)
@@ -927,6 +1042,7 @@ jobs:
             # =================================================================
             # FASE 3: Clonar/atualizar repositório
             # =================================================================
+            progress 6 "Clonando/atualizando repositório"
             # Salvar .env.prod antes de modificar o diretório
             cp "$ENV_FILE" /tmp/.env.prod.backup
             
@@ -952,6 +1068,7 @@ jobs:
             # =================================================================
             # FASE 5: Login nos registries
             # =================================================================
+            progress 7 "Login nos registries (GHCR + Docker Hub)"
             echo "${GH_PAT}" | docker login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin
             if [ -n "${DOCKERHUB_USERNAME:-}" ] && [ -n "${DOCKERHUB_TOKEN:-}" ]; then
               echo "${DOCKERHUB_TOKEN}" | docker login -u "${DOCKERHUB_USERNAME}" --password-stdin
@@ -960,6 +1077,7 @@ jobs:
             # =================================================================
             # FASE 6: Criar networks Docker
             # =================================================================
+            progress 8 "Criando networks Docker"
             echo "🌐 Criando networks Docker..."
             docker network create alice-network 2>/dev/null || echo "ℹ️ alice-network já existe"
             docker network create erpnext-network 2>/dev/null || echo "ℹ️ erpnext-network já existe"
@@ -978,6 +1096,7 @@ jobs:
             # CORREÇÃO 01/01/2026: Pull com retry e exponential backoff
             # Docker Hub pode ter rate limiting ou falhas temporárias
             # =================================================================
+            progress 9 "Pull das imagens Docker (serviços core)"
             echo "📥 Baixando imagens Docker (serviços core)..."
             
             pull_with_retry() {
@@ -1016,6 +1135,7 @@ jobs:
               exit 1
             fi
             
+            progress 10 "Iniciando containers CORE (51 serviços)"
             echo "🚀 Iniciando containers CORE (sem GPU)..."
             if ! docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans; then
               echo "❌ ERRO: docker compose up (core) falhou. Capturando diagnóstico..."
@@ -1683,6 +1803,7 @@ jobs:
             # =================================================================
             # FASE 8: Iniciar serviços GPU (OBRIGATÓRIO)
             # =================================================================
+            progress 11 "Iniciando serviços GPU (OBRIGATÓRIO)"
             # GPU PROFILE: gpu-llm (Mixtral para chat/inference)
             # Outros profiles disponíveis: gpu-embeddings, gpu-flux, gpu-asr, gpu-training
             # NOTA: Apenas UM profile GPU deve estar ativo por vez (GPU única de 20GB)
@@ -1718,6 +1839,7 @@ jobs:
             # Status final
             TOTAL_RUNNING=$(docker ps --format "{{.Names}}" | wc -l)
             echo ""
+            progress 12 "Deploy COMPLETO - Verificando resultado"
             echo "=============================================="
             echo "✅ Deploy COMPLETO:"
             echo "   - Total containers: ${TOTAL_RUNNING}"
