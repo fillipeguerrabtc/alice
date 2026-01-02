@@ -3,7 +3,7 @@
 > **Autor:** Fillipe Guerra  
 > **Data:** 02 de Janeiro de 2026  
 > **Método:** Verificação direta do código-fonte + Revisão sistemática completa  
-> **Versão:** 4.26 - Caddy Gateway + pgBackRest Init
+> **Versão:** 4.27 - Fix Release Pipeline Caddy Service
 
 ---
 
@@ -822,12 +822,12 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | CI Jobs | 6 jobs | 4 jobs | ~60% tempo |
 | Build Services | Em CI (redundante) | REMOVIDO (Release builda) | 15min eliminados |
 | Security + Compliance | 2 jobs separados | 1 job consolidado | ~5min |
-| Docker Images | Matrix 15 jobs | 1 job `build-images` | ~4min overhead |
+| Docker Images | Matrix 17 jobs | 1 job `build-images` | ~4min overhead |
 | Node.js Setup | Repetido 15x | Composite action 1x | ~6-10min |
 
-> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow é o responsável por garantir que **todas as 15 imagens** existam para a TAG do release (GHCR). Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release publica imagens (15 tags), Deploy deploya.
+> **OTIMIZAÇÃO (27/12/2025):** O job `build-all` foi REMOVIDO do CI pois era redundante - o Release workflow é o responsável por garantir que **todas as 17 imagens** existam para a TAG do release (GHCR). Cada workflow agora tem responsabilidade única: CI valida (typecheck/lint/security), Release publica imagens (17 tags), Deploy deploya.
 
-> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest adicionado (10 microservices + 5 GPU = 15 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
+> **OTIMIZAÇÃO Docker Builds (27/12/2025):** Todos os builds usam `--network=host` para downloads mais rápidos. pgBackRest, postgres e caddy adicionados (12 services + 5 GPU = 17 imagens). **Enterprise retagging (27/12/2025):** quando um serviço **não mudou**, o Release **não rebuilda** — ele faz **retag no GHCR** apontando para o mesmo digest do release anterior, garantindo a TAG nova (determinismo total) e reduzindo drasticamente o tempo (principalmente nas imagens GPU).
 
 > **Bug Fix Deploy (28/12/2025):** Digests SHA256 removidos de todas as imagens de terceiros pois rotacionam quando Docker Hub republica tags. Componentes atualizados para últimas versões: **Prometheus v3.8.1**, **Caddy 2.8.4**, **cAdvisor v0.52.1**, **Node Exporter v1.9.1**, **ClickHouse 25.12-alpine**, **Langfuse 3.140.0**, **pgBackRest 2.57.0**. **(01/01/2026):** Alertmanager removido - alertas via Grafana Alerting. **(02/01/2026):** Traefik removido - Caddy é novo API Gateway.
 
@@ -842,7 +842,7 @@ Push → CI (auto) → Release (auto) → Deploy (auto)
 | trigger-release | 2 min | API call |
 | **Release Workflow** | | |
 | create-release | 5 min | Tag + GitHub Release |
-| build-images | 90 min | 15 imagens Docker (10 microservices + 5 GPU) - rebuild apenas do que mudou; retag do restante |
+| build-images | 90 min | 17 imagens Docker (12 services + 5 GPU) - rebuild apenas do que mudou; retag do restante |
 | deploy-production (tag push) | - | Disparo automático por TAG `v*` (sem API call) |
 | **Deploy Workflow** | | |
 | validate-and-prepare | 5 min | Validação + GHCR check |

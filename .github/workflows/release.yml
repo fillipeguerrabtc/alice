@@ -12,7 +12,7 @@
 #   1. Validar e criar tag semântica (vX.Y.Z)
 #   2. Gerar changelog automático (Conventional Commits)
 #   3. Criar GitHub Release com notas
-#   4. Build e push de TODAS as 14 imagens Docker (9 microservices + 5 GPU)
+#   4. Build e push de TODAS as 17 imagens Docker (12 services + 5 GPU)
 #   5. Disparar workflow de Deploy
 #
 # OTIMIZAÇÃO (27/12/2025): Consolidação de builds Docker
@@ -314,6 +314,7 @@ jobs:
                 rag) SERVICE_DIR_PATTERN="^apps/rag-service/" ;;
                 training) SERVICE_DIR_PATTERN="^apps/training-service/" ;;
                 gpu-manager) SERVICE_DIR_PATTERN="^apps/gpu-manager-service/" ;;
+                caddy) SERVICE_DIR_PATTERN="^infra/docker/" ;;
                 *)
                   echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
                   exit 1
@@ -359,7 +360,7 @@ jobs:
             fi
           done
           
-          echo "✅ All 11 microservices built!"
+          echo "✅ All 12 services built!"
 
       # ==========================================================================
       # SMOKE TEST: Validar imagem PostgreSQL + pgvector (CRÍTICO)
@@ -544,7 +545,7 @@ jobs:
             fi
           done
           
-          echo "✅ All 15 images built (10 microservices + 5 GPU)"
+          echo "✅ All 17 images built (12 services + 5 GPU)"
 
   # ===========================================================================
   # Job 3: Disparar Deploy Automaticamente
