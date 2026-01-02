@@ -358,14 +358,16 @@ services:
       - erpnext-network
     healthcheck:
       # CORREÇÃO 02/01/2026: Verificar se Caddy está servindo tráfego HTTP
-      # Prioridade 1: Tentar wget na porta 80 (verifica se está servindo)
+      # Prioridade 1: Tentar Admin API (porta 2019 - sempre disponível mesmo durante ACME)
       # Fallback: Verificar portas em tcp/tcp6 (80=0050, 443=01BB, 2019=07E3)
+      # NOTA: No primeiro deploy, ACME challenge pode demorar - usar Admin API é mais confiável
       # Caddy escuta em IPv6 (::) que cobre IPv4, então portas aparecem em tcp6
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ 2>/dev/null || grep -qiE ':0050|:01BB|:07E3' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:2019/config/ 2>/dev/null || grep -qiE ':0050|:01BB|:07E3' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 45s
+      # MELHORIA 02/01/2026: Aumentado de 45s para 60s (ACME challenge pode demorar)
+      start_period: 60s
     deploy:
       resources:
         limits:
@@ -421,13 +423,28 @@ services:
         set -e
         echo "🔐 [pgBackRest Init] Verificando stanza alice_prod..."
         
+        # =================================================================
+        # CORREÇÃO CRÍTICA 02/01/2026: pgBackRest 2.49+ PROÍBE senhas na CLI
+        # =================================================================
+        # ERROR: [031]: option 'repo1-cipher-pass' is not allowed on the command-line
+        # HINT: this option could expose secrets in the process list.
+        # SOLUÇÃO: pgBackRest lê AUTOMATICAMENTE PGBACKREST_REPO1_CIPHER_PASS (env var)
+        # Ref: https://pgbackrest.org/configuration.html#section-general/option-repo-cipher-pass
+        # =================================================================
+        
+        # Validar que variável de ambiente está definida (fail-fast)
+        if [ -z "${PGBACKREST_REPO1_CIPHER_PASS:-}" ]; then
+          echo "❌ [pgBackRest Init] ERRO: PGBACKREST_REPO1_CIPHER_PASS não definido"
+          echo "   Configure BACKUP_CIPHER_PASS nos secrets do GitHub"
+          exit 1
+        fi
+        
         # Idempotência: verificar se stanza já existe no repositório
-        # NOTA: Usar apenas configurações de repositório (sem pg1-*)
+        # NOTA: NÃO passar --repo1-cipher-pass na CLI (pgBackRest lê da env var)
         if pgbackrest \
             --stanza=alice_prod \
             --repo1-path=/var/lib/pgbackrest \
             --repo1-cipher-type=aes-256-cbc \
-            --repo1-cipher-pass="${PGBACKREST_REPO1_CIPHER_PASS}" \
             --log-level-console=warn \
             info 2>/dev/null | grep -q "status"; then
           echo "✅ [pgBackRest Init] Stanza alice_prod já existe"
@@ -436,15 +453,14 @@ services:
         
         echo "📦 [pgBackRest Init] Criando stanza alice_prod (repositório vazio)..."
         
-        # CORREÇÃO CRÍTICA 02/01/2026: Criar stanza SEM pg1-path
-        # --no-online: não conectar ao PostgreSQL
-        # SEM --pg1-path: não tentar ler pg_control (arquivo não existe ainda)
-        # Passar APENAS configurações de repositório via CLI (ignora pgbackrest.conf)
+        # CORREÇÃO CRÍTICA 02/01/2026: 
+        # 1. NÃO passar --repo1-cipher-pass na CLI (pgBackRest lê da env var PGBACKREST_REPO1_CIPHER_PASS)
+        # 2. --no-online: não conectar ao PostgreSQL (ainda não iniciou)
+        # 3. SEM --pg1-path: não tentar ler pg_control (arquivo não existe ainda)
         if pgbackrest \
             --stanza=alice_prod \
             --repo1-path=/var/lib/pgbackrest \
             --repo1-cipher-type=aes-256-cbc \
-            --repo1-cipher-pass="${PGBACKREST_REPO1_CIPHER_PASS}" \
             --log-level-console=info \
             --log-level-file=detail \
             --log-path=/var/log/pgbackrest \

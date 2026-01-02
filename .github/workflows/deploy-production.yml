@@ -656,17 +656,24 @@ jobs:
             # =================================================================
             # CORREÇÃO 02/01/2026: Função progress() para indicadores de progresso
             # Conforme PROBLEMA #10 do relatório de deploy
+            # MELHORIA 02/01/2026: Adiciona tempo decorrido e % de progresso
             # =================================================================
             TOTAL_STEPS=13
+            DEPLOY_START=$(date +%s)
             progress() {
               local step="$1"
               local desc="$2"
-              log "[$step/$TOTAL_STEPS] $desc"
+              local elapsed=$(($(date +%s) - DEPLOY_START))
+              local mins=$((elapsed / 60))
+              local secs=$((elapsed % 60))
+              local percent=$((step * 100 / TOTAL_STEPS))
+              log "[$step/$TOTAL_STEPS - ${percent}% - ${mins}m${secs}s] $desc"
             }
             
             # =================================================================
             # CORREÇÃO 02/01/2026: Cleanup automático em caso de falha
             # Conforme PROBLEMA #9 do relatório de deploy
+            # MELHORIA: Captura logs de TODOS containers com erro (incluindo init)
             # =================================================================
             cleanup_on_failure() {
               local exit_code=$?
@@ -674,11 +681,27 @@ jobs:
                 log "❌ [CLEANUP] Script falhou com exit code $exit_code na linha $LINENO"
                 log "🧹 [CLEANUP] Capturando estado dos containers para diagnóstico..."
                 docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
-                log "🧹 [CLEANUP] Logs dos containers com erro (últimas 50 linhas cada):"
-                for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
-                  log "--- Logs de $c ---"
-                  docker logs --tail=50 "$c" 2>&1 || true
+                
+                # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
+                # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
+                log "🧹 [CLEANUP] Logs dos containers com erro (últimas 200 linhas cada):"
+                
+                # Capturar containers com exit code != 0 (incluindo init que já saíram)
+                for c in $(docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | head -15); do
+                  CONTAINER_EXIT=$(docker inspect --format='{{.State.ExitCode}}' "$c" 2>/dev/null || echo "?")
+                  log "--- Logs de $c (exit code: $CONTAINER_EXIT) ---"
+                  docker logs --tail=200 "$c" 2>&1 || true
                 done
+                
+                # Também capturar containers com status exited/dead (podem ter exit 0 mas falharam depois)
+                for c in $(docker ps -a --filter "status=exited" --filter "status=dead" --format "{{.Names}}" 2>/dev/null | head -10); do
+                  # Evitar duplicatas
+                  if ! docker ps -a --filter "exited!=0" --format "{{.Names}}" 2>/dev/null | grep -q "^${c}$"; then
+                    log "--- Logs de $c (status: exited/dead) ---"
+                    docker logs --tail=100 "$c" 2>&1 || true
+                  fi
+                done
+                
                 log "🧹 [CLEANUP] Diagnóstico completo"
               fi
             }
@@ -1194,7 +1217,9 @@ jobs:
               while [ $attempt -le $max_attempts ]; do
                 log "📥 Tentativa $attempt/$max_attempts de pull das imagens..."
                 
-                if docker compose -f docker-compose.prod.yml --env-file .env.prod pull; then
+                # PROBLEMA #5: Usar log para rastrear comando executado
+              log "🔄 Executando: docker compose pull (todas as imagens)"
+              if docker compose -f docker-compose.prod.yml --env-file .env.prod pull; then
                   log "✅ Pull concluído com sucesso"
                   return 0
                 else
@@ -1227,8 +1252,15 @@ jobs:
             
             # CORREÇÃO 02/01/2026: Capturar saída do docker compose para detectar erros imediatamente
             # docker compose up -d retorna 0 mesmo com "dependency failed to start"
+            # PROBLEMA #5: Usar log para rastrear comando executado
+            log "🔄 Executando: docker compose up -d --remove-orphans (containers CORE)"
             COMPOSE_OUTPUT=$(docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans 2>&1) || true
             COMPOSE_EXIT=$?
+            if [ $COMPOSE_EXIT -eq 0 ]; then
+              log "✅ docker compose up (core) retornou sucesso (exit 0)"
+            else
+              log "❌ docker compose up (core) retornou erro (exit $COMPOSE_EXIT)"
+            fi
             echo "$COMPOSE_OUTPUT"
             
             # FAIL-FAST IMEDIATO: Verificar erros de dependência na saída
@@ -1356,6 +1388,15 @@ jobs:
               echo ""
               echo "📋 Status de todos os containers:"
               docker compose -f docker-compose.prod.yml --env-file .env.prod ps || true
+              echo ""
+              # =================================================================
+              # MELHORIA M1 (02/01/2026): Rollback automático em falha de init
+              # =================================================================
+              # Parar todos os containers mas PRESERVAR dados (pode ser parcialmente válido)
+              # Isso permite re-tentar deploy sem perder dados do PostgreSQL se existirem
+              echo "🔄 Iniciando cleanup automático..."
+              docker compose -f docker-compose.prod.yml --env-file .env.prod down --remove-orphans 2>/dev/null || true
+              echo "🧹 Cleanup completo - dados persistentes preservados"
               exit 1
             fi
             
@@ -2119,6 +2160,15 @@ jobs:
               echo "   ⚠️ Chat → GPU Manager: não alcança (verificar network)"
             fi
             
+            # Test 7: pgBackRest stanza existe e está acessível (PROBLEMA #8)
+            echo "🔍 Test 7: pgBackRest stanza..."
+            if docker exec alice-postgres pgbackrest --stanza=alice_prod info 2>/dev/null | grep -q "status"; then
+              echo "   ✅ pgBackRest stanza: OK"
+            else
+              echo "   ⚠️ pgBackRest stanza: não encontrada (verificar pgbackrest-init)"
+              echo "      NOTA: stanza-upgrade pode ser necessário após postgres iniciar"
+            fi
+            
             echo ""
             if [ $SMOKE_FAILED -eq 1 ]; then
               echo "❌ ERRO: Um ou mais smoke tests críticos falharam!"
@@ -2140,6 +2190,27 @@ jobs:
             echo "   - Profile GPU ativo: ${GPU_PROFILE}"
             echo "   - Smoke tests: PASSOU"
             echo "=============================================="
+            
+            # =================================================================
+            # MELHORIA M2 (02/01/2026): Persistir métricas de deploy
+            # Útil para análise de performance de deploys passados
+            # =================================================================
+            DEPLOY_END=$(date +%s)
+            DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+            cat > /opt/alice/logs/deploy-metrics-$(date +%Y%m%d-%H%M%S).json <<EOF
+            {
+              "version": "${IMAGE_TAG}",
+              "timestamp": "$(date -Iseconds)",
+              "duration_seconds": ${DEPLOY_DURATION},
+              "status": "success",
+              "containers_total": ${TOTAL_RUNNING},
+              "containers_gpu": ${GPU_RUNNING:-0},
+              "gpu_profile": "${GPU_PROFILE:-none}",
+              "smoke_tests": "passed"
+            }
+            EOF
+            echo ""
+            echo "📊 Métricas de deploy salvas em /opt/alice/logs/"
 
   # ===========================================================================
   # Job 4: Health Check
