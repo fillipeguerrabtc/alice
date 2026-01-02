@@ -357,10 +357,11 @@ services:
       - alice-network
       - erpnext-network
     healthcheck:
-      # CORREÇÃO 02/01/2026: Verificar porta em AMBOS tcp e tcp6
-      # Caddy escuta em IPv6 (::) que cobre IPv4, então porta aparece em tcp6
-      # Porta 2019 decimal = 07E3 hexadecimal
-      test: ["CMD-SHELL", "grep -qi ':07E3' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
+      # CORREÇÃO 02/01/2026: Verificar se Caddy está servindo tráfego HTTP
+      # Prioridade 1: Tentar wget na porta 80 (verifica se está servindo)
+      # Fallback: Verificar portas em tcp/tcp6 (80=0050, 443=01BB, 2019=07E3)
+      # Caddy escuta em IPv6 (::) que cobre IPv4, então portas aparecem em tcp6
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:80/ 2>/dev/null || grep -qiE ':0050|:01BB|:07E3' /proc/net/tcp /proc/net/tcp6 2>/dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -409,32 +410,54 @@ services:
       - /opt/alice/backups/postgresql/logs:/var/log/pgbackrest:rw
     networks:
       - alice-network
-    # CORREÇÃO CRÍTICA 02/01/2026: Usar --no-online para criar stanza SEM PostgreSQL
-    # pgBackRest --no-online: cria estrutura de repositório sem conectar ao banco
-    # Isso resolve o DEADLOCK: postgres precisa stanza, stanza-create precisava postgres
+    # CORREÇÃO CRÍTICA 02/01/2026: Criar stanza SEM pg1-path (sem pg_control)
+    # PROBLEMA ANTERIOR: pgbackrest.conf tinha pg1-path que requer pg_control existir
+    # SOLUÇÃO: Passar TODAS as configurações via linha de comando, SEM pg1-*
+    # Isso cria apenas estrutura de diretórios no repositório
+    # Após postgres iniciar, stanza-upgrade sincroniza com pg_control
     # Ref: https://pgbackrest.org/command.html#command-stanza-create
     command:
       - |
+        set -e
         echo "🔐 [pgBackRest Init] Verificando stanza alice_prod..."
         
-        # Idempotência: verificar se stanza já existe e está OK
-        if pgbackrest --stanza=alice_prod --log-level-console=warn info 2>/dev/null | grep -q "status: ok"; then
-          echo "✅ [pgBackRest Init] Stanza alice_prod já existe e está OK"
+        # Idempotência: verificar se stanza já existe no repositório
+        # NOTA: Usar apenas configurações de repositório (sem pg1-*)
+        if pgbackrest \
+            --stanza=alice_prod \
+            --repo1-path=/var/lib/pgbackrest \
+            --repo1-cipher-type=aes-256-cbc \
+            --repo1-cipher-pass="${PGBACKREST_REPO1_CIPHER_PASS}" \
+            --log-level-console=warn \
+            info 2>/dev/null | grep -q "status"; then
+          echo "✅ [pgBackRest Init] Stanza alice_prod já existe"
           exit 0
         fi
         
-        echo "📦 [pgBackRest Init] Criando stanza alice_prod (repositório local)..."
+        echo "📦 [pgBackRest Init] Criando stanza alice_prod (repositório vazio)..."
         
-        # CORREÇÃO CRÍTICA: --no-online cria stanza SEM conectar ao PostgreSQL
-        # Cria apenas estrutura de diretórios no repositório
-        # PostgreSQL pode iniciar com archive_command apontando para esta stanza
-        # Após postgres iniciar, stanza-upgrade sincroniza metadados
-        if pgbackrest --stanza=alice_prod --log-level-console=info --no-online stanza-create; then
-          echo "✅ [pgBackRest Init] Stanza criada com sucesso (offline mode)"
-          pgbackrest --stanza=alice_prod info || true
+        # CORREÇÃO CRÍTICA 02/01/2026: Criar stanza SEM pg1-path
+        # --no-online: não conectar ao PostgreSQL
+        # SEM --pg1-path: não tentar ler pg_control (arquivo não existe ainda)
+        # Passar APENAS configurações de repositório via CLI (ignora pgbackrest.conf)
+        if pgbackrest \
+            --stanza=alice_prod \
+            --repo1-path=/var/lib/pgbackrest \
+            --repo1-cipher-type=aes-256-cbc \
+            --repo1-cipher-pass="${PGBACKREST_REPO1_CIPHER_PASS}" \
+            --log-level-console=info \
+            --log-level-file=detail \
+            --log-path=/var/log/pgbackrest \
+            --no-online \
+            stanza-create; then
+          echo "✅ [pgBackRest Init] Stanza criada com sucesso (repositório vazio)"
+          echo "ℹ️  PostgreSQL vai fazer archive-push após iniciar"
+          echo "ℹ️  stanza-upgrade será executado pelo container pgbackrest principal"
           exit 0
         else
           echo "❌ [pgBackRest Init] ERRO ao criar stanza"
+          echo "   Verifique permissões em /var/lib/pgbackrest"
+          ls -la /var/lib/pgbackrest/ 2>/dev/null || echo "   Diretório não existe ou sem permissão"
           exit 1
         fi
     restart: "no"
