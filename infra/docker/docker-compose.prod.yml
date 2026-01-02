@@ -1392,11 +1392,11 @@ services:
           cpus: '0.5'
 
   # Redis Cache - Cache ERPNext
-  # Docs 2025: Redis 7.4 cache - maxmemory = 80-90% do container (200MB para 256MB)
+  # Docs 2025: ERPNext v15 REQUER Redis 6.x (documentação oficial Frappe)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-cache:
-    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine
+    # ATUALIZADO 01/01/2026: 7.4.6-alpine -> 6.2.21-alpine (ERPNext v15 requer Redis 6)
+    image: redis:6.2.21-alpine
     platform: linux/amd64
     container_name: erpnext-redis-cache
     restart: always
@@ -1454,11 +1454,11 @@ services:
           cpus: '0.1'
 
   # Redis Queue - Filas ERPNext
-  # Docs 2025: Redis 7.4 queue - maxmemory = 80-90% do container (200MB para 256MB)
+  # Docs 2025: ERPNext v15 REQUER Redis 6.x (documentação oficial Frappe)
   # SEGURANÇA: ACL + Image digest SHA256 (Supply Chain Security 2025)
   erpnext-redis-queue:
-    # ATUALIZADO 14/12/2025: 7-alpine -> 7.4.6-alpine (ultima estável do 7.x)
-    image: redis:7.4.6-alpine
+    # ATUALIZADO 01/01/2026: 7.4.6-alpine -> 6.2.21-alpine (ERPNext v15 requer Redis 6)
+    image: redis:6.2.21-alpine
     platform: linux/amd64
     container_name: erpnext-redis-queue
     restart: always
