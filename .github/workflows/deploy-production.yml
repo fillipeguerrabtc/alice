@@ -1282,18 +1282,21 @@ jobs:
             
             echo "✅ BACKUP_CIPHER_PASS presente no .env.prod (${BACKUP_LEN} chars)"
             
-            # CORREÇÃO 02/01/2026: Capturar saída do docker compose para detectar erros imediatamente
-            # docker compose up -d retorna 0 mesmo com "dependency failed to start"
+            # CORREÇÃO 03/01/2026: Mostrar output em TEMPO REAL durante docker compose up
+            # PROBLEMA: Capturar saída com $() oculta progresso - workflow parece travado
+            # SOLUÇÃO: Usar tee para mostrar em tempo real E capturar para análise
             # PROBLEMA #5: Usar log para rastrear comando executado
             log "🔄 Executando: docker compose up -d --remove-orphans (containers CORE)"
-            COMPOSE_OUTPUT=$(docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans 2>&1) || true
-            COMPOSE_EXIT=$?
+            COMPOSE_LOG="/tmp/compose_output_$$.log"
+            docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --remove-orphans 2>&1 | tee "$COMPOSE_LOG"
+            COMPOSE_EXIT=${PIPESTATUS[0]}
+            COMPOSE_OUTPUT=$(cat "$COMPOSE_LOG")
+            rm -f "$COMPOSE_LOG"
             if [ $COMPOSE_EXIT -eq 0 ]; then
               log "✅ docker compose up (core) retornou sucesso (exit 0)"
             else
               log "❌ docker compose up (core) retornou erro (exit $COMPOSE_EXIT)"
             fi
-            echo "$COMPOSE_OUTPUT"
             
             # =================================================================
             # MONITORAMENTO ATIVO: Detectar crash loops e containers unhealthy
