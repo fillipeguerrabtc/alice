@@ -43,12 +43,12 @@ RUN mkdir -p /var/log/caddy && \
     chown -R caddy:caddy /var/log/caddy && \
     chmod 755 /var/log/caddy
 
-# Health check - Verificar Admin API (saúde REAL)
-# CORREÇÃO 03/01/2026: wget instalado via apk (linha 30)
-# Retries 10 (consistente com docker-compose.prod.yml)
+# Health check - Verificar endpoint /health (saúde REAL)
+# CORREÇÃO 03/01/2026: Endpoint simples em porta 80
+# Não depende de ACME, SSL, DNS ou Admin API
 # Flags: --spider -q (ordem importa per wget man page)
-HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=10 \
-    CMD wget --spider -q http://localhost:2019/config/ || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=5 \
+    CMD wget --spider -q http://localhost/health || exit 1
 
 # Expor portas
 # 80: HTTP (redirect para HTTPS)
