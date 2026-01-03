@@ -737,6 +737,34 @@ jobs:
                 log "🧹 [CLEANUP] Capturando estado dos containers para diagnóstico..."
                 docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null | head -60 || true
                 
+                # =============================================================
+                # CORREÇÃO 03/01/2026: Diagnóstico específico do Caddy
+                # =============================================================
+                # PROBLEMA: Caddy fica unhealthy mas não capturávamos seus logs
+                # SOLUÇÃO: Capturar logs, healthcheck e env vars do Caddy
+                # =============================================================
+                if docker ps -a --format '{{.Names}}' | grep -q '^alice-caddy$'; then
+                  log "🔍 [CADDY DIAGNOSTICS] Capturando informações específicas do Caddy..."
+                  
+                  log "--- Logs do alice-caddy (últimas 200 linhas) ---"
+                  docker logs --tail=200 alice-caddy 2>&1 || true
+                  
+                  log "--- Estado do Healthcheck do alice-caddy ---"
+                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null | jq . || \
+                  docker inspect --format='{{json .State.Health}}' alice-caddy 2>/dev/null || true
+                  
+                  log "--- Variáveis de Ambiente do alice-caddy (ACME/EMAIL) ---"
+                  docker exec alice-caddy env 2>/dev/null | grep -E '(ACME|EMAIL|LOG_LEVEL)' || \
+                    echo "Não foi possível capturar env vars (container pode estar parado)"
+                  
+                  log "--- Configuração do Caddy (validação) ---"
+                  docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1 || \
+                    echo "Não foi possível validar Caddyfile (container pode estar parado)"
+                  
+                  log "🔍 [CADDY DIAGNOSTICS] Diagnóstico do Caddy completo"
+                  echo ""
+                fi
+                
                 # CORREÇÃO 02/01/2026: Incluir init containers que completaram com erro
                 # Init containers podem ter exit code != 0 mas não aparecem em "exited" se já foram removidos
                 log "🧹 [CLEANUP] Logs dos containers com erro (últimas 200 linhas cada):"
