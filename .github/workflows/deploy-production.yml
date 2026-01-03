@@ -160,6 +160,58 @@ jobs:
           
           echo "✅ Todos os 20 secrets obrigatórios estão presentes"
 
+      # ==========================================================================
+      # CORREÇÃO 03/01/2026: Validação ACME_EMAIL obrigatório (fail-fast)
+      # ==========================================================================
+      # ROOT CAUSE: ACME_EMAIL vazio causa Caddy parse error e container unhealthy
+      # PROBLEMA: Workflow valida SECRET mas não valida que SECRET tem VALOR
+      # SOLUÇÃO: Fail-fast se ACME_EMAIL vazio ou formato inválido
+      # Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
+      # ==========================================================================
+      - name: Validar ACME_EMAIL obrigatório
+        run: |
+          echo "=============================================="
+          echo "VALIDANDO ACME_EMAIL"
+          echo "=============================================="
+          
+          ACME_EMAIL="${{ secrets.ACME_EMAIL }}"
+          
+          # Verificar se está vazio
+          if [ -z "$ACME_EMAIL" ]; then
+            echo "❌ ERRO: ACME_EMAIL secret está vazio ou não definido"
+            echo ""
+            echo "📋 ACME_EMAIL é OBRIGATÓRIO para Let's Encrypt (SSL automático)"
+            echo ""
+            echo "🔧 Ação necessária:"
+            echo "  1. Acesse GitHub → Settings → Secrets → Actions"
+            echo "  2. Configure o secret ACME_EMAIL"
+            echo "  3. Valor: seu-email@example.com (email válido)"
+            echo ""
+            echo "⚠️ IMPACTO: Caddy falha no parse do Caddyfile sem ACME_EMAIL"
+            echo "   Container fica unhealthy → Deploy falha após 3min 57s"
+            exit 1
+          fi
+          
+          # Validar formato de email básico (RFC 5322 simplificado)
+          if ! echo "$ACME_EMAIL" | grep -qE '^[^@]+@[^@]+\.[^@]+$'; then
+            echo "❌ ERRO: ACME_EMAIL tem formato inválido"
+            echo "   Valor atual não parece ser um email válido"
+            echo ""
+            echo "📋 Formato esperado: usuario@dominio.com"
+            echo ""
+            echo "🔧 Ação necessária:"
+            echo "  1. Acesse GitHub → Settings → Secrets → Actions"
+            echo "  2. Atualize o secret ACME_EMAIL"
+            echo "  3. Use um email válido (ex: admin@yesyoudeserve.duckdns.org)"
+            exit 1
+          fi
+          
+          # Sucesso - mascarar domínio para segurança
+          MASKED_EMAIL=$(echo "$ACME_EMAIL" | sed 's/@.*/***/')
+          echo "✅ ACME_EMAIL validado: $MASKED_EMAIL"
+          echo "   Formato: OK"
+          echo "   Let's Encrypt: Notificações serão enviadas para este email"
+
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           ref: ${{ inputs.version }}
@@ -1297,6 +1349,90 @@ jobs:
             else
               log "❌ docker compose up (core) retornou erro (exit $COMPOSE_EXIT)"
             fi
+            
+            # =================================================================
+            # CORREÇÃO 03/01/2026: Validar Caddy IMEDIATAMENTE após docker compose up
+            # =================================================================
+            # ROOT CAUSE: Caddy falha após 3min 57s desperdiçados sem logs
+            # PROBLEMA: Workflow espera timeout completo antes de capturar logs
+            # SOLUÇÃO: Verificar Caddy em 30s e fail-fast se problemático
+            # IMPACTO: Deploy falha em <1 minuto ao invés de 4 minutos
+            # =================================================================
+            echo ""
+            echo "=============================================="
+            echo "🔍 VALIDAÇÃO CADDY (FAIL-FAST)"
+            echo "=============================================="
+            log "🔍 Aguardando 30s para Caddy tentar iniciar..."
+            sleep 30
+            
+            log "🔍 Verificando status inicial do Caddy..."
+            CADDY_STATUS=$(docker inspect --format='{{.State.Status}}' alice-caddy 2>/dev/null || echo "not-found")
+            echo "   Status: $CADDY_STATUS"
+            
+            if [ "$CADDY_STATUS" = "not-found" ]; then
+              echo "❌ ERRO CRÍTICO: Container alice-caddy NÃO EXISTE após docker compose up"
+              echo ""
+              echo "🔎 Possíveis causas:"
+              echo "   1. docker-compose.prod.yml não tem serviço 'caddy'"
+              echo "   2. Problema no docker compose up (verificar logs acima)"
+              echo "   3. Nome do serviço incorreto (deve ser 'caddy')"
+              echo ""
+              echo "📋 Listando containers existentes:"
+              docker ps -a --format "table {{.Names}}\t{{.Status}}" | grep -i caddy || echo "   (nenhum container com 'caddy' no nome)"
+              exit 1
+            fi
+            
+            if [ "$CADDY_STATUS" != "running" ]; then
+              echo "❌ ERRO CRÍTICO: Caddy NÃO está rodando 30s após docker compose up"
+              echo "   Status atual: $CADDY_STATUS"
+              echo ""
+              echo "🔎 Diagnóstico: Container iniciou mas saiu/crashou imediatamente"
+              echo ""
+              echo "📋 Logs completos do Caddy:"
+              echo "────────────────────────────────────────────────────────────────────"
+              docker logs alice-caddy 2>&1 || echo "   (não foi possível capturar logs)"
+              echo "────────────────────────────────────────────────────────────────────"
+              echo ""
+              echo "🔍 Detalhes do container:"
+              docker inspect alice-caddy 2>/dev/null || echo "   (não foi possível inspecionar container)"
+              echo ""
+              echo "❌ Deploy ABORTADO: Caddy falhou na inicialização"
+              exit 1
+            fi
+            
+            # Verificar se healthcheck já passou (improvável em 30s, mas detecta problemas imediatos)
+            CADDY_HEALTH=$(docker inspect --format='{{.State.Health.Status}}' alice-caddy 2>/dev/null || echo "no-health")
+            echo "   Healthcheck status: $CADDY_HEALTH"
+            
+            if [ "$CADDY_HEALTH" = "unhealthy" ]; then
+              echo "⚠️ AVISO: Caddy já está UNHEALTHY após 30s - possível problema de configuração"
+              echo ""
+              echo "📋 Logs do Caddy (últimas 100 linhas):"
+              echo "────────────────────────────────────────────────────────────────────"
+              docker logs alice-caddy --tail=100 2>&1 || echo "   (não foi possível capturar logs)"
+              echo "────────────────────────────────────────────────────────────────────"
+              echo ""
+              echo "🔎 Diagnóstico:"
+              echo "   - Healthcheck falhou MUITO rápido (< 30s)"
+              echo "   - Possível erro no Caddyfile (sintaxe)"
+              echo "   - Possível problema com ACME_EMAIL vazio"
+              echo "   - Possível problema com portas (80/443 já em uso)"
+              echo ""
+              echo "❌ Deploy ABORTADO: Caddy falhou no healthcheck inicial"
+              exit 1
+            fi
+            
+            if [ "$CADDY_HEALTH" = "starting" ]; then
+              echo "✅ Caddy está rodando - healthcheck ainda iniciando (normal)"
+              echo "   Status: $CADDY_STATUS | Health: $CADDY_HEALTH"
+              echo "   ➡️ Continuando com monitoramento ativo..."
+            else
+              echo "✅ Caddy está rodando"
+              echo "   Status: $CADDY_STATUS | Health: $CADDY_HEALTH"
+              echo "   ➡️ Continuando com monitoramento ativo..."
+            fi
+            echo "=============================================="
+            echo ""
             
             # =================================================================
             # MONITORAMENTO ATIVO: Detectar crash loops e containers unhealthy
