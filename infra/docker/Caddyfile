@@ -54,6 +54,9 @@
 	}
 	
 	# Logs estruturados
+	# CORREÇÃO 03/01/2026: Log level configurável via env var
+	# LOG_LEVEL pode ser: DEBUG, INFO, WARN, ERROR (default: INFO)
+	# Para troubleshooting: docker run -e LOG_LEVEL=DEBUG ...
 	log {
 		output file /var/log/caddy/access.log {
 			roll_size 100mb
@@ -61,7 +64,7 @@
 			roll_keep_for 168h
 		}
 		format json
-		level INFO
+		level {$LOG_LEVEL:INFO}
 	}
 }
 

@@ -25,9 +25,13 @@ LABEL org.opencontainers.image.authors="Fillipe Guerra"
 # Copiar configuração Caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 
+# Copiar entrypoint de diagnóstico
+COPY caddy-entrypoint.sh /usr/local/bin/caddy-entrypoint.sh
+
 # CORREÇÃO 02/01/2026: Instalar wget para healthcheck
 # Alpine base não tem wget instalado por padrão
-RUN apk add --no-cache wget
+RUN apk add --no-cache wget && \
+    chmod +x /usr/local/bin/caddy-entrypoint.sh
 
 # Garantir existência do usuário/grupo caddy (imagens oficiais geralmente já têm)
 RUN (getent group caddy || addgroup -g 1000 -S caddy) && \
@@ -56,5 +60,6 @@ EXPOSE 80 443 443/udp 2019
 # Caddy roda como non-root por padrão (UID/GID 1000)
 USER caddy
 
-# Comando padrão
-CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+# ENTRYPOINT de diagnóstico (03/01/2026)
+# Valida configuração e loga startup antes de iniciar Caddy
+ENTRYPOINT ["/usr/local/bin/caddy-entrypoint.sh"]
