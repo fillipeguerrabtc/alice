@@ -51,6 +51,7 @@ import {
   ShutdownPriority,
   permissionCache,
   requestGpuStream,
+  validateAgentTenantConsistency,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
 import { eq, desc, inArray, and } from '@alice/database';
@@ -4472,6 +4473,19 @@ app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest)
       return res.status(409).json({ error: 'Já existe um agente com este slug' });
     }
     
+    // SEGURANÇA: Validar que namespaceId pertence ao mesmo tenant (previne cross-tenant attack)
+    // Conforme documentação em packages/shared/src/schema.ts: "tenantId DEVE ser igual ao tenantId do namespace referenciado"
+    try {
+      await validateAgentTenantConsistency(
+        data.namespaceId,
+        tenantId,
+        async (id) => db.query.namespaces.findFirst({ where: eq(schema.namespaces.id, id) })
+      );
+    } catch (validationError) {
+      logger.warn({ tenantId, namespaceId: data.namespaceId, error: validationError }, 'Tentativa de associar agente a namespace de outro tenant');
+      return res.status(403).json({ error: 'Namespace não encontrado ou não pertence ao seu tenant' });
+    }
+    
     const [agent] = await db.insert(schema.agents).values({
       tenantId,
       nome: data.nome,
@@ -4547,6 +4561,21 @@ app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromReq
       
       if (slugConflict) {
         return res.status(409).json({ error: 'Já existe um agente com este slug' });
+      }
+    }
+    
+    // SEGURANÇA: Se namespaceId está sendo atualizado, validar que pertence ao mesmo tenant
+    // Conforme documentação em packages/shared/src/schema.ts: "tenantId DEVE ser igual ao tenantId do namespace referenciado"
+    if (data.namespaceId !== undefined) {
+      try {
+        await validateAgentTenantConsistency(
+          data.namespaceId,
+          tenantId,
+          async (id) => db.query.namespaces.findFirst({ where: eq(schema.namespaces.id, id) })
+        );
+      } catch (validationError) {
+        logger.warn({ tenantId, namespaceId: data.namespaceId, agentId: id, error: validationError }, 'Tentativa de associar agente a namespace de outro tenant');
+        return res.status(403).json({ error: 'Namespace não encontrado ou não pertence ao seu tenant' });
       }
     }
     
