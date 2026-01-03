@@ -1407,6 +1407,41 @@ jobs:
               sleep $MONITOR_INTERVAL
             done
             
+            # =================================================================
+            # CORREÇÃO 03/01/2026: Caddy-specific health diagnostics
+            # Se Caddy estiver unhealthy, capturar logs detalhados ANTES de falhar
+            # Ref: Issue - Caddy container unhealthy root causes
+            # =================================================================
+            log "🔍 Verificação específica de saúde do Caddy..."
+            CADDY_STATUS=$(docker inspect --format='{{.State.Health.Status}}' alice-caddy 2>/dev/null || echo "no-health")
+            if [ "$CADDY_STATUS" != "healthy" ]; then
+              echo ""
+              echo "❌ ALERTA: Caddy está $CADDY_STATUS (não healthy)"
+              echo ""
+              echo "📋 Detalhes do container Caddy:"
+              docker inspect alice-caddy --format='{{json .State}}' | jq '.' 2>/dev/null || docker inspect alice-caddy || true
+              echo ""
+              echo "🧾 Logs do Caddy (últimas 200 linhas):"
+              docker logs --tail=200 alice-caddy 2>&1 || true
+              echo ""
+              echo "🔍 Verificando conectividade Admin API (porta 2019):"
+              docker exec alice-caddy wget --spider -q --timeout=5 http://localhost:2019/config/ 2>&1 && echo "✅ Admin API OK" || echo "❌ Admin API inacessível"
+              echo ""
+              echo "🔍 Verificando ACME_EMAIL no container:"
+              docker exec alice-caddy env | grep ACME_EMAIL || echo "⚠️  ACME_EMAIL não definido"
+              echo ""
+              echo "🔍 Validando Caddyfile syntax:"
+              docker exec alice-caddy caddy validate --config /etc/caddy/Caddyfile 2>&1 || echo "❌ Caddyfile inválido"
+              echo ""
+              # Se Caddy unhealthy é crítico - não continuar deploy
+              if [ "$CADDY_STATUS" = "unhealthy" ]; then
+                echo "❌ ERRO CRÍTICO: Caddy unhealthy - deploy não pode continuar"
+                exit 1
+              fi
+            else
+              log "✅ Caddy está healthy"
+            fi
+            
             # FAIL-FAST IMEDIATO: Verificar erros de dependência na saída
             if echo "$COMPOSE_OUTPUT" | grep -qi "dependency.*failed to start\|Error response from daemon\|error creating\|no such image"; then
               echo ""
