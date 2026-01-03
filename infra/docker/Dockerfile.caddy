@@ -25,6 +25,10 @@ LABEL org.opencontainers.image.authors="Fillipe Guerra"
 # Copiar configuração Caddy
 COPY Caddyfile /etc/caddy/Caddyfile
 
+# CORREÇÃO 02/01/2026: Instalar wget para healthcheck
+# Alpine base não tem wget instalado por padrão
+RUN apk add --no-cache wget
+
 # Garantir existência do usuário/grupo caddy (imagens oficiais geralmente já têm)
 RUN (getent group caddy || addgroup -g 1000 -S caddy) && \
     (getent passwd caddy || adduser -u 1000 -D -S -G caddy caddy)

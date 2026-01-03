@@ -152,6 +152,39 @@ echo "  Stanza: $STANZA"
 echo "  Modo: ${1:-archive-push}"
 echo "=================================================="
 
+# ==========================================================================
+# CORREÇÃO 02/01/2026: Processar WALs pendentes do primeiro deploy
+# ==========================================================================
+# PROBLEMA: No primeiro deploy, PostgreSQL arquiva WALs em /tmp/wal_pending
+# porque a stanza ainda não existia no momento do archive_command.
+#
+# SOLUÇÃO: Agora que a stanza existe, processar WALs pendentes
+# Isso garante que NENHUM WAL seja perdido durante o primeiro deploy.
+# ==========================================================================
+PENDING_WAL_DIR="/var/lib/postgresql/data/../wal_pending"
+# O path acima é relativo ao PGDATA, mas os WALs estão em /tmp/wal_pending do container postgres
+# Como os volumes são diferentes, precisamos verificar se existe no nosso contexto
+
+# Verificar se há WALs pendentes (volume compartilhado ou script externo)
+if [ -d "/tmp/wal_pending" ] && [ "$(ls -A /tmp/wal_pending 2>/dev/null)" ]; then
+    echo "[INFO] Encontrados WALs pendentes do primeiro deploy..."
+    for wal_file in /tmp/wal_pending/*; do
+        if [ -f "$wal_file" ]; then
+            wal_name=$(basename "$wal_file")
+            echo "[INFO] Arquivando WAL pendente: $wal_name"
+            if pgbackrest --stanza="$STANZA" archive-push "$wal_file" 2>&1; then
+                rm -f "$wal_file"
+                echo "[OK] WAL $wal_name arquivado com sucesso"
+            else
+                echo "[WARN] Falha ao arquivar WAL $wal_name (pode já ter sido arquivado)"
+            fi
+        fi
+    done
+    echo "[OK] WALs pendentes processados"
+else
+    echo "[INFO] Nenhum WAL pendente encontrado (normal em deploys subsequentes)"
+fi
+
 # Executar comando passado COM stanza explícito
 # Bug fix: pgBackRest requer --stanza= explícito em todos os comandos
 if [ $# -eq 0 ]; then

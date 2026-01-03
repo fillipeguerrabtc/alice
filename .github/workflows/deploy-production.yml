@@ -1295,6 +1295,115 @@ jobs:
             fi
             echo "$COMPOSE_OUTPUT"
             
+            # =================================================================
+            # MONITORAMENTO ATIVO: Detectar crash loops e containers unhealthy
+            # CORREÇÃO 03/01/2026: Workflow ficava "agarrado" quando containers
+            # entravam em crash loop sem detectar. Agora monitora ativamente.
+            # =================================================================
+            log "📊 Iniciando MONITORAMENTO ATIVO de containers (max 5 min)..."
+            
+            MONITOR_START=$(date +%s)
+            MONITOR_TIMEOUT=300  # 5 minutos
+            MONITOR_INTERVAL=15  # Verificar a cada 15 segundos
+            ITERATION=0
+            
+            while true; do
+              ITERATION=$((ITERATION + 1))
+              ELAPSED=$(($(date +%s) - MONITOR_START))
+              
+              log "📊 [${ITERATION}] Status check (${ELAPSED}s/${MONITOR_TIMEOUT}s)..."
+              
+              # Mostrar status de TODOS os containers com cores
+              echo "┌────────────────────────────────────────────────────────────────────┐"
+              echo "│ CONTAINER                        STATUS           HEALTH          │"
+              echo "├────────────────────────────────────────────────────────────────────┤"
+              docker ps -a --format "{{.Names}}\t{{.Status}}" | while read -r line; do
+                NAME=$(echo "$line" | cut -f1)
+                STATUS=$(echo "$line" | cut -f2)
+                # Detectar problemas
+                if echo "$STATUS" | grep -qi "restarting\|unhealthy\|exited"; then
+                  echo "│ ❌ $NAME: $STATUS"
+                elif echo "$STATUS" | grep -qi "starting\|health:"; then
+                  echo "│ ⏳ $NAME: $STATUS"
+                elif echo "$STATUS" | grep -qi "Up.*healthy"; then
+                  echo "│ ✅ $NAME: $STATUS"
+                else
+                  echo "│ ⚪ $NAME: $STATUS"
+                fi
+              done
+              echo "└────────────────────────────────────────────────────────────────────┘"
+              
+              # Contar containers com problemas
+              CRASH_LOOPS=$(docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -ci "restarting" || echo "0")
+              UNHEALTHY=$(docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -ci "unhealthy" || echo "0")
+              EXITED_FAILED=$(docker ps -a --filter "status=exited" --format "{{.Names}}" | wc -l || echo "0")
+              
+              # Verificar containers em CRASH LOOP (RestartCount > 3)
+              log "🔍 Verificando containers em crash loop (RestartCount > 3)..."
+              CRASH_CONTAINERS=""
+              for container in $(docker ps -a --format "{{.Names}}"); do
+                RESTART_COUNT=$(docker inspect --format='{{.RestartCount}}' "$container" 2>/dev/null || echo "0")
+                if [ "$RESTART_COUNT" -gt 3 ]; then
+                  CRASH_CONTAINERS="$CRASH_CONTAINERS $container(restarts:$RESTART_COUNT)"
+                  echo "⚠️  Container $container em CRASH LOOP: $RESTART_COUNT restarts"
+                fi
+              done
+              
+              # FAIL-FAST se detectar crash loops
+              if [ -n "$CRASH_CONTAINERS" ]; then
+                echo ""
+                echo "❌ FAIL-FAST: Containers em CRASH LOOP detectados:$CRASH_CONTAINERS"
+                echo ""
+                echo "🧾 Capturando logs dos containers problemáticos..."
+                for container in $(echo "$CRASH_CONTAINERS" | tr ' ' '\n' | cut -d'(' -f1 | grep -v '^$'); do
+                  echo ""
+                  echo "=== LOGS: $container ==="
+                  docker logs --tail=150 "$container" 2>&1 || true
+                done
+                exit 1
+              fi
+              
+              # Verificar se todos containers CORE estão healthy
+              CORE_CONTAINERS="alice-postgres alice-redis alice-caddy"
+              ALL_CORE_HEALTHY=true
+              for container in $CORE_CONTAINERS; do
+                if docker ps --format "{{.Names}}\t{{.Status}}" | grep "^${container}" | grep -qi "healthy"; then
+                  log "✅ $container: healthy"
+                else
+                  ALL_CORE_HEALTHY=false
+                fi
+              done
+              
+              # Se todos CORE estão healthy, podemos prosseguir
+              if [ "$ALL_CORE_HEALTHY" = "true" ]; then
+                log "✅ Todos os containers CORE estão healthy!"
+                break
+              fi
+              
+              # Timeout check
+              if [ $ELAPSED -ge $MONITOR_TIMEOUT ]; then
+                echo ""
+                echo "❌ TIMEOUT: Containers não ficaram healthy após ${MONITOR_TIMEOUT}s"
+                echo ""
+                echo "📋 Status final dos containers:"
+                docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.State}}"
+                echo ""
+                echo "🧾 Logs dos containers com problemas:"
+                for container in $(docker ps -a --filter "status=restarting" --format "{{.Names}}"); do
+                  echo "=== LOGS: $container (restarting) ==="
+                  docker logs --tail=100 "$container" 2>&1 || true
+                done
+                for container in $(docker ps -a --format "{{.Names}}\t{{.Status}}" | grep -i "unhealthy" | cut -f1); do
+                  echo "=== LOGS: $container (unhealthy) ==="
+                  docker logs --tail=100 "$container" 2>&1 || true
+                done
+                exit 1
+              fi
+              
+              # Aguardar antes da próxima verificação
+              sleep $MONITOR_INTERVAL
+            done
+            
             # FAIL-FAST IMEDIATO: Verificar erros de dependência na saída
             if echo "$COMPOSE_OUTPUT" | grep -qi "dependency.*failed to start\|Error response from daemon\|error creating\|no such image"; then
               echo ""
