@@ -53,7 +53,7 @@ import {
   requestGpuStream,
 } from '@alice/shared-utils';
 import type { Role } from '@alice/shared-utils';
-import { eq, desc, inArray } from '@alice/database';
+import { eq, desc, inArray, and } from '@alice/database';
 import { z } from 'zod';
 import { 
   buscarContextoRAG, 
@@ -4381,7 +4381,7 @@ const updateAgentSchema = createAgentSchema.partial();
  * Lista todos os agentes do tenant atual
  * Isolamento multi-tenant via tenantId do usuário autenticado
  */
-app.get('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:read'), async (req: Request, res: Response) => {
+app.get('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   
   if (!tenantId) {
@@ -4406,7 +4406,7 @@ app.get('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest),
  * Obtém um agente específico pelo ID
  * Verifica se pertence ao tenant do usuário
  */
-app.get('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:read'), async (req: Request, res: Response) => {
+app.get('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:read'), async (req: Request, res: Response) => {
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
@@ -4444,7 +4444,7 @@ app.get('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromReque
  * POST /api/agents
  * Cria um novo agente para o tenant
  */
-app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:write'), async (req: Request, res: Response) => {
+app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:write'), async (req: Request, res: Response) => {
   const tenantId = req.tenantId;
   
   if (!tenantId) {
@@ -4460,11 +4460,15 @@ app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest)
   
   try {
     // Verificar se slug já existe no tenant
+    // CORREÇÃO 02/01/2026: Filtrar por AMBOS slug E tenantId na query (evita race condition multi-tenant)
     const existingAgent = await db.query.agents.findFirst({
-      where: eq(schema.agents.slug, data.slug),
+      where: and(
+        eq(schema.agents.slug, data.slug),
+        eq(schema.agents.tenantId, tenantId)
+      ),
     });
     
-    if (existingAgent && existingAgent.tenantId === tenantId) {
+    if (existingAgent) {
       return res.status(409).json({ error: 'Já existe um agente com este slug' });
     }
     
@@ -4497,7 +4501,7 @@ app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest)
  * Atualiza um agente existente
  * Verifica se pertence ao tenant do usuário
  */
-app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:write'), async (req: Request, res: Response) => {
+app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:write'), async (req: Request, res: Response) => {
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
@@ -4532,12 +4536,16 @@ app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromReq
     }
     
     // Se está alterando o slug, verificar se novo slug já existe
+    // CORREÇÃO 02/01/2026: Filtrar por AMBOS slug E tenantId na query (evita race condition multi-tenant)
     if (data.slug && data.slug !== existingAgent.slug) {
       const slugConflict = await db.query.agents.findFirst({
-        where: eq(schema.agents.slug, data.slug),
+        where: and(
+          eq(schema.agents.slug, data.slug),
+          eq(schema.agents.tenantId, tenantId)
+        ),
       });
       
-      if (slugConflict && slugConflict.tenantId === tenantId) {
+      if (slugConflict) {
         return res.status(409).json({ error: 'Já existe um agente com este slug' });
       }
     }
@@ -4563,7 +4571,7 @@ app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromReq
  * Exclui um agente
  * Verifica se pertence ao tenant do usuário
  */
-app.delete('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:delete'), async (req: Request, res: Response) => {
+app.delete('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('chat:agents:delete'), async (req: Request, res: Response) => {
   const paramsResult = uuidParamSchema.safeParse(req.params);
   if (!paramsResult.success) {
     return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
