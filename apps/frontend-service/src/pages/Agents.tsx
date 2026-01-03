@@ -1,3 +1,13 @@
+/**
+ * Página de Gestão de Agentes IA - Enterprise Edition
+ * 
+ * Permite configurar identidade, personalidade, system prompt e parâmetros do modelo
+ * para cada agente de IA da plataforma Alice.
+ * 
+ * @author Fillipe Guerra
+ * @version 4.65
+ * @date 02/01/2026
+ */
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -7,20 +17,22 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { asResolver } from "@/lib/form-helpers";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Slider } from "@/components/ui/slider";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   Form,
   FormControl,
@@ -41,8 +53,19 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Bot,
   Plus,
@@ -52,12 +75,28 @@ import {
   Power,
   MessageSquare,
   Briefcase,
+  Settings2,
+  Brain,
+  Sparkles,
+  Info,
+  Copy,
+  User,
+  Zap,
+  Thermometer,
+  Hash,
+  FileText,
+  Wand2,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 
+// ============================================================================
+// TIPOS E INTERFACES
+// ============================================================================
+
 interface Agent {
   id: string;
+  tenantId: string | null;
   namespaceId: string | null;
   nome: string;
   slug: string;
@@ -72,69 +111,166 @@ interface Agent {
   status: 'active' | 'training' | 'paused' | 'deprecated' | null;
   metricas: unknown;
   versao: number | null;
-  criadoEm: Date | null;
-  atualizadoEm: Date | null;
+  criadoEm: string | null;
+  atualizadoEm: string | null;
 }
 
-const statusOptionsConfig = [
-  { value: "active", icon: Power, color: "text-green-500", labelKey: "agents.status.active" },
-  { value: "training", icon: Bot, color: "text-blue-500", labelKey: "agents.status.training" },
-  { value: "paused", icon: MessageSquare, color: "text-orange-500", labelKey: "agents.status.paused" },
-  { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", labelKey: "agents.status.deprecated" },
-];
+// Modelos disponíveis - Mixtral é o modelo principal via vLLM
+const AVAILABLE_MODELS = [
+  { value: 'Mixtral-8x7B', label: 'Mixtral 8x7B (Principal)', description: 'MoE ~12B parâmetros ativos' },
+  { value: 'Mixtral-8x7B-Instruct', label: 'Mixtral 8x7B Instruct', description: 'Versão fine-tuned para instruções' },
+] as const;
+
+// Presets de temperatura
+const TEMPERATURE_PRESETS = [
+  { value: 0, label: 'Determinístico', description: 'Respostas consistentes e previsíveis' },
+  { value: 0.3, label: 'Conservador', description: 'Pouca variação, mais preciso' },
+  { value: 0.7, label: 'Balanceado', description: 'Equilíbrio entre criatividade e precisão' },
+  { value: 1.0, label: 'Criativo', description: 'Respostas mais variadas' },
+  { value: 1.5, label: 'Muito Criativo', description: 'Alta variação, experimental' },
+] as const;
+
+// Capacidades pré-definidas
+const PREDEFINED_CAPABILITIES = [
+  'chat',
+  'rag',
+  'trading',
+  'customer-support',
+  'sales',
+  'technical-support',
+  'onboarding',
+  'analytics',
+  'scheduling',
+  'multilingual',
+] as const;
+
+// ============================================================================
+// TIPOS DE NAMESPACE
+// ============================================================================
+
+interface Namespace {
+  id: string;
+  nome: string;
+  slug: string;
+  cor: string | null;
+}
+
+// ============================================================================
+// SCHEMAS DE VALIDAÇÃO
+// ============================================================================
+
+const statusOptions = ['active', 'training', 'paused', 'deprecated'] as const;
 
 /**
  * Interface explícita para dados do formulário de agentes
- * Definida primeiro para evitar TS2589 (melhores práticas 2025)
+ * Todos os campos configuráveis do agente estão incluídos
+ * 
+ * NOTA: O schema do banco de dados (packages/shared/src/schema.ts) define
+ * apenas temperatura, maxTokens e modeloBase como parâmetros LLM.
+ * Para adicionar parâmetros avançados (top_p, frequency_penalty, etc.),
+ * seria necessário criar uma migration nova.
  */
 interface AgentFormData {
   nome: string;
   slug: string;
-  status: "active" | "training" | "paused" | "deprecated";
+  status: typeof statusOptions[number];
   descricao?: string | null;
+  avatar?: string | null;
   instrucoes?: string | null;
   personalidade?: string | null;
+  modeloBase: string;
+  temperaturaModelo: number;
+  maxTokens: number;
+  capacidades: string[];
+  namespaceId?: string | null;
 }
 
 /**
- * Schema Zod com tipo explícito para evitar inferência recursiva
+ * Schema Zod completo para validação do formulário
  */
 const agentFormSchema: z.ZodType<AgentFormData> = z.object({
-  nome: z.string().min(2),
-  slug: z.string().min(2).regex(/^[a-z0-9-]+$/),
-  status: z.enum(["active", "training", "paused", "deprecated"]),
-  descricao: z.string().optional().nullable(),
-  instrucoes: z.string().optional().nullable(),
-  personalidade: z.string().optional().nullable(),
+  nome: z.string().min(2, 'Nome deve ter pelo menos 2 caracteres').max(255),
+  slug: z.string().min(2, 'Slug deve ter pelo menos 2 caracteres').max(100).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
+  status: z.enum(statusOptions),
+  descricao: z.string().max(2000).optional().nullable(),
+  avatar: z.string().url('URL inválida').optional().nullable().or(z.literal('')),
+  instrucoes: z.string().max(10000).optional().nullable(),
+  personalidade: z.string().max(5000).optional().nullable(),
+  modeloBase: z.string().min(1, 'Selecione um modelo'),
+  temperaturaModelo: z.number().min(0).max(2),
+  maxTokens: z.number().int().min(100).max(32000),
+  capacidades: z.array(z.string()),
+  namespaceId: z.string().uuid().optional().nullable(),
 });
+
+// ============================================================================
+// COMPONENTES AUXILIARES
+// ============================================================================
+
+const statusOptionsConfig = [
+  { value: "active", icon: Power, color: "text-green-500", bgColor: "bg-green-500/10" },
+  { value: "training", icon: Brain, color: "text-blue-500", bgColor: "bg-blue-500/10" },
+  { value: "paused", icon: MessageSquare, color: "text-orange-500", bgColor: "bg-orange-500/10" },
+  { value: "deprecated", icon: Briefcase, color: "text-muted-foreground", bgColor: "bg-muted" },
+];
 
 function AgentCardSkeleton() {
   return (
-    <Card>
+    <Card className="overflow-hidden">
       <CardContent className="p-6">
         <div className="flex items-start justify-between mb-4">
-          <Skeleton className="h-12 w-12 rounded-lg" />
-          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-14 w-14 rounded-xl" />
+          <Skeleton className="h-6 w-20" />
         </div>
-        <Skeleton className="h-5 w-32 mb-2" />
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-3/4 mt-1" />
+        <Skeleton className="h-6 w-40 mb-2" />
+        <Skeleton className="h-4 w-full mb-1" />
+        <Skeleton className="h-4 w-3/4" />
+        <div className="mt-4 flex gap-2">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-20" />
+        </div>
       </CardContent>
     </Card>
   );
 }
 
+function CapabilityBadge({ capability, onRemove }: { capability: string; onRemove?: () => void }) {
+  return (
+    <Badge variant="secondary" className="gap-1 pr-1">
+      {capability}
+      {onRemove && (
+        <button
+          type="button"
+          onClick={onRemove}
+          className="ml-1 hover:bg-destructive/20 rounded-full p-0.5"
+        >
+          <Trash2 className="h-3 w-3" />
+        </button>
+      )}
+    </Badge>
+  );
+}
+
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
+
 export default function Agents() {
   const { t } = useTranslation();
   const { user } = useAuth();
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [isSheetOpen, setIsSheetOpen] = useState(false);
   const [editingAgent, setEditingAgent] = useState<Agent | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
+  const [newCapability, setNewCapability] = useState('');
+  const [activeTab, setActiveTab] = useState('basic');
 
-  const statusOptions = statusOptionsConfig.map(opt => ({
+  const statusLabels = statusOptionsConfig.map(opt => ({
     ...opt,
-    label: t(opt.labelKey)
+    label: t(`agents.status.${opt.value}`)
   }));
 
+  // Formulário com valores padrão enterprise
   const form = useForm<AgentFormData>({
     resolver: asResolver<AgentFormData>(zodResolver(agentFormSchema)),
     defaultValues: {
@@ -142,46 +278,79 @@ export default function Agents() {
       slug: "",
       status: "active",
       descricao: "",
+      avatar: "",
       instrucoes: "",
       personalidade: "",
+      modeloBase: "Mixtral-8x7B",
+      temperaturaModelo: 0.7,
+      maxTokens: 4096,
+      capacidades: [],
+      namespaceId: null,
     },
   });
 
+  // Query para listar agentes
   const { data: agents, isLoading } = useQuery<Agent[]>({
     queryKey: ["/api/agents"],
     enabled: !!user,
   });
 
+  // Query para listar namespaces (para associar agentes)
+  const { data: namespaces } = useQuery<Namespace[]>({
+    queryKey: ["/api/namespaces"],
+    enabled: !!user,
+  });
+
+  // Mutations
   const createAgentMutation = useMutation({
     mutationFn: async (data: AgentFormData) => {
-      const res = await apiRequest("POST", "/api/agents", data);
+      const payload = {
+        ...data,
+        avatar: data.avatar || null,
+        descricao: data.descricao || null,
+        instrucoes: data.instrucoes || null,
+        personalidade: data.personalidade || null,
+      };
+      const res = await apiRequest("POST", "/api/agents", payload);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
       toast({ title: t('agents.success.created') });
-      setIsDialogOpen(false);
-      form.reset();
+      handleCloseSheet();
     },
-    onError: () => {
-      toast({ title: t('agents.errors.create'), variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ 
+        title: t('agents.errors.create'), 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
   const updateAgentMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<AgentFormData> }) => {
-      const res = await apiRequest("PATCH", `/api/agents/${id}`, data);
+      const payload = {
+        ...data,
+        avatar: data.avatar || null,
+        descricao: data.descricao || null,
+        instrucoes: data.instrucoes || null,
+        personalidade: data.personalidade || null,
+      };
+      const res = await apiRequest("PATCH", `/api/agents/${id}`, payload);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
       toast({ title: t('agents.success.updated') });
-      setIsDialogOpen(false);
-      setEditingAgent(null);
-      form.reset();
+      handleCloseSheet();
     },
-    onError: () => {
-      toast({ title: t('agents.errors.update'), variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ 
+        title: t('agents.errors.update'), 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -192,9 +361,15 @@ export default function Agents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
       toast({ title: t('agents.success.removed') });
+      setDeleteDialogOpen(false);
+      setAgentToDelete(null);
     },
-    onError: () => {
-      toast({ title: t('agents.errors.remove'), variant: "destructive" });
+    onError: (error: Error) => {
+      toast({ 
+        title: t('agents.errors.remove'), 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -205,8 +380,30 @@ export default function Agents() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/agents"] });
+      toast({ title: t('agents.success.updated') });
     },
   });
+
+  // Handlers
+  const handleCloseSheet = () => {
+    setIsSheetOpen(false);
+    setEditingAgent(null);
+    setActiveTab('basic');
+    form.reset({
+      nome: "",
+      slug: "",
+      status: "active",
+      descricao: "",
+      avatar: "",
+      instrucoes: "",
+      personalidade: "",
+      modeloBase: "Mixtral-8x7B",
+      temperaturaModelo: 0.7,
+      maxTokens: 4096,
+      capacidades: [],
+      namespaceId: null,
+    });
+  };
 
   const handleSubmit = (data: AgentFormData) => {
     if (editingAgent) {
@@ -222,212 +419,90 @@ export default function Agents() {
       nome: agent.nome,
       slug: agent.slug,
       descricao: agent.descricao || "",
+      avatar: agent.avatar || "",
       instrucoes: agent.instrucoes || "",
       personalidade: agent.personalidade || "",
       status: agent.status || "active",
+      modeloBase: agent.modeloBase || "Mixtral-8x7B",
+      temperaturaModelo: agent.temperaturaModelo ?? 0.7,
+      maxTokens: agent.maxTokens ?? 4096,
+      capacidades: agent.capacidades || [],
+      namespaceId: agent.namespaceId || null,
     });
-    setIsDialogOpen(true);
+    setActiveTab('basic');
+    setIsSheetOpen(true);
   };
 
   const handleNewAgent = () => {
     setEditingAgent(null);
     form.reset();
-    setIsDialogOpen(true);
+    setActiveTab('basic');
+    setIsSheetOpen(true);
+  };
+
+  const handleCopySlug = (slug: string) => {
+    navigator.clipboard.writeText(slug);
+    toast({ title: t('success.copied') });
+  };
+
+  const handleAddCapability = () => {
+    if (newCapability.trim()) {
+      const current = form.getValues('capacidades');
+      if (!current.includes(newCapability.trim())) {
+        form.setValue('capacidades', [...current, newCapability.trim()]);
+      }
+      setNewCapability('');
+    }
+  };
+
+  const handleRemoveCapability = (cap: string) => {
+    const current = form.getValues('capacidades');
+    form.setValue('capacidades', current.filter(c => c !== cap));
   };
 
   const getStatusInfo = (status: string) => {
-    return statusOptions.find((s) => s.value === status) || statusOptions[0];
+    return statusLabels.find((s) => s.value === status) || statusLabels[0];
+  };
+
+  const getTemperatureLabel = (temp: number) => {
+    const preset = TEMPERATURE_PRESETS.find(p => Math.abs(p.value - temp) < 0.05);
+    return preset?.label || `${temp.toFixed(1)}`;
   };
 
   const activeAgents = agents?.filter((a) => a.status === 'active').length || 0;
   const totalAgents = agents?.length || 0;
 
+  const watchedTemperature = form.watch('temperaturaModelo');
+  const watchedCapacidades = form.watch('capacidades');
+
   return (
     <div className="p-6 space-y-6">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight" data-testid="text-page-title">
+          <h1 className="text-3xl font-bold tracking-tight flex items-center gap-3" data-testid="text-page-title">
+            <Bot className="h-8 w-8 text-primary" />
             {t('agents.title')}
           </h1>
           <p className="text-muted-foreground mt-1">
             {t('agents.subtitle', { active: activeAgents, total: totalAgents })}
           </p>
         </div>
-        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-          <DialogTrigger asChild>
-            <Button onClick={handleNewAgent} data-testid="button-criar-agente">
-              <Plus className="mr-2 h-4 w-4" />
-              {t('agents.create')}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>
-                {editingAgent ? t('agents.form.dialogTitleEdit') : t('agents.form.dialogTitle')}
-              </DialogTitle>
-              <DialogDescription>
-                {t('agents.form.dialogDesc')}
-              </DialogDescription>
-            </DialogHeader>
-            <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="nome"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'nome'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.form.name')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder={t('agents.placeholders.name')}
-                          {...field}
-                          data-testid="input-agente-nome"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="slug"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'slug'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.form.slug')}</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder={t('agents.placeholders.slug')}
-                          {...field}
-                          data-testid="input-agente-slug"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t('agents.form.slugDesc')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="status"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'status'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.status.label')}</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
-                        <FormControl>
-                          <SelectTrigger data-testid="select-agente-status">
-                            <SelectValue placeholder={t('agents.status.selectPlaceholder')} />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {statusOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                              {option.label}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="descricao"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'descricao'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.form.description')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder={t('agents.placeholders.description')}
-                          className="resize-none"
-                          rows={2}
-                          {...field}
-                          value={field.value || ''}
-                          data-testid="input-agente-descricao"
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="instrucoes"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'instrucoes'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.form.instructions')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder={t('agents.placeholders.instructions')}
-                          className="resize-none"
-                          rows={4}
-                          {...field}
-                          value={field.value || ''}
-                          data-testid="input-agente-instrucoes"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t('agents.form.instructionsDesc')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <FormField
-                  control={form.control}
-                  name="personalidade"
-                  render={({ field }: { field: ControllerRenderProps<AgentFormData, 'personalidade'> }) => (
-                    <FormItem>
-                      <FormLabel>{t('agents.form.personality')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          placeholder={t('agents.placeholders.personality')}
-                          className="resize-none"
-                          rows={2}
-                          {...field}
-                          value={field.value || ''}
-                          data-testid="input-agente-personalidade"
-                        />
-                      </FormControl>
-                      <FormDescription>
-                        {t('agents.form.personalityDesc')}
-                      </FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-                <DialogFooter>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => setIsDialogOpen(false)}
-                  >
-                    {t('common.cancel')}
-                  </Button>
-                  <Button
-                    type="submit"
-                    disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
-                    data-testid="button-salvar-agente"
-                  >
-                    {t('common.save')}
-                  </Button>
-                </DialogFooter>
-              </form>
-            </Form>
-          </DialogContent>
-        </Dialog>
+        <Button onClick={handleNewAgent} size="lg" data-testid="button-criar-agente">
+          <Plus className="mr-2 h-5 w-5" />
+          {t('agents.create')}
+        </Button>
       </div>
 
+      {/* Grid de Agentes */}
       {isLoading ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3, 4, 5, 6].map((i) => (
             <AgentCardSkeleton key={i} />
           ))}
         </div>
       ) : agents && agents.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
           {agents.map((agent) => {
             const statusInfo = getStatusInfo(agent.status || 'active');
             const StatusIcon = statusInfo.icon;
@@ -435,33 +510,51 @@ export default function Agents() {
             return (
               <Card
                 key={agent.id}
-                className={`hover-elevate transition-all duration-200 ${
-                  agent.status !== 'active' ? "opacity-60" : ""
+                className={`overflow-hidden hover:shadow-lg transition-all duration-200 cursor-pointer group ${
+                  agent.status !== 'active' ? "opacity-70" : ""
                 }`}
+                onClick={() => handleEdit(agent)}
                 data-testid={`card-agente-${agent.id}`}
               >
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between mb-4">
                     <div
-                      className={`flex h-12 w-12 items-center justify-center rounded-lg bg-muted ${statusInfo.color}`}
+                      className={`flex h-14 w-14 items-center justify-center rounded-xl ${statusInfo.bgColor} ${statusInfo.color} transition-transform group-hover:scale-105`}
                     >
-                      <StatusIcon className="h-6 w-6" />
+                      {agent.avatar ? (
+                        <img 
+                          src={agent.avatar} 
+                          alt={agent.nome} 
+                          className="h-10 w-10 rounded-lg object-cover"
+                        />
+                      ) : (
+                        <Bot className="h-7 w-7" />
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant={agent.status === 'active' ? "default" : "secondary"}>
+                      <Badge 
+                        variant={agent.status === 'active' ? "default" : "secondary"}
+                        className={agent.status === 'active' ? "bg-green-500/10 text-green-600 border-green-500/20" : ""}
+                      >
+                        <StatusIcon className="h-3 w-3 mr-1" />
                         {statusInfo.label}
                       </Badge>
                       <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" data-testid={`button-menu-agente-${agent.id}`}>
+                        <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" data-testid={`button-menu-agente-${agent.id}`}>
                             <MoreHorizontal className="h-4 w-4" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
                           <DropdownMenuItem onClick={() => handleEdit(agent)}>
                             <Edit className="mr-2 h-4 w-4" />
                             {t('common.edit')}
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => handleCopySlug(agent.slug)}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            {t('agents.actions.copySlug')}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onClick={() =>
                               toggleAgentMutation.mutate({
@@ -474,8 +567,11 @@ export default function Agents() {
                             {agent.status === 'active' ? t('agents.actions.pause') : t('agents.actions.activate')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
-                            className="text-destructive"
-                            onClick={() => deleteAgentMutation.mutate(agent.id)}
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => {
+                              setAgentToDelete(agent);
+                              setDeleteDialogOpen(true);
+                            }}
                           >
                             <Trash2 className="mr-2 h-4 w-4" />
                             {t('common.remove')}
@@ -484,19 +580,44 @@ export default function Agents() {
                       </DropdownMenu>
                     </div>
                   </div>
-                  <h3 className="font-semibold text-foreground mb-1">{agent.nome}</h3>
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {agent.descricao || (agent.instrucoes ? agent.instrucoes.substring(0, 100) : t('agents.noDescription'))}
+                  
+                  <h3 className="font-semibold text-lg text-foreground mb-1">{agent.nome}</h3>
+                  <p className="text-xs text-muted-foreground font-mono mb-2">@{agent.slug}</p>
+                  <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
+                    {agent.descricao || agent.instrucoes?.substring(0, 100) || t('agents.noDescription')}
                   </p>
-                  <div className="mt-4 flex items-center gap-4 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1">
-                      <MessageSquare className="h-3 w-3" />
-                      <span>{t('agents.conversations', { count: 0 })}</span>
+                  
+                  {/* Info Cards */}
+                  <div className="mt-4 grid grid-cols-3 gap-2">
+                    <div className="bg-muted/50 rounded-lg p-2 text-center">
+                      <Thermometer className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <span className="text-xs font-medium">{agent.temperaturaModelo?.toFixed(1) ?? '0.7'}</span>
                     </div>
-                    <Badge variant="outline" className="text-xs">
-                      {statusInfo.label}
-                    </Badge>
+                    <div className="bg-muted/50 rounded-lg p-2 text-center">
+                      <Hash className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <span className="text-xs font-medium">{agent.maxTokens?.toLocaleString() ?? '4096'}</span>
+                    </div>
+                    <div className="bg-muted/50 rounded-lg p-2 text-center">
+                      <Zap className="h-4 w-4 mx-auto mb-1 text-muted-foreground" />
+                      <span className="text-xs font-medium">{agent.capacidades?.length ?? 0}</span>
+                    </div>
                   </div>
+
+                  {/* Capacidades */}
+                  {agent.capacidades && agent.capacidades.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1">
+                      {agent.capacidades.slice(0, 3).map((cap) => (
+                        <Badge key={cap} variant="outline" className="text-xs">
+                          {cap}
+                        </Badge>
+                      ))}
+                      {agent.capacidades.length > 3 && (
+                        <Badge variant="outline" className="text-xs">
+                          +{agent.capacidades.length - 3}
+                        </Badge>
+                      )}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             );
@@ -505,20 +626,584 @@ export default function Agents() {
       ) : (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-4">
-              <Bot className="h-8 w-8 text-primary" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 mb-6">
+              <Bot className="h-10 w-10 text-primary" />
             </div>
-            <h3 className="font-semibold text-foreground mb-2">{t('agents.noAgents')}</h3>
-            <p className="text-sm text-muted-foreground text-center max-w-md mb-4">
+            <h3 className="font-semibold text-xl text-foreground mb-2">{t('agents.noAgents')}</h3>
+            <p className="text-muted-foreground text-center max-w-md mb-6">
               {t('agents.noAgentsDesc')}
             </p>
-            <Button onClick={handleNewAgent} data-testid="button-criar-primeiro-agente">
-              <Plus className="mr-2 h-4 w-4" />
+            <Button onClick={handleNewAgent} size="lg" data-testid="button-criar-primeiro-agente">
+              <Plus className="mr-2 h-5 w-5" />
               {t('agents.create')}
             </Button>
           </CardContent>
         </Card>
       )}
+
+      {/* Sheet de Edição/Criação */}
+      <Sheet open={isSheetOpen} onOpenChange={setIsSheetOpen}>
+        <SheetContent className="sm:max-w-[640px] overflow-y-auto">
+          <SheetHeader className="pb-4">
+            <SheetTitle className="flex items-center gap-2 text-xl">
+              {editingAgent ? <Edit className="h-5 w-5" /> : <Plus className="h-5 w-5" />}
+              {editingAgent ? t('agents.form.dialogTitleEdit') : t('agents.form.dialogTitle')}
+            </SheetTitle>
+            <SheetDescription>
+              {t('agents.form.dialogDescFull')}
+            </SheetDescription>
+          </SheetHeader>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-6">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-4 mb-4">
+                  <TabsTrigger value="basic" className="text-xs sm:text-sm">
+                    <User className="h-4 w-4 mr-1 hidden sm:inline" />
+                    {t('agents.tabs.basic')}
+                  </TabsTrigger>
+                  <TabsTrigger value="prompt" className="text-xs sm:text-sm">
+                    <FileText className="h-4 w-4 mr-1 hidden sm:inline" />
+                    {t('agents.tabs.prompt')}
+                  </TabsTrigger>
+                  <TabsTrigger value="model" className="text-xs sm:text-sm">
+                    <Settings2 className="h-4 w-4 mr-1 hidden sm:inline" />
+                    {t('agents.tabs.model')}
+                  </TabsTrigger>
+                  <TabsTrigger value="capabilities" className="text-xs sm:text-sm">
+                    <Sparkles className="h-4 w-4 mr-1 hidden sm:inline" />
+                    {t('agents.tabs.capabilities')}
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Tab: Informações Básicas */}
+                <TabsContent value="basic" className="space-y-4 mt-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        {t('agents.sections.identity')}
+                      </CardTitle>
+                      <CardDescription>{t('agents.sections.identityDesc')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="nome"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'nome'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.name')} *</FormLabel>
+                            <FormControl>
+                              <Input
+                                placeholder={t('agents.placeholders.name')}
+                                {...field}
+                                data-testid="input-agente-nome"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="slug"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'slug'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.slug')} *</FormLabel>
+                            <FormControl>
+                              <div className="flex">
+                                <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-input bg-muted text-sm text-muted-foreground">
+                                  @
+                                </span>
+                                <Input
+                                  className="rounded-l-none"
+                                  placeholder={t('agents.placeholders.slug')}
+                                  {...field}
+                                  data-testid="input-agente-slug"
+                                />
+                              </div>
+                            </FormControl>
+                            <FormDescription>{t('agents.form.slugDesc')}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="avatar"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'avatar'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.avatar')}</FormLabel>
+                            <FormControl>
+                              <Input
+                                type="url"
+                                placeholder={t('agents.placeholders.avatar')}
+                                {...field}
+                                value={field.value || ''}
+                                data-testid="input-agente-avatar"
+                              />
+                            </FormControl>
+                            <FormDescription>{t('agents.form.avatarDesc')}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="status"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'status'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.status.label')}</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-agente-status">
+                                  <SelectValue placeholder={t('agents.status.selectPlaceholder')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {statusLabels.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    <div className="flex items-center gap-2">
+                                      <option.icon className={`h-4 w-4 ${option.color}`} />
+                                      {option.label}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="namespaceId"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'namespaceId'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.namespace')}</FormLabel>
+                            <Select 
+                              onValueChange={(value) => field.onChange(value === 'none' ? null : value)} 
+                              value={field.value || 'none'}
+                            >
+                              <FormControl>
+                                <SelectTrigger data-testid="select-agente-namespace">
+                                  <SelectValue placeholder={t('agents.placeholders.namespace')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="none">
+                                  {t('agents.form.noNamespace')}
+                                </SelectItem>
+                                {namespaces?.map((ns) => (
+                                  <SelectItem key={ns.id} value={ns.id}>
+                                    <div className="flex items-center gap-2">
+                                      {ns.cor && (
+                                        <div 
+                                          className="w-3 h-3 rounded-full" 
+                                          style={{ backgroundColor: ns.cor }}
+                                        />
+                                      )}
+                                      {ns.nome}
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>{t('agents.form.namespaceDesc')}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <FormField
+                        control={form.control}
+                        name="descricao"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'descricao'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.description')}</FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder={t('agents.placeholders.description')}
+                                className="resize-none"
+                                rows={3}
+                                {...field}
+                                value={field.value || ''}
+                                data-testid="input-agente-descricao"
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Tab: System Prompt & Personalidade */}
+                <TabsContent value="prompt" className="space-y-4 mt-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Wand2 className="h-4 w-4" />
+                        {t('agents.sections.behavior')}
+                      </CardTitle>
+                      <CardDescription>{t('agents.sections.behaviorDesc')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="instrucoes"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'instrucoes'> }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">
+                              <FileText className="h-4 w-4" />
+                              {t('agents.form.systemPrompt')}
+                            </FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder={t('agents.placeholders.systemPrompt')}
+                                className="resize-none font-mono text-sm"
+                                rows={10}
+                                {...field}
+                                value={field.value || ''}
+                                data-testid="input-agente-instrucoes"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('agents.form.systemPromptDesc')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <Separator />
+
+                      <FormField
+                        control={form.control}
+                        name="personalidade"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'personalidade'> }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">
+                              <Brain className="h-4 w-4" />
+                              {t('agents.form.personality')}
+                            </FormLabel>
+                            <FormControl>
+                              <Textarea
+                                placeholder={t('agents.placeholders.personality')}
+                                className="resize-none"
+                                rows={4}
+                                {...field}
+                                value={field.value || ''}
+                                data-testid="input-agente-personalidade"
+                              />
+                            </FormControl>
+                            <FormDescription>
+                              {t('agents.form.personalityDesc')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="bg-muted/50 rounded-lg p-4">
+                        <div className="flex items-start gap-3">
+                          <Info className="h-5 w-5 text-muted-foreground mt-0.5" />
+                          <div className="text-sm text-muted-foreground">
+                            <p className="font-medium mb-1">{t('agents.tips.promptTitle')}</p>
+                            <ul className="list-disc list-inside space-y-1 text-xs">
+                              <li>{t('agents.tips.promptTip1')}</li>
+                              <li>{t('agents.tips.promptTip2')}</li>
+                              <li>{t('agents.tips.promptTip3')}</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Tab: Configurações do Modelo */}
+                <TabsContent value="model" className="space-y-4 mt-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Settings2 className="h-4 w-4" />
+                        {t('agents.sections.modelConfig')}
+                      </CardTitle>
+                      <CardDescription>{t('agents.sections.modelConfigDesc')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-6">
+                      <FormField
+                        control={form.control}
+                        name="modeloBase"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'modeloBase'> }) => (
+                          <FormItem>
+                            <FormLabel>{t('agents.form.baseModel')}</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger data-testid="select-agente-modelo">
+                                  <SelectValue placeholder={t('agents.placeholders.selectModel')} />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                {AVAILABLE_MODELS.map((model) => (
+                                  <SelectItem key={model.value} value={model.value}>
+                                    <div className="flex flex-col">
+                                      <span className="font-medium">{model.label}</span>
+                                      <span className="text-xs text-muted-foreground">{model.description}</span>
+                                    </div>
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <FormDescription>{t('agents.form.baseModelDesc')}</FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      <Separator />
+
+                      <FormField
+                        control={form.control}
+                        name="temperaturaModelo"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'temperaturaModelo'> }) => (
+                          <FormItem>
+                            <div className="flex items-center justify-between">
+                              <FormLabel className="flex items-center gap-2">
+                                <Thermometer className="h-4 w-4" />
+                                {t('agents.form.temperature')}
+                              </FormLabel>
+                              <div className="flex items-center gap-2">
+                                <Badge variant="secondary" className="font-mono">
+                                  {field.value.toFixed(2)}
+                                </Badge>
+                                <span className="text-sm text-muted-foreground">
+                                  ({getTemperatureLabel(field.value)})
+                                </span>
+                              </div>
+                            </div>
+                            <FormControl>
+                              <Slider
+                                min={0}
+                                max={2}
+                                step={0.05}
+                                value={[field.value]}
+                                onValueChange={(vals) => field.onChange(vals[0])}
+                                className="mt-2"
+                                data-testid="slider-agente-temperatura"
+                              />
+                            </FormControl>
+                            <div className="flex justify-between text-xs text-muted-foreground mt-1">
+                              <span>{t('agents.temperatureLabels.deterministic')}</span>
+                              <span>{t('agents.temperatureLabels.balanced')}</span>
+                              <span>{t('agents.temperatureLabels.creative')}</span>
+                            </div>
+                            <FormDescription className="mt-2">
+                              {t('agents.form.temperatureDesc')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+
+                      {/* Presets de Temperatura */}
+                      <div className="grid grid-cols-5 gap-2">
+                        {TEMPERATURE_PRESETS.map((preset) => (
+                          <Button
+                            key={preset.value}
+                            type="button"
+                            variant={Math.abs(watchedTemperature - preset.value) < 0.05 ? "default" : "outline"}
+                            size="sm"
+                            className="text-xs"
+                            onClick={() => form.setValue('temperaturaModelo', preset.value)}
+                          >
+                            {preset.value}
+                          </Button>
+                        ))}
+                      </div>
+
+                      <Separator />
+
+                      <FormField
+                        control={form.control}
+                        name="maxTokens"
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'maxTokens'> }) => (
+                          <FormItem>
+                            <FormLabel className="flex items-center gap-2">
+                              <Hash className="h-4 w-4" />
+                              {t('agents.form.maxTokens')}
+                            </FormLabel>
+                            <FormControl>
+                              <div className="flex gap-2">
+                                <Input
+                                  type="number"
+                                  min={100}
+                                  max={32000}
+                                  {...field}
+                                  onChange={(e) => field.onChange(parseInt(e.target.value) || 4096)}
+                                  className="font-mono"
+                                  data-testid="input-agente-maxtokens"
+                                />
+                                <Select
+                                  value={String(field.value)}
+                                  onValueChange={(v) => field.onChange(parseInt(v))}
+                                >
+                                  <SelectTrigger className="w-32">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {[1024, 2048, 4096, 8192, 16384, 32000].map((val) => (
+                                      <SelectItem key={val} value={String(val)}>
+                                        {val.toLocaleString()}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </FormControl>
+                            <FormDescription>
+                              {t('agents.form.maxTokensDesc')}
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+
+                {/* Tab: Capacidades */}
+                <TabsContent value="capabilities" className="space-y-4 mt-0">
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-base flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        {t('agents.sections.capabilities')}
+                      </CardTitle>
+                      <CardDescription>{t('agents.sections.capabilitiesDesc')}</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Capacidades adicionadas */}
+                      <div>
+                        <Label className="text-sm mb-2 block">{t('agents.form.activeCapabilities')}</Label>
+                        <div className="flex flex-wrap gap-2 min-h-[60px] p-3 border rounded-lg bg-muted/30">
+                          {watchedCapacidades.length > 0 ? (
+                            watchedCapacidades.map((cap) => (
+                              <CapabilityBadge
+                                key={cap}
+                                capability={cap}
+                                onRemove={() => handleRemoveCapability(cap)}
+                              />
+                            ))
+                          ) : (
+                            <span className="text-sm text-muted-foreground">
+                              {t('agents.form.noCapabilities')}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Adicionar capacidade customizada */}
+                      <div>
+                        <Label className="text-sm mb-2 block">{t('agents.form.addCapability')}</Label>
+                        <div className="flex gap-2">
+                          <Input
+                            value={newCapability}
+                            onChange={(e) => setNewCapability(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                            placeholder={t('agents.placeholders.capability')}
+                            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddCapability())}
+                          />
+                          <Button type="button" variant="outline" onClick={handleAddCapability}>
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      </div>
+
+                      <Separator />
+
+                      {/* Capacidades pré-definidas */}
+                      <div>
+                        <Label className="text-sm mb-2 block">{t('agents.form.suggestedCapabilities')}</Label>
+                        <div className="flex flex-wrap gap-2">
+                          {PREDEFINED_CAPABILITIES.map((cap) => (
+                            <Button
+                              key={cap}
+                              type="button"
+                              variant={watchedCapacidades.includes(cap) ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => {
+                                if (watchedCapacidades.includes(cap)) {
+                                  handleRemoveCapability(cap);
+                                } else {
+                                  form.setValue('capacidades', [...watchedCapacidades, cap]);
+                                }
+                              }}
+                            >
+                              {cap}
+                            </Button>
+                          ))}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+
+              {/* Botões de Ação */}
+              <div className="flex justify-end gap-3 pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCloseSheet}
+                >
+                  {t('common.cancel')}
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={createAgentMutation.isPending || updateAgentMutation.isPending}
+                  data-testid="button-salvar-agente"
+                >
+                  {(createAgentMutation.isPending || updateAgentMutation.isPending) ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      {t('common.loading')}
+                    </>
+                  ) : (
+                    t('common.save')
+                  )}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </SheetContent>
+      </Sheet>
+
+      {/* Dialog de Confirmação de Exclusão */}
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('confirm.deleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('agents.confirmDelete', { name: agentToDelete?.nome })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => agentToDelete && deleteAgentMutation.mutate(agentToDelete.id)}
+            >
+              {t('common.remove')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

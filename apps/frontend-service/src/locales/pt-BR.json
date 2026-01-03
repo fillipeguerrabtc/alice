@@ -369,6 +369,7 @@
     "description": "Descrição",
     "systemPrompt": "System Prompt",
     "capabilities": "Capacidades",
+    "confirmDelete": "Tem certeza que deseja excluir o agente \"{{name}}\"? Esta ação não pode ser desfeita.",
     "status": {
       "label": "Status",
       "active": "Ativo",
@@ -378,28 +379,78 @@
       "selectPlaceholder": "Selecione o status"
     },
     "noAgents": "Nenhum agente configurado",
-    "noAgentsDesc": "Crie seu primeiro agente IA para automatizar interações",
+    "noAgentsDesc": "Crie seu primeiro agente IA para automatizar interações com identidade e personalidade personalizadas.",
     "noDescription": "Sem descrição",
     "conversations": "{{count}} conversas",
+    "tabs": {
+      "basic": "Básico",
+      "prompt": "Prompt",
+      "model": "Modelo",
+      "capabilities": "Capacidades"
+    },
+    "sections": {
+      "identity": "Identidade do Agente",
+      "identityDesc": "Informações básicas que identificam o agente",
+      "behavior": "Comportamento e Personalidade",
+      "behaviorDesc": "Configure como o agente deve se comportar e responder",
+      "modelConfig": "Configurações do Modelo LLM",
+      "modelConfigDesc": "Ajuste os parâmetros do modelo de linguagem",
+      "capabilities": "Capacidades do Agente",
+      "capabilitiesDesc": "Defina as habilidades e funções que o agente pode executar"
+    },
     "form": {
       "name": "Nome",
       "slug": "Slug",
       "slugDesc": "Identificador único (letras minúsculas, números e hífens)",
       "description": "Descrição",
+      "avatar": "URL do Avatar",
+      "avatarDesc": "URL de uma imagem para representar o agente (opcional)",
+      "namespace": "Namespace",
+      "namespaceDesc": "Associar agente a um namespace específico para organização (opcional)",
+      "noNamespace": "Nenhum (Global)",
+      "systemPrompt": "System Prompt (Instruções do Sistema)",
+      "systemPromptDesc": "Define como o agente deve se comportar. Este texto é enviado ao LLM no início de cada conversa.",
       "instructions": "Instruções do Sistema",
       "instructionsDesc": "Define o comportamento e personalidade do agente",
-      "personality": "Personalidade",
-      "personalityDesc": "Traços de personalidade do agente",
+      "personality": "Traços de Personalidade",
+      "personalityDesc": "Características de personalidade que influenciam o tom das respostas (ex: amigável, profissional, empático)",
+      "baseModel": "Modelo Base",
+      "baseModelDesc": "Modelo LLM usado para geração de respostas (Mixtral 8x7B é o modelo principal)",
+      "temperature": "Temperatura",
+      "temperatureDesc": "Controla a aleatoriedade das respostas. Valores menores = mais determinístico, valores maiores = mais criativo.",
+      "maxTokens": "Tokens Máximos",
+      "maxTokensDesc": "Limite máximo de tokens na resposta (1 token ≈ 4 caracteres em português)",
+      "activeCapabilities": "Capacidades Ativas",
+      "noCapabilities": "Nenhuma capacidade adicionada",
+      "addCapability": "Adicionar Capacidade",
+      "suggestedCapabilities": "Capacidades Sugeridas",
       "dialogTitle": "Criar Agente",
       "dialogTitleEdit": "Editar Agente",
-      "dialogDesc": "Configure o agente com suas instruções personalizadas"
+      "dialogDesc": "Configure o agente com suas instruções personalizadas",
+      "dialogDescFull": "Configure a identidade, personalidade, system prompt e parâmetros do modelo LLM para este agente de IA."
     },
     "placeholders": {
       "name": "Ex: Assistente de Vendas",
-      "slug": "Ex: assistente-vendas",
-      "description": "Descrição breve do agente",
+      "slug": "assistente-vendas",
+      "description": "Descrição breve do propósito e função do agente",
+      "avatar": "https://exemplo.com/avatar.png",
+      "namespace": "Selecione um namespace",
+      "systemPrompt": "Você é Alice, uma assistente de IA empresarial inteligente e profissional. Você ajuda os usuários com...\n\nRegras:\n- Sempre seja educado e prestativo\n- Responda no idioma da mensagem do usuário\n- Se não souber algo, diga honestamente",
       "instructions": "Você é um assistente especializado em...",
-      "personality": "Ex: Amigável, profissional, objetivo..."
+      "personality": "Ex: Amigável, profissional, objetivo, empático...",
+      "capability": "nova-capacidade",
+      "selectModel": "Selecione um modelo"
+    },
+    "temperatureLabels": {
+      "deterministic": "Preciso",
+      "balanced": "Balanceado",
+      "creative": "Criativo"
+    },
+    "tips": {
+      "promptTitle": "Dicas para um bom System Prompt:",
+      "promptTip1": "Defina claramente a identidade e papel do agente",
+      "promptTip2": "Inclua regras específicas sobre o que fazer e não fazer",
+      "promptTip3": "O agente detecta automaticamente o idioma da mensagem do usuário"
     },
     "validation": {
       "nameMin": "Nome deve ter pelo menos 2 caracteres",
@@ -409,7 +460,8 @@
     },
     "actions": {
       "pause": "Pausar",
-      "activate": "Ativar"
+      "activate": "Ativar",
+      "copySlug": "Copiar Slug"
     },
     "success": {
       "created": "Agente criado com sucesso",

@@ -310,7 +310,9 @@ services:
       - alice-network
     healthcheck:
       # CORREÇÃO 02/01/2026: SearXNG é Python - usar Python urllib para verificar saúde REAL
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz', timeout=5)"]
+      # NOTA: SearXNG NÃO tem endpoint /healthz (feature request #4026 não implementado)
+      # Usar endpoint raiz / que retorna 200 quando o serviço está funcionando
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -1812,6 +1814,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1870,6 +1874,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1925,6 +1931,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -1980,6 +1988,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -2035,6 +2045,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -2090,6 +2102,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}
@@ -2145,6 +2159,8 @@ services:
       REDIS_CACHE: redis://:${REDIS_CACHE_PASSWORD}@erpnext-redis-cache:6379
       REDIS_QUEUE: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379
       REDIS_SOCKETIO: redis://:${REDIS_QUEUE_PASSWORD}@erpnext-redis-queue:6379/1
+      # CORREÇÃO 02/01/2026: Variável separada para healthcheck (os.environ.get)
+      REDIS_QUEUE_PASSWORD: ${REDIS_QUEUE_PASSWORD}
       SOCKETIO_PORT: 9000
       AUTO_MIGRATE: 1
       FRAPPE_SITE_NAME_HEADER: ${ERPNEXT_SITE_NAME:-erp.yesyoudeserve.duckdns.org}

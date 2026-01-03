@@ -369,6 +369,7 @@
     "description": "Description",
     "systemPrompt": "System Prompt",
     "capabilities": "Capabilities",
+    "confirmDelete": "Are you sure you want to delete the agent \"{{name}}\"? This action cannot be undone.",
     "status": {
       "label": "Status",
       "active": "Active",
@@ -378,28 +379,78 @@
       "selectPlaceholder": "Select status"
     },
     "noAgents": "No agents configured",
-    "noAgentsDesc": "Create your first AI agent to automate interactions",
+    "noAgentsDesc": "Create your first AI agent to automate interactions with custom identity and personality.",
     "noDescription": "No description",
     "conversations": "{{count}} conversations",
+    "tabs": {
+      "basic": "Basic",
+      "prompt": "Prompt",
+      "model": "Model",
+      "capabilities": "Capabilities"
+    },
+    "sections": {
+      "identity": "Agent Identity",
+      "identityDesc": "Basic information that identifies the agent",
+      "behavior": "Behavior and Personality",
+      "behaviorDesc": "Configure how the agent should behave and respond",
+      "modelConfig": "LLM Model Settings",
+      "modelConfigDesc": "Adjust the language model parameters",
+      "capabilities": "Agent Capabilities",
+      "capabilitiesDesc": "Define the skills and functions the agent can perform"
+    },
     "form": {
       "name": "Name",
       "slug": "Slug",
       "slugDesc": "Unique identifier (lowercase letters, numbers and hyphens)",
       "description": "Description",
+      "avatar": "Avatar URL",
+      "avatarDesc": "URL of an image to represent the agent (optional)",
+      "namespace": "Namespace",
+      "namespaceDesc": "Associate agent to a specific namespace for organization (optional)",
+      "noNamespace": "None (Global)",
+      "systemPrompt": "System Prompt (System Instructions)",
+      "systemPromptDesc": "Defines how the agent should behave. This text is sent to the LLM at the start of each conversation.",
       "instructions": "System Instructions",
       "instructionsDesc": "Defines the behavior and personality of the agent",
-      "personality": "Personality",
-      "personalityDesc": "Personality traits of the agent",
+      "personality": "Personality Traits",
+      "personalityDesc": "Personality characteristics that influence the tone of responses (e.g., friendly, professional, empathetic)",
+      "baseModel": "Base Model",
+      "baseModelDesc": "LLM model used for response generation (Mixtral 8x7B is the main model)",
+      "temperature": "Temperature",
+      "temperatureDesc": "Controls the randomness of responses. Lower values = more deterministic, higher values = more creative.",
+      "maxTokens": "Max Tokens",
+      "maxTokensDesc": "Maximum token limit in response (1 token ≈ 4 characters in English)",
+      "activeCapabilities": "Active Capabilities",
+      "noCapabilities": "No capabilities added",
+      "addCapability": "Add Capability",
+      "suggestedCapabilities": "Suggested Capabilities",
       "dialogTitle": "Create Agent",
       "dialogTitleEdit": "Edit Agent",
-      "dialogDesc": "Configure the agent with custom instructions"
+      "dialogDesc": "Configure the agent with custom instructions",
+      "dialogDescFull": "Configure the identity, personality, system prompt and LLM model parameters for this AI agent."
     },
     "placeholders": {
       "name": "E.g.: Sales Assistant",
-      "slug": "E.g.: sales-assistant",
-      "description": "Brief agent description",
+      "slug": "sales-assistant",
+      "description": "Brief description of the agent's purpose and function",
+      "avatar": "https://example.com/avatar.png",
+      "namespace": "Select a namespace",
+      "systemPrompt": "You are Alice, an intelligent and professional enterprise AI assistant. You help users with...\n\nRules:\n- Always be polite and helpful\n- Respond in the user's message language\n- If you don't know something, say so honestly",
       "instructions": "You are an assistant specialized in...",
-      "personality": "E.g.: Friendly, professional, objective..."
+      "personality": "E.g.: Friendly, professional, objective, empathetic...",
+      "capability": "new-capability",
+      "selectModel": "Select a model"
+    },
+    "temperatureLabels": {
+      "deterministic": "Precise",
+      "balanced": "Balanced",
+      "creative": "Creative"
+    },
+    "tips": {
+      "promptTitle": "Tips for a good System Prompt:",
+      "promptTip1": "Clearly define the agent's identity and role",
+      "promptTip2": "Include specific rules about what to do and not do",
+      "promptTip3": "The agent automatically detects the user's message language"
     },
     "validation": {
       "nameMin": "Name must be at least 2 characters",
@@ -409,7 +460,8 @@
     },
     "actions": {
       "pause": "Pause",
-      "activate": "Activate"
+      "activate": "Activate",
+      "copySlug": "Copy Slug"
     },
     "success": {
       "created": "Agent created successfully",

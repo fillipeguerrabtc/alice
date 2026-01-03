@@ -701,6 +701,81 @@ function extractImagePrompt(message: string, keyword: string): string {
 }
 
 // ============================================================================
+// SYSTEM PROMPT DINÂMICO - Configurável via Dashboard Admin (02/01/2026)
+// Regra 6 CLAUDE.md: Sem hardcoded - usa instruções do agente quando disponível
+// ============================================================================
+
+/**
+ * Interface do agente para type safety no system prompt
+ */
+interface AgentConfig {
+  instrucoes?: string | null;
+  personalidade?: string | null;
+  modeloBase?: string | null;
+  temperaturaModelo?: number | null;
+  maxTokens?: number | null;
+}
+
+/**
+ * System prompt padrão usado quando não há agente configurado
+ * ou quando o agente não tem instruções definidas.
+ * 
+ * IMPORTANTE: O prompt instrui a IA a detectar o idioma do usuário
+ * e responder no mesmo idioma (não mais hardcoded em português).
+ */
+const DEFAULT_SYSTEM_PROMPT = `You are Alice, an intelligent and helpful enterprise AI assistant.
+
+IMPORTANT LANGUAGE RULES:
+- ALWAYS detect the language of the user's message
+- ALWAYS respond in the SAME language as the user's message
+- If the user writes in Portuguese, respond in Portuguese
+- If the user writes in English, respond in English
+- If the user writes in Spanish, respond in Spanish
+- And so on for any language
+
+BEHAVIOR GUIDELINES:
+- Be professional, helpful, and concise
+- If you don't know something, say so honestly
+- Provide accurate and relevant information
+- Be respectful and maintain a positive tone`;
+
+/**
+ * Constrói o system prompt dinâmico baseado na configuração do agente
+ * 
+ * @param agent - Configuração do agente (opcional)
+ * @param _userMessage - Mensagem do usuário para detecção de idioma (reservado para uso futuro)
+ * @returns System prompt completo
+ * 
+ * NOTA: A detecção de idioma é feita pelo próprio LLM baseada nas instruções
+ * do DEFAULT_SYSTEM_PROMPT. O parâmetro userMessage está reservado para
+ * implementação futura de detecção de idioma programática se necessário.
+ */
+function buildSystemPrompt(agent?: AgentConfig | null, _userMessage?: string): string {
+  // Se o agente tem instruções customizadas, usar elas
+  if (agent?.instrucoes && agent.instrucoes.trim()) {
+    let prompt = agent.instrucoes;
+    
+    // Se o agente tem personalidade, adicionar como complemento
+    if (agent.personalidade && agent.personalidade.trim()) {
+      prompt += `\n\nPERSONALITY: ${agent.personalidade}`;
+    }
+    
+    // Adicionar instrução de idioma se não estiver presente
+    // (para garantir que agentes customizados também respeitem o idioma do usuário)
+    if (!prompt.toLowerCase().includes('language') && 
+        !prompt.toLowerCase().includes('idioma') && 
+        !prompt.toLowerCase().includes('língua')) {
+      prompt += `\n\nIMPORTANT: Always respond in the same language as the user's message.`;
+    }
+    
+    return prompt;
+  }
+  
+  // Fallback para prompt padrão
+  return DEFAULT_SYSTEM_PROMPT;
+}
+
+// ============================================================================
 // CIRCUIT BREAKER - GPU Manager Service LLM API (Regra 16 - Best Practices 2025)
 // Usa CIRCUIT_BREAKER_PRESETS centralizado (Regra 2 - Não Duplicar)
 // ============================================================================
@@ -721,9 +796,64 @@ interface LLMResponse {
   }>;
 }
 
+/**
+ * Configuração de parâmetros LLM para chamadas de inferência
+ * 
+ * BUG FIX 02/01/2026: Valores agora vêm da configuração do agente, não hardcoded
+ */
+interface LLMConfig {
+  /** Temperatura do modelo (0-2). Default: 0.7 */
+  temperature?: number;
+  /** Limite máximo de tokens na resposta. Default: 4096 */
+  maxTokens?: number;
+  /** Modelo a ser usado. Default: Mixtral-8x7B-Instruct-v0.1-AWQ */
+  model?: string;
+}
+
 interface LLMRequest {
   messages: LLMMessage[];
   stream: boolean;
+  config?: LLMConfig;
+}
+
+// Valores padrão centralizados (Regra 2 - Não Duplicar)
+const DEFAULT_LLM_CONFIG: Required<LLMConfig> = {
+  temperature: 0.7,
+  maxTokens: 4096,
+  model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+};
+
+/**
+ * Extrai configuração LLM de um agente
+ * Usa valores padrão se agente não tiver configuração
+ * 
+ * @param agent - Agente opcional com configurações de modelo
+ * @returns Configuração LLM para usar nas chamadas
+ */
+function getAgentLLMConfig(agent?: AgentConfig | null): LLMConfig {
+  if (!agent) return {};
+  
+  return {
+    temperature: agent.temperaturaModelo ?? undefined,
+    maxTokens: agent.maxTokens ?? undefined,
+    model: agent.modeloBase ? mapModelNameToAWQ(agent.modeloBase) : undefined,
+  };
+}
+
+/**
+ * Mapeia nome amigável do modelo para o nome usado pelo vLLM/AWQ
+ * 
+ * @param modelName - Nome do modelo no banco (ex: "Mixtral-8x7B")
+ * @returns Nome do modelo AWQ para vLLM
+ */
+function mapModelNameToAWQ(modelName: string): string {
+  const modelMap: Record<string, string> = {
+    'Mixtral-8x7B': 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+    'Mixtral-8x7B-Instruct': 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+    // Adicionar outros modelos conforme necessário
+  };
+  
+  return modelMap[modelName] || DEFAULT_LLM_CONFIG.model;
 }
 
 async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Response> {
@@ -737,6 +867,12 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
   
   const timeout = LLM_SYNC_TIMEOUT;
   
+  // BUG FIX 02/01/2026: Usar configuração do agente ou valores padrão
+  const config = request.config || {};
+  const temperature = config.temperature ?? DEFAULT_LLM_CONFIG.temperature;
+  const maxTokens = config.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
+  const model = config.model || DEFAULT_LLM_CONFIG.model;
+  
   // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
   {
     // Não-streaming: usar GPU Manager Service (fila priorizada, monitoramento VRAM)
@@ -748,10 +884,10 @@ async function callLlamaAPIInternal(request: LLMRequest): Promise<globalThis.Res
         priority: GpuRequestPriority.CRITICAL,
         timeout,
         body: {
-          model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+          model,
           messages: request.messages,
-          max_tokens: 4096,
-          temperature: 0.7,
+          max_tokens: maxTokens,
+          temperature,
           stream: false,
         },
       });
@@ -803,7 +939,16 @@ const LLM_FALLBACK_MESSAGE = 'Desculpe, estou temporariamente indisponível. Por
 // BUG FIX 26/12/2025: streamFallback removido - não usado com arquitetura GPU Manager Service
 // Fallback agora é tratado diretamente no handler com mensagem de erro apropriada
 
-async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<string | AsyncGenerator<string>> {
+/**
+ * Chama a API LLM via GPU Manager Service
+ * 
+ * @param messages - Array de mensagens no formato LLM
+ * @param stream - Se true, retorna async generator (NÃO SUPORTADO - use proxy direto)
+ * @param config - Configuração opcional do LLM (temperatura, maxTokens, modelo)
+ * 
+ * BUG FIX 02/01/2026: Agora aceita configuração do agente para temperatura e maxTokens
+ */
+async function callLlamaAPI(messages: LLMMessage[], stream = false, config?: LLMConfig): Promise<string | AsyncGenerator<string>> {
   // BUG FIX 25/12/2025: callLlamaAPI NÃO suporta streaming
   // Streaming deve ser feito diretamente no endpoint/handler usando proxy direto do GPU Manager Service
   // porque o GPU Manager Service consome o body ao fazer proxy
@@ -812,7 +957,7 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<str
   }
   
   try {
-    const response = await gpuManagerBreaker.fire({ messages, stream: false }) as globalThis.Response;
+    const response = await gpuManagerBreaker.fire({ messages, stream: false, config }) as globalThis.Response;
     const data = await response.json() as LLMResponse;
     return data.choices[0]?.message?.content || '';
   } catch (error) {
@@ -845,19 +990,27 @@ async function callLlamaAPI(messages: LLMMessage[], stream = false): Promise<str
 /**
  * Faz proxy do stream do GPU Manager Service para WebSocket ou HTTP SSE
  * BUG FIX 25/12/2025: Função reutilizável para streaming via GPU Manager Service
+ * BUG FIX 02/01/2026: Agora aceita configuração do agente para temperatura e maxTokens
  * 
  * @param llmMessages Mensagens para enviar ao LLM
  * @param onChunk Callback chamado para cada chunk de conteúdo (para WebSocket: ws.send)
  * @param onDone Callback chamado quando stream termina (para WebSocket: salvar mensagem)
  *                 BUG FIX 25/12/2025: Suporta callbacks async para operações de banco de dados
  *                 BUG FIX 25/12/2025: Recebe fullResponse como parâmetro para evitar closure sobre variável vazia
+ * @param config Configuração opcional do LLM (temperatura, maxTokens, modelo)
  * @returns Promise que resolve com a resposta completa (concatenada)
  */
 async function proxyStreamFromGpuManager(
   llmMessages: LLMMessage[],
   onChunk: (content: string) => void,
-  onDone?: (fullResponse: string) => Promise<void> | void
+  onDone?: (fullResponse: string) => Promise<void> | void,
+  config?: LLMConfig
 ): Promise<string> {
+  // BUG FIX 02/01/2026: Usar configuração do agente ou valores padrão
+  const temperature = config?.temperature ?? DEFAULT_LLM_CONFIG.temperature;
+  const maxTokens = config?.maxTokens ?? DEFAULT_LLM_CONFIG.maxTokens;
+  const model = config?.model || DEFAULT_LLM_CONFIG.model;
+  
   // BUG FIX 26/12/2025: Usar requestGpuStream centralizado de @alice/shared-utils
   // Remove duplicação de GPU_MANAGER_URL e validação de INTERNAL_API_SECRET
   // requestGpuStream já faz fail-fast da secret e usa a URL correta
@@ -867,10 +1020,10 @@ async function proxyStreamFromGpuManager(
     endpoint: '/v1/chat/completions',
     method: 'POST',
     body: {
-      model: 'TheBloke/Mixtral-8x7B-Instruct-v0.1-AWQ',
+      model,
       messages: llmMessages,
-      max_tokens: 4096,
-      temperature: 0.7,
+      max_tokens: maxTokens,
+      temperature,
       stream: true,
     },
     timeout: 60000,
@@ -1901,8 +2054,8 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       isFromUser: true,
     }).returning();
 
-    const agent = conversation.agent as { instrucoes?: string } | null;
-    let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
+    const agent = conversation.agent as AgentConfig | null;
+    let systemPrompt = buildSystemPrompt(agent, body.conteudo);
     
     const ragStartTime = Date.now();
     const ragResult = await buscarContextoRAG(body.conteudo, conversation.namespaceId || undefined);
@@ -1931,8 +2084,11 @@ app.post('/api/chat/conversations/:id/messages', requireAuth(), requireSameTenan
       })),
     ];
 
+    // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
+    const llmConfig = getAgentLLMConfig(agent);
+
     const llmStartTime = Date.now();
-    const response = await callLlamaAPI(llmMessages);
+    const response = await callLlamaAPI(llmMessages, false, llmConfig);
     const llmLatency = Date.now() - llmStartTime;
     const totalLatency = Date.now() - ragStartTime;
 
@@ -1990,9 +2146,9 @@ app.post('/api/chat/stream', requireAuth(), requireSameTenant(getTenantIdFromReq
   res.flushHeaders();
 
   try {
-    let systemPrompt = 'Você é Alice, uma assistente de IA empresarial inteligente e útil. Responda sempre em português.';
-    
+    // Usar último mensagem do usuário para detecção de idioma
     const lastUserMessage = inputMessages.filter(m => m.role === 'user').pop();
+    let systemPrompt = buildSystemPrompt(null, lastUserMessage?.content);
     let ragSources: Array<{ documentId: string; titulo: string; similarity: number }> = [];
     
     if (lastUserMessage) {
@@ -2973,8 +3129,8 @@ wss.on('connection', (ws, req) => {
         // Se não tem resposta do cache (não é saudação), continuar para LLM
         // Métricas já foram registradas no bloco acima quando hasResponse=true
 
-        const agent = conversation?.agent as { instrucoes?: string } | null;
-        let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+        const agent = conversation?.agent as AgentConfig | null;
+        let systemPrompt = buildSystemPrompt(agent, messageContent);
 
         const namespaceId = message.namespaceId || conversation?.namespaceId || undefined;
         // CORREÇÃO 17/12/2025: Usar messageContent (com fallback) ao invés de message.content (potencialmente undefined)
@@ -3005,6 +3161,9 @@ wss.on('connection', (ws, req) => {
           { role: 'user', content: messageContent },
         ];
 
+        // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
+        const llmConfig = getAgentLLMConfig(agent);
+        
         // BUG FIX 26/12/2025: Prefixado com _ - resultado não usado pois callback onDone usa responseText diretamente
         let _fullResponse = '';
         try {
@@ -3119,7 +3278,8 @@ wss.on('connection', (ws, req) => {
                   confidence: postResponseEscalation.confidence,
                 }, 'Escalação automática após resposta de baixa confiança do LLM');
               }
-            }
+            },
+            llmConfig // BUG FIX 02/01/2026: Passar configuração do agente
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -3332,8 +3492,8 @@ wss.on('connection', (ws, req) => {
 
         // Preparar prompt para Mixtral 8x7B (SOMENTE TEXTO)
         // CORREÇÃO 17/12/2025: Mixtral NÃO processa imagens - usar RAG com embeddings CLIP
-        const agent = conversation.agent as { instrucoes?: string } | null;
-        let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+        const agent = conversation.agent as AgentConfig | null;
+        let systemPrompt = buildSystemPrompt(agent, mediaMessage.content);
         
         // Para imagens: usa RAG com embeddings CLIP (1024 dim) para buscar contexto similar
         // Para áudio: usar transcrição quando disponível
@@ -3375,6 +3535,9 @@ wss.on('connection', (ws, req) => {
 
         // BUG FIX 25/12/2025: Chamar LLM com streaming via proxyStreamFromGpuManager
         const llmStartTime = Date.now();
+        
+        // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
+        const mediaLlmConfig = getAgentLLMConfig(agent);
         
         // CORREÇÃO 17/12/2025: Mixtral 8x7B é SOMENTE TEXTO
         // NÃO envia imagens diretamente - usa contexto RAG via embeddings CLIP
@@ -3456,7 +3619,8 @@ wss.on('connection', (ws, req) => {
                 mediaType: validatedMediaType,
                 llmLatencyMs: llmLatency,
               }, 'Mensagem multimodal processada via WebSocket');
-            }
+            },
+            mediaLlmConfig // BUG FIX 02/01/2026: Passar configuração do agente
           );
         } catch (streamError) {
           logger.error({ error: streamError }, 'Erro no streaming WebSocket');
@@ -4189,6 +4353,271 @@ app.get('/api/chat/escalation-config', requireAuth(), requireSameTenant(getTenan
 });
 
 // ============================================================================
+// API CRUD DE AGENTES (ASSISTENTES IA)
+// Permite configurar identidade, personalidade e instruções da IA via dashboard
+// Regra 6 CLAUDE.md: Implementação enterprise-grade com validação completa
+// ============================================================================
+
+// Schema de validação para criação/atualização de agentes
+const createAgentSchema = z.object({
+  nome: z.string().min(2, 'Nome deve ter no mínimo 2 caracteres').max(255),
+  slug: z.string().min(2).max(100).regex(/^[a-z0-9-]+$/, 'Slug deve conter apenas letras minúsculas, números e hífens'),
+  descricao: z.string().max(2000).optional().nullable(),
+  personalidade: z.string().max(5000).optional().nullable(),
+  instrucoes: z.string().max(10000).optional().nullable(),
+  avatar: z.string().url().optional().nullable(),
+  capacidades: z.array(z.string()).optional().nullable(),
+  modeloBase: z.string().max(100).optional().default('Mixtral-8x7B'),
+  temperaturaModelo: z.number().min(0).max(2).optional().default(0.7),
+  maxTokens: z.number().int().min(100).max(32000).optional().default(4096),
+  status: z.enum(['active', 'training', 'paused', 'deprecated']).optional().default('active'),
+  namespaceId: z.string().uuid().optional().nullable(),
+});
+
+const updateAgentSchema = createAgentSchema.partial();
+
+/**
+ * GET /api/agents
+ * Lista todos os agentes do tenant atual
+ * Isolamento multi-tenant via tenantId do usuário autenticado
+ */
+app.get('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:read'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
+  try {
+    const agents = await db.query.agents.findMany({
+      where: eq(schema.agents.tenantId, tenantId),
+      orderBy: [desc(schema.agents.criadoEm)],
+    });
+    
+    res.json(agents);
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao listar agentes');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * GET /api/agents/:id
+ * Obtém um agente específico pelo ID
+ * Verifica se pertence ao tenant do usuário
+ */
+app.get('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:read'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
+  try {
+    const agent = await db.query.agents.findFirst({
+      where: eq(schema.agents.id, id),
+    });
+    
+    if (!agent) {
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    // SEGURANÇA: Verificar isolamento multi-tenant
+    if (agent.tenantId !== tenantId) {
+      logger.warn({ agentId: id, requestTenantId: tenantId, agentTenantId: agent.tenantId }, 'Tentativa de acesso cross-tenant a agente');
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    res.json(agent);
+  } catch (error) {
+    logger.error({ error, agentId: id }, 'Erro ao buscar agente');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * POST /api/agents
+ * Cria um novo agente para o tenant
+ */
+app.post('/api/agents', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:write'), async (req: Request, res: Response) => {
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
+  const parseResult = createAgentSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+  
+  const data = parseResult.data;
+  
+  try {
+    // Verificar se slug já existe no tenant
+    const existingAgent = await db.query.agents.findFirst({
+      where: eq(schema.agents.slug, data.slug),
+    });
+    
+    if (existingAgent && existingAgent.tenantId === tenantId) {
+      return res.status(409).json({ error: 'Já existe um agente com este slug' });
+    }
+    
+    const [agent] = await db.insert(schema.agents).values({
+      tenantId,
+      nome: data.nome,
+      slug: data.slug,
+      descricao: data.descricao,
+      personalidade: data.personalidade,
+      instrucoes: data.instrucoes,
+      avatar: data.avatar,
+      capacidades: data.capacidades,
+      modeloBase: data.modeloBase,
+      temperaturaModelo: data.temperaturaModelo,
+      maxTokens: data.maxTokens,
+      status: data.status,
+      namespaceId: data.namespaceId,
+    }).returning();
+    
+    logger.info({ agentId: agent.id, tenantId, nome: agent.nome }, 'Agente criado');
+    res.status(201).json(agent);
+  } catch (error) {
+    logger.error({ error, tenantId }, 'Erro ao criar agente');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * PATCH /api/agents/:id
+ * Atualiza um agente existente
+ * Verifica se pertence ao tenant do usuário
+ */
+app.patch('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:write'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
+  const parseResult = updateAgentSchema.safeParse(req.body);
+  if (!parseResult.success) {
+    return res.status(400).json({ error: 'Dados inválidos', details: parseResult.error.format() });
+  }
+  
+  const data = parseResult.data;
+  
+  try {
+    // Verificar se agente existe e pertence ao tenant
+    const existingAgent = await db.query.agents.findFirst({
+      where: eq(schema.agents.id, id),
+    });
+    
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    if (existingAgent.tenantId !== tenantId) {
+      logger.warn({ agentId: id, requestTenantId: tenantId, agentTenantId: existingAgent.tenantId }, 'Tentativa de atualização cross-tenant de agente');
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    // Se está alterando o slug, verificar se novo slug já existe
+    if (data.slug && data.slug !== existingAgent.slug) {
+      const slugConflict = await db.query.agents.findFirst({
+        where: eq(schema.agents.slug, data.slug),
+      });
+      
+      if (slugConflict && slugConflict.tenantId === tenantId) {
+        return res.status(409).json({ error: 'Já existe um agente com este slug' });
+      }
+    }
+    
+    const [updatedAgent] = await db.update(schema.agents)
+      .set({
+        ...data,
+        atualizadoEm: new Date(),
+      })
+      .where(eq(schema.agents.id, id))
+      .returning();
+    
+    logger.info({ agentId: id, tenantId, updates: Object.keys(data) }, 'Agente atualizado');
+    res.json(updatedAgent);
+  } catch (error) {
+    logger.error({ error, agentId: id }, 'Erro ao atualizar agente');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+/**
+ * DELETE /api/agents/:id
+ * Exclui um agente
+ * Verifica se pertence ao tenant do usuário
+ */
+app.delete('/api/agents/:id', requireAuth(), requireSameTenant(getTenantIdFromRequest), requirePermission('agents:delete'), async (req: Request, res: Response) => {
+  const paramsResult = uuidParamSchema.safeParse(req.params);
+  if (!paramsResult.success) {
+    return res.status(400).json({ error: 'ID de agente inválido', details: paramsResult.error.format() });
+  }
+  const { id } = paramsResult.data;
+  const tenantId = req.tenantId;
+  
+  if (!tenantId) {
+    return res.status(403).json({ error: 'Acesso negado: usuário não associado a um tenant' });
+  }
+  
+  try {
+    // Verificar se agente existe e pertence ao tenant
+    const existingAgent = await db.query.agents.findFirst({
+      where: eq(schema.agents.id, id),
+    });
+    
+    if (!existingAgent) {
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    if (existingAgent.tenantId !== tenantId) {
+      logger.warn({ agentId: id, requestTenantId: tenantId, agentTenantId: existingAgent.tenantId }, 'Tentativa de exclusão cross-tenant de agente');
+      return res.status(404).json({ error: 'Agente não encontrado' });
+    }
+    
+    // Verificar se agente está em uso em conversas ativas
+    const conversationsUsingAgent = await db.query.conversations.findFirst({
+      where: eq(schema.conversations.agentId, id),
+    });
+    
+    if (conversationsUsingAgent) {
+      // Soft delete - apenas marcar como deprecated
+      const [deprecatedAgent] = await db.update(schema.agents)
+        .set({ status: 'deprecated', atualizadoEm: new Date() })
+        .where(eq(schema.agents.id, id))
+        .returning();
+      
+      logger.info({ agentId: id, tenantId }, 'Agente marcado como deprecated (em uso em conversas)');
+      return res.json({ message: 'Agente marcado como deprecated (em uso em conversas)', agent: deprecatedAgent });
+    }
+    
+    // Hard delete se não estiver em uso
+    await db.delete(schema.agents).where(eq(schema.agents.id, id));
+    
+    logger.info({ agentId: id, tenantId }, 'Agente excluído');
+    res.status(204).send();
+  } catch (error) {
+    logger.error({ error, agentId: id }, 'Erro ao excluir agente');
+    res.status(500).json({ error: 'Erro interno do servidor' });
+  }
+});
+
+// ============================================================================
 // ROTAS DE INTEGRAÇÃO CROSS-SERVICE (HANDOVER/TAKEOVER)
 // Usadas pelo integrations-service para WhatsApp e outros canais
 // ============================================================================
@@ -4361,8 +4790,8 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
     }).returning();
     
     // Processar mensagem com LLM
-    const agent = conversation.agent as { instrucoes?: string } | null;
-    let systemPrompt = agent?.instrucoes || 'Você é Alice, uma assistente de IA empresarial.';
+    const agent = conversation.agent as AgentConfig | null;
+    let systemPrompt = buildSystemPrompt(agent, content);
     
     // Buscar contexto RAG se disponível
     const ragResult = await buscarContextoRAG(content, conversation.namespaceId || undefined);
@@ -4385,8 +4814,11 @@ app.post('/api/chat/message', asyncHandler(async (req: Request, res: Response) =
       })),
     ];
     
+    // BUG FIX 02/01/2026: Extrair configuração LLM do agente para uso nas chamadas
+    const externalChannelLlmConfig = getAgentLLMConfig(agent);
+    
     const llmStartTime = Date.now();
-    const llmResponse = await callLlamaAPI(llmMessages);
+    const llmResponse = await callLlamaAPI(llmMessages, false, externalChannelLlmConfig);
     const llmLatency = Date.now() - llmStartTime;
     
     // Salvar resposta do bot
