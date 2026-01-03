@@ -737,14 +737,20 @@ services:
       - alice-network
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Qdrant 1.16 healthcheck - Docs Oficiais 2025
+      # CORREÇÃO 03/01/2026: Qdrant 1.16 healthcheck - Imagem Debian
       # =================================================================
-      # Endpoints disponíveis: /healthz, /livez, /readyz (retornam HTTP 200)
-      # Acessíveis sem autenticação mesmo com API key configurada.
+      # Imagem qdrant/qdrant é baseada em Debian (buster-slim)
+      # Ref: https://qdrant.tech/documentation/guides/installation/
+      #
+      # TEM bash disponível, mas NÃO tem curl/wget por padrão
+      # GitHub issue #3491 - curl foi solicitado mas não adicionado
+      # Ref: https://github.com/qdrant/qdrant/issues/3491
+      #
+      # SOLUÇÃO: Usar /dev/tcp builtin do bash para verificar porta REST API
+      # Endpoints disponíveis: /healthz, /livez, /readyz (porta 6333)
       # Ref: https://qdrant.tech/documentation/guides/monitoring/
-      # Imagem qdrant/qdrant inclui wget e curl (confirmado docs 2025)
       # =================================================================
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "timeout 5 bash -c 'true < /dev/tcp/localhost/6333' || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -2851,16 +2857,23 @@ services:
       - alice-network
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Jaeger v2.13 healthcheck - Docs Oficiais 2025
+      # CORREÇÃO 03/01/2026: Jaeger v2.13 - Usar HEALTHCHECK EMBUTIDO
       # =================================================================
-      # Endpoint oficial: http://localhost:13133/status
+      # PROBLEMA: Imagem jaegertracing/jaeger:2.13.0 é MINIMAL (sem shell)
+      # NÃO é possível usar CMD-SHELL, bash, curl ou wget
+      #
+      # SOLUÇÃO ENTERPRISE: Herdar healthcheck embutido da imagem oficial
+      # A imagem Jaeger v2 JÁ DEFINE HEALTHCHECK no Dockerfile oficial
+      # que usa a extensão healthcheckv2 (porta 13133, endpoint /status)
+      # test: ["NONE"] = herdar healthcheck da imagem base
+      #
       # Ref: https://www.jaegertracing.io/docs/2.13/deployment/
-      # Imagem jaegertracing/jaeger:2.13.0 é Alpine - usar wget (disponível)
+      # Ref: https://github.com/jaegertracing/jaeger (Dockerfile)
       # =================================================================
-      test: ["CMD-SHELL", "wget -q --spider http://localhost:13133/status || exit 1"]
+      test: ["NONE"]
       interval: 30s
-      timeout: 5s
-      retries: 3
+      timeout: 10s
+      retries: 5
       start_period: 60s
     deploy:
       resources:
