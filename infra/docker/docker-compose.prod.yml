@@ -1307,7 +1307,14 @@ services:
   # innodb_buffer_pool_size = 70% do container memory (1.4GB para 2GB container)
   # SEGURANÇA: Image digest SHA256 (Supply Chain Security 2025)
   erpnext-mariadb:
-    image: mariadb:10.11
+    # =================================================================
+    # CORREÇÃO 03/01/2026: MariaDB 10.8.8 - Compatibilidade ERPNext v15
+    # =================================================================
+    # ERPNext v15 (frappe/erpnext) requer MariaDB 10.6.x ou 10.8.x MÁXIMO
+    # MariaDB 10.11+ causa incompatibilidades com schema migration e stored procedures
+    # Ref: https://frappeframework.com/docs/v15/user/en/installation#system-requirements
+    # =================================================================
+    image: mariadb:10.8.8
     platform: linux/amd64
     container_name: erpnext-mariadb
     restart: always
