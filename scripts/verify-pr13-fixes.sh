@@ -99,7 +99,7 @@ else
   fi
 
   # Verificar sleep 30
-  if grep -q "sleep 30" "$DEPLOY_FILE" | head -1; then
+  if grep -q "sleep 30" "$DEPLOY_FILE"; then
     echo -e "${GREEN}  ✅ Sleep 30s presente${NC}"
   else
     echo -e "${RED}  ❌ Sleep 30s não encontrado${NC}"
