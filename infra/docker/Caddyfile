@@ -21,7 +21,7 @@
 	# Email para Let's Encrypt (notificações de expiração)
 	# CORREÇÃO 03/01/2026: Sintaxe correta env.VAR para expansão de variável
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
-	email {env.ACME_EMAIL}
+	email {$ACME_EMAIL}
 	
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local
