@@ -1,17 +1,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 var __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 // Helper para obter variáveis de ambiente com fallback (proxy só usado em dev)
 function getEnvOrDefault(name, defaultValue) {
-    var value = (process.env[name] || '').trim();
+    var _a;
+    var value = (_a = process.env[name]) === null || _a === void 0 ? void 0 : _a.trim();
     // Durante build, usar default (proxy não é usado em produção - SPA estático)
     // Durante dev, usar fallback para localhost se não configurado
     return value || defaultValue;
 }
-
 // URLs dos serviços para proxy (apenas usado no dev server, não no build)
 var AUTH_SERVICE_URL = getEnvOrDefault('AUTH_SERVICE_URL', 'http://localhost:3001');
 var CHAT_SERVICE_URL = getEnvOrDefault('CHAT_SERVICE_URL', 'http://localhost:3002');
@@ -20,7 +20,7 @@ var TRAINING_SERVICE_URL = getEnvOrDefault('TRAINING_SERVICE_URL', 'http://local
 var INTEGRATIONS_SERVICE_URL = getEnvOrDefault('INTEGRATIONS_SERVICE_URL', 'http://localhost:3005');
 var WS_URL = getEnvOrDefault('WS_URL', 'ws://localhost:3002');
 export default defineConfig({
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
     resolve: {
         alias: {
             '@': path.resolve(__dirname, './src'),
@@ -66,17 +66,42 @@ export default defineConfig({
     build: {
         outDir: 'dist',
         sourcemap: false,
+        // PERFORMANCE: esbuild para builds mais rápidos (Vite 7 2025 Best Practices)
         minify: 'esbuild',
+        // PERFORMANCE: target moderno para código mais otimizado
+        target: 'esnext',
         rollupOptions: {
             output: {
+                // PERFORMANCE: Separação de chunks para melhor caching (2025 Best Practices)
                 manualChunks: {
-                    vendor: ['react', 'react-dom'],
-                    ui: ['@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu', '@radix-ui/react-toast'],
-                    charts: ['recharts'],
+                    // React core
+                    'vendor-react': ['react', 'react-dom'],
+                    // UI framework (shadcn/radix)
+                    'vendor-ui': [
+                        '@radix-ui/react-dialog',
+                        '@radix-ui/react-dropdown-menu',
+                        '@radix-ui/react-toast',
+                        '@radix-ui/react-select',
+                        '@radix-ui/react-tabs',
+                        '@radix-ui/react-tooltip',
+                        '@radix-ui/react-scroll-area',
+                    ],
+                    // Charting
+                    'vendor-charts': ['recharts'],
+                    // Internationalization
+                    'vendor-i18n': ['i18next', 'react-i18next', 'i18next-browser-languagedetector'],
+                    // Query and routing
+                    'vendor-query': ['@tanstack/react-query', 'wouter'],
+                    // Motion/animations
+                    'vendor-motion': ['framer-motion'],
                 },
             },
         },
-        chunkSizeWarningLimit: 1000,
+        chunkSizeWarningLimit: 500,
+        // PERFORMANCE: CSS code splitting para melhor caching
+        cssCodeSplit: true,
+        // PERFORMANCE: Desabilitar assets inline para melhor caching
+        assetsInlineLimit: 4096,
     },
     define: {
         __APP_VERSION__: JSON.stringify(process.env.npm_package_version),

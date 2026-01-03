@@ -323,6 +323,7 @@ jobs:
               # Rebuild do serviço se mudou seu diretório real, qualquer package compartilhado, lockfile ou scripts base
               # Observação: padrão conservador para garantir correção (enterprise).
               SERVICE_DIR_PATTERN=""
+              # CORREÇÃO 02/01/2026: Todos os 12 serviços do array SERVICES devem estar mapeados
               case "$IMAGE" in
                 api-gateway) SERVICE_DIR_PATTERN="^apps/api-gateway/" ;;
                 auth) SERVICE_DIR_PATTERN="^apps/auth-service/" ;;
@@ -333,9 +334,12 @@ jobs:
                 rag) SERVICE_DIR_PATTERN="^apps/rag-service/" ;;
                 training) SERVICE_DIR_PATTERN="^apps/training-service/" ;;
                 gpu-manager) SERVICE_DIR_PATTERN="^apps/gpu-manager-service/" ;;
+                pgbackrest) SERVICE_DIR_PATTERN="^infra/backup/" ;;
+                postgres) SERVICE_DIR_PATTERN="^infra/postgres/" ;;
                 caddy) SERVICE_DIR_PATTERN="^infra/docker/" ;;
                 *)
                   echo "❌ ERRO: serviço desconhecido no pipeline release: $IMAGE"
+                  echo "Serviços válidos: api-gateway, auth, chat, frontend, integrations, observability, rag, training, gpu-manager, pgbackrest, postgres, caddy"
                   exit 1
                   ;;
               esac

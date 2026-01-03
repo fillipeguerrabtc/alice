@@ -972,7 +972,10 @@ export default function Agents() {
                       <FormField
                         control={form.control}
                         name="temperaturaModelo"
-                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'temperaturaModelo'> }) => (
+                        render={({ field }: { field: ControllerRenderProps<AgentFormData, 'temperaturaModelo'> }) => {
+                          // CORREÇÃO 02/01/2026: Garantir valor padrão para evitar undefined (TS18048/TS2345)
+                          const temperatureValue = field.value ?? 0.7;
+                          return (
                           <FormItem>
                             <div className="flex items-center justify-between">
                               <FormLabel className="flex items-center gap-2">
@@ -981,10 +984,10 @@ export default function Agents() {
                               </FormLabel>
                               <div className="flex items-center gap-2">
                                 <Badge variant="secondary" className="font-mono">
-                                  {field.value.toFixed(2)}
+                                  {temperatureValue.toFixed(2)}
                                 </Badge>
                                 <span className="text-sm text-muted-foreground">
-                                  ({getTemperatureLabel(field.value)})
+                                  ({getTemperatureLabel(temperatureValue)})
                                 </span>
                               </div>
                             </div>
@@ -993,8 +996,8 @@ export default function Agents() {
                                 min={0}
                                 max={2}
                                 step={0.05}
-                                value={[field.value]}
-                                onValueChange={(vals) => field.onChange(vals[0])}
+                                value={[temperatureValue]}
+                                onValueChange={(vals: number[]) => field.onChange(vals[0])}
                                 className="mt-2"
                                 data-testid="slider-agente-temperatura"
                               />
@@ -1009,7 +1012,8 @@ export default function Agents() {
                             </FormDescription>
                             <FormMessage />
                           </FormItem>
-                        )}
+                          );
+                        }}
                       />
 
                       {/* Presets de Temperatura */}
