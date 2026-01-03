@@ -18,11 +18,16 @@
 # CONFIGURAÇÃO GLOBAL
 # =============================================================================
 {
-	# Email para Let's Encrypt (notificações de expiração)
-	# CORREÇÃO 03/01/2026: Fallback se ACME_EMAIL não definido (fail-safe)
-	# Sintaxe: {$VAR:default} - usa default se VAR vazio
+	# =================================================================
+	# CORREÇÃO 03/01/2026: Email OBRIGATÓRIO - Fail-fast se ausente
+	# =================================================================
+	# PROBLEMA: Fallback noreply@ pode ser rejeitado por Let's Encrypt
+	# SOLUÇÃO: Remover fallback - Caddy FALHA IMEDIATAMENTE se não definido
+	# Permite diagnóstico rápido ao invés de timeout silencioso
+	# Sintaxe: {env.VAR} sem fallback - erro se VAR não existe
 	# Ref: https://caddyserver.com/docs/caddyfile/concepts#environment-variables
-	email {$ACME_EMAIL:noreply@yesyoudeserve.duckdns.org}
+	# =================================================================
+	email {env.ACME_EMAIL}
 	
 	# Produção - Let's Encrypt oficial
 	# NOTA: Caddy automaticamente usa staging para domínios localhost/local

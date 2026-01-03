@@ -356,27 +356,35 @@ services:
       - erpnext-network
     healthcheck:
       # =================================================================
-      # CORREÇÃO 03/01/2026: Caddy 2.8 healthcheck DUPLO - Docs Oficiais
+      # CORREÇÃO 03/01/2026: Timeout Enterprise para Let's Encrypt
       # =================================================================
-      # ROOT CAUSE: Healthcheck só testava Admin API (porta 2019)
-      # PROBLEMA: Se Caddyfile tem erro de sintaxe, Caddy nem inicia
-      #           → Admin API nunca sobe → healthcheck falha para sempre
-      # SOLUÇÃO: Teste DUPLO para detectar problemas de configuração
-      #   1. Admin API (porta 2019) - verifica se Caddy iniciou
-      #   2. HTTP porta 80 - verifica se Caddyfile foi parseado OK
+      # PROBLEMA: Primeiro deploy com Let's Encrypt + DNS pode demorar:
+      # - DuckDNS propagation: até 5 min
+      # - Let's Encrypt ACME challenge: até 3 min
+      # - Network latency + retry backoff: variável
+      # 
+      # SOLUÇÃO: start_period 600s (10 min) + retries 15
+      # TOTAL TIMEOUT: 600s + (15 × 30s) = 1050s (17.5 minutos máximo)
+      # 
+      # Referência: Docker + Let's Encrypt Best Practices 2026
+      # https://caddyserver.com/docs/automatic-https
+      # =================================================================
+      # CORREÇÃO HEALTHCHECK: Admin API APENAS (porta 2019)
+      # =================================================================
+      # PROBLEMA: Teste porta 80 falha porque Caddyfile não tem rota catch-all
+      #           Todas as rotas exigem Host header específico
+      #           (yesyoudeserve.duckdns.org, observability.*, etc)
+      # SOLUÇÃO: Admin API sempre responde quando Caddy está rodando
+      #          Não depende de rotas, SSL, DNS ou backends
       # Ref: https://caddyserver.com/docs/api
-      # =================================================================
-      # CORREÇÃO START_PERIOD: 180s para primeiro deploy (Let's Encrypt + DNS)
-      # CORREÇÃO RETRIES: 10 (antes 8) para dar mais tempo
-      # TOTAL TIMEOUT: 180s + (10 × 30s) = 480s (8 minutos máximo)
       # =================================================================
       test:
         - "CMD-SHELL"
-        - "wget --spider -q http://localhost:2019/config/ && wget --spider -q -O /dev/null http://localhost:80 || exit 1"
+        - "wget --spider -q http://localhost:2019/config/ || exit 1"
       interval: 30s
       timeout: 10s
-      retries: 10
-      start_period: 180s
+      retries: 15
+      start_period: 600s
     deploy:
       resources:
         limits:
